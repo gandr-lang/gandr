@@ -66,6 +66,7 @@ use crate::presented::RuleNode;
 use crate::presented::RuleVariable;
 use crate::term::ConstantIndex;
 use crate::term::ConstructorTag;
+use crate::term::SourceRank;
 
 /// One node of an operation rule's side, in pre-order.
 ///
@@ -314,6 +315,16 @@ pub trait RuleScope
         &self,
         constant: ConstantIndex,
     ) -> Option<&OperationRules>;
+
+    /// The rank of the declaration at `constant`; none when no declaration
+    /// ranked below the ruled definition stands there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rank(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<SourceRank>;
 }
 
 impl OperationRules
@@ -408,7 +419,7 @@ impl OperationRules
     #[inline]
     pub fn converge<S>(
         &self,
-        own: ConstantIndex,
+        (own, rank): (ConstantIndex, SourceRank),
         scope: &S,
         fuel: &mut RewriteFuel,
     ) -> Result<(), OperationRuleRefusal>
@@ -426,6 +437,7 @@ impl OperationRules
         };
         let reader = Reader {
             own: (own, arity),
+            rank,
             scope,
         };
         for (index, rule) in self.0.iter().enumerate() {
@@ -672,7 +684,9 @@ struct Reader<'scope, S>
 {
     /// The ruled definition's position and arity.
     own: (ConstantIndex, FieldCount),
-    /// The declarations admitted below it.
+    /// The ruled definition's rank.
+    rank: SourceRank,
+    /// The declarations ranked below it.
     scope: &'scope S,
 }
 
@@ -728,7 +742,7 @@ where
     }
 
     /// Check that `constant` at `stated` arguments names the ruled definition
-    /// at its arity, or a ruled definition admitted before it at its own.
+    /// at its arity, or a ruled definition ranked below it at its own.
     ///
     /// # Specification
     /// trivial.
@@ -746,7 +760,9 @@ where
             stated == arity
         }
         else {
-            constant < own
+            self.scope
+                .rank(constant)
+                .is_some_and(|rank| rank < self.rank)
                 && self.scope.rules(constant).and_then(OperationRules::arity) == Some(stated)
         };
         if known {
@@ -880,10 +896,13 @@ where
             side: right,
             children: &below,
         };
-        match lpo::orient(&left, &right, &AdmissionOrder, buffers) {
+        let order = AdmissionOrder {
+            own: (self.own.0, self.rank),
+            scope: self.scope,
+        };
+        match lpo::orient(&left, &right, &order, buffers) {
             Orientation::Oriented(Evidence::Path(derivation))
-                if lpo::check(&left, &right, &AdmissionOrder, &derivation, buffers)
-                    == Replay::Holds =>
+                if lpo::check(&left, &right, &order, &derivation, buffers) == Replay::Holds =>
             {
                 Placement::Above
             },
@@ -1408,20 +1427,30 @@ impl Valued for OperationSide<'_>
     }
 }
 
-/// The admission order as the path order's precedence: an operation ranked
-/// by its position, above every operation admitted before it; constructors
+/// The admission order as the path order's precedence: an operation placed
+/// at its source rank, above every operation ranked below it; constructors
 /// and results tuples ground; every status lexicographic.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
-struct AdmissionOrder;
+struct AdmissionOrder<'scope, S>
+{
+    /// The ruled definition's position and rank.
+    own: (ConstantIndex, SourceRank),
+    /// The declarations ranked below it.
+    scope: &'scope S,
+}
 
-impl Precedence for AdmissionOrder
+impl<S> Precedence for AdmissionOrder<'_, S>
+where
+    S: RuleScope,
 {
     type Symbol = OperationNode;
 
-    /// An operation's position as its rank; every other node ground.
+    /// An operation's source rank as its place; every other node ground. An
+    /// operation the scope does not rank stands ground too, and the
+    /// well-formedness check refuses it before any orientation.
     ///
     /// # Specification
     /// trivial.
@@ -1430,14 +1459,22 @@ impl Precedence for AdmissionOrder
         symbol: OperationNode,
     ) -> Place
     {
-        match symbol {
-            OperationNode::Operation { constant, .. } => Place::Ranked(Rank::from(
-                u64::try_from(usize::from(constant)).unwrap_or(u64::MAX),
-            )),
-            OperationNode::Constructor { .. }
-            | OperationNode::Results(_)
-            | OperationNode::Variable(_) => Place::Ground,
+        let OperationNode::Operation { constant, .. } = symbol
+        else {
+            return Place::Ground;
+        };
+        let (own, rank) = self.own;
+        let ranked = if constant == own {
+            Some(rank)
         }
+        else {
+            self.scope.rank(constant)
+        };
+        ranked.map_or(Place::Ground, |rank| {
+            Place::Ranked(Rank::from(
+                u64::try_from(usize::from(rank)).unwrap_or(u64::MAX),
+            ))
+        })
     }
 
     /// Lexicographic, for every symbol.

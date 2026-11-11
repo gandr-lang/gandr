@@ -13,6 +13,8 @@ use gandr_kernel_core::Environment;
 use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::NoVerdicts;
+use gandr_kernel_core::verdict::Receipt;
+use gandr_kernel_core::verdict::ReceiptSignature;
 use gandr_kernel_core::verdict::StoredReceipt;
 use gandr_kernel_core::verdict::StratumBytes;
 use gandr_kernel_core::verdict::StratumKey;
@@ -34,6 +36,7 @@ use gandr_kernel_term::Presentation;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::SealExtent;
 use gandr_kernel_term::SealScope;
+use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::TermArena;
 use quenchant_shape::shape::Maybe;
 
@@ -583,6 +586,21 @@ fn offer(
     offered: Offered,
 ) -> Admission
 {
+    offer_ranked(environment, offered, None)
+}
+
+/// Offer `offered` to `environment` ranked at `rank`, or at its position
+/// when `rank` is none; answer how it was admitted, the block's members as
+/// one and at their positions.
+///
+/// # Specification
+/// trivial.
+fn offer_ranked(
+    environment: &mut Environment,
+    offered: Offered,
+    rank: Option<SourceRank>,
+) -> Admission
+{
     let next = ConstantIndex::from(usize::from(environment.entries().len()));
     let mut staging = environment.stage();
     let arena = staging.arena();
@@ -680,6 +698,10 @@ fn offer(
             return Admission::Checked;
         },
     };
+    let staged = match rank {
+        Some(rank) => staged.ranked(rank),
+        None => staged,
+    };
     let admitted = environment
         .add_decl(staged)
         .expect("each declaration of these programs admits");
@@ -762,8 +784,13 @@ fn an_edit_re_keys_only_what_reads_it_6568()
     );
 }
 
-/// #6568: a key reads no admission order. A definition naming two axioms is
-/// recalled when the two are admitted in the other order.
+/// #6568, narrowed by #6621: the key of a declaration that carries no
+/// operation rules reads no admission order. A definition naming two axioms
+/// is recalled when the two are admitted, and ranked, in the other order.
+/// The key of a ruled definition reads the rank order of the operations its
+/// rules name, because the path order compares them. Its twin,
+/// `ruled::tests::a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621`,
+/// checks such a definition again when two of those operations swap ranks.
 #[test]
 fn a_key_reads_no_admission_order_6568()
 {
@@ -863,6 +890,40 @@ fn words_over_a_reached_sort_re_key_a_declaration_6568()
     );
 }
 
+/// #6621: a key reads only the types of words ranked below the declaration.
+/// Words over the sort an axiom reads, admitted before the axiom but ranked
+/// above it, leave the axiom's key as a run without them keys it; ranked
+/// below it, they re-key it.
+#[test]
+fn words_ranked_above_a_declaration_do_not_re_key_it_6621()
+{
+    use Admission::Checked;
+    use Admission::Recalled;
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let rank = |place: usize| Some(SourceRank::from(place));
+    let receipt = recorded_program(&signer, &[Offered::Sort, Offered::Of(at(0_usize))]);
+    let ranked = |words: usize| {
+        let mut environment =
+            Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
+        [
+            offer_ranked(&mut environment, Offered::Sort, rank(0_usize)),
+            offer_ranked(&mut environment, Offered::Words(at(0_usize)), rank(words)),
+            offer_ranked(&mut environment, Offered::Of(at(0_usize)), rank(2_usize)),
+        ]
+    };
+    assert_eq!(
+        ranked(3_usize),
+        [Recalled, Checked, Recalled],
+        "words ranked above the axiom"
+    );
+    assert_eq!(
+        ranked(1_usize),
+        [Recalled, Checked, Checked],
+        "words ranked below the axiom"
+    );
+}
+
 /// #6568: a mutual block is keyed whole, and each member by its place in it.
 /// A declaration that reads a member keeps its key when the block moves, and
 /// an edit of the other member re-keys it.
@@ -894,4 +955,97 @@ fn a_block_member_is_keyed_by_its_whole_block_6568()
         [Checked, Checked],
         "an edit of the forest re-keys the tree"
     );
+}
+
+/// The receipt that `landing` gave at `48e710d73`, before #6621, over a cold
+/// run of the program [`admit`] offers naming the first unit, under the key
+/// of the seed `[7; 32]`: its signature, then the key and the bytes of each
+/// record.
+const BEFORE_THE_RANK: (&str, [(&str, &str); 5]) = (
+    "1e19147ddf0163c90bb47cea5c3eacce80d6771a80156f222be7075deca440ed4e3ea764fc6ec435b7f4c6f198f9bbbdc41f5b6a5b91c5312a5230d1ef80cf0a",
+    [
+        (
+            "53185b618dd2bf08da575ec9625a3e4d87071118bfd8b6840c6b9761b39db1f6",
+            "0101000000000000000000",
+        ),
+        (
+            "90c9993f5dd27504ade47b1a6f0286d105d2cab21bb949a87d8c3558796dc0e1",
+            "0101000000000000000000",
+        ),
+        (
+            "afe7287a3cb3d32a9cad07dee150936ee3222466e003c061b2dd4f4001b65ba0",
+            "0101000000000000000000",
+        ),
+        (
+            "d653946cdc1c2847bc69d3c330275a5b2da70dddb4465ed274fc5c11e7d7eb56",
+            "0101000000000000000000",
+        ),
+        (
+            "fb4a16c4caa9e5907aaedbd196652f71886aa36d1b17131f23966c7fb2aaa435",
+            "0101000000000000000000",
+        ),
+    ],
+);
+
+/// #6621: a store that a kernel without ranks wrote reads a miss. No key of
+/// its receipt is a key this kernel computes for the same program, so a run
+/// that reads the store recalls nothing and checks each declaration, as a
+/// fresh run does.
+#[test]
+fn a_store_written_before_the_rank_reads_a_miss_6621()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let named = ConstantIndex::from(0_usize);
+    // The bytes the hexadecimal digits spell, two digits a byte.
+    let spelled = |digits: &str| -> Vec<u8> {
+        digits
+            .as_bytes()
+            .chunks(2)
+            .map(|pair| {
+                core::str::from_utf8(pair)
+                    .ok()
+                    .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+                    .expect("the fixture spells bytes in hexadecimal")
+            })
+            .collect()
+    };
+    let (signature, records) = BEFORE_THE_RANK;
+    let signature: [u8; 64] = spelled(signature)
+        .try_into()
+        .expect("a signature is 64 bytes");
+    let records = records
+        .iter()
+        .map(|&(key, image)| {
+            let key: [u8; 32] = spelled(key).try_into().expect("a key is 32 bytes");
+            let image = spelled(image);
+            let Maybe::Present(record) =
+                VerdictRecord::decode(VerdictKey::from(key), VerdictImage::from(image.as_slice()))
+            else {
+                panic!("the fixture holds records this kernel reads");
+            };
+            record
+        })
+        .collect();
+    let before = StoredReceipt::new(
+        Receipt::new(signer.identity(), ReceiptSignature::from(signature)),
+        records,
+    );
+    let keys = |receipt: &StoredReceipt| {
+        receipt
+            .records()
+            .iter()
+            .map(VerdictRecord::key)
+            .collect::<BTreeSet<_>>()
+    };
+    assert!(
+        keys(&before).is_disjoint(&keys(&recorded(&signer, named))),
+        "no key of the old store is a key of this kernel"
+    );
+    let mut environment = Environment::recalling(trusting(&signer), Store::holding(&[&before]));
+    assert_eq!(
+        admit(&mut environment, named),
+        [Admission::Checked; 3],
+        "a run over the old store checks each declaration"
+    );
+    assert_eq!(usize::from(environment.recalls()), 0, "and recalls nothing");
 }

@@ -469,6 +469,7 @@ pub use crate::term::PathEvidence;
 pub use crate::term::ResultCount;
 pub use crate::term::Seam;
 pub use crate::term::Side;
+pub use crate::term::SourceRank;
 pub use crate::term::Stage;
 pub use crate::term::StageDepth;
 pub use crate::term::StageId;

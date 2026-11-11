@@ -1120,11 +1120,11 @@ INSERT INTO purpose VALUES('kernel-core','env::AdmittedDeclaration','struct','On
 INSERT INTO purpose VALUES('kernel-core','env::ArtifactRefusal','struct','Why an artifact did not replay: the first declaration the kernel rejected, and the rejection.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::AxiomReport','struct','The transitive audit of a declaration: the axioms and unchecked admissions it rests on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::CheckedId','struct','An unforgeable receipt that a declaration was admitted, naming its position.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core','env::Entries','struct','An environment''s admitted declarations, in admission order, indexed by admission position, and the tables a check reads beside them: a check reads an entry only through its support.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','env::Entries','struct','An environment''s admitted declarations, in admission order, indexed by admission position, and the tables a check reads beside them: a check reads an entry only through its support, and only below the rank of the declaration it admits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Environment','struct','The append-only kernel environment: one arena, and the admitted declarations in admission order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::OutstandingContent','enum','Whether an environment holds staged, unresolved content above some mark.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::OutstandingCount','struct','How many staged, unresolved marks sit above the one a refusal is about.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core','env::StagedDeclaration','struct','A declaration whose content has been minted, paired with the watermark its content began at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','env::StagedDeclaration','struct','A declaration whose content has been minted, paired with the watermark its content began at and the rank its source gives it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Staging','struct','A borrowing staging session for one declaration''s content.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::CompTypeHead','enum','The head former of a computation type, as an error payload names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::CompTypeMismatch','struct','A mismatch between two computation types the checker required to convert.',NULL,'fits','sound',NULL);
@@ -1429,7 +1429,7 @@ INSERT INTO purpose VALUES('kernel-term','operation_rules::OperationRuleFault','
 INSERT INTO purpose VALUES('kernel-term','operation_rules::OperationRuleRefusal','struct','The first rule an operation''s rules are refused at, and why.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','operation_rules::OperationRules','struct','A definition''s rules, in the order the producer wrote them, shared.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','operation_rules::Overlapped','enum','The other rule of a critical pair.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','operation_rules::RuleScope','trait','What a convergence decision reads of the declarations admitted before the ruled definition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','operation_rules::RuleScope','trait','What a convergence decision reads of the declarations ranked below the ruled definition.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Apartness','enum','How two terms of a presented type stand, as Presentation::apart decides.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::CellFault','enum','Why free cells do not mint a type of words.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::CellIndex','struct','A cell''s position among a type of words'' cells, its generator.',NULL,'fits','sound',NULL);
@@ -1653,6 +1653,7 @@ INSERT INTO purpose VALUES('kernel-term','term::PathEvidence','struct','Portable
 INSERT INTO purpose VALUES('kernel-term','term::ResultCount','struct','How many values a returner of several values returns, and how many binders its bind opens.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::Seam','enum','The wiring a composition requests between its two flows.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::Side','enum','One side of a binary former: a summand of `A + B`, such as a boolean''s, or an endpoint of a path.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','term::SourceRank','struct','The place of an admitted declaration in its revision''s source order: what "admitted before" means to every reader of the environment.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::Stage','enum','The stage a value type is refined at: a stage of a structural fixpoint''s typing, unrelated to the meta and object levels of stage::Stage(crate::stage::Stage).',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::StageDepth','struct','How many steps below its anchor a bound stage stands: at least one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::StageId','struct','A stage the recursion typing mints.',NULL,'fits','sound',NULL);

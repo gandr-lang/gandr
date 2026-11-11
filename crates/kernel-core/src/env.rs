@@ -123,6 +123,7 @@ use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealExtent;
 use gandr_kernel_term::SealScope;
+use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -203,6 +204,9 @@ pub struct StagedDeclaration
     content_start: ArenaWatermark,
     /// The declaration itself.
     declaration: Declaration,
+    /// The rank its source gives it; none for the rank of a fresh
+    /// admission, which is its position.
+    rank: Option<SourceRank>,
 }
 
 impl StagedDeclaration
@@ -216,6 +220,37 @@ impl StagedDeclaration
     pub const fn declaration(&self) -> &Declaration
     {
         &self.declaration
+    }
+
+    /// This staged declaration ranked at `rank` in its source, its content
+    /// start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — admission refuses a rank a live entry holds.
+    /// - ensures: the same declaration at the same content start, ranked at
+    ///   `rank`.
+    /// - provides: how a readmission places an appended declaration where its
+    ///   source states it, so each reader of ranks answers as over a fresh
+    ///   admission of that source.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition ranked below an earlier admission
+    ///   orients its rules as though admitted before it.
+    /// - witness: `ruled::tests::a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621`
+    #[spec(ensures: |ret| ret.rank == Some(rank))]
+    #[inline]
+    #[must_use]
+    pub fn ranked(
+        self,
+        rank: SourceRank,
+    ) -> Self
+    {
+        Self {
+            rank: Some(rank),
+            ..self
+        }
     }
 
     /// This staged definition carrying `related` as the path endpoints its
@@ -790,6 +825,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.data(levels, parameters, constructors, kind),
         }
     }
@@ -820,6 +856,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.codata(levels, parameters, observations, kind),
         }
     }
@@ -852,6 +889,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.indexed(levels, parameters, table, kind),
         }
     }
@@ -968,6 +1006,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.def(levels, declared, body),
         }
     }
@@ -1012,6 +1051,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.sealed_def(levels, declared, body, provenance),
         }
     }
@@ -1052,6 +1092,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.axiom(levels, declared),
         }
     }
@@ -1092,6 +1133,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self.builder.literal_identity(levels, declared, test),
         }
     }
@@ -1141,6 +1183,7 @@ impl<'env> Staging<'env>
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
+            rank: None,
             declaration: self
                 .builder
                 .abstract_type(levels, kind, representation, scope),
@@ -1183,6 +1226,9 @@ pub struct AdmittedDeclaration
     /// entry's key. Absent when the policy rechecks, the bypass admitted it or
     /// an input of it has no entry key.
     key: Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+    /// Its rank in the source of the revision that holds it: what every
+    /// reader of "admitted before" compares.
+    rank: SourceRank,
 }
 
 impl AdmittedDeclaration
@@ -1272,6 +1318,17 @@ impl AdmittedDeclaration
     ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
     {
         self.key
+    }
+
+    /// The declaration's rank in its source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rank(&self) -> SourceRank
+    {
+        self.rank
     }
 
     /// What the declaration's check charged, goal by goal: its admission's
@@ -1449,6 +1506,20 @@ pub struct Entries
     /// The support of the check that runs over the entries: none until a
     /// check opens one, and never shared with a clone.
     support: Option<alloc::sync::Arc<crate::weakening::Support>>,
+    /// The rank the check that runs reads below: none until a check opens
+    /// one, and never shared with a clone.
+    horizon: Option<Horizon>,
+}
+
+/// The rank a check reads below: the rank of the declaration it admits. The
+/// check reads only the entries its source states before that declaration.
+#[derive(Clone, Debug)]
+struct Horizon
+{
+    /// The rank of the declaration the check admits.
+    rank: SourceRank,
+    /// The presentations, as a reading below the rank sees them.
+    presentations: crate::presented::Presentations,
 }
 
 /// The admitted declarations and what a check reads beside them.
@@ -1461,10 +1532,10 @@ struct EntryLog
     presentations: crate::presented::Presentations,
     /// The position of each ruled definition, by the fixpoint its body thunks.
     ruled: BTreeMap<ComputationId, ConstantIndex>,
-    /// The position of each built-in role's holder.
-    roles: BTreeMap<gandr_kernel_term::Builtin, ConstantIndex>,
+    /// The positions of each built-in role's holders, ascending.
+    roles: BTreeMap<gandr_kernel_term::Builtin, Vec<ConstantIndex>>,
     /// The positions of the plain definitions named by their content, by the
-    /// digest of their declared type and body, ascending.
+    /// digest of their declared type and body, by rank ascending.
     definitions: BTreeMap<ContentDigest, Vec<ConstantIndex>>,
     /// The entries that name each position: the reverse of each entry's
     /// direct references.
@@ -1472,6 +1543,8 @@ struct EntryLog
     /// The positions of the generative admissions, by their content key:
     /// the earlier ones with one content are what a new one's key counts.
     generative: BTreeMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
+    /// The position of the entry that holds each rank.
+    ranked: BTreeMap<SourceRank, ConstantIndex>,
 }
 
 /// No admitted declaration.
@@ -1492,6 +1565,7 @@ impl Clone for Entries
         Self {
             log: self.log.clone(),
             support: None,
+            horizon: None,
         }
     }
 }
@@ -1533,6 +1607,7 @@ impl Entries
         Self {
             log: None,
             support: None,
+            horizon: None,
         }
     }
 
@@ -1565,8 +1640,9 @@ impl Entries
     /// - ensures: the entry at `offset` while no check runs, or when it is in
     ///   the running check's support; then, at the check's first read of it,
     ///   its direct references join the support, with each type of words over
-    ///   each of them. `None` past the entries, and for an entry outside the
-    ///   support, whose position the support keeps.
+    ///   each of them. `None` past the entries, for an entry the check's
+    ///   horizon does not hold, as for an entry not admitted, and for an entry
+    ///   outside the support, whose position the support keeps.
     /// - provides: the one read of an entry a check makes, so the kernel checks
     ///   the weakening rather than assumes it.
     /// - fails: never.
@@ -1577,9 +1653,11 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a check reading an entry its content does not name is
     ///   refused at that position, and a case over a sort keeps the loop arm of
-    ///   a type of words the case does not name.
+    ///   a type of words the case does not name. A reference to an entry ranked
+    ///   above the declaration is unbound.
     /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    /// - witness: `env::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
     #[inline]
     #[must_use]
     pub fn get<Offset>(
@@ -1592,6 +1670,9 @@ impl Entries
         let position = usize::from(offset.into());
         let log = self.log.as_deref()?;
         let entry = log.family.get(position)?;
+        if entry.rank >= self.horizon() {
+            return None;
+        }
         let Some(support) = self.support.as_deref()
         else {
             return Some(entry);
@@ -1625,6 +1706,9 @@ impl Entries
     {
         let position = usize::from(offset.into());
         let entry = self.family().get(position)?;
+        if entry.rank >= self.horizon() {
+            return None;
+        }
         let read = self
             .support
             .as_deref()
@@ -1663,16 +1747,78 @@ impl Entries
     }
 
     /// The presented types among the entries, and the types of words over
-    /// each sort.
+    /// each sort, as the running check reads them: below its horizon.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub(crate) fn presentations(&self) -> &crate::presented::Presentations
     {
+        self.horizon.as_ref().map_or_else(
+            || {
+                self.log
+                    .as_deref()
+                    .map_or(&crate::presented::FREE, |log| &log.presentations)
+            },
+            |horizon| &horizon.presentations,
+        )
+    }
+
+    /// The rank the running check reads below: the rank of the declaration
+    /// it admits, and above every rank while no check runs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn horizon(&self) -> SourceRank
+    {
+        self.horizon
+            .as_ref()
+            .map_or(SourceRank::ABOVE, |horizon| horizon.rank)
+    }
+
+    /// The rank of the entry at `position`, read outside any support.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn rank_of(
+        &self,
+        position: ConstantIndex,
+    ) -> Option<SourceRank>
+    {
+        self.family()
+            .get(usize::from(position))
+            .map(AdmittedDeclaration::rank)
+    }
+
+    /// The position of the live entry that holds `rank`, if one holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn ranked(
+        &self,
+        rank: SourceRank,
+    ) -> Option<ConstantIndex>
+    {
+        self.log.as_deref()?.ranked.get(&rank).copied()
+    }
+
+    /// The rank past every rank a live entry holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn past_ranks(&self) -> SourceRank
+    {
         self.log
             .as_deref()
-            .map_or(&crate::presented::FREE, |log| &log.presentations)
+            .and_then(|log| log.ranked.last_key_value())
+            .map_or_else(
+                || SourceRank::from(0_usize),
+                |(&rank, _)| SourceRank::from(usize::from(rank).saturating_add(1)),
+            )
     }
 
     /// The entry key of the declaration at `position`, read outside any
@@ -1692,7 +1838,8 @@ impl Entries
         )
     }
 
-    /// How many generative admissions hold the content key `content`.
+    /// How many generative admissions ranked below `below` hold the content
+    /// key `content`.
     ///
     /// # Specification
     /// trivial.
@@ -1700,13 +1847,21 @@ impl Entries
     pub(crate) fn generative_count(
         &self,
         content: crate::verdict::VerdictKey,
+        below: SourceRank,
     ) -> crate::verdict::KeyedCount
     {
         crate::verdict::KeyedCount::from(
             self.log
                 .as_deref()
                 .and_then(|log| log.generative.get(&content))
-                .map_or(0, Vec::len),
+                .map_or(0, |positions| {
+                    positions
+                        .iter()
+                        .filter(|&&position| {
+                            self.rank_of(position).is_some_and(|rank| rank < below)
+                        })
+                        .count()
+                }),
         )
     }
 
@@ -1744,7 +1899,9 @@ impl Entries
         self.get(usize::from(position)).map(|_| position)
     }
 
-    /// The position of the entry that holds `role`, if one holds it.
+    /// The position of the entry that holds `role` and that the running
+    /// check reads, if one holds it: the holder ranked first below the
+    /// check's horizon.
     ///
     /// # Specification
     /// trivial.
@@ -1754,11 +1911,34 @@ impl Entries
         role: gandr_kernel_term::Builtin,
     ) -> Option<ConstantIndex>
     {
-        self.log.as_deref()?.roles.get(&role).copied()
+        self.holder_below(role, self.horizon())
     }
 
-    /// The positions of the plain definitions whose declared type and body
-    /// digest to `digest`, ascending.
+    /// The position of the holder of `role` ranked first below `below`, if
+    /// one holds it there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn holder_below(
+        &self,
+        role: gandr_kernel_term::Builtin,
+        below: SourceRank,
+    ) -> Option<ConstantIndex>
+    {
+        self.log
+            .as_deref()?
+            .roles
+            .get(&role)?
+            .iter()
+            .filter_map(|&position| Some((self.rank_of(position)?, position)))
+            .filter(|&(rank, _)| rank < below)
+            .min()
+            .map(|(_, position)| position)
+    }
+
+    /// The positions of the plain definitions ranked below `below` whose
+    /// declared type and body digest to `digest`, by rank ascending.
     ///
     /// # Specification
     /// trivial.
@@ -1766,12 +1946,17 @@ impl Entries
     pub(crate) fn digested(
         &self,
         digest: ContentDigest,
+        below: SourceRank,
     ) -> &[ConstantIndex]
     {
-        self.log
+        let positions = self
+            .log
             .as_deref()
             .and_then(|log| log.definitions.get(&digest))
-            .map_or(&[], Vec::as_slice)
+            .map_or(&[][..], Vec::as_slice);
+        let held = positions
+            .partition_point(|&position| self.rank_of(position).is_some_and(|rank| rank < below));
+        positions.get(.. held).unwrap_or_default()
     }
 
     /// The reach of an edit to the entries at `edited`: each of them, with
@@ -1815,8 +2000,8 @@ impl Entries
         let words = |position: ConstantIndex| {
             let entry = log.family.get(usize::from(position))?;
             let sort = entry.declaration.presentation().cells()?.sort();
-            let over = log.presentations.over(sort);
-            over.binary_search(&position).is_ok().then_some(sort)
+            let mut over = log.presentations.over(sort);
+            over.any(|words| words == position).then_some(sort)
         };
         crate::dependents::reach(&log.dependents, words, log.family.len(), edited)
     }
@@ -1833,6 +2018,7 @@ impl Entries
         Self {
             log: self.log.clone(),
             support: self.support.clone(),
+            horizon: self.horizon.clone(),
         }
     }
 
@@ -1850,11 +2036,12 @@ impl Entries
     ///
     /// # Specification
     /// - requires: `entry` is the declaration admitted at the next position,
-    ///   its content in `arena`.
+    ///   its content in `arena`, at a rank no entry holds.
     /// - ensures: one more entry; the presentations hold its presented type and
     ///   the type of words it is over its sort, the ruled index its fixpoint,
-    ///   the role index its role, the digest index its content name, and the
-    ///   reverse index a row for each of its direct references.
+    ///   the role index its role, the digest index its content name, the rank
+    ///   index its rank, and the reverse index a row for each of its direct
+    ///   references.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1883,22 +2070,32 @@ impl Entries
                 | DeclarationContent::AbstractType { .. } => None,
             }
         });
+        let rank = entry.rank;
         log.presentations
-            .admit(position, declaration, sort_constructors);
+            .admit((position, rank), declaration, sort_constructors);
         if let DeclarationContent::Def { body, .. } = *declaration.content()
             && !declaration.operation_rules().rules().is_empty()
             && let Some(&Value::Thunk(root)) = arena.value(body)
         {
             let _previous = log.ruled.insert(root, position);
         }
-        // The first holder keeps its role: admission refuses a second, and
-        // only the bypass admits one.
+        // Each holder is kept: a reader takes the one ranked first below
+        // it. Admission refuses a second holder, and only the bypass admits
+        // one.
         if let Maybe::Present(role) = declaration.role() {
-            let _first = log.roles.entry(role).or_insert(position);
+            log.roles.entry(role).or_default().push(position);
         }
         if let ConstantName::Definition { digest, .. } = entry.key_name {
-            log.definitions.entry(digest).or_default().push(position);
+            let family = &log.family;
+            let positions = log.definitions.entry(digest).or_default();
+            let at = positions.partition_point(|&held| {
+                family
+                    .get(usize::from(held))
+                    .is_some_and(|earlier| earlier.rank < rank)
+            });
+            positions.insert(at, position);
         }
+        let _previous = log.ranked.insert(rank, position);
         log.dependents.admit(position, &entry.references);
         log.family.push(entry);
     }
@@ -1936,7 +2133,10 @@ impl Entries
         log.family.truncate(length);
         log.presentations.forget_from(first);
         log.ruled.retain(|_, &mut position| position < first);
-        log.roles.retain(|_, &mut position| position < first);
+        log.roles.retain(|_, positions| {
+            positions.retain(|&position| position < first);
+            !positions.is_empty()
+        });
         log.definitions.retain(|_, positions| {
             positions.retain(|&position| position < first);
             !positions.is_empty()
@@ -1945,6 +2145,7 @@ impl Entries
             positions.retain(|&position| position < first);
             !positions.is_empty()
         });
+        log.ranked.retain(|_, &mut position| position < first);
     }
 
     /// Share every entry with every clone made after.
@@ -1975,14 +2176,17 @@ impl Entries
         self.log_mut().family.get_mut(offset)
     }
 
-    /// Open a check whose support starts at `roots`: each joins, with each
-    /// type of words over it.
+    /// Open a check of the declaration ranked at `rank`, whose support starts
+    /// at `roots`: each joins, with each type of words over it.
     ///
     /// # Specification
     /// - requires: no check runs over these entries.
     /// - ensures: until [`Self::close`], [`Self::get`] answers only the entries
-    ///   in the support, which grows as the check reads.
-    /// - provides: the start of a support by weakening.
+    ///   in the support, which grows as the check reads, and only those ranked
+    ///   below `rank`; [`Self::presentations`] and [`Self::holder`] answer only
+    ///   the rows ranked below it.
+    /// - provides: the start of a support by weakening, and the horizon that
+    ///   makes a check read only what its source states before it.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses state what later reads answer, which
@@ -1991,11 +2195,21 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::get`].
     /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `env::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
     pub(crate) fn open(
         &mut self,
         roots: impl IntoIterator<Item = ConstantIndex>,
+        rank: SourceRank,
     )
     {
+        self.horizon = Some(Horizon {
+            rank,
+            presentations: self
+                .log
+                .as_deref()
+                .map_or(&crate::presented::FREE, |log| &log.presentations)
+                .below(rank),
+        });
         let length = self.len();
         let fresh = alloc::sync::Arc::default;
         let support = self.support.get_or_insert_with(fresh);
@@ -2021,6 +2235,7 @@ impl Entries
     /// trivial.
     pub(crate) fn close(&mut self) -> Option<ConstantIndex>
     {
+        self.horizon = None;
         alloc::sync::Arc::get_mut(self.support.as_mut()?)?.close()
     }
 
@@ -2052,7 +2267,7 @@ impl EntryLog
     )
     {
         support.join(position);
-        for &words in self.presentations.over(position) {
+        for words in self.presentations.over(position) {
             support.join(words);
         }
     }
@@ -2501,6 +2716,7 @@ impl Environment
     {
         let StagedDeclaration {
             content_start,
+            rank: _,
             declaration: _,
         } = staged;
         self.outstanding.resolve(content_start);
@@ -2642,6 +2858,7 @@ impl Environment
     {
         let StagedDeclaration {
             content_start,
+            rank,
             declaration,
         } = staged;
         // The guard, before anything is truncated: a declaration staged after
@@ -2658,11 +2875,16 @@ impl Environment
             return Err(KernelError::OutstandingStagedContent { above });
         }
         let position = ConstantIndex::from(usize::from(self.entries.len()));
+        let rank = rank.unwrap_or_else(|| SourceRank::from(position));
         let content_end = self.arena.watermark();
         // The rejection mark: this declaration's content-start, clamped into
         // `[admission floor, content-end]`, so a rollback can neither delete an
         // admitted declaration's content nor retain a checker intermediate.
         let rejected = content_start.clamped_into(self.admission_floor, content_end);
+        if let Some(by) = self.entries.ranked(rank) {
+            self.arena.truncate_to(rejected);
+            return Err(KernelError::RankTaken { rank, by });
+        }
         let levels = match LevelContext::admit(
             declaration.levels().params(),
             declaration.levels().constraints().to_vec(),
@@ -2678,18 +2900,21 @@ impl Environment
         // A rejected declaration enters no environment, so the next one's
         // input does not read it: the chain steps back over it below, and the
         // encoder forgets the nodes whose ids the arena mints again.
-        let content = self.content_key(core::slice::from_ref(&declaration), position);
+        let content = self.content_key(
+            core::slice::from_ref(&declaration),
+            (position, core::slice::from_ref(&rank)),
+        );
         let generative = !matches!(
             *declaration.content(),
             DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
         );
         let entry_key = match content {
             Maybe::Present(content) if generative => {
-                Maybe::Present(content.generative(self.entries.generative_count(content)))
+                Maybe::Present(content.generative(self.entries.generative_count(content, rank)))
             },
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
-        let key = self.verdicts.key(&self.arena, &declaration);
+        let key = self.verdicts.key(&self.arena, (&declaration, rank));
         // The entry key first, which an edit the declaration does not read
         // leaves alone; then the chain key, which a store of an earlier
         // release holds.
@@ -2712,7 +2937,7 @@ impl Environment
                 // The check reads through the support its content names, and a
                 // read outside it refuses the declaration whatever the check
                 // decided.
-                self.entries.open(named.iter().copied());
+                self.entries.open(named.iter().copied(), rank);
                 let checked = {
                     let Self {
                         ref mut arena,
@@ -2752,7 +2977,7 @@ impl Environment
                     position,
                     admission,
                 );
-                let key_name = self.definition_name(&declaration);
+                let key_name = self.definition_name(&declaration, rank);
                 self.entries.push(&self.arena, AdmittedDeclaration {
                     declaration,
                     admission,
@@ -2763,6 +2988,7 @@ impl Environment
                     key_name,
                     census,
                     key: entry_key,
+                    rank,
                 });
                 if let (true, Maybe::Present(content)) = (generative, content) {
                     self.entries.generative(content, position);
@@ -2880,7 +3106,9 @@ impl Environment
     ///   vouches for it, and nothing is verified.
     /// - ensures: the declaration is appended, marked [`Admission::Unchecked`],
     ///   and included in the audit of every dependent, and its staged mark is
-    ///   resolved. The arena is unchanged, since the bypass mints no
+    ///   resolved. It takes its staged rank, or its position when staged with
+    ///   none; when a live entry holds that rank, it takes the rank past every
+    ///   live one. The arena is unchanged, since the bypass mints no
     ///   intermediate and truncates nothing, and the admission floor rises to
     ///   its watermark so a later rejection cannot truncate through what the
     ///   bypass committed. The outstanding-content guard is therefore not owed
@@ -2911,10 +3139,18 @@ impl Environment
     {
         let StagedDeclaration {
             content_start,
+            rank,
             declaration,
         } = staged;
         self.outstanding.resolve(content_start);
         let position = ConstantIndex::from(usize::from(self.entries.len()));
+        // The bypass refuses nothing, so a held rank gives way to the rank past
+        // every live one: two entries never share a rank.
+        let rank = rank.unwrap_or_else(|| SourceRank::from(position));
+        let rank = match self.entries.ranked(rank) {
+            None => rank,
+            Some(_) => self.entries.past_ranks(),
+        };
         // The bypass commits whatever content the arena holds, so the floor
         // rises to the current watermark. Without this a later rejection could
         // truncate through bypassed content.
@@ -2937,6 +3173,7 @@ impl Environment
             key_name: ConstantName::Position,
             census: ExpansionCensus::new(),
             key: Maybe::Absent(crate::verdict::keyed::Absent::Bypassed),
+            rank,
         });
         self.advance_seals(position);
         CheckedId::new(position)
@@ -3012,15 +3249,33 @@ impl Environment
             }
             return Err(KernelError::OutstandingStagedContent { above });
         }
+        let base = self.entries.len();
+        let content_end = self.arena.watermark();
+        let rejected = content_start.clamped_into(self.admission_floor, content_end);
+        let mut ranks = Vec::with_capacity(staged.len());
+        for (offset, member) in staged.iter().enumerate() {
+            let position = ConstantIndex::from(usize::from(base).saturating_add(offset));
+            let rank = member.rank.unwrap_or_else(|| SourceRank::from(position));
+            // A member ranks above the member before it, at a rank no live
+            // entry holds.
+            let taken = match ranks.last() {
+                Some(&earlier) if earlier >= rank => {
+                    Some(ConstantIndex::from(usize::from(position).saturating_sub(1)))
+                },
+                Some(_) | None => self.entries.ranked(rank),
+            };
+            if let Some(by) = taken {
+                self.arena.truncate_to(rejected);
+                return Err(KernelError::RankTaken { rank, by });
+            }
+            ranks.push(rank);
+        }
         let members = staged
             .into_iter()
             .map(|member| member.declaration)
             .collect::<Vec<_>>();
-        let base = self.entries.len();
-        let content_end = self.arena.watermark();
-        let rejected = content_start.clamped_into(self.admission_floor, content_end);
         let manifest = self.manifest.clone();
-        match self.admit_block(&members, content_end) {
+        match self.admit_block(&members, &ranks, content_end) {
             Ok(ids) => {
                 self.arena.truncate_to(content_end);
                 self.admission_floor = content_end;
@@ -3047,7 +3302,8 @@ impl Environment
     ///
     /// # Specification
     /// - requires: `members` were staged into this arena below `content_end`,
-    ///   in admission order.
+    ///   in admission order, and `ranks` holds one free rank per member,
+    ///   ascending.
     /// - ensures: on success one entry per member is appended, each audited
     ///   with the union of the block's audits; on failure some prefix of them
     ///   may be, for the caller to truncate.
@@ -3066,14 +3322,19 @@ impl Environment
     fn admit_block(
         &mut self,
         members: &[Declaration],
+        ranks: &[SourceRank],
         content_end: ArenaWatermark,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
         let base = usize::from(self.entries.len());
         let first = ConstantIndex::from(base);
+        let first_rank = ranks
+            .first()
+            .copied()
+            .unwrap_or_else(|| SourceRank::from(first));
         // The block is keyed whole, before its first member enters, and each
         // member by its place in it.
-        let content = self.content_key(members, first);
+        let content = self.content_key(members, (first, ranks));
         let generative = members.iter().any(|member| {
             !matches!(
                 *member.content(),
@@ -3081,9 +3342,9 @@ impl Environment
             )
         });
         let block_key = match content {
-            Maybe::Present(content) if generative => {
-                Maybe::Present(content.generative(self.entries.generative_count(content)))
-            },
+            Maybe::Present(content) if generative => Maybe::Present(
+                content.generative(self.entries.generative_count(content, first_rank)),
+            ),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         self.verdicts.end();
@@ -3109,7 +3370,7 @@ impl Environment
                 member.levels().params(),
                 member.levels().constraints().to_vec(),
             )?;
-            self.entries.open(named.iter().copied());
+            self.entries.open(named.iter().copied(), first_rank);
             let formed = {
                 let Self {
                     ref mut arena,
@@ -3136,7 +3397,12 @@ impl Environment
             supported(formed, self.entries.close())?;
             self.arena.truncate_to(content_end);
         }
-        for ((offset, member), census) in members.iter().enumerate().zip(censuses.iter_mut()) {
+        for (((offset, member), census), &rank) in members
+            .iter()
+            .enumerate()
+            .zip(censuses.iter_mut())
+            .zip(ranks)
+        {
             let position = ConstantIndex::from(base.saturating_add(offset));
             let levels = LevelContext::admit(
                 member.levels().params(),
@@ -3146,7 +3412,7 @@ impl Environment
             // as a lone one is, every family and definition before it
             // admitted, inside the block only so its own fixpoint reads its
             // constant as the self binder.
-            self.entries.open(named.iter().copied());
+            self.entries.open(named.iter().copied(), rank);
             let checked = {
                 let Self {
                     ref mut arena,
@@ -3200,6 +3466,7 @@ impl Environment
                     },
                     Maybe::Absent(absent) => Maybe::Absent(absent),
                 },
+                rank,
             });
             self.advance_seals(position);
             admitted.push(CheckedId::new(position));
@@ -3365,6 +3632,7 @@ impl Environment
                         .iter()
                         .map(|member| StagedDeclaration {
                             content_start: floor,
+                            rank: None,
                             declaration: member.declaration().clone(),
                         })
                         .collect();
@@ -3381,6 +3649,7 @@ impl Environment
             }
             let staged = StagedDeclaration {
                 content_start: floor,
+                rank: None,
                 declaration: marked.declaration().clone(),
             };
             match marked.mark() {
@@ -3475,27 +3744,30 @@ impl Environment
         }
     }
 
-    /// The content key of `members`, admitted as one unit from `first` on:
-    /// what their checks read, with each position they name written as its
-    /// entry's key.
+    /// The content key of `members`, admitted as one unit from `first` on at
+    /// the ranks `ranks`: what their checks read, with each position they name
+    /// written as its entry's key.
     ///
     /// # Specification
-    /// - requires: `first` is the environment's length, and `members` are
-    ///   staged in its arena.
+    /// - requires: `first` is the environment's length, `members` are staged in
+    ///   its arena, and `ranks` holds one rank per member, ascending.
     /// - ensures: absent as
     ///   [`keyed::Absent::Rechecking`](crate::verdict::keyed::Absent::Rechecking)
     ///   under a policy that rechecks, as
     ///   [`keyed::Absent::OpenSeal`](crate::verdict::keyed::Absent::OpenSeal)
     ///   when a member is an abstract type sealed to the end of the sequence,
     ///   and as [`keyed::Absent::Unkeyed`](crate::verdict::keyed::Absent::Unkeyed)
-    ///   when a position a member names, a type of words its references reach
-    ///   or an atom manifest at the admission has no entry key. Otherwise the
-    ///   key over this kernel's build, each member's keyed segment and the keys
-    ///   of the positions it names in the order it names them, each manifest
-    ///   atom's key with how many members read it, and the keys of the types of
-    ///   words over each sort the references reach.
+    ///   when a position a member names, a type of words its references reach,
+    ///   a role holder it reads or an atom manifest at the admission has no
+    ///   entry key. Otherwise the key over this kernel's build; each member's
+    ///   keyed segment, the keys of the positions it names in the order it
+    ///   names them, and what [`Self::key_ranks`] writes of its ranks; each
+    ///   manifest atom's key with how many members read it; and the keys of the
+    ///   types of words ranked below the first member over each sort the
+    ///   references reach, in rank order.
     /// - provides: one key for two units at two positions exactly when, up to a
-    ///   BLAKE3 collision, their checks read the same content.
+    ///   BLAKE3 collision, their checks read the same content in the same
+    ///   source order.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the key is a digest, which a predicate would
@@ -3503,16 +3775,21 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an edit re-keys the declarations that read the edited
-    ///   one and no other; two axioms of one type take two keys; a type of
-    ///   words over a reached sort re-keys a declaration, and one over another
-    ///   sort does not.
+    ///   one and no other; a key reads no admission order outside operation
+    ///   rules; two axioms of one type take two keys; a type of words over a
+    ///   reached sort re-keys a declaration, and one over another sort or
+    ///   ranked above the declaration does not; a ruled definition whose
+    ///   operations swap their ranks takes another key.
     /// - witness: `tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
+    /// - witness: `tests::verdicts::a_key_reads_no_admission_order_6568`
     /// - witness: `tests::verdicts::two_axioms_of_one_type_take_two_keys_6568`
     /// - witness: `tests::verdicts::words_over_a_reached_sort_re_key_a_declaration_6568`
+    /// - witness: `tests::verdicts::words_ranked_above_a_declaration_do_not_re_key_it_6621`
+    /// - witness: `ruled::tests::a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621`
     fn content_key(
         &self,
         members: &[Declaration],
-        first: ConstantIndex,
+        (first, ranks): (ConstantIndex, &[SourceRank]),
     ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
     {
         use crate::verdict::KeyedCount;
@@ -3521,12 +3798,15 @@ impl Environment
             return Maybe::Absent(Absent::Rechecking);
         }
         let end = ConstantIndex::from(usize::from(first).saturating_add(members.len()));
+        let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
         let presentations = self.entries.presentations();
         let words = presentations.sorts().next().is_some();
         let mut keyer = crate::verdict::EntryKeyer::tagged(crate::verdict::EntryTag::Content);
         keyer.count(KeyedCount::from(members.len()));
         let mut reached = Vec::new();
-        for member in members {
+        let mut order = Vec::new();
+        let mut operations = Vec::new();
+        for (offset, (member, &rank)) in members.iter().zip(ranks).enumerate() {
             let marked = MarkedDeclaration::new(AdmissionMark::Checked, member.clone());
             let Maybe::Present(segment) =
                 gandr_kernel_term::keyed_segment(&self.arena, &marked, first .. end)
@@ -3541,6 +3821,15 @@ impl Environment
                     return Maybe::Absent(Absent::Unkeyed);
                 };
                 keyer.key(key);
+            }
+            let own = ConstantIndex::from(usize::from(first).saturating_add(offset));
+            if let Err(absent) = self.key_ranks(
+                &mut keyer,
+                (member, (own, rank)),
+                (segment.named(), (first, ranks)),
+                (&mut order, &mut operations),
+            ) {
+                return Maybe::Absent(absent);
             }
             if words {
                 reached.extend_from_slice(segment.named());
@@ -3579,20 +3868,23 @@ impl Environment
             keyer.key(key);
             keyer.count(read_by);
         }
-        // The types of words over each sort the references reach, which a
-        // case over the sort owes a loop arm for.
-        let mut registry = BTreeSet::new();
+        // The types of words ranked below the first member over each sort
+        // the references reach, which a case over the sort owes a loop arm
+        // for, in rank order.
+        let mut registry = Vec::new();
         let mut visited = BTreeSet::new();
         while let Some(position) = reached.pop() {
             if !visited.insert(position) {
                 continue;
             }
-            for &word in presentations.over(position) {
-                let Maybe::Present(key) = self.entries.key(word)
+            for word in presentations.over(position) {
+                let Some(word_rank) = self.entries.rank_of(word)
                 else {
                     return Maybe::Absent(Absent::Unkeyed);
                 };
-                let _first = registry.insert(key);
+                if word_rank < below {
+                    registry.push((word_rank, word));
+                }
             }
             if let Some(entry) = self.entries.family().get(usize::from(position)) {
                 reached.extend(
@@ -3604,11 +3896,127 @@ impl Environment
                 );
             }
         }
+        registry.sort_unstable();
+        registry.dedup();
         keyer.count(KeyedCount::from(registry.len()));
-        for key in registry {
+        for (_, word) in registry {
+            let Maybe::Present(key) = self.entries.key(word)
+            else {
+                return Maybe::Absent(Absent::Unkeyed);
+            };
             keyer.key(key);
         }
         Maybe::Present(keyer.finish())
+    }
+
+    /// Write into `keyer` what the check of `member`, admitted at `own` and
+    /// ranked at `rank`, reads of source order beyond its content and the
+    /// keys of the positions it names, `named`; `first` and `ranks` place and
+    /// rank the members of its unit, and `order` is scratch.
+    ///
+    /// # Specification
+    /// - requires: each of `named` is an admitted position, and the unit's
+    ///   members stand from `first` on, one per rank of `ranks`.
+    /// - ensures: [`keyed::Absent::Unkeyed`](crate::verdict::keyed::Absent::Unkeyed)
+    ///   when an operation the rules name stands neither in `named` nor in
+    ///   the unit, or when it or a role holder the member reads has no entry
+    ///   key or no rank. Otherwise written: for a member that carries
+    ///   operation rules, the rank order of the operations they name, its own
+    ///   among them, each written as its place in `named` or past it in the
+    ///   unit, which the path order compares; then, for a role holder, the key
+    ///   of each role's holder ranked first below it, or none. Nothing for a
+    ///   member that carries no rules and holds no role: its check reads no
+    ///   order among the entries it names.
+    /// - provides: the one place where a key reads ranks, so a ruling on what a
+    ///   key holds of source order changes this function alone. A twin's order
+    ///   among the definitions of its content is in its name, and no check
+    ///   reads it; the types of words below a rank are in the registry
+    ///   [`Self::content_key`] writes.
+    /// - fails: as `- ensures:`.
+    /// - panics: none.
+    /// - executable: none — what is written is digest input, which a predicate
+    ///   would restate.
+    ///
+    /// # Errors
+    /// As `- ensures:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::content_key`].
+    /// - witness: `tests::verdicts::a_key_reads_no_admission_order_6568`
+    /// - witness: `ruled::tests::a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621`
+    fn key_ranks(
+        &self,
+        keyer: &mut crate::verdict::EntryKeyer,
+        (member, (own, rank)): (&Declaration, (ConstantIndex, SourceRank)),
+        (named, (first, ranks)): (&[ConstantIndex], (ConstantIndex, &[SourceRank])),
+        (order, operations): (
+            &mut Vec<(SourceRank, crate::verdict::KeyedCount)>,
+            &mut Vec<ConstantIndex>,
+        ),
+    ) -> Result<(), crate::verdict::keyed::Absent>
+    {
+        use crate::verdict::KeyedCount;
+        use crate::verdict::keyed::Absent;
+        let rules = member.operation_rules().rules();
+        if !rules.is_empty() {
+            operations.clear();
+            operations.push(own);
+            for rule in rules {
+                for node in rule.left().iter().chain(rule.right()) {
+                    if let gandr_kernel_term::OperationNode::Operation { constant, .. } = *node {
+                        operations.push(constant);
+                    }
+                }
+            }
+            operations.sort_unstable();
+            operations.dedup();
+            // An operation the member names stands at its place in `named`; an
+            // operation of the unit, the member's own among them, stands past
+            // `named` at its place in the unit.
+            order.clear();
+            for (place, &position) in named.iter().enumerate() {
+                if operations.binary_search(&position).is_ok() {
+                    let ranked = self.entries.rank_of(position).ok_or(Absent::Unkeyed)?;
+                    order.push((ranked, KeyedCount::from(place)));
+                }
+            }
+            let unit = operations.partition_point(|&operation| operation < first);
+            for &operation in operations.get(unit ..).unwrap_or_default() {
+                let Some((offset, &ranked)) = usize::from(operation)
+                    .checked_sub(usize::from(first))
+                    .and_then(|offset| Some((offset, ranks.get(offset)?)))
+                else {
+                    break;
+                };
+                order.push((ranked, KeyedCount::from(named.len().saturating_add(offset))));
+            }
+            // An operation that stands neither in `named` nor in the unit has no
+            // key to read.
+            if order.len() != operations.len() {
+                return Err(Absent::Unkeyed);
+            }
+            order.sort_unstable();
+            keyer.count(KeyedCount::from(order.len()));
+            for &(_, place) in order.iter() {
+                keyer.count(place);
+            }
+        }
+        if let Maybe::Present(_) = member.role() {
+            for role in gandr_kernel_term::Builtin::ALL {
+                match self.entries.holder_below(role, rank) {
+                    Some(holder) => {
+                        let Maybe::Present(key) = self.entries.key(holder)
+                        else {
+                            return Err(Absent::Unkeyed);
+                        };
+                        keyer.count(KeyedCount::from(1_usize));
+                        keyer.key(key);
+                    },
+                    None => keyer.count(KeyedCount::from(0_usize)),
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The transitive audit of an admitted declaration.
@@ -3795,21 +4203,21 @@ impl Environment
         rested
     }
 
-    /// How a memo key names a reference to `declaration`, checked against
-    /// this environment and about to be admitted alone.
+    /// How a memo key names a reference to `declaration`, about to be
+    /// admitted alone at the rank `rank`.
     ///
     /// # Specification
-    /// - requires: `declaration` checked against this environment's entries,
-    ///   and its content lives in its arena.
-    /// - ensures: its declared type and body, ranked by how many earlier
-    ///   entries named so carry the same type and body, when it is a plain
-    ///   definition — monomorphic, carrying no laws, relations, operation
-    ///   rules, stages, presentation or sealing provenance, and admitted while
-    ///   no atom's minting admission is open; its position otherwise.
+    /// - requires: the content of `declaration` lives in its arena.
+    /// - ensures: its declared type and body, ordered by how many entries
+    ///   ranked below `rank` and named so carry the same type and body, when it
+    ///   is a plain definition — monomorphic, carrying no laws, relations,
+    ///   operation rules, stages, presentation or sealing provenance, and
+    ///   admitted while no atom's minting admission is open; its position
+    ///   otherwise.
     /// - provides: names injective on the environment's positions, so a key
     ///   built through them answers as one built through positions does. A
-    ///   checked definition admitted alone names only earlier constants, so
-    ///   reading references by content descends in admission order.
+    ///   checked definition admitted alone names only constants ranked below
+    ///   it, so reading references by content descends in rank order.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3828,6 +4236,7 @@ impl Environment
     fn definition_name(
         &mut self,
         declaration: &Declaration,
+        rank: SourceRank,
     ) -> ConstantName
     {
         let DeclarationContent::Def { declared, body } = *declaration.content()
@@ -3847,7 +4256,7 @@ impl Environment
             crate::encoding::name_definition(
                 &mut self.names.definitions,
                 &self.arena,
-                &self.entries,
+                (&self.entries, rank),
                 declared,
                 body,
             )
@@ -4849,6 +5258,7 @@ mod tests
     use gandr_kernel_term::SealExtent;
     use gandr_kernel_term::SealScope;
     use gandr_kernel_term::Seam;
+    use gandr_kernel_term::SourceRank;
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
 
@@ -5007,6 +5417,75 @@ mod tests
             }),
             environment.add_decl(forward).map(|_admitted| ()),
             "the environment is append-only, so a forward reference names nothing"
+        );
+    }
+
+    /// #6621: a check reads only the entries its source states before the
+    /// declaration. A definition ranked below the entry it names reads that
+    /// entry as a forward reference, though the entry stands at an earlier
+    /// position; ranked above it, the definition admits.
+    #[test]
+    fn a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621()
+    {
+        let mut environment = Environment::new();
+        let earlier = unit_definition(&mut environment, None).ranked(SourceRank::from(5_usize));
+        let named = environment
+            .add_decl(earlier)
+            .expect("a unit definition admits")
+            .position();
+        let below =
+            unit_definition(&mut environment, Some(named)).ranked(SourceRank::from(3_usize));
+        assert_eq!(
+            environment.add_decl(below).map(|_admitted| ()),
+            Err(KernelError::UnboundConstant { index: named }),
+            "an entry ranked above the declaration names nothing to it"
+        );
+        let above =
+            unit_definition(&mut environment, Some(named)).ranked(SourceRank::from(7_usize));
+        assert!(
+            environment.add_decl(above).is_ok(),
+            "an entry ranked below the declaration is read"
+        );
+    }
+
+    /// #6621: two entries never share a rank. A declaration staged at a rank
+    /// a live entry holds is refused naming that entry, and so is a block
+    /// member ranked at or below the member before it.
+    #[test]
+    fn a_rank_another_entry_holds_is_refused_6621()
+    {
+        let rank = SourceRank::from;
+        let mut environment = Environment::new();
+        let held = unit_definition(&mut environment, None).ranked(rank(4_usize));
+        let holder = environment
+            .add_decl(held)
+            .expect("a unit definition admits")
+            .position();
+        let again = unit_definition(&mut environment, None).ranked(rank(4_usize));
+        assert_eq!(
+            environment.add_decl(again).map(|_admitted| ()),
+            Err(KernelError::RankTaken {
+                rank: rank(4_usize),
+                by: holder,
+            }),
+            "a live entry holds the rank"
+        );
+        let first = unit_definition(&mut environment, None).ranked(rank(6_usize));
+        let second = unit_definition(&mut environment, None).ranked(rank(6_usize));
+        assert_eq!(
+            environment
+                .add_block(vec![first, second])
+                .map(|_admitted| ()),
+            Err(KernelError::RankTaken {
+                rank: rank(6_usize),
+                by: ConstantIndex::from(1_usize),
+            }),
+            "the member before it ranks at the same rank"
+        );
+        assert_eq!(
+            usize::from(environment.entries.len()),
+            1,
+            "neither refusal admits an entry"
         );
     }
 
@@ -6600,7 +7079,7 @@ mod tests
                         pending.extend(held.references.iter().copied());
                     }
                     let over = entries.presentations().over(position);
-                    pending.extend(over.iter().copied().filter(|&words| words < consumer));
+                    pending.extend(over.filter(|&words| words < consumer));
                 }
                 if !support.is_disjoint(&reached) {
                     let _fresh = reached.insert(consumer);
@@ -6651,7 +7130,9 @@ mod tests
         )
         .expect("no level parameter admits");
         let check = |environment: &mut Environment, roots: &[ConstantIndex]| {
-            environment.entries.open(roots.iter().copied());
+            environment
+                .entries
+                .open(roots.iter().copied(), gandr_kernel_term::SourceRank::ABOVE);
             let mut arena = environment.arena.clone();
             let checked = crate::check::check_declaration(
                 &mut arena,

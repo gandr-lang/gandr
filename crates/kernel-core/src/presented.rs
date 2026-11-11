@@ -90,6 +90,7 @@ use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleSlot;
 use gandr_kernel_term::RuleTerm;
+use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::TermReading;
 use gandr_kernel_term::Value;
@@ -124,6 +125,8 @@ pub(crate) struct PresentedType
     /// its cells loop in, in tag order: where a case over the sort keeps its
     /// loop arms, and how the cells' point builds.
     sort_arities: Option<Arc<[FieldCount]>>,
+    /// The rank of the declaration that presents it.
+    rank: SourceRank,
 }
 
 impl PresentedType
@@ -141,23 +144,31 @@ impl PresentedType
 }
 
 /// The presented types of an environment, by admission position, and the
-/// types of words over each sort.
+/// types of words over each sort, by rank, as a reading below one rank sees
+/// them.
 ///
 /// # Specification
 /// - provides: the rule table every conversion of the environment's terms
 ///   reads, and the registry that joins a sort's types of words to a check's
 ///   support; empty, and free to build and clone, while no admitted declaration
 ///   presents its type. The environment adds a row at each presented admission,
-///   so no reading walks the entries.
+///   so no reading walks the entries. A reading answers only the rows ranked
+///   below its horizon, so the check of a declaration reads only what its
+///   source states before it.
 /// - panics: none.
 /// - executable: none — data declaration; lookup is its observer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`normal_form`].
 /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
-#[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Presentations(Option<Arc<Table>>);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Presentations
+{
+    /// The rows, shared with every reading of them.
+    table: Option<Arc<Table>>,
+    /// The rank every row a reading answers stands below.
+    horizon: SourceRank,
+}
 
 /// The rows of [`Presentations`].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -165,13 +176,29 @@ struct Table
 {
     /// Each presented type, by admission position.
     types: BTreeMap<ConstantIndex, PresentedType>,
-    /// The types of words whose cells loop in each sort, by admission
-    /// position ascending.
-    words: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
+    /// The types of words whose cells loop in each sort, each with its rank,
+    /// by rank ascending.
+    words: BTreeMap<ConstantIndex, Vec<(SourceRank, ConstantIndex)>>,
 }
 
 /// The presentations of an environment presenting no type.
-pub(crate) static FREE: Presentations = Presentations(None);
+pub(crate) static FREE: Presentations = Presentations {
+    table: None,
+    horizon: SourceRank::ABOVE,
+};
+
+impl Default for Presentations
+{
+    /// No presented type, read below every rank.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        FREE.clone()
+    }
+}
 
 impl Presentations
 {
@@ -190,7 +217,7 @@ impl Presentations
     /// # Adequacy
     /// - hypothesis: L3 — as [`normal_form`].
     /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
-    #[spec(ensures: |ret| ret.0.as_ref().is_none_or(|table| !table.types.is_empty() && table.types.len() <= usize::from(entries.len())))]
+    #[spec(ensures: |ret| ret.table.as_ref().is_none_or(|table| !table.types.is_empty() && table.types.len() <= usize::from(entries.len())))]
     #[inline]
     #[must_use]
     pub fn of(entries: &Entries) -> Self
@@ -198,16 +225,35 @@ impl Presentations
         entries.presentations().clone()
     }
 
-    /// These presentations and the declaration admitted at `position`, when
-    /// it presents its type; `sort` is the constructor table of the sort its
-    /// cells loop in, for a type of words.
+    /// These presentations as a reading below `horizon` sees them: the rows
+    /// ranked below it.
     ///
     /// # Specification
-    /// - requires: `position` is past every position these presentations hold.
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn below(
+        &self,
+        horizon: SourceRank,
+    ) -> Self
+    {
+        Self {
+            table: self.table.clone(),
+            horizon,
+        }
+    }
+
+    /// These presentations and the declaration admitted at `position`, ranked
+    /// at `rank`, when it presents its type; `sort` is the constructor table
+    /// of the sort its cells loop in, for a type of words.
+    ///
+    /// # Specification
+    /// - requires: `position` is past every position these presentations hold,
+    ///   and no row holds `rank`.
     /// - ensures: the declaration's row, with its rules and arities, when it is
     ///   a data declaration whose presentation holds a rule, and its row in the
-    ///   registry of its sort when it is a type of words; nothing changes
-    ///   otherwise.
+    ///   registry of its sort, in rank order, when it is a type of words;
+    ///   nothing changes otherwise.
     /// - provides: the one change the environment makes at an admission.
     /// - fails: never.
     /// - panics: none.
@@ -219,7 +265,7 @@ impl Presentations
     /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
     pub(crate) fn admit(
         &mut self,
-        position: ConstantIndex,
+        (position, rank): (ConstantIndex, SourceRank),
         declaration: &gandr_kernel_term::Declaration,
         sort: Option<&[Vec<ValueTypeId>]>,
     )
@@ -239,14 +285,17 @@ impl Presentations
                 .map(|fields| FieldCount::from(fields.len()))
                 .collect()
         };
-        let table = Arc::make_mut(self.0.get_or_insert_with(Arc::default));
+        let table = Arc::make_mut(self.table.get_or_insert_with(Arc::default));
         if let Some(cells) = declaration.presentation().cells() {
-            table.words.entry(cells.sort()).or_default().push(position);
+            let words = table.words.entry(cells.sort()).or_default();
+            let at = words.partition_point(|&(held, _)| held < rank);
+            words.insert(at, (rank, position));
         }
         let _previous = table.types.insert(position, PresentedType {
             presentation: declaration.presentation().clone(),
             arities: arities(constructors),
             sort_arities: declaration.presentation().cells().and(sort).map(arities),
+            rank,
         });
     }
 
@@ -260,7 +309,7 @@ impl Presentations
         first: ConstantIndex,
     )
     {
-        let Some(shared) = self.0.as_mut()
+        let Some(shared) = self.table.as_mut()
         else {
             return;
         };
@@ -270,16 +319,16 @@ impl Presentations
         let table = Arc::make_mut(shared);
         let _forgotten = table.types.split_off(&first);
         table.words.retain(|_, words| {
-            words.retain(|&held| held < first);
+            words.retain(|&(_, held)| held < first);
             !words.is_empty()
         });
         if table.types.is_empty() {
-            self.0 = None;
+            self.table = None;
         }
     }
 
-    /// The types of words whose cells loop in the sort at `sort`, by
-    /// admission position ascending.
+    /// The types of words whose cells loop in the sort at `sort`, by rank
+    /// ascending.
     ///
     /// # Specification
     /// trivial.
@@ -287,12 +336,15 @@ impl Presentations
     pub(crate) fn over(
         &self,
         sort: ConstantIndex,
-    ) -> &[ConstantIndex]
+    ) -> impl Iterator<Item = ConstantIndex> + '_
     {
-        self.0
+        self.table
             .as_deref()
             .and_then(|table| table.words.get(&sort))
-            .map_or(&[], Vec::as_slice)
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .take_while(|&&(rank, _)| rank < self.horizon)
+            .map(|&(_, words)| words)
     }
 
     /// The sorts some type of words loops in, ascending.
@@ -302,10 +354,13 @@ impl Presentations
     #[inline]
     pub(crate) fn sorts(&self) -> impl Iterator<Item = ConstantIndex> + '_
     {
-        self.0
-            .as_deref()
-            .into_iter()
-            .flat_map(|table| table.words.keys().copied())
+        self.table.as_deref().into_iter().flat_map(|table| {
+            table
+                .words
+                .iter()
+                .filter(|&(_, words)| words.first().is_some_and(|&(rank, _)| rank < self.horizon))
+                .map(|(&sort, _)| sort)
+        })
     }
 
     /// The presented type at `constant`, if it presents one.
@@ -318,13 +373,17 @@ impl Presentations
         constant: ConstantIndex,
     ) -> Option<&PresentedType>
     {
-        self.0.as_deref()?.types.get(&constant)
+        self.table
+            .as_deref()?
+            .types
+            .get(&constant)
+            .filter(|presented| presented.rank < self.horizon)
     }
 
     /// The types of words whose cells loop in the sort admitted at `sort`, by
-    /// admission position ascending, each with its cells: the order a case
-    /// over the sort keeps its loop arms in. Cells above dimension one loop
-    /// at the point's reflexivity, and a case keeps an arm for them too.
+    /// rank ascending, each with its cells: the order a case over the sort
+    /// keeps its loop arms in. Cells above dimension one loop at the point's
+    /// reflexivity, and a case keeps an arm for them too.
     ///
     /// # Specification
     /// trivial.
@@ -334,7 +393,7 @@ impl Presentations
         sort: ConstantIndex,
     ) -> impl Iterator<Item = (ConstantIndex, &FreeCells)>
     {
-        self.over(sort).iter().filter_map(move |&words| {
+        self.over(sort).filter_map(move |words| {
             self.presented(words)
                 .and_then(PresentedType::cells)
                 .map(|cells| (words, cells))
@@ -435,17 +494,21 @@ impl Presentations
         ty
     }
 
-    /// The types of words, by admission position ascending, each with its
-    /// cells.
+    /// The types of words a reading answers, by admission position ascending,
+    /// each with its cells.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub(crate) fn worded(&self) -> impl Iterator<Item = (ConstantIndex, &FreeCells)>
     {
-        self.0.iter().flat_map(|table| {
+        self.table.iter().flat_map(|table| {
             table.types.iter().filter_map(|(&words, presented)| {
-                presented.presentation.cells().map(|cells| (words, cells))
+                presented
+                    .presentation
+                    .cells()
+                    .filter(|_| presented.rank < self.horizon)
+                    .map(|cells| (words, cells))
             })
         })
     }
@@ -456,11 +519,11 @@ impl Presentations
     /// # Specification
     /// - requires: nothing — unreadable ids read as no words.
     /// - ensures: `Some(words)` exactly when `base` is a constructor term of a
-    ///   sort `s` and `words` the first presented type, by admission position,
-    ///   whose cells loop in `s` wrapped `wraps` times at a point `base`
-    ///   spells; admission keeps one type of words per point and wrapping. A
-    ///   `base` that is the empty word of a type of words over `p` wrapped `t`
-    ///   times reads as `p` wrapped `wraps + t + 1` times.
+    ///   sort `s` and `words` the first presented type, by rank, whose cells
+    ///   loop in `s` wrapped `wraps` times at a point `base` spells; admission
+    ///   keeps one type of words per point and wrapping. A `base` that is the
+    ///   empty word of a type of words over `p` wrapped `t` times reads as `p`
+    ///   wrapped `wraps + t + 1` times.
     /// - provides: the value half of [`Self::words`]: the reading of
     ///   `Replay::present` at a reflexivity, as `syntax::empty_word` in
     ///   core-term compares it and the evaluator's `presented::normal_form`
