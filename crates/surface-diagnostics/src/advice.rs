@@ -365,6 +365,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => String::from("write an operation application on the rule's left side"),
         LoweringRefusal::UndescribedMember {
+            fault: MemberFault::NoOutput,
+            ..
+        } => String::from("give the operation at least one output port"),
+        LoweringRefusal::UndescribedMember {
             fault: MemberFault::IllSorted,
             ..
         } => String::from("state a law at an earlier sort that makes the two sorts one"),
