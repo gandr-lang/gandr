@@ -47,6 +47,21 @@
 //! and `<tool_call_id>@<version>` for an event. Each event also carries its
 //! version in its JSON. A runtime that receives one key twice keeps one copy.
 //!
+//! # The activity
+//!
+//! The hub's build with the `instrument` feature offers `subscribe_activity`,
+//! which follows the work ledger of the hub's pool. While a row follows it,
+//! the toolset watches the hub's fold of the activity ring, and each tick of
+//! the fold that has events reaches each row. A row keeps the events that its
+//! runtime did not take, 4096 at most, and counts each event that it drops.
+//! It has one state in flight at most. The text of a state is the run of the
+//! toolset, the drops, the pending events and the row of each core. Its key
+//! is `<tool_call_id>@<run>.<sequence>`, with the sequence number of its last
+//! event, and its version is null. The run is the time at which the toolset
+//! started, so a restart repeats no key, and the table writes nothing when a
+//! runtime takes a state. Once no row follows the activity, the toolset ends
+//! its watch, and the hub folds nothing.
+//!
 //! # The subscription table
 //!
 //! The subscription table is one file per workspace, readable by its owner
@@ -133,8 +148,12 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::SystemTime;
 
+#[cfg(feature = "instrument")]
+use gandr_surface_lsp::Activities;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::Peer;
+#[cfg(feature = "instrument")]
+use gandr_surface_lsp::Tick;
 use gandr_surface_lsp::Workspace;
 use gandr_surface_render_remote::AccountCard;
 use gandr_surface_render_remote::DiagCard;
@@ -164,6 +183,8 @@ use crate::face::lock;
 use crate::tools;
 use crate::tools::Scope;
 
+#[cfg(feature = "instrument")]
+mod activity;
 mod deliver;
 mod subscriptions;
 
@@ -468,6 +489,10 @@ struct Subscription
     last: Option<Arc<str>>,
     /// Whether the retries of its last delivery were spent.
     unreachable: bool,
+    /// The events of the activity that its runtime did not take, when it
+    /// follows the activity.
+    #[cfg(feature = "instrument")]
+    ledger: activity::Ledger,
 }
 
 impl Subscription
@@ -508,6 +533,34 @@ impl Subscription
             text: Arc::clone(&state.text),
         });
     }
+
+    /// Owe the next state of the activity to this subscription, the row
+    /// `row`, when it has no state in flight and an event is pending. The
+    /// state carries the row of each core that `occupancy` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn owe_ledger(
+        &mut self,
+        row: &Row,
+        (run, occupancy): (activity::Run, &activity::Occupancy),
+        deliveries: &Deliveries,
+    )
+    {
+        let Some((last, text)) = self.ledger.owed(run, occupancy)
+        else {
+            return;
+        };
+        deliveries.owe(row.clone(), Post {
+            callback_url: Arc::clone(&self.callback_url),
+            token: self.token.clone(),
+            key: alloc::format!("{}@{}.{}", self.kept.tool_call_id, run.0, u64::from(last)),
+            version: None,
+            head: alloc::format!("{}null,\"text\":", self.routing),
+            text: Arc::from(quoted(&text)),
+        });
+    }
 }
 
 /// One state of a scope, as each subscription to it receives it.
@@ -517,6 +570,21 @@ struct State
     version: i32,
     /// The state as a JSON string, quoted once for all subscriptions.
     text: Arc<str>,
+}
+
+/// The toolset's watch of the hub's activity: the fold, the toolset's peer,
+/// where each tick goes, and whether the watch is on.
+#[cfg(feature = "instrument")]
+struct Watch
+{
+    /// The hub's fold of the activity ring.
+    activities: Activities,
+    /// The toolset's connection to the hub.
+    peer: Peer,
+    /// Where each tick of the fold that has events goes.
+    sender: Sender<Arc<Tick>>,
+    /// Whether the toolset watches now.
+    watching: bool,
 }
 
 /// The subscriptions by row, the rows that follow each document by their
@@ -529,8 +597,19 @@ struct Subscriptions
     diagnostics: BTreeMap<DocumentUri, BTreeSet<Row>>,
     /// The rows that follow a declaration of each document.
     accounts: BTreeMap<DocumentUri, BTreeSet<Row>>,
+    /// The rows that follow the activity.
+    activity: BTreeSet<Row>,
     /// The generation of the last change that the table must keep.
     generation: Generation,
+    /// The watch of the hub's activity, once the toolset serves.
+    #[cfg(feature = "instrument")]
+    watch: Option<Watch>,
+    /// When the toolset started to serve.
+    #[cfg(feature = "instrument")]
+    run: activity::Run,
+    /// The row of each core at the last tick, encoded once for every row.
+    #[cfg(feature = "instrument")]
+    occupancy: activity::Occupancy,
 }
 
 impl Subscriptions
@@ -545,7 +624,14 @@ impl Subscriptions
             rows: BTreeMap::new(),
             diagnostics: BTreeMap::new(),
             accounts: BTreeMap::new(),
+            activity: BTreeSet::new(),
             generation: Generation::default(),
+            #[cfg(feature = "instrument")]
+            watch: None,
+            #[cfg(feature = "instrument")]
+            run: activity::Run(0),
+            #[cfg(feature = "instrument")]
+            occupancy: activity::Occupancy::default(),
         };
         for row in kept {
             let _row = subscriptions.insert(row);
@@ -570,20 +656,33 @@ impl Subscriptions
         );
         let row = Row::Subscription(kept.group_id.clone(), kept.tool_call_id.clone());
         drop(self.remove(&row));
-        let (index, document) = match kept.scope {
-            Scope::Diagnostics(ref document) => (&mut self.diagnostics, document),
-            Scope::Account { ref document, .. } => (&mut self.accounts, document),
-        };
-        let _fresh = index
-            .entry(document.clone())
-            .or_default()
-            .insert(row.clone());
+        match kept.scope {
+            Scope::Diagnostics(ref document) => {
+                let _fresh = self
+                    .diagnostics
+                    .entry(document.clone())
+                    .or_default()
+                    .insert(row.clone());
+            },
+            Scope::Account { ref document, .. } => {
+                let _fresh = self
+                    .accounts
+                    .entry(document.clone())
+                    .or_default()
+                    .insert(row.clone());
+            },
+            Scope::Activity => {
+                let _fresh = self.activity.insert(row.clone());
+            },
+        }
         drop(self.rows.insert(row.clone(), Subscription {
             callback_url: Arc::from(kept.callback_url.as_str()),
             token: kept.token.as_deref().map(Arc::from),
             routing,
             last: None,
             unreachable: false,
+            #[cfg(feature = "instrument")]
+            ledger: activity::Ledger::default(),
             kept,
         }));
         row
@@ -602,6 +701,10 @@ impl Subscriptions
         let (index, document) = match subscription.kept.scope {
             Scope::Diagnostics(ref document) => (&mut self.diagnostics, document),
             Scope::Account { ref document, .. } => (&mut self.accounts, document),
+            Scope::Activity => {
+                let _removed = self.activity.remove(row);
+                return Some(subscription);
+            },
         };
         if let Some(rows) = index.get_mut(document) {
             let _removed = rows.remove(row);
@@ -673,7 +776,7 @@ impl Subscriptions
                 Scope::Account {
                     ref declaration, ..
                 } => Some(declaration.clone()),
-                Scope::Diagnostics(_) => None,
+                Scope::Diagnostics(_) | Scope::Activity => None,
             })
             .collect()
     }
@@ -703,11 +806,94 @@ impl Subscriptions
                 Scope::Account {
                     ref declaration, ..
                 } => states.get(declaration),
-                Scope::Diagnostics(_) => None,
+                Scope::Diagnostics(_) | Scope::Activity => None,
             };
             if let Some(state) = state {
                 subscription.owe(row, state, deliveries);
             }
+        }
+    }
+
+    /// Watch the hub's activity while a row follows it, and end the watch
+    /// once no row does.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The host's refusal of the fold's thread.
+    #[cfg(feature = "instrument")]
+    fn follow(&mut self) -> io::Result<()>
+    {
+        let following = !self.activity.is_empty();
+        let Some(ref mut watch) = self.watch
+        else {
+            return Ok(());
+        };
+        if following == watch.watching {
+            return Ok(());
+        }
+        if following {
+            watch.activities.watch(watch.peer, watch.sender.clone())?;
+        }
+        else {
+            watch.activities.unwatch(watch.peer);
+        }
+        watch.watching = following;
+        Ok(())
+    }
+
+    /// Add the events of `tick` to each row that follows the activity, and
+    /// owe each row with no state in flight its next state. `occupancy` is the
+    /// row of each core of the tick, encoded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn publish_activity(
+        &mut self,
+        tick: &Tick,
+        occupancy: activity::Occupancy,
+        deliveries: &Deliveries,
+    )
+    {
+        self.occupancy = occupancy;
+        let Self {
+            ref activity,
+            ref mut rows,
+            ref occupancy,
+            run,
+            ..
+        } = *self;
+        for row in activity {
+            if let Some(subscription) = rows.get_mut(row) {
+                subscription.ledger.heard(&tick.events);
+                subscription.owe_ledger(row, (run, occupancy), deliveries);
+            }
+        }
+    }
+
+    /// The runtime took the state that `row` had in flight: let go of what it
+    /// carried, and owe the next state when an event is pending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn ledger_taken(
+        &mut self,
+        row: &Row,
+        deliveries: &Deliveries,
+    )
+    {
+        let Self {
+            ref mut rows,
+            ref occupancy,
+            run,
+            ..
+        } = *self;
+        if let Some(subscription) = rows.get_mut(row) {
+            subscription.ledger.taken();
+            subscription.owe_ledger(row, (run, occupancy), deliveries);
         }
     }
 }
@@ -906,10 +1092,12 @@ impl Toolset
     ///   `subscription_event` to each subscription to the frame, and each
     ///   admission that changes the card of a declaration owes one to each
     ///   subscription to the declaration, unless the runtime took a state of
-    ///   that version or a later one. A `POST` to `/cancel_tool_call` or
-    ///   `/close_thread` is answered `200` once the rows it names are dropped
-    ///   from the table and their deliveries forgotten. Each delivery is
-    ///   retried as the policy states.
+    ///   that version or a later one. While a row follows the activity, each
+    ///   tick of the hub's fold that has events reaches it, and a row with no
+    ///   state in flight is owed its next state. A `POST` to
+    ///   `/cancel_tool_call` or `/close_thread` is answered `200` once the rows
+    ///   it names are dropped from the table and their deliveries forgotten.
+    ///   Each delivery is retried as the policy states.
     /// - provides: `gandr serve`, the face beside the hub's socket.
     /// - fails: when accepting a connection fails on every acceptor for a
     ///   reason other than an interruption or an aborted connection.
@@ -940,6 +1128,7 @@ impl Toolset
     /// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
     /// - witness: `rap::tests::a_cancel_and_a_closed_thread_drop_their_rows`
     /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
+    /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -965,6 +1154,8 @@ impl Toolset
             table,
             policy,
         } = self;
+        #[cfg(feature = "instrument")]
+        let (mut subscriptions, mut log) = (subscriptions, log);
         let manifest = manifest(listener.local_addr()?);
         let deliveries = Deliveries::new(policy);
         let (queue, queued) = channel();
@@ -987,6 +1178,31 @@ impl Toolset
             watched.watch(peer, changed);
             watched.watch_accounts(peer, settled);
         }
+        // The toolset watches the hub's activity while a row follows it.
+        #[cfg(feature = "instrument")]
+        let ticks = {
+            let (ticked, ticks) = channel();
+            subscriptions.run = activity::Run(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_or(0, |since| {
+                        u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+                    }),
+            );
+            subscriptions.watch = Some(Watch {
+                activities: lock(workspace).activity().clone(),
+                peer,
+                sender: ticked,
+                watching: false,
+            });
+            if let Err(error) = subscriptions.follow() {
+                drop(writeln!(
+                    log,
+                    "the toolset did not watch the activity for its resumed rows: {error}"
+                ));
+            }
+            ticks
+        };
         // An acknowledgement takes the store's lock for one line alone, so
         // acceptors at the host's width answer in parallel. Two at least keep a
         // client that stalls from holding every other call. The deliveries
@@ -1023,10 +1239,12 @@ impl Toolset
             drop(scope.spawn(move || {
                 fan_out_accounts(settlements, workspace, subscriptions, deliveries);
             }));
+            #[cfg(feature = "instrument")]
+            drop(scope.spawn(move || fan_out_activity(ticks, subscriptions, deliveries)));
             for _delivery in 0 .. width {
                 drop(scope.spawn(move || {
                     deliveries.run(|row, fate| {
-                        told(row, &fate, store, subscriptions, table, log);
+                        told(row, &fate, store, subscriptions, table, deliveries, log);
                     });
                 }));
             }
@@ -1059,6 +1277,8 @@ impl Toolset
             // its attempt in flight ends. The store keeps each answer that no
             // runtime took.
             lock(workspace).depart(peer);
+            #[cfg(feature = "instrument")]
+            drop(lock(subscriptions).watch.take());
             deliveries.close();
             accepted
         })
@@ -1388,6 +1608,9 @@ fn ended<Log>(
         drop(subscriptions.remove(row));
         desk.deliveries.forget(row);
     }
+    // The removal of a row only ends a watch, which cannot fail.
+    #[cfg(feature = "instrument")]
+    drop(subscriptions.follow());
     let snapshot = subscriptions.snapshot();
     drop(subscriptions);
     // A flush to the disk takes milliseconds, so the file is written outside
@@ -1529,8 +1752,18 @@ fn work<Log>(
                 scope: scope.clone(),
                 last_version: None,
             });
-            if let Err(error) = held.snapshot().and_then(|snapshot| table.write(&snapshot)) {
+            // A row that follows the activity starts the watch first.
+            #[cfg(feature = "instrument")]
+            let followed = held.follow();
+            #[cfg(not(feature = "instrument"))]
+            let followed = Ok(());
+            let kept = followed
+                .and_then(|()| held.snapshot())
+                .and_then(|snapshot| table.write(&snapshot));
+            if let Err(error) = kept {
                 drop(held.remove(&row));
+                #[cfg(feature = "instrument")]
+                drop(held.follow());
                 answer.subscription = None;
                 answer.text =
                     alloc::format!("Error: the toolset did not keep the subscription: {error}");
@@ -1822,11 +2055,32 @@ fn account_state(
     }
 }
 
+/// Add each tick of the hub's fold that `ticks` carries to each row that
+/// follows the activity, until the toolset ends its watch. The row of each
+/// core is encoded once for each tick, outside the lock.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+fn fan_out_activity(
+    ticks: Receiver<Arc<Tick>>,
+    subscriptions: &Mutex<Subscriptions>,
+    deliveries: &Deliveries,
+)
+{
+    for tick in ticks {
+        let occupancy = activity::rows(&tick.rows);
+        lock(subscriptions).publish_activity(&tick, occupancy, deliveries);
+    }
+}
+
 /// Act on `fate`, how the deliveries of `row` ended: settle a call that a
 /// runtime took or refused, record the version of a state that a runtime took,
 /// drop a subscription that a runtime refused, and mark one whose retries are
-/// spent. Tell `log` of each fate but a delivery taken, of a subscription that
-/// is reachable again, and of a table that could not be written.
+/// spent. A row that follows the activity lets go of the state it took and is
+/// owed its next state on `deliveries`. Tell `log` of each fate but a delivery
+/// taken, of a subscription that is reachable again, and of a table that could
+/// not be written.
 ///
 /// # Specification
 /// trivial.
@@ -1836,6 +2090,14 @@ fn told<Log>(
     store: &Mutex<Store>,
     subscriptions: &Mutex<Subscriptions>,
     table: &Table,
+    #[cfg_attr(
+        not(feature = "instrument"),
+        expect(
+            unused_variables,
+            reason = "only a row that follows the activity is owed a state when its runtime takes one"
+        )
+    )]
+    deliveries: &Deliveries,
     log: &Mutex<Log>,
 ) where
     Log: Write,
@@ -1853,6 +2115,8 @@ fn told<Log>(
         },
         (&Row::Subscription(..), &Fate::Taken(version)) => {
             let mut held = lock(subscriptions);
+            #[cfg(feature = "instrument")]
+            held.ledger_taken(row, deliveries);
             let (recovered, advanced) =
                 held.rows
                     .get_mut(row)
@@ -1886,6 +2150,9 @@ fn told<Log>(
         (&Row::Subscription(..), &Fate::Refused(_)) => {
             let mut held = lock(subscriptions);
             let snapshot = held.remove(row).map(|_dropped| held.snapshot());
+            // The removal of a row only ends a watch, which cannot fail.
+            #[cfg(feature = "instrument")]
+            drop(held.follow());
             drop(held);
             let saved = snapshot.map_or(Ok(()), |snapshot| table.write(&snapshot?));
             if let Err(error) = saved {
@@ -1898,6 +2165,9 @@ fn told<Log>(
         (&Row::Subscription(..), &Fate::Spent(..)) => {
             if let Some(subscription) = lock(subscriptions).rows.get_mut(row) {
                 subscription.unreachable = true;
+                // The next tick owes the events of the state it dropped.
+                #[cfg(feature = "instrument")]
+                subscription.ledger.spent();
             }
         },
     }
@@ -2275,6 +2545,85 @@ mod tests
         .expect("the text is a frame as JSON")
     }
 
+    /// Hear the states of the activity row `work-1` on `callback` until one
+    /// carries the end of an admission, and give the run that keys them.
+    /// Each state routes to the row, has no version, and is keyed by the run
+    /// and its last sequence number. The events come once each, in the order
+    /// of their sequence numbers. They hold one admission, a `replay` task,
+    /// and the judgement's `fork` tasks, each started and ended.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admitted(callback: &TcpListener) -> Value
+    {
+        let mut run = Value::Null;
+        let mut sequences: Vec<u64> = Vec::new();
+        let mut tasks: Vec<(String, String)> = Vec::new();
+        let mut admitted = false;
+        while !admitted {
+            let event = received(callback);
+            let routed = event.json();
+            assert_eq!(
+                (
+                    routed.get("type"),
+                    routed.get("tool_call_id"),
+                    routed.get("version")
+                ),
+                (
+                    Some(&json!("subscription_event")),
+                    Some(&json!("work-1")),
+                    Some(&Value::Null)
+                ),
+                "an event of the activity routes to its row and has no version: {routed}"
+            );
+            let state = framed(&routed);
+            let events = state["events"]
+                .as_array()
+                .expect("a state lists its events");
+            let last = events
+                .last()
+                .and_then(|carried| carried["sequence"].as_u64())
+                .expect("a state carries one event at least");
+            assert_eq!(
+                event.carries(&json!(alloc::format!(
+                    "idempotency-key: work-1@{}.{last}",
+                    state["run"]
+                ))),
+                Answer(true),
+                "the key is the row, the run and the last sequence number: {}",
+                event.head
+            );
+            run = state["run"].clone();
+            for carried in events {
+                sequences.push(carried["sequence"].as_u64().expect("an event is numbered"));
+                let task = carried["task"].as_str().expect("an event names its task");
+                let edge = carried["edge"].as_str().expect("an event names its edge");
+                admitted |= (task, edge) == ("replay", "end");
+                tasks.push((String::from(task), String::from(edge)));
+            }
+        }
+        assert!(
+            sequences.is_sorted_by(|earlier, later| earlier < later),
+            "each event reaches the runtime once, in the order of the sequence numbers: {sequences:?}"
+        );
+        let count = |task: &str, edge: &str| {
+            tasks
+                .iter()
+                .filter(|&&(ref named, ref edged)| named == task && edged == edge)
+                .count()
+        };
+        assert_eq!(
+            (count("replay", "start"), count("replay", "end")),
+            (1, 1),
+            "the admission is one replay task: {tasks:?}"
+        );
+        assert!(
+            count("fork", "start") >= 1 && count("fork", "start") == count("fork", "end"),
+            "the judgement and its molding jobs are fork tasks, each started and ended: {tasks:?}"
+        );
+        run
+    }
+
     /// Each tool that `tools` lists, as its name and its input schema.
     ///
     /// # Specification
@@ -2322,6 +2671,7 @@ mod tests
                 .collect::<Vec<_>>(),
             [
                 Some(&json!("subscribe_account")),
+                Some(&json!("subscribe_activity")),
                 Some(&json!("subscribe_diagnostics"))
             ],
             "the manifest alone offers the subscriptions"
@@ -2991,6 +3341,74 @@ mod tests
             quiet(&callback, Duration::from_millis(500)),
             Answer(true),
             "a closed thread hears nothing"
+        );
+        drop(editor);
+    }
+
+    #[test]
+    fn an_activity_subscription_hears_each_task_until_it_ends()
+    {
+        let earlier = Scratch::new(&json!("rap-activity-earlier"));
+        let later = Scratch::new(&json!("rap-activity-later"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/active.gandr");
+        let toolset = opened(&earlier);
+        let address = toolset.address().expect("the toolset listens");
+        hub(&earlier, toolset);
+        assert_eq!(
+            subscribed(
+                address,
+                &callback,
+                &json!({ "operation": "subscribe_activity", "arguments": {},
+                    "id": "work-1", "group_id": "thread-1" })
+            ),
+            json!({ "subscription": "work-1", "scope": "activity" }),
+            "the result names the subscription and its scope"
+        );
+        let mut editor = Editor::new(&earlier);
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let first = admitted(&callback);
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(300)),
+            Answer(true),
+            "the row hears nothing more than the tasks of the edit"
+        );
+        drop(editor);
+
+        // A later hub resumes the row from the table that the earlier hub
+        // wrote, and a later edit marks its tasks under the later run.
+        let toolset = Toolset::open(
+            loopback(),
+            &calls(&later),
+            &table(&earlier),
+            Policy::default(),
+        )
+        .expect("the store and the table open");
+        let address = toolset.address().expect("the toolset listens");
+        hub(&later, toolset);
+        let mut editor = Editor::new(&later);
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let second = admitted(&callback);
+        assert_ne!(
+            first, second,
+            "a later hub keys its states by a run of its own, so it repeats no key"
+        );
+        let ended = posted(
+            address,
+            &json!("/cancel_tool_call"),
+            &json!({ "tool_call_id": "work-1" }),
+        );
+        assert!(ended.head.starts_with("HTTP/1.1 200 "), "{}", ended.head);
+        assert_eq!(
+            awaited(&table(&earlier), &json!([])),
+            json!([]),
+            "a cancel drops the row"
+        );
+        editor.edit(&uri, &json!(2_i32), &json!("def f = 43 ;\n"));
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(500)),
+            Answer(true),
+            "a cancelled row hears nothing"
         );
         drop(editor);
     }

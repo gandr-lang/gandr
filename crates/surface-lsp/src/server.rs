@@ -9281,13 +9281,13 @@ impl Judging
     ///   judges as if no retired one ran before it.
     /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
     fn run<Poll>(
-        self,
+        mut self,
         retirement: &Poll,
     ) -> Polled<Rechecked, Poll::Retired, ()>
     where
         Poll: Retirement,
     {
-        let subscription = self.subscription;
+        let subscription = core::mem::replace(&mut self.subscription, Subscription::SILENT);
         subscription.run((self, retirement))
     }
 }
@@ -17231,11 +17231,15 @@ mod tests
         let _changed = server.server.handle(&mut server.workspace, &edit(2));
         let _settled = server.settle();
         let mut marked: Vec<(Task, Edge)> = Vec::new();
-        while !marked.contains(&(Task::Replay, Edge::End)) {
+        let mut admitted = false;
+        while !admitted {
             let tick = ticks
                 .recv_timeout(core::time::Duration::from_secs(5))
                 .expect("the edit's admission reaches the watcher");
-            marked.extend(tick.events.iter().map(|event| (event.task, event.edge)));
+            for event in &tick.events {
+                admitted |= (event.task, event.edge) == (Task::Replay, Edge::End);
+                marked.push((event.task, event.edge));
+            }
         }
         let replays: Vec<Edge> = marked
             .iter()

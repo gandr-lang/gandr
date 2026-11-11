@@ -11,6 +11,8 @@
 //! events to every watcher as one shared [`Tick`], and it ends at the first
 //! tick that finds no watcher. While the hub has a watcher, each judgement and
 //! each admission runs at the activity sink, so its fork sites mark the rings.
+//! A job reads whether the hub has a watcher from one atomic flag, so a job of
+//! a hub with no watcher takes no lock.
 //!
 //! **Alternatives.** A fold for each watcher drains the rings twice, but the
 //! rings have one consumer. A thread that ticks with no watcher wakes 60 times
@@ -30,6 +32,9 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::num::NonZeroUsize;
+use core::ops::ControlFlow;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 use std::io;
 use std::sync::Mutex;
@@ -37,6 +42,7 @@ use std::sync::MutexGuard;
 use std::sync::PoisonError;
 use std::sync::mpsc::Sender;
 use std::thread;
+use std::time::Instant;
 
 use gandr_core_fork::activity::Activity;
 use gandr_core_fork::activity::Event;
@@ -95,7 +101,7 @@ struct Held
     fold: Fold,
 }
 
-/// What the fold's thread and the watchers share.
+/// The fold's state, which the fold's thread and the watchers change.
 ///
 /// # Specification
 /// trivial.
@@ -109,7 +115,41 @@ struct Folding
     /// Where each watcher hears each tick that has events.
     watchers: BTreeMap<Peer, Sender<Arc<Tick>>>,
     /// Whether a thread folds now.
-    folding: bool,
+    folds: bool,
+}
+
+/// Whether the hub has a watcher, which a job reads with no lock. A job of a
+/// hub with no watcher thus takes no lock.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct Watched(AtomicBool);
+
+impl Watched
+{
+    /// Follow `watchers`: the hub has a watcher while one is left.
+    ///
+    /// # Specification
+    /// trivial.
+    fn follow(
+        &self,
+        watchers: &BTreeMap<Peer, Sender<Arc<Tick>>>,
+    )
+    {
+        self.0.store(!watchers.is_empty(), Ordering::Release);
+    }
+}
+
+/// What the fold's thread, the watchers and the jobs share.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Shared
+{
+    /// Whether the hub has a watcher.
+    watched: Watched,
+    /// The fold's state.
+    state: Mutex<Folding>,
 }
 
 /// The hub's fold of the activity ring, and its watchers.
@@ -125,8 +165,9 @@ struct Folding
 /// - hypothesis: L3 — a watcher hears a task that a job marks, and once the
 ///   last watcher leaves, the thread ends and no job writes a mark.
 /// - witness: `activity::tests::a_watcher_hears_each_task_and_the_fold_ends_without_one`
+#[repr(transparent)]
 #[derive(Clone, Debug, Default)]
-pub struct Activities(Arc<Mutex<Folding>>);
+pub struct Activities(Arc<Shared>);
 
 impl Activities
 {
@@ -137,10 +178,13 @@ impl Activities
     #[must_use]
     pub(crate) fn of(pool: Arc<Pool>) -> Self
     {
-        Self(Arc::new(Mutex::new(Folding {
-            pool,
-            ..Folding::default()
-        })))
+        Self(Arc::new(Shared {
+            watched: Watched::default(),
+            state: Mutex::new(Folding {
+                pool,
+                ..Folding::default()
+            }),
+        }))
     }
 
     /// Admit `peer` as a watcher: each tick that has events goes to
@@ -175,24 +219,27 @@ impl Activities
         watcher: Sender<Arc<Tick>>,
     ) -> io::Result<()>
     {
-        let mut folding = lock(&self.0);
+        let mut folding = lock(&self.0.state);
         if folding.held.is_none() {
             let rings = Arc::new(folding.pool.activity(Slots::from(SLOTS)));
             let fold = Fold::new(&rings);
             folding.held = Some(Held { rings, fold });
         }
         drop(folding.watchers.insert(peer, watcher));
-        if !folding.folding {
+        self.0.watched.follow(&folding.watchers);
+        if !folding.folds {
             let shared = Arc::clone(&self.0);
             let started = thread::Builder::new()
                 .name(String::from("gandr-activity"))
                 .spawn(move || folded(&shared));
             if let Err(error) = started {
                 drop(folding.watchers.remove(&peer));
+                self.0.watched.follow(&folding.watchers);
                 return Err(error);
             }
-            folding.folding = true;
+            folding.folds = true;
         }
+        drop(folding);
         Ok(())
     }
 
@@ -207,7 +254,9 @@ impl Activities
         peer: Peer,
     )
     {
-        drop(lock(&self.0).watchers.remove(&peer));
+        let mut folding = lock(&self.0.state);
+        drop(folding.watchers.remove(&peer));
+        self.0.watched.follow(&folding.watchers);
     }
 
     /// The rings that a job writes, while the hub has a watcher.
@@ -217,7 +266,10 @@ impl Activities
     #[must_use]
     pub(crate) fn rings(&self) -> Option<Arc<Activity>>
     {
-        let folding = lock(&self.0);
+        if !self.0.watched.0.load(Ordering::Acquire) {
+            return None;
+        }
+        let folding = lock(&self.0.state);
         if folding.watchers.is_empty() {
             return None;
         }
@@ -225,44 +277,63 @@ impl Activities
     }
 }
 
+impl Folding
+{
+    /// One tick of the fold: fold the rings, and send the tick to every
+    /// watcher when it has events. `watched` follows the watchers that are
+    /// left. With no watcher, no thread folds, and the fold breaks.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ticked(
+        &mut self,
+        watched: &Watched,
+    ) -> ControlFlow<()>
+    {
+        let Self {
+            ref mut held,
+            ref mut watchers,
+            ref mut folds,
+            ..
+        } = *self;
+        let Some(held) = held.as_mut().filter(|_| !watchers.is_empty())
+        else {
+            *folds = false;
+            return ControlFlow::Break(());
+        };
+        let card = held.fold.tick(&held.rings, activity_clock());
+        if !card.events.is_empty() {
+            let tick = Arc::new(Tick {
+                events: Box::from(card.events),
+                rows: Box::from(card.rows),
+            });
+            watchers.retain(|_, watcher| watcher.send(Arc::clone(&tick)).is_ok());
+            watched.follow(watchers);
+        }
+        ControlFlow::Continue(())
+    }
+}
+
 /// Fold the rings that `shared` holds once for each tick, and send each tick
-/// that has events to every watcher, until a tick finds no watcher.
+/// that has events to every watcher, until a tick finds no watcher. The ticks
+/// keep their period: a late wake shortens the next sleep, and a tick later
+/// than a whole period skips the ticks that it missed.
 ///
 /// # Specification
 /// trivial.
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "share: every watcher shares one copy of a tick that has events, and a tick with no event copies nothing"
-    )
-)]
-fn folded(shared: &Mutex<Folding>)
+fn folded(shared: &Shared)
 {
-    loop {
-        {
-            let mut guard = lock(shared);
-            let Folding {
-                ref mut held,
-                ref mut watchers,
-                ref mut folding,
-                ..
-            } = *guard;
-            let Some(held) = held.as_mut().filter(|_| !watchers.is_empty())
-            else {
-                *folding = false;
-                return;
-            };
-            let card = held.fold.tick(&held.rings, activity_clock());
-            if !card.events.is_empty() {
-                let tick = Arc::new(Tick {
-                    events: Box::from(card.events),
-                    rows: Box::from(card.rows),
-                });
-                watchers.retain(|_, watcher| watcher.send(Arc::clone(&tick)).is_ok());
-            }
+    let mut next = Instant::now();
+    while lock(&shared.state).ticked(&shared.watched).is_continue() {
+        let now = Instant::now();
+        next = next.checked_add(TICK).unwrap_or(now);
+        let rest = next.saturating_duration_since(now);
+        if rest.is_zero() {
+            next = now;
         }
-        thread::sleep(TICK);
+        else {
+            thread::sleep(rest);
+        }
     }
 }
 

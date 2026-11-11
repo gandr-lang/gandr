@@ -94,12 +94,14 @@ pub fn clock() -> Nanos
 ///   one end on the last ring, with its kind, world and declaration.
 /// - witness: `pool::recording::tests::a_marked_task_is_one_start_and_one_end_on_its_thread_s_ring`
 #[inline]
-pub fn marked<Out>(
+pub fn marked<Work, Out>(
     activity: &Activity,
     (task, world): (Task, World),
     declared: Declared,
-    work: impl FnOnce() -> Out,
+    work: Work,
 ) -> Out
+where
+    Work: FnOnce() -> Out,
 {
     Marks {
         activity,
