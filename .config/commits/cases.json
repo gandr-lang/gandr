@@ -2,7 +2,11 @@
   {
     "name": "a commit carrying the owner co-author and the assistance line passes, under --empty too",
     "commits": [
-      { "message": "docs(kernel): a change with its trailers", "trailers": true, "change": true }
+      {
+        "message": "docs(kernel): a change with its trailers\n\nThe change states what kernel-core's items are for.",
+        "trailers": true,
+        "change": true
+      }
     ],
     "flag": "--empty",
     "exit": 0
@@ -23,7 +27,7 @@
     "name": "an empty commit carrying its trailers keeps the commit rules",
     "commits": [
       {
-        "message": "docs(kernel): an empty commit with its trailers",
+        "message": "docs(kernel): an empty commit with its trailers\n\nThe commit records a decision and changes no file.",
         "trailers": true,
         "change": false
       }
@@ -34,9 +38,13 @@
   {
     "name": "#2640: an empty commit is refused under --empty, past a commit that passes",
     "commits": [
-      { "message": "docs(kernel): a change with its trailers", "trailers": true, "change": true },
       {
-        "message": "docs(kernel): an empty commit with its trailers",
+        "message": "docs(kernel): a change with its trailers\n\nThe change states what kernel-core's items are for.",
+        "trailers": true,
+        "change": true
+      },
+      {
+        "message": "docs(kernel): an empty commit with its trailers\n\nThe commit records a decision and changes no file.",
         "trailers": true,
         "change": false
       }
@@ -69,6 +77,30 @@
     "exit": 0
   },
   {
+    "name": "#6628: a commit with a header and its trailers and no body is refused",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with only its trailers",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "#6628: a commit with a body before its trailers passes, a body line that reads as a trailer word included",
+    "commits": [
+      {
+        "message": "docs(kernel): a change with its body\n\nNote: the body states what the change does and why.",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
     "name": "a pushed branch's trailer-less commit is refused by the push tier",
     "push": "refs/heads/topic",
     "commits": [
@@ -85,7 +117,11 @@
     "name": "#5651: a pushed notes ref, which shares no history with the trunk, passes the push tier",
     "push": "refs/notes/rebased",
     "commits": [
-      { "message": "docs(kernel): a change with its trailers", "trailers": true, "change": true }
+      {
+        "message": "docs(kernel): a change with its trailers\n\nThe change states what kernel-core's items are for.",
+        "trailers": true,
+        "change": true
+      }
     ],
     "flag": "",
     "exit": 0

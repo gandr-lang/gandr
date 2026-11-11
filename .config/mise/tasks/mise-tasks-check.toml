@@ -2291,8 +2291,10 @@ echo "integration check OK: $(jq length .config/integration/cases.json) cases re
 # refused under its flag: a trailer-less copy of a merged commit is refused
 # (the regression: #2613 carried one), an empty commit under `--empty`, and
 # a closing keyword anywhere but its own `Closes #n` line (#2980), since
-# GitHub closes the issue it names when the commit reaches main. A case
-# with `push` runs the push tier (`.config/commits/push.bash`) instead, as
+# GitHub closes the issue it names when the commit reaches main. A commit
+# with a header and its trailers and no body is refused, and one with a body
+# passes (#6628). A case with `push` runs the push tier
+# (`.config/commits/push.bash`) instead, as
 # if the commits were pushed to that ref: a branch's trailer-less commit is
 # refused, and a notes ref, which shares no history with the trunk, passes
 # (#5651). A `held` case gives the trunk a copy of each commit under another

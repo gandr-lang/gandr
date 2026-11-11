@@ -32,6 +32,22 @@ const trailerLeadingBlank = (parsed) => {
   ];
 };
 
+// A body before the trailers (#6628). Four landings carried a header and
+// their trailers alone, so the tree held no record of their change but the
+// pull request. The rule reads the raw message, as trailer-leading-blank
+// does: some line between the header and the first trailer holds text. The
+// stock body-empty rule reads a body line that starts with `word:` as a
+// footer, so it would refuse a body that only looks like one. A pull
+// request's title has no body, so the rule is off for it.
+const bodyBeforeTrailers = (parsed) => {
+  const raw = parsed.raw ?? [parsed.header, parsed.body, parsed.footer].filter(Boolean).join("\n");
+  const lines = raw.split("\n").filter((line) => !line.startsWith("#"));
+  const end = lines.findIndex((line, index) => index > 0 && TRAILER_LINE.test(line.trimEnd()));
+  const body = lines.slice(1, end < 0 ? lines.length : end);
+  if (body.some((line) => line.trim() !== "")) return [true, ""];
+  return [false, "the message needs a body before its trailers: say what the change does and why"];
+};
+
 // Closed vocabulary. Grow deliberately; per-surface growth is the failure mode.
 //
 // Crate scopes are the crate categories of `crates/README.md`, never one crate
@@ -184,6 +200,7 @@ export default {
         "no-harness-trailer": noHarnessTrailer,
         "identity-trailers": identityTrailers,
         "no-autosquash-marker": noAutosquashMarker,
+        "body-before-trailers": bodyBeforeTrailers,
         "no-stray-closing-keyword": noStrayClosingKeyword,
       },
     },
@@ -200,6 +217,7 @@ export default {
     // trailer-leading-blank rule above is the sound replacement.
     "footer-leading-blank": [0, "always"],
     "trailer-leading-blank": [2, "always"],
+    "body-before-trailers": [TITLE ? 0 : 2, "always"],
     "no-harness-trailer": [2, "always"],
     "identity-trailers": [TITLE ? 0 : 2, "always"],
     "no-autosquash-marker": [2, "always"],
