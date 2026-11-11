@@ -791,6 +791,8 @@ pub struct Diagnostic
     pub hypotheses: Vec<Binding>,
     /// The note it closes with.
     pub note: Maybe<String, report_note::Absent>,
+    /// The notes that follow [`Self::note`].
+    pub notes: Vec<String>,
     /// What its reader does about it: one imperative sentence.
     pub help: Maybe<String, help::Absent>,
     /// The source text of its primary span, when that is one line.

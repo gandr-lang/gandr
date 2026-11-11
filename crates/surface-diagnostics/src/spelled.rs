@@ -73,6 +73,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::Failure;
 use gandr_core_checker::FrameRole;
 use gandr_core_checker::ModuleReport;
@@ -109,6 +110,7 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
+use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type_line;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -247,9 +249,14 @@ impl Failures
 ///   its outer rule was checked against, and a module that refuses nothing
 ///   spells none.
 /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
-#[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Spellings(BTreeMap<TypeNode, Presentation>);
+pub struct Spellings
+{
+    /// The types a refusal compares.
+    types: BTreeMap<TypeNode, Presentation>,
+    /// The sides a loop refusal compares.
+    loops: BTreeMap<ComputationId, Presentation>,
+}
 
 /// A module's [`Spellings`] in each [`Spelling`].
 ///
@@ -326,7 +333,7 @@ impl TypeSpellings
     /// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
     /// - witness: `tests::diagnostics::a_mismatch_between_two_region_binders_names_both_2138`
     /// - witness: `tests::diagnostics::a_refusal_is_spelled_as_its_own_source_reads_it_4813`
-    #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
+    #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.types.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
                 if [refusal.compared().expected, refusal.compared().found, refusal.compared().unfolded].contains(&Maybe::Present(*node))))
@@ -399,8 +406,13 @@ impl TypeSpellings
             (&mut later.unicode, &earlier.unicode),
             (&mut later.ascii, &earlier.ascii),
         ] {
-            into.0.extend(
-                from.0
+            into.types.extend(
+                from.types
+                    .iter()
+                    .map(|(&node, spelled)| (node, spelled.clone())),
+            );
+            into.loops.extend(
+                from.loops
                     .iter()
                     .map(|(&node, spelled)| (node, spelled.clone())),
             );
@@ -442,7 +454,11 @@ impl TypeSpellings
 /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
 /// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
 #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled|
-    spelled.0.values().all(|presentation| !presentation.as_ref().contains('\n'))))]
+    spelled
+        .types
+        .values()
+        .chain(spelled.loops.values())
+        .all(|presentation| !presentation.as_ref().contains('\n'))))]
 fn spell<'failure>(
     (arena, module): (&CoreArena, &LoweredModule<'_>),
     (declarations, failures): (
@@ -454,7 +470,10 @@ fn spell<'failure>(
 {
     let mut unicode = BTreeMap::new();
     let mut ascii = BTreeMap::new();
+    let mut unicode_loops = BTreeMap::new();
+    let mut ascii_loops = BTreeMap::new();
     let mut seen = BTreeSet::new();
+    let mut seen_loops = BTreeSet::new();
     // Each failure's hypotheses, named where the source wrote their
     // binders, and each type it names with how many of them it stands
     // under.
@@ -629,12 +648,29 @@ fn spell<'failure>(
                 Maybe::Absent(_) => None,
             }),
     );
-    if named.is_empty() {
+    let named_loops: Vec<(ComputationId, SourceIndex)> = declarations
+        .iter()
+        .filter_map(|declaration| match declaration.produced().refusal() {
+            Maybe::Present(Refusal::Checking(CheckRefusal::LoopNotRespected {
+                left,
+                right,
+                ..
+            })) => Some(([left, right], reader_of(declaration.constant()))),
+            Maybe::Present(Refusal::Checking(_) | Refusal::Lowering(_) | Refusal::Corpus(_))
+            | Maybe::Absent(_) => None,
+        })
+        .flat_map(|(sides, reader)| sides.map(|side| (side, reader)))
+        .collect();
+    if named.is_empty() && named_loops.is_empty() {
         return TypeSpellings::default();
     }
     // A reader names each constant as its imports bind it, so each source
     // that reads a named type takes its own names.
-    let mut readers: Vec<SourceIndex> = named.iter().map(|&(_, _, reader)| reader).collect();
+    let mut readers: Vec<SourceIndex> = named
+        .iter()
+        .map(|&(_, _, reader)| reader)
+        .chain(named_loops.iter().map(|&(_, reader)| reader))
+        .collect();
     readers.sort_unstable();
     readers.dedup();
     let paths: Vec<Vec<String>> = readers
@@ -740,9 +776,44 @@ fn spell<'failure>(
             }
         }
     }
+    for (node, reader) in named_loops {
+        if !seen_loops.insert(node) {
+            continue;
+        }
+        let Some(source) = readers
+            .binary_search(&reader)
+            .ok()
+            .and_then(|at| sources.get(at))
+        else {
+            continue;
+        };
+        for (spelling, spelled) in [
+            (Spelling::Unicode, &mut unicode_loops),
+            (Spelling::Ascii, &mut ascii_loops),
+        ] {
+            let style = Style {
+                form: Form::Sugared,
+                spelling,
+            };
+            if let Ok(presentation) =
+                present_computation_line(source, CoreNode::Computation(node), style)
+                && !presentation.as_ref().contains('\n')
+                && u32::try_from(presentation.as_ref().chars().count())
+                    .is_ok_and(|width| width <= SPELLING_WIDTH)
+            {
+                let _fresh = spelled.insert(node, presentation);
+            }
+        }
+    }
     TypeSpellings {
-        unicode: Spellings(unicode),
-        ascii: Spellings(ascii),
+        unicode: Spellings {
+            types: unicode,
+            loops: unicode_loops,
+        },
+        ascii: Spellings {
+            types: ascii,
+            loops: ascii_loops,
+        },
     }
 }
 
@@ -758,7 +829,22 @@ impl Spellings
         node: TypeNode,
     ) -> Maybe<&Presentation, spelling::Absent>
     {
-        self.0
+        self.types
+            .get(&node)
+            .map_or(Maybe::Absent(spelling::Absent::Unspelled), Maybe::Present)
+    }
+
+    /// The printed loop computation `node`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn loop_side(
+        &self,
+        node: ComputationId,
+    ) -> Maybe<&Presentation, spelling::Absent>
+    {
+        self.loops
             .get(&node)
             .map_or(Maybe::Absent(spelling::Absent::Unspelled), Maybe::Present)
     }
