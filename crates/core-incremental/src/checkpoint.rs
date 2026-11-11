@@ -2850,7 +2850,7 @@ where
                     },
                     gandr_core_checker::DeclarationContent::Codata(_) => Answer::Codata,
                     gandr_core_checker::DeclarationContent::Abstract(_)
-                    | gandr_core_checker::DeclarationContent::World => Answer::Untyped,
+                    | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
                 };
                 (
                     Outcome {
@@ -3164,7 +3164,7 @@ fn adopt(
         // A world declaration belongs to a located program, and a codata
         // declaration has no content form: both items are opaque and
         // returned before this.
-        gandr_core_checker::DeclarationContent::World
+        gandr_core_checker::DeclarationContent::World(_)
         | gandr_core_checker::DeclarationContent::Codata(_) => {
             return Maybe::Absent(recall::Absent::Opaque);
         },

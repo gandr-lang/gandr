@@ -79,7 +79,7 @@ fn signed(declaration: &Declaration) -> ValueTypeId
         | DeclarationContent::Data(_)
         | DeclarationContent::Codata(_)
         | DeclarationContent::Abstract(_)
-        | DeclarationContent::World) => {
+        | DeclarationContent::World(_)) => {
             panic!("a signed value declaration, got {other:?}")
         },
     }

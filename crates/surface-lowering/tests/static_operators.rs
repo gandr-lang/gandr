@@ -216,8 +216,13 @@ fn judge(
                     panic!("no fixture seals a module: {sealing:?}")
                 },
                 DeclarationOutcome::World => {
+                    let requirement = match module.world_row(declaration) {
+                        Maybe::Present(row) => row.clone(),
+                        Maybe::Absent(_) => gandr_core_term::effect::EffectRow::EMPTY,
+                    };
                     return Declaration::world(
                         declaration.constant(),
+                        requirement,
                         OriginToken::from(usize::from(declaration.origin())),
                     );
                 },

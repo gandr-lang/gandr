@@ -310,7 +310,7 @@ fn schedule(
                 &crate::DeclarationContent::Data(_)
                 | &crate::DeclarationContent::Codata(_)
                 | &crate::DeclarationContent::Abstract(_)
-                | &crate::DeclarationContent::World,
+                | &crate::DeclarationContent::World(_),
                 _,
             ) => {
                 return;
@@ -1343,7 +1343,7 @@ enum Run
         | Verdict::Data => match *declaration.content() {
             | crate::DeclarationContent::Data(ref signature) => context.data_signatures().get(&declaration.constant()) == Some(signature),
             | crate::DeclarationContent::Codata(ref signature) => context.codata_signatures().get(&declaration.constant()) == Some(signature),
-            | crate::DeclarationContent::Abstract(_) | crate::DeclarationContent::World => true,
+            | crate::DeclarationContent::Abstract(_) | crate::DeclarationContent::World(_) => true,
             | crate::DeclarationContent::Value { .. } => false,
         },
         | Verdict::Checked { declared, body, .. } => (matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(_), body: Maybe::Present(value) } if *value <= body)
@@ -1473,7 +1473,7 @@ fn decide(
         crate::DeclarationContent::Data(_)
         | crate::DeclarationContent::Codata(_)
         | crate::DeclarationContent::Abstract(_)
-        | crate::DeclarationContent::World => Collecting::Off,
+        | crate::DeclarationContent::World(_) => Collecting::Off,
     };
     context.deferrals_mut().open(collecting);
     // The pairs a declaration's conversions relate, the nodes its solved
@@ -1557,8 +1557,8 @@ fn decide(
             let signed = finish(context, outer);
             return formed(verdict, kept(signed));
         },
-        crate::DeclarationContent::World => {
-            context.worlds_mut().declare(constant);
+        crate::DeclarationContent::World(ref requirement) => {
+            context.worlds_mut().declare(constant, requirement);
             let signed = finish(context, outer);
             return formed(Ok(()), kept(signed));
         },
@@ -3079,7 +3079,7 @@ where
             crate::DeclarationContent::Data(_)
             | crate::DeclarationContent::Codata(_)
             | crate::DeclarationContent::Abstract(_)
-            | crate::DeclarationContent::World => {
+            | crate::DeclarationContent::World(_) => {
                 let _formed = decide(context, declaration, Run::Judged);
             },
         }

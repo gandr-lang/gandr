@@ -20,7 +20,7 @@
 //!   Leta      ────────────────────────────────────────────────
 //!              Γ ⊢_w leta[w′] x = v ; t ⇒ C
 //!
-//!              Γ; Σ ⊢_w′ t ⇒ F A    A mobile and open    t pure
+//!              Γ; Σ ⊢_w′ t ⇐ F^{ρ(w′)} A    A mobile and open
 //!   Migrate   ──────────────────────────────────────────────────
 //!              Γ; Σ, cap_w′ :_w ⊢_w migrate[w′] { t } ⇒ F A
 //!
@@ -36,6 +36,16 @@
 //! resident — an endpoint, a held value, a view, a capability — is located
 //! the same way, and an action, an access or an eliminator on one at another
 //! world is [`LocatedDefect::Elsewhere`], as is a variable.
+//!
+//! # A world's row
+//!
+//! `ρ(w′)` is the row the world requires, `world w′ requires [ … ] ;`. The
+//! row is empty for a world that requires nothing and for the host's world.
+//! A migration's body checks under that row, as a definition's body checks
+//! under its declared row. A perform outside the row is refused at the
+//! perform with [`CheckRefusal::TypeMismatch`], as in a function. The
+//! migration performs nothing at `w`, so it checks against a returner at any
+//! row there.
 //!
 //! # Two predicates decide a crossing
 //!
@@ -610,6 +620,9 @@ pub(crate) struct Worlds
 {
     /// The positions of the world declarations admitted.
     declared: BTreeSet<ConstantIndex>,
+    /// The row each world declaration requires, by its position. A world
+    /// that requires nothing has no entry.
+    rows: BTreeMap<ConstantIndex, gandr_core_term::effect::EffectRow>,
     /// The home of each declaration judged at a declared world.
     homes: BTreeMap<ConstantIndex, World>,
     /// The declarations that spent a capability.
@@ -634,6 +647,7 @@ impl Default for Worlds
     {
         Self {
             declared: BTreeSet::new(),
+            rows: BTreeMap::new(),
             homes: BTreeMap::new(),
             entries: BTreeSet::new(),
             host: HostEntry::Unbounded,
@@ -645,16 +659,41 @@ impl Default for Worlds
 
 impl Worlds
 {
-    /// Admit the world declaration at `constant`.
+    /// Admit the world declaration at `constant`, requiring `requirement`.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn declare(
         &mut self,
         constant: ConstantIndex,
+        requirement: &gandr_core_term::effect::EffectRow,
     )
     {
         let _fresh = self.declared.insert(constant);
+        if requirement.purity() != gandr_core_term::effect::Purity::Pure {
+            let _previous = self.rows.insert(constant, requirement.clone());
+        }
+    }
+
+    /// The row code at `world` performs in: the row its declaration
+    /// requires, or the empty row for the host's world and a world that
+    /// requires nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn row(
+        &self,
+        world: World,
+    ) -> gandr_core_term::effect::EffectRow
+    {
+        match world {
+            World::Host => gandr_core_term::effect::EffectRow::EMPTY,
+            World::Declared(constant) => self
+                .rows
+                .get(&constant)
+                .cloned()
+                .unwrap_or(gandr_core_term::effect::EffectRow::EMPTY),
+        }
     }
 
     /// The positions of the world declarations admitted.

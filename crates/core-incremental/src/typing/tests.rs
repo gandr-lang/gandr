@@ -723,7 +723,11 @@ fn a_located_refusal_projects_its_worlds_and_types()
     let mut program = Program::new(arena, vec![
         Item::new(
             ItemKey::from("seat"),
-            Declaration::world(ConstantIndex::from(0_usize), OriginToken::from(0_usize)),
+            Declaration::world(
+                ConstantIndex::from(0_usize),
+                gandr_core_term::effect::EffectRow::EMPTY,
+                OriginToken::from(0_usize),
+            ),
         ),
         Item::new(
             ItemKey::from("migrating"),

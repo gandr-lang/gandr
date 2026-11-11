@@ -1044,8 +1044,13 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
                     ));
                 },
                 DeclarationOutcome::World => {
+                    let requirement = match lowered.module.world_row(declaration) {
+                        Maybe::Present(row) => row.clone(),
+                        Maybe::Absent(_) => gandr_core_term::effect::EffectRow::EMPTY,
+                    };
                     return Some(Declaration::world(
                         declaration.constant(),
+                        requirement,
                         OriginToken::from(usize::from(declaration.origin())),
                     ));
                 },

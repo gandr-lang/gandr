@@ -12536,6 +12536,9 @@ pub struct LoweredModule<'source>
     /// The entries of the row each world is written to require, `world w
     /// requires [ … ] ;`, by the world's position.
     requirements: BTreeMap<ConstantIndex, Vec<Required>>,
+    /// The row each world requires, its interfaces named whole each held, by
+    /// the world's position. A world that requires none of them has no entry.
+    world_rows: BTreeMap<ConstantIndex, gandr_core_term::effect::EffectRow>,
     /// The offer the module's source writes, `offers [ … ] ;`.
     offer: Maybe<Offered, offer::Absent>,
     /// The reducts the module mints, ascending by position.
@@ -12612,6 +12615,7 @@ impl<'source> LoweredModule<'source>
             models: Layered::whole(BTreeMap::new()),
             qualified: BTreeMap::new(),
             requirements: BTreeMap::new(),
+            world_rows: BTreeMap::new(),
             offer: Maybe::Absent(offer::Absent::Unoffered),
             reducts: Vec::new(),
             forgets: Vec::new(),
@@ -12707,6 +12711,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.requirements = requirements;
+        self
+    }
+
+    /// This module, carrying `world_rows`, the row each world requires, by
+    /// the world's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_world_rows(
+        mut self,
+        world_rows: BTreeMap<ConstantIndex, gandr_core_term::effect::EffectRow>,
+    ) -> Self
+    {
+        self.world_rows = world_rows;
         self
     }
 
@@ -13749,6 +13769,24 @@ impl<'source> LoweredModule<'source>
             .map_or(Maybe::Absent(requirement::Absent::Unrequired), |entries| {
                 Maybe::Present(entries.as_slice())
             })
+    }
+
+    /// The row the world `declaration` requires: the interfaces its
+    /// requirement names whole, each held. Code at the world performs in this
+    /// row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn world_row(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> Maybe<&gandr_core_term::effect::EffectRow, requirement::Absent>
+    {
+        self.world_rows.get(&declaration.constant()).map_or(
+            Maybe::Absent(requirement::Absent::Unrequired),
+            Maybe::Present,
+        )
     }
 
     /// The offer this module's source writes, `offers [ … ] ;`: what a site

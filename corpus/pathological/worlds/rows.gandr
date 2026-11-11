@@ -1,0 +1,38 @@
+// A migration's body checks under the row that its world requires.
+//
+// A world's requirement states what code at the world may perform. So the
+// check refuses a body that performs outside that row, as it refuses a
+// function's body outside its declared row.
+//
+// `unrequired` prints at `bare`, a world that requires nothing. The row of the
+// enclosing function holds the console, but that row does not reach the body.
+// So the print is refused. `bound` binds the result of the same print to a
+// name, and the body of the migration is refused.
+//
+// - see: `corpus/model/deployments/offers.gandr` — a migration printing
+//   through the console that its world requires
+
+// The console's host interface.
+import std.io;
+
+/// The world the entry runs at.
+pub world near;
+
+/// A world that requires nothing.
+pub world bare;
+
+/// `unrequired` prints at a world that requires nothing, and the print is
+/// refused. The enclosing row holds the console, but the body runs at `bare`.
+@[refuses("TypeMismatch")]
+@[entry(*{near, bare})]
+def unrequired() -> [std.io.Console.Eff] Unit =
+  migrate [bare] { std.io.Console.print "bare" }
+
+/// `bound` binds the result of the same print to a name, and the body of the
+/// migration is refused.
+@[refuses("TypeMismatch")]
+@[entry(*{near, bare})]
+def bound() -> [std.io.Console.Eff] Unit {
+  let printed = migrate [bare] { std.io.Console.print "bare" };
+  pure printed
+}
