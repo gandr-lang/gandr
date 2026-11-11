@@ -9,7 +9,6 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NameRef;
 use quenchant_shape::shape::Maybe;
 
-use crate::boundary::DirectedContextDeclaration;
 use crate::boundary::DirectedObjectCovariance;
 use crate::vdc::SignatureRef;
 
@@ -267,72 +266,6 @@ impl DirectedContext
             }
         }
         Maybe::Absent(context_lookup::Absent::Undeclared)
-    }
-
-    /// The signature `name` ranges over — the **innermost** binding, or
-    /// `Absent` when `name` is undeclared.
-    ///
-    /// # Specification
-    /// - ensures: the [`SignatureRef`] of the last `(name, _)` binding, or
-    ///   `Absent`.
-    /// - panics: none.
-    #[inline]
-    /// # Adequacy
-    /// - hypothesis: L1 — exact innermost-signature projection and absence are
-    ///   executable. A name bound twice at different signatures, beside an
-    ///   undeclared one, observes both.
-    /// - witness: `tests::directed::tests::a_context_answers_a_name_by_its_innermost_binding`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body searches the bindings innermost first, as the check does"
-        )
-    )]
-    #[spec(ensures: |out| match (out, self.vars.iter().rfind(|entry| entry.0.as_ref() == name.as_ref())) { (Maybe::Present(signature), Some(entry)) => signature == &entry.1.sig, (Maybe::Absent(_), None) => true, _ => false })]
-    pub fn signature_of(
-        &self,
-        name: NameRef<'_>,
-    ) -> Maybe<&SignatureRef, context_lookup::Absent>
-    {
-        for binding in self.vars.iter().rev() {
-            if binding.0.as_ref() == name.as_ref() {
-                return Maybe::Present(&binding.1.sig);
-            }
-        }
-        Maybe::Absent(context_lookup::Absent::Undeclared)
-    }
-
-    /// Whether `name` is declared.
-    ///
-    /// # Specification
-    /// - ensures: `true` iff `name` appears in `vars`.
-    /// - panics: none.
-    #[inline]
-    #[must_use]
-    /// # Adequacy
-    /// - hypothesis: L3 — declaration membership separates constrained engine
-    ///   holes from undeclared ones.
-    /// - witness: `tests::directed::tests::a_context_answers_a_name_by_its_innermost_binding`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body searches the bindings once, as the check does"
-        )
-    )]
-    #[spec(ensures: |out| bool::from(out) == self.vars.iter().any(|entry| entry.0.as_ref() == name.as_ref()))]
-    pub fn declares(
-        &self,
-        name: NameRef<'_>,
-    ) -> DirectedContextDeclaration
-    {
-        for binding in &self.vars {
-            if binding.0.as_ref() == name.as_ref() {
-                return DirectedContextDeclaration::from(true);
-            }
-        }
-        DirectedContextDeclaration::from(false)
     }
 
     /// **Check** an engine cell's derived variance against this context — the

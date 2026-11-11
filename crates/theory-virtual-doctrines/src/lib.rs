@@ -55,7 +55,6 @@ pub use crate::boundary::DerivationIndex;
 pub use crate::boundary::DerivationReplay;
 pub use crate::boundary::DescTableEmptyStatus;
 pub use crate::boundary::DescTableLength;
-pub use crate::boundary::DirectedContextDeclaration;
 pub use crate::boundary::DirectedObjectCovariance;
 pub use crate::boundary::DiscreteHomInhabitation;
 pub use crate::boundary::IsoValidity;
