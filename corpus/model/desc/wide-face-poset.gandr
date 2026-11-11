@@ -33,18 +33,18 @@ type Deploy = *{
   replicas : Integer,
   timeout : Integer
 } where
-  face placed = { host, port, user, region, zone, replicas };
-  face served = { port, tls, region, zone, tier, replicas };
-  face fronted = { host, port, tls, tier, replicas, timeout };
-  face guarded = { tls, user, tier, replicas, timeout };
-  face owned = { host, user, region, zone, tier, timeout };
-  face routed = { host, port, tls, region, tier };
-  face audited = { port, tls, user, region, zone, timeout };
-  face scaled = { host, zone, tier, replicas, timeout };
-  face pinned = { port, tls, user, zone, tier, timeout };
-  face mirrored = { host, tls, user, zone, tier, replicas };
-  face pooled = { port, user, region, zone, tier, replicas, timeout };
-  face drained = { host, tls, region, replicas, timeout };
+  face placed = {host, port, user, region, zone, replicas};
+  face served = {port, tls, region, zone, tier, replicas};
+  face fronted = {host, port, tls, tier, replicas, timeout};
+  face guarded = {tls, user, tier, replicas, timeout};
+  face owned = {host, user, region, zone, tier, timeout};
+  face routed = {host, port, tls, region, tier};
+  face audited = {port, tls, user, region, zone, timeout};
+  face scaled = {host, zone, tier, replicas, timeout};
+  face pinned = {port, tls, user, zone, tier, timeout};
+  face mirrored = {host, tls, user, zone, tier, replicas};
+  face pooled = {port, user, region, zone, tier, replicas, timeout};
+  face drained = {host, tls, region, replicas, timeout};
 
 /// A deployment that states each of its fields.
 def wide_deployment : Deploy = *{

@@ -42,7 +42,7 @@ module Faces where {
 @[refuses("IllFormedDescription")]
 type Server = &{host : String, port : Integer, tls : Bool} where
   /// `secure` names the port and TLS fields.
-  face secure = { port, tls };
+  face secure = {port, tls};
 
 /// Stream is a codata. It cannot declare a face.
 @[refuses("MalformedForm")]
