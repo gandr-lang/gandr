@@ -493,7 +493,7 @@ impl Tree
     ///   renumbers each node in the order a breadth-first walk first reaches
     ///   it; an absent root gives an empty tree.
     /// - panics: none.
-    /// - economy: copies each node of the subtree once, however many parents
+    /// - intension: copies each node of the subtree once, however many parents
     ///   name it.
     ///
     /// # Adequacy
@@ -622,7 +622,7 @@ impl core::hash::Hasher for Naming
 ///   whose terms are equal have one name, whichever table holds them and
 ///   however it shares their nodes.
 /// - panics: none.
-/// - economy: names each node once, children first.
+/// - intension: names each node once, children first.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two revisions of one term read out of two arenas, a graft
@@ -688,7 +688,7 @@ fn names_of(
 /// - ensures: each index of `nodes` once; in an acyclic table each node comes
 ///   after each of its children.
 /// - panics: none.
-/// - economy: visits each node and each child edge once.
+/// - intension: visits each node and each child edge once.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a shared child numbered after one of its parents, which a
@@ -999,7 +999,7 @@ impl Snapshot
     /// - provides: the id-free image [`diff`] compares and [`Self::localize`]
     ///   descends.
     /// - panics: none.
-    /// - economy: reads each arena node an item reaches once, however many
+    /// - intension: reads each arena node an item reaches once, however many
     ///   parents name it, so the work is linear in the arena nodes of the items
     ///   read, not in the size of the term written out.
     ///
@@ -2449,7 +2449,7 @@ struct Place
 ///   retains every other node, shared as `tree` shares it; renumbers the result
 ///   in discovery order; an unresolved path changes nothing.
 /// - panics: none.
-/// - economy: a node on no edited path is copied once, however many parents
+/// - intension: a node on no edited path is copied once, however many parents
 ///   name it; a node on an edited path is copied for that path.
 ///
 /// # Adequacy
@@ -2770,7 +2770,7 @@ fn path_of<Nodes>(
 ///   unequal leaves become leaf actions and other differences become subtree
 ///   replacements. Equal trees append nothing.
 /// - panics: none.
-/// - economy: reads the pairs on a path from the root to a change, once for
+/// - intension: reads the pairs on a path from the root to a change, once for
 ///   each such path; a pair with one content name ends its path.
 ///
 /// # Adequacy
@@ -3390,8 +3390,8 @@ enum Root
 ///   content name; missing entries retain their arena sort, and recorded
 ///   extents enclose every recorded descendant.
 /// - panics: none.
-/// - economy: reads each arena node it reaches once, however many parents name
-///   it.
+/// - intension: reads each arena node it reaches once, however many parents
+///   name it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — multi-child body terms, nested source extents and absent
