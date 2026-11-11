@@ -292,9 +292,6 @@ unbuilt! {
     /// A cell member with parameters, a side that is no closed term, or a rule
     /// arrow.
     CellMember => "cell_member",
-    /// A case over a family with a cell above dimension one, `surf : Path.here
-    /// a <-> Path.here a`, whose branch for the cell is not built.
-    HigherCellCase => "higher_cell_case",
     /// An attribute block on a data block's generator.
     GeneratorAttribute => "attribute",
     /// A model signature the derivation cannot state.
@@ -416,7 +413,6 @@ impl Unbuilt
             Self::TermsType => TrackingIssue::SORTED_TERMS,
             Self::LawTerms => TrackingIssue::LAW_CELL,
             Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
-            Self::HigherCellCase => TrackingIssue::HIGHER_CELL_CASE,
             Self::LinearPorts | Self::PortPattern => TrackingIssue::LINEAR_PORTS,
             Self::SourceAttribute => TrackingIssue::SOURCE_ATTRIBUTE,
             Self::FixedValue | Self::DependentPatch => TrackingIssue::PATCHED_TYPE,

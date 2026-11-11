@@ -983,13 +983,10 @@ impl Machine<'_, '_>
         };
         let constructors = signature.constructors().len();
         // A case carries one branch per constructor, and then either no loop
-        // arm or one per loop of its sort. A case over a sort with cells above
-        // dimension one has no branch for them yet, so it is refused.
-        // - see: #6395 — the case at a higher cell.
+        // arm or one per cell of its sort, loops and cells above dimension one
+        // alike.
         let looped = crate::loops::loops(self.context, datatype).len();
-        if crate::loops::higher(self.context, datatype).is_some()
-            || count != constructors
-                && (looped == 0 || constructors.checked_add(looped) != Some(count))
+        if count != constructors && (looped == 0 || constructors.checked_add(looped) != Some(count))
         {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
         }

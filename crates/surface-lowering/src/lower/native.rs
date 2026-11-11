@@ -6952,15 +6952,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `tests` is the match's compiled tree and `written` its loop
     ///   arms, in source order.
-    /// - ensures: none for no loop arm; otherwise one arm per loop of the root
-    ///   switch's sort, words by their position among the collected words and
-    ///   loops in written order.
+    /// - ensures: none for no loop arm; otherwise one arm per cell of the root
+    ///   switch's sort, loops and cells above dimension one alike, words by
+    ///   their position among the collected words and cells in written order.
     /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] when the root is no
-    ///   switch on the scrutinee's constructors or a loop of its sort has no
-    ///   arm; [`LoweringRefusal::DuplicateDefinition`] at a loop's second arm;
-    ///   the wrong-sort refusal at an arm for a loop of another sort; the
-    ///   unadmitted [`Unbuilt::HigherCellCase`] at the match when the root
-    ///   switch's sort has a cell above dimension one.
+    ///   switch on the scrutinee's constructors or a cell of its sort has no
+    ///   arm; [`LoweringRefusal::DuplicateDefinition`] at a cell's second arm;
+    ///   the wrong-sort refusal at an arm for a cell of another sort.
     /// - panics: none.
     ///
     /// # Errors
@@ -7000,22 +6998,6 @@ impl<'source> Lowerer<'_, 'source>
             }) if level == TreeLevel::default() => Some(family),
             _ => None,
         };
-        // A case over a sort with a cell above dimension one has no branch
-        // for the cell yet.
-        // - see: #6395 — the case at a higher cell.
-        if let Some(family) = root
-            && self.collected.words.iter().any(|words| {
-                words.reflexivities != gandr_kernel_term::Reflexivities::NONE
-                    && sort_of(words) == Some(family)
-            })
-        {
-            return Err(LoweringRefusal::OutOfFragment {
-                span: site.at.span,
-                form: FormName::MATCH,
-                sort: site.reading.sort(),
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::HigherCellCase),
-            });
-        }
         if written.is_empty() {
             return Ok(written);
         }

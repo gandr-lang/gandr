@@ -965,12 +965,6 @@ pub(super) fn case(
     if signature.arity() != FamilyArity(argument_count) {
         return Err(KernelError::DataArgumentArity);
     }
-    // A case over a sort with cells above dimension one has no branch for
-    // them yet, so it is refused.
-    // - see: #6395 — the case at a higher cell.
-    if presentations.higher(declaration).is_some() {
-        return Err(KernelError::NonExhaustiveDataCase);
-    }
     let owed = super::loops::loops(arena, presentations, datatype);
     // A loop is owed at the written motive.
     let motive = if owed.is_empty() { read } else { written };

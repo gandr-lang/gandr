@@ -38,7 +38,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 
 - **The core arena outlives the domain arena.** A domain node names core nodes it does not own, so the caller never truncates the core arena below one, as [`arena`](src/arena.rs) states.
 - **Well-scoped input.** Readback splices a source id under open binders on the strength of its term face, which is sound only if that source term is closed. Evaluating a well-scoped term guarantees it.
-- **Lowering one body.** The definition chain names a body by its canonical subterm-table entry index, which is arena-independent; `LoweredChain::lower` runs the one pass in admission order and asks the caller, once per distinct index, for that body as a closed core value in the arena the run evaluates against. Reading a table entry as a core term is the caller's, because the caller holds the table. A lowering that is not closed surfaces as `EvalFault::UnboundVariable`, inside `ReadbackFault::Eval`, when the body is forced.
+- **Lowering one body.** `LoweredChain::lower` asks the caller, once per distinct body, for that body as a closed core value in the run's arena; [`eval`](src/eval.rs) states the pass and its refusal.
 - **A fuel budget.** The caller sizes `Fuel` for the run; exhaustion is `EvalFault::OutOfFuel` or `ReadbackFault::OutOfFuel`, a decline rather than a verdict.
 - **A conversion problem's depth.** `Problem::under` names the first intuitionistic binder level neither side mentions, so the machine's fresh variables start past the binders the caller already opened; a side that mentions a level at or past it compares a caller's variable with the machine's. `Problem::values` and `Problem::computations` start at the floor, for closed sides.
 - **A step budget.** The caller sizes `StepBudget` in `MachineSettings`, or takes `StepBudget::DEFAULT`; exhaustion is `MachineVerdict::Declined(DeclineReason::Budget)`, a decline rather than a verdict.
@@ -124,6 +124,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — background: a finer sharing installs only behind a replayed trace.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep, and § 4.2's useful sharing, whose compact normal form readback builds.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite evaluates as the fold it realises, and every nesting of its chain evaluates to that fold.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, whose arm at a cell `eval::words` reads.
 
 ## License
 

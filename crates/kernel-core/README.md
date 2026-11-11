@@ -23,7 +23,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
-- **Recorded verdicts.** `Environment::recalling` keys each lone checked admission by `VerdictKey` and admits a key a trusted signer's verified `Receipt` attests as `Admission::Recalled` without the check; `Environment::receipt` signs, with a `KernelSigner`, only what this kernel checked itself. `TrustPolicy`, `VerdictSource`, `StoredReceipt`, `VerdictRecord` and `KernelIdentity` in [`verdict`](src/verdict.rs).
+- **Recorded verdicts.** `Environment::recalling` admits a key that a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself. [`verdict`](src/verdict.rs) holds the key, the policy and the records.
 - **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
 - **Sealing.** An abstract type carries its representation and the extent of its minting admission: the declarations inside it are checked with the atom read as its representation, and every later one against the bare atom (`seal`).
 - **The checking machine.** `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`; only `Environment` admits.
@@ -98,6 +98,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the field label on each refusal of a patched type's replayed formation.
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2, whose holders the kernel validates.
 - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace-certificate design — the replay runs a held operand's steps, which the trace does not record.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, in `words`.
 
 ## License
 

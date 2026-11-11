@@ -290,6 +290,7 @@ use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LooseDepth;
 use gandr_kernel_term::Reads;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TableEntryCount;
@@ -4183,7 +4184,10 @@ where
                             ref arguments,
                         }) = arena.value_type(domain)
                         && arguments.is_empty()
-                        && let mut looping = judgement.presentations.looping(sort)
+                        && let mut looping = judgement
+                            .presentations
+                            .looping(sort)
+                            .filter(|looped| looped.1.reflexivities() == Reflexivities::NONE)
                         && let Some((words, _)) = looping.next()
                         && looping.next().is_none()
                         && let Some(point) =
