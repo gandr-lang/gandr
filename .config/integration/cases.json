@@ -187,7 +187,10 @@
       "landing": "1111111111111111111111111111111111111111",
       "integration": "2222222222222222222222222222222222222222",
       "compare": "diverged",
-      "repair": { "sha": "4444444444444444444444444444444444444444", "held": true },
+      "repair": {
+        "sha": "4444444444444444444444444444444444444444",
+        "held": true
+      },
       "runs": [
         {
           "databaseId": 2,
@@ -218,7 +221,10 @@
       "landing": "1111111111111111111111111111111111111111",
       "integration": "2222222222222222222222222222222222222222",
       "compare": "ahead",
-      "repair": { "sha": "4444444444444444444444444444444444444444", "held": false },
+      "repair": {
+        "sha": "4444444444444444444444444444444444444444",
+        "held": false
+      },
       "runs": [
         {
           "databaseId": 2,
@@ -354,38 +360,68 @@
   {
     "name": "#6540: a list with no row closes its open issue, so an empty list counts as no open defect",
     "program": "list-state.jq",
-    "input": { "row": false, "state": "OPEN" },
-    "output": { "act": "close" }
+    "input": {
+      "row": false,
+      "state": "OPEN"
+    },
+    "output": {
+      "act": "close"
+    }
   },
   {
     "name": "#6540: a list with no row leaves its closed issue closed",
     "program": "list-state.jq",
-    "input": { "row": false, "state": "CLOSED" },
-    "output": { "act": null }
+    "input": {
+      "row": false,
+      "state": "CLOSED"
+    },
+    "output": {
+      "act": null
+    }
   },
   {
     "name": "#6540: a list with a row reopens its closed issue",
     "program": "list-state.jq",
-    "input": { "row": true, "state": "CLOSED" },
-    "output": { "act": "reopen" }
+    "input": {
+      "row": true,
+      "state": "CLOSED"
+    },
+    "output": {
+      "act": "reopen"
+    }
   },
   {
     "name": "#6540: a list with a row leaves its open issue open",
     "program": "list-state.jq",
-    "input": { "row": true, "state": "OPEN" },
-    "output": { "act": null }
+    "input": {
+      "row": true,
+      "state": "OPEN"
+    },
+    "output": {
+      "act": null
+    }
   },
   {
     "name": "#6540: with no list issue, a row files the list",
     "program": "list-state.jq",
-    "input": { "row": true, "state": null },
-    "output": { "act": "file" }
+    "input": {
+      "row": true,
+      "state": null
+    },
+    "output": {
+      "act": "file"
+    }
   },
   {
     "name": "#6540: with no list issue and no row, the cycle files nothing",
     "program": "list-state.jq",
-    "input": { "row": false, "state": null },
-    "output": { "act": null }
+    "input": {
+      "row": false,
+      "state": null
+    },
+    "output": {
+      "act": null
+    }
   },
   {
     "name": "a passing cycle lists no test and pages nobody",
@@ -682,11 +718,23 @@
       "now": 1000000,
       "oldest": null,
       "runs": [
-        { "status": "completed", "conclusion": "failure" },
-        { "status": "completed", "conclusion": "failure" },
-        { "status": "completed", "conclusion": "failure" }
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        }
       ],
-      "limits": { "cycles": 2, "hours": 12 }
+      "limits": {
+        "cycles": 2,
+        "hours": 12
+      }
     },
     "output": {
       "cycles": 0,
@@ -702,15 +750,39 @@
       "now": 1000000,
       "oldest": 996400,
       "runs": [
-        { "status": "in_progress", "conclusion": "" },
-        { "status": "completed", "conclusion": "failure" },
-        { "status": "completed", "conclusion": "cancelled" },
-        { "status": "completed", "conclusion": "timed_out" },
-        { "status": "completed", "conclusion": "failure" },
-        { "status": "completed", "conclusion": "success" },
-        { "status": "completed", "conclusion": "failure" }
+        {
+          "status": "in_progress",
+          "conclusion": ""
+        },
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "status": "completed",
+          "conclusion": "timed_out"
+        },
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        }
       ],
-      "limits": { "cycles": 2, "hours": 12 }
+      "limits": {
+        "cycles": 2,
+        "hours": 12
+      }
     },
     "output": {
       "cycles": 3,
@@ -726,11 +798,23 @@
       "now": 1000000,
       "oldest": 956800,
       "runs": [
-        { "status": "completed", "conclusion": "failure" },
-        { "status": "completed", "conclusion": "failure" },
-        { "status": "completed", "conclusion": "success" }
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "status": "completed",
+          "conclusion": "success"
+        }
       ],
-      "limits": { "cycles": 2, "hours": 12 }
+      "limits": {
+        "cycles": 2,
+        "hours": 12
+      }
     },
     "output": {
       "cycles": 2,
@@ -745,8 +829,16 @@
     "input": {
       "now": 1000000,
       "oldest": 956440,
-      "runs": [{ "status": "completed", "conclusion": "failure" }],
-      "limits": { "cycles": 2, "hours": 12 }
+      "runs": [
+        {
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ],
+      "limits": {
+        "cycles": 2,
+        "hours": 12
+      }
     },
     "output": {
       "cycles": 1,
@@ -945,6 +1037,246 @@
     "output": {
       "runner": "hosted",
       "line": "The suite runs on the hosted runner: the cycle cannot read the self-hosted runners."
+    }
+  },
+  {
+    "name": "#6587: one commit after the green head is the culprit, with no probe",
+    "program": "search.jq",
+    "input": {
+      "commits": ["c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      "results": {}
+    },
+    "output": {
+      "culprit": "c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "#6587: the search probes the middle of the first parents between the green head and the red head",
+    "program": "search.jq",
+    "input": {
+      "commits": [
+        "c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "results": {}
+    },
+    "output": {
+      "probe": "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "#6587: a pass moves the lower bound up, and the search probes the middle above it",
+    "program": "search.jq",
+    "input": {
+      "commits": [
+        "c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "results": {
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "pass"
+      }
+    },
+    "output": {
+      "probe": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "#6587: a fail moves the upper bound down, and the search probes the middle below it",
+    "program": "search.jq",
+    "input": {
+      "commits": [
+        "c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "results": {
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "fail"
+      }
+    },
+    "output": {
+      "probe": "c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "#6587: a pass next to a fail names the fail as the first commit where the check fails",
+    "program": "search.jq",
+    "input": {
+      "commits": [
+        "c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "c4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "results": {
+        "c1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "pass",
+        "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "fail"
+      }
+    },
+    "output": {
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "#6587: no commit after the green head is refused",
+    "program": "search.jq",
+    "input": {
+      "commits": [],
+      "results": {}
+    },
+    "fails": true
+  },
+  {
+    "name": "#6587: a red check with no open defect files one for the lane of the pull request that brings the culprit",
+    "program": "owner.jq",
+    "input": {
+      "check": "check:tests-enforcing",
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "lines": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"],
+      "open": [],
+      "pr": {
+        "number": 6563,
+        "branch": "reduction-6576-pair-tests",
+        "title": "fix(core): read a declined pair"
+      }
+    },
+    "output": {
+      "lane": "reduction",
+      "title": "landing: `check:tests-enforcing` fails from #6563 (c2aaaaaaa)",
+      "number": null,
+      "observation": "## Observation\n\n`landing:watch` runs `check:tests-enforcing` on the head `fffffffff` of `landing`, and the check fails. It passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where the check fails. Pull request #6563, \"fix(core): read a declined pair\", brings it, so the claim goes to the lane `reduction`.\n\nThe failing lines:\n\n```text\n[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair\n```",
+      "page": "FIX #{n}: `check:tests-enforcing` fails on landing at fffffffff, and #6563 (c2aaaaaaa) brings it. Repair it on landing, never with a revert."
+    }
+  },
+  {
+    "name": "#6587: a red check with an open defect of the same check comments on it and pages its number",
+    "program": "owner.jq",
+    "input": {
+      "check": "check:tests-enforcing",
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "lines": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"],
+      "open": [
+        {
+          "number": 7001,
+          "title": "landing: `check:doc` fails from #1 (aaaaaaaaa)"
+        },
+        {
+          "number": 7002,
+          "title": "landing: `check:tests-enforcing` fails from #6500 (bbbbbbbbb)"
+        }
+      ],
+      "pr": {
+        "number": 6563,
+        "branch": "reduction-6576-pair-tests",
+        "title": "fix(core): read a declined pair"
+      }
+    },
+    "output": {
+      "lane": "reduction",
+      "title": "landing: `check:tests-enforcing` fails from #6563 (c2aaaaaaa)",
+      "number": 7002,
+      "observation": "`landing:watch` runs `check:tests-enforcing` on the head `fffffffff` of `landing`, and the check fails. It passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where the check fails. Pull request #6563, \"fix(core): read a declined pair\", brings it, so the claim goes to the lane `reduction`.\n\nThe failing lines:\n\n```text\n[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair\n```",
+      "page": "FIX #7002: `check:tests-enforcing` fails on landing at fffffffff, and #6563 (c2aaaaaaa) brings it. Repair it on landing, never with a revert."
+    }
+  },
+  {
+    "name": "#6587: a culprit that GitHub names no pull request for goes to the fixer",
+    "program": "owner.jq",
+    "input": {
+      "check": "check:tests-enforcing",
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "lines": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"],
+      "open": [],
+      "pr": null
+    },
+    "output": {
+      "lane": "triage",
+      "title": "landing: `check:tests-enforcing` fails from commit c2aaaaaaa",
+      "number": null,
+      "observation": "## Observation\n\n`landing:watch` runs `check:tests-enforcing` on the head `fffffffff` of `landing`, and the check fails. It passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where the check fails. GitHub names no pull request for it, so the claim goes to the fixer.\n\nThe failing lines:\n\n```text\n[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair\n```",
+      "page": "FIX #{n}: `check:tests-enforcing` fails on landing at fffffffff, and commit c2aaaaaaa brings it. Repair it on landing, never with a revert."
+    }
+  },
+  {
+    "name": "#6587: a main that holds landing stands behind it by nothing and pages nothing",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "limit": 45,
+      "paged": null,
+      "oldest": null
+    },
+    "output": {
+      "minutes": 0,
+      "page": false,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "line": "main holds landing"
+    }
+  },
+  {
+    "name": "#6587: a gap of exactly 45 minutes pages nothing",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "limit": 45,
+      "paged": null,
+      "oldest": 97300
+    },
+    "output": {
+      "minutes": 45,
+      "page": false,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "line": "main stands 45 minutes behind landing at mmmmmmmmm"
+    }
+  },
+  {
+    "name": "#6587: a gap past 45 minutes pages the fixer",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "limit": 45,
+      "paged": null,
+      "oldest": 97240
+    },
+    "output": {
+      "minutes": 46,
+      "page": true,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "line": "main stands 46 minutes behind landing at mmmmmmmmm"
+    }
+  },
+  {
+    "name": "#6587: a gap past 45 minutes pages once for each head of main",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "limit": 45,
+      "paged": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "oldest": 94600
+    },
+    "output": {
+      "minutes": 90,
+      "page": false,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "line": "main stands 90 minutes behind landing at mmmmmmmmm"
     }
   }
 ]
