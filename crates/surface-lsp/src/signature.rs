@@ -53,7 +53,6 @@ use gandr_surface_lowering::Documentation;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::read_doc;
-use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
@@ -69,7 +68,6 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::goto::ranged;
-use crate::hover::HOVER_WIDTH;
 use crate::hover::Hovering;
 use crate::inline::escape_into;
 use crate::position::Position;
@@ -1724,20 +1722,22 @@ fn declared(
 
 /// What a `gandr/stack` request at `position` of `text`, whose reading is
 /// `reading` and whose copy keeps `hovering`, answers: each spine the position
-/// stands in, from the innermost outward, each type spelled in `style`.
+/// stands in, from the innermost outward, each type spelled in `style` on one
+/// line.
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
 /// - ensures: one row for each frame the reading answers at the position
 ///   ([`Reading::frames`]), in its order. A row holds the head as written and
 ///   its range, and the type the table gives the term at the head's first byte
-///   when that term lies inside the head, as a hover spells it. It holds the
-///   declared head and its count of parameters when the table refers the head's
-///   first byte to a declaration or constructor whose head the hovering keeps.
-///   It holds the slot, and the type the judgement checked the outermost term
-///   of the slot's argument against ([`TypeTable::outermost`]), its own type
-///   when it was checked against no other. That type is none, which reads owed,
-///   when the slot writes no argument or the table types no term inside it.
+///   when that term lies inside the head, as the hover spells it on a page
+///   wider than every line ([`TypeTable::at_line`]). It holds the declared head
+///   and its count of parameters when the table refers the head's first byte to
+///   a declaration or constructor whose head the hovering keeps. It holds the
+///   slot, and the type the judgement checked the outermost term of the slot's
+///   argument against ([`TypeTable::outermost`]), its own type when it was
+///   checked against no other. That type is none, which reads owed, when the
+///   slot writes no argument or the table types no term inside it.
 /// - provides: the answer to `gandr/stack`.
 /// - fails: never.
 /// - panics: none.
@@ -1748,6 +1748,7 @@ fn declared(
 ///   signature help.
 /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
 ///
+/// [`TypeTable::at_line`]: gandr_surface_dispatcher::TypeTable::at_line
 /// [`TypeTable::outermost`]: gandr_surface_dispatcher::TypeTable::outermost
 #[spec(ensures: |ret| matches!(ret, Answer::Stack(_)))]
 #[must_use]
@@ -1761,7 +1762,6 @@ pub fn stack(
 {
     let index = LineIndex::new(<&str>::from(text).into());
     let at = ByteOffset::from(usize::from(position.byte(&index)));
-    let page = PageWidth::from(HOVER_WIDTH);
     let table = hovering.table();
     let inside = |typed: &TypedSpan, within: ByteSpan| {
         within.start() <= typed.span().start() && typed.span().end() <= within.end()
@@ -1773,22 +1773,25 @@ pub fn stack(
                 let range = ranged(&index, frame.head)?;
                 let head = <&str>::from(text)
                     .get(usize::from(frame.head.start()) .. usize::from(frame.head.end()))?;
-                let ty = match table.at(frame.head.start(), page, style) {
+                let ty = match table.at_line(frame.head.start(), style) {
                     Maybe::Present(ref typed) if inside(typed, frame.head) => {
                         Some(String::from(typed.ty().as_ref()))
                     },
                     Maybe::Present(_) | Maybe::Absent(_) => None,
                 };
                 let signature = declared(hovering, frame.head);
-                let expected = frame.argument.and_then(|argument| {
-                    match table.outermost(argument, page, style) {
-                        Maybe::Present(ref typed) => Some(String::from(match typed.expected() {
-                            Maybe::Present(checked) => checked.as_ref(),
-                            Maybe::Absent(_) => typed.ty().as_ref(),
-                        })),
-                        Maybe::Absent(_) => None,
-                    }
-                });
+                let expected =
+                    frame
+                        .argument
+                        .and_then(|argument| match table.outermost(argument, style) {
+                            Maybe::Present(ref typed) => {
+                                Some(String::from(match typed.expected() {
+                                    Maybe::Present(checked) => checked.as_ref(),
+                                    Maybe::Absent(_) => typed.ty().as_ref(),
+                                }))
+                            },
+                            Maybe::Absent(_) => None,
+                        });
                 Some(StackRow {
                     head: String::from(head),
                     range,

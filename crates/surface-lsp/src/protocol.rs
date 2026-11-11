@@ -3584,8 +3584,9 @@ pub struct StackRow
     pub head: String,
     /// Where the head is written.
     pub range: Range,
-    /// The type the judgement gives the term at the head, as a hover spells
-    /// it; `null` when the judgement types no term there.
+    /// The type the judgement gives the term at the head, on one line as a
+    /// hover spells it on a page wider than every line; `null` when the
+    /// judgement types no term there.
     #[serde(rename = "type")]
     pub ty: Option<String>,
     /// The declared head of the declaration or constructor the head refers
@@ -3596,8 +3597,9 @@ pub struct StackRow
     pub arity: Option<u32>,
     /// The slot the position fills, from zero.
     pub slot: u32,
-    /// The type the judgement checked the slot's argument against; `null`
-    /// reads owed: the slot writes no argument the judgement typed.
+    /// The type the judgement checked the slot's argument against, on one
+    /// line; `null` reads owed: the slot writes no argument the judgement
+    /// typed.
     pub expected: Option<String>,
 }
 

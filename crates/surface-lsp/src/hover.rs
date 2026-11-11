@@ -225,8 +225,8 @@ use crate::search::Found;
 use crate::signature::Signatures;
 use crate::tracking::Gap;
 
-/// The page width a hover lays a type out at, and the context stack with it.
-pub const HOVER_WIDTH: u32 = 80;
+/// The page width a hover lays a type out at.
+const HOVER_WIDTH: u32 = 80;
 
 /// What a tile inside an accepted declaration answers, after what the lowering
 /// kept, where the engine typed nothing at it: a sentence the corpus sweep
