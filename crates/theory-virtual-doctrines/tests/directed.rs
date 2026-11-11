@@ -544,14 +544,12 @@ mod tests
             "the invertible certificates share the ground seam"
         );
         let outcome = directed_cut(&first, &second, &store);
+        let CutOutcome::Coherent(composite) = outcome
+        else {
+            panic!("an all-invertible cut is admitted unconditionally (the boundary theorem)");
+        };
         assert!(
-            bool::from(outcome.is_coherent()),
-            "an all-invertible cut is admitted unconditionally (the boundary theorem)"
-        );
-        assert!(
-            outcome
-                .tracelet()
-                .is_ok_and(|composite| bool::from(composite.replay(&store))),
+            bool::from(composite.replay(&store)),
             "the coherent composite replays the whole chain"
         );
     }
@@ -566,11 +564,11 @@ mod tests
                 let (store, first, second) = invertible_chain(NameRef::from(prefix));
                 let outcome = directed_cut(&first, &second, &store);
                 prop_assert!(
-                    bool::from(outcome.is_coherent()),
+                    matches!(&outcome, CutOutcome::Coherent(_)),
                     "an invertible cut is coherent (never gated, never declined)"
                 );
                 prop_assert!(
-                    !bool::from(outcome.is_declined()),
+                    !matches!(&outcome, CutOutcome::Declined(_)),
                     "the boundary theorem: the invertible lane is never declined"
                 );
             }
@@ -666,18 +664,13 @@ mod tests
         let b = fused(&mut store, u2, v2);
         let outcome = directed_cut(&a, &b, &store);
         assert!(
-            bool::from(outcome.is_declined()),
+            matches!(&outcome, CutOutcome::Declined(_)),
             "a mixed-variance cycle is declined by the acyclicity gate"
         );
         if let CutOutcome::Declined(ref obstruction) = outcome {
             assert!(
                 matches!(obstruction, gandr_theory_decomposition_spaces::CompositionObstruction::Cycle { cycle } if cycle.len() >= 2),
                 "the decline carries the variable-flow cycle"
-            );
-            assert_eq!(
-                outcome.tracelet(),
-                Err(obstruction),
-                "a declined cut answers its obstruction, not a certificate"
             );
         }
         else {
