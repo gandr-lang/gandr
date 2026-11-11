@@ -199,6 +199,8 @@ mod item_source;
 mod live_match;
 mod lowerings;
 mod session;
+#[cfg(feature = "instrument")]
+mod timings;
 mod typed;
 
 pub use crate::account::Account;
@@ -279,5 +281,25 @@ pub use crate::session::import;
 pub use crate::session::imported;
 pub use crate::session::reopened;
 pub use crate::session::resumed;
+#[cfg(feature = "instrument")]
+pub use crate::timings::Percentiles;
+#[cfg(feature = "instrument")]
+pub use crate::timings::PhaseRings;
+#[cfg(feature = "instrument")]
+pub use crate::timings::RowRings;
+#[cfg(feature = "instrument")]
+pub use crate::timings::SampleCount;
+#[cfg(feature = "instrument")]
+pub use crate::timings::SampleRing;
+#[cfg(feature = "instrument")]
+pub use crate::timings::Spread;
+#[cfg(feature = "instrument")]
+pub use crate::timings::TimingColumn;
+#[cfg(feature = "instrument")]
+pub use crate::timings::Timings;
+#[cfg(feature = "instrument")]
+pub use crate::timings::WINDOW;
+#[cfg(feature = "instrument")]
+pub use crate::timings::untimed;
 pub use crate::typed::spelled;
 pub use crate::typed::type_of;

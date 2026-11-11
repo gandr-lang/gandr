@@ -362,6 +362,17 @@ pub trait CheckpointObserver
     {
     }
 
+    /// A pass starts its first item: each item it then passes runs from the
+    /// previous item's end, or from here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn opened(&mut self)
+    {
+    }
+
     /// A pass adopted or judged `item`.
     ///
     /// # Specification

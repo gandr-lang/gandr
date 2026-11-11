@@ -461,9 +461,30 @@ mod verdicts;
 /// The process's global allocator: the private malloc zone of
 /// [`allocator::zone::Zone`] on macOS under `malloc-zone`, the system
 /// allocator otherwise.
-#[cfg(all(feature = "malloc-zone", target_os = "macos"))]
+#[cfg(all(
+    feature = "malloc-zone",
+    target_os = "macos",
+    not(feature = "instrument")
+))]
 #[global_allocator]
 static ALLOCATOR: allocator::zone::Zone = allocator::zone::Zone;
+
+/// The process's global allocator under `instrument`: the private malloc zone
+/// of [`allocator::zone::Zone`], each allocation counted on its thread.
+#[cfg(all(feature = "malloc-zone", target_os = "macos", feature = "instrument"))]
+#[global_allocator]
+static ALLOCATOR: allocator::counting::Counting<allocator::zone::Zone> =
+    allocator::counting::Counting::over(allocator::zone::Zone);
+
+/// The process's global allocator under `instrument`: the system allocator,
+/// each allocation counted on its thread.
+#[cfg(all(
+    feature = "instrument",
+    not(all(feature = "malloc-zone", target_os = "macos"))
+))]
+#[global_allocator]
+static ALLOCATOR: allocator::counting::Counting<std::alloc::System> =
+    allocator::counting::Counting::over(std::alloc::System);
 
 /// The exit code of a run with an unsettled declaration.
 const UNSETTLED: u8 = 1;
@@ -4531,7 +4552,7 @@ fn measured(
                     },
                 }
                 match row.took() {
-                    Maybe::Present(took) => writeln!(stdout, "{} ns", took.as_nanos())?,
+                    Maybe::Present(took) => writeln!(stdout, "{} ns", took.wall().as_nanos())?,
                     Maybe::Absent(timed::Absent::Untimed) => writeln!(stdout, "untimed")?,
                     Maybe::Absent(timed::Absent::Unoffered) => writeln!(stdout, "unoffered")?,
                     Maybe::Absent(timed::Absent::Block) => writeln!(stdout, "admitted in a block")?,

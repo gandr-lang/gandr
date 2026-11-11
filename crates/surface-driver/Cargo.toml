@@ -101,8 +101,10 @@ tracing-subscriber = { workspace = true, optional = true }
 # as the hotpath bench's workloads do, and its incremental workload parses
 # each revision through the session's form store, on the serial fork. The
 # `check --activity` witness reads the activity ring, so the crate's own
-# targets turn its `instrument` feature on.
+# targets turn its `instrument` feature on. The counting allocator's witness
+# reads its thread's count through the checker's `Meter`.
 [dev-dependencies]
+gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
 gandr-lang = { workspace = true, features = ["instrument"] }
 gandr-surface-lsp = { workspace = true, features = ["client"] }
@@ -140,9 +142,10 @@ hotpath = [
 ]
 # The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
 # instrument layer its client chose, `gandr serve` offers `subscribe_activity`,
-# and `gandr check --activity` prints each core's occupancy from the activity
-# ring. Off, as in `gandr check` and every artifact a recipe builds, no
-# recording sink and no ring is compiled.
+# `gandr check --activity` prints each core's occupancy from the activity
+# ring, and the global allocator counts each allocation of its thread for the
+# timings layer. Off, as in `gandr check` and every artifact a recipe builds,
+# no recording sink, no ring and no count is compiled.
 instrument = [
   "dep:gandr-core-fork",
   "gandr-core-fork/instrument",

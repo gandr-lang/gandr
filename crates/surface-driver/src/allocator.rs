@@ -31,6 +31,16 @@
 //! when a measurement on a quiet host meets that line; take a crate instead if
 //! a Linux measurement shows the system allocator costing a wall a crate
 //! removes.
+//!
+//! # The counting allocator
+//!
+//! With the `instrument` feature, the process's allocator is
+//! `counting::Counting` over the allocator above. It serves each request
+//! through that allocator and, before it serves an allocation, it adds one to
+//! the calling thread's count (`gandr_surface_dispatcher::allocated`). The
+//! timings layer reads that count at each phase boundary. The count is one
+//! thread-local add for each allocation, and a build without the feature, as
+//! `gandr check` and every artifact a recipe builds, compiles none of it.
 
 /// The private malloc zone and the global allocator over it.
 #[cfg(all(feature = "malloc-zone", target_os = "macos"))]
@@ -465,6 +475,178 @@ pub mod zone
     }
 }
 
+/// The global allocator that counts each allocation of its thread before it
+/// serves it.
+#[cfg(feature = "instrument")]
+pub mod counting
+{
+    use core::alloc::GlobalAlloc;
+    use core::alloc::Layout;
+
+    /// `A`, with each allocation counted on its thread.
+    ///
+    /// # Specification
+    /// - ensures: serves every request as `A` serves it, and adds one to the
+    ///   calling thread's count for each allocation, cleared allocation and
+    ///   resize it serves.
+    /// - provides: the allocator the `gandr` binary installs under
+    ///   `instrument`.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    pub struct Counting<A>(A);
+
+    impl<A> Counting<A>
+    {
+        /// `inner`, its allocations counted.
+        ///
+        /// # Specification
+        /// trivial.
+        #[inline]
+        #[must_use]
+        pub const fn over(inner: A) -> Self
+        {
+            Self(inner)
+        }
+    }
+
+    /// `A` serves every allocation and takes every block back.
+    ///
+    /// # Safety
+    /// - unsafe invariants: each method forwards its arguments to `A`'s and
+    ///   answers what `A`'s answers, so every block is `A`'s block. The count
+    ///   allocates nothing and cannot panic.
+    // SAFETY: each method forwards to `A`'s method unchanged, and the count
+    // touches no block.
+    unsafe impl<A> GlobalAlloc for Counting<A>
+    where
+        A: GlobalAlloc,
+    {
+        /// One allocation counted, then `A`'s block for `layout`.
+        ///
+        /// # Specification
+        /// - requires: `layout` has a nonzero size.
+        /// - ensures: as `A`'s `alloc`, and the thread's count is one more.
+        /// - panics: none.
+        /// - executable: none — a predicate evaluated inside the global
+        ///   allocator could panic, and a panic must not unwind out of an
+        ///   allocator.
+        ///
+        /// # Safety
+        /// - unsafe invariants: the caller upholds [`GlobalAlloc::alloc`]'s
+        ///   contract: `layout` has a nonzero size.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a box allocated between two readings of the
+        ///   thread's count advances it by one, and every other witness of this
+        ///   module runs through this allocator.
+        /// - witness: `allocator::tests::the_counting_allocator_counts_each_allocation_of_its_thread`
+        #[inline]
+        unsafe fn alloc(
+            &self,
+            layout: Layout,
+        ) -> *mut u8
+        {
+            gandr_surface_dispatcher::allocated();
+            // SAFETY: the caller's layout has a nonzero size.
+            unsafe { self.0.alloc(layout) }
+        }
+
+        /// One allocation counted, then `A`'s cleared block for `layout`.
+        ///
+        /// # Specification
+        /// - requires: `layout` has a nonzero size.
+        /// - ensures: as `A`'s `alloc_zeroed`, and the thread's count is one
+        ///   more.
+        /// - panics: none.
+        /// - executable: none — a predicate evaluated inside the global
+        ///   allocator could panic, and a panic must not unwind out of an
+        ///   allocator.
+        ///
+        /// # Safety
+        /// - unsafe invariants: the caller upholds
+        ///   [`GlobalAlloc::alloc_zeroed`]'s contract: `layout` has a nonzero
+        ///   size.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — as [`Counting::alloc`].
+        /// - witness: `allocator::tests::zeroed_blocks_read_zero_after_reuse`
+        #[inline]
+        unsafe fn alloc_zeroed(
+            &self,
+            layout: Layout,
+        ) -> *mut u8
+        {
+            gandr_surface_dispatcher::allocated();
+            // SAFETY: the caller's layout has a nonzero size.
+            unsafe { self.0.alloc_zeroed(layout) }
+        }
+
+        /// `A` takes `ptr`'s block back.
+        ///
+        /// # Specification
+        /// - requires: `ptr` is a live block this allocator returned for
+        ///   `layout`.
+        /// - ensures: as `A`'s `dealloc`; the count is unchanged.
+        /// - panics: none.
+        /// - executable: none — a predicate evaluated inside the global
+        ///   allocator could panic, and a panic must not unwind out of an
+        ///   allocator.
+        ///
+        /// # Safety
+        /// - unsafe invariants: the caller upholds [`GlobalAlloc::dealloc`]'s
+        ///   contract: `ptr` is live and was allocated by this allocator with
+        ///   `layout`.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — every witness frees what it allocates.
+        /// - witness: `allocator::tests::every_alignment_is_served_aligned`
+        #[inline]
+        unsafe fn dealloc(
+            &self,
+            ptr: *mut u8,
+            layout: Layout,
+        )
+        {
+            // SAFETY: `ptr` is a live block of `A` allocated with `layout`.
+            unsafe {
+                self.0.dealloc(ptr, layout);
+            }
+        }
+
+        /// One allocation counted, then `A`'s resize of `ptr`'s block.
+        ///
+        /// # Specification
+        /// - requires: `ptr` is a live block this allocator returned for
+        ///   `layout`; `new_size` is nonzero and, rounded up to
+        ///   `layout.align()`, at most `isize::MAX`.
+        /// - ensures: as `A`'s `realloc`, and the thread's count is one more.
+        /// - panics: none.
+        /// - executable: none — a predicate evaluated inside the global
+        ///   allocator could panic, and a panic must not unwind out of an
+        ///   allocator.
+        ///
+        /// # Safety
+        /// - unsafe invariants: the caller upholds [`GlobalAlloc::realloc`]'s
+        ///   contract on `ptr`, `layout` and `new_size`.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — as [`Counting::alloc`].
+        /// - witness: `allocator::tests::reallocation_keeps_contents_and_alignment`
+        #[inline]
+        unsafe fn realloc(
+            &self,
+            ptr: *mut u8,
+            layout: Layout,
+            new_size: usize,
+        ) -> *mut u8
+        {
+            gandr_surface_dispatcher::allocated();
+            // SAFETY: the caller upholds the contract on all three arguments.
+            unsafe { self.0.realloc(ptr, layout, new_size) }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -636,5 +818,30 @@ mod tests
                 dealloc(block, shrunk);
             }
         }
+    }
+
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn the_counting_allocator_counts_each_allocation_of_its_thread()
+    {
+        use gandr_core_checker::bridge::Meter as _;
+        use gandr_surface_dispatcher::Allocations;
+
+        assert_eq!(
+            gandr_surface_dispatcher::counting(),
+            quenchant_shape::shape::Maybe::Present(Allocations),
+            "the binary's allocator counts each allocation"
+        );
+        let before = Allocations.allocations();
+        let boxed = core::hint::black_box(Box::new(core::hint::black_box(7_u64)));
+        let after = Allocations.allocations();
+        drop(boxed);
+        let freed = Allocations.allocations();
+        assert_eq!(
+            u64::from(after.since(before)),
+            1,
+            "one box is one allocation of the thread"
+        );
+        assert_eq!(freed, after, "a free counts nothing");
     }
 }
