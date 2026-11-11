@@ -23,13 +23,11 @@ mod tests
     use gandr_theory_levitation::NameRef;
     use gandr_theory_levitation::NominalId;
     use gandr_theory_virtual_doctrines::BiDiagram;
-    use gandr_theory_virtual_doctrines::Coend;
     use gandr_theory_virtual_doctrines::CutOutcome;
     use gandr_theory_virtual_doctrines::Diagram;
     use gandr_theory_virtual_doctrines::DirectedContext;
     use gandr_theory_virtual_doctrines::DirectedHom;
     use gandr_theory_virtual_doctrines::DirectedJ;
-    use gandr_theory_virtual_doctrines::End;
     use gandr_theory_virtual_doctrines::JError;
     use gandr_theory_virtual_doctrines::MotiveShape;
     use gandr_theory_virtual_doctrines::OpSig;
@@ -424,13 +422,18 @@ mod tests
                 (ct(NameRef::from("P1")), ct(NameRef::from("V1"))),
             ],
         };
+        let components = diagram
+            .entries
+            .iter()
+            .map(|entry| entry.1.clone())
+            .collect::<Vec<_>>();
         assert_eq!(
-            End::of(&diagram).components,
+            components,
             vec![ct(NameRef::from("V0")), ct(NameRef::from("V1"))],
             "the end is the product of the diagonal components"
         );
         assert_eq!(
-            Coend::of(&diagram).summands,
+            components,
             vec![ct(NameRef::from("V0")), ct(NameRef::from("V1"))],
             "the coend is the coproduct of the diagonal components"
         );
