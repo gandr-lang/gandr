@@ -5,6 +5,10 @@
 /// `Path.ap` of the case on the cell reduces to that arm. A case into the
 /// universe takes `ua` of a homotopy at the 2-cell, and transport along that
 /// cell applies the homotopy at the point.
+/// Not implemented: a dependent case whose answer at the point holds a letter
+/// owes the whiskering of the cell, which does not yet compute.
+///
+/// - owes: #6531
 // The spheres, their cells at their path types, and the cancellations.
 import "../../model/identity/sphere.gandr";
 // The circle, `selfloop` and `ua`.
