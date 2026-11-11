@@ -343,6 +343,9 @@ pub struct Supported
     support: Support,
     /// The form the table holds the declaration in.
     entered: Entered,
+    /// The failure of the run that refused the declaration, when this
+    /// judgement keeps one.
+    failure: Maybe<crate::Failure, crate::kept::Absent>,
     /// The goal memo's consults of the decision, where a module run that
     /// keeps supports counted them; none otherwise.
     #[cfg(feature = "instrument")]
@@ -351,7 +354,8 @@ pub struct Supported
 
 impl Supported
 {
-    /// The verdict `verdict`, reached by consulting `support`, entered so.
+    /// The verdict `verdict`, reached by consulting `support`, entered so,
+    /// beside the `failure` of a refused run.
     ///
     /// # Specification
     /// trivial.
@@ -359,12 +363,14 @@ impl Supported
         verdict: Verdict,
         support: Support,
         entered: Entered,
+        failure: Maybe<crate::Failure, crate::kept::Absent>,
     ) -> Self
     {
         Self {
             verdict,
             support,
             entered,
+            failure,
             #[cfg(feature = "instrument")]
             memo: crate::tally::MemoTally::NONE,
         }
@@ -427,6 +433,21 @@ impl Supported
     pub const fn entered(&self) -> Entered
     {
         self.entered
+    }
+
+    /// The failure of the run that refused the declaration; absent for an
+    /// accepted declaration, for one refused before its body ran, and for a
+    /// module run, which keeps its failures in its report.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn failure(&self) -> Maybe<&crate::Failure, crate::kept::Absent>
+    {
+        match self.failure {
+            Maybe::Present(ref failure) => Maybe::Present(failure),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
     }
 }
 

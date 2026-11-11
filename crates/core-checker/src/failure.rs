@@ -543,7 +543,9 @@ impl Obligation
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(
+    #[inline]
+    #[must_use]
+    pub const fn new(
         role: FrameRole,
         at: CoreNode,
         expected: Maybe<TypeNode, judged::Absent>,
@@ -634,7 +636,9 @@ impl Pursuit
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(
+    #[inline]
+    #[must_use]
+    pub const fn new(
         at: CoreNode,
         expected: Maybe<TypeNode, judged::Absent>,
         stage: Stage,
@@ -751,6 +755,46 @@ impl Failure
             endpoints: Box::default(),
             solved: None,
         }
+    }
+
+    /// The failure of a run that refused with `refusal` while pursuing
+    /// `pursuit`, `obligations` pending, `hypotheses` open and `endpoints`
+    /// bound, its compared types solved as `solved` ([`Self::solutions`]): a
+    /// failure that a checkpoint kept, seated in an arena again.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn seated(
+        refusal: CheckRefusal,
+        obligations: Vec<Obligation>,
+        pursuit: Pursuit,
+        hypotheses: Vec<ValueTypeId>,
+        endpoints: Vec<LiveEndpoint>,
+        solved: Option<crate::refusal::Compared>,
+    ) -> Self
+    {
+        Self {
+            refusal,
+            obligations: obligations.into_boxed_slice(),
+            pursuit,
+            hypotheses: hypotheses.into_boxed_slice(),
+            endpoints: endpoints.into_boxed_slice(),
+            solved: solved.map(Box::new),
+        }
+    }
+
+    /// The types the refusal compares, read through the solutions the solver
+    /// held when it refused; none when no solution changed either.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn solutions(&self) -> Option<crate::refusal::Compared>
+    {
+        self.solved.as_deref().copied()
     }
 
     /// This failure, its run standing under the binders `outer` declares,

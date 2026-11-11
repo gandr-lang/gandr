@@ -1269,6 +1269,7 @@ fn the_pad_s_ciphertext_is_independent_of_its_message_5713()
 /// typed alone.
 mod sweeps
 {
+    use gandr_kernel_term::ConstantIndex;
     use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Rotation;
@@ -1964,6 +1965,19 @@ mod sweeps
     /// a night, the count the nightly's sweeps share.
     const DECIDED_NIGHTS: Nights = Nights(7);
 
+    /// The refusals' sample: sixty-four sources, ranked by their BLAKE3 digest
+    /// under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them. The
+    /// nightly profile seats the night's slice, and the `sweeps` profile every
+    /// source.
+    const SEATED: Sample = Sample {
+        name: SampleName("a_refusal_seated_from_its_checkpoint_diagnoses_as_its_judgement"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to seat every source's refusals.
+    const SEATED_NIGHTS: Nights = Nights(7);
+
     /// A pass that decides each item opens its context through the
     /// judgement's own constructor, and steps the module run's own schedule
     /// of mutual blocks. So over each corpus source it admits each item that
@@ -1983,6 +1997,26 @@ mod sweeps
     {
         decides_within(&Sweep::asked().expect("the run's sweep resolves").changed());
     }
+
+    /// Each refused item of each source the sweep visits, its refusal and its
+    /// failure seated from the checkpoint its judgement kept, diagnoses as the
+    /// whole judgement diagnoses it: every field of the diagnostic is equal but
+    /// the producer's image, which prints arena ids.
+    #[test]
+    fn a_refusal_seated_from_its_checkpoint_diagnoses_as_its_judgement()
+    {
+        seats_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn a_refusal_seated_from_its_checkpoint_diagnoses_as_its_judgement_changed()
+    {
+        seats_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// An observer that hears nothing.
+    struct Quiet;
 
     /// Every source `sweep` visits, judged whole and decided item by item by
     /// a fresh pass, has no item that one of the two admits and the other
@@ -2107,6 +2141,430 @@ mod sweeps
             "over {compared} items, a deciding pass admits and refuses each item as the whole \
              judgement does; admitted: {admitted_by_the_pass:?}; refused: \
              {refused_by_the_pass:?}"
+        );
+    }
+
+    impl gandr_core_incremental::CheckpointObserver for Quiet
+    {
+    }
+
+    /// A runner that runs nothing: the seated side settles only to spell the
+    /// types its refusals name.
+    struct Unrun;
+
+    impl gandr_surface_corpus::Runner for Unrun
+    {
+        /// Spells nothing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run(
+            &mut self,
+            _constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            RunSpelling::from(String::new())
+        }
+
+        /// Spells nothing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_refused(
+            &mut self,
+            _constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            RunSpelling::from(String::new())
+        }
+
+        /// Spells nothing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn decompose(
+            &mut self,
+            _constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            RunSpelling::from(String::new())
+        }
+
+        /// Forks no channel.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_traced(
+            &mut self,
+            _constant: ConstantIndex,
+        ) -> gandr_surface_corpus::TracedRun
+        {
+            gandr_surface_corpus::TracedRun {
+                run: RunSpelling::from(String::new()),
+                channels: Vec::new(),
+            }
+        }
+
+        /// Spells nothing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn reads(
+            &mut self,
+            _constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            RunSpelling::from(String::new())
+        }
+
+        /// Takes no path.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_distributed(
+            &mut self,
+            _constant: ConstantIndex,
+            _quota: gandr_surface_corpus::Bits,
+            _path: &mut dyn FnMut(RunSpelling, gandr_surface_corpus::Bits),
+        ) -> Result<(), gandr_surface_corpus::Undistributed>
+        {
+            Ok(())
+        }
+    }
+
+    /// The diagnostic of `declaration`'s checker refusal `refusal` in `text`
+    /// at `path`, its types spelled by `spellings` and its failure kept in
+    /// `failures`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn diagnosed(
+        (path, text): (&Path, SourceText<'_>),
+        (declaration, refusal): (
+            &gandr_surface_corpus::DeclarationReport<'_>,
+            gandr_surface_corpus::Refusal<'_>,
+        ),
+        origins: &gandr_surface_lowering::OriginTable,
+        (spellings, failures): (
+            &gandr_surface_diagnostics::TypeSpellings,
+            &gandr_surface_diagnostics::Failures,
+        ),
+    ) -> gandr_surface_diagnostics::Diagnostic
+    {
+        gandr_surface_diagnostics::diagnose(
+            path,
+            text,
+            gandr_surface_diagnostics::Subject::Refused {
+                declaration,
+                refusal,
+                origins,
+                spellings: spellings.spelled(gandr_surface_pretty::Spelling::Unicode),
+                failure: failures.get(declaration.constant()),
+                upstream: Maybe::Absent(gandr_surface_diagnostics::upstream::Absent::Own),
+                obstruction: Maybe::Absent(gandr_surface_diagnostics::obstructed::Absent::Unparted),
+            },
+        )
+    }
+
+    /// Every source `sweep` visits, judged whole, has each refused item's
+    /// diagnostic equal to the one its checkpoint's seated refusal and failure
+    /// give, the checkpoint read back from its bytes where its set persists.
+    /// An opaque item keeps no failure, since no pass takes its checkpoint.
+    /// An item whose checkpoint names another refusal than the judgement, or
+    /// a refusal the judgement does not give, was decided apart by the pass,
+    /// and is counted apart: its seat is that refusal's own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn seats_alike(sweep: &Sweep)
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_checker::Unretired;
+        use gandr_core_incremental::BackendArtifact;
+        use gandr_core_incremental::IncrementalSession;
+        use gandr_core_incremental::ItemOrdinal;
+        use gandr_core_incremental::Judgement;
+        use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::Typing;
+        use gandr_core_incremental::decode_checkpoints;
+        use gandr_core_incremental::encode_checkpoints;
+        use gandr_core_incremental::seating;
+        use gandr_surface_corpus::Refusal;
+        use gandr_surface_diagnostics::Failures;
+        use gandr_surface_diagnostics::TypeSpellings;
+        use gandr_surface_dispatcher::Checking;
+        use gandr_surface_dispatcher::Recording;
+        use gandr_surface_dispatcher::Supporting;
+        use gandr_surface_dispatcher::Unshadowed;
+        use gandr_surface_dispatcher::classify;
+        use gandr_surface_dispatcher::item_program;
+        use gandr_surface_dispatcher::judge_member_after_retiring;
+        use gandr_surface_dispatcher::lay_out_shadowed;
+        use gandr_surface_dispatcher::lower_unit_source;
+        use gandr_surface_syntax::ByteOffset;
+
+        /// What the witness counts over the sources that it visits.
+        ///
+        /// # Specification
+        /// trivial.
+        #[derive(Default)]
+        struct SeatTally
+        {
+            /// The refused items.
+            refused: usize,
+            /// The refused items that are opaque, which keep no failure.
+            opaque: usize,
+            /// The refused items seated from their checkpoints.
+            seated: usize,
+            /// The sources whose sets are read back from bytes.
+            persisted: usize,
+            /// The refused items that do not seat, by reason.
+            unseated: BTreeMap<seating::Absent, usize>,
+            /// The seated items that the pass decided apart from the judgement.
+            apart: Vec<(PathBuf, ConstantIndex)>,
+            /// The seated items whose diagnostic is different.
+            differing: Vec<(PathBuf, ConstantIndex, String)>,
+        }
+
+        /// Judge the source at `path` whole, seat each refused item from its
+        /// checkpoint, and count in `tally` how each seat diagnoses.
+        ///
+        /// # Specification
+        /// trivial.
+        fn seat_source(
+            grammar: &Pbg,
+            path: &Path,
+            tally: &mut SeatTally,
+        )
+        {
+            let own = std::fs::read_to_string(path).expect("a corpus source reads");
+            let root = classify(path);
+            let laid = lay_out_shadowed(
+                grammar,
+                path,
+                root,
+                SourceText::from(own.as_str()),
+                &Unshadowed,
+            );
+            let text = SourceText::from(laid.text.as_str());
+            let lower = || {
+                let lowering =
+                    lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
+                        .ok()?;
+                match lowering.into_lowered() {
+                    Lowered::Module { module, arena } => Some((module, arena)),
+                    Lowered::Refused(_) => None,
+                }
+            };
+            let Some((module, arena)) = lower()
+            else {
+                return;
+            };
+            let (settled, admission) = judge_member_after_retiring(
+                root.corpus_root(),
+                (module, text),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                ByteOffset::from(0_usize),
+                (&Unretired, Recording::Unrecorded, Supporting::Kept),
+            )
+            .whole()
+            .into_parts();
+            let Ok(Composed::Settled {
+                ref report,
+                ref origins,
+                ref spellings,
+                ref failures,
+                ..
+            }) = settled
+            else {
+                return;
+            };
+            let whole: BTreeMap<ConstantIndex, _> = report
+                .declarations()
+                .iter()
+                .filter_map(|declaration| match declaration.produced().refusal() {
+                    Maybe::Present(refusal @ Refusal::Checking(_)) => Some((
+                        declaration.constant(),
+                        (
+                            declaration,
+                            diagnosed(
+                                (path, text),
+                                (declaration, refusal),
+                                origins,
+                                (spellings, failures),
+                            ),
+                        ),
+                    )),
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                })
+                .collect();
+            if whole.is_empty() {
+                return;
+            }
+            let Some((module, arena)) = lower()
+            else {
+                return;
+            };
+            let mut program = item_program(&module, arena).expect("a lowered module lays out");
+            let mut session = IncrementalSession::new(
+                MemoryCheckpointStore::default(),
+                BackendArtifact::from(b"core-checker".as_slice()),
+                CheckBudget::DEFAULT,
+            );
+            // A set the store does not persist, as a codata item's, still
+            // leaves the resume the pass made.
+            let _submitted = session.submit_retiring(
+                &mut program,
+                &mut Quiet,
+                &Unretired,
+                Some(Judgement::new(admission.arena(), admission.verdicts())),
+            );
+            let Maybe::Present(resume) = session.last()
+            else {
+                panic!("a submitted session whose order builds holds a resume");
+            };
+            let decoded;
+            let checkpoints = match encode_checkpoints(resume.checkpoints()) {
+                Ok(bytes) => {
+                    tally.persisted = tally.persisted.saturating_add(1);
+                    decoded = decode_checkpoints(&bytes).expect("written checkpoints read back");
+                    &decoded
+                },
+                Err(_) => resume.checkpoints(),
+            };
+            let mut arena = admission.arena().clone();
+            let mut verdicts = admission.verdicts().clone();
+            let mut seats = BTreeSet::new();
+            for (ordinal, checkpoint) in checkpoints.items().iter().enumerate() {
+                let &Typing::Refused(_) = checkpoint.typing()
+                else {
+                    continue;
+                };
+                tally.refused = tally.refused.saturating_add(1);
+                // An opaque item keeps no failure: no pass takes its
+                // checkpoint.
+                if checkpoint.content().opacity() == gandr_core_incremental::Opacity::Opaque {
+                    tally.opaque = tally.opaque.saturating_add(1);
+                    continue;
+                }
+                let ordinal = ItemOrdinal::from(ordinal);
+                match checkpoint.refused(&mut arena, (&program, ordinal)) {
+                    Maybe::Present((refusal, failure)) => {
+                        let constant = program
+                            .items()
+                            .get(usize::from(ordinal))
+                            .map(|item| item.declaration().constant())
+                            .expect("a checkpoint's item stands in its program");
+                        verdicts.refuse(constant, refusal, match failure {
+                            Maybe::Present(failure) => Some(failure),
+                            Maybe::Absent(_) => None,
+                        });
+                        let _new = seats.insert(constant);
+                    },
+                    Maybe::Absent(reason) => {
+                        let count = tally.unseated.entry(reason).or_default();
+                        *count = count.saturating_add(1);
+                    },
+                }
+            }
+            let Some((module, _)) = lower()
+            else {
+                return;
+            };
+            let Ok(report) = gandr_surface_corpus::settle(
+                root.corpus_root(),
+                &arena,
+                &module,
+                &verdicts,
+                &mut Unrun,
+            )
+            else {
+                return;
+            };
+            let failures = Failures::of(&verdicts);
+            let spellings = TypeSpellings::of(&arena, &module, &report, &failures, (origins, text));
+            tally.seated = tally.seated.saturating_add(seats.len());
+            for declaration in report.declarations() {
+                let constant = declaration.constant();
+                if !seats.remove(&constant) {
+                    continue;
+                }
+                let Maybe::Present(refusal) = declaration.produced().refusal()
+                else {
+                    tally.differing.push((
+                        path.to_path_buf(),
+                        constant,
+                        String::from("no refusal"),
+                    ));
+                    continue;
+                };
+                let Some(&(judged_declaration, ref judged)) = whole.get(&constant)
+                else {
+                    tally.apart.push((path.to_path_buf(), constant));
+                    continue;
+                };
+                let mut seat = diagnosed(
+                    (path, text),
+                    (judged_declaration, refusal),
+                    origins,
+                    (&spellings, &failures),
+                );
+                seat.detail.producer.clone_from(&judged.detail.producer);
+                if seat.message.key != judged.message.key {
+                    tally.apart.push((path.to_path_buf(), constant));
+                    continue;
+                }
+                if seat != *judged {
+                    tally.differing.push((
+                        path.to_path_buf(),
+                        constant,
+                        format!("seated {seat:?}; judged {judged:?}"),
+                    ));
+                }
+            }
+            tally.differing.extend(
+                seats
+                    .into_iter()
+                    .map(|constant| (path.to_path_buf(), constant, String::from("no declaration"))),
+            );
+        }
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(
+            SEATED,
+            SEATED_NIGHTS,
+            &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+        );
+        assert!(
+            visited.len() >= sweep.drawn(SEATED).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let mut tally = SeatTally::default();
+        for source in visited {
+            seat_source(&grammar, source.path.as_path(), &mut tally);
+        }
+        let SeatTally {
+            refused,
+            opaque,
+            seated,
+            persisted,
+            unseated,
+            apart,
+            differing,
+        } = tally;
+        eprintln!(
+            "{refused} refused items, {opaque} of them opaque; {seated} seated, their sets read \
+             back from bytes in {persisted} sources; unseated, by reason: {unseated:?}; decided \
+             apart by the pass: {} {apart:?}",
+            apart.len()
+        );
+        assert!(
+            differing.is_empty(),
+            "over {seated} seated refusals, each diagnoses as its whole judgement does: \
+             {differing:?}"
         );
     }
 

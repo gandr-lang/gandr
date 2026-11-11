@@ -106,6 +106,7 @@ fn judged(
         layout,
         sites: &encoded.sites,
         types: &crate::content::TypeMemo::default(),
+        read: core::cell::RefCell::new(None),
     };
     let typing = projection.typing(&verdict);
     (verdict, typing)
@@ -339,6 +340,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
         layout: program.layout(),
         sites: &encoded.sites,
         types: &crate::content::TypeMemo::default(),
+        read: core::cell::RefCell::new(None),
     };
     // The specified breadth-first walk is pair, quote, thunk, thunk type,
     // return, returner, unit value, unit type. Arena noise is not a site.
@@ -770,6 +772,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
                 layout,
                 sites: &encoded.sites,
                 types: &crate::content::TypeMemo::default(),
+                read: core::cell::RefCell::new(None),
             }
             .typing(&verdict)
         })
@@ -802,6 +805,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
                         layout,
                         sites: &encoded[2].sites,
                         types: &crate::content::TypeMemo::default(),
+                        read: core::cell::RefCell::new(None),
                     }
                     .value_type(thunk),
                     predicate: Predicate::Mobile,
