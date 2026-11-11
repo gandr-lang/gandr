@@ -146,8 +146,10 @@ pub fn relate(
 /// # Adequacy
 /// - hypothesis: L3 — two states of one recursive protocol, one past the binder
 ///   and one before it, relate exactly when their unfoldings do, and a state
-///   past the arena is refused.
+///   past the arena is refused; L2 — at the two roots, each pair of bounded
+///   generated protocols relates as the independent finite oracle decides.
 /// - witness: `tests::relations::states_past_the_root_relate_through_their_unfoldings`
+/// - witness: `tests::relations::generated_relations_match_finite_oracle`
 #[spec(ensures: |ret| match ret {
     Ok(RelationResult::Related(ref evidence)) => evidence.payloads.is_empty()
         && left.head(left_state).is_ok_and(|(a, _)| right.head(right_state).is_ok_and(|(b, _)|
