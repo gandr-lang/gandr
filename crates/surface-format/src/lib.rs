@@ -797,7 +797,6 @@ pub fn declared_form(
 /// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
 /// - witness: `tests::rewrite::a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255`
 /// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
-/// - witness: `tests::rewrite::the_runs_ending_a_block_are_written_away_together`
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
