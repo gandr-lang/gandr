@@ -37,6 +37,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — `cover`'s three rules.
 - `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design — a match's derivation beside its tree.
 - `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface, so a literal identity test is a declaration form that the audit names.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the normal forms of presented types — the `presented` module reads a word of cells above dimension one as abelian, the count of each cell.
 
 ## Provided features
 
