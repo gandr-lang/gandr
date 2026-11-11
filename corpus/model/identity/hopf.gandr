@@ -49,8 +49,8 @@ def hopf(x : S2) -> Type =
     | surf => ua selfloop
 
 /// The 2-cell of the universe at the circle: the loop at each point.
-def loopCell : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle) =
-  ua selfloop
+def loopCell : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle) = ua
+  selfloop
 
 /// The transport of a point along a 2-cell of the universe at the circle.
 def walkCell(
@@ -64,16 +64,21 @@ def cellBeta(y : Circle) -> Path[.A = Path[.A = Circle](y, y)](walkCell y loopCe
   Path.here (selfloop y)
 
 /// `Path.ap` of the Hopf family on the 2-cell is its arm there.
-def hopfCellIsArm : Path[.A = Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle)](
+def hopfCellIsArm : Path[.A = Path[.A = Path[.A = Type](Circle, Circle)](
+  Path.here Circle,
+  Path.here Circle
+)](
   Path.ap hopf surf,
   loopCell
 ) = Path.here loopCell;
 
 /// The transport of `Base` along the 2-cell in the Hopf family is the loop.
-def hopfLoop : Path[.A = Path[.A = Circle](Base, Base)](walkCell Base (Path.ap hopf surf), loop) =
-  Path.here loop;
+def hopfLoop : Path[.A = Path[.A = Circle](Base, Base)](
+  walkCell Base (Path.ap hopf surf),
+  loop
+) = Path.here loop;
 
 /// A map that sends each point to the loop is no homotopy of the identity.
 @[refuses("TypeMismatch")]
-def notACell : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle) =
-  ua (fun (y : Circle) { loop });
+def notACell : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle) = ua
+  (fun (y : Circle) { loop });

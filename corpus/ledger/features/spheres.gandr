@@ -53,5 +53,7 @@ def walkAlong(
 
 /// The transport of `Base` along the 2-cell in the Hopf family is the loop.
 @[checks]
-def hopfWalked : Path[.A = Path[.A = Circle](Base, Base)](walkAlong Base (Path.ap hopfFamily surf), loop) =
-  Path.here loop;
+def hopfWalked : Path[.A = Path[.A = Circle](Base, Base)](
+  walkAlong Base (Path.ap hopfFamily surf),
+  loop
+) = Path.here loop;
