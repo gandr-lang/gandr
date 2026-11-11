@@ -6919,7 +6919,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         };
         let pair = |arena: &TermArena, at| match arena.value(at) {
             Some(&Value::Tuple(ref parts)) => match **parts {
-                [first, second] => Some((first, second)),
+                [first, second] => Some([first, second]),
                 _ => None,
             },
             Some(_) | None => None,
@@ -6928,7 +6928,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         if matches!(self.arena.value(cell), Some(&Value::Thunk(_))) {
             return Ok(identity_map(self.arena, cell, Returns::Reflexivity));
         }
-        let Some((map, inverses)) = pair(self.arena, cell)
+        let Some([map, inverses]) = pair(self.arena, cell)
         else {
             return Ok(CellIdentity::Other);
         };
@@ -6937,13 +6937,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             return Ok(CellIdentity::Other);
         }
         let inverses = read(self, inverses)?;
-        let Some((left, right)) = pair(self.arena, inverses)
+        let Some(inverses) = pair(self.arena, inverses)
         else {
             return Ok(CellIdentity::Other);
         };
-        for inverse in [left, right] {
+        for inverse in inverses {
             let inverse = read(self, inverse)?;
-            let Some((back, law)) = pair(self.arena, inverse)
+            let Some([back, law]) = pair(self.arena, inverse)
             else {
                 return Ok(CellIdentity::Other);
             };

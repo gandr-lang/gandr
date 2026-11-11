@@ -726,8 +726,9 @@ pub(crate) fn cell_code(
         return Err(refused);
     };
     identity_codes(arena, domain)
+        .ok()
         .map(|(code, _)| code)
-        .map_err(|_| refused)
+        .ok_or(refused)
 }
 
 /// What a map of the identity cell of `ua` returns at its bound point.

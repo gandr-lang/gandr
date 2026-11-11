@@ -855,43 +855,45 @@ pub(crate) fn identity_cell(
 ) -> Result<CellIdentity, DomainFault>
 {
     let other = Ok(CellIdentity::Other);
-    match *domain.value(cell).ok_or(DomainFault::Dangling)? {
-        DomainValue::Thunk { .. } => identity_map(core, domain, cell, Returns::Reflexivity),
-        DomainValue::Tuple { fields, .. } => {
-            let &[map, inverses] = domain.fields(fields)?
-            else {
-                return other;
-            };
-            let Some(&DomainValue::Tuple { fields: pair, .. }) = domain.value(inverses)
-            else {
-                return other;
-            };
-            let &[left, right] = domain.fields(pair)?
-            else {
-                return other;
-            };
-            if identity_map(core, domain, map, Returns::Point)? == CellIdentity::Other {
-                return other;
-            }
-            for inverse in [left, right] {
-                let Some(&DomainValue::Tuple { fields: halves, .. }) = domain.value(inverse)
-                else {
-                    return other;
-                };
-                let &[back, law] = domain.fields(halves)?
-                else {
-                    return other;
-                };
-                if identity_map(core, domain, back, Returns::Point)? == CellIdentity::Other
-                    || identity_map(core, domain, law, Returns::Reflexivity)? == CellIdentity::Other
-                {
-                    return other;
-                }
-            }
-            Ok(CellIdentity::Identity)
-        },
-        _ => other,
+    let held = domain.value(cell).ok_or(DomainFault::Dangling)?;
+    if matches!(*held, DomainValue::Thunk { .. }) {
+        return identity_map(core, domain, cell, Returns::Reflexivity);
     }
+    let DomainValue::Tuple { fields, .. } = *held
+    else {
+        return other;
+    };
+    let &[map, inverses] = domain.fields(fields)?
+    else {
+        return other;
+    };
+    let Some(&DomainValue::Tuple { fields: pair, .. }) = domain.value(inverses)
+    else {
+        return other;
+    };
+    let &[left, right] = domain.fields(pair)?
+    else {
+        return other;
+    };
+    if identity_map(core, domain, map, Returns::Point)? == CellIdentity::Other {
+        return other;
+    }
+    for inverse in [left, right] {
+        let Some(&DomainValue::Tuple { fields: halves, .. }) = domain.value(inverse)
+        else {
+            return other;
+        };
+        let &[back, law] = domain.fields(halves)?
+        else {
+            return other;
+        };
+        if identity_map(core, domain, back, Returns::Point)? == CellIdentity::Other
+            || identity_map(core, domain, law, Returns::Reflexivity)? == CellIdentity::Other
+        {
+            return other;
+        }
+    }
+    Ok(CellIdentity::Identity)
 }
 
 /// What a map of the identity cell returns at its bound point.
