@@ -26,9 +26,11 @@
       "check:gandr-doc",
       "check:syntax-exemplars"
     ],
+    "corpus-tests": ["check:tests-enforcing"],
     "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
     "prose": ["check:prose"]
   },
+  "readers": ["gandr-surface-dispatcher"],
   "light": ["check:cases", "check:spec-cost-landed"],
   "landing": [
     "check:corpus",
@@ -71,8 +73,9 @@
     { "path": "rustfmt.toml", "groups": ["rust", "doc"] },
     { "path": "corpus/glossary.toml", "groups": ["corpus", "prose"] },
     { "path": "corpus/prose.ledger", "groups": ["corpus", "prose"] },
+    { "path": "corpus/**.gandr", "groups": ["corpus", "corpus-tests", "prose"] },
     { "path": "**.gandr", "groups": ["corpus", "prose"] },
-    { "path": "corpus/", "groups": ["corpus"] },
+    { "path": "corpus/", "groups": ["corpus", "corpus-tests"] },
     { "path": "library/", "groups": ["corpus"] },
     { "path": "ledger/", "groups": ["corpus"] },
     { "path": "contrib/gandr-vscode/", "groups": ["extension"] },

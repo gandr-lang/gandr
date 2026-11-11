@@ -106,7 +106,7 @@
     "output": ["check:claims", "check:corpus", "check:doc", "check:typos"]
   },
   {
-    "name": "#4911: a corpus source selects the corpus checks and no Rust check",
+    "name": "#4911, #6725: a corpus source selects the corpus checks and the suite that reads the corpus, and no other Rust check",
     "program": "select.jq",
     "input": {
       "tasks": [
@@ -120,7 +120,7 @@
       ],
       "changed": ["corpus/model/basics/definitions.gandr", "library/std/list.gandr"]
     },
-    "output": ["check:claims", "check:corpus", "check:typos"]
+    "output": ["check:claims", "check:corpus", "check:tests-enforcing", "check:typos"]
   },
   {
     "name": "#4911: a narrower row stands above a wider one",
@@ -322,6 +322,22 @@
       "landing": true
     },
     "output": ["check:claims", "check:typos"]
+  },
+  {
+    "name": "#6725: the landing's gate of #6709's corpus source alone runs the enforcing suite",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:landing",
+        "check:tests-enforcing",
+        "check:typos"
+      ],
+      "changed": ["corpus/model/identity/hopf.gandr"],
+      "landing": true
+    },
+    "output": ["check:claims", "check:corpus", "check:tests-enforcing", "check:typos"]
   },
   {
     "name": "#6489: the landing's gate of #6469's moved span and #6484's new refusing source runs the corpus check, both format checks and the renderers' goldens, and no corpus check that the landing list leaves out",
@@ -582,6 +598,27 @@
       "touched": true
     },
     "output": ["gandr-core-term"]
+  },
+  {
+    "name": "#6725: #6709's corpus source alone touches the dispatcher, whose tests read the corpus",
+    "program": "packages.jq",
+    "input": {
+      "changed": ["corpus/model/identity/hopf.gandr"],
+      "touched": true,
+      "packages": [
+        {
+          "name": "gandr-core-checker",
+          "dir": "crates/core-checker",
+          "deps": []
+        },
+        {
+          "name": "gandr-surface-dispatcher",
+          "dir": "crates/surface-dispatcher",
+          "deps": ["gandr-core-checker"]
+        }
+      ]
+    },
+    "output": ["gandr-surface-dispatcher"]
   },
   {
     "name": "#5014: a workflow-only change scopes no package",

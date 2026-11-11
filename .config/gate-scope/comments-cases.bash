@@ -60,8 +60,8 @@ check "#6648: one token of code beside a comment selects check:doc and check:cor
   crates/core-term/src/lib.rs $'// The count.\npub const N: u8 = 2;' "$whole"
 check "#6648: a blank line beside a comment reads as code" \
   crates/core-term/src/lib.rs $'// The count.\n\npub const N: u8 = 1;' "$whole"
-check "#6648: a comment edit in a corpus source selects check:prose" \
-  corpus/model/count.gandr $'/// The count of items.\ndef n = 1 ;' $'check:claims\ncheck:corpus\ncheck:prose'
+check "#6648, #6725: a comment edit in a corpus source selects check:prose and the suite that reads the corpus" \
+  corpus/model/count.gandr $'/// The count of items.\ndef n = 1 ;' $'check:claims\ncheck:corpus\ncheck:prose\ncheck:tests-enforcing'
 
 # The change of a commit: `select.bash <commit>` reads the classifier over
 # the commit's own change, as `passed.bash` reads a head (#5076).
