@@ -53,10 +53,150 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A front end's stable identity for one item, opaque to this crate.
+/// A front end's stable identity for one item: its name, after the tag of the
+/// source that declares it when the front end names that source.
+///
+/// The tag tells the source's items from another source's items of the same
+/// name, so an item's reference counts its occurrence within its own source,
+/// whatever other sources the program holds. The crate reads no more
+/// of a key than its bytes, its tag and its name.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ItemKey(Box<[u8]>);
+
+/// The byte that opens the key of an item of a tagged source. No UTF-8 text
+/// opens with it, so a key of an untagged source never reads as a tagged one.
+const TAGGED: u8 = 0xFF;
+
+/// How many bytes of a source name's digest a tag keeps.
+const TAG_DIGEST: usize = 8;
+
+/// How many bytes open the key of an item of a tagged source: [`TAGGED`],
+/// then the tag's digest.
+const TAG_PREFIX: usize = 1 + TAG_DIGEST;
+
+/// The tag of a source: the first eight bytes of the BLAKE3 digest of the name
+/// a front end gives it. A digest keeps each key of the source short, whatever
+/// the length of the name.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceTag([u8; TAG_DIGEST]);
+
+impl From<&str> for SourceTag
+{
+    /// The tag of the source named `name`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first eight bytes of the BLAKE3 digest of `name`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two names of one source and two sources of one name.
+    /// - witness: `region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
+    #[spec(ensures: |ret| blake3::hash(name.as_bytes()).as_bytes().get(.. TAG_DIGEST) == Some(ret.0.as_slice()))]
+    #[inline]
+    fn from(name: &str) -> Self
+    {
+        let mut tag = [0_u8; TAG_DIGEST];
+        for (byte, digested) in tag.iter_mut().zip(blake3::hash(name.as_bytes()).as_bytes()) {
+            *byte = *digested;
+        }
+        Self(tag)
+    }
+}
+
+/// The name an item key holds: its bytes after the tag of its source.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct KeyName<'key>(&'key [u8]);
+
+impl AsRef<[u8]> for KeyName<'_>
+{
+    /// The name's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        self.0
+    }
+}
+
+impl<'key> From<KeyName<'key>> for &'key [u8]
+{
+    /// The name's bytes, borrowed from its key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: KeyName<'key>) -> Self
+    {
+        name.0
+    }
+}
+
+impl ItemKey
+{
+    /// The name the key holds: the bytes after its source's tag, or every
+    /// byte of the key of an untagged source.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the bytes after the first [`TAG_PREFIX`] when the key opens
+    ///   with [`TAGGED`] and holds a whole tag; else every byte. The predicate
+    ///   checks the name's end and width, since comparing the bytes walks them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tagged key, an untagged key and an empty key.
+    /// - witness: `region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
+    #[spec(ensures: |ret| ret.0.as_ptr_range().end == self.0.as_ptr_range().end
+        && ret.0.len() == self.0.get(TAG_PREFIX ..)
+            .filter(|_| self.0.first() == Some(&TAGGED))
+            .map_or_else(|| self.0.len(), <[u8]>::len))]
+    #[inline]
+    #[must_use]
+    pub fn name(&self) -> KeyName<'_>
+    {
+        let bytes: &[u8] = &self.0;
+        KeyName(
+            bytes
+                .get(TAG_PREFIX ..)
+                .filter(|_| bytes.first() == Some(&TAGGED))
+                .unwrap_or(bytes),
+        )
+    }
+}
+
+impl From<(SourceTag, &str)> for ItemKey
+{
+    /// The key of the item named `name` in the source tagged `tag`:
+    /// [`TAGGED`], the tag, then the name's bytes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`TAGGED`], the tag's bytes, then `name`'s bytes; its
+    ///   [`ItemKey::name`] is `name`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ItemKey::name`].
+    /// - witness: `region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
+    #[spec(ensures: |ret| ret.0.first() == Some(&TAGGED)
+        && ret.0.get(1 .. TAG_PREFIX) == Some(tag.0.as_slice())
+        && ret.name().0 == name.as_bytes())]
+    #[inline]
+    fn from((tag, name): (SourceTag, &str)) -> Self
+    {
+        let mut key = Vec::with_capacity(TAG_PREFIX.saturating_add(name.len()));
+        key.push(TAGGED);
+        key.extend_from_slice(&tag.0);
+        key.extend_from_slice(name.as_bytes());
+        Self(key.into_boxed_slice())
+    }
+}
 
 impl From<&[u8]> for ItemKey
 {
@@ -73,7 +213,8 @@ impl From<&[u8]> for ItemKey
 
 impl From<&str> for ItemKey
 {
-    /// The key of this text's bytes.
+    /// The key of this text's bytes: the key of an item of an untagged
+    /// source.
     ///
     /// # Specification
     /// trivial.
@@ -137,11 +278,13 @@ pub struct Item
     key: ItemKey,
     /// The declaration the checker judges.
     declaration: Declaration,
+    /// Whether the front end states the item's own closure located.
+    reach: crate::content::Locus,
 }
 
 impl Item
 {
-    /// The item `declaration` under `key`.
+    /// The item `declaration` under `key`, its own closure unlocated.
     ///
     /// # Specification
     /// trivial.
@@ -152,7 +295,25 @@ impl Item
         declaration: Declaration,
     ) -> Self
     {
-        Self { key, declaration }
+        Self {
+            key,
+            declaration,
+            reach: crate::content::Locus::Unlocated,
+        }
+    }
+
+    /// The item, its own closure located: its own source, or a source that
+    /// its own source reaches, declares a world or states an entry. The front
+    /// end states it, because the front end alone knows the sources.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn located(mut self) -> Self
+    {
+        self.reach = crate::content::Locus::Located;
+        self
     }
 
     /// The front end's stable identity for the item.
@@ -175,6 +336,44 @@ impl Item
     pub const fn declaration(&self) -> &Declaration
     {
         &self.declaration
+    }
+
+    /// Whether the item is located: a world, an item that states an entry,
+    /// or an item whose own closure is located ([`Item::located`]). A
+    /// located item is opaque, and a source the item does not reach never
+    /// makes it located.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`crate::content::Locus::Located`] exactly when the front end
+    ///   states the item's closure located, the declaration is a world, or it
+    ///   states an entry.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a world, an item beside it that its front end marks
+    ///   and the same item unmarked separate the three answers.
+    /// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
+    #[spec(ensures: |ret| (ret == crate::content::Locus::Located)
+        == (self.reach == crate::content::Locus::Located
+            || matches!(*self.declaration.content(), gandr_core_checker::DeclarationContent::World(_))
+            || matches!(self.declaration.entry(), Maybe::Present(_))))]
+    #[inline]
+    #[must_use]
+    pub fn locus(&self) -> crate::content::Locus
+    {
+        if self.reach == crate::content::Locus::Located
+            || matches!(
+                *self.declaration.content(),
+                gandr_core_checker::DeclarationContent::World(_)
+            )
+            || matches!(self.declaration.entry(), Maybe::Present(_))
+        {
+            crate::content::Locus::Located
+        }
+        else {
+            crate::content::Locus::Unlocated
+        }
     }
 }
 
@@ -273,24 +472,10 @@ pub struct Layout
     occupied: BTreeMap<ConstantIndex, ItemOrdinal>,
     /// The item each reference names.
     named: BTreeMap<Reference, ItemOrdinal>,
-    /// Whether the program declares a world or an item states an entry.
-    locus: crate::content::Locus,
 }
 
 impl Layout
 {
-    /// Whether the program declares a world or an item states an entry: every
-    /// item of a located program is opaque.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn locus(&self) -> crate::content::Locus
-    {
-        self.locus
-    }
-
     /// The reference the admission position `position` resolves to.
     ///
     /// # Specification
@@ -482,12 +667,7 @@ impl Program
             let _vacant = named.insert(reference.clone(), ordinal);
             references.push(reference);
         }
-        let located = items.iter().any(|item| {
-            matches!(
-                *item.declaration.content(),
-                gandr_core_checker::DeclarationContent::World(_)
-            ) || matches!(item.declaration.entry(), Maybe::Present(_))
-        });
+
         Ok(Self {
             arena,
             layout: Layout {
@@ -495,12 +675,6 @@ impl Program
                 references,
                 occupied,
                 named,
-                locus: if located {
-                    crate::content::Locus::Located
-                }
-                else {
-                    crate::content::Locus::Unlocated
-                },
             },
             tier: None,
             strata: alloc::sync::Arc::new(gandr_core_checker::ua::NoStratumStore),

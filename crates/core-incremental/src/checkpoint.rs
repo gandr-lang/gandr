@@ -880,9 +880,9 @@ quenchant_shape::reason_enum! {
 /// What a pass over a program's leading items leaves, for a later revision
 /// that lays more items after them to start from.
 ///
-/// The state holds the items' references, checkpoints and answers, the locus
-/// they were encoded at, and the checking context they leave, its arena
-/// released.
+/// The state holds the items' references, checkpoints and answers, and the
+/// checking context they leave, its arena released. Each item holds its own
+/// locus, so the leading items lead a program whose items begin with them.
 ///
 /// # Specification
 /// - executable: none — the state holds no program to certify it against;
@@ -898,8 +898,6 @@ pub struct Leading
 {
     /// The allowance the leading items were judged under.
     budget: CheckBudget,
-    /// Whether the leading program is located: every item's content holds it.
-    locus: crate::content::Locus,
     /// The leading items, in order.
     items: Vec<crate::region::Item>,
     /// Their references, in order.
@@ -925,28 +923,26 @@ impl Leading
         ItemCount::from(self.checkpoints.len())
     }
 
-    /// Whether `program` lays the leading items first: it is located alike
-    /// and its first items are theirs, keys and declarations.
+    /// Whether `program` lays the leading items first: its first items are
+    /// theirs, keys, declarations and loci.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Leads`] exactly when the locus matches and `program`'s
-    ///   items begin with the leading items.
+    /// - ensures: [`Leads`] exactly when `program`'s items begin with the
+    ///   leading items.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Leading`].
     /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
-    #[spec(ensures: |ret| (ret == Leads::Leads) == (program.layout().locus() == self.locus
-        && program.items().get(.. self.items.len()) == Some(self.items.as_slice())))]
+    #[spec(ensures: |ret| (ret == Leads::Leads)
+        == (program.items().get(.. self.items.len()) == Some(self.items.as_slice())))]
     fn leads(
         &self,
         program: &Program,
     ) -> Leads
     {
-        if program.layout().locus() == self.locus
-            && program.items().get(.. self.items.len()) == Some(self.items.as_slice())
-        {
+        if program.items().get(.. self.items.len()) == Some(self.items.as_slice()) {
             Leads::Leads
         }
         else {
@@ -1455,8 +1451,8 @@ pub fn resume_from(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: on success [`check_program`]'s resume, and the leading state of
-///   every item of `program`: their references, checkpoints and answers,
-///   `program`'s locus, and the checking context after the last of them.
+///   every item of `program`: their references, checkpoints and answers, and
+///   the checking context after the last of them.
 /// - fails: as [`check_program`].
 /// - panics: none.
 ///
@@ -1487,7 +1483,6 @@ pub fn lead(
     .whole();
     let leading = Leading {
         budget,
-        locus: program.layout().locus(),
         items: program.items().to_vec(),
         references: program.references().to_vec(),
         checkpoints: advanced.resume.checkpoints.items.clone(),
@@ -3551,9 +3546,8 @@ fn seat(
             }
             return Maybe::Present(Answer::Untyped);
         },
-        // A world declaration belongs to a located program, and a codata
-        // declaration has no content form: both items are opaque and
-        // returned before this.
+        // A world declaration is located, and a codata declaration has no
+        // content form: both items are opaque and returned before this.
         gandr_core_checker::DeclarationContent::World(_)
         | gandr_core_checker::DeclarationContent::Codata(_) => {
             return Maybe::Absent(recall::Absent::Opaque);

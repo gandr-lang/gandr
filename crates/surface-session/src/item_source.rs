@@ -287,7 +287,7 @@ impl ItemSource for SurfaceItems
             .items()
             .iter()
             .all(|item| {
-                core::str::from_utf8(item.key().as_ref())
+                core::str::from_utf8(item.key().name().as_ref())
                     .is_ok_and(|name| !name.is_empty() && revision.0.contains(name))
             })
     }

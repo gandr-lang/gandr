@@ -1,5 +1,5 @@
 # Written by `gandr check` from the coordinates the workspace's packages' sources import: relock with `gandr lock`, never by hand.
-# blake3: 5a0a639558d638db638c629d9091d499c46aeab45ba0452423a84a625c4d7e73
+# blake3: c2c891044f100c820e7676d022365f425d795ebce9d4a1f3f00f1854626b2d35
 
 [dependencies."tools"]
-"path:../hello" = { pointer = "bc41cefb3b373408ab6ec4e8a6692a9c64ebbe3a693fff882c24206ac5ea98ee:0" }
+"path:../hello" = { pointer = "5d5643eb61d6337454bb95ea0a71e2984a765ef18df15fc6f8d57694075ae825:0" }
