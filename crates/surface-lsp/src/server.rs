@@ -12913,15 +12913,15 @@ mod tests
         );
     }
 
-    /// How many declines of an endpoint loop the publications at `version`
-    /// among `messages` carry.
+    /// The declines of an endpoint loop that the publications at `version`
+    /// among `messages` carry, each as its message.
     ///
     /// # Specification
     /// trivial.
     fn declines(
         messages: &Value,
-        version: i32,
-    ) -> usize
+        version: &Value,
+    ) -> Vec<String>
     {
         messages
             .as_array()
@@ -12930,14 +12930,15 @@ mod tests
             .filter(|message| {
                 message.get("method").and_then(Value::as_str)
                     == Some("textDocument/publishDiagnostics")
-                    && message.pointer("/params/version") == Some(&Value::from(version))
+                    && message.pointer("/params/version") == Some(version)
             })
             .filter_map(|message| message.pointer("/params/diagnostics"))
             .filter_map(Value::as_array)
             .flatten()
             .filter_map(|diagnostic| diagnostic.get("message").and_then(Value::as_str))
             .filter(|message| message.contains("no kernel image: EndpointLoop"))
-            .count()
+            .map(String::from)
+            .collect()
     }
 
     /// #6810: the admission of an edit resumes the declarations before the
@@ -12974,7 +12975,10 @@ mod tests
             ),
         );
         assert_eq!(
-            (declines(&opened, 1_i32), declines(&edited, 2_i32)),
+            (
+                declines(&opened, &Value::from(1_i32)).len(),
+                declines(&edited, &Value::from(2_i32)).len()
+            ),
             (5_usize, 5_usize),
             "the admission of the opening and of the edit each publish the five loops' declines"
         );
@@ -13023,7 +13027,10 @@ mod tests
         let resumed = send(&mut second, Json(&open));
         let _removed = std::fs::remove_dir_all(&directory);
         assert_eq!(
-            (declines(&crossed, 1_i32), declines(&resumed, 1_i32)),
+            (
+                declines(&crossed, &Value::from(1_i32)).len(),
+                declines(&resumed, &Value::from(1_i32)).len()
+            ),
             (5_usize, 5_usize),
             "the connection that crosses the closure and the one that resumes it each publish \
              the five loops' declines"
