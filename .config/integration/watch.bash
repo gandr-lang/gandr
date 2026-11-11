@@ -123,17 +123,19 @@ watch_checkout() {
 
 # Runs the check `$2`, or the whole gate when it is `check`, on commit `$1`
 # against the green head, writing its log to `$3`; exits as the check exits.
+# The run is a background gate (#6638): at niceness 19 and in no host slot,
+# so a lane's gate beside it loses neither CPU nor a slot to it.
 watch_run() {
   local commit=$1 check=$2 log=$3
   watch_checkout "$commit"
   if [[ $check == check ]]; then
-    (cd "$watch_tree" && mise run check) > "$log" 2>&1
+    (cd "$watch_tree" && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
   else
     (cd "$watch_tree" \
       && GATE_SCOPE=$(.config/gate-scope/scope.bash 2> /dev/null) \
       && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
       && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_TEST_SCOPE=$GATE_WITNESS_SCOPE \
-      && mise run "$check") > "$log" 2>&1
+      && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$log" 2>&1
   fi
 }
 
@@ -240,7 +242,7 @@ watch_once() {
 }
 
 # Install (`$1` = install) or remove (`$1` = remove) the service that keeps
-# `landing:watch` running from this checkout.
+# `landing:watch` running from this checkout, in the background (#6638).
 watch_service() {
-  service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)'
+  service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)' background
 }

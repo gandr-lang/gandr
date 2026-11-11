@@ -28,6 +28,12 @@
 # `<lock>: waiting on <holders>` and tries again every 5 seconds; with
 # `GATE_NO_WAIT=1`, which `check --no-wait` sets, it refuses at once, naming
 # them.
+#
+# A background gate (#6638) takes its lane's lock and no slot. The head
+# watcher of `landing` runs its gate with `GANDR_GATE_BACKGROUND=1` at
+# niceness 19, so the gate takes only CPU that no other process asks for, and
+# no lane's gate waits for its slot. A gate that asks for the background at
+# another niceness takes a slot, as any gate does.
 
 source "${BASH_SOURCE[0]%/*}/host-lock.bash"
 
@@ -54,6 +60,14 @@ hold_gate_slot() {
   if [[ ${GATE_NO_WAIT:-} == 1 ]]; then wait=(--no-wait); fi
   gate_lane=$(gate_lane)
   host_lock ${wait[@]+"${wait[@]}"} --fd 8 "gate-lane-$gate_lane" 1 "$@"
+  if [[ ${GANDR_GATE_BACKGROUND:-} == 1 && $(ps -o ni= -p $$ | tr -d ' ') == 19 ]]; then
+    gate_slot=background
+    export GANDR_GATE_SLOT=$gate_slot
+    # The traps release descriptor 9 too; it holds no lock here.
+    exec 9> /dev/null
+    trap 'host_unlock 9; host_unlock 8' EXIT
+    return
+  fi
   host_lock ${wait[@]+"${wait[@]}"} gate "$gate_slots" "$@" "(lane $gate_lane)"
   gate_slot=$host_slot
   export GANDR_GATE_SLOT=$gate_slot

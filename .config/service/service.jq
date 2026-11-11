@@ -6,11 +6,18 @@
 # relaunch runs again within a minute. `service.bash` writes it under the XDG
 # configuration directory or `~/Library/LaunchAgents/`, never the tree.
 #
-# Input: `{os, dir, mise, path, environment, name, task, description}`:
-# `linux` or `macos`, the checkout, the `mise` executable, the `PATH` the
-# service runs under, the other variables it runs under by name (git's
-# configuration, #4866), the service's name (`gandr-<name>` or
-# `gandr.<name>`), the task it runs and the unit's description.
+# A background service (#6638) runs at the host's lowest priority, so a
+# seat's gate beside it loses no CPU to it: `Nice=19` with the idle CPU
+# policy and the idle IO class on Linux, and `Nice` 19 with the `Background`
+# process type on macOS. An IO class takes effect only where the block
+# device's scheduler reads one (`bfq`).
+#
+# Input: `{os, dir, mise, path, environment, name, task, description,
+# background}`: `linux` or `macos`, the checkout, the `mise` executable, the
+# `PATH` the service runs under, the other variables it runs under by name
+# (git's configuration, #4866), the service's name (`gandr-<name>` or
+# `gandr.<name>`), the task it runs, the unit's description, and whether it
+# runs in the background (absent, no).
 # Output: the unit's or the agent's text.
 
 . as $in
@@ -26,8 +33,10 @@
     + [$variables[] | "Environment=\(.[0])=\(.[1])"]
     + [ "ExecStart=\($in.mise) run \($in.task)",
       "Restart=always",
-      "RestartSec=20",
-      "",
+      "RestartSec=20"
+    ]
+    + (if $in.background then ["Nice=19", "CPUSchedulingPolicy=idle", "IOSchedulingClass=idle"] else [] end)
+    + [ "",
       "[Install]",
       "WantedBy=default.target"
     ] | join("\n")
@@ -41,8 +50,10 @@
       "  <key>EnvironmentVariables</key><dict>\([$variables[] | "<key>\(.[0] | xml)</key><string>\(.[1] | xml)</string>"] | join(""))</dict>",
       "  <key>ProgramArguments</key><array><string>\($in.mise | xml)</string><string>run</string><string>\($in.task | xml)</string></array>",
       "  <key>KeepAlive</key><true/>",
-      "  <key>ThrottleInterval</key><integer>20</integer>",
-      "</dict>",
+      "  <key>ThrottleInterval</key><integer>20</integer>"
+    ]
+    + (if $in.background then ["  <key>Nice</key><integer>19</integer>", "  <key>ProcessType</key><string>Background</string>"] else [] end)
+    + [ "</dict>",
       "</plist>"
     ] | join("\n")
   else
