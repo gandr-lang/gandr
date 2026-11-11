@@ -224,6 +224,7 @@ use gandr_surface_pretty::WrittenForms;
 use gandr_surface_pretty::WrittenName;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
+use gandr_surface_pretty::present_type_line;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -970,6 +971,21 @@ impl core::fmt::Display for Shift
             Self::Returner => "-F",
         })
     }
+}
+
+/// How the table lays a spelled type out.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Lay
+{
+    /// On a page of so many columns, as [`present_type`] lays it out.
+    Page(PageWidth),
+    /// On as few lines as the type admits, as [`present_type_line`] writes it:
+    /// the layout of a page wider than every line, with no layout document
+    /// built.
+    Line,
 }
 
 /// The type of every node of one source a face can point at, and of every
@@ -3484,7 +3500,40 @@ impl TypeTable
     {
         self.chosen(offset)
             .map_or(Maybe::Absent(typing::Absent::Untyped), |entry| {
-                self.answer(entry, page, style)
+                self.answer(entry, Lay::Page(page), style)
+            })
+    }
+
+    /// The entry [`Self::at`] chooses at `offset`, spelled in `style` on as few
+    /// lines as it admits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the answer [`Self::at`] gives at a page wider than every
+    ///   line, each type written as [`present_type_line`] writes it, so no
+    ///   layout document is built.
+    /// - provides: the head type a row of the context stack shows.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type wider than a narrow page answers on one line,
+    ///   the line a page wider than the type lays out.
+    /// - witness: `typed::tests::a_type_answers_on_the_line_a_wide_page_lays_out`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref answer) => answer.span.start() <= offset && offset < answer.span.end(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn at_line(
+        &self,
+        offset: ByteOffset,
+        style: Style,
+    ) -> Maybe<TypedSpan, typing::Absent>
+    {
+        self.chosen(offset)
+            .map_or(Maybe::Absent(typing::Absent::Untyped), |entry| {
+                self.answer(entry, Lay::Line, style)
             })
     }
 
@@ -3512,6 +3561,61 @@ impl TypeTable
     ) -> Option<ByteSpan>
     {
         self.chosen(offset).map(|entry| entry.span)
+    }
+
+    /// The outermost term the table types inside `within`, spelled in `style`
+    /// on as few lines as it admits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: among the term entries whose span lies inside `within`, one
+    ///   of the widest; among those, the entry latest in the table. The
+    ///   judgement around a term records its entries after the term's own, so a
+    ///   computation written in a value's place answers the value the lowering
+    ///   binds in that place. It is spelled as [`Self::at_line`] spells an
+    ///   entry, so no layout document is built. Absent as
+    ///   [`typing::Absent::Untyped`] when no term entry lies inside `within`,
+    ///   and as [`typing::Absent::Unspelled`] when the printer cannot lay the
+    ///   chosen entry's type out.
+    /// - provides: the term that stands in one slot of a call, with the type
+    ///   the slot asks of it.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the argument of each spine around a hole answers the
+    ///   type its slot asks, a computation in a value's slot included, and a
+    ///   slot that holds no typed term answers none.
+    /// - witness: `typed::tests::the_outermost_term_in_a_slot_answers_the_type_the_slot_asks`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref answer) => answer.subject == Subject::Term
+            && within.start() <= answer.span.start() && answer.span.end() <= within.end(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn outermost(
+        &self,
+        within: ByteSpan,
+        style: Style,
+    ) -> Maybe<TypedSpan, typing::Absent>
+    {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|&(_, entry)| {
+                entry.subject == Subject::Term
+                    && within.start() <= entry.span.start()
+                    && entry.span.end() <= within.end()
+            })
+            .max_by_key(|&(position, entry)| {
+                (
+                    usize::from(entry.span.end()).saturating_sub(usize::from(entry.span.start())),
+                    position,
+                )
+            })
+            .map_or(Maybe::Absent(typing::Absent::Untyped), |(_, entry)| {
+                self.answer(entry, Lay::Line, style)
+            })
     }
 
     /// The written name holding `offset` and what it refers to: the binder or
@@ -4235,7 +4339,7 @@ impl TypeTable
     {
         self.entries
             .iter()
-            .map(move |entry| self.answer(entry, page, style))
+            .map(move |entry| self.answer(entry, Lay::Page(page), style))
     }
 
     /// Every binder the source wrote whose name overlaps `within`, in table
@@ -4275,10 +4379,10 @@ impl TypeTable
                     && entry.span.start() < within.end()
                     && within.start() < entry.span.end()
             })
-            .map(move |entry| self.answer(entry, page, style))
+            .map(move |entry| self.answer(entry, Lay::Page(page), style))
     }
 
-    /// `entry` spelled in `style` on a page of `page` columns.
+    /// `entry` spelled in `style`, laid out as `lay` asks.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -4301,24 +4405,30 @@ impl TypeTable
     fn answer(
         &self,
         entry: &Entry,
-        page: PageWidth,
+        lay: Lay,
         style: Style,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
         let mut binders = self.standing(entry.standing);
         binders.scope = self.scope_of(entry.span);
-        let Maybe::Present(ty) = self.spell(entry.ty, &binders, page, style)
+        let Maybe::Present(ty) = self.spell_laid(entry.ty, &binders, lay, style)
         else {
             return Maybe::Absent(typing::Absent::Unspelled);
         };
-        let expected = match self.spell(entry.last, &binders, page, style) {
-            Maybe::Present(other)
-                if entry.last != entry.ty
-                    && <Presentation as AsRef<str>>::as_ref(&other) != ty.as_ref() =>
-            {
+        let expected = if entry.last == entry.ty {
+            Maybe::Absent(checked_against::Absent::Agreed)
+        }
+        else {
+            match self.spell_laid(entry.last, &binders, lay, style) {
                 Maybe::Present(other)
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(checked_against::Absent::Agreed),
+                    if <Presentation as AsRef<str>>::as_ref(&other) != ty.as_ref() =>
+                {
+                    Maybe::Present(other)
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => {
+                    Maybe::Absent(checked_against::Absent::Agreed)
+                },
+            }
         };
         let crossed = match entry.standing {
             Standing::Judged(Within {
@@ -4327,7 +4437,7 @@ impl TypeTable
             }) if entry.subject == Subject::Term => self
                 .crossings
                 .get(&at)
-                .and_then(|by| self.applied(by, &binders, page, style))
+                .and_then(|by| self.applied(by, &binders, lay, style))
                 .map_or(Maybe::Absent(crossed::Absent::Uncrossed), Maybe::Present),
             Standing::Judged(_) | Standing::Closed | Standing::Named(_) | Standing::Parted(..) => {
                 Maybe::Absent(crossed::Absent::Uncrossed)
@@ -4344,8 +4454,8 @@ impl TypeTable
     }
 
     /// The map `by` names, as the explicit form writes it around a term
-    /// standing under `context`, each carrier spelled in `style` on a page of
-    /// `page` columns: none when a name is empty or a carrier is spelled
+    /// standing under `context`, each carrier spelled in `style` and laid out
+    /// as `lay` asks: none when a name is empty or a carrier is spelled
     /// otherwise than faithfully.
     ///
     /// # Specification
@@ -4354,7 +4464,7 @@ impl TypeTable
         &self,
         by: &CrossedBy,
         context: &Context,
-        page: PageWidth,
+        lay: Lay,
         style: Style,
     ) -> Option<Applied>
     {
@@ -4387,7 +4497,7 @@ impl TypeTable
                 let mut before = String::from("forget[");
                 for (index, &(ref sort, ty)) in sorts.iter().enumerate() {
                     let Maybe::Present(spelled) =
-                        self.spell(TypeNode::Value(ty), context, page, style)
+                        self.spell_laid(TypeNode::Value(ty), context, lay, style)
                     else {
                         return None;
                     };
@@ -4621,12 +4731,27 @@ impl TypeTable
             node,
             context,
             &WrittenForms::new(),
-            page,
+            Lay::Page(page),
             style,
         )
     }
 
-    /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
+    /// `node` spelled as [`Self::spell`] spells it, laid out as `lay` asks.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spell_laid(
+        &self,
+        node: TypeNode,
+        context: &Context,
+        lay: Lay,
+        style: Style,
+    ) -> Maybe<Presentation, typing::Absent>
+    {
+        self.spell_in(&self.arena, node, context, &WrittenForms::new(), lay, style)
+    }
+
+    /// `node` of `arena` spelled as [`Self::spell_laid`] spells a node of the
     /// table's own arena: `arena` holds the table's nodes at their ids, so the
     /// constants and constructors are named alike, each dependent arrow
     /// `read` names past them binds the name it holds, each type `read`
@@ -4642,7 +4767,7 @@ impl TypeTable
         node: TypeNode,
         context: &Context,
         read: &WrittenForms<String, WrittenModel>,
-        page: PageWidth,
+        lay: Lay,
         style: Style,
     ) -> Maybe<Presentation, typing::Absent>
     {
@@ -4762,8 +4887,11 @@ impl TypeTable
         let printer = context
             .recursive
             .map_or(printer, |recursive| printer.recursing(recursive, &[]));
-        present_type(&printer, root(node), page, style)
-            .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
+        match lay {
+            Lay::Page(page) => present_type(&printer, root(node), page, style),
+            Lay::Line => present_type_line(&printer, root(node), style),
+        }
+        .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
     }
 
     /// The context an entry standing at `standing` is read under: the names
@@ -5801,7 +5929,14 @@ impl TypeTable
                                 },
                                 |under| under.context,
                             );
-                            match self.spell_in(&arena, again, &context, &read_back, page, style) {
+                            match self.spell_in(
+                                &arena,
+                                again,
+                                &context,
+                                &read_back,
+                                Lay::Page(page),
+                                style,
+                            ) {
                                 Maybe::Present(again) => Maybe::Present(again.to_string()),
                                 Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
                             }
@@ -9284,6 +9419,75 @@ mod tests
                 expected: Maybe::Present(String::from("Integer")),
             }),
             "the term has its own type and the one it was checked against"
+        );
+    }
+
+    /// The outermost term inside a slot's argument answers the type the slot
+    /// asks, a computation in a value's slot included; a span that holds no
+    /// typed term answers none.
+    #[test]
+    fn the_outermost_term_in_a_slot_answers_the_type_the_slot_asks()
+    {
+        let source = SourceText::from(include_str!(
+            "typed/unformatted/the-outermost-term-in-a-slot-answers-the-type-the-slot-asks.gandr"
+        ));
+        let table = table(source);
+        let text = <&str>::from(source);
+        let span = |needle: &str| {
+            let start = text.rfind(needle).expect("the needle occurs");
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(needle.len())),
+            )
+            .expect("an ordered span")
+        };
+        let checked = |within: ByteSpan| match table.outermost(within, Form::Explicit.into()) {
+            Maybe::Present(typed) => Some(String::from(match typed.expected() {
+                Maybe::Present(checked) => checked.as_ref(),
+                Maybe::Absent(_) => typed.ty().as_ref(),
+            })),
+            Maybe::Absent(_) => None,
+        };
+        assert_eq!(
+            checked(span("(h 1)")),
+            Some(String::from("Integer")),
+            "a computation in a value's slot answers the value's type"
+        );
+        assert_eq!(
+            checked(span("2")),
+            Some(String::from("Integer")),
+            "a literal answers its slot's type"
+        );
+        assert_eq!(checked(span("def")), None, "a keyword holds no typed term");
+    }
+
+    /// A type wider than a narrow page answers on one line, the line a page
+    /// wider than the type lays out.
+    #[test]
+    fn a_type_answers_on_the_line_a_wide_page_lays_out()
+    {
+        let source = SourceText::from(include_str!(
+            "typed/unformatted/a-type-answers-on-the-line-a-wide-page-lays-out.gandr"
+        ));
+        let table = table(source);
+        let at = ByteOffset::from(<&str>::from(source).rfind("wide").expect("the use occurs"));
+        let style = Form::Explicit.into();
+        let spelled = |answer: Maybe<super::TypedSpan, typing::Absent>| match answer {
+            Maybe::Present(typed) => Some(String::from(typed.ty().as_ref())),
+            Maybe::Absent(_) => None,
+        };
+        let paged =
+            spelled(table.at(at, PageWidth::from(40_u32), style)).expect("the use is typed");
+        let line = spelled(table.at_line(at, style)).expect("the use is typed");
+        assert!(
+            paged.contains('\n'),
+            "a narrow page breaks the type: {paged}"
+        );
+        assert!(!line.contains('\n'), "one line holds the type: {line}");
+        assert_eq!(
+            Some(line),
+            spelled(table.at(at, PageWidth::from(4_096_u32), style)),
+            "the line is the layout of a wide page"
         );
     }
 

@@ -199,6 +199,7 @@ mod item_source;
 mod live_match;
 mod lowerings;
 mod session;
+mod stack;
 #[cfg(feature = "instrument")]
 mod timings;
 #[cfg(feature = "instrument")]
@@ -284,6 +285,9 @@ pub use crate::session::import;
 pub use crate::session::imported;
 pub use crate::session::reopened;
 pub use crate::session::resumed;
+pub use crate::stack::Frame;
+pub use crate::stack::Slot;
+pub use crate::stack::Stack;
 #[cfg(feature = "instrument")]
 pub use crate::timings::Percentiles;
 #[cfg(feature = "instrument")]

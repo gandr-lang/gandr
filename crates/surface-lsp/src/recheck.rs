@@ -903,7 +903,7 @@ where
             reading = parsed
                 .own
                 .filter(|_| readings == Readings::Kept)
-                .map(|tree| Reading::of_tree(grammar, roles, tree));
+                .map(|tree| Reading::of_tree(grammar, roles, tree, Arc::clone(parsed.stack)));
             if keeps {
                 signatures = match laid {
                     Maybe::Present(ref laid) => Signatures::after(

@@ -3181,6 +3181,9 @@ pub enum Answer
     /// What a signature-help request answers at a position of an open
     /// document: the declared head of the call the position stands in.
     Signatures(SignatureHelp),
+    /// What `gandr/stack` answers at a position of an open document: each
+    /// spine the position stands in, from the innermost outward.
+    Stack(Vec<StackRow>),
     /// What an inline-completion request answers for an open document.
     Inline(InlineCompletionList),
     /// What a document-symbol request answers for an open document.
@@ -3570,6 +3573,34 @@ pub enum ParameterLabel
     Text(String),
     /// Its start and end in the label, in UTF-16 code units.
     Offsets([u32; 2]),
+}
+
+/// One spine a position stands in, as a `gandr/stack` request answers it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackRow
+{
+    /// The head, as written.
+    pub head: String,
+    /// Where the head is written.
+    pub range: Range,
+    /// The type the judgement gives the term at the head, on one line as a
+    /// hover spells it on a page wider than every line; `null` when the
+    /// judgement types no term there.
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+    /// The declared head of the declaration or constructor the head refers
+    /// to, on one line; `null` when the head refers to none.
+    pub declared: Option<String>,
+    /// How many parameters the declared head takes; `null` with no declared
+    /// head.
+    pub arity: Option<u32>,
+    /// The slot the position fills, from zero.
+    pub slot: u32,
+    /// The type the judgement checked the slot's argument against, on one
+    /// line; `null` reads owed: the slot writes no argument the judgement
+    /// typed.
+    pub expected: Option<String>,
 }
 
 /// The result of an inline-completion request.

@@ -30,6 +30,7 @@ use gandr_surface_session::FormCensus;
 use gandr_surface_session::FormCount;
 use gandr_surface_session::FormStore;
 use gandr_surface_session::Session;
+use gandr_surface_session::Stack;
 use gandr_surface_session::Verdicts;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -160,19 +161,21 @@ fn agree(
 }
 
 /// Parse `text` through `store` and assert it commits the whole parse of
-/// `text`: the same tree, node for node and block for block, and the same
-/// repairs.
+/// `text`: the same tree, node for node and block for block, the same
+/// repairs, and the same spines.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: answers the store's form census.
-/// - panics: when the store's parse differs from the whole parse, naming
-///   `context`.
+/// - panics: when the store's parse or the stack it keeps differs from the
+///   whole parse's, naming `context`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every generated and scripted revision is parsed through
 ///   it; a form taken up as a block where an edit reached it, a comment a
-///   stretch moved, or a region laid after a fold reached it changes a node.
+///   stretch moved, or a region laid after a fold reached it changes a node,
+///   and a spine kept with a region the parse did not take up whole, or read
+///   from another start, changes the stack.
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
 /// - witness: `tests::forms::a_one_form_edit_molds_only_the_forms_that_read_it`
 /// - witness: `tests::forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it`
@@ -187,9 +190,14 @@ fn commits_whole(
     let (parsed, census) = store
         .parse(&GRAMMAR, source, &Serial)
         .expect("the store's parse commits");
+    let whole = parse(&GRAMMAR, source).expect("the whole parse commits");
     assert_eq!(
-        parsed,
-        parse(&GRAMMAR, source).expect("the whole parse commits"),
+        **store.stack(),
+        Stack::of(&GRAMMAR, whole.tree()),
+        "{context}: the stack kept from blocks is the whole parse's"
+    );
+    assert_eq!(
+        parsed, whole,
         "{context}: the tree committed from blocks is the whole parse's"
     );
     census

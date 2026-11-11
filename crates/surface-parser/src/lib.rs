@@ -193,6 +193,7 @@ pub use crate::parse::LaidUnit;
 pub use crate::parse::ParseCleanStatus;
 pub use crate::parse::ParseResult;
 pub use crate::parse::RunCount;
+pub use crate::parse::RunRegion;
 pub use crate::parse::Separation;
 pub use crate::parse::Unlayable;
 pub use crate::parse::juxtaposed;
