@@ -529,6 +529,12 @@ pub struct CheckingContext<'arena>
     /// not keep it: a resumed context counts from zero.
     #[cfg(feature = "instrument")]
     tally: crate::tally::MemoTally,
+    /// The step [`Self::unfold`] certified at each code: the reduct and what
+    /// the step unfolded. The definitions only grow, and a certified step
+    /// reads only them and the arena. So a second unfold of a code reads the
+    /// held step and certifies nothing. A checkpoint does not keep it: a
+    /// resumed context certifies again.
+    unfolded: BTreeMap<ValueId, (ValueId, Unfolded)>,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -871,6 +877,7 @@ impl<'arena> CheckingContext<'arena>
             memo: MemoActivity::Active,
             #[cfg(feature = "instrument")]
             tally: crate::tally::MemoTally::default(),
+            unfolded: BTreeMap::new(),
         }
     }
 
@@ -957,6 +964,7 @@ impl<'arena> CheckingContext<'arena>
             memo: _,
             #[cfg(feature = "instrument")]
                 tally: _,
+            unfolded: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1166,6 +1174,7 @@ impl<'arena> CheckingContext<'arena>
             memo: MemoActivity::Active,
             #[cfg(feature = "instrument")]
             tally: crate::tally::MemoTally::default(),
+            unfolded: BTreeMap::new(),
         }
     }
 
@@ -5146,7 +5155,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   redex — its step certified by the normaliser's conversion beneath the
     ///   context's binders and an unfolded definition logged as consulted;
     ///   nothing for any other code. A reduct is another node than `code`, and
-    ///   resolves.
+    ///   resolves. The first unfold of a code certifies its step and holds it;
+    ///   a later unfold of that code gives the held reduct, mints nothing and
+    ///   logs the consult again.
     /// - fails: [`CheckRefusal::Undecided`] when the machine does not certify
     ///   the step; [`CheckRefusal::DanglingNode`] for a code that does not
     ///   resolve.
@@ -5160,6 +5171,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   δβ-step, and a rigid code; the certification is the normaliser's,
     ///   witnessed where it is defined.
     /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
+    /// - witness: `context::tests::a_second_unfold_of_a_code_takes_its_held_step`
     /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
     /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
     #[spec(ensures: |ret| match ret {
@@ -5171,15 +5183,23 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         code: ValueId,
     ) -> Result<Maybe<ValueId, unfolding::Absent>, CheckRefusal>
     {
-        let Maybe::Present(step) = self.definitions.reduce(self.arena, code)?
+        let (reduct, unfolded) = if let Some(&held) = self.unfolded.get(&code) {
+            held
+        }
         else {
-            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+            let Maybe::Present(step) = self.definitions.reduce(self.arena, code)?
+            else {
+                return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+            };
+            let certificate = self.definitions.certify(self.arena, step)?;
+            let held = (certificate.reduct(), certificate.unfolded());
+            let _replaced = self.unfolded.insert(code, held);
+            held
         };
-        let certificate = self.definitions.certify(self.arena, step)?;
-        if let Unfolded::Definition(constant) = certificate.unfolded() {
+        if let Unfolded::Definition(constant) = unfolded {
             let _answer = self.consult(constant);
         }
-        Ok(Maybe::Present(certificate.reduct()))
+        Ok(Maybe::Present(reduct))
     }
 
     /// The code `code` reduces to at its head: [`Self::unfold`] taken until
