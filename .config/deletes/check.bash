@@ -137,7 +137,9 @@ if [[ $mode == full ]]; then
     records "$root" "$scratch/records-head"
   fi
   # Each side's items and tests: {id, kind, file, start, end}. A test is an
-  # item of a test unit that the library unit of the same root lacks.
+  # item of a test unit that the library unit of the same root lacks. Each
+  # file is at its path in the tree, or null for a source that a build script
+  # writes (`paths.jq`, #6844).
   inventory() {
     local dir=$1
     shopt -s nullglob
@@ -145,16 +147,21 @@ if [[ $mode == full ]]; then
     shopt -u nullglob
     (( ${#units[@]} )) || { echo '[]'; return; }
     for unit in "${units[@]}"; do
-      jq -s -c --arg unit "$(basename "$unit" .jsonl)" \
-        '{root: ($unit | sub("\\.[a-z-]+$"; "")), kind: ($unit | capture("\\.(?<k>[a-z-]+)$").k),
-          items: [.[] | select(.record == "item") | {id: .path, kind, file, start, end}]}' "$unit"
+      jq -s -c -L "$here" --arg unit "$(basename "$unit" .jsonl)" \
+        'include "paths"; {root: ($unit | sub("\\.[a-z-]+$"; "")), kind: ($unit | capture("\\.(?<k>[a-z-]+)$").k),
+          items: [.[] | select(.record == "item") | {id: .path, kind, file: (.file | tree_path), start, end}]}' "$unit" \
+        || return 2
     done | jq -s -c '(map(select(.kind != "test")) | map({key: .root, value: [.items[].id]}) | from_entries) as $lib
       | [.[] | .root as $root | .kind as $kind | .items[]
           | . + {test: ($kind == "test" and .kind == "fn" and (.id | IN(($lib[$root] // [])[]) | not))}]
       | unique_by(.id)'
   }
-  inventory "$scratch/records-base" > "$scratch/items-base.json"
-  inventory "$scratch/records-head" > "$scratch/items-head.json"
+  # A record whose relative path leaves the tree is refused (`paths.jq`),
+  # since no git read reaches it.
+  for side in base head; do
+    inventory "$scratch/records-$side" > "$scratch/items-$side.json" \
+      || { echo "check:deletes: a record of the $side names a file that leaves the tree" >&2; exit 2; }
+  done
   # The keys of each ledger table at a revision, as `<table>:<key>,<key>`.
   ledger_keys() {
     local rev=$1 file table
@@ -219,18 +226,8 @@ if [[ $mode == full ]]; then
     done
   } | jq -s -c .)
   held=$({ jq -r '.[].id' "$scratch/items-head.json"; cat "$scratch/ledger-head" "$scratch/files-head"; sed 's/^/kept.txt:/' "$scratch/kept-head"; } | jq -R . | jq -s -c 'unique')
-  # Each test of both sides whose lines differ.
-  tests=$(jq -c --slurpfile head "$scratch/items-head.json" \
-    '($head[0] | map(select(.test)) | map({key: .id, value: .}) | from_entries) as $h | .[] | select(.test) | select($h[.id] != null) | [., $h[.id]]' "$scratch/items-base.json" \
-    | while IFS= read -r pair; do
-        old=$(jq -r '.[0] | "\(.file) \(.start) \(.end)"' <<< "$pair")
-        new=$(jq -r '.[1] | "\(.file) \(.start) \(.end)"' <<< "$pair")
-        read -r ofile ostart oend <<< "$old"
-        read -r nfile nstart nend <<< "$new"
-        if [[ $(git show "$base:$ofile" | sed -n "${ostart},${oend}p") != "$(sed -n "${nstart},${nend}p" "$root/$nfile")" ]]; then
-          jq -c '.[0] | {id, name: (.id | sub("^.*::"; ""))}' <<< "$pair"
-        fi
-      done | jq -s -c .)
+  # Each test of both sides whose lines differ (`tests.bash`).
+  tests=$("$here/tests.bash" "$base" "$scratch/items-base.json" "$scratch/items-head.json")
   # Each left item that the crate's `## Provided features` names on a line
   # that the head keeps: by its own segment or its owner's, in backquotes or
   # as the words of its name.
