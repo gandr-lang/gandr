@@ -2260,6 +2260,38 @@ impl<'pbg> MeldState<'pbg>
         self.push_molded(mold, text);
     }
 
+    /// Push `text`, a reserved word the molder reads as a name, as a tile of
+    /// `mold`, and owe the word.
+    ///
+    /// # Specification
+    /// - requires: none; `mold` is the name tile the molder chose.
+    /// - ensures: the state [`push_text`](Self::push_text) reaches, then one
+    ///   more obligation, [`Oblig::ReservedKeyword`], over the bytes of `text`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reserved word in a name slot owes one obligation at
+    ///   its own bytes; flagging the span before the push, or a point, moves
+    ///   it.
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..).is_some_and(|pushed| pushed.ends_with(<&str>::from(text))) && self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::ReservedKeyword && usize::from(obligation.span.end()) == self.source.len() && usize::from(obligation.span.start()) == self.source.len().saturating_sub(<&str>::from(text).len())))]
+    pub(crate) fn push_reserved_name(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        self.push_text(mold, text);
+        let end = self.source.len();
+        let span = SourceSpan::new(
+            Self::wire_len(CheckpointCount::from(
+                end.saturating_sub(<&str>::from(text).len()),
+            )),
+            Self::wire_len(CheckpointCount::from(end)),
+        );
+        self.flag(Oblig::ReservedKeyword, span);
+    }
+
     /// Push one tile of `mold` over `text` through the machine: Shift,
     /// Reduce or Degrout.
     ///
@@ -3911,7 +3943,7 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a declaration's name slot, empty after its head tile,
     ///   separates a keyword written there from one written after a name.
-    /// - witness: `tests::acceptance::a_keyword_in_a_name_slot_stands_there_unmolded_722`
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
     #[inline]
     #[spec(ensures: |ret| bool::from(ret) == self.nearest_open_form().is_some_and(|frontier| usize::from(frontier).checked_add(1) == Some(self.stack.len())))]
     pub(crate) fn head_is_frontier(&self) -> HeadFrontier

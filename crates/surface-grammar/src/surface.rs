@@ -315,6 +315,90 @@ pub const APPLICATION: &str = " ";
 /// pushes no juxtaposition tile inside one.
 pub const FLAT_OPENERS: &[&str] = &["#!{", "subshell_open", "command_substitution_start"];
 
+/// The reserved lowercase keywords (the tree-sitter grammar's `KW`, the wired
+/// subset).
+///
+/// A reserved keyword is never an ordinary `identifier` (tree-sitter's `word`
+/// reservation), so a lowercase word matching one molds only to its own
+/// keyword tile — not the wide identifier menu that would let, say, `ret` be
+/// read as a variable.
+///
+/// One place reads a reserved word as a name: the slot a form opens for a
+/// name, as `def match(…)` writes one, where no tile of the word continues the
+/// form. The parser reads the name there and owes the word, so the
+/// declaration stays whole. The lowering reads the same word in a name's tile
+/// and refuses the form that holds it, by the word.
+///
+/// The fold-in globally reserves the thirteen new
+/// keyword-led forms' leads — `data` / `codata` declarations, `def rec`
+/// (`rec`), `data` / `codata` operation and 2-cell members (`op` / `rule`),
+/// the `for … in` / `while` / `break` / `continue` control forms, the `match …
+/// with …` view, the `import` declaration, and the `module` declaration. A
+/// corpus + fixture sweep found no collision with any existing identifier, so
+/// all reserve globally (the keyword table is provisional; a real collision
+/// would move the offender to a contextual keyword). `loop` met that collision
+/// first: the book's circle names its cell `loop` (`loop : Base <-> Base`),
+/// so `loop` is contextual — its tile molds where `loop { … }` opens an
+/// expression, the identifier everywhere else, and the window after the word
+/// tells the two apart at an expression slot (`{` against anything else).
+/// `codata`
+/// reserves as one whole word — the labeler munches the maximal
+/// `[A-Za-z0-9_]` run, so `codata` never lexes as two words (the
+/// longest-match hazard is a non-issue here). The operator-declaration fixity
+/// classes (`infixl` / `infixr` / `infix` / `prefix` / `postfix`) are
+/// deliberately NOT reserved: they mold as contextual tiles only where the
+/// `op`-led fixity form expects them, so they remain ordinary identifiers
+/// everywhere else.
+/// `run` is reserved as the lead of the inline run and never enters the
+/// ordinary identifier menu. `let`, the binding statement's lead, stays
+/// contextual: a theory names an operation `let`, and the statement's slot is
+/// the only one where its tile stands.
+///
+/// The circuit block form reserves exactly its two **item-position**
+/// leads, `theory` and `oper`: at a fresh top-level slot a lowercase word is
+/// otherwise an expression statement, so an unreserved form-first lead would
+/// tie its own tile against `identifier` at every declaration. Its four other
+/// leads stay **contextual** — the member keyword `sort` (beside the already-
+/// reserved `data` / `rule`) and the body statements `node` / `feed` are
+/// `≐`-successors inside an open `theory` block or circuit body, so a user
+/// program may still bind `sort`, `node`, or `feed` as an ordinary name;
+/// `theory` and `oper` it may not. `sort` in particular could not be reserved
+/// even if wanted: `list.sort` is a live projection in the corpus. Contextual
+/// is not the same as inadmissible-elsewhere, and the circuit grammar module
+/// records the one slot where `sort`'s mold does collide with a type variable.
+///
+/// The capability scope reserves its lead `handle`: it opens an expression,
+/// where an unreserved lead would tie its own tile against `identifier` at
+/// every expression slot. Temporary access reserves its leads `access`,
+/// `resume` and `abort` for the same reason, and `unwind`, the tile after an
+/// access's body, so a name there is never read as the next statement.
+///
+/// A world declaration reserves its lead `world`, an item-position lead as
+/// `theory` is, and the mobility mark its lead `mobile`, which opens a module
+/// signature's field where an unreserved word would tie against the value
+/// field's `identifier`. A flow declaration reserves its lead `flow` for the
+/// same reason as `world`; `via`, which names the flow an import reads its
+/// source through, stays contextual, since no identifier stands after an
+/// import's signature. The extern block's `from`, before the library it
+/// names, stays contextual too, since no identifier stands after the block's
+/// convention: a relation's record names its map back `from`, and a pattern
+/// or a projection reads that field by its label.
+///
+/// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
+/// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
+/// tile against `identifier` there.
+///
+/// `where` is reserved: it ends a declaration's head, whose last slot is a
+/// type, and opens the block of its members.
+pub const RESERVED_WORDS: &[&str] = &[
+    "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
+    "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
+    "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
+    "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
+    "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
+    "pub", "flow", "where",
+];
+
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
 pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "and_expression",

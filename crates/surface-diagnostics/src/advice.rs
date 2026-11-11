@@ -616,6 +616,9 @@ fn malformed(
                 format!("write a term in place of `{}`", stray.written.as_ref())
             },
         },
+        FormFault::Repaired(Repair::ReservedName(word)) => {
+            format!("choose another name in place of `{}`", word.as_ref())
+        },
         FormFault::Repaired(Repair::GhostClose(close)) => {
             format!("add the closing `{}`", closing(close))
         },

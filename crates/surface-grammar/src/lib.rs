@@ -201,6 +201,7 @@ pub use crate::spelling::edit_distance;
 pub use crate::spelling::spelled;
 pub use crate::surface::APPLICATION;
 pub use crate::surface::PBG_ONLY_KINDS;
+pub use crate::surface::RESERVED_WORDS;
 pub use crate::surface::TREE_SITTER_NAMED_KINDS;
 pub use crate::surface::built_in;
 pub use crate::surface::built_in_prec_table;
