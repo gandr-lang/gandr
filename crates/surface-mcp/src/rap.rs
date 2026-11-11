@@ -908,7 +908,11 @@ impl Subscriptions
             return Ok(());
         }
         if following {
-            watch.activities.watch(watch.peer, watch.sender.clone())?;
+            watch.activities.watch(
+                watch.peer,
+                watch.sender.clone(),
+                gandr_surface_lsp::Cadence::Events,
+            )?;
         }
         else {
             watch.activities.unwatch(watch.peer);
@@ -2180,6 +2184,7 @@ fn carded(frame: &RenderFrame) -> Option<(&DocId, &ReportView)>
             | FrameBody::Resync
             | FrameBody::Accounts { .. }
             | FrameBody::AccountPatch { .. }
+            | FrameBody::Activity { .. }
             | FrameBody::Detach),
         ) => None,
     }

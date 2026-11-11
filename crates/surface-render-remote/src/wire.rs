@@ -19,8 +19,8 @@
 //! # Session shape
 //!
 //! The message set is the projection of one binary session,
-//! `?Attach . !Hello . μX. (!Frame . X & ?Resync . X & ?Detach . end)`, so a
-//! typed endpoint can carry the same frames as its messages.
+//! `?Attach . !Hello . μX. (!Frame . X & !Activity . X & ?Resync . X & ?Detach
+//! . end)`, so a typed endpoint can carry the same frames as its messages.
 //!
 //! # The frame
 //!
@@ -29,9 +29,9 @@
 //! of it, the version the report describes, and a renderer paints a report only
 //! while that version matches the buffer it shows, asking for a resync
 //! otherwise, so a stale report is dropped rather than painted. `Hello`, the
-//! documents a server tracks, and `Detach` are connection-scoped. The four
-//! constructors are the only way to build a frame, so the scope always suits
-//! the body.
+//! documents a server tracks, `Activity`, the pool's activity at one tick,
+//! and `Detach` are connection-scoped. The constructors are the only way to
+//! build a frame, so the scope always suits the body.
 //!
 //! The wire image is `{"schema_version", "doc_uri", "doc_version", "body"}`,
 //! the body adjacently tagged by `kind` and `data`, the two routing keys `null`
@@ -54,6 +54,7 @@ use anodized::spec;
 
 use crate::account::AccountCard;
 use crate::account::AccountEdit;
+use crate::activity::PoolActivity;
 use crate::present::DiagCard;
 use crate::present::GoalCard;
 use crate::present::HlSpan;
@@ -282,6 +283,13 @@ pub enum FrameBody
         /// The edits, to be applied in order.
         edits: Vec<AccountEdit>,
     },
+    /// Server to client, for each tick of the hub's work ledger that changes
+    /// it: the activity of the hub's pool. Connection-scoped.
+    Activity
+    {
+        /// The activity.
+        activity: PoolActivity,
+    },
     /// Either direction: close the stream. Connection-scoped.
     Detach,
 }
@@ -291,8 +299,9 @@ pub enum FrameBody
 /// # Specification
 /// - ensures: a [`FrameBody::Frame`], [`FrameBody::Resync`],
 ///   [`FrameBody::Accounts`] or [`FrameBody::AccountPatch`] is document-scoped
-///   and a [`FrameBody::Hello`] or [`FrameBody::Detach`] is connection-scoped,
-///   in every frame built by the six constructors or decoded.
+///   and a [`FrameBody::Hello`], [`FrameBody::Activity`] or
+///   [`FrameBody::Detach`] is connection-scoped, in every frame built by the
+///   seven constructors or decoded.
 /// - provides: under the `serde` feature, the wire image `{"schema_version",
 ///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
 ///   connection-scoped frame; the decode refuses another schema version, keys
@@ -464,6 +473,34 @@ impl RenderFrame
         }
     }
 
+    /// The activity of the hub's pool at one tick.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Activity`] carrying
+    ///   `activity` unchanged.
+    /// - provides: the message that the activity pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the activity of two cores survives a round trip
+    ///   through JSON with no routing keys, and the decode refuses it routed.
+    /// - witness: `wire::tests::the_activity_body_is_connection_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Activity { .. }),
+    ))]
+    pub const fn activity(activity: PoolActivity) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Activity { activity },
+        }
+    }
+
     /// The close of the stream.
     ///
     /// # Specification
@@ -601,6 +638,8 @@ enum ConnectionBody
 {
     /// [`FrameBody::Hello`].
     Hello,
+    /// [`FrameBody::Activity`].
+    Activity,
     /// [`FrameBody::Detach`].
     Detach,
 }
@@ -685,6 +724,7 @@ impl fmt::Display for FrameDecodeError
             Self::ConnectionScopedRouted { body } => {
                 let name = match body {
                     ConnectionBody::Hello => "hello",
+                    ConnectionBody::Activity => "activity",
                     ConnectionBody::Detach => "detach",
                 };
                 write!(
@@ -742,14 +782,25 @@ impl RenderFrame
             has_uri = wire.doc_uri.is_some(),
             version = wire.doc_version,
             kind = core::mem::discriminant(&wire.body),
-            connection = matches!(wire.body, FrameBody::Hello { .. } | FrameBody::Detach),
-            hello = matches!(wire.body, FrameBody::Hello { .. }),
+            connection = matches!(
+                wire.body,
+                FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach
+            ),
+            routed = match wire.body {
+                FrameBody::Hello { .. } => Some(ConnectionBody::Hello),
+                FrameBody::Activity { .. } => Some(ConnectionBody::Activity),
+                FrameBody::Detach => Some(ConnectionBody::Detach),
+                FrameBody::Frame { .. }
+                | FrameBody::Resync
+                | FrameBody::Accounts { .. }
+                | FrameBody::AccountPatch { .. } => None,
+            },
             unrouted = match wire.body {
                 FrameBody::Frame { .. } => Some(DocumentBody::Frame),
                 FrameBody::Resync => Some(DocumentBody::Resync),
                 FrameBody::Accounts { .. } => Some(DocumentBody::Accounts),
                 FrameBody::AccountPatch { .. } => Some(DocumentBody::AccountPatch),
-                FrameBody::Hello { .. } | FrameBody::Detach => None,
+                FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach => None,
             },
         ],
         ensures: |ref ret| match *ret {
@@ -759,10 +810,7 @@ impl RenderFrame
                 schema == WIRE_SCHEMA_VERSION && has_uri != version.is_some(),
             Err(FrameDecodeError::ConnectionScopedRouted { body }) =>
                 schema == WIRE_SCHEMA_VERSION && has_uri && version.is_some()
-                    && connection && match body {
-                        ConnectionBody::Hello => hello,
-                        ConnectionBody::Detach => !hello,
-                    },
+                    && connection && routed == Some(body),
             Err(FrameDecodeError::DocumentScopedUnrouted { body }) =>
                 schema == WIRE_SCHEMA_VERSION && !has_uri && version.is_none()
                     && !connection && unrouted == Some(body),
@@ -788,7 +836,10 @@ impl RenderFrame
             (Some(_), None) | (None, Some(_)) => return Err(FrameDecodeError::RoutingLockstep),
         };
         let unrouted = match (&wire.body, &scope) {
-            (&(FrameBody::Hello { .. } | FrameBody::Detach), &FrameScope::Connection)
+            (
+                &(FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach),
+                &FrameScope::Connection,
+            )
             | (
                 &(FrameBody::Frame { .. }
                 | FrameBody::Resync
@@ -799,6 +850,11 @@ impl RenderFrame
             (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
                 return Err(FrameDecodeError::ConnectionScopedRouted {
                     body: ConnectionBody::Hello,
+                });
+            },
+            (&FrameBody::Activity { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Activity,
                 });
             },
             (&FrameBody::Detach, &FrameScope::Document(_)) => {
@@ -855,7 +911,10 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
     #[inline]
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |frame| matches!(
         (&frame.scope, &frame.body),
-        (&FrameScope::Connection, &(FrameBody::Hello { .. } | FrameBody::Detach))
+        (
+            &FrameScope::Connection,
+            &(FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach),
+        )
             | (&FrameScope::Document(_), &(FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
@@ -890,11 +949,19 @@ mod tests
     use crate::account::AccountEdit;
     use crate::account::AccountKey;
     use crate::account::CheckerVerdict;
+    use crate::activity::CoreActivity;
+    use crate::activity::Lengths;
+    use crate::activity::Load;
+    use crate::activity::PoolActivity;
+    use crate::activity::TaskKind;
     use crate::present::ByteOffset;
     use crate::present::ByteRange;
     use crate::present::GoalCard;
     use crate::present::HlRole;
     use crate::present::HlSpan;
+    use crate::visual::Count;
+    use crate::visual::SampleUnit;
+    use crate::visual::Samples;
 
     /// An editor version, written as a count.
     #[repr(transparent)]
@@ -1188,6 +1255,58 @@ mod tests
                 Err(super::FrameDecodeError::DocumentScopedUnrouted { body })
             );
         }
+    }
+
+    #[test]
+    fn the_activity_body_is_connection_scoped()
+    {
+        let load = |busy: u64, lengths: Option<Lengths>| Load {
+            occupancy: Samples::new(SampleUnit::Nanoseconds, vec![Count(busy), Count(0)])
+                .expect("two samples fit a ring"),
+            busy: Count(busy),
+            lengths,
+        };
+        let lengths = Lengths {
+            p50: Count(40),
+            p99: Count(90),
+        };
+        let frame = RenderFrame::activity(PoolActivity {
+            window: Count(2_000_000_000),
+            cores: vec![
+                CoreActivity {
+                    world: Some(Count(0)),
+                    core: Count(0),
+                    now: Some(TaskKind::Replay),
+                    load: load(700, Some(lengths)),
+                },
+                CoreActivity {
+                    world: None,
+                    core: Count(1),
+                    now: None,
+                    load: load(0, None),
+                },
+            ],
+            totals: load(700, Some(lengths)),
+        });
+        let decoded: RenderFrame =
+            serde_json::from_value(image(&frame)).expect("an activity frame decodes");
+        assert_eq!(decoded, frame, "the activity survives the round trip");
+        assert_eq!(decoded.scope, FrameScope::Connection);
+        let core = &image(&frame)["body"]["data"]["activity"]["cores"][1];
+        assert!(
+            core.get("world").is_none() && core.get("now").is_none(),
+            "an absent world and an idle core take no bytes: {core}"
+        );
+        let mut routed = image(&frame);
+        routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        routed["doc_version"] = serde_json::Value::from(2_i32);
+        let wire = serde_json::from_value(routed).expect("well-typed wire fields");
+        assert_eq!(
+            RenderFrame::from_wire(wire),
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Activity
+            })
+        );
     }
 
     #[test]

@@ -17240,7 +17240,7 @@ mod tests
         server
             .workspace
             .activity()
-            .watch(peer, watcher)
+            .watch(peer, watcher, crate::activity::Cadence::Events)
             .expect("the host starts the fold's thread");
         let _changed = server.server.handle(&mut server.workspace, &edit(2));
         let _settled = server.settle();
@@ -17282,7 +17282,7 @@ mod tests
         server
             .workspace
             .activity()
-            .watch(peer, watcher)
+            .watch(peer, watcher, crate::activity::Cadence::Events)
             .expect("the host starts the fold's thread");
         assert!(
             ticks

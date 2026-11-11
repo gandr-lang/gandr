@@ -30,6 +30,14 @@
 //! frame. An admission that settles the document's kernel tiers sends the
 //! edits alone, because the report did not change.
 //!
+//! In the build with the `instrument` feature, the face also watches the
+//! hub's work ledger at the cadence of the rows while the renderer is
+//! attached. It folds each tick it hears into the renderer's pane
+//! (`activity::Pane`) and sends the pool's activity as one connection-scoped
+//! frame, and nothing when the pane did not change. A tick comes while a row
+//! holds busy time in its window, so the occupancy moves while no event
+//! arrives, and an idle pool sends nothing.
+//!
 //! **Alternatives.** A report built from the judgement's reports rather than
 //! the published diagnostics would carry the typed arguments a card has room
 //! for, at the cost of keeping each document's reports beside its diagnostics,
@@ -44,10 +52,13 @@
 //! **Reversal.** A view that must show unsaved goals with their types reads
 //! goal cards once the checker spells them; a frame set that gains a closing
 //! body announces a forgotten document; a report measured as too large for a
-//! document's every edit sends only what changed.
+//! document's every edit sends only what changed; a pane measured as too
+//! large for a tick sends the rows that changed.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+#[cfg(feature = "instrument")]
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::io;
 use std::io::BufRead as _;
@@ -67,6 +78,12 @@ use gandr_surface_render_remote::FrameScope;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_render_remote::account_edits;
 
+#[cfg(feature = "instrument")]
+use crate::activity::Cadence;
+#[cfg(feature = "instrument")]
+use crate::activity::Pane;
+#[cfg(feature = "instrument")]
+use crate::activity::Tick;
 use crate::hub::lock;
 use crate::protocol::DocumentUri;
 use crate::server::Peer;
@@ -85,6 +102,9 @@ enum Event
     Changed(DocumentUri),
     /// A document whose kernel tiers an admission settled.
     Settled(DocumentUri),
+    /// A tick of the hub's work ledger that moves the activity pane.
+    #[cfg(feature = "instrument")]
+    Ticked(Arc<Tick>),
     /// The client's stream ended, or sent a line that is not a frame.
     Closed,
 }
@@ -171,9 +191,11 @@ fn send(
 ///   A resync from the client is answered with the named document's whole
 ///   account and its report at its current version, nothing for a document the
 ///   hub does not hold; a detach is answered with a detach and ends the face.
-///   Frames are written one line each, in the order the face made them. The
-///   face returns when the client's stream ends, a line is not a frame, or a
-///   write fails.
+///   Frames are written one line each, in the order the face made them. In the
+///   build with the `instrument` feature, each tick of the hub's work ledger
+///   that changes the pane sends the pool's activity, connection-scoped, and a
+///   tick that leaves it as it was sends nothing. The face returns when the
+///   client's stream ends, a line is not a frame, or a write fails.
 /// - provides: `gandr serve`'s render-bus face, which `gandr view` attaches to.
 /// - fails: never; a fault ends the connection.
 /// - panics: none.
@@ -186,14 +208,18 @@ fn send(
 ///   report after the editor's edit, a resync's answer and the detach; a
 ///   connection with another preface is detached at once. The view receives the
 ///   document's whole account, a patch once the admission settles it, and no
-///   patch after an edit to a comment.
+///   patch after an edit to a comment. In the build with the `instrument`
+///   feature, the edit's judgement shows in the pool's activity, each frame
+///   differs from the one before, and the pane goes back to idle once the busy
+///   time leaves the window.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
+/// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
         pool_only_threads,
-        reason = "io: the change and settlement forwarders and the view's line reader each block on their channel or socket for the attachment's life"
+        reason = "io: the change, settlement and tick forwarders and the view's line reader each block on their channel or socket for the attachment's life"
     )
 )]
 #[inline]
@@ -215,12 +241,18 @@ pub fn serve(
     let (events, inbox) = channel();
     let (watcher, changes) = channel::<DocumentUri>();
     let (accountant, settlements) = channel::<DocumentUri>();
+    #[cfg(feature = "instrument")]
+    let (ticker, ticks) = channel::<Arc<Tick>>();
     // The cards each document's last account frame left the renderer with.
     let mut sent: BTreeMap<DocumentUri, Vec<AccountCard>> = BTreeMap::new();
     let opening = {
         let mut held = lock(workspace);
         held.watch(peer, watcher);
         held.watch_accounts(peer, accountant);
+        // A host that refuses the fold's thread leaves the pane out; the
+        // reports go on.
+        #[cfg(feature = "instrument")]
+        drop(held.activity().watch(peer, ticker, Cadence::Rows));
         let mut opening = Vec::from([held.greeting()]);
         let uris: Vec<DocumentUri> = held.held().map(|(uri, _version)| uri.clone()).collect();
         for uri in &uris {
@@ -233,6 +265,20 @@ pub fn serve(
     if send(&mut writing, &opening).is_err() {
         return;
     }
+    #[cfg(feature = "instrument")]
+    {
+        let forward = events.clone();
+        drop(thread::spawn(move || {
+            for tick in ticks {
+                if forward.send(Event::Ticked(tick)).is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+    // The pane of the pool, and the last activity frame the renderer holds.
+    #[cfg(feature = "instrument")]
+    let (mut pane, mut shown) = (Pane::default(), None::<RenderFrame>);
     let forwarded: [Forwarded; 2] = [(changes, Event::Changed), (settlements, Event::Settled)];
     for (heard, event) in forwarded {
         let forward = events.clone();
@@ -274,6 +320,18 @@ pub fn serve(
                     let patch = patched(account, &uri, &mut sent, Whole::Owed);
                     (patch.into_iter().collect(), false)
                 },
+                #[cfg(feature = "instrument")]
+                Event::Ticked(tick) => {
+                    let frame = RenderFrame::activity(pane.hear(&tick));
+                    if shown.as_ref() == Some(&frame) {
+                        (Vec::new(), false)
+                    }
+                    else {
+                        let failed = send(&mut writing, core::slice::from_ref(&frame)).is_err();
+                        shown = Some(frame);
+                        (Vec::new(), failed)
+                    }
+                },
                 Event::Sent(frame) => match (frame.scope(), frame.body()) {
                     (&FrameScope::Document(ref document), &FrameBody::Resync) => {
                         let uri = DocumentUri::from(&document.uri);
@@ -290,7 +348,8 @@ pub fn serve(
                         | FrameBody::Frame { .. }
                         | FrameBody::Resync
                         | FrameBody::Accounts { .. }
-                        | FrameBody::AccountPatch { .. }),
+                        | FrameBody::AccountPatch { .. }
+                        | FrameBody::Activity { .. }),
                     ) => (Vec::new(), false),
                 },
             };
