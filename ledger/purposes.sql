@@ -4634,7 +4634,6 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DerivationRepla
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DescTableEmptyStatus','struct','Whether a reflected description registry is empty.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DescTableLength','struct','Number of descriptions registered in a reflected VDC description table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedContextDeclaration','struct','Whether a directed VDC context declares an object variable.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedHomReflexivity','struct','Whether a directed hom lies on the reflexive diagonal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedObjectCovariance','struct','Whether a directed reflected object is sorted covariantly.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DiscreteHomInhabitation','struct','Whether a discrete reflected hom has a reflexive inhabitant.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::IsoValidity','struct','Whether a reflected protype isomorphism validates by replay.',NULL,'fits','sound',NULL);

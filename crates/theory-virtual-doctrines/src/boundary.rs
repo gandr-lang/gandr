@@ -88,11 +88,6 @@ copy_wrapper!(
     "Whether a directed VDC context declares an object variable."
 );
 copy_wrapper!(
-    DirectedHomReflexivity,
-    bool,
-    "Whether a directed hom lies on the reflexive diagonal."
-);
-copy_wrapper!(
     DirectedObjectCovariance,
     bool,
     "Whether a directed reflected object is sorted covariantly."
