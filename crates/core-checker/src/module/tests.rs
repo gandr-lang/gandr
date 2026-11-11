@@ -3839,6 +3839,79 @@ fn a_refusal_cuts_the_support_where_the_run_stopped()
 }
 
 #[test]
+fn a_kept_support_is_the_support_of_the_judgement_alone_6573()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let inner = arena.comp_type_arrow(integer, returns_integer);
+    let outer = arena.comp_type_arrow(integer, inner);
+    let function_type = arena.value_type_thunk(outer);
+    let suspended_type = arena.value_type_thunk(returns_integer);
+    let zero = arena.value_literal(integer_literal());
+    let text = arena.value_literal(text_literal());
+    let s = arena.value_constant(ConstantIndex::from(0_usize));
+    let f = arena.value_constant(ConstantIndex::from(1_usize));
+    let x = arena.value_constant(ConstantIndex::from(2_usize));
+    // thunk ((force f) s) x: the judgement stops at s, and the typed run
+    // recovers and reads x after it.
+    let forced = arena.computation_force(f);
+    let once = arena.computation_application(forced, s);
+    let twice = arena.computation_application(once, x);
+    let suspended = arena.value_thunk(twice);
+    let module = [
+        declaration(At(0), UNSIGNED, Maybe::Present(text)),
+        declaration(At(1), Maybe::Present(function_type), HOLE),
+        declaration(At(2), Maybe::Present(integer), Maybe::Present(zero)),
+        declaration(
+            At(3),
+            Maybe::Present(suspended_type),
+            Maybe::Present(suspended),
+        ),
+    ];
+    let mut alone = arena.clone();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut run = ModuleRun::new();
+    run.keep_typings();
+    run.keep_supports();
+    run.judge(&mut context, &module, |_, _, _| {});
+    let typed = run.take_typings().expect("the run keeps its typings");
+    let report = run.finish(&mut context);
+    assert!(
+        typed
+            .typings()
+            .get(&ConstantIndex::from(3_usize))
+            .is_some_and(|kept| kept
+                .typings()
+                .iter()
+                .any(|typing| typing.term == TermNode::Value(x))),
+        "the typed run reads x after the refusal"
+    );
+    let mut single = CheckingContext::new(&mut alone, CheckBudget::DEFAULT);
+    let each: alloc::collections::BTreeMap<ConstantIndex, super::Supported> = module
+        .iter()
+        .map(|offered| {
+            (
+                offered.constant(),
+                super::check_declaration_supported(&mut single, offered),
+            )
+        })
+        .collect();
+    // The memo's count of each decision is the instrument's, not the verdict's.
+    let read = |supported: &alloc::collections::BTreeMap<ConstantIndex, super::Supported>| {
+        supported
+            .iter()
+            .map(|(&constant, kept)| (constant, kept.verdict(), kept.support().clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        read(report.supported()),
+        read(&each),
+        "each kept verdict and support is the one the judgement alone gives, with no read of the typed run"
+    );
+}
+
+#[test]
 fn an_adopted_answer_is_read_as_if_judged()
 {
     let mut arena = CoreArena::new();

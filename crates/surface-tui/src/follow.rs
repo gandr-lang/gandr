@@ -4,9 +4,10 @@
 //!
 //! The view builds the frame of the document it follows
 //! ([`Following::frame`]): one record that names the document, its version
-//! and its counts, then one record per card and per hole, then one record per
-//! declaration of the account. The activity pane follows: one record per core
-//! of the pool, then the totals record. [`rendering`] lays the frame out as the
+//! and its counts, then one record per declaration of the account, then one
+//! record per card and per hole. So a card that comes or goes moves no row of
+//! the account. The activity pane follows: one record per core of the pool,
+//! then the totals record. [`rendering`] lays the frame out as the
 //! visual language's rendering data, which every rule of
 //! `gandr_surface_render_remote::RULES` checks. A painter then puts the cells
 //! on the terminal or on a pipe and adds nothing: a column is as wide as its
@@ -117,8 +118,9 @@ pub enum Heard
 }
 
 /// One cell as a painter puts it on a line: its text, padded to its column's
-/// width, and its style.
-type Painted = (String, Style);
+/// width, and the cell it draws, which names its attributes; a head draws no
+/// cell.
+pub type Painted<'pane> = (String, Option<&'pane Cell>);
 
 impl Following
 {
@@ -280,15 +282,16 @@ impl Following
     /// - ensures: the empty frame before any report and any activity. A report
     ///   gives a frame at the document's version. Its first record holds the
     ///   document's `uri`, its `version`, and the counts of its `diagnostics`
-    ///   and its `holes`. A record per card follows: its one-based `span`
-    ///   (absent for a card placed nowhere), its `code` (absent when the code
-    ///   is not the registry's own), one `message` per line of its message, and
-    ///   one `chain` per step of its derivation. A record per hole follows: its
-    ///   `span`, an absent `code` and its `message`. A record per account card
-    ///   follows, at the account's version: its `declaration`, its `kernel`
-    ///   warrant and its `tier` (both absent when the kernel was offered
-    ///   nothing), its `verdict`, and its `compile` tier, its counts and its
-    ///   `timing` when the card holds them. Each text is trimmed, and an empty
+    ///   and its `holes`. A record per account card follows, at the account's
+    ///   version: its `declaration`, its `kernel` warrant and its `tier` (both
+    ///   absent when the kernel was offered nothing), its `verdict`, and its
+    ///   `compile` tier, its counts and its `timing` when the card holds them.
+    ///   A record per card follows: its one-based `span` (absent for a card
+    ///   placed nowhere), its `code` (absent when the code is not the
+    ///   registry's own), one `message` per line of its message, and one
+    ///   `chain` per step of its derivation. A record per hole follows: its
+    ///   `span`, an absent `code` and its `message`. So a card that comes or
+    ///   goes moves no row of the account. Each text is trimmed, and an empty
     ///   line or step is left out. A span is a row and a column, both
     ///   one-based. Rows end where the language server's rows end, and the
     ///   column counts characters. The activity of the pool comes last, at the
@@ -399,8 +402,9 @@ fn activity_records(
 }
 
 /// The frame of `report`, the report of `document`, with the records of
-/// `account` after its own: what [`Following::frame`] answers while
-/// `document` is the one followed.
+/// `account` after its own and before the cards: what [`Following::frame`]
+/// answers while `document` is the one followed. A card that comes or goes
+/// thus never moves a row of the account.
 ///
 /// # Specification
 /// trivial.
@@ -458,6 +462,11 @@ fn framed(
             field("holes", count(holes.clone().count())),
         ]),
     });
+    if let Some(&(ref accounted, ref cards)) = account {
+        records.extend(cards.iter().map(|card| Record {
+            fields: account_fields(card, Revision(i64::from(i32::from(accounted.version)))),
+        }));
+    }
     for card in &report.diagnostics {
         let code = if card.code == DiagnosticCode::Other {
             Datum::Absent
@@ -494,11 +503,6 @@ fn framed(
             field("message", text(&hole.message)),
         ]),
     }));
-    if let Some(&(ref accounted, ref cards)) = account {
-        records.extend(cards.iter().map(|card| Record {
-            fields: account_fields(card, Revision(i64::from(i32::from(accounted.version)))),
-        }));
-    }
     Frame { revision, records }
 }
 
@@ -907,14 +911,14 @@ fn drawn(
 }
 
 /// The lines a painter puts down for `panes`: each pane's heads when it has
-/// any, then its rows; each cell padded to its column's width, with the style
-/// its attributes name. A head shows its field's name and its unit, and a head
-/// that repeats the head before it, the second column of a latency, shows
-/// nothing. A cell shows its glyph and its text.
+/// any, then its rows; each cell padded to its column's width, beside the cell
+/// whose attributes name its style. A head shows its field's name and its
+/// unit, and a head that repeats the head before it, the second column of a
+/// latency, shows nothing. A cell shows its glyph and its text.
 ///
 /// # Specification
 /// trivial.
-fn laid(panes: &[Pane]) -> Vec<Vec<Painted>>
+pub fn laid(panes: &[Pane]) -> Vec<Vec<Painted<'_>>>
 {
     let measured = |text: &str| Span::raw(text).width();
     let joined = |first: &str, second: &str| {
@@ -996,7 +1000,7 @@ fn laid(panes: &[Pane]) -> Vec<Vec<Painted>>
                 (0 .. pane.heads.len())
                     .map(|column| {
                         let (name, unit, align) = head(&pane.heads, column);
-                        (padded(name, unit, width(column), align), Style::new())
+                        (padded(name, unit, width(column), align), None)
                     })
                     .collect(),
             );
@@ -1013,7 +1017,7 @@ fn laid(panes: &[Pane]) -> Vec<Vec<Painted>>
                             width(column),
                             held.align,
                         ),
-                        painted(held),
+                        Some(held),
                     )
                 })
                 .collect()
@@ -1153,20 +1157,21 @@ pub fn draw_following(
     screen.render_widget(Paragraph::new(foot), bottom);
 }
 
-/// The terminal lines of `laid`: the cells of a line parted by one space.
+/// The terminal lines of `laid`: the cells of a line parted by one space, each
+/// in the style its attributes name.
 ///
 /// # Specification
 /// trivial.
-fn lines(laid: Vec<Vec<Painted>>) -> Vec<Line<'static>>
+fn lines(laid: Vec<Vec<Painted<'_>>>) -> Vec<Line<'static>>
 {
     laid.into_iter()
         .map(|line| {
             let mut spans = Vec::with_capacity(line.len().saturating_mul(2));
-            for (column, (text, style)) in line.into_iter().enumerate() {
+            for (column, (text, cell)) in line.into_iter().enumerate() {
                 if column > 0 {
                     spans.push(Span::raw(" "));
                 }
-                spans.push(Span::styled(text, style));
+                spans.push(Span::styled(text, cell.map_or_else(Style::new, painted)));
             }
             Line::from(spans)
         })

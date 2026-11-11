@@ -470,10 +470,12 @@ INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runti
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering','circuit::embed','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering','description::theory','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-core','encoding','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-dispatcher','measure','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-driver','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-session','session','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-checker','bridge::held','anchor','648841332ce3dbff019553212338953c50fc29bb','2026-11-11','b46f4bd89ad3e8b864ef529e2e01eab14be0238b');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-checker','template::memo','lineage','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','21da273baaf8fa8b1851c07f04df073e5f74b03c');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-sequent','closure','lineage',NULL,NULL,NULL);

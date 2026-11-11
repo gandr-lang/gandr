@@ -6,7 +6,8 @@
 # whole run. `gate:all` runs one full test suite, `check:tests-enforcing`, as CI
 # does (#5216), so the suite takes the host's cores divided by the slots, never
 # more. The plain build runs only `check:tests-plain-only`, one test. The
-# landing's gate, `check`, runs no test (#5458).
+# landing's gate, `check`, runs the enforcing suite of the packages its change
+# touches alone (#6595), not of their dependents (#5458).
 #
 # One lane once held both slots, its two worktrees' gates running at once, and
 # the host's load reached 70 on 32 cores (#4911). So a gate first takes its

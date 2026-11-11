@@ -10,7 +10,10 @@
 //! holds no answer. A goal that the memo cannot key, or a run where the memo
 //! is closed, is no consult. A build without the feature holds no field and
 //! makes no add, so the driver and each recipe pay nothing. The counts layer
-//! of the instrument reads the tally before and after each item it judges.
+//! of the instrument reads the tally before and after each item it judges. A
+//! module run that keeps supports also keeps the consults of each decision,
+//! and the incremental pass charges them to the item it takes the verdict
+//! for.
 //!
 //! **Alternatives.** A sink that each run takes as a type parameter costs the
 //! same nothing in a build without the feature. It changes each entry of the
@@ -123,6 +126,16 @@ pub struct MemoTally
 
 impl MemoTally
 {
+    /// No consult of any kind: what a decision that no counting run kept
+    /// carries.
+    #[cfg(feature = "instrument")]
+    pub(crate) const NONE: Self = Self {
+        term_hits: MemoCount(0),
+        term_misses: MemoCount(0),
+        type_hits: MemoCount(0),
+        type_misses: MemoCount(0),
+    };
+
     /// The value judgements the memo answered.
     ///
     /// # Specification
@@ -218,6 +231,27 @@ impl MemoTally
             term_misses: self.term_misses.less(earlier.term_misses),
             type_hits: self.type_hits.less(earlier.type_hits),
             type_misses: self.type_misses.less(earlier.type_misses),
+        }
+    }
+
+    /// The consults of this tally and of `other`, tallies of two disjoint
+    /// spans of runs: each count the sum of the two, up to the
+    /// representation's ceiling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn plus(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self {
+            term_hits: self.term_hits.plus(other.term_hits),
+            term_misses: self.term_misses.plus(other.term_misses),
+            type_hits: self.type_hits.plus(other.type_hits),
+            type_misses: self.type_misses.plus(other.type_misses),
         }
     }
 

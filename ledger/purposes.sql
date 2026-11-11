@@ -302,6 +302,7 @@ INSERT INTO purpose VALUES('core-incremental','checkpoint::Answered','struct','H
 INSERT INTO purpose VALUES('core-incremental','checkpoint::Checkpoints','struct','Holds a complete checkpoint set, its allowance and one checkpoint per item in source order.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ContentKey','struct','Carries the digest of an item''s canonical content, which the memo buckets its recall by and the session''s account keys each row by.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ItemCheckpoint','struct','Holds one item''s checkpoint, its content, the content''s key, footprint, recorded support and typing, shared by every copy.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','checkpoint::Judgement','struct','Hands the incremental pass the revision''s whole-module judgement, so the pass takes each changed item''s verdict and support and decides it no second time.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::Leading','struct','Holds the state a pass over a program''s leading items leaves, for a later revision to resume after them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::Resume','struct','Holds one revision''s checkpoints, how each was reached, and the item order carrying identity to the next revision.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ResumeCensus','struct','Counts the work a resume did, per item and per edge, so a witness pins its linearity.',NULL,'fits','sound',NULL);
@@ -1077,11 +1078,15 @@ INSERT INTO purpose VALUES('kernel-core','encoding::ContentEncoding','struct','A
 INSERT INTO purpose VALUES('kernel-core','encoding::ContentId','struct','The canonical number of one distinct content within a ContentTable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::ContentTable','struct','The session''s canonical content numbering: one id per distinct content, assigned in post-order first-completion order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::EncodingLength','struct','The byte length of a ContentEncoding.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::Exact','enum','The identity on content: the identification a record name is taken up to when no datum relates two records.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::Identification','trait','What a record name identifies records up to, and the context its key derives under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::RecordName','struct','A record''s name: BLAKE3 over its tag, its payload and its members'' names, alike in every session that holds the record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::RewriteGoal','enum','One rewrite obligation, as the key derivation names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::SupportGoal','enum','Which question one goal expansion asks, in the vocabulary the memo key is derived from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::Telescope','enum','The binders a support folds in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::content_digest','function','The absolute content digest of one node: the digest of the canonical record stream of everything it reaches, built in a table of its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::encode_rewrite','function','Encode one rewrite obligation''s whole key: the direction, the subject''s content, the binder depth, and the rewrite''s own parameter.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::record_name::Absent','enum','Why a content table gives no name for a record: it names nothing, or it holds no record at that id.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::support_key','function','Name one goal''s whole support: the goal record of its direction, its obligation''s content, its expected type''s content and its binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Admission','enum','How a declaration was admitted: through the checked choke point, or through the warned bypass.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::AdmittedDeclaration','struct','One admitted declaration and its audit metadata.',NULL,'fits','sound',NULL);
@@ -2196,6 +2201,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::Recording','enum','Whe
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Rejection','struct','Writes why the kernel did not re-derive a declaration the checker accepted, with no subject, so a fault and a lens both read it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Resumption','struct','What Admission::admit_resuming answers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::SpellingCount','struct','How many spelling passes a run has made: one per judged unit, each spelling every type the unit''s checker refusals compare and its failures name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::Supporting','enum','Whether a judgement keeps the verdict and support of each declaration it decides alone, for an incremental pass that takes them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Unheld','enum','Why an import closure''s lowering is not held for the documents laid after it: each such document is lowered with its closure, whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Unruled','enum','A form that the kernel has no rule for, which keeps a declaration''s verdict on the checker''s side.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::adapt','function','The checker''s input for `module`: every declaration the lowering did not refuse, in admission order.',NULL,'fits','sound',NULL);
@@ -3487,6 +3493,7 @@ INSERT INTO purpose VALUES('surface-session','session::SessionFault','enum','Nam
 INSERT INTO purpose VALUES('surface-session','session::Submission','struct','Holds a submission, so the submission''s report and edit script are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Tables','enum','Names the tables a session holds, so the tables'' kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Trial','struct','Holds a trial, so the trial''s candidates are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','session::Verdicts','enum','Whether a session''s incremental pass takes each changed item''s verdict from the judgement or decides it again, the reversal path the corpus witness compares against.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::evaluate','function','Runs one declaration of the revision on the dispatcher''s run stage, so the declaration''s run is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','typed::type_of','function','Spells the type the latest resume gives a declaration, so the type''s spelling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','build::StagedId','struct','The identity of a node staged inside one TreeBuilder.',NULL,'fits','sound',NULL);
@@ -3529,6 +3536,7 @@ INSERT INTO purpose VALUES('surface-syntax','tree::slice::TreeSlice','struct','H
 INSERT INTO purpose VALUES('surface-tui','app::App','struct','Holds the face''s state over one read-evaluate loop, so the loop''s transcript and the line being edited are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Handled','enum','Names what a key leaves the face to do, so the key''s handling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Key','enum','Names one key the face acts on, so the key''s action is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-tui','capture::svg','function','Draws a run of the panes of a rendering as SVG on a grid of monospace cells, so the capture of a pane is the view''s own layout and a changed renderer changes it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::Following','struct','Holds what the side view knows, so the last report of each document it heard is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::Heard','enum','Names what hearing a frame leaves the view to do, so the frame''s handling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::Seen','enum','Names what the side view has seen, so the view''s state is read.',NULL,'fits','sound',NULL);

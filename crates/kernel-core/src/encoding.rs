@@ -63,6 +63,24 @@
 //! changes no verdict and no count — it costs a linear scan — so only the
 //! digests' own unit witnesses distinguish it.
 //!
+//! # A record's name crosses sessions, and the records decide
+//!
+//! An id is canonical in its session only, because the table gives ids in
+//! first-completion order. A table made by [`ContentTable::named`] also gives
+//! each record a [`RecordName`]: BLAKE3 over the record's tag, its payload and
+//! its members' names, each field framed by its length. The payload holds no
+//! id and no arena position, so two sessions give one record one name. The
+//! table names a record once, when it admits the record fresh, and keeps the
+//! name in a column at the record's id. A goal's name is the name of its goal
+//! record.
+//!
+//! A name locates a record and never decides that two records agree. The
+//! table interns by the exact record, as above, so two records under one name
+//! keep their own ids. A constant that the table names by its position gives
+//! a goal one name only under one admitted prefix. A table made by
+//! [`ContentTable::new`] names nothing and pays one branch for each fresh
+//! record.
+//!
 //! # The encoding is injective by construction
 //!
 //! Prefix-free, tagged, length-prefixed, and mirroring the term relation
@@ -106,8 +124,13 @@
 //!   content (§ kernel-reassessment-design item 2), and those names are
 //!   table-local, agreeing across tables by re-interned records (item 10), as
 //!   the definition record is.
+//! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: a record's name is
+//!   its key up to an identification, with the identification as a parameter (§
+//!   storage-conjecture-chunk-descent). `RecordName` takes `Exact`, the
+//!   identity on content.
 
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
@@ -786,6 +809,327 @@ impl ContentEncoding
     }
 }
 
+/// What a name identifies records up to, and the context its key derives
+/// under.
+///
+/// Each identification derives its own key, so names under two
+/// identifications never meet. [`Exact`] is the one identification here.
+pub trait Identification: Clone + Copy + core::fmt::Debug + Eq + core::hash::Hash + Ord
+{
+    /// The context the name's key derives under.
+    const CONTEXT: &'static str;
+}
+
+/// The identity on content: two records take one name exactly when their
+/// tags, their payloads and their members' names agree, and the descent datum
+/// is empty.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Exact {}
+
+impl Identification for Exact
+{
+    const CONTEXT: &'static str = "gandr kernel record name 2026-11-11";
+}
+
+/// A record's name: BLAKE3 over its tag, its payload and its members' names,
+/// under the key of the identification `I`.
+///
+/// A name reads no content id, so two tables give one record one name,
+/// whatever order each met the content in. A name locates a record. It never
+/// decides that two records agree: the table compares the records.
+///
+/// # Specification
+/// - ensures: two records take one name, up to a BLAKE3 collision, exactly when
+///   their tags, their payload words and their members' names agree in order.
+/// - provides: the name of a record across tables and sessions.
+/// - panics: none.
+/// - executable: none — collision resistance is BLAKE3's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a goal over a plain definition takes one name in two
+///   environments that admitted its declarations in two orders, and a goal over
+///   an axiom takes two.
+/// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+/// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RecordName<I: Identification = Exact>([u8; 32], PhantomData<I>);
+
+impl<I: Identification> From<RecordName<I>> for [u8; 32]
+{
+    /// The name's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: RecordName<I>) -> Self
+    {
+        name.0
+    }
+}
+
+impl<I: Identification> RecordName<I>
+{
+    /// The name a member takes that the column does not hold. No member takes
+    /// it: a member is a record the table admitted before, and a table that
+    /// names its records names each one it admits.
+    const UNNAMED: Self = Self([0_u8; 32], PhantomData);
+
+    /// The name of the record whose words, members excluded, are `payload`,
+    /// and whose members' names are `members`, in order.
+    ///
+    /// # Specification
+    /// - requires: `payload` leads with the record's tag word.
+    /// - ensures: BLAKE3, keyed by `key`, over three fields: the tag word, the
+    ///   other payload words, and the members' names. Each field leads with its
+    ///   length, so no two records give one byte string.
+    /// - provides: the one hash a table names a record by.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — collision resistance is BLAKE3's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RecordName`].
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    fn of(
+        key: &NameKey,
+        payload: &ContentEncoding,
+        members: &[Self],
+    ) -> Self
+    {
+        let length = |count: usize| u64::try_from(count).unwrap_or(u64::MAX).to_le_bytes();
+        let mut hasher = blake3::Hasher::new_keyed(&key.0);
+        let words = payload.0.as_slice();
+        let fields: [&[u32]; 2] = words.split_at(words.len().min(1)).into();
+        for field in fields {
+            let _framed = hasher.update(&length(field.len()));
+            for word in field {
+                let _hashed = hasher.update(&word.to_le_bytes());
+            }
+        }
+        let _framed = hasher.update(&length(members.len()));
+        for member in members {
+            let _hashed = hasher.update(&member.0);
+        }
+        Self(*hasher.finalize().as_bytes(), PhantomData)
+    }
+}
+
+/// The key every record name hashes under, derived once from the context of
+/// an identification.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+struct NameKey([u8; 32]);
+
+/// Where the record writers write a record's words.
+///
+/// A table writes each record whole, each member as its content id. A table
+/// that names its records writes a fresh record once more with `NAMED` set.
+/// Then each member goes apart as its name, and the words hold the rest. The
+/// writers take `NAMED` as a constant, so a table that names nothing runs the
+/// writers it ran before, with no branch for the names.
+#[derive(Debug)]
+struct RecordSink<'record, const NAMED: bool>
+{
+    /// The words written: the whole record, or with `NAMED` every word but
+    /// the members.
+    words: &'record mut ContentEncoding,
+    /// With `NAMED`, each member's name in the record's order.
+    members: Option<&'record mut Vec<RecordName>>,
+    /// With `NAMED`, the table's names by content id.
+    column: &'record [RecordName],
+}
+
+impl<'record> RecordSink<'record, false>
+{
+    /// A sink that writes the whole record into `words`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn whole(words: &'record mut ContentEncoding) -> Self
+    {
+        Self {
+            words,
+            members: None,
+            column: &[],
+        }
+    }
+}
+
+impl<'record> RecordSink<'record, true>
+{
+    /// A sink that writes every word of a record but its members into
+    /// `payload`, and the members' names, read from `column`, into `members`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn named(
+        payload: &'record mut ContentEncoding,
+        members: &'record mut Vec<RecordName>,
+        column: &'record [RecordName],
+    ) -> Self
+    {
+        Self {
+            words: payload,
+            members: Some(members),
+            column,
+        }
+    }
+}
+
+impl<const NAMED: bool> RecordSink<'_, NAMED>
+{
+    /// Forget every word and member written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clear(&mut self)
+    {
+        self.words.0.clear();
+        if let Some(members) = self.members.as_deref_mut() {
+            members.clear();
+        }
+    }
+
+    /// As [`ContentEncoding::put_tag`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_tag(
+        &mut self,
+        tag: WireTag,
+    )
+    {
+        self.words.put_tag(tag);
+    }
+
+    /// As [`ContentEncoding::put_word`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_word(
+        &mut self,
+        value: EncodedWord,
+    )
+    {
+        self.words.put_word(value);
+    }
+
+    /// Append a member: its content id in a whole record, its name with
+    /// `NAMED`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_content(
+        &mut self,
+        id: ContentId,
+    )
+    {
+        if !NAMED {
+            self.words.put_content(id);
+            return;
+        }
+        let name = usize::try_from(id.0)
+            .ok()
+            .and_then(|position| self.column.get(position))
+            .copied()
+            .unwrap_or(RecordName::UNNAMED);
+        if let Some(members) = self.members.as_deref_mut() {
+            members.push(name);
+        }
+    }
+
+    /// As [`ContentEncoding::put_count`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_count(
+        &mut self,
+        count: ComponentCount,
+    )
+    {
+        self.words.put_count(count);
+    }
+
+    /// As [`ContentEncoding::put_text`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_text(
+        &mut self,
+        text: EncodedText<'_>,
+    )
+    {
+        self.words.put_text(text);
+    }
+}
+
+/// What a table that names its records keeps: one name for each record, and
+/// the buffers that naming one fresh record reuses.
+#[derive(Clone, Debug)]
+struct Names
+{
+    /// Each record's name, by content id.
+    column: Vec<RecordName>,
+    /// The fresh record's payload.
+    payload: ContentEncoding,
+    /// The fresh record's members' names.
+    members: Vec<RecordName>,
+    /// The key every name hashes under, derived from [`Exact::CONTEXT`].
+    key: NameKey,
+}
+
+impl Names
+{
+    /// Name the fresh record that `write` writes, and keep its name at the
+    /// next id.
+    ///
+    /// # Specification
+    /// - requires: `write` writes the record the table admitted last, and the
+    ///   column holds a name for each record before it.
+    /// - ensures: the column holds one more name: the record's.
+    /// - provides: the one step that names a record, run once per fresh record.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RecordName`].
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    #[spec(captures: named_before = self.column.len(),
+        ensures: named_before.checked_add(1) == Some(self.column.len()))]
+    fn name(
+        &mut self,
+        write: impl FnOnce(&mut RecordSink<'_, true>),
+    )
+    {
+        let mut record =
+            RecordSink::named(&mut self.payload, &mut self.members, self.column.as_slice());
+        record.clear();
+        write(&mut record);
+        let name = RecordName::of(&self.key, &self.payload, &self.members);
+        self.column.push(name);
+    }
+}
+
+/// Whether a table names its records.
+#[derive(Clone, Debug, Default)]
+enum Naming
+{
+    /// The table names no record: a fresh record costs one branch.
+    #[default]
+    Off,
+    /// The table names each record it admits fresh.
+    On(Names),
+}
+
 /// A length that frames a payload: a [`ContentEncoding`]'s words, or a
 /// text's bytes.
 #[repr(transparent)]
@@ -880,6 +1224,8 @@ pub struct ContentTable
     /// How each admitted constant is named, by admission position; a position
     /// past the end is named by itself.
     constants: Vec<ConstantName>,
+    /// Whether the table names its records, and the names when it does.
+    naming: Naming,
 }
 
 /// Where one record's words sit in a [`ContentTable`]'s stream.
@@ -1249,6 +1595,20 @@ impl Placements
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a table gives no name for a record.
+    mod record_name {
+        /// The table holds no name for the record.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The table names no record.
+            Off,
+            /// The table holds no record at the id.
+            Unrecorded,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a table holds no id for a record.
     mod record_held {
         /// The table has not seen the record.
@@ -1271,6 +1631,116 @@ impl ContentTable
     pub fn new() -> Self
     {
         Self::default()
+    }
+
+    /// A fresh table that names each record it admits fresh: BLAKE3 over the
+    /// record's tag, its payload and its members' names ([`RecordName`]).
+    ///
+    /// # Specification
+    /// - ensures: a table that numbers records as [`Self::new`] does, and holds
+    ///   one name for each record it admits.
+    /// - provides: the names a key carries when it leaves its session.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RecordName`]; a table made by [`Self::new`]
+    ///   gives no name.
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| matches!(ret.naming, Naming::On(ref names) if names.column.is_empty()))]
+    pub fn named() -> Self
+    {
+        Self {
+            naming: Naming::On(Names {
+                column: Vec::new(),
+                payload: ContentEncoding::new(),
+                members: Vec::new(),
+                key: NameKey(blake3::derive_key(Exact::CONTEXT, &[])),
+            }),
+            ..Self::default()
+        }
+    }
+
+    /// The name of the record at `id`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name the table gave the record when it admitted it;
+    ///   absent as [`record_name::Absent::Off`] for a table that names nothing,
+    ///   and as [`record_name::Absent::Unrecorded`] past its records.
+    /// - provides: the name a key takes across sessions.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RecordName`].
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
+    #[inline]
+    #[spec(ensures: |ret| match self.naming {
+        Naming::Off => ret == Maybe::Absent(record_name::Absent::Off),
+        Naming::On(ref names) => matches!(ret, Maybe::Present(_)) == (id.0 < self.records)
+            && u64::try_from(names.column.len()) == Ok(self.records),
+    })]
+    pub fn name(
+        &self,
+        id: ContentId,
+    ) -> Maybe<RecordName, record_name::Absent>
+    {
+        let Naming::On(ref names) = self.naming
+        else {
+            return Maybe::Absent(record_name::Absent::Off);
+        };
+        usize::try_from(id.0)
+            .ok()
+            .and_then(|position| names.column.get(position))
+            .copied()
+            .map_or(
+                Maybe::Absent(record_name::Absent::Unrecorded),
+                Maybe::Present,
+            )
+    }
+
+    /// Name the record the table admitted last, when the table names its
+    /// records and the record has no name yet.
+    ///
+    /// # Specification
+    /// - requires: `write` writes the record the table admitted last, and the
+    ///   column holds a name for each record before it.
+    /// - ensures: a table that names its records holds a name for each record;
+    ///   a table that names nothing is unchanged.
+    /// - provides: the one branch a record costs a table that names nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::name`].
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
+    #[inline]
+    #[spec(ensures: match self.naming {
+        Naming::Off => true,
+        Naming::On(ref names) => u64::try_from(names.column.len()) == Ok(self.records),
+    })]
+    fn name_fresh(
+        &mut self,
+        write: impl FnOnce(&Self, &mut RecordSink<'_, true>),
+    )
+    {
+        let Naming::On(ref names) = self.naming
+        else {
+            return;
+        };
+        if u64::try_from(names.column.len()).is_ok_and(|named| named >= self.records) {
+            return;
+        }
+        if let Naming::On(mut names) = core::mem::take(&mut self.naming) {
+            names.name(|record| write(self, record));
+            self.naming = Naming::On(names);
+        }
     }
 
     /// Empty the table as [`Self::new`] makes it, keeping every buffer's
@@ -1304,6 +1774,9 @@ impl ContentTable
         self.members.clear();
         self.tasks.clear();
         self.constants.clear();
+        if let Naming::On(ref mut names) = self.naming {
+            names.column.clear();
+        }
     }
 
     /// The framed record stream: the canonical encoding of everything this
@@ -1532,9 +2005,12 @@ impl ContentTable
                         continue;
                     }
                     let mut record = core::mem::take(&mut self.scratch);
-                    self.write_record(&mut record, arena, close);
+                    self.write_record(&mut RecordSink::whole(&mut record), arena, close);
                     self.scratch = record;
                     let id = self.intern_scratch();
+                    self.name_fresh(|table, named| {
+                        table.write_record(named, arena, close);
+                    });
                     self.placed.insert(close, id);
                 },
             }
@@ -1825,80 +2301,17 @@ impl ContentTable
         for fixpoint in [parameters.own, parameters.following].into_iter().flatten() {
             members.push(self.place(arena, AnyNode::Computation(fixpoint)));
         }
-        {
-            let mut placed = members.iter().copied();
-            let record = &mut self.scratch;
-            record.0.clear();
-            record.put_tag(KeyRecord::Parameters.tag());
-            record.put_word(EncodedWord(u64::from(u32::from(parameters.level_params))));
-            record.put_count(ComponentCount(parameters.constraints.len()));
-            for constraint in parameters.constraints {
-                put_level(record, constraint.left());
-                record.put_tag(match constraint.relation() {
-                    gandr_kernel_strata::ConstraintRelation::Leq => WireTag::from(0x00_u8),
-                    gandr_kernel_strata::ConstraintRelation::Eq => WireTag::from(0x01_u8),
-                });
-                put_level(record, constraint.right());
-            }
-            for positions in [parameters.manifest, parameters.laws] {
-                record.put_count(ComponentCount(positions.len()));
-                for &position in positions {
-                    record.put_count(ComponentCount(usize::from(position)));
-                }
-            }
-            match parameters.block {
-                ParametersBlock::Outside => record.put_tag(WireTag::from(0x00_u8)),
-                ParametersBlock::Data {
-                    position,
-                    parameters: classifiers,
-                    indices,
-                    constructors,
-                    results,
-                    ..
-                } => {
-                    record.put_tag(WireTag::from(0x01_u8));
-                    record.put_count(ComponentCount(usize::from(position)));
-                    put_placed(record, &mut placed, ComponentCount(1));
-                    put_placed(record, &mut placed, ComponentCount(classifiers.len()));
-                    put_placed(record, &mut placed, ComponentCount(indices.len()));
-                    record.put_count(ComponentCount(constructors.len()));
-                    for fields in constructors {
-                        put_placed(record, &mut placed, ComponentCount(fields.len()));
-                    }
-                    record.put_count(ComponentCount(results.len()));
-                    for result in results {
-                        put_placed(record, &mut placed, ComponentCount(result.len()));
-                    }
-                },
-                ParametersBlock::Codata {
-                    position,
-                    parameters: classifiers,
-                    observations,
-                    ..
-                } => {
-                    record.put_tag(WireTag::from(0x02_u8));
-                    record.put_count(ComponentCount(usize::from(position)));
-                    put_placed(record, &mut placed, ComponentCount(1));
-                    put_placed(record, &mut placed, ComponentCount(classifiers.len()));
-                    put_placed(record, &mut placed, ComponentCount(observations.len()));
-                },
-            }
-            for fixpoint in [parameters.own, parameters.following] {
-                if fixpoint.is_some() {
-                    record.put_tag(component_present());
-                    put_placed(record, &mut placed, ComponentCount(1));
-                }
-                else {
-                    record.put_tag(component_absent());
-                }
-            }
-            record.put_tag(match parameters.partiality {
-                crate::check::Partiality::Refused => WireTag::from(0x00_u8),
-                crate::check::Partiality::Ruled => WireTag::from(0x01_u8),
-            });
-        }
+        write_parameters(
+            &mut RecordSink::whole(&mut self.scratch),
+            parameters,
+            &members,
+        );
+        let id = self.intern_scratch();
+        self.name_fresh(|_, named| {
+            write_parameters(named, parameters, &members);
+        });
         self.members = members;
-        self.intern_scratch()
+        id
     }
 
     /// Write the one-level record of `node` into `record`, replacing what it
@@ -1931,20 +2344,20 @@ AnyNode::Computation(id) => (arena.computation(id).is_some(), 1_u8),
 AnyNode::ValueType(id) => (arena.value_type(id).is_some(), 2_u8),
 AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         if readable {
-            record.0.first().is_some_and(|&tag| tag != u32::from(DANGLING_TAG))
+            record.words.0.first().is_some_and(|&tag| tag != u32::from(DANGLING_TAG))
         } else {
-            record.0.len() == 2 && record.0.first() == Some(&u32::from(DANGLING_TAG))
-                && record.0.get(1) == Some(&u32::from(family))
+            record.words.0.len() == 2 && record.words.0.first() == Some(&u32::from(DANGLING_TAG))
+                && record.words.0.get(1) == Some(&u32::from(family))
         }
     })]
-    fn write_record(
+    fn write_record<const NAMED: bool>(
         &self,
-        record: &mut ContentEncoding,
+        record: &mut RecordSink<'_, NAMED>,
         arena: &TermArena,
         node: AnyNode,
     )
     {
-        record.0.clear();
+        record.clear();
         match node {
             AnyNode::Value(id) => match arena.value(id) {
                 None => put_dangling(record, DanglingFamily::Value),
@@ -2017,8 +2430,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Quote(quoted) => matches!(self.placed.get(AnyNode::ValueType(quoted)), Maybe::Present(_)),
             Value::QuoteComputation(quoted) => matches!(self.placed.get(AnyNode::CompType(quoted)), Maybe::Present(_)),
         },
-        captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *value {
+        captures: entry_len = record.words.0.len(),
+        ensures: record.words.0.get(entry_len) == Some(&u32::from(u8::from(match *value {
             Value::Constructor { .. } => gandr_kernel_term::NODE_V_CONSTRUCTOR,
             Value::Record(_) => gandr_kernel_term::NODE_V_RECORD,
             Value::Restrict { .. } => gandr_kernel_term::NODE_V_RESTRICT,
@@ -2055,9 +2468,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::StaticApplication(..) => gandr_kernel_term::NODE_V_STATIC_APPLICATION,
         })))
     )]
-    fn put_value(
+    fn put_value<const NAMED: bool>(
         &self,
-        record: &mut ContentEncoding,
+        record: &mut RecordSink<'_, NAMED>,
         value: &Value,
     )
     {
@@ -2357,8 +2770,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Case { scrutinee, ref branches } => matches!(self.placed.get(AnyNode::Value(scrutinee)), Maybe::Present(_))
                             && branches.iter().all(|id| matches!(self.placed.get(AnyNode::Computation(*id)), Maybe::Present(_))),
         },
-        captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *computation {
+        captures: entry_len = record.words.0.len(),
+        ensures: record.words.0.get(entry_len) == Some(&u32::from(u8::from(match *computation {
             Computation::DataCase { equations, .. } => if equations == gandr_kernel_term::EquationCount::NONE { gandr_kernel_term::NODE_C_DATA_CASE } else { gandr_kernel_term::NODE_C_INDEXED_DATA_CASE },
             Computation::SigmaSplit { .. } => gandr_kernel_term::NODE_C_SIGMA_SPLIT,
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
@@ -2384,9 +2797,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Project(..) => gandr_kernel_term::NODE_C_PROJECT,
         })))
     )]
-    fn put_computation(
+    fn put_computation<const NAMED: bool>(
         &self,
-        record: &mut ContentEncoding,
+        record: &mut RecordSink<'_, NAMED>,
         computation: &Computation,
     )
     {
@@ -2679,8 +3092,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => matches!(self.placed.get(AnyNode::ValueType(inner)), Maybe::Present(_)),
             ValueType::Element { code, .. } => matches!(self.placed.get(AnyNode::Value(code)), Maybe::Present(_)),
         },
-        captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *value_type {
+        captures: entry_len = record.words.0.len(),
+        ensures: record.words.0.get(entry_len) == Some(&u32::from(u8::from(match *value_type {
             ValueType::Data { .. } => gandr_kernel_term::NODE_VT_DATA,
             ValueType::Record(_) => gandr_kernel_term::NODE_VT_RECORD,
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
@@ -2704,9 +3117,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Staged { .. } => record_staged(),
         })))
     )]
-    fn put_value_type(
+    fn put_value_type<const NAMED: bool>(
         &self,
-        record: &mut ContentEncoding,
+        record: &mut RecordSink<'_, NAMED>,
         value_type: &ValueType,
     )
     {
@@ -2906,8 +3319,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::With(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::CompType(*id)), Maybe::Present(_))),
             CompType::Codata { ref arguments, .. } => arguments.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
         },
-        captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *comp_type {
+        captures: entry_len = record.words.0.len(),
+        ensures: record.words.0.get(entry_len) == Some(&u32::from(u8::from(match *comp_type {
             CompType::Returner(..) => gandr_kernel_term::NODE_CT_RETURNER,
             CompType::Returns(..) => gandr_kernel_term::NODE_CT_RETURNS,
             CompType::Arrow { .. } => gandr_kernel_term::NODE_CT_ARROW,
@@ -2917,9 +3330,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Codata { .. } => gandr_kernel_term::NODE_CT_CODATA,
         })))
     )]
-    fn put_comp_type(
+    fn put_comp_type<const NAMED: bool>(
         &self,
-        record: &mut ContentEncoding,
+        record: &mut RecordSink<'_, NAMED>,
         comp_type: &CompType,
     )
     {
@@ -3525,8 +3938,8 @@ fn push_children(
 /// # Specification
 /// trivial.
 #[inline]
-fn put_dangling(
-    record: &mut ContentEncoding,
+fn put_dangling<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
     family: DanglingFamily,
 )
 {
@@ -3614,29 +4027,29 @@ const fn sign_tag(sign: Sign) -> WireTag
 /// - witness: `encoding::tests::a_character_is_not_its_one_scalar_string`
 /// - witness: `encoding::tests::a_width_literal_keys_by_its_width`
 #[spec(
-    captures: entry_len = record.0.len(),
+    captures: entry_len = record.words.0.len(),
     ensures: {
         let packed = |text: &str| text.as_bytes().chunks(4).map(|chunk|
             u32::from_le_bytes(core::array::from_fn(|index| chunk.get(index).copied().unwrap_or(0_u8))))
             .collect::<Vec<u32>>();
         match *literal {
-        Literal::Integer(ref integer) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_INTEGER)))
-            && record.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(integer.sign()))))
-            && record.0.ends_with(&packed(integer.magnitude().as_ref())),
-        Literal::Text(ref text) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_TEXT)))
-            && record.0.ends_with(&packed(text.as_ref())),
-        Literal::Numeric(ref numeric) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_NUMERIC)))
-            && record.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(numeric.sign()))))
-            && record.0.ends_with(&packed(numeric.fraction().as_ref())),
-        Literal::Character(ref character) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_CHARACTER)))
-            && record.0.ends_with(&packed(character.to_text().as_str())),
-        Literal::Float64(_) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_FLOAT64))),
-        Literal::Fixed(fixed) => record.0.get(entry_len) == Some(&u32::from(u8::from(fixed_kind(fixed.width())))),
+        Literal::Integer(ref integer) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_INTEGER)))
+            && record.words.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(integer.sign()))))
+            && record.words.0.ends_with(&packed(integer.magnitude().as_ref())),
+        Literal::Text(ref text) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_TEXT)))
+            && record.words.0.ends_with(&packed(text.as_ref())),
+        Literal::Numeric(ref numeric) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_NUMERIC)))
+            && record.words.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(numeric.sign()))))
+            && record.words.0.ends_with(&packed(numeric.fraction().as_ref())),
+        Literal::Character(ref character) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_CHARACTER)))
+            && record.words.0.ends_with(&packed(character.to_text().as_str())),
+        Literal::Float64(_) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_FLOAT64))),
+        Literal::Fixed(fixed) => record.words.0.get(entry_len) == Some(&u32::from(u8::from(fixed_kind(fixed.width())))),
         }
     }
 )]
-fn put_literal(
-    record: &mut ContentEncoding,
+fn put_literal<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
     literal: &Literal,
 )
 {
@@ -3693,7 +4106,7 @@ fn put_literal(
 ///   and reverse construction order; they do not enumerate the level algebra.
 /// - witness: `encoding::tests::level_frames_are_canonical_and_include_each_component`
 #[spec(
-    captures: entry_len = record.0.len(),
+    captures: entry_len = record.words.0.len(),
     ensures: {
         let words = core::iter::once(u64::from(level.constant_part()))
             .chain(core::iter::once(u64::try_from(level.atoms().count()).unwrap_or(u64::MAX)))
@@ -3707,11 +4120,11 @@ fn put_literal(
         low | if group.saturating_add(1) < groups { 0x8000_0000 } else { 0 }
     })
 });
-        record.0.get(entry_len..).is_some_and(|image| image.iter().copied().eq(expected))
+        record.words.0.get(entry_len..).is_some_and(|image| image.iter().copied().eq(expected))
     }
 )]
-fn put_level(
-    record: &mut ContentEncoding,
+fn put_level<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
     level: &Level,
 )
 {
@@ -3743,8 +4156,8 @@ fn put_level(
 /// # Adequacy
 /// - hypothesis: L3 — as [`ContentTable::parameters`].
 /// - witness: `encoding::tests::parameters_name_their_block_by_content`
-fn put_placed(
-    record: &mut ContentEncoding,
+fn put_placed<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
     placed: &mut impl Iterator<Item = ContentId>,
     count: ComponentCount,
 )
@@ -3753,6 +4166,102 @@ fn put_placed(
     for id in placed.take(count.0) {
         record.put_content(id);
     }
+}
+
+/// Write the record of a declaration's parameters into `record`, replacing
+/// what it held. The record holds the level count, the constraints, the
+/// manifest and law positions, the block, the fixpoints and the partiality.
+/// Its members are `members`, in the order [`ContentTable::parameters`]
+/// placed them.
+///
+/// # Specification
+/// - requires: `members` holds the ids the table placed for the block's kind,
+///   classifiers, results and observations, then for the fixpoints, in order.
+/// - ensures: `record` leads with the parameters tag.
+/// - provides: the one writer of a parameters record, for its id and for its
+///   name.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ContentTable::parameters`].
+/// - witness: `encoding::tests::parameters_name_their_block_by_content`
+#[spec(ensures: record.words.0.first() == Some(&u32::from(u8::from(KeyRecord::Parameters.tag()))))]
+fn write_parameters<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
+    parameters: &Parameters<'_>,
+    members: &[ContentId],
+)
+{
+    let mut placed = members.iter().copied();
+    record.clear();
+    record.put_tag(KeyRecord::Parameters.tag());
+    record.put_word(EncodedWord(u64::from(u32::from(parameters.level_params))));
+    record.put_count(ComponentCount(parameters.constraints.len()));
+    for constraint in parameters.constraints {
+        put_level(record, constraint.left());
+        record.put_tag(match constraint.relation() {
+            gandr_kernel_strata::ConstraintRelation::Leq => WireTag::from(0x00_u8),
+            gandr_kernel_strata::ConstraintRelation::Eq => WireTag::from(0x01_u8),
+        });
+        put_level(record, constraint.right());
+    }
+    for positions in [parameters.manifest, parameters.laws] {
+        record.put_count(ComponentCount(positions.len()));
+        for &position in positions {
+            record.put_count(ComponentCount(usize::from(position)));
+        }
+    }
+    match parameters.block {
+        ParametersBlock::Outside => record.put_tag(WireTag::from(0x00_u8)),
+        ParametersBlock::Data {
+            position,
+            parameters: classifiers,
+            indices,
+            constructors,
+            results,
+            ..
+        } => {
+            record.put_tag(WireTag::from(0x01_u8));
+            record.put_count(ComponentCount(usize::from(position)));
+            put_placed(record, &mut placed, ComponentCount(1));
+            put_placed(record, &mut placed, ComponentCount(classifiers.len()));
+            put_placed(record, &mut placed, ComponentCount(indices.len()));
+            record.put_count(ComponentCount(constructors.len()));
+            for fields in constructors {
+                put_placed(record, &mut placed, ComponentCount(fields.len()));
+            }
+            record.put_count(ComponentCount(results.len()));
+            for result in results {
+                put_placed(record, &mut placed, ComponentCount(result.len()));
+            }
+        },
+        ParametersBlock::Codata {
+            position,
+            parameters: classifiers,
+            observations,
+            ..
+        } => {
+            record.put_tag(WireTag::from(0x02_u8));
+            record.put_count(ComponentCount(usize::from(position)));
+            put_placed(record, &mut placed, ComponentCount(1));
+            put_placed(record, &mut placed, ComponentCount(classifiers.len()));
+            put_placed(record, &mut placed, ComponentCount(observations.len()));
+        },
+    }
+    for fixpoint in [parameters.own, parameters.following] {
+        if fixpoint.is_some() {
+            record.put_tag(component_present());
+            put_placed(record, &mut placed, ComponentCount(1));
+        }
+        else {
+            record.put_tag(component_absent());
+        }
+    }
+    record.put_tag(match parameters.partiality {
+        crate::check::Partiality::Refused => WireTag::from(0x00_u8),
+        crate::check::Partiality::Ruled => WireTag::from(0x01_u8),
+    });
 }
 
 /// Which question one goal expansion asks, in the vocabulary the memo key is
@@ -3997,12 +4506,66 @@ pub fn support_key(
     for entry in telescope.entries() {
         binders.push(table.place(arena, AnyNode::ValueType(entry)));
     }
-    let record = &mut table.scratch;
-    record.0.clear();
+    let placed = PlacedGoal {
+        goal,
+        subject,
+        expected,
+        telescope,
+        binders: &binders,
+    };
+    write_goal(&mut RecordSink::whole(&mut table.scratch), placed);
+    let id = table.intern_scratch();
+    table.name_fresh(|_, named| {
+        write_goal(named, placed);
+    });
+    table.members = binders;
+    id
+}
+
+/// A goal whose members the table has placed: what [`write_goal`] writes.
+#[derive(Clone, Copy, Debug)]
+struct PlacedGoal<'goal>
+{
+    /// The question the goal asks.
+    goal: SupportGoal,
+    /// The id of the goal's subject.
+    subject: ContentId,
+    /// The id of the goal's expected type, when it has one.
+    expected: Maybe<ContentId, expected_type::Absent>,
+    /// The binders the goal reads.
+    telescope: Telescope<'goal>,
+    /// The id of each binder's type, in the telescope's order.
+    binders: &'goal [ContentId],
+}
+
+/// Write the goal record of `placed` into `record`, replacing what it held:
+/// the goal tag, the direction, the subject, the expected type when the goal
+/// has one, and the binders it reads.
+///
+/// # Specification
+/// - requires: `placed.binders` holds one id for each entry of the telescope,
+///   in its order.
+/// - ensures: `record` leads with the goal tag and the direction.
+/// - provides: the one writer of a goal record, for its id and for its name.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`support_key`].
+/// - witness: `encoding::tests::the_direction_is_part_of_the_key`
+/// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
+#[spec(ensures: record.words.0.first() == Some(&u32::from(u8::from(KeyRecord::Goal.tag())))
+    && record.words.0.get(1) == Some(&u32::from(u8::from(placed.goal.direction()))))]
+fn write_goal<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
+    placed: PlacedGoal<'_>,
+)
+{
+    record.clear();
     record.put_tag(KeyRecord::Goal.tag());
-    record.put_tag(goal.direction());
-    record.put_content(subject);
-    match expected {
+    record.put_tag(placed.goal.direction());
+    record.put_content(placed.subject);
+    match placed.expected {
         Maybe::Present(id) => {
             record.put_tag(component_present());
             record.put_content(id);
@@ -4011,11 +4574,11 @@ pub fn support_key(
             record.put_tag(component_absent());
         },
     }
-    match telescope {
+    match placed.telescope {
         Telescope::Read(read) => {
             record.put_tag(telescope_read());
             record.put_count(ComponentCount(read.len()));
-            for (&(index, _), &binder) in read.iter().zip(&binders) {
+            for (&(index, _), &binder) in read.iter().zip(placed.binders) {
                 record.put_word(EncodedWord(u64::from(u32::from(index))));
                 record.put_content(binder);
             }
@@ -4023,13 +4586,11 @@ pub fn support_key(
         Telescope::Whole(context) => {
             record.put_tag(telescope_whole());
             record.put_count(ComponentCount(context.len()));
-            for &binder in &binders {
+            for &binder in placed.binders {
                 record.put_content(binder);
             }
         },
     }
-    table.members = binders;
-    table.intern_scratch()
 }
 
 /// One rewrite obligation, as the key derivation names it.
@@ -4351,8 +4912,11 @@ mod tests
     use super::ContentId;
     use super::ContentTable;
     use super::EncodedWord;
+    use super::Naming;
     use super::PlacementCount;
     use super::Placements;
+    use super::RecordName;
+    use super::RecordSink;
     use super::RewriteGoal;
     use super::SupportGoal;
     use super::Telescope;
@@ -5192,7 +5756,7 @@ mod tests
         let keys = cases.map(|(node, goal, family)| {
             let key = support_key(&mut table, &arena, goal, Telescope::Whole(&[]));
             let mut record = ContentEncoding::new();
-            table.write_record(&mut record, &arena, node);
+            table.write_record(&mut RecordSink::whole(&mut record), &arena, node);
             assert_eq!(record.as_ref(), &[0xff_u32, u32::from(family)]);
             assert_eq!(
                 content_digest(&arena, node),
@@ -5317,7 +5881,7 @@ mod tests
     {
         let image = |level: &super::Level| {
             let mut record = ContentEncoding(vec![0x7e]);
-            super::put_level(&mut record, level);
+            super::put_level(&mut RecordSink::whole(&mut record), level);
             record
         };
         let zero = super::Level::zero();
@@ -5513,30 +6077,40 @@ mod tests
         Second,
     }
 
+    /// Whether a naming fixture's table holds a record before the goal.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum TableState
+    {
+        /// The table holds nothing before the goal.
+        Cold,
+        /// The table holds the declared type's goal before the goal.
+        Warm,
+    }
+
     /// Admit `referent` and a pair definition in `order`, then
-    /// `c : Unit = referent`; return the record stream a table told the
-    /// environment's entries builds for `c`'s body.
+    /// `c : Unit = referent`; return the environment, `c`'s body and `c`'s
+    /// declared type.
     ///
     /// # Specification
     /// - requires: `referent` admits one declaration at the unit type.
-    /// - ensures: the stream of every record `c`'s body reaches, in the order
-    ///   the walk assigns them.
-    /// - provides: the admission-order fixtures the constant naming cases
-    ///   compare.
+    /// - ensures: an environment that holds the referent, the pair and `c`, in
+    ///   that order or with the pair first.
+    /// - provides: the admission-order environments the constant naming cases
+    ///   and the record naming cases read.
     /// - fails: never.
     /// - panics: when an admission refuses.
-    /// - executable: none — the cases compare two calls' streams, which no
+    /// - executable: none — the cases compare two calls' environments, which no
     ///   single call's predicate states.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a definition and an axiom referent each admitted
     ///   before and after an unrelated definition.
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
-    fn reference_stream(
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    fn reference_environment(
         referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
         order: ReferentOrder,
-    ) -> ContentEncoding
+    ) -> (crate::env::Environment, ValueId, ValueTypeId)
     {
         let mut environment = crate::env::Environment::new();
         let pair = |environment: &mut crate::env::Environment| {
@@ -5564,10 +6138,114 @@ mod tests
         let reference = staging.arena().value_constant(reached);
         let staged = staging.def(LevelSignature::monomorphic(), declared, reference);
         let _c = environment.add_decl(staged).expect("the reference admits");
+        (environment, reference, declared)
+    }
+
+    /// Admit `referent` and a pair definition in `order`, then
+    /// `c : Unit = referent`; return the record stream a table told the
+    /// environment's entries builds for `c`'s body.
+    ///
+    /// # Specification
+    /// - requires: `referent` admits one declaration at the unit type.
+    /// - ensures: the stream of every record `c`'s body reaches, in the order
+    ///   the walk assigns them.
+    /// - provides: the admission-order fixtures the constant naming cases
+    ///   compare.
+    /// - fails: never.
+    /// - panics: when an admission refuses.
+    /// - executable: none — the cases compare two calls' streams, which no
+    ///   single call's predicate states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition and an axiom referent each admitted
+    ///   before and after an unrelated definition.
+    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+    fn reference_stream(
+        referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
+        order: ReferentOrder,
+    ) -> ContentEncoding
+    {
+        let (environment, reference, _declared) = reference_environment(referent, order);
         let mut table = ContentTable::new();
         table.name_constants(environment.entries());
         let _id = table.place(environment.arena(), AnyNode::Value(reference));
         table.stream().clone()
+    }
+
+    /// Admit `referent` and a pair definition in `order`, then
+    /// `c : Unit = referent`; key the goal that synthesises `c`'s body under
+    /// `c`'s declared type as its one binder, in a table that names its
+    /// records. A `warm` table first keys the level of `c`'s declared type,
+    /// so it numbers the goal later.
+    ///
+    /// # Specification
+    /// - requires: `referent` admits one declaration at the unit type.
+    /// - ensures: the goal's id and its name.
+    /// - provides: the admission-order fixtures the record naming cases
+    ///   compare.
+    /// - fails: never.
+    /// - panics: when an admission refuses, or when the table gives no name.
+    /// - executable: none — the cases compare two calls' names, which no single
+    ///   call's predicate states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition and an axiom referent each admitted
+    ///   before and after an unrelated definition, in a cold and a warm table.
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+    fn goal_name(
+        referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
+        order: ReferentOrder,
+        state: TableState,
+    ) -> (ContentId, RecordName)
+    {
+        let (environment, reference, declared) = reference_environment(referent, order);
+        let mut table = ContentTable::named();
+        table.name_constants(environment.entries());
+        if state == TableState::Warm {
+            let _warmed = support_key(
+                &mut table,
+                environment.arena(),
+                SupportGoal::ValueTypeLevel(declared),
+                Telescope::Whole(&[]),
+            );
+        }
+        let id = support_key(
+            &mut table,
+            environment.arena(),
+            SupportGoal::SynthValue(reference),
+            Telescope::Whole(&[declared]),
+        );
+        match table.name(id) {
+            Maybe::Present(name) => (id, name),
+            Maybe::Absent(absent) => panic!("a named table names each goal: {absent:?}"),
+        }
+    }
+
+    /// Admit the axiom `name : Unit`.
+    ///
+    /// # Specification
+    /// - ensures: the axiom's position.
+    /// - provides: the axiom the naming cases reference.
+    /// - fails: never.
+    /// - panics: when the admission refuses.
+    /// - executable: none — the position is the environment's, which the cases
+    ///   read back through its entries.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit axiom admits in every environment.
+    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+    /// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+    fn unit_axiom(environment: &mut crate::env::Environment) -> ConstantIndex
+    {
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let staged = staging.axiom(LevelSignature::monomorphic(), declared);
+        environment
+            .add_decl(staged)
+            .expect("the axiom admits")
+            .position()
     }
 
     /// Admit `name : Unit = ()`.
@@ -5610,20 +6288,95 @@ mod tests
     #[test]
     fn an_axiom_reference_keeps_its_position()
     {
-        let axiom = |environment: &mut crate::env::Environment| {
-            let mut staging = environment.stage();
-            let declared = staging.arena().value_type_unit();
-            let staged = staging.axiom(LevelSignature::monomorphic(), declared);
-            environment
-                .add_decl(staged)
-                .expect("the axiom admits")
-                .position()
-        };
-        let first = reference_stream(&axiom, ReferentOrder::First);
-        let second = reference_stream(&axiom, ReferentOrder::Second);
+        let first = reference_stream(&unit_axiom, ReferentOrder::First);
+        let second = reference_stream(&unit_axiom, ReferentOrder::Second);
         assert_ne!(
             first, second,
             "an axiom has no body to name it by, so its reference reads its position"
+        );
+    }
+
+    #[test]
+    fn a_goal_takes_one_name_in_either_admission_order_864()
+    {
+        let (cold, first) = goal_name(&unit_definition, ReferentOrder::First, TableState::Cold);
+        let (warmed, second) = goal_name(&unit_definition, ReferentOrder::Second, TableState::Warm);
+        assert_ne!(cold, warmed, "the warm table numbers the goal later");
+        assert_eq!(
+            first, second,
+            "a goal's name reads its content and its members' names, never their ids"
+        );
+    }
+
+    #[test]
+    fn a_goal_over_an_axiom_takes_its_position_s_name_864()
+    {
+        let (_, first) = goal_name(&unit_axiom, ReferentOrder::First, TableState::Cold);
+        let (_, second) = goal_name(&unit_axiom, ReferentOrder::Second, TableState::Cold);
+        assert_ne!(
+            first, second,
+            "an axiom's reference reads its position, so its goal's name does too"
+        );
+    }
+
+    #[test]
+    fn a_forged_name_keeps_two_records_apart_864()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let pair = arena.value_type_product(&[unit, unit]);
+        let mut table = ContentTable::named();
+        let first = table.place(&arena, AnyNode::ValueType(unit));
+        let second = table.place(&arena, AnyNode::ValueType(pair));
+        let Naming::On(ref mut names) = table.naming
+        else {
+            panic!("a named table names its records");
+        };
+        let forged = names.column[0];
+        names.column[1] = forged;
+        let records = table.records;
+        let unit_again = arena.value_type_unit();
+        let pair_again = arena.value_type_product(&[unit_again, unit_again]);
+        assert_eq!(first, table.place(&arena, AnyNode::ValueType(unit_again)));
+        assert_eq!(second, table.place(&arena, AnyNode::ValueType(pair_again)));
+        assert_eq!(
+            records, table.records,
+            "the records decide, so a re-minted record finds its own id"
+        );
+        assert_eq!(
+            table.name(first),
+            table.name(second),
+            "the forged name stands"
+        );
+    }
+
+    #[test]
+    fn a_table_that_names_nothing_gives_no_name_864()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let mut plain = ContentTable::new();
+        let id = support_key(
+            &mut plain,
+            &arena,
+            SupportGoal::SynthValue(unit),
+            Telescope::Whole(&[]),
+        );
+        assert_eq!(
+            Maybe::Absent(super::record_name::Absent::Off),
+            plain.name(id)
+        );
+        let mut named = ContentTable::named();
+        let id = support_key(
+            &mut named,
+            &arena,
+            SupportGoal::SynthValue(unit),
+            Telescope::Whole(&[]),
+        );
+        assert!(matches!(named.name(id), Maybe::Present(_)));
+        assert_eq!(
+            Maybe::Absent(super::record_name::Absent::Unrecorded),
+            named.name(ContentId(named.records))
         );
     }
 

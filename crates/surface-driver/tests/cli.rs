@@ -4657,10 +4657,13 @@ fn the_view_renders_a_corpus_source_in_the_visual_language()
     let (first, breaches) = ruled(&mut following);
     assert_eq!(breaches, [], "{first:#?}");
     assert!(
-        first
-            .panes
-            .get(1)
-            .is_some_and(|cards| cards.rows.len() >= 2),
+        first.panes.iter().any(|cards| {
+            cards
+                .heads
+                .first()
+                .is_some_and(|head| <&str>::from(head.name) == "span")
+                && cards.rows.len() >= 2
+        }),
         "the source's refusals are shown: {first:#?}"
     );
     let changed = serde_json::json!({

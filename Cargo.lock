@@ -1860,6 +1860,7 @@ dependencies = [
 name = "gandr-surface-tui"
 version = "0.0.0"
 dependencies = [
+ "expect-test",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-surface-dispatcher",
