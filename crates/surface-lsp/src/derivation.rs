@@ -65,7 +65,7 @@ pub const HOVERED: Count = Count(100);
 /// - hypothesis: L3 — an attached view of the trace layer hears the card of the
 ///   declaration at the editor's cursor, its first row the root at depth zero,
 ///   and each goal written inside the declaration.
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
 #[spec(ensures: |ret| ret.rows.len() == derivation.nodes().len() && ret.columns == columns)]
 #[must_use]
 pub fn card(

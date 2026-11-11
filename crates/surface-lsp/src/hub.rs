@@ -718,6 +718,10 @@ fn connection<Log>(
                     server.edited_elsewhere(&mut held, &paths);
                     (reported.end, Vec::new(), Flow::Continue)
                 },
+                Met::Traced => {
+                    server.traced_elsewhere(&mut held);
+                    (Vec::new(), Vec::new(), Flow::Continue)
+                },
                 Met::Frame { message, later } => {
                     let reported = server.reported(&held, &message);
                     for message in reported.begin {
@@ -2087,15 +2091,17 @@ mod tests
 
     /// #6295: a view of the trace layer hears the derivation card of the
     /// declaration at the editor's cursor. The view subscribes after the
-    /// editor opened the document, so the edit that follows traces the two
-    /// declarations it changes and adopts the third. A move of the cursor
-    /// inside the declaration sends no card, and a move into the other changed
-    /// declaration sends its card. A face that sent the card of another
-    /// declaration, placed a goal outside its declaration, or sent a card for a
-    /// move inside one fails here.
+    /// editor's job judged the document at another layer, so the
+    /// subscription judges it again at the trace layer, and the view hears
+    /// the card at the cursor with no edit (#6716). The edit that follows
+    /// traces the two declarations it changes and adopts the third. A move of
+    /// the cursor inside the declaration sends no card, and a move into the
+    /// other changed declaration sends its card. A face that sent the card of
+    /// another declaration, placed a goal outside its declaration, sent a card
+    /// for a move inside one, or sent no card before an edit fails here.
     #[cfg(feature = "instrument")]
     #[test]
-    fn an_attached_view_follows_the_derivation_at_the_editors_cursor()
+    fn an_attached_view_follows_the_derivation_at_the_editors_cursor_6716()
     {
         let scratch = Scratch::new(Json("derivation"));
         let socket = scratch.socket();
@@ -2147,17 +2153,23 @@ mod tests
             encoded(&RenderFrame::resync(document(1_i32)))
         );
         view.write_all(asked.as_bytes()).expect("the hub reads");
-        let mut accounts = 0_usize;
-        while accounts < 2 {
-            let (_line, frame) = next_frame(&mut reading);
-            assert!(
-                !matches!(*frame.body(), FrameBody::Derivation { .. }),
-                "an untraced judgement sends no card: {frame:?}"
-            );
-            if matches!(*frame.body(), FrameBody::Accounts { .. }) {
-                accounts = accounts.saturating_add(1);
+        let derived = |reading: &mut BufReader<UnixStream>| loop {
+            let (_line, frame) = next_frame(reading);
+            if let FrameBody::Derivation { ref card } = *frame.body() {
+                return (frame.scope().clone(), card.clone());
             }
-        }
+        };
+        let (scope, late) = derived(&mut reading);
+        assert_eq!(
+            (scope, late.declaration.as_str()),
+            (FrameScope::Document(document(1_i32)), "main"),
+            "a view that attaches after the editor's job hears the card at the cursor with no edit"
+        );
+        assert_eq!(
+            editor.published(),
+            Some(serde_json::json!(1_i32)),
+            "the judgement at the trace layer publishes the editor's version again"
+        );
         editor.send(Json(
             &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
                 "params": {"textDocument": {"uri": uri, "version": 2_i32},
@@ -2165,12 +2177,6 @@ mod tests
             .to_string(),
         ));
         assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
-        let derived = |reading: &mut BufReader<UnixStream>| loop {
-            let (_line, frame) = next_frame(reading);
-            if let FrameBody::Derivation { ref card } = *frame.body() {
-                return (frame.scope().clone(), card.clone());
-            }
-        };
         let text = opened("b + a", "f 1 (g 2 4)");
         let lines: Vec<&str> = text.split_inclusive('\n').collect();
         let declared = |line: usize| {

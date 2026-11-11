@@ -1836,7 +1836,9 @@ impl Workspace
     }
 
     /// Subscribe `peer`, a render-bus connection, to the trace layer: each job
-    /// of every connection traces until `peer` departs.
+    /// of every connection traces until `peer` departs. The first view tells
+    /// each editor, since the jobs before it ran at another layer and kept no
+    /// tree (#6716).
     ///
     /// # Specification
     /// trivial.
@@ -1847,7 +1849,13 @@ impl Workspace
         peer: Peer,
     )
     {
+        let first = self.tracers.is_empty();
         let _new = self.tracers.insert(peer);
+        if first {
+            for changes in self.editors.values() {
+                changes.traced();
+            }
+        }
     }
 
     /// Keep `position` as the cursor of the document at `uri` when `peer` is
@@ -2258,7 +2266,7 @@ impl Workspace
     /// - hypothesis: L3 — a view of the trace layer attached to a hub hears the
     ///   card of the declaration at the cursor the editor's signature help
     ///   names, and nothing while the cursor moves inside it.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
     #[cfg(feature = "instrument")]
     #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
     #[inline]
@@ -4865,6 +4873,33 @@ impl Server
     {
         if self.phase == Phase::Running {
             self.resynchronise(workspace, Picks::Naming(changed, Origin::Editor));
+        }
+    }
+
+    /// Make due each copy this connection holds, the first view of the trace
+    /// layer having subscribed: the judgements before it kept no tree.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on a running connection, every copy it holds is made due, and
+    ///   [`Server::admit`] judges it at the trace layer; on any other, nothing.
+    /// - provides: the derivation cards of a view that attaches after the
+    ///   editor's last job.
+    /// - panics: none.
+    /// - executable: none — as [`Server::edited_elsewhere`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view that subscribes after the editor judged its
+    ///   document hears the card at the cursor with no edit.
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+    #[inline]
+    pub fn traced_elsewhere(
+        &self,
+        workspace: &mut Workspace,
+    )
+    {
+        if self.phase == Phase::Running {
+            self.resynchronise(workspace, Picks::Every);
         }
     }
 
@@ -10150,7 +10185,7 @@ impl Drive
                 return Ok(ControlFlow::Continue(()));
             },
             // No watch and no other connection holds this loop's inbox.
-            Met::Changed(_) | Met::Edited(_) | Met::Proposed => {
+            Met::Changed(_) | Met::Edited(_) | Met::Proposed | Met::Traced => {
                 return Ok(ControlFlow::Continue(()));
             },
             Met::Frame { message, later } => (message, later),
