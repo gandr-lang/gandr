@@ -59,7 +59,10 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_surface_dispatcher::KernelTier;
 use gandr_surface_dispatcher::Unruled;
 use gandr_surface_render_remote::AccountCard;
+use gandr_surface_render_remote::AccountCounts;
 use gandr_surface_render_remote::AccountKey;
+#[cfg(feature = "instrument")]
+use gandr_surface_render_remote::Count;
 use gandr_surface_render_remote::Glyph;
 use gandr_surface_render_remote::KernelMark;
 use gandr_surface_render_remote::LineIndex;
@@ -284,6 +287,43 @@ impl Tiers
         }
     }
 
+    /// These tiers with the rows of `rows`, the session's account after an
+    /// admission: each declaration takes the row at its position, which holds
+    /// the kernel's counts that the admission recorded.
+    ///
+    /// # Specification
+    /// - requires: `rows` ascends by position, as the account lists them.
+    /// - ensures: each declaration with a row at its position holds that row;
+    ///   each other declaration keeps its row. The order, the ranges and the
+    ///   tiers stay.
+    /// - provides: the counts that the cards read after the admission ends.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document rechecked at the counts layer shows each
+    ///   declaration's kernel counts on its card once its admission ends.
+    /// - witness: `server::tests::a_counted_document_shows_its_counts_on_each_card_6289`
+    #[cfg(feature = "instrument")]
+    #[spec(captures: [count = self.each.len()], ensures: |()| self.each.len() == count)]
+    pub fn reread(
+        &mut self,
+        rows: Vec<(ConstantIndex, ContentKey, AccountRow)>,
+    )
+    {
+        let mut rows = rows.into_iter().peekable();
+        for tiered in &mut self.each {
+            while rows
+                .next_if(|&(constant, ..)| constant < tiered.constant)
+                .is_some()
+            {}
+            if let Some((_, key, row)) = rows.next_if(|&(constant, ..)| constant == tiered.constant)
+            {
+                tiered.row = Maybe::Present((key, row));
+            }
+        }
+    }
+
     /// The lens title of `tier`: its warrant's name in the kernel, then its
     /// reason; none for an unmarked tier.
     ///
@@ -469,7 +509,8 @@ impl Tiers
 
     /// One account card per declaration with a content key, in order: its
     /// key, its name, the checker's verdict, the kernel's warrant and title,
-    /// and its compile tier. The counts and the timing stay absent.
+    /// its compile tier and, at the counts layer, its counts. The timing stays
+    /// absent.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -524,7 +565,7 @@ impl Tiers
                         Maybe::Present(tier) => Some(shown_compile(tier)),
                         Maybe::Absent(_) => None,
                     },
-                    counts: None,
+                    counts: shown_counts(&row),
                     timing: None,
                 })
             })
@@ -561,6 +602,42 @@ const fn shown_compile(tier: CompileTier) -> gandr_surface_render_remote::Compil
         CompileTier::Stencil => Shown::Stencil,
         CompileTier::Optimised => Shown::Optimised,
     }
+}
+
+/// The wire's counts of `row`: absent when the latest recheck counted
+/// nothing.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+fn shown_counts(row: &AccountRow) -> Option<AccountCounts>
+{
+    match row.counts() {
+        Maybe::Present(counts) => Some(AccountCounts {
+            hits: Count(u64::from(counts.hits())),
+            misses: Count(u64::from(counts.misses())),
+            nodes: Count(u64::from(counts.nodes())),
+            molded: Count(u64::from(counts.molded())),
+            judged: Count(u64::from(counts.judged())),
+            crossed: Count(u64::from(counts.crossed())),
+            obligations: Count(u64::from(counts.obligations())),
+            recalled: Count(u64::from(counts.recalled())),
+            expanded: Count(u64::from(counts.expanded())),
+            kept: Count(u64::from(counts.kept())),
+        }),
+        Maybe::Absent(_) => None,
+    }
+}
+
+/// The wire's counts of `row`: absent, since a build without the
+/// `instrument` feature counts nothing.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(feature = "instrument"))]
+const fn shown_counts(_row: &AccountRow) -> Option<AccountCounts>
+{
+    None
 }
 
 /// The parameters of `gandr/kernelTiers`: the kernel tiers of one open

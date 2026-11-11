@@ -131,7 +131,11 @@ use gandr_core_checker::Unretired;
 use gandr_core_checker::check_declaration_supported;
 use gandr_core_checker::form_value_type;
 use gandr_core_checker::signature_table;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::tally::MemoTally;
 use gandr_core_checker::unfolding;
+#[cfg(feature = "instrument")]
+use gandr_core_term::ArenaWatermark;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_check_memo::CheckMemo;
@@ -142,6 +146,10 @@ use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::NullMemo;
+#[cfg(feature = "instrument")]
+use gandr_kernel_term::ArenaLength;
+#[cfg(feature = "instrument")]
+use gandr_kernel_term::ConstantIndex;
 use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
@@ -152,6 +160,8 @@ use crate::content::ArenaNode;
 use crate::content::Encoded;
 use crate::content::ItemContent;
 use crate::content::Opacity;
+#[cfg(feature = "instrument")]
+use crate::content::Sites;
 use crate::content::TypeContent;
 use crate::content::encode_item;
 use crate::content::seating;
@@ -161,9 +171,11 @@ use crate::order::ItemHandle;
 use crate::order::ItemOrder;
 use crate::order::SpliceCensus;
 use crate::order::handle;
+use crate::persistence::CheckpointObserver;
 use crate::region::Layout;
 use crate::region::Program;
 use crate::region::Reference;
+use crate::session::Unobserved;
 use crate::typing::Projection;
 use crate::typing::Typing;
 
@@ -696,6 +708,46 @@ pub enum Adoption
     Judged,
 }
 
+/// One item that a pass adopted or judged, as the pass tells its observer.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+#[derive(Clone, Copy, Debug)]
+pub struct PassedItem<'pass>
+{
+    /// The item's admission position.
+    pub constant: ConstantIndex,
+    /// Whether the pass adopted the item or judged it.
+    pub adoption: Adoption,
+    /// The goal-memo consultations of the item's step; none for an adopted
+    /// item.
+    pub memo: MemoTally,
+    /// The arena nodes that the item's step minted.
+    pub minted: ArenaLength,
+    /// The arena nodes that the item's content walk reached.
+    sites: &'pass Sites,
+}
+
+#[cfg(feature = "instrument")]
+impl PassedItem<'_>
+{
+    /// How many arena nodes that the item's content reaches were minted at or
+    /// after `mark`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn reached_since(
+        &self,
+        mark: ArenaWatermark,
+    ) -> ArenaLength
+    {
+        self.sites.minted_since(mark)
+    }
+}
+
 /// The work one resume did, counted per item and per edge.
 ///
 /// The counts are the pass's declared intension: every one is linear in the
@@ -1202,12 +1254,12 @@ pub fn check_program(
 ) -> Result<Resume, ResumeError>
 {
     let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
-    advance::<NullMemoChoice, KeepNothing, _>(
+    advance::<NullMemoChoice, KeepNothing, _, _>(
         (&[], &[]),
         (order, &[]),
         program,
         Start::Fresh(budget),
-        &Unretired,
+        (&Unretired, &mut Unobserved),
     )
     .map(Polled::whole)
     .map(|advanced| advanced.resume)
@@ -1280,12 +1332,12 @@ pub fn resume(
         order,
         ..
     } = base;
-    advance::<HashedMemoChoice, KeepNothing, _>(
+    advance::<HashedMemoChoice, KeepNothing, _, _>(
         (&checkpoints.items, &handles),
         (order, &[]),
         edited,
         Start::Fresh(checkpoints.budget),
-        &Unretired,
+        (&Unretired, &mut Unobserved),
     )
     .map(Polled::whole)
     .map(|advanced| advanced.resume)
@@ -1351,12 +1403,12 @@ pub fn resume_from(
         .map(|checkpoint| checkpoint.content().reference().clone())
         .collect();
     let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
-    advance::<HashedMemoChoice, KeepNothing, _>(
+    advance::<HashedMemoChoice, KeepNothing, _, _>(
         (&base.items, &handles),
         (order, &[]),
         edited,
         Start::Fresh(base.budget),
-        &Unretired,
+        (&Unretired, &mut Unobserved),
     )
     .map(Polled::whole)
     .map(|advanced| advanced.resume)
@@ -1392,12 +1444,12 @@ pub fn lead(
 ) -> Result<(Resume, Leading), ResumeError>
 {
     let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
-    let advanced = advance::<NullMemoChoice, KeepContext, _>(
+    let advanced = advance::<NullMemoChoice, KeepContext, _, _>(
         (&[], &[]),
         (order, &[]),
         program,
         Start::Fresh(budget),
-        &Unretired,
+        (&Unretired, &mut Unobserved),
     )?
     .whole();
     let leading = Leading {
@@ -1462,7 +1514,7 @@ pub fn resume_after(
     edited: &mut Program,
 ) -> Result<Resume, ResumeError>
 {
-    resume_after_retiring(base, leading, edited, &Unretired).map(Polled::whole)
+    resume_after_retiring(base, leading, edited, (&Unretired, &mut Unobserved)).map(Polled::whole)
 }
 
 /// What a resume that polls retirement answers: the resume, or the retirement
@@ -1499,17 +1551,18 @@ pub type Resuming<Retired> =
     Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
     Polled::Retired(..) => true,
 }) || ret.is_err())]
-pub fn resume_after_retiring<Poll>(
+pub fn resume_after_retiring<Poll, Observer>(
     base: Maybe<Resume, crate::session::submitted::Absent>,
     leading: &Arc<Leading>,
     edited: &mut Program,
-    retirement: &Poll,
+    (retirement, observer): (&Poll, &mut Observer),
 ) -> Result<Resuming<Poll::Retired>, ResumeError>
 where
     Poll: Retirement,
+    Observer: CheckpointObserver,
 {
     if leading.leads(edited) == Leads::Departs {
-        return resume_or_check(base, edited, leading.budget, retirement);
+        return resume_or_check(base, edited, leading.budget, (retirement, observer));
     }
     let count = leading.checkpoints.len();
     let polled = match base {
@@ -1526,15 +1579,15 @@ where
                 checkpoints.items.get(count ..),
             ) {
                 (Some((before, behind)), Some(items)) => {
-                    advance::<HashedMemoChoice, KeepNothing, _>(
+                    advance::<HashedMemoChoice, KeepNothing, _, _>(
                         (items, behind),
                         (order, before),
                         edited,
                         Start::After(leading),
-                        retirement,
+                        (retirement, observer),
                     )?
                 },
-                _ => match fresh_after(leading, edited, retirement)? {
+                _ => match fresh_after(leading, edited, (retirement, observer))? {
                     Polled::Whole(advanced) => Polled::Whole(advanced),
                     Polled::Retired(retired, _) => Polled::Retired(retired, order),
                 },
@@ -1555,7 +1608,7 @@ where
             }
         },
         other @ (Maybe::Present(_) | Maybe::Absent(_)) => {
-            match fresh_after(leading, edited, retirement)? {
+            match fresh_after(leading, edited, (retirement, observer))? {
                 Polled::Whole(advanced) => Polled::Whole(advanced),
                 Polled::Retired(retired, _) => Polled::Retired(retired, other),
             }
@@ -1631,14 +1684,15 @@ fn started_after(
     Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
     Polled::Retired(..) => true,
 }) || ret.is_err())]
-pub fn resume_or_check<Poll>(
+pub fn resume_or_check<Poll, Observer>(
     previous: Maybe<Resume, crate::session::submitted::Absent>,
     edited: &mut Program,
     budget: CheckBudget,
-    retirement: &Poll,
+    (retirement, observer): (&Poll, &mut Observer),
 ) -> Result<Resuming<Poll::Retired>, ResumeError>
 where
     Poll: Retirement,
+    Observer: CheckpointObserver,
 {
     match previous {
         Maybe::Present(Resume {
@@ -1649,12 +1703,12 @@ where
             census,
             after,
         }) => Ok(
-            match advance::<HashedMemoChoice, KeepNothing, _>(
+            match advance::<HashedMemoChoice, KeepNothing, _, _>(
                 (&checkpoints.items, &handles),
                 (order, &[]),
                 edited,
                 Start::Fresh(checkpoints.budget),
-                retirement,
+                (retirement, observer),
             )? {
                 Polled::Whole(advanced) => Polled::Whole(advanced.resume),
                 Polled::Retired(retired, order) => Polled::Retired(
@@ -1673,12 +1727,12 @@ where
         Maybe::Absent(reason) => {
             let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
             Ok(
-                match advance::<NullMemoChoice, KeepNothing, _>(
+                match advance::<NullMemoChoice, KeepNothing, _, _>(
                     (&[], &[]),
                     (order, &[]),
                     edited,
                     Start::Fresh(budget),
-                    retirement,
+                    (retirement, observer),
                 )? {
                     Polled::Whole(advanced) => Polled::Whole(advanced.resume),
                     Polled::Retired(retired, _) => Polled::Retired(retired, Maybe::Absent(reason)),
@@ -1705,21 +1759,22 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`resume_after`].
 /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
-fn fresh_after<Poll>(
+fn fresh_after<Poll, Observer>(
     leading: &Leading,
     edited: &mut Program,
-    retirement: &Poll,
+    (retirement, observer): (&Poll, &mut Observer),
 ) -> Result<Advancing<(), Poll::Retired>, ResumeError>
 where
     Poll: Retirement,
+    Observer: CheckpointObserver,
 {
     let (order, handles) = ItemOrder::seeded(&leading.references).map_err(ResumeError::Order)?;
-    advance::<HashedMemoChoice, KeepNothing, _>(
+    advance::<HashedMemoChoice, KeepNothing, _, _>(
         (&[], &[]),
         (order, &handles),
         edited,
         Start::After(leading),
-        retirement,
+        (retirement, observer),
     )
 }
 
@@ -2445,17 +2500,18 @@ type Advancing<Kept, Retired> = Polled<Advanced<Kept>, Retired, ItemOrder>;
         }) || ret.is_err()
     },
 )]
-fn advance<Choice, Kept, Poll>(
+fn advance<Choice, Kept, Poll, Observer>(
     base: (&[ItemCheckpoint], &[ItemHandle]),
     ordered: (ItemOrder, &[ItemHandle]),
     edited: &mut Program,
     start: Start<'_>,
-    retirement: &Poll,
+    (retirement, observer): (&Poll, &mut Observer),
 ) -> Result<Advancing<Kept::Kept, Poll::Retired>, ResumeError>
 where
     Choice: MemoChoice,
     Kept: Keep,
     Poll: Retirement,
+    Observer: CheckpointObserver,
 {
     let (base, base_handles) = base;
     let (mut order, leading_handles) = ordered;
@@ -2477,13 +2533,14 @@ where
     census.items = ItemCount::from(count);
     let passed = {
         let memo = Choice::build(base);
-        pass::<Choice::Memo<'_>, Kept, Poll>(
+        pass::<Choice::Memo<'_>, Kept, Poll, Observer>(
             (base, &memo),
             (&encoded, &keys),
             edited,
             start,
             &mut census,
             retirement,
+            observer,
         )
     };
     let (outcomes, answers, kept) = match passed {
@@ -2632,18 +2689,34 @@ type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, 
         Polled::Retired(..) => true,
     },
 )]
-fn pass<'id, Memo, Kept, Poll>(
+#[cfg_attr(
+    not(feature = "instrument"),
+    expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "the observer hears each item only under the `instrument` feature"
+    )
+)]
+fn pass<'id, Memo, Kept, Poll, Observer>(
     (base, memo): (&'id [ItemCheckpoint], &Memo),
     (encoded, keys): (&'id [Encoded], &[Maybe<ContentKey, recall::Absent>]),
     edited: &mut Program,
     start: Start<'_>,
     census: &mut ResumeCensus,
     retirement: &Poll,
+    #[cfg_attr(
+        not(feature = "instrument"),
+        expect(
+            unused_variables,
+            reason = "the observer hears each item only under the `instrument` feature"
+        )
+    )]
+    observer: &mut Observer,
 ) -> Passed<Kept::Kept, Poll::Retired>
 where
     Memo: CheckMemo<ItemIdentity<'id>, ItemOrdinal>,
     Kept: Keep,
     Poll: Retirement,
+    Observer: CheckpointObserver,
 {
     let active = Memo::ACTIVITY == MemoActivity::Active;
     let footprints: Vec<Footprint> = encoded
@@ -2712,6 +2785,8 @@ where
         else {
             break;
         };
+        #[cfg(feature = "instrument")]
+        let before = (context.tally(), context.arena().watermark());
         let adopted = match candidates.get(index) {
             Some(&Maybe::Present(ref candidate)) => adopt(&mut context, &AdoptionInput {
                 candidate,
@@ -2786,6 +2861,14 @@ where
                 )
             },
         };
+        #[cfg(feature = "instrument")]
+        observer.passed(&PassedItem {
+            constant: declaration.constant(),
+            adoption: outcome.adoption,
+            memo: context.tally().since(before.0),
+            minted: context.arena().minted_since(before.1),
+            sites: &item.sites,
+        });
         outcomes.push(outcome);
         supplied.own.push(answer);
     }

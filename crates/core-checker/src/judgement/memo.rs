@@ -240,6 +240,17 @@ enum Keyed
     Unkeyed,
 }
 
+/// What one consult of the memo found.
+#[cfg(feature = "instrument")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Consult
+{
+    /// The memo answered the goal.
+    Hit,
+    /// The memo keyed the goal and held no answer for it.
+    Miss,
+}
+
 /// The memo one run of the machine keeps: its answers, the goals under way it
 /// may record, and the scratch a key is gathered in.
 pub(super) struct GoalMemo
@@ -308,11 +319,19 @@ impl Machine<'_, '_>
         }
         let world = self.context.world();
         let reads = self.memo.reads.as_slice();
-        if let Some(hit) = self.memo.answers.filed(digest_of(goal, world)).find(|hit| {
-            let key = hit.support();
-            key.goal == goal && key.world == world && *key.reads == *reads
-        }) {
-            return Maybe::Present(*hit.outcome());
+        let answered = self
+            .memo
+            .answers
+            .filed(digest_of(goal, world))
+            .find(|hit| {
+                let key = hit.support();
+                key.goal == goal && key.world == world && *key.reads == *reads
+            })
+            .map(|hit| *hit.outcome());
+        if let Some(answer) = answered {
+            #[cfg(feature = "instrument")]
+            self.tallied(goal, Consult::Hit);
+            return Maybe::Present(answer);
         }
         let effects = self.effects();
         self.memo.pending.push(Pending {
@@ -321,7 +340,29 @@ impl Machine<'_, '_>
             frames: self.frames.len(),
             effects,
         });
+        #[cfg(feature = "instrument")]
+        self.tallied(goal, Consult::Miss);
         Maybe::Absent(unanswered::Absent::Missed)
+    }
+
+    /// Count `consult` of `goal` on its plane in the context's tally.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn tallied(
+        &mut self,
+        goal: Goal,
+        consult: Consult,
+    )
+    {
+        let tally = self.context.tally_mut();
+        match (plane_of(goal), consult) {
+            (Plane::Terms, Consult::Hit) => tally.term_hit(),
+            (Plane::Terms, Consult::Miss) => tally.term_miss(),
+            (Plane::Types, Consult::Hit) => tally.type_hit(),
+            (Plane::Types, Consult::Miss) => tally.type_miss(),
+        }
     }
 
     /// Record `produced` as the answer of every goal under way that the ascent

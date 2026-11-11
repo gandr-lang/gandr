@@ -289,6 +289,16 @@ pub enum QubitPrecedence
     Unread,
 }
 
+/// Where a node stands against an arena watermark.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Minted
+{
+    /// Minted before the watermark: the watermark's arena holds it.
+    Before,
+    /// Minted at or after the watermark.
+    Since,
+}
+
 /// A snapshot of the four family lengths and of the supports' word arena.
 ///
 /// Restoring an arena to a watermark drops exactly the nodes allocated after
@@ -307,6 +317,85 @@ pub struct ArenaWatermark
     comp_types: usize,
     /// The supports' word arena length.
     words: WordMark,
+}
+
+impl ArenaWatermark
+{
+    /// Where the value `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_value(
+        self,
+        id: ValueId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.values)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+
+    /// Where the computation `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_computation(
+        self,
+        id: ComputationId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.computations)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+
+    /// Where the value type `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_value_type(
+        self,
+        id: ValueTypeId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.value_types)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+
+    /// Where the computation type `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_comp_type(
+        self,
+        id: CompTypeId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.comp_types)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
 }
 
 /// The fields an element of a record type or of a patched type holds.
@@ -676,6 +765,38 @@ impl CoreArena
     {
         (after.comp_types .. usize::from(self.comp_types.len()))
             .map(|index| CompTypeId(id_index(ArenaLength::from(index)).0))
+    }
+
+    /// How many nodes the four families allocated after `after`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum of the four family suffixes that begin at the mark;
+    ///   zero for a mark beyond every family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[spec(ensures: |ret| usize::from(ret) == self.values_since(after).len()
+        .saturating_add(self.computations_since(after).len())
+        .saturating_add(self.value_types_since(after).len())
+        .saturating_add(self.comp_types_since(after).len()))]
+    #[inline]
+    #[must_use]
+    pub fn minted_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> ArenaLength
+    {
+        ArenaLength::from(
+            self.values_since(after)
+                .len()
+                .saturating_add(self.computations_since(after).len())
+                .saturating_add(self.value_types_since(after).len())
+                .saturating_add(self.comp_types_since(after).len()),
+        )
     }
 
     /// Truncate every family back to `watermark`, dropping later allocations.

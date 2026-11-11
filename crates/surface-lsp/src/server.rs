@@ -4101,6 +4101,8 @@ impl Server
             let admitted = settle(&mut locked(&document.session), finished);
             logged.timing = admitted.timing;
             document.tiers.settle(admitted.tiers);
+            #[cfg(feature = "instrument")]
+            document.tiers.reread(admitted.rows);
             for accountant in workspace.accountants.values() {
                 let _gone = accountant.send(uri.clone());
             }
@@ -12434,6 +12436,87 @@ mod tests
                 replayed.map(String::from).to_vec()
             ),
             "the edited declaration alone waits on its admission"
+        );
+    }
+
+    /// #6289: at the counts layer each card counts what the engine did for
+    /// its declaration in the latest recheck, the checker's and the kernel's
+    /// apart. A first recheck judges each declaration and molds the forms of
+    /// its two halves; the admission offers it to the kernel, whose check
+    /// charges goals. A second recheck of the same text adopts each item and
+    /// molds no form, so each card counts no judged item, no memo consult and
+    /// no molded form, and the lowering's nodes again. The kernel's goals split
+    /// between expanded and kept by what earlier admissions of the process
+    /// kept, so the witness reads their sum.
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn a_counted_document_shows_its_counts_on_each_card_6289()
+    {
+        use gandr_surface_render_remote::AccountCounts;
+        use gandr_surface_render_remote::Count;
+
+        let uri = "file:///a-counted-document-shows-its-counts-on-each-card-6289.gandr";
+        let document = DocumentUri::from(uri);
+        let text =
+            include_str!("server/fixtures/a-comment-edit-keeps-each-kernel-tier-6286-first.gandr");
+        let mut connected = initialized();
+        connected.server.subscription = crate::instrument::Subscription::COUNTS;
+        let _opened = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                    "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}})
+                .to_string(),
+            ),
+        );
+        // Each card's checker counts, and whether its kernel's check charged
+        // a goal.
+        let counts = |connected: &Connected| -> Vec<Option<([u64; 7], bool)>> {
+            connected
+                .workspace
+                .accounted(&document)
+                .map(|(_, cards)| {
+                    cards
+                        .iter()
+                        .map(|card| {
+                            card.counts.map(|counts: AccountCounts| {
+                                (
+                                    [
+                                        counts.hits,
+                                        counts.misses,
+                                        counts.nodes,
+                                        counts.molded,
+                                        counts.judged,
+                                        counts.crossed,
+                                        counts.obligations,
+                                    ]
+                                    .map(|Count(count)| count),
+                                    counts.expanded.0 + counts.recalled.0 + counts.kept.0 > 0,
+                                )
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            counts(&connected),
+            [Some(([0, 3, 2, 2, 1, 1, 0], true)); 2],
+            "a first recheck judges each declaration, molds both its forms and offers it to the kernel"
+        );
+        let _changed = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": uri, "version": 2_i32},
+                    "contentChanges": [{"text": text}]}})
+                .to_string(),
+            ),
+        );
+        assert_eq!(
+            counts(&connected),
+            [Some(([0, 0, 2, 0, 0, 1, 0], true)); 2],
+            "a second recheck adopts each item and molds no form"
         );
     }
 

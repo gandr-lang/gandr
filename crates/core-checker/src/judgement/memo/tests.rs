@@ -84,6 +84,49 @@ fn a_shared_pair_spends_a_step_for_each_distinct_goal()
     );
 }
 
+/// The tally counts a miss for each goal the memo keys first and a hit for
+/// each goal it meets again. The iterated pair reads each level's goal twice,
+/// once through each field, so each plane counts one hit for each level. The
+/// type's formation keys one goal for each level and the unit's, and the
+/// pair's check keys one goal more than the formation.
+/// A tally that counted a hit as a miss, or a consult on the wrong plane,
+/// changes a count.
+#[cfg(feature = "instrument")]
+#[test]
+fn the_tally_counts_a_hit_for_each_goal_met_again()
+{
+    let mut arena = CoreArena::new();
+    let (pair, ty) = iterated_pair(&mut arena);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let formed = form_value_type(&mut context, ty).expect("the type forms");
+    let formation = context.tally();
+    assert!(
+        check_value(&mut context, pair, formed).is_ok(),
+        "the pair checks"
+    );
+    let check = context.tally().since(formation);
+    let read = |tally: crate::tally::MemoTally| {
+        [
+            tally.term_hits(),
+            tally.term_misses(),
+            tally.type_hits(),
+            tally.type_misses(),
+        ]
+        .map(u64::from)
+    };
+    let depth = u64::try_from(DEPTH).unwrap_or(u64::MAX);
+    assert_eq!(
+        (read(formation), read(check)),
+        ([0, 0, depth, depth.saturating_add(1)], [
+            depth,
+            depth.saturating_add(2),
+            0,
+            0
+        ]),
+        "each plane counts its own consults: one hit for each level"
+    );
+}
+
 #[test]
 fn a_node_read_under_two_binder_types_is_judged_under_each()
 {

@@ -190,6 +190,8 @@ extern crate alloc;
 
 mod account;
 mod closures;
+#[cfg(feature = "instrument")]
+mod counts;
 mod edit;
 mod forms;
 mod instrument;
@@ -206,6 +208,16 @@ pub use crate::account::CompileTier;
 pub use crate::account::KernelState;
 pub use crate::account::compiled;
 pub use crate::account::unrowed;
+#[cfg(feature = "instrument")]
+pub use crate::counts::CountColumn;
+#[cfg(feature = "instrument")]
+pub use crate::counts::Counts;
+#[cfg(feature = "instrument")]
+pub use crate::counts::DeclarationCounts;
+#[cfg(feature = "instrument")]
+pub use crate::counts::EventCount;
+#[cfg(feature = "instrument")]
+pub use crate::counts::uncounted;
 pub use crate::edit::Action;
 pub use crate::edit::ChildSlot;
 pub use crate::edit::CorePath;
