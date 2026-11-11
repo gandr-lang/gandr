@@ -2688,6 +2688,190 @@ fn a_carried_endpoint_maps_a_cell_6458()
     );
 }
 
+/// The second one-point sort `T`, at constant 3.
+const OTHER: usize = 3;
+/// The words of the loop at `T`'s point, at constant 4.
+const OTHER_LOOPS: usize = 4;
+/// `lp`, the word of `T`'s loop, at constant 5.
+const OTHER_LOOP: usize = 5;
+/// The words of the 2-cell at `T`'s point's reflexivity, at constant 6.
+const OTHER_CELLS: usize = 6;
+/// `cell`, the word of `T`'s 2-cell, at constant 7.
+const OTHER_CELL: usize = 7;
+
+/// [`one_two_cell`], then the sort `T`, the words of a loop at its point and
+/// `lp`, and the words of a 2-cell at the point's reflexivity and `cell`,
+/// admitted in that order.
+///
+/// # Specification
+/// trivial.
+fn two_cell_and_other() -> Environment
+{
+    let mut environment = one_two_cell();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let staged = staging.data(LevelSignature::monomorphic(), vec![], vec![vec![]], kind);
+    let _other = environment
+        .add_decl(staged)
+        .expect("the second one-point sort admits");
+    for (words, wrapping) in [(OTHER_LOOPS, 0_usize), (OTHER_CELLS, 1_usize)] {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(words), vec![]);
+        let base =
+            || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+        let cells = FreeCells::new(ConstantIndex::from(OTHER), vec![FreeCell::new(
+            base(),
+            base(),
+        )])
+        .wrapped(gandr_kernel_term::Reflexivities::from(wrapping));
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![own], vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(cells));
+        let _words = environment
+            .add_decl(staged)
+            .expect("the second sort's words admit");
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(OTHER), vec![]);
+        let point = arena.value_constructor(
+            ConstantIndex::from(OTHER),
+            carrier,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
+        let mut path = arena.value_type_path(carrier, point, point);
+        if wrapping == 1 {
+            let reflexivity = arena.value_here(point);
+            path = arena.value_type_path(path, reflexivity, reflexivity);
+        }
+        let own = arena.value_type_data(ConstantIndex::from(words), vec![]);
+        let empty = arena.value_constructor(
+            ConstantIndex::from(words),
+            own,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
+        let letter = arena.value_constructor(
+            ConstantIndex::from(words),
+            own,
+            ConstructorTag::from(1_usize),
+            vec![empty],
+        );
+        let staged = staging.def(LevelSignature::monomorphic(), path, letter);
+        let _word = environment
+            .add_decl(staged)
+            .expect("the second sort's word checks at its path");
+    }
+    environment
+}
+
+/// Stage `thunk (λx. case x { Base ⇒ return Pt; surf ⇒ return arm })` at `(x
+/// : S) → F T`, the arm at the 2-cell written only where `arm` names a
+/// constant, and admit it.
+///
+/// # Specification
+/// trivial.
+fn onto_other(
+    environment: &mut Environment,
+    arm: Option<ConstantIndex>,
+) -> Result<ConstantIndex, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let other = arena.value_type_data(ConstantIndex::from(OTHER), vec![]);
+    let point = arena.value_constructor(
+        ConstantIndex::from(OTHER),
+        other,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
+    let motive = arena.comp_type_returner(other);
+    let mut branches = vec![arena.computation_return(point)];
+    if let Some(arm) = arm {
+        let arm = arena.value_constant(arm);
+        branches.push(arena.computation_return(arm));
+    }
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let case = arena.computation_data_case(scrutinee, motive, branches);
+    let lambda = arena.computation_lambda(case);
+    let pi = arena.comp_type_pi(carrier, motive);
+    let declared = arena.value_type_thunk(pi);
+    let body = arena.value_thunk(lambda);
+    let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+    environment
+        .add_decl(staged)
+        .map(gandr_kernel_core::CheckedId::position)
+}
+
+/// Stage `thunk (λx. case x { Base ⇒ return lp })` at `(x : S) → F Path[.A =
+/// T](⟨map x⟩, ⟨map x⟩)`, and admit it.
+///
+/// # Specification
+/// trivial.
+fn loop_over(
+    environment: &mut Environment,
+    map: ConstantIndex,
+) -> Result<ConstantIndex, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let other = arena.value_type_data(ConstantIndex::from(OTHER), vec![]);
+    let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let function = arena.value_constant(map);
+    let forced = arena.computation_force(function);
+    let applied = arena.computation_application(forced, x);
+    let image = arena.value_returned(applied);
+    let fibre = arena.value_type_path(other, image, image);
+    let motive = arena.comp_type_returner(fibre);
+    let answer = arena.value_constant(ConstantIndex::from(OTHER_LOOP));
+    let branches = vec![arena.computation_return(answer)];
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let case = arena.computation_data_case(scrutinee, motive, branches);
+    let lambda = arena.computation_lambda(case);
+    let pi = arena.comp_type_pi(carrier, motive);
+    let declared = arena.value_type_thunk(pi);
+    let body = arena.value_thunk(lambda);
+    let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+    environment
+        .add_decl(staged)
+        .map(gandr_kernel_core::CheckedId::position)
+}
+
+/// #6741: a dependent case at the 2-cell that answers a loop carries it
+/// along the bound path; past a family whose images of the 2-cell are both
+/// empty, the loop moves to itself.
+#[test]
+fn a_carried_loop_moves_past_two_empty_images_6741()
+{
+    let mut environment = two_cell_and_other();
+    let flat = onto_other(&mut environment, None)
+        .expect("a map onto the second sort with no arm at the 2-cell admits");
+    let onto = onto_other(&mut environment, Some(ConstantIndex::from(OTHER_CELL)))
+        .expect("a map of the 2-cell onto the second sort's 2-cell admits");
+    let admitted = loop_over(&mut environment, flat);
+    assert!(
+        admitted.is_ok(),
+        "the map's image of the 2-cell is empty at both ends, so the loop moves to itself: \
+         {admitted:?}"
+    );
+    assert_eq!(
+        loop_over(&mut environment, onto),
+        Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+        "the map onto the second sort's 2-cell whiskers the loop, and no rule reads it"
+    );
+}
+
 /// A word written in place of the 2-cell's words, no definition naming it,
 /// is followed one path type above the sort: `Path.ap` of a map along it
 /// starts at the map's action on the point's reflexivity, and the identity's

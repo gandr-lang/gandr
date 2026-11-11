@@ -2,16 +2,21 @@
 /// Implemented: a data declaration declares a cell at the reflexivity of a
 /// point. The checker and the kernel take the path type at that wrapped point
 /// as the cell's words. A case over a sphere takes an arm at its cell, and
-/// `Path.ap` of the case on the cell reduces to that arm. A case into the
-/// universe takes `ua` of a homotopy at the 2-cell, and transport along that
-/// cell applies the homotopy at the point.
+/// `Path.ap` of the case on the cell reduces to that arm.
 ///
-/// Not implemented: a dependent case whose answer at the point holds a letter
-/// owes the whiskering of the cell, which does not yet compute.
+/// A case into the universe takes `ua` of a homotopy at the 2-cell. Transport
+/// along that cell applies the homotopy at the point. A dependent case whose
+/// answer at the point holds a loop checks where both images of the cell are
+/// empty.
 ///
-/// - owes: #6531
+/// Not implemented: past an image that holds a cell, that answer owes the
+/// whiskering of the cell, which does not yet compute.
+///
+/// - owes: #6773
 // The spheres, their cells at their path types, and the cancellations.
 import "../../model/identity/sphere.gandr";
+// A sort with a loop and a 2-cell, and its maps out of the 2-sphere.
+import "../../model/identity/sphere-whiskers.gandr";
 // The circle, `selfloop` and `ua`.
 import "../../model/identity/circle-base.gandr";
 import "../../model/identity/univalence.gandr";
@@ -36,6 +41,12 @@ def surfMapped : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base
   Path.ap surfKept surf,
   surf
 ) = Path.here surf;
+
+/// A loop at the point moves to itself past two empty images of the 2-cell.
+@[checks]
+def loopKept(x : S2) -> Path[.A = LoopCell](toPt x, toPt x) =
+  match x where
+    | Base2 => lp
 
 /// The Hopf family takes `ua selfloop` at the 2-cell.
 @[checks]

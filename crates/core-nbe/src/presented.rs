@@ -381,12 +381,14 @@ fn spells(
 ///   [`Presented`] carries, exactly when `value` is `here(q)`, `q` reads as a
 ///   point `p` wrapped in `r` reflexivities, `p` is a constructor term of a
 ///   sort `s`, and `definitions` presents `w` with cells over `s` wrapped `r`
-///   times whose point `p` spells. The reading takes the reflexivities off `q`,
-///   and each held endpoint it then meets runs by [`read_held`] and is
-///   unwrapped in turn. A held endpoint runs only while some presented type of
-///   words is wrapped at least as often as the reflexivities taken off so far,
-///   and its run is charged to `fuel`. [`NormalForm::Exhausted`] with `fuel` at
-///   zero when a run spends it; [`NormalForm::Kept`] otherwise.
+///   times whose point `p` spells. A `q` that reads as the empty word of a type
+///   of words over `p` wrapped `t` times reads as `p` wrapped `r + t + 1`
+///   times. The reading takes the reflexivities off `q`, and each held endpoint
+///   it then meets runs by [`read_held`] and is unwrapped in turn. A held
+///   endpoint runs only while some presented type of words is wrapped at least
+///   as often as the reflexivities taken off so far, and its run is charged to
+///   `fuel`. [`NormalForm::Exhausted`] with `fuel` at zero when a run spends
+///   it; [`NormalForm::Kept`] otherwise.
 /// - provides: the reading of [`normal_form`] at a reflexivity: the empty word
 ///   is the canonical form of the path both terms spell, as the kernel's replay
 ///   reads it in `present`.
@@ -409,8 +411,11 @@ fn spells(
 /// # Adequacy
 /// - hypothesis: L3 — `here(base)` reads as the circle's empty word,
 ///   `here(here(base))` as the empty word of the 2-cells, a held point reads
-///   once it runs, and `here(other)` off the point stays as written.
+///   once it runs, and `here(other)` off the point stays as written. At a point
+///   with loops and a 2-cell, `here` of the loops' empty word reads as the
+///   2-cells' empty word; read at the loops' sort, it stays as written.
 /// - witness: `presented::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+/// - witness: `presented::tests::a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741`
 #[spec(captures: before = u64::from(*fuel), ensures: |ret| u64::from(*fuel) <= before
     && match ret {
         Ok(NormalForm::Rewritten(word)) => domain.value(word).is_some(),
@@ -453,14 +458,30 @@ fn reflexivity_word(
             Held::Exhausted => return Ok(NormalForm::Exhausted),
         };
     }
-    let Some(&DomainValue::Constructor { datatype, .. }) = domain.value(base)
+    let Some(&DomainValue::Constructor { datatype, tag, .. }) = domain.value(base)
     else {
         return Ok(NormalForm::Kept);
     };
-    let Some(sort) = declaration(core, domain, datatype)?
+    let Some(declared) = declaration(core, domain, datatype)?
     else {
         return Ok(NormalForm::Kept);
     };
+    // The empty word of a type of words over `p` wrapped `r` times spells `p`
+    // wrapped `r + 1` times, so a reflexivity around it reads one dimension up.
+    let emptied = if tag == gandr_kernel_term::FreeCells::nil() {
+        definitions.presented(declared).and_then(Presented::cells)
+    }
+    else {
+        None
+    };
+    let (sort, wraps) = emptied.map_or((declared, wraps), |below| {
+        (
+            below.sort(),
+            wraps
+                .saturating_add(usize::from(below.reflexivities()))
+                .saturating_add(1),
+        )
+    });
     for (words, presented) in definitions.presentations() {
         let (Some(cells), Some(own)) = (presented.cells(), presented.own)
         else {
@@ -471,11 +492,14 @@ fn reflexivity_word(
             Some(&ValueType::Data { declaration, ref arguments })
                 if declaration == words && arguments.is_empty()
         );
-        if !classified
-            || cells.sort() != sort
-            || usize::from(cells.reflexivities()) != wraps
-            || spells(core, domain, sort, base, cells.point())? == Spelling::Apart
-        {
+        if !classified || cells.sort() != sort || usize::from(cells.reflexivities()) != wraps {
+            continue;
+        }
+        let apart = match emptied {
+            Some(below) => below.point() != cells.point(),
+            None => spells(core, domain, sort, base, cells.point())? == Spelling::Apart,
+        };
+        if apart {
             continue;
         }
         let datatype = domain.value_closure_node(ValueBody::ValueType(own), Environment::new());

@@ -16,16 +16,17 @@
 /// endpoints, one `Path.ap` layer deeper. The checker converts the transport
 /// of the answer to the answer, and the kernel re-derives the same reading.
 ///
-/// Limits: the rule reads a path family alone, and it reduces the transport
-/// only where the answer at the point is reflexivity. An arm written at the
-/// cell of a dependent case is checked at the motive's own type, so it does
-/// not check.
+/// Limits: the rule reads a path family alone. It reduces the transport where
+/// the answer at the point is reflexivity, or where both images of the cell
+/// are empty (`sphere-whiskers.gandr`). An arm written at the cell of a
+/// dependent case is checked at the motive's own type, so it does not check.
 ///
 /// - see: #6458 — `selfrefl2`, `throughName2`, `selfrefl3`
 /// - see: corpus/pathological/identity/sphere-maps.gandr — a map with no arm
 ///   at the cell, which the case refuses
 /// - see: #6477 — `apEmptyCell`
 /// - see: #6531 — the answer at the point that holds a letter
+/// - see: corpus/model/identity/sphere-whiskers.gandr
 /// - see: corpus/model/identity/sphere.gandr
 /// - see: corpus/model/identity/circle-maps.gandr
 /// - see: corpus/model/identity/hopf.gandr
