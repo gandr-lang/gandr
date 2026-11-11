@@ -5,9 +5,10 @@
 # each member belongs to. `gh` is recorded, not run, and a `gh stack link`
 # puts each pull request it names in stack 9, as the server would; the
 # retargeting, the required checks and the twin runs `queue_stack` reads are
-# stubbed, and `stack_link` and `link.jq` run as written. The result is one
-# line compared with the case's `output`: `queue_stack`'s exit status, then
-# the `gh` calls it made.
+# stubbed, and `stack_link` and `link.jq` run as written. A case's `foreign`
+# is the reading of the lowest open member's branch (`foreign_commits`,
+# #6797), empty when absent. The result is one line compared with the case's
+# `output`: `queue_stack`'s exit status, then the `gh` calls it made.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
@@ -35,6 +36,7 @@ for (( i = 0; i < count; i++ )); do
   stack_of() { jq -r --arg n "$1" '.[$n] // "null"' <<< "$servers"; }
   stack_entries() { echo '[]'; }
   retarget_landing() { :; }
+  foreign_commits() { jq -c ".[$i].foreign // []" "$cases"; }
   wait_required() { return 0; }
   rerun_twins() { return 1; }
   status=0

@@ -844,14 +844,16 @@ replay_reads() {
 # (`chain_replay`), so a conflict stops the cut with nothing moved. The
 # server refuses a base edit on a stacked pull request, so the stack is
 # unstacked first and the member above the red one retargeted onto the red
-# one's base. The server is then read again, and only a reading with the red
-# member in no stack and the member above it on that base lets the push run
-# (#5071): every moved branch in one atomic push leased on each remote tip.
-# The chain without the red member is then linked again (`stack_link`). The
-# red member stays open on its base for its seat. Prints one line per branch
-# that moved.
+# one's base, read against its replayed head (`set_base`, #6797). The server
+# is then read again, and only a reading with the red member in no stack and
+# the member above it on that base lets the push run (#5071): every moved
+# branch in one atomic push leased on each remote tip. A read or a push that
+# fails after the base edit sets the old base again, so the base never moves
+# without the branch (#6797). The chain without the red member is then
+# linked again (`stack_link`). The red member stays open on its base for its
+# seat. Prints one line per branch that moved.
 restack_past() {
-  local stack=$1 red=$2 at heads above head onto base scratch server held gap line status=0 pushes=() leases=() moved=() old new number
+  local stack=$1 red=$2 at heads above head onto base scratch server held gap line status=0 pushes=() leases=() moved=() old new number tip edited=0
   at=$(jq --argjson red "$red" 'map(.number) | index($red)' <<< "$stack")
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   above=("${heads[@]:at+1}")
@@ -876,13 +878,14 @@ restack_past() {
       pushes+=("$new:refs/heads/$head")
       leases+=("--force-with-lease=refs/heads/$head:$old")
       moved+=("$head ${old::12}..${new::12}")
+      [[ $head != "${above[0]}" ]] || tip=$new
     done
     number=$(jq -r ".[$at + 1].number" <<< "$stack")
     server=$(stack_of "$red")
     # It exits nonzero (5) whenever it leaves a queued member stacked, so
     # the server's reading below decides, never its exit.
     [[ $server == null ]] || gh stack unstack "$server" < /dev/null > /dev/null 2>&1 || :
-    gh pr edit "$number" -R "$repo" --base "$base" > /dev/null || status=$?
+    if set_base "$number" "$base" "$tip"; then edited=1; else status=1; fi
   fi
   if (( status == 0 )); then
     server=$(stack_of "$red") || status=$?
@@ -898,6 +901,10 @@ restack_past() {
   if (( status == 0 )); then
     git -C "$scratch" push --quiet --atomic "${leases[@]}" origin "${pushes[@]}" || status=$?
     gh_budget_stale
+  fi
+  if (( status != 0 && edited == 1 )); then
+    gh pr edit "$number" -R "$repo" --base "${heads[at]}" > /dev/null \
+      || echo "#$number stands on $base with its branch unmoved: set its base to ${heads[at]} by hand" >&2
   fi
   if (( status == 0 )); then
     stack_link "$(jq -c --argjson red "$red" 'map(select(.number != $red))' <<< "$stack")" || status=$?
@@ -995,7 +1002,7 @@ cut_to_top() {
   if (( status == 0 )); then
     chain=$(jq -c --argjson root "$root" 'map(select(.number != $root))' <<< "$stack")
     top=$(jq -r '.[-1].head' <<< "$chain")
-    gh pr edit "$root" -R "$repo" --base "$top" > /dev/null || status=$?
+    set_base "$root" "$top" || status=$?
   fi
   if (( status == 0 )); then
     stack_link "$(jq -c --argjson stack "$stack" --argjson root "$root" '. + [$stack[] | select(.number == $root)]' <<< "$chain")" || status=$?
@@ -1331,16 +1338,65 @@ rerun_twins() {
   (( ${#ids[@]} > 0 ))
 }
 
+# The open pull requests whose commits the branch `$2` holds past the base
+# `$3` (`foreign.jq`, #6797), as a JSON array, empty when the base agrees
+# with the branch. `$1` is the unit's pull request, or `null` before it
+# opens. `$4` is the head read in place of `origin/$2`, such as a replay not
+# yet pushed or a branch not yet pushed. One fetch takes every open head, and
+# each commit list reaches jq on its standard input, never as an argument
+# (#6374).
+foreign_commits() {
+  local number=$1 head=$2 base=$3 tip=${4:-} open other ohead above heads=()
+  open=$(open_prs) || return 1
+  mapfile -t heads < <(jq -r --arg head "$head" '.[] | select(.head != $head) | .head' <<< "$open")
+  if [[ -z $tip ]]; then
+    heads+=("$head")
+    tip=origin/$head
+  fi
+  git fetch --quiet origin "$base" "${heads[@]}" || return 1
+  {
+    git rev-list "origin/$base..$tip" | jq -Rsc --argjson number "$number" '{own: true, number: $number, commits: (split("\n") | map(select(. != "")))}'
+    while IFS=$'\t' read -r other ohead; do
+      above=false
+      if git merge-base --is-ancestor "$tip" "origin/$ohead"; then above=true; fi
+      git rev-list "origin/$base..origin/$ohead" \
+        | jq -Rsc --argjson number "$other" --argjson above "$above" '{own: false, number: $number, above: $above, commits: (split("\n") | map(select(. != "")))}'
+    done < <(jq -r --arg head "$head" '.[] | select(.head != $head) | [.number, .head] | @tsv' <<< "$open")
+  } | jq -sc '(map(select(.own)) | first) as $own | {number: $own.number, commits: $own.commits, open: map(select(.own | not) | del(.own))}' \
+    | jq -c -f "$pr_stack_dir/foreign.jq"
+}
+
+# Set pull request `$1`'s base to `$2` only while its branch, or the head
+# `$3` read in its place, holds no commit of another open pull request past
+# `$2` (`foreign_commits`, #6797): a landing over that base would squash
+# those commits under its title. A refusal names them on stderr, changes
+# nothing and returns 1.
+set_base() {
+  local number=$1 base=$2 tip=${3:-} head foreign
+  head=$(open_prs | jq -r --argjson n "$number" '.[] | select(.number == $n) | .head')
+  [[ -n $head ]] || { echo "#$number is not open, so its base stays" >&2; return 1; }
+  foreign=$(foreign_commits "$number" "$head" "$base" "$tip") \
+    || { echo "the commits of #$number past $base cannot be read, so its base stays" >&2; return 1; }
+  if [[ $foreign != '[]' ]]; then
+    echo "#$number keeps its base: past $base its branch holds $(jq -r 'map("\(.commits) commit(s) of #\(.number)") | join(", ")' <<< "$foreign"), which a landing over $base would squash under its title (#6797)" >&2
+    return 1
+  fi
+  gh pr edit "$number" -R "$repo" --base "$base" > /dev/null
+}
+
 # Retarget to the trunk every open pull request the landing of `$1`, a JSON
 # array of pull request numbers, would close (`retarget.jq`, #1420): GitHub
 # deletes a merged branch and closes, unmerged, every open pull request still
 # based on it that no linked stack carries. Each survives on the trunk, and
-# `pr:land` from its top rebases it. Prints one line on stderr for each.
+# `pr:land` from its top rebases it. A pull request whose branch holds the
+# commits of a pull request still open keeps its base (`set_base`, #6797):
+# on the trunk, a landing would squash those commits under its title. Prints
+# one line on stderr for each.
 retarget_landing() {
   local number base
   while IFS=$'\t' read -r number base; do
     [[ -n "$number" ]] || continue
-    gh pr edit "$number" -R "$repo" --base "$trunk" > /dev/null
+    set_base "$number" "$trunk" || continue
     echo "#$number retargeted from $base to $trunk: the landing deletes its base" >&2
   done < <(open_prs | jq -r --argjson landing "$1" -f "$pr_stack_dir/retarget.jq" | jq -r '.[] | [.number, .base] | @tsv')
 }
@@ -1413,7 +1469,7 @@ base_closed() {
   local stack
   stack=$(stack_of "$1")
   [[ $stack == null ]] || gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :
-  gh pr edit "$1" -R "$repo" --base "$2" > /dev/null && return 0
+  set_base "$1" "$2" && return 0
   stack_link "$3" || :
   echo "the base of #$1 did not change to $2, so the cut past the member closed below it moved nothing" >&2
   return 1
@@ -1547,7 +1603,7 @@ retarget_bottom() {
     gh pr reopen "$number" -R "$repo" > /dev/null
   fi
   if [[ -n "$stack" ]]; then gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :; fi
-  gh pr edit "$number" -R "$repo" --base "$trunk" > /dev/null
+  set_base "$number" "$trunk" || return 2
   echo "#$number retargeted from $base to $trunk: its base merged or is gone, and no landing reaches $trunk from it" >&2
 }
 
@@ -1570,9 +1626,19 @@ retarget_bottom() {
 # server stack takes none, so the stack merge would not know `$3` (#4843).
 # The stack is read again once the queued ones merge.
 queue_stack() {
-  local stack=$1 queued=$2 upto=$3 open landing number reruns watched
+  local stack=$1 queued=$2 upto=$3 open landing number reruns watched bottom foreign
   open=$(jq -c --argjson queued "$queued" '[.[] | select(.number | IN($queued[]) | not)]' <<< "$stack")
   mapfile -t landing < <(jq -r --argjson upto "$upto" '(map(.number) | index($upto)) as $end | .[: $end + 1][].number' <<< "$open")
+  # The lowest open member lands over the member queued below it, or over the
+  # trunk, so a commit of another open pull request on its branch past that
+  # base would merge under its title (#6797): the stack waits for that pull
+  # request, or for a restack.
+  bottom=$(jq -c --argjson stack "$stack" --arg trunk "$trunk" '.[0] as $low | ($stack | map(.number) | index($low.number)) as $at | $low + {base: (if $at > 0 then $stack[$at - 1].head else $trunk end)}' <<< "$open")
+  foreign=$(foreign_commits "$(jq -r .number <<< "$bottom")" "$(jq -r .head <<< "$bottom")" "$(jq -r .base <<< "$bottom")") || return 1
+  if [[ $foreign != '[]' ]]; then
+    echo "the stack is not queued: past $(jq -r .base <<< "$bottom"), the branch of its lowest open member #$(jq -r .number <<< "$bottom") holds $(jq -r 'map("\(.commits) commit(s) of #\(.number)") | join(", ")' <<< "$foreign"); restack it onto the pull request it builds on, then land again (#6797)" >&2
+    return 1
+  fi
   retarget_landing "$(jq -cn '$ARGS.positional | map(tonumber)' --args "${landing[@]}")"
   if [[ $(jq length <<< "$stack") == 1 ]]; then
     if [[ $(stack_of "$upto") == null ]]; then

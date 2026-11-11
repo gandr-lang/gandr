@@ -32,5 +32,20 @@
     "upto": 3,
     "stacks": {},
     "output": "status 0; gh: stack link --base main 2 3 | stack merge 3 --yes --merge"
+  },
+  {
+    "name": "#6797: a stack whose lowest open member holds the commits of two open parents past the trunk is not queued, nor linked",
+    "stack": [
+      { "number": 6793, "head": "reduction-6741-whiskered-letter" },
+      { "number": 6795, "head": "triage-6790-main-arm-state" }
+    ],
+    "queued": [],
+    "upto": 6795,
+    "stacks": {},
+    "foreign": [
+      { "number": 6791, "commits": 4 },
+      { "number": 6792, "commits": 5 }
+    ],
+    "output": "status 1; gh: "
   }
 ]

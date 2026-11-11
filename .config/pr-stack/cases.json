@@ -4581,5 +4581,60 @@
       "branches": ["landing", "gh-readonly-queue/landing/pr-1", "stack-base", "stray"]
     },
     "output": "[{\"branch\":\"landing\",\"accounted\":true},{\"branch\":\"gh-readonly-queue/landing/pr-1\",\"accounted\":true},{\"branch\":\"stack-base\",\"accounted\":true},{\"branch\":\"stray\",\"accounted\":false}]"
+  },
+  {
+    "name": "#6797: a base on the trunk under a branch on two open parents names both, and the pull request above is the unit's own",
+    "program": "foreign.jq",
+    "input": {
+      "number": 6793,
+      "commits": ["r1", "r2", "r3", "r4", "r5", "m1", "v1", "v2", "v3", "v4"],
+      "open": [
+        { "number": 6791, "above": false, "commits": ["v1", "v2", "v3", "v4"] },
+        { "number": 6792, "above": false, "commits": ["m1", "v1", "v2", "v3", "v4"] },
+        {
+          "number": 6795,
+          "above": true,
+          "commits": ["t1", "r1", "r2", "r3", "r4", "r5", "m1", "v1", "v2", "v3", "v4"]
+        }
+      ]
+    },
+    "output": "[{\"number\":6791,\"commits\":4},{\"number\":6792,\"commits\":5}]"
+  },
+  {
+    "name": "#6797: a base on the nearest parent's head agrees, since the parents' commits lie in the base",
+    "program": "foreign.jq",
+    "input": {
+      "number": 6793,
+      "commits": ["r1", "r2", "r3", "r4", "r5"],
+      "open": [
+        { "number": 6791, "above": false, "commits": [] },
+        { "number": 6792, "above": false, "commits": [] },
+        { "number": 6795, "above": true, "commits": ["t1", "r1", "r2", "r3", "r4", "r5"] }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#6797: a base two levels down, as a cut leaves it with the branch unmoved, names the parent between",
+    "program": "foreign.jq",
+    "input": {
+      "number": 6795,
+      "commits": ["t1", "r1", "r2", "r3", "r4", "r5"],
+      "open": [
+        { "number": 6792, "above": false, "commits": [] },
+        { "number": 6793, "above": false, "commits": ["r1", "r2", "r3", "r4", "r5"] }
+      ]
+    },
+    "output": "[{\"number\":6793,\"commits\":5}]"
+  },
+  {
+    "name": "#6797: a branch read before its pull request opens names a sibling that shares its parent's commit",
+    "program": "foreign.jq",
+    "input": {
+      "number": null,
+      "commits": ["a1", "p1"],
+      "open": [{ "number": 7, "above": false, "commits": ["p1", "s1"] }]
+    },
+    "output": "[{\"number\":7,\"commits\":1}]"
   }
 ]

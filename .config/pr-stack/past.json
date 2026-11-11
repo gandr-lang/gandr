@@ -22,7 +22,7 @@
     "red": "middle",
     "upper": "apart",
     "server": "keeps",
-    "output": "refused: the server still holds #2 in stack 9 after the unstack; nothing is pushed; gh: stack unstack 9 | pr edit 3 -R case/case --base lower; link: "
+    "output": "refused: the server still holds #2 in stack 9 after the unstack; nothing is pushed; gh: stack unstack 9 | pr edit 3 -R case/case --base lower | pr edit 3 -R case/case --base red; link: "
   },
   {
     "name": "#5071: a member whose tip the member above it does not contain is refused before the replay, both named, and nothing moves",
