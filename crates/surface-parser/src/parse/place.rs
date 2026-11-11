@@ -139,6 +139,10 @@ const COPIES: usize = 16;
 /// order.
 const BRACKETS: usize = 4;
 
+/// The most copies [`lined`] molds: the first keyword of each line first,
+/// then the next keyword of each line.
+const LINE_COPIES: usize = 4;
+
 /// Which search over a parse's targets runs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Pass
@@ -372,7 +376,12 @@ impl Target
 ///   obligations than `parsed`. Last, an opener left out of a declaration that
 ///   holds a closer too many is placed over the parse [`headed`] gives
 ///   ([`opened`]). Its parse is kept only where it owes fewer obligations than
-///   the melder's reading and than the parse of the searches before it.
+///   the melder's reading and than the parse of the searches before it. Where
+///   the parse these searches give owes three obligations or more, a
+///   declaration's keyword left out at a line inside a declaration that holds a
+///   repair is placed over the parse [`headed`] gives ([`lined`]), and the
+///   searches above run again over that parse. It is kept only where it owes
+///   fewer obligations than the parse of the searches before it.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -394,8 +403,10 @@ impl Target
 ///   source is never minted inside its body; a `(` left out before a juxtaposed
 ///   operand is minted where its declaration parses; a `)` left out after a
 ///   line that ends in a `,` keeps the first search's reading when the gap's
-///   copy owes more than its minted tiles; and a `)` that the gap mints where
-///   the first search mints it keeps the first search's reach.
+///   copy owes more than its minted tiles; a `)` that the gap mints where the
+///   first search mints it keeps the first search's reach; and a `def` left out
+///   at a line inside a declaration that ends with no `;` is minted at that
+///   line's first tile.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
@@ -404,25 +415,60 @@ impl Target
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::place::tests::a_gap_parse_that_owes_more_than_its_tiles_keeps_the_first_placement_6029`
+/// - witness: `parse::place::tests::a_keyword_left_out_at_a_line_inside_a_declaration_is_minted_there_6104`
 pub(super) fn placed<'source>(
     pbg: &Pbg,
     parsed: ParseResult<'source>,
 ) -> ParseResult<'source>
 {
     let parsed = headed(pbg, &parsed).unwrap_or(parsed);
+    let found = searched(pbg, &parsed);
+    let owed = found
+        .as_ref()
+        .map_or(parsed.obligations.len(), |found| found.obligations.len());
+    if owed < 3 {
+        return found.unwrap_or(parsed);
+    }
+    match lined(pbg, &parsed).map(|lined| searched(pbg, &lined).unwrap_or(lined)) {
+        Some(lined) if lined.obligations.len() < owed => lined,
+        Some(_) | None => found.unwrap_or(parsed),
+    }
+}
+
+/// The searches of [`placed`] that run after [`headed`], over `parsed`.
+///
+/// # Specification
+/// - requires: `parsed` is a parse under `pbg`.
+/// - ensures: as the clause of [`placed`] states for its searches after
+///   [`headed`] and before [`lined`]: the parse those searches keep, or `None`
+///   where they keep none.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`placed`].
+/// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+/// - witness: `parse::place::tests::a_keyword_left_out_at_a_line_inside_a_declaration_is_minted_there_6104`
+fn searched<'source>(
+    pbg: &Pbg,
+    parsed: &ParseResult<'source>,
+) -> Option<ParseResult<'source>>
+{
     // The gap search wins over the first target where it keeps a place
     // before a line inside the target's top-level form and owes nothing but
     // the tiles it mints: the line tells where the repair stands, and the
     // whole form's reading tells only that it parses. A gap parse that mints
     // nothing the first parse does not mint at the same place tells nothing
     // more, and the first parse keeps the reach of its closers.
-    let searched = match earlier(pbg, &parsed, Pass::First) {
-        Some((found, form)) => super::gap::gapped(pbg, &parsed, Some(form))
+    let searched = match earlier(pbg, parsed, Pass::First) {
+        Some((found, form)) => super::gap::gapped(pbg, parsed, Some(form))
             .filter(|gap| !minted_places(&gap.tree).is_subset(&minted_places(&found.tree)))
             .or(Some(found)),
-        None => super::gap::gapped(pbg, &parsed, None)
-            .or_else(|| earlier(pbg, &parsed, Pass::Last).map(|(found, _)| found))
-            .or_else(|| fronted(pbg, &parsed)),
+        None => super::gap::gapped(pbg, parsed, None)
+            .or_else(|| earlier(pbg, parsed, Pass::Last).map(|(found, _)| found))
+            .or_else(|| fronted(pbg, parsed)),
     };
     // An opener left out wins only where it owes fewer obligations than the
     // melder's reading and than the search that places a closer or a
@@ -430,7 +476,7 @@ pub(super) fn placed<'source>(
     let bound = Owed::from(searched.as_ref().map_or(parsed.obligations.len(), |found| {
         found.obligations.len().min(parsed.obligations.len())
     }));
-    opened(pbg, &parsed, bound).or(searched).unwrap_or(parsed)
+    opened(pbg, parsed, bound).or(searched)
 }
 
 /// `parsed` with the tile a separator takes next minted after it, where the
@@ -816,6 +862,164 @@ fn headed<'source>(
                 &[splice],
                 [ObligationInstance::new(Oblig::MissingTile, lead)],
             )
+        })
+}
+
+/// `parsed` with a declaration's keyword minted at the first tile of a line
+/// inside a top-level declaration that holds a repair, where the rest of that
+/// declaration from the line on parses as one declaration.
+///
+/// A definition that ends with no `;` lets its body run on to the next line.
+/// Where the `def` of the definition after it is left out, as in
+/// `def f(…) -> Type = return Unit` with ` g : T = e;` on a later line, the
+/// melder reads `g` as an operand of the body and the rest of `g` as the body's
+/// tail. Each top-level form reads as a declaration, so [`headed`] finds no
+/// run. Here each tile that a line starts with, after only spaces or tabs,
+/// inside a top-level declaration that holds a repair, and after that
+/// declaration's first tile, is a place. The places go from the least indented,
+/// and in source order among equals. A place whose tile no declaration keyword
+/// takes gives no copy. The first [`LINE_COPIES`] other places give the copies:
+/// the first keyword in mold order at each place, then the next keyword at each
+/// place, the first [`LINE_COPIES`] copies in all. Each keyword is written
+/// before its tile, a space after it. Each copy spans the tile and the rest of
+/// its declaration.
+///
+/// # Specification
+/// - requires: `parsed` is a parse under `pbg`.
+/// - ensures: the first such copy that molds with no repair as declarations
+///   alone gives the parse when that parse owes fewer obligations than
+///   `parsed`: the source's tree read from the whole copy, the keyword an empty
+///   prefix grout at its tile, with one [`Oblig::MissingTile`] over that tile
+///   beside the whole copy's other obligations, shifted back over the keyword;
+///   `None` where no copy tried parses or its parse owes no fewer.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `def` left out at a line inside a declaration that ends
+///   with no `;` is minted at that line's first tile, and the definition from
+///   there on parses whole.
+/// - witness: `parse::place::tests::a_keyword_left_out_at_a_line_inside_a_declaration_is_minted_there_6104`
+fn lined<'source>(
+    pbg: &Pbg,
+    parsed: &ParseResult<'source>,
+) -> Option<ParseResult<'source>>
+{
+    let tree = &parsed.tree;
+    let source = tree.source();
+    let text = <&str>::from(source);
+    let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
+    let mut candidates: Vec<(usize, ByteSpan, MoldId, ByteSpan)> = Vec::new();
+    for position in tree.children(tree.root()) {
+        let Some(node) = tree.node(position)
+        else {
+            continue;
+        };
+        let NodeLabel::Meld(mold) = node.label()
+        else {
+            continue;
+        };
+        if !bool::from(declaration_head(pbg, mold)) {
+            continue;
+        }
+        let span = node.span();
+        if !parsed.obligations.iter().any(|obligation| {
+            span.start() <= obligation.span.start() && obligation.span.end() <= span.end()
+        }) {
+            continue;
+        }
+        let Some((_, first)) = first_tile(tree, position)
+        else {
+            continue;
+        };
+        for inner in tree.descendants(position).into_iter().flatten() {
+            let Some(tile) = tree.node(inner)
+            else {
+                continue;
+            };
+            let NodeLabel::Tile(lead) = tile.label()
+            else {
+                continue;
+            };
+            let start = usize::from(tile.span().start());
+            if tile.span().start() <= first.start() || tile.span().start() == tile.span().end() {
+                continue;
+            }
+            // A line's first tile stands after a newline and only spaces or
+            // tabs. The scan reads back over the indent alone.
+            let Some(before) = text.get(.. start)
+            else {
+                continue;
+            };
+            let indent = before
+                .bytes()
+                .rev()
+                .take_while(|&byte| byte == b' ' || byte == b'\t')
+                .count();
+            let newline = indent
+                .checked_add(1)
+                .and_then(|width| start.checked_sub(width));
+            if newline.and_then(|at| before.as_bytes().get(at)) != Some(&b'\n') {
+                continue;
+            }
+            let Ok(run) = ByteSpan::new(tile.span().start(), span.end())
+            else {
+                continue;
+            };
+            candidates.push((indent, run, lead, tile.span()));
+        }
+    }
+    candidates.sort_unstable_by_key(|&(indent, run, ..)| (indent, run.start()));
+    // Each line's first keyword comes before any line's second. A line whose
+    // tile no keyword takes, as a closer, gives no copy. No line past the
+    // first [`LINE_COPIES`] that give one can give a copy, so the scan reads
+    // no more.
+    let lines: Vec<(ByteSpan, ByteSpan, Vec<SourceText<'static>>)> = candidates
+        .into_iter()
+        .map(|(_, run, lead, lead_span)| (run, lead_span, heads(pbg, lead)))
+        .filter(|(.., keywords)| !keywords.is_empty())
+        .take(LINE_COPIES)
+        .collect();
+    let ranks = lines
+        .iter()
+        .map(|(.., keywords)| keywords.len())
+        .max()
+        .unwrap_or(0);
+    let mut written_keyword = String::new();
+    (0 .. ranks)
+        .flat_map(|rank| {
+            lines.iter().filter_map(move |(run, lead_span, keywords)| {
+                keywords
+                    .get(rank)
+                    .copied()
+                    .map(|keyword| (*run, *lead_span, keyword))
+            })
+        })
+        .take(LINE_COPIES)
+        .find_map(|(run, lead, keyword)| {
+            let place = lead.start();
+            written_keyword.clear();
+            written_keyword.push_str(<&str>::from(keyword));
+            written_keyword.push(' ');
+            let tile = SourceText::from(written_keyword.as_str());
+            let copied = written(source, run, place, tile, SourceText::from(""))?;
+            let declaration = unrepaired(pbg, SourceText::from(copied.as_str()))?;
+            if !bool::from(declared(pbg, &declaration)) {
+                return None;
+            }
+            let copy = written(source, whole, place, tile, SourceText::from(""))?;
+            let splice = Splice::new(place, tile, NodeLabel::Grout {
+                sort: BOUNDARY_SORT.grout_sort(),
+                shape: GroutShape::Prefix,
+            })?;
+            spliced(
+                molded(pbg, SourceText::from(copy.as_str())),
+                source,
+                &[splice],
+                [ObligationInstance::new(Oblig::MissingTile, lead)],
+            )
+            .filter(|placed| placed.obligations.len() < parsed.obligations.len())
         })
 }
 
@@ -2601,6 +2805,62 @@ mod tests
                 "{why}: the `def` is minted, empty, at the `rec`"
             );
         }
+    }
+
+    /// #6104: a `def` left out at a line inside a declaration that ends with
+    /// no `;` makes the melder read the next definition as the body's tail.
+    /// Every top-level form reads as a declaration, so the head search finds
+    /// no run. The keyword is minted at the line's first tile, and the
+    /// definition from there on parses whole.
+    #[test]
+    fn a_keyword_left_out_at_a_line_inside_a_declaration_is_minted_there_6104()
+    {
+        let pbg = built_in().unwrap();
+        let source = include_str!(
+            "place/unformatted/a-keyword-left-out-at-a-line-inside-a-declaration-is-minted-there-6104.gandr"
+        );
+        let head = source.find("pair :").unwrap();
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        let tree = parsed.tree();
+        assert_eq!(
+            reconstruct(tree),
+            source,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            parsed
+                .obligations()
+                .iter()
+                .any(|repair| repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == head
+                    && usize::from(repair.span.end()) == head.saturating_add(4)),
+            "a repair stands over the name at the line's start: {:?}",
+            parsed.obligations()
+        );
+        assert!(
+            parsed
+                .obligations()
+                .iter()
+                .all(|repair| usize::from(repair.span.start()) <= head),
+            "the definition from the minted keyword on parses whole: {:?}",
+            parsed.obligations()
+        );
+        let ghosts: Vec<ByteOffset> = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| {
+                matches!(node.label(), NodeLabel::Grout {
+                    shape: GroutShape::Prefix,
+                    ..
+                }) && node.span().start() == node.span().end()
+            })
+            .map(|node| node.span().start())
+            .collect();
+        assert_eq!(
+            ghosts,
+            [ByteOffset::from(head)],
+            "the `def` is minted, empty, at the name"
+        );
     }
 
     /// #6029: a `)` left out inside a declaration whose line before ends in a

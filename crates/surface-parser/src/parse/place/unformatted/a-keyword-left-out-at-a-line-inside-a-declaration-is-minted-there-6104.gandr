@@ -1,0 +1,6 @@
+def before(r : Unit) -> Type = return Unit
+
+/// The pair after it.
+ pair : Dyad (Unit -> Unit) before = MkDyad
+  computed
+  *{};
