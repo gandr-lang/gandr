@@ -395,7 +395,8 @@ impl Walk<'_, '_>
 
     /// The spine the juxtaposed application at `at` writes, `f x y`, with its
     /// head and then its arguments left in the walk's parts; its separators
-    /// and arguments are pushed onto the walk's buffers.
+    /// and arguments are pushed onto the walk's buffers. It walks down the
+    /// spine's left edge once.
     ///
     /// # Specification
     /// - requires: the walk's tree was parsed under its grammar.
@@ -406,7 +407,6 @@ impl Walk<'_, '_>
     ///   separator, each argument, and the end of `at` as its close; none
     ///   otherwise.
     /// - panics: none.
-    /// - economy: one walk down the spine's left edge.
     /// - executable: none — a clause would walk the spine again.
     ///
     /// # Adequacy
@@ -552,7 +552,7 @@ pub struct Stack
 impl Stack
 {
     /// The stack of `tree`, parsed under `grammar`, one form per child of its
-    /// root.
+    /// root. It walks the tree once.
     ///
     /// # Specification
     /// - requires: `tree` was parsed under `grammar`.
@@ -561,7 +561,6 @@ impl Stack
     /// - provides: the stack of a text a face parsed itself.
     /// - fails: never.
     /// - panics: none.
-    /// - economy: one walk of the tree.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Stack::at`].

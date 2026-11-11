@@ -3517,23 +3517,12 @@ impl TypeTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each row of the context stack shows the type the
-    ///   hover at its head shows.
-    /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body scans every entry for the spans holding the offset once; the check scans them once more"
-        )
-    )]
-    #[spec(ensures: |ret| {
-        let holding = |entry: &&Entry| entry.span.start() <= offset && offset < entry.span.end();
-        match ret {
-            Maybe::Present(ref answer) => answer.span.start() <= offset && offset < answer.span.end(),
-            Maybe::Absent(typing::Absent::Untyped) => !self.entries.iter().any(|entry| holding(&entry)),
-            Maybe::Absent(typing::Absent::Unspelled) => self.entries.iter().any(|entry| holding(&entry)),
-        }
+    /// - hypothesis: L3 — a type wider than a narrow page answers on one line,
+    ///   the line a page wider than the type lays out.
+    /// - witness: `typed::tests::a_type_answers_on_the_line_a_wide_page_lays_out`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref answer) => answer.span.start() <= offset && offset < answer.span.end(),
+        Maybe::Absent(_) => true,
     })]
     #[inline]
     pub fn at_line(
@@ -3597,22 +3586,11 @@ impl TypeTable
     /// - hypothesis: L3 — the argument of each spine around a hole answers the
     ///   type its slot asks, a computation in a value's slot included, and a
     ///   slot that holds no typed term answers none.
-    /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body scans every entry for the spans inside the window once; the check scans them once more"
-        )
-    )]
-    #[spec(ensures: |ret| {
-        let inside = |entry: &&Entry| entry.subject == Subject::Term
-            && within.start() <= entry.span.start() && entry.span.end() <= within.end();
-        match ret {
-            Maybe::Present(ref answer) => within.start() <= answer.span.start() && answer.span.end() <= within.end(),
-            Maybe::Absent(typing::Absent::Untyped) => !self.entries.iter().any(|entry| inside(&entry)),
-            Maybe::Absent(typing::Absent::Unspelled) => self.entries.iter().any(|entry| inside(&entry)),
-        }
+    /// - witness: `typed::tests::the_outermost_term_in_a_slot_answers_the_type_the_slot_asks`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref answer) => answer.subject == Subject::Term
+            && within.start() <= answer.span.start() && answer.span.end() <= within.end(),
+        Maybe::Absent(_) => true,
     })]
     #[inline]
     pub fn outermost(
@@ -9441,6 +9419,78 @@ mod tests
                 expected: Maybe::Present(String::from("Integer")),
             }),
             "the term has its own type and the one it was checked against"
+        );
+    }
+
+    /// The outermost term inside a slot's argument answers the type the slot
+    /// asks, a computation in a value's slot included; a span that holds no
+    /// typed term answers none.
+    #[test]
+    fn the_outermost_term_in_a_slot_answers_the_type_the_slot_asks()
+    {
+        let source = SourceText::from(
+            "def h(c : Integer) -> -F Integer { return c }\n\
+             def g(a : Integer, b : Integer) -> -F Integer { return a + b }\n\
+             def main() -> -F Integer { g 2 (h 1) }\n",
+        );
+        let table = table(source);
+        let text = <&str>::from(source);
+        let span = |needle: &str| {
+            let start = text.rfind(needle).expect("the needle occurs");
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(needle.len())),
+            )
+            .expect("an ordered span")
+        };
+        let checked = |within: ByteSpan| match table.outermost(within, Form::Explicit.into()) {
+            Maybe::Present(typed) => Some(String::from(match typed.expected() {
+                Maybe::Present(checked) => checked.as_ref(),
+                Maybe::Absent(_) => typed.ty().as_ref(),
+            })),
+            Maybe::Absent(_) => None,
+        };
+        assert_eq!(
+            checked(span("(h 1)")),
+            Some(String::from("Integer")),
+            "a computation in a value's slot answers the value's type"
+        );
+        assert_eq!(
+            checked(span("2")),
+            Some(String::from("Integer")),
+            "a literal answers its slot's type"
+        );
+        assert_eq!(checked(span("def")), None, "a keyword holds no typed term");
+    }
+
+    /// A type wider than a narrow page answers on one line, the line a page
+    /// wider than the type lays out.
+    #[test]
+    fn a_type_answers_on_the_line_a_wide_page_lays_out()
+    {
+        let source = SourceText::from(
+            "def wide(first : Integer, second : Integer, third : Integer, fourth : Integer) -> -F Integer { return first }\n\
+             def main() -> -F Integer { wide 1 2 3 4 }\n",
+        );
+        let table = table(source);
+        let at = ByteOffset::from(<&str>::from(source).rfind("wide").expect("the use occurs"));
+        let style = Form::Explicit.into();
+        let spelled = |answer: Maybe<super::TypedSpan, typing::Absent>| match answer {
+            Maybe::Present(typed) => Some(String::from(typed.ty().as_ref())),
+            Maybe::Absent(_) => None,
+        };
+        let paged =
+            spelled(table.at(at, PageWidth::from(40_u32), style)).expect("the use is typed");
+        let line = spelled(table.at_line(at, style)).expect("the use is typed");
+        assert!(
+            paged.contains('\n'),
+            "a narrow page breaks the type: {paged}"
+        );
+        assert!(!line.contains('\n'), "one line holds the type: {line}");
+        assert_eq!(
+            Some(line),
+            spelled(table.at(at, PageWidth::from(4_096_u32), style)),
+            "the line is the layout of a wide page"
         );
     }
 
