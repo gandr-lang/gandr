@@ -939,7 +939,8 @@ fn routes(
 /// - requires: nothing.
 /// - ensures: `Some((f, n, q))` exactly when `call` is `n` such layers, `n` at
 ///   least one, around `force f y` for a constant `f`, `q` the outermost
-///   transport's path; `None` otherwise.
+///   transport's path; `None` otherwise, and for a transport whose left
+///   endpoint reads its family's binder or whose operand is no reflexivity.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -949,7 +950,9 @@ fn routes(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Path.ap` of the sphere's identity on the 2-cell is the
-///   identity under one layer, as the evaluator reads it.
+///   identity under one layer, as the evaluator reads it. A transport in `x.
+///   Path[.A = B](⟨g x⟩, ⟨g x⟩)` conjugates its operand: read as a layer, the
+///   map's image of the 2-cell replaces the image's inverse, then the image.
 /// - witness: `tests::native_formers::a_map_s_image_of_a_2_cell_in_place_is_its_arm`
 #[spec(ensures: |ret| ret.is_none_or(|(_, layers, _)| layers != Reflexivities::NONE))]
 fn layered(
@@ -959,15 +962,26 @@ fn layered(
 {
     let innermost = |value: ValueId| matches!(arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32));
     let (mut body, mut layers, mut along) = (call, 0_usize, None);
-    while let Some(&Computation::PathTransport { motive, path, .. }) = arena.computation(body) {
+    while let Some(&Computation::PathTransport {
+        motive,
+        path,
+        value,
+    }) = arena.computation(body)
+    {
         if along.is_some() && !innermost(path) {
             return None;
         }
         along = along.or(Some(path));
-        let &ValueType::Path { right, .. } = arena.value_type(motive)?
+        let &ValueType::Path { left, right, .. } = arena.value_type(motive)?
         else {
             return None;
         };
+        // A layer moves its right endpoint alone, from reflexivity at the left.
+        if !matches!(arena.value(value), Some(&Value::Here { .. }))
+            || binder_use(arena, Family::Value(left)) != BinderUse::Ignored
+        {
+            return None;
+        }
         let &Value::Returned(inner) = arena.value(right)?
         else {
             return None;
