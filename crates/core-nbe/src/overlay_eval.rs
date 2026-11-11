@@ -54,6 +54,7 @@ use crate::eval::eval_comp_within;
 use crate::eval::eval_sharing;
 #[cfg(doc)]
 use crate::eval::eval_value;
+use crate::eval::eval_value_within;
 use crate::free::CoreTerm;
 use crate::free::Free;
 use crate::free::FreeFault;
@@ -195,25 +196,91 @@ pub fn eval_overlay_computation(
         .map_err(OverlayEvalFault::Evaluation)
 }
 
-/// Evaluate an overlay root under a sharing policy: duplicate it, erase the
-/// duplicate keeping each share's leg, and run the machine sharing those legs
-/// by configuration.
+/// Evaluate a value overlay root in `environment`: erase it, then run the
+/// unshared machine over the erasure.
 ///
 /// # Specification
-/// - requires: `core` is the arena the overlay's opaque nodes name, and the
-///   term `root` stands for is closed and of an evaluation family.
-/// - ensures: on success the weak head of the term `root` stands for, in its
-///   polarity, paired with the fuel left over — one unit per task the machine
-///   popped, a leg met again in a configuration already evaluated costing the
-///   one step that popped it; `core` holds the duplicate's erasure, `domain`
-///   what the evaluation minted, and the overlay is at its entry watermark
-///   whatever the outcome.
+/// - requires: `core` is the arena the overlay's opaque nodes name, and
+///   `environment` binds every occurrence the term `root` stands for counts
+///   past its own binders.
+/// - ensures: on success the value the erasure of `root` evaluates to in
+///   `environment`, paired with the fuel left over; `core` holds the erasure.
+/// - provides: the reference of the property over open roots, whose binders are
+///   rigid variables in `environment`.
+/// - fails: as [`eval_overlay_value`] fails.
+/// - panics: none.
+/// - executable: none — the clause is the composition the body states.
+///
+/// # Errors
+/// - [`OverlayEvalFault::Erasure`] — the root does not erase.
+/// - [`OverlayEvalFault::Evaluation`] — the erased term does not evaluate.
+pub fn eval_overlay_value_within(
+    overlay: &Overlay,
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    root: OverlayValueId,
+    environment: Environment,
+) -> Result<(DomainValueId, Fuel), OverlayEvalFault>
+{
+    let erased = erase_value(overlay, root, core).map_err(OverlayEvalFault::Erasure)?;
+    eval_value_within(core, domain, definitions, fuel, erased, environment)
+        .map_err(OverlayEvalFault::Evaluation)
+}
+
+/// Evaluate a computation overlay root to weak head in `environment`: erase
+/// it, then run the unshared machine over the erasure.
+///
+/// # Specification
+/// - requires: as [`eval_overlay_value_within`].
+/// - ensures: as [`eval_overlay_value_within`], for a computation root.
+/// - provides: the computation half of the reference over open roots.
+/// - fails: as [`eval_overlay_value`] fails.
+/// - panics: none.
+/// - executable: none — the clause is the composition the body states.
+///
+/// # Errors
+/// - [`OverlayEvalFault::Erasure`] — the root does not erase.
+/// - [`OverlayEvalFault::Evaluation`] — the erased term does not evaluate.
+pub fn eval_overlay_computation_within(
+    overlay: &Overlay,
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    root: OverlayCompId,
+    environment: Environment,
+) -> Result<(DomainCompId, Fuel), OverlayEvalFault>
+{
+    let erased = erase_computation(overlay, root, core).map_err(OverlayEvalFault::Erasure)?;
+    eval_comp_within(core, domain, definitions, fuel, erased, environment)
+        .map_err(OverlayEvalFault::Evaluation)
+}
+
+/// Evaluate an overlay root under a sharing policy in `environment`: duplicate
+/// it, erase the duplicate keeping each share's leg, and run the machine
+/// sharing those legs by configuration.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name; the term
+///   `root` stands for is of an evaluation family, and `environment` binds
+///   every occurrence it counts past its own binders.
+/// - ensures: on success the weak head of the term `root` stands for, read in
+///   `environment`, in its polarity, paired with the fuel left over — one unit
+///   per task the machine popped, a leg met again in a configuration already
+///   evaluated costing the one step that popped it; `core` holds the
+///   duplicate's erasure, `domain` what the evaluation minted, and the overlay
+///   is at its entry watermark whatever the outcome.
 /// - provides: the sharing stance's evaluator, which the certifying path
-///   installs; the reference stance evaluates through [`eval_overlay_value`]
-///   and [`eval_overlay_computation`] instead. The clause states the overlay's
-///   restoration and the remainder's bound; that the result reads back as the
-///   reference's is a relation between two runs, and the witnesses below carry
-///   it.
+///   installs over a closed root in the empty environment; the reference stance
+///   evaluates through [`eval_overlay_value`] and [`eval_overlay_computation`]
+///   instead. An environment of rigid variables makes the run's configurations
+///   open: that run is the instrument of the property over open roots, and the
+///   checker's path never asks for it (see `traced`). The clause states the
+///   overlay's restoration and the remainder's bound; that the result reads
+///   back as the reference's is a relation between two runs, and the witnesses
+///   below carry it.
 /// - fails: [`OverlayEvalFault::Duplication`] with the walk's refusal;
 ///   [`OverlayEvalFault::Erasure`] with erasure's, `core` left at its entry
 ///   watermark; [`OverlayEvalFault::Evaluation`] with the machine's, the
@@ -258,13 +325,15 @@ pub fn eval_overlay_shared(
     fuel: Fuel,
     policy: DuplicationPolicy,
     root: OverlayId,
+    environment: Environment,
 ) -> Result<(Glued, Fuel), OverlayEvalFault>
 {
     let mark = overlay.watermark();
     let erased = duplicate_and_erase(overlay, core, policy, root);
     overlay.truncate_to(mark);
     let (term, legs) = erased?;
-    eval_sharing(core, domain, definitions, fuel, term, legs).map_err(OverlayEvalFault::Evaluation)
+    eval_sharing(core, domain, definitions, fuel, term, legs, environment)
+        .map_err(OverlayEvalFault::Evaluation)
 }
 
 /// Duplicate `root` under `policy`, erase the duplicate keeping each share's

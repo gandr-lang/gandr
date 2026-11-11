@@ -85,18 +85,18 @@ struct Row(&'static str);
 struct Label(&'static str);
 
 /// One former, and the free indices its binding structure states.
-struct Former
+pub struct Former
 {
     /// The former, as the row writes it.
-    what: &'static str,
+    pub what: &'static str,
     /// Builds the former in an empty arena.
-    build: fn(&mut CoreArena) -> CoreTerm,
+    pub build: fn(&mut CoreArena) -> CoreTerm,
     /// Its free intuitionistic indices, ascending.
-    intuitionistic: &'static [u32],
+    pub intuitionistic: &'static [u32],
     /// Its free linear indices, ascending.
-    linear: &'static [u32],
+    pub linear: &'static [u32],
     /// The linear indices it consumes, ascending.
-    consumed: &'static [u32],
+    pub consumed: &'static [u32],
 }
 
 /// The intuitionistic variable at `at`.
@@ -277,7 +277,7 @@ fn alongside(
 ///
 /// # Specification
 /// trivial.
-fn values() -> [Former; 18]
+pub fn values() -> [Former; 18]
 {
     [
         Former {
@@ -540,7 +540,7 @@ fn values() -> [Former; 18]
 ///
 /// # Specification
 /// trivial.
-fn types() -> [Former; 12]
+pub fn types() -> [Former; 12]
 {
     [
         Former {
@@ -754,7 +754,7 @@ fn types() -> [Former; 12]
 ///
 /// # Specification
 /// trivial.
-fn computations() -> [Former; 27]
+pub fn computations() -> [Former; 27]
 {
     [
         Former {

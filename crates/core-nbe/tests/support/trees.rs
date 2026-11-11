@@ -19,7 +19,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 
 /// A core node in one of the four term and type families.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Term
 {
     /// A value.

@@ -4,6 +4,7 @@ use gandr_core_term::DefinitionalEnvironment;
 use super::Definitions;
 use super::DomainArena;
 use super::DuplicationPolicy;
+use super::Environment;
 use super::EvalFault;
 use super::Fuel;
 use super::Overlay;
@@ -92,7 +93,8 @@ fn refusals_preserve_the_erasure_and_evaluation_boundaries()
                 definitions,
                 Fuel::from(0_u32),
                 DuplicationPolicy::default(),
-                root
+                root,
+                Environment::new()
             )
         );
         assert_eq!(*expected, core);
@@ -140,7 +142,8 @@ fn refusals_preserve_the_erasure_and_evaluation_boundaries()
                 definitions,
                 Fuel::from(20_u32),
                 DuplicationPolicy::default(),
-                root
+                root,
+                Environment::new()
             ),
             Err(OverlayEvalFault::Duplication(_))
         ));
@@ -195,7 +198,8 @@ fn type_roots_are_refused_before_evaluation()
                 definitions,
                 Fuel::from(20_u32),
                 DuplicationPolicy::default(),
-                root
+                root,
+                Environment::new()
             )
         );
         assert_eq!(

@@ -32,7 +32,9 @@ use super::ZoneDepth;
 use super::read_comp_under;
 use super::read_value_under;
 use super::readback_computation;
+use super::readback_computation_within;
 use super::readback_value;
+use super::readback_value_within;
 use crate::arena::DomainArena;
 use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
@@ -50,8 +52,10 @@ use crate::eval::Definitions;
 use crate::eval::EvalFault;
 use crate::eval::Fuel;
 use crate::eval::LoweredChain;
+use crate::eval::eval_comp_within;
 use crate::eval::eval_computation;
 use crate::eval::eval_value;
+use crate::eval::eval_value_within;
 
 /// Ample fuel for every case that is meant to finish.
 ///
@@ -463,6 +467,119 @@ fn a_level_outside_the_open_binders_is_refused()
         }),
         core.value(read),
         "and there it is the innermost index"
+    );
+}
+
+#[test]
+fn a_value_under_rigid_variables_reads_back_under_their_binders()
+{
+    let mut core = CoreArena::new();
+    let (chain, definitional) = nothing_unfolds();
+    let definitions = Definitions::new(&chain, &definitional, definitional.root());
+    let mut domain = DomainArena::new();
+    let mut rigid = Environment::new();
+    for level in 0_u32 .. 2 {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a variable head mints rigid");
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("a spineless neutral stands in a value position");
+        rigid.extend(Zone::Intuitionistic, bound);
+    }
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let (inner, outer) = (variable(&mut core, 0), variable(&mut core, 1));
+    let pair = core.value_tuple(&[inner, outer]);
+    let (evaluated, _) = eval_value_within(
+        &core,
+        &mut domain,
+        definitions,
+        ample(),
+        pair,
+        rigid.clone(),
+    )
+    .expect("a pair of bound variables evaluates");
+    let read = readback_value_within(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        evaluated,
+        &rigid,
+    )
+    .expect("both binders open answer both levels");
+    let Some(Value::Tuple(components)) = core.value(read).cloned()
+    else {
+        panic!("the pair reads back as a pair");
+    };
+    let indices: Vec<Option<Value>> = components
+        .iter()
+        .map(|&component| core.value(component).cloned())
+        .collect();
+    assert_eq!(
+        [0_u32, 1].map(|index| Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        })),
+        *indices,
+        "each rigid variable reads back as the index of its binder"
+    );
+    assert_eq!(
+        Err(ReadbackFault::LevelOutOfScope {
+            zone: Zone::Intuitionistic,
+            level: BinderLevel::from(1_u32),
+        }),
+        readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        ),
+        "with no binder open, the innermost rigid variable names nothing"
+    );
+    let returned = core.computation_return(inner);
+    let (head, _) = eval_comp_within(
+        &core,
+        &mut domain,
+        definitions,
+        ample(),
+        returned,
+        rigid.clone(),
+    )
+    .expect("a return of a bound variable evaluates");
+    let read = readback_computation_within(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        head,
+        &rigid,
+    )
+    .expect("the weak head reads back under both binders");
+    let Some(&Computation::Return(returned)) = core.computation(read)
+    else {
+        panic!("the return reads back as a return");
+    };
+    assert_eq!(
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: innermost(),
+        }),
+        core.value(returned),
+        "the returned rigid variable reads back as the innermost index"
     );
 }
 

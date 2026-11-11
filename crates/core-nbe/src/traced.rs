@@ -48,6 +48,12 @@
 //! Reversal: a confluence result for open terms under strong reduction covers
 //! the core's formers, and sharing extends past the weak-head machine.
 //!
+//! `TracedDuplication::eval_overlay_value_within` and its computation twin
+//! evaluate a root in an environment of rigid variables, and so share open
+//! configurations. They are the instrument of the property over open roots:
+//! its agreement with the copying stance is the evidence that a reversal of
+//! the decision above reads. The checker's path never calls them.
+//!
 //! # Certifying path
 //!
 //! `DuplicationPolicy::new` installs either stance, and the property test
@@ -109,6 +115,7 @@ use gandr_kernel_conversion_trace::TraceSink;
 use crate::arena::DomainArena;
 use crate::arena::DomainCompId;
 use crate::arena::DomainValueId;
+use crate::closure::Environment;
 use crate::conv::ConversionFault;
 use crate::domain::Glued;
 use crate::duplicate::DuplicationFault;
@@ -129,8 +136,10 @@ use crate::overlay::OverlayId;
 use crate::overlay::OverlayValueId;
 use crate::overlay_eval::OverlayEvalFault;
 use crate::overlay_eval::eval_overlay_computation;
+use crate::overlay_eval::eval_overlay_computation_within;
 use crate::overlay_eval::eval_overlay_shared;
 use crate::overlay_eval::eval_overlay_value;
+use crate::overlay_eval::eval_overlay_value_within;
 use crate::policy::DuplicationPolicy;
 use crate::policy::DuplicationStance;
 use crate::policy::GranularityPolicy;
@@ -350,6 +359,7 @@ where
                     fuel,
                     self.policy,
                     OverlayId::Value(root),
+                    Environment::new(),
                 )?;
                 match produced {
                     Glued::Value(value) => Ok((value, left)),
@@ -420,6 +430,150 @@ where
                     fuel,
                     self.policy,
                     OverlayId::Computation(root),
+                    Environment::new(),
+                )?;
+                match produced {
+                    Glued::Computation(comp) => Ok((comp, left)),
+                    Glued::Value(_) => {
+                        Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant))
+                    },
+                }
+            },
+        }
+    }
+
+    /// Evaluate a value overlay root in `environment` under the installed
+    /// stance.
+    ///
+    /// # Specification
+    /// - requires: `core` is the arena the overlay's opaque nodes name, and
+    ///   `environment` binds every occurrence the term `root` stands for counts
+    ///   past its own binders.
+    /// - ensures: under the erase-and-clone stance, the erasure of `root`
+    ///   evaluated in `environment`; under the spinal stance,
+    ///   [`eval_overlay_shared`] in `environment` over the value root. The
+    ///   overlay is at its entry watermark whatever the outcome.
+    /// - provides: the instrument of the property over open roots. An
+    ///   environment of rigid variables makes the configurations of a spinal
+    ///   run open, which the checker's path declines (see the module doc), so
+    ///   the path never calls this method.
+    /// - fails: as [`TracedDuplication::eval_overlay_value`] fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`TracedDuplication::eval_overlay_value`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the oracle is the run of the copying stance in the
+    ///   same environment of rigid variables, read back under as many open
+    ///   binders and compared as a tree over generated open roots. A run that
+    ///   drops the environment, or that remembers a leg across two bindings,
+    ///   changes that comparison.
+    /// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+    #[inline]
+    #[spec(
+        captures: [entry = overlay.watermark(), entry_trace = self.sink.recorded_count()],
+        ensures: |ret| overlay.watermark() == entry && self.sink.recorded_count() == entry_trace
+            && ret.as_ref().map_or(true, |&(produced, remaining)| domain.value(produced).is_some() && u32::from(remaining) <= u32::from(fuel)),
+    )]
+    pub fn eval_overlay_value_within(
+        &self,
+        overlay: &mut Overlay,
+        core: &mut CoreArena,
+        domain: &mut DomainArena,
+        definitions: Definitions<'_>,
+        fuel: Fuel,
+        root: OverlayValueId,
+        environment: Environment,
+    ) -> Result<(DomainValueId, Fuel), OverlayEvalFault>
+    {
+        match self.policy.stance() {
+            DuplicationStance::EraseAndClone => eval_overlay_value_within(
+                overlay,
+                core,
+                domain,
+                definitions,
+                fuel,
+                root,
+                environment,
+            ),
+            DuplicationStance::Spinal => {
+                let (produced, left) = eval_overlay_shared(
+                    overlay,
+                    core,
+                    domain,
+                    definitions,
+                    fuel,
+                    self.policy,
+                    OverlayId::Value(root),
+                    environment,
+                )?;
+                match produced {
+                    Glued::Value(value) => Ok((value, left)),
+                    Glued::Computation(_) => {
+                        Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant))
+                    },
+                }
+            },
+        }
+    }
+
+    /// Evaluate a computation overlay root to weak head in `environment` under
+    /// the installed stance.
+    ///
+    /// # Specification
+    /// - requires: as [`TracedDuplication::eval_overlay_value_within`].
+    /// - ensures: as [`TracedDuplication::eval_overlay_value_within`], for a
+    ///   computation root.
+    /// - provides: the computation half of the instrument of the property over
+    ///   open roots, which the checker's path never calls.
+    /// - fails: as [`TracedDuplication::eval_overlay_value`] fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`TracedDuplication::eval_overlay_value`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`TracedDuplication::eval_overlay_value_within`],
+    ///   over generated open computation roots.
+    /// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+    #[inline]
+    #[spec(
+        captures: [entry = overlay.watermark(), entry_trace = self.sink.recorded_count()],
+        ensures: |ret| overlay.watermark() == entry && self.sink.recorded_count() == entry_trace
+            && ret.as_ref().map_or(true, |&(produced, remaining)| domain.computation(produced).is_some() && u32::from(remaining) <= u32::from(fuel)),
+    )]
+    pub fn eval_overlay_computation_within(
+        &self,
+        overlay: &mut Overlay,
+        core: &mut CoreArena,
+        domain: &mut DomainArena,
+        definitions: Definitions<'_>,
+        fuel: Fuel,
+        root: OverlayCompId,
+        environment: Environment,
+    ) -> Result<(DomainCompId, Fuel), OverlayEvalFault>
+    {
+        match self.policy.stance() {
+            DuplicationStance::EraseAndClone => eval_overlay_computation_within(
+                overlay,
+                core,
+                domain,
+                definitions,
+                fuel,
+                root,
+                environment,
+            ),
+            DuplicationStance::Spinal => {
+                let (produced, left) = eval_overlay_shared(
+                    overlay,
+                    core,
+                    domain,
+                    definitions,
+                    fuel,
+                    self.policy,
+                    OverlayId::Computation(root),
+                    environment,
                 )?;
                 match produced {
                     Glued::Computation(comp) => Ok((comp, left)),

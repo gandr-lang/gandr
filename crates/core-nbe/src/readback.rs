@@ -342,6 +342,42 @@ impl OpenBinders
         Self::default()
     }
 
+    /// The binders open over a term evaluated in `environment`: one for each
+    /// of its entries, in each zone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each zone's depth is the environment's depth in that zone;
+    ///   [`ReadbackFault::BinderCeiling`] for a zone deeper than a level
+    ///   counts.
+    /// - provides: the seed of a readback under rigid variables.
+    /// - fails: [`ReadbackFault::BinderCeiling`] past the level ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ReadbackFault::BinderCeiling`] — a zone holds more entries than a
+    ///   level counts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value under two rigid variables reads back with
+    ///   both open, and an empty environment opens none.
+    /// - witness: `readback::tests::a_value_under_rigid_variables_reads_back_under_their_binders`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |binders|
+        usize::try_from(binders.intuitionistic.0).is_ok_and(|depth| depth == usize::from(environment.depth(Zone::Intuitionistic)))
+            && usize::try_from(binders.linear.0).is_ok_and(|depth| depth == usize::from(environment.depth(Zone::Linear)))))]
+    fn of(environment: &Environment) -> Result<Self, ReadbackFault>
+    {
+        let depth = |zone: Zone| {
+            u32::try_from(usize::from(environment.depth(zone)))
+                .map(ZoneDepth)
+                .map_err(|_wide| ReadbackFault::BinderCeiling { zone })
+        };
+        Ok(Self {
+            intuitionistic: depth(Zone::Intuitionistic)?,
+            linear: depth(Zone::Linear)?,
+        })
+    }
+
     /// How many binders are open in `zone`.
     ///
     /// # Specification
@@ -1967,6 +2003,83 @@ pub fn readback_computation(
         comp,
         OpenBinders::none(),
     )
+}
+
+/// Read a domain value back with one binder open for each entry of
+/// `environment`, in each zone.
+///
+/// # Specification
+/// - requires: `value` was evaluated in `environment`, whose entries are the
+///   rigid variables at the levels from zero in each zone, the innermost the
+///   newest.
+/// - ensures: on success the core value `value` denotes under those binders,
+///   each rigid variable read back as the index of its binder.
+/// - provides: the readback twin of [`eval_value_within`], and the reading of
+///   the property over open roots.
+/// - fails: every variant of [`ReadbackFault`];
+///   [`ReadbackFault::BinderCeiling`] for a zone deeper than a level counts.
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`ReadbackFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the depth taken from the
+///   environment, separated by a value evaluated under rigid variables, read
+///   back with them open and refused with none open.
+/// - witness: `readback::tests::a_value_under_rigid_variables_reads_back_under_their_binders`
+#[inline]
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|term| core.value(*term).is_some()))]
+pub fn readback_value_within(
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    mode: ReadbackMode,
+    fuel: Fuel,
+    value: DomainValueId,
+    environment: &Environment,
+) -> Result<ValueId, ReadbackFault>
+{
+    let binders = OpenBinders::of(environment)?;
+    read_value_under(core, domain, definitions, mode, fuel, value, binders)
+}
+
+/// Read a domain computation back with one binder open for each entry of
+/// `environment`, in each zone.
+///
+/// # Specification
+/// - requires: as [`readback_value_within`], for a weak head.
+/// - ensures: on success the core computation `comp` denotes under those
+///   binders.
+/// - provides: the readback twin of
+///   [`eval_comp_within`](crate::eval::eval_comp_within), and the computation
+///   half of the reading of the property over open roots.
+/// - fails: as [`readback_value_within`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`ReadbackFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readback_value_within`], over a weak head that
+///   returns a rigid variable.
+/// - witness: `readback::tests::a_value_under_rigid_variables_reads_back_under_their_binders`
+#[inline]
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|term| core.computation(*term).is_some()))]
+pub fn readback_computation_within(
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    mode: ReadbackMode,
+    fuel: Fuel,
+    comp: DomainCompId,
+    environment: &Environment,
+) -> Result<ComputationId, ReadbackFault>
+{
+    let binders = OpenBinders::of(environment)?;
+    read_comp_under(core, domain, definitions, mode, fuel, comp, binders)
 }
 
 /// Read a domain value back with `binders` already open over it.

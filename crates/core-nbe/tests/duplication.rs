@@ -23,17 +23,25 @@
 //! The duplication cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+
 use anodized::spec;
+use gandr_core_nbe::BinderLevel;
 use gandr_core_nbe::Bound;
 use gandr_core_nbe::CompGraft;
 use gandr_core_nbe::CompNode;
+use gandr_core_nbe::CoreTerm;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::DuplicationFault;
 use gandr_core_nbe::DuplicationPolicy;
 use gandr_core_nbe::DuplicationStance;
+use gandr_core_nbe::Environment;
 use gandr_core_nbe::Fuel;
 use gandr_core_nbe::LoweredChain;
+use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::Overlay;
 use gandr_core_nbe::OverlayCompId;
 use gandr_core_nbe::OverlayEvalFault;
@@ -47,35 +55,198 @@ use gandr_core_nbe::ShareDistance;
 use gandr_core_nbe::SharePosition;
 use gandr_core_nbe::Sharing;
 use gandr_core_nbe::SharingMeasure;
+use gandr_core_nbe::TermFace;
 use gandr_core_nbe::TracedDuplication;
+use gandr_core_nbe::Unfolding;
 use gandr_core_nbe::ValueGraft;
 use gandr_core_nbe::ValueNode;
+use gandr_core_nbe::compile_computation;
+use gandr_core_nbe::compile_value;
 use gandr_core_nbe::duplicate_computation;
 use gandr_core_nbe::duplicate_value;
 use gandr_core_nbe::erase_computation;
 use gandr_core_nbe::erase_value;
 use gandr_core_nbe::readback_computation;
+use gandr_core_nbe::readback_computation_within;
 use gandr_core_nbe::readback_value;
+use gandr_core_nbe::readback_value_within;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::children;
+use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::support::Crossing;
 use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::Summand;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::prop_assert;
 use proptest::prelude::proptest;
 
+use crate::free_indices::Former;
+use crate::free_indices::computations;
+use crate::free_indices::types;
+use crate::free_indices::values;
 use crate::trees::Term;
-use crate::trees::Trees;
-use crate::trees::same_tree;
 
 /// How many overlays the property generates.
 const CASES: u32 = 600;
 
-/// The branching budget; share skeletons and returner wrappers add nodes.
-const BUDGET: u32 = 28;
+/// The branching budget; share skeletons and returner wrappers add nodes. It
+/// stands where the largest generated root erases to as many core nodes as
+/// the largest side that the checker's machine entries meet over the corpus.
+const BUDGET: u32 = 48;
+
+/// How many seeds the agreement property runs, and the census test reads.
+const SEEDS: u32 = 2048;
+
+/// The binders the applied root opens: one more than the largest index a row
+/// of the full alphabet reads.
+const OPENED: u32 = 8;
+
+/// The names of the grafted formers, shares and occurrences.
+const GRAFTED: [&str; 13] = [
+    "grafted ⟨⟩",
+    "grafted variable",
+    "grafted pair",
+    "grafted thunk",
+    "grafted λ",
+    "grafted return",
+    "grafted force",
+    "grafted application",
+    "grafted bind",
+    "value share",
+    "computation share",
+    "value occurrence",
+    "computation occurrence",
+];
+
+/// The names of the opaque leaves the generator mints itself.
+const MINTED: [&str; 3] = ["opaque (x, ⟨⟩)", "opaque ⟨⟩", "opaque return"];
+
+/// The name of a transport along a path no rule reduces.
+const STUCK_LINK: &str = "stuck link tr(y. El y, k, ⟨⟩)";
+
+/// The name of a bind over a stuck link whose body transports the bound value.
+const BIND_OVER_STUCK_LINK: &str = "x ← tr(y. El y, k, ⟨⟩); tr(y. El y, k′, x)";
+
+/// The closed arguments of the applied root, by name.
+const ARGUMENTS: [&str; 8] = [
+    "argument ⟨⟩",
+    "argument (⟨⟩, ⟨⟩)",
+    "argument inl ⟨⟩",
+    "argument inr ⟨⟩",
+    "argument {a = ⟨⟩}",
+    "argument [⟨⟩]",
+    "argument thunk (λ. return x₀)",
+    "argument k, rigid",
+];
+
+/// What the roots of a run hold, by name: each grafted former, each share and
+/// occurrence by family, and each opaque leaf by the row it comes from.
+type Census = BTreeMap<&'static str, u32>;
+
+/// Count `name` once more in `census`.
+///
+/// # Specification
+/// trivial.
+fn counted_once(
+    census: &mut Census,
+    name: &'static str,
+)
+{
+    let count = census.entry(name).or_insert(0);
+    *count = count.saturating_add(1);
+}
+
+/// An opaque leaf of the full alphabet.
+enum Leaf
+{
+    /// A row of the free-index table.
+    Row(Former),
+    /// A transport along a path no rule reduces.
+    StuckLink,
+    /// A bind over a stuck link whose body transports the bound value along
+    /// another such path.
+    BindOverStuckLink,
+}
+
+impl Leaf
+{
+    /// Whether the leaf reads no linear slot and each of its free indices
+    /// stands below `binders`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fits(
+        &self,
+        binders: u32,
+    ) -> bool
+    {
+        match self {
+            Self::Row(row) => {
+                row.linear.is_empty()
+                    && row.consumed.is_empty()
+                    && row.intuitionistic.iter().all(|&index| index < binders)
+            },
+            Self::StuckLink | Self::BindOverStuckLink => true,
+        }
+    }
+
+    /// The leaf's name for the census, and its term built in `core`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn built(
+        &self,
+        core: &mut CoreArena,
+    ) -> (&'static str, CoreTerm)
+    {
+        match self {
+            Self::Row(row) => (row.what, (row.build)(core)),
+            Self::StuckLink => {
+                let operand = core.value_unit();
+                let link = transported(core, ConstantIndex::from(0_usize), operand);
+                (STUCK_LINK, CoreTerm::Computation(link))
+            },
+            Self::BindOverStuckLink => {
+                let operand = core.value_unit();
+                let link = transported(core, ConstantIndex::from(0_usize), operand);
+                let carried = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let body = transported(core, ConstantIndex::from(1_usize), carried);
+                (
+                    BIND_OVER_STUCK_LINK,
+                    CoreTerm::Computation(core.computation_bind(link, body)),
+                )
+            },
+        }
+    }
+}
+
+/// A transport of `operand` along the constant `path`, which nothing defines,
+/// under a motive that reads its binder: no rule reduces it.
+///
+/// # Specification
+/// trivial.
+fn transported(
+    core: &mut CoreArena,
+    path: ConstantIndex,
+    operand: ValueId,
+) -> ComputationId
+{
+    let path = core.value_constant(path);
+    let code = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = core.value_type_element(code, Level::zero());
+    core.computation_path_transport(motive, path, operand)
+}
 
 /// Which evaluation family a generated node stands in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -277,6 +448,8 @@ struct Generator<'core>
     scopes: Vec<Option<(Family, Scope)>>,
     /// The jobs left.
     jobs: Vec<Job>,
+    /// The name of each opaque leaf, by slot.
+    leaves: BTreeMap<usize, &'static str>,
 }
 
 impl Generator<'_>
@@ -487,6 +660,12 @@ impl Generator<'_>
         }
         let indices: Vec<u32> = (0 .. job.binders).collect();
         let read = (!indices.is_empty()).then(|| self.seeded.pick(&indices));
+        if self.seeded.pick(&[true, false])
+            && let Some(plan) = self.drawn(job)
+        {
+            self.set(job.slot, plan);
+            return;
+        }
         match job.family {
             Family::Value => {
                 let plan = match (self.seeded.pick(&[0_u8, 1, 2, 3]), read) {
@@ -496,9 +675,13 @@ impl Generator<'_>
                             .core
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
                         let unit = self.core.value_unit();
+                        self.leaves.insert(job.slot.0, "opaque (x, ⟨⟩)");
                         Plan::OpaqueValue(self.core.value_tuple(&[variable, unit]))
                     },
-                    (2, _) => Plan::OpaqueValue(self.core.value_unit()),
+                    (2, _) => {
+                        self.leaves.insert(job.slot.0, "opaque ⟨⟩");
+                        Plan::OpaqueValue(self.core.value_unit())
+                    },
                     _ => Plan::Unit,
                 };
                 self.set(job.slot, plan);
@@ -512,6 +695,7 @@ impl Generator<'_>
                 };
                 if self.seeded.pick(&[true, false]) {
                     let opaque = self.core.computation_return(returned);
+                    self.leaves.insert(job.slot.0, "opaque return");
                     self.set(job.slot, Plan::OpaqueComputation(opaque));
                 }
                 else {
@@ -526,6 +710,61 @@ impl Generator<'_>
                 }
             },
         }
+    }
+
+    /// Draw an opaque leaf of `job`'s family from the full alphabet: a row of
+    /// the free-index table whose free indices the job's binders bind, or a
+    /// stuck link.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an opaque plan of the job's family whose term resolves in the
+    ///   arena, with its name kept for the census; `None` when the drawn row
+    ///   builds a term of the other family.
+    /// - provides: the full alphabet of core as opaque leaves.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a job of either family under any count of binders.
+    ///   The plan keeps the job's family and resolves in the arena, and its
+    ///   name stands in the census. A row drawn under too few binders makes
+    ///   both runs refuse alike, and a row never drawn leaves the census test
+    ///   short of its alphabet.
+    /// - witness: `tests::duplication::the_property_draws_its_whole_alphabet`
+    #[spec(
+            ensures: |ret| ret.is_none_or(|plan| match plan {
+                Plan::OpaqueValue(id) => job.family == Family::Value && self.core.value(id).is_some(),
+                Plan::OpaqueComputation(id) => job.family == Family::Computation && self.core.computation(id).is_some(),
+                _ => false,
+            } && self.leaves.contains_key(&job.slot.0))
+        )]
+    fn drawn(
+        &mut self,
+        job: Job,
+    ) -> Option<Plan>
+    {
+        let mut leaves: Vec<Leaf> = match job.family {
+            Family::Value => values().into_iter().chain(types()).map(Leaf::Row).collect(),
+            Family::Computation => computations()
+                .into_iter()
+                .map(Leaf::Row)
+                .chain([Leaf::StuckLink, Leaf::BindOverStuckLink])
+                .collect(),
+        };
+        leaves.retain(|leaf| leaf.fits(job.binders));
+        let choices: Vec<usize> = (0 .. leaves.len()).collect();
+        if choices.is_empty() {
+            return None;
+        }
+        let leaf = leaves.swap_remove(self.seeded.pick(&choices));
+        let (name, term) = leaf.built(self.core);
+        let plan = match (job.family, term) {
+            (Family::Value, CoreTerm::Value(id)) => Plan::OpaqueValue(id),
+            (Family::Computation, CoreTerm::Computation(id)) => Plan::OpaqueComputation(id),
+            _ => return None,
+        };
+        self.leaves.insert(job.slot.0, name);
+        Some(plan)
     }
 
     /// Settle `job` as an internal node, queueing its children.
@@ -786,12 +1025,47 @@ fn generated(
     binders: Binders,
 ) -> (Overlay, OverlayId)
 {
+    let (overlay, root, _) = counted(seeded, core, family, binders);
+    (overlay, root)
+}
+
+/// Generate one overlay as [`generated`] does, with the census of what it
+/// holds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`generated`], and a census that names each node of the
+///   overlay once: each grafted former, each share and occurrence by family,
+///   and each opaque leaf by the row it comes from.
+/// - provides: the inputs the property duplicates, with the alphabet they draw.
+/// - panics: when a mint is refused, which a plan this small never provokes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — any seed and either evaluation family are admitted. The
+///   returned root validates in its family, and the census counts one name for
+///   each plan slot. A census that drops a former or names a leaf by another
+///   row changes the alphabet the census test compares with its declaration.
+/// - witness: `tests::duplication::the_property_draws_its_whole_alphabet`
+/// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+#[spec(
+        ensures: |ret| ret.0.validate(ret.1).is_ok()
+            && matches!((family, ret.1), (Family::Value, OverlayId::Value(_)) | (Family::Computation, OverlayId::Computation(_)))
+            && ret.2.values().copied().map(u64::from).sum::<u64>() > 0
+    )]
+fn counted(
+    seeded: &mut Seeded,
+    core: &mut CoreArena,
+    family: Family,
+    binders: Binders,
+) -> (Overlay, OverlayId, Census)
+{
     let mut generator = Generator {
         seeded,
         core,
         plans: Vec::new(),
         scopes: Vec::from([None]),
         jobs: Vec::new(),
+        leaves: BTreeMap::new(),
     };
     let root = generator.slot();
     generator.queue(Job {
@@ -803,6 +1077,7 @@ fn generated(
     });
     generator.run();
     let plans = generator.plans;
+    let leaves = generator.leaves;
 
     let mut positions = vec![0_u32; plans.len()];
     let mut arities = vec![0_u32; plans.len()];
@@ -949,7 +1224,43 @@ fn generated(
     overlay
         .validate(root)
         .expect("a generated overlay validates");
-    (overlay, root)
+    let mut census = Census::new();
+    for (slot, plan) in plans.iter().enumerate() {
+        let name = match plan {
+            Plan::Pending => panic!("every slot is settled"),
+            Plan::Unit => "grafted ⟨⟩",
+            Plan::Variable(_) => "grafted variable",
+            Plan::Pair(..) => "grafted pair",
+            Plan::Thunk(_) => "grafted thunk",
+            Plan::Lambda(_) => "grafted λ",
+            Plan::Return(_) => "grafted return",
+            Plan::Force(_) => "grafted force",
+            Plan::Application(..) => "grafted application",
+            Plan::Bind(..) => "grafted bind",
+            Plan::Share {
+                family: Family::Value,
+                ..
+            } => "value share",
+            Plan::Share {
+                family: Family::Computation,
+                ..
+            } => "computation share",
+            Plan::Occurrence {
+                family: Family::Value,
+                ..
+            } => "value occurrence",
+            Plan::Occurrence {
+                family: Family::Computation,
+                ..
+            } => "computation occurrence",
+            Plan::OpaqueValue(_) | Plan::OpaqueComputation(_) => leaves
+                .get(&slot)
+                .copied()
+                .expect("each opaque leaf carries its name"),
+        };
+        counted_once(&mut census, name);
+    }
+    (overlay, root, census)
 }
 
 /// Erase `root` into `core`.
@@ -1048,88 +1359,171 @@ fn ample() -> Fuel
     Fuel::from(1_000_000_u32)
 }
 
-/// Evaluate `root` under `stance` and read its weak head back, in copies of
-/// `overlay` and `core`.
+/// Evaluate `root` under `stance` in an environment of `rigid` rigid
+/// variables, and read its weak head back with as many binders open, in a
+/// copy of `overlay`, minting into `core`.
 ///
 /// # Specification
-/// - requires: `root` is an evaluation root that validates, and `core` holds
-///   its opaque nodes.
-/// - ensures: the arena the run erased and read back into, with the term read
-///   back in the root's family; or how the run refused. `overlay` and `core`
-///   are untouched.
-/// - provides: the one run both stances of the agreement property go through.
-/// - panics: when the root is a type root, which the requirement excludes.
+/// - requires: `root` is an evaluation root that validates, `core` holds its
+///   opaque nodes, and the root reads no binder past `rigid`.
+/// - ensures: the term read back in the root's family, in `core`, each rigid
+///   variable read back as the index of its binder; or how the run refused.
+///   `overlay` is untouched, and `core` only grows. A closed root, `rigid`
+///   zero, runs through the evaluators the checker's path installs.
+/// - provides: the one run both stances of the agreement property go through,
+///   both into one arena, so that the core's syntax comparison reads the two
+///   results side by side.
+/// - panics: when the root is a type root, which the requirement excludes, or
+///   when a rigid variable does not mint.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a valid generated root of either family. The term read
-///   back resolves in its returned arena in the root's family, and the run
-///   under the other stance is compared with it as a tree, or its refusal as a
-///   value: a run that read back another root, ran under the other stance or
-///   met a refusal the other run did not changes that comparison.
+/// - hypothesis: L3 — a valid generated root of either family, closed or under
+///   rigid variables. The term read back resolves in `core` in the root's
+///   family, and the run under the other stance is compared with it as a tree,
+///   or its refusal as a value: a run that read back another root, ran under
+///   the other stance, dropped the environment or met a refusal the other run
+///   did not changes that comparison.
 /// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
 #[spec(
         requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok(),
-        ensures: |ret| ret.as_ref().map_or(true, |&(ref arena, read)| match (root, read) {
-            (OverlayId::Value(_), Term::Value(id)) => arena.value(id).is_some(),
-            (OverlayId::Computation(_), Term::Computation(id)) => arena.computation(id).is_some(),
+        ensures: |ret| ret.as_ref().map_or(true, |&read| match (root, read) {
+            (OverlayId::Value(_), Term::Value(id)) => core.value(id).is_some(),
+            (OverlayId::Computation(_), Term::Computation(id)) => core.computation(id).is_some(),
             _ => false,
         })
     )]
 fn evaluated(
     stance: DuplicationStance,
     overlay: &Overlay,
-    core: &CoreArena,
+    core: &mut CoreArena,
     root: OverlayId,
-) -> Result<(CoreArena, Term), Refused>
+    rigid: u32,
+) -> Result<Term, Refused>
 {
     let mut overlay = overlay.clone();
-    let mut core = core.clone();
     let chain = LoweredChain::new();
-    let environment = DefinitionalEnvironment::new();
-    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let definitional = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &definitional, definitional.root());
     let mut domain = DomainArena::new();
+    let mut environment = Environment::new();
+    for level in 0 .. rigid {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a variable head mints rigid");
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("a spineless neutral stands in a value position");
+        environment.extend(Zone::Intuitionistic, bound);
+    }
     let mut log = TraceLog::new();
     let installed = TracedDuplication::install(stance, &mut log)
         .expect("a recording sink carries either stance");
     let mode = ReadbackMode::Unfolding;
-    let read = match root {
-        OverlayId::Value(id) => {
+    let read = match (root, rigid) {
+        (OverlayId::Value(id), 0) => {
             let (head, _) = installed
-                .eval_overlay_value(
+                .eval_overlay_value(&mut overlay, core, &mut domain, definitions, ample(), id)
+                .map_err(Refused::Evaluation)?;
+            Term::Value(
+                readback_value(core, &mut domain, definitions, mode, ample(), head)
+                    .map_err(Refused::Readback)?,
+            )
+        },
+        (OverlayId::Value(id), _) => {
+            let (head, _) = installed
+                .eval_overlay_value_within(
                     &mut overlay,
-                    &mut core,
+                    core,
                     &mut domain,
                     definitions,
                     ample(),
                     id,
+                    environment.clone(),
                 )
                 .map_err(Refused::Evaluation)?;
             Term::Value(
-                readback_value(&mut core, &mut domain, definitions, mode, ample(), head)
+                readback_value_within(
+                    core,
+                    &mut domain,
+                    definitions,
+                    mode,
+                    ample(),
+                    head,
+                    &environment,
+                )
+                .map_err(Refused::Readback)?,
+            )
+        },
+        (OverlayId::Computation(id), 0) => {
+            let (head, _) = installed
+                .eval_overlay_computation(&mut overlay, core, &mut domain, definitions, ample(), id)
+                .map_err(Refused::Evaluation)?;
+            Term::Computation(
+                readback_computation(core, &mut domain, definitions, mode, ample(), head)
                     .map_err(Refused::Readback)?,
             )
         },
-        OverlayId::Computation(id) => {
+        (OverlayId::Computation(id), _) => {
             let (head, _) = installed
-                .eval_overlay_computation(
+                .eval_overlay_computation_within(
                     &mut overlay,
-                    &mut core,
+                    core,
                     &mut domain,
                     definitions,
                     ample(),
                     id,
+                    environment.clone(),
                 )
                 .map_err(Refused::Evaluation)?;
             Term::Computation(
-                readback_computation(&mut core, &mut domain, definitions, mode, ample(), head)
-                    .map_err(Refused::Readback)?,
+                readback_computation_within(
+                    core,
+                    &mut domain,
+                    definitions,
+                    mode,
+                    ample(),
+                    head,
+                    &environment,
+                )
+                .map_err(Refused::Readback)?,
             )
         },
-        OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+        (OverlayId::ValueType(_) | OverlayId::CompType(_), _) => {
             panic!("the property generates evaluation roots")
         },
     };
-    Ok((core, read))
+    Ok(read)
+}
+
+/// Whether `left` and `right`, both in `core`, are one tree, by the core's own
+/// syntax comparison: every former, leaf and child agrees, path evidence
+/// aside. It reads every former of the full alphabet, and shares no code with
+/// duplication, erasure or the machine. A computation is compared as its
+/// thunk.
+///
+/// # Specification
+/// trivial.
+fn one_tree(
+    core: &mut CoreArena,
+    left: Term,
+    right: Term,
+) -> bool
+{
+    let (left, right) = match (left, right) {
+        (Term::Value(left), Term::Value(right)) => (left, right),
+        (Term::Computation(left), Term::Computation(right)) => {
+            (core.value_thunk(left), core.value_thunk(right))
+        },
+        _ => return false,
+    };
+    equal_certificate_syntax(core, left, right) == CertificateEquality::Equal
 }
 
 /// Mint a value node.
@@ -1184,7 +1578,8 @@ fn occurrence(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a computation overlay that validates from the returned root, its
-///   root an arity-two share whose leg is a thunked abstraction.
+///   root an arity-two share whose leg is a thunked abstraction, with the
+///   census of its generated body.
 /// - provides: the open configurations the agreement property reads.
 /// - panics: when a mint is refused, which a plan this small never provokes.
 ///
@@ -1200,9 +1595,9 @@ fn occurrence(
 fn applied_twice(
     seeded: &mut Seeded,
     core: &mut CoreArena,
-) -> (Overlay, OverlayId)
+) -> (Overlay, OverlayId, Census)
 {
-    let (mut overlay, body) = generated(seeded, core, Family::Computation, Binders(1));
+    let (mut overlay, body, census) = counted(seeded, core, Family::Computation, Binders(1));
     let OverlayId::Computation(body) = body
     else {
         panic!("a computation body was asked for");
@@ -1255,7 +1650,358 @@ fn applied_twice(
         }),
     ));
     overlay.validate(root).expect("the wrapper validates");
-    (overlay, root)
+    (overlay, root, census)
+}
+
+/// One closed argument of the applied root, drawn from `seeded`, with its
+/// name in [`ARGUMENTS`].
+///
+/// # Specification
+/// trivial.
+fn argument(
+    seeded: &mut Seeded,
+    core: &mut CoreArena,
+) -> (&'static str, ValueId)
+{
+    let at = seeded.pick(&[0_usize, 1, 2, 3, 4, 5, 6, 7]);
+    let unit = core.value_unit();
+    let built = match at {
+        0 => unit,
+        1 => {
+            let other = core.value_unit();
+            core.value_tuple(&[unit, other])
+        },
+        2 => core.value_injection(Summand::from(0_usize), unit),
+        3 => core.value_injection(Summand::from(1_usize), unit),
+        4 => core.value_record(BTreeMap::from([(
+            FieldLabel::from(String::from("a")),
+            unit,
+        )])),
+        5 => {
+            let nil = core.value_list_nil();
+            core.value_list_cons(unit, nil)
+        },
+        6 => {
+            let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let returned = core.computation_return(bound);
+            let lambda = core.computation_lambda(returned);
+            core.value_thunk(lambda)
+        },
+        _ => core.value_constant(ConstantIndex::from(2_usize)),
+    };
+    (ARGUMENTS[at], built)
+}
+
+/// `(λ⁸. b) a₀ … a₇`, with `b` a computation generated from `seeded` under
+/// [`OPENED`] binders and each argument a closed value drawn from
+/// [`ARGUMENTS`]. Each leaf of the full alphabet reads its free indices as
+/// those arguments, so the stuck links, cases, records and words compute.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a computation overlay that validates from the returned root, with
+///   the census of its body, its abstractions and its arguments.
+/// - provides: the closed configurations over the full alphabet that the
+///   agreement property reads.
+/// - panics: when a mint is refused, which a plan this small never provokes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — any seed. The root validates as a computation, and each
+///   row of the full alphabet stands under enough binders. A share whose leg
+///   reads an argument is evaluated in the configuration the arguments make. A
+///   run that remembers it under another configuration changes the tree the
+///   property compares.
+/// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+/// - witness: `tests::duplication::the_property_draws_its_whole_alphabet`
+#[spec(
+        ensures: |ret| ret.0.validate(ret.1).is_ok() && matches!(ret.1, OverlayId::Computation(_))
+    )]
+fn applied_to_arguments(
+    seeded: &mut Seeded,
+    core: &mut CoreArena,
+) -> (Overlay, OverlayId, Census)
+{
+    let (mut overlay, body, mut census) =
+        counted(seeded, core, Family::Computation, Binders(OPENED));
+    let OverlayId::Computation(mut head) = body
+    else {
+        panic!("a computation body was asked for");
+    };
+    for _ in 0 .. OPENED {
+        head = computation(&mut overlay, CompNode::Grafted(CompGraft::Lambda(head)));
+        counted_once(&mut census, "grafted λ");
+    }
+    for _ in 0 .. OPENED {
+        let (name, argument) = argument(seeded, core);
+        counted_once(&mut census, name);
+        let argument = value(&mut overlay, ValueNode::Opaque(argument));
+        head = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Application(head, argument)),
+        );
+        counted_once(&mut census, "grafted application");
+    }
+    let root = OverlayId::Computation(head);
+    overlay.validate(root).expect("the applied root validates");
+    (overlay, root, census)
+}
+
+/// One root the agreement property runs, with the arena its opaque nodes
+/// name.
+struct Root
+{
+    /// The shape the root comes from.
+    shape: &'static str,
+    /// The arena its opaque nodes name.
+    core: CoreArena,
+    /// The overlay.
+    overlay: Overlay,
+    /// The root.
+    root: OverlayId,
+    /// The rigid variables it is evaluated under: none for a closed root.
+    rigid: u32,
+}
+
+/// Add each count of `from` into `into`.
+///
+/// # Specification
+/// trivial.
+fn merged(
+    into: &mut Census,
+    from: Census,
+)
+{
+    for (name, count) in from {
+        let total = into.entry(name).or_insert(0);
+        *total = total.saturating_add(count);
+    }
+}
+
+/// The roots the agreement property runs for `seed`, with the census of what
+/// they hold: a closed root, an open body applied under two bindings of its
+/// binder, a body over the full alphabet applied to eight closed arguments, a
+/// body over the full alphabet under eight rigid variables, and the
+/// compilations of the erasures of the closed root and of the root under
+/// rigid variables.
+///
+/// # Specification
+/// trivial.
+fn roots(seed: u64) -> ([Root; 6], Census)
+{
+    let mut seeded = Seeded(seed);
+    let family = seeded.pick(&[Family::Value, Family::Computation]);
+    let mut census = Census::new();
+    let mut closed_core = CoreArena::new();
+    let (closed, closed_root, drawn) = counted(&mut seeded, &mut closed_core, family, Binders(0));
+    merged(&mut census, drawn);
+    let mut twice_core = CoreArena::new();
+    let (twice, twice_root, drawn) = applied_twice(&mut seeded, &mut twice_core);
+    merged(&mut census, drawn);
+    let mut applied_core = CoreArena::new();
+    let (applied, applied_root, drawn) = applied_to_arguments(&mut seeded, &mut applied_core);
+    merged(&mut census, drawn);
+    let mut open_core = CoreArena::new();
+    let (open, open_root, drawn) = counted(&mut seeded, &mut open_core, family, Binders(OPENED));
+    merged(&mut census, drawn);
+    let (closed_compiled_core, _, closed_compiled, closed_compiled_root) =
+        compiled(&closed, &closed_core, closed_root);
+    let (open_compiled_core, _, open_compiled, open_compiled_root) =
+        compiled(&open, &open_core, open_root);
+    let roots = [
+        Root {
+            shape: "closed",
+            core: closed_core,
+            overlay: closed,
+            root: closed_root,
+            rigid: 0,
+        },
+        Root {
+            shape: "applied twice",
+            core: twice_core,
+            overlay: twice,
+            root: twice_root,
+            rigid: 0,
+        },
+        Root {
+            shape: "applied to eight arguments",
+            core: applied_core,
+            overlay: applied,
+            root: applied_root,
+            rigid: 0,
+        },
+        Root {
+            shape: "under eight rigid variables",
+            core: open_core,
+            overlay: open,
+            root: open_root,
+            rigid: OPENED,
+        },
+        Root {
+            shape: "compiled from the erasure of the closed root",
+            core: closed_compiled_core,
+            overlay: closed_compiled,
+            root: closed_compiled_root,
+            rigid: 0,
+        },
+        Root {
+            shape: "compiled from the erasure of the root under rigid variables",
+            core: open_compiled_core,
+            overlay: open_compiled,
+            root: open_compiled_root,
+            rigid: OPENED,
+        },
+    ];
+    (roots, census)
+}
+
+/// The term `root` erases to in a copy of `core`, compiled back into a fresh
+/// overlay: the shape that the checker's path hands a stance.
+///
+/// # Specification
+/// - requires: `root` is an evaluation root that validates, and `core` holds
+///   its opaque nodes.
+/// - ensures: the copy of `core` with the erasure in it, the erasure, and the
+///   overlay and root its compilation mints.
+/// - provides: the compiled roots of the agreement property and of the
+///   compilation's round trip.
+/// - panics: when the erasure does not compile, which the round trip test
+///   reports as the defect it is.
+///
+/// # Adequacy
+/// - hypothesis: L3 — any generated root. Its erasure shares each leg, so the
+///   compilation meets nodes reached more than once; a compilation that loses a
+///   share or grafts a former erasure does not invert changes the round trip
+///   and the agreement over the compiled roots.
+/// - witness: `tests::duplication::a_compiled_erasure_erases_to_itself`
+/// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+#[spec(
+        requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok(),
+        ensures: |ret| matches!((ret.1, ret.3), (Term::Value(_), OverlayId::Value(_)) | (Term::Computation(_), OverlayId::Computation(_)))
+    )]
+fn compiled(
+    overlay: &Overlay,
+    core: &CoreArena,
+    root: OverlayId,
+) -> (CoreArena, Term, Overlay, OverlayId)
+{
+    let mut arena = core.clone();
+    let term = erased(overlay, root, &mut arena);
+    let mut compiled = Overlay::new();
+    let root = match term {
+        Term::Value(id) => {
+            OverlayId::Value(compile_value(&mut compiled, &arena, id).expect("an erasure compiles"))
+        },
+        Term::Computation(id) => OverlayId::Computation(
+            compile_computation(&mut compiled, &arena, id).expect("an erasure compiles"),
+        ),
+        Term::ValueType(_) | Term::CompType(_) => panic!("an evaluation root erases to a term"),
+    };
+    (arena, term, compiled, root)
+}
+
+/// How many distinct nodes of `core` `root` reaches, of every family.
+///
+/// # Specification
+/// trivial.
+fn distinct(
+    core: &CoreArena,
+    root: Term,
+) -> usize
+{
+    /// The children of one node, pushed for the walk.
+    struct Pending(Vec<Term>);
+    impl children::Visit for Pending
+    {
+        fn value(
+            &mut self,
+            child: ValueId,
+            _crossing: Crossing,
+        )
+        {
+            self.0.push(Term::Value(child));
+        }
+
+        fn computation(
+            &mut self,
+            child: ComputationId,
+            _crossing: Crossing,
+        )
+        {
+            self.0.push(Term::Computation(child));
+        }
+
+        fn value_type(
+            &mut self,
+            child: ValueTypeId,
+            _crossing: Crossing,
+        )
+        {
+            self.0.push(Term::ValueType(child));
+        }
+
+        fn comp_type(
+            &mut self,
+            child: CompTypeId,
+            _crossing: Crossing,
+        )
+        {
+            self.0.push(Term::CompType(child));
+        }
+    }
+    let mut seen = BTreeSet::new();
+    let mut pending = Pending(Vec::from([root]));
+    while let Some(node) = pending.0.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        match node {
+            Term::Value(id) => {
+                if let Some(value) = core.value(id) {
+                    children::of_value(value, &mut pending);
+                }
+            },
+            Term::Computation(id) => {
+                if let Some(computation) = core.computation(id) {
+                    children::of_computation(computation, &mut pending);
+                }
+            },
+            Term::ValueType(id) => {
+                if let Some(value_type) = core.value_type(id) {
+                    children::of_value_type(value_type, &mut pending);
+                }
+            },
+            Term::CompType(id) => {
+                if let Some(comp_type) = core.comp_type(id) {
+                    children::of_comp_type(comp_type, &mut pending);
+                }
+            },
+        }
+    }
+    seen.len()
+}
+
+/// The alphabet the agreement property declares: the grafted formers, shares
+/// and occurrences, the leaves the generator mints, each row of the
+/// free-index table that reads no linear slot, the stuck links, and the
+/// arguments of the applied root.
+///
+/// # Specification
+/// trivial.
+fn alphabet() -> BTreeSet<&'static str>
+{
+    let rows = values()
+        .into_iter()
+        .chain(types())
+        .chain(computations())
+        .filter(|row| row.linear.is_empty() && row.consumed.is_empty())
+        .map(|row| row.what);
+    GRAFTED
+        .into_iter()
+        .chain(MINTED)
+        .chain(rows)
+        .chain([STUCK_LINK, BIND_OVER_STUCK_LINK])
+        .chain(ARGUMENTS)
+        .collect()
 }
 
 /// A chain of `links` shares, each sharing the one below among the two
@@ -1341,9 +2087,8 @@ fn spinal_duplication_is_invisible_to_erasure()
             let mut erasures = core.clone();
             let before = erased(&overlay, root, &mut erasures);
             let after = erased(&overlay, rebuilt, &mut erasures);
-            assert_eq!(
-                Trees::Same,
-                same_tree(&erasures, before, &erasures, after),
+            assert!(
+                one_tree(&mut erasures, before, after),
                 "case {case} under {stance:?}: the duplicate erases to another tree"
             );
         }
@@ -1353,36 +2098,53 @@ fn spinal_duplication_is_invisible_to_erasure()
 proptest! {
     // About one root in seventy evaluates an open leg under two bindings, so
     // every run reaches one.
-    #![proptest_config(ProptestConfig::with_cases(2048))]
+    #![proptest_config(ProptestConfig::with_cases(SEEDS))]
 
     /// Over generated overlay roots, a spinal run reads back as the copying
-    /// stance's run, or refuses as it does: a closed root, and an open body
-    /// applied under two bindings of its binder.
+    /// stance's run, or refuses as it does: a closed root, an open body
+    /// applied under two bindings of its binder, a body over the full alphabet
+    /// applied to eight closed arguments, a body over the full alphabet under
+    /// eight rigid variables, and the compilations of two erasures.
     #[test]
     fn spinal_evaluation_agrees_with_the_copying_stance(seed in 1_u64 ..)
     {
-        let mut seeded = Seeded(seed);
-        let family = seeded.pick(&[Family::Value, Family::Computation]);
-        let mut closed_core = CoreArena::new();
-        let closed = generated(&mut seeded, &mut closed_core, family, Binders(0));
-        let mut open_core = CoreArena::new();
-        let open = applied_twice(&mut seeded, &mut open_core);
-        for (shape, core, (overlay, root)) in [("closed", &closed_core, closed), ("applied twice", &open_core, open)] {
-            let reference = evaluated(DuplicationStance::EraseAndClone, &overlay, core, root);
-            let spinal = evaluated(DuplicationStance::Spinal, &overlay, core, root);
+        let (roots, _) = roots(seed);
+        for Root { shape, core, overlay, root, rigid } in roots {
+            let mut arena = core;
+            let reference = evaluated(DuplicationStance::EraseAndClone, &overlay, &mut arena, root, rigid);
+            let spinal = evaluated(DuplicationStance::Spinal, &overlay, &mut arena, root, rigid);
             let agreed = match (reference.as_ref(), spinal.as_ref()) {
-                (Ok(expected), Ok(read)) => same_tree(&read.0, read.1, &expected.0, expected.1) == Trees::Same,
+                (Ok(expected), Ok(read)) => one_tree(&mut arena, *read, *expected),
                 (Err(expected), Err(refused)) => expected == refused,
                 (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
             };
             prop_assert!(
                 agreed,
                 "seed {seed}, the {shape} root: the copying stance gave {:?}, the spinal stance {:?}",
-                reference.as_ref().map(|&(_, read)| read),
-                spinal.as_ref().map(|&(_, read)| read)
+                reference,
+                spinal
             );
         }
     }
+}
+
+/// Over as many seeds as the agreement property runs, the generator draws
+/// exactly the alphabet it declares: each grafted former, each share and
+/// occurrence, and each opaque leaf of the full alphabet, and nothing else.
+#[test]
+fn the_property_draws_its_whole_alphabet()
+{
+    let mut census = Census::new();
+    for seed in 1 ..= u64::from(SEEDS) {
+        let (_, drawn) = roots(seed);
+        merged(&mut census, drawn);
+    }
+    let drawn: BTreeSet<&str> = census.keys().copied().collect();
+    assert_eq!(
+        drawn,
+        alphabet(),
+        "over {SEEDS} seeds the property draws {census:#?}"
+    );
 }
 
 #[test]
@@ -1653,4 +2415,39 @@ fn a_refused_duplication_leaves_the_overlay_as_it_found_it()
         .duplicate_value(&mut overlay, &core, root)
         .expect("the sharing stance keeps every share and mints the overlay's size");
     assert!(overlay.validate(OverlayId::Value(kept)).is_ok());
+}
+
+/// The erasure of each root the agreement property runs compiles back into an
+/// overlay root that validates and erases to the same term, node for node.
+#[test]
+fn a_compiled_erasure_erases_to_itself()
+{
+    for seed in 1 ..= u64::from(SEEDS) {
+        let (roots, _) = roots(seed);
+        for Root {
+            shape,
+            core,
+            overlay,
+            root,
+            ..
+        } in roots
+        {
+            let (mut arena, erasure, compiled, compiled_root) = compiled(&overlay, &core, root);
+            assert_eq!(
+                Ok(()),
+                compiled.validate(compiled_root),
+                "seed {seed}, the {shape} root: the compilation validates"
+            );
+            let again = erased(&compiled, compiled_root, &mut arena);
+            assert!(
+                one_tree(&mut arena, erasure, again),
+                "seed {seed}, the {shape} root: the compilation erases to another tree"
+            );
+            assert_eq!(
+                distinct(&arena, erasure),
+                distinct(&arena, again),
+                "seed {seed}, the {shape} root: the compilation erases to another graph"
+            );
+        }
+    }
 }

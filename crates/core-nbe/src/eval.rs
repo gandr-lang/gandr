@@ -3172,18 +3172,19 @@ pub fn apply_static_within(
     Ok((produced, machine.fuel))
 }
 
-/// Evaluate a closed core term to weak head in the empty environment, sharing
-/// each leg of `legs` across the occurrences that read it in one
-/// configuration.
+/// Evaluate a core term to weak head in `environment`, sharing each leg of
+/// `legs` across the occurrences that read it in one configuration.
 ///
 /// # Specification
-/// - requires: `root` resolves in `core` and is closed; each leg of `legs` is a
-///   term of `core` paired with exactly its free indices.
-/// - ensures: on success the weak head of `root`, paired with the fuel left
-///   over — one unit per task the run popped. A leg met in a configuration
-///   already evaluated is not evaluated again: the occurrence costs the one
-///   step that popped it, and the first evaluation of each configuration one
-///   step more, for the task that remembers it.
+/// - requires: `root` resolves in `core`; `environment` binds every occurrence
+///   `root` counts past its own binders, in the zone that occurrence names;
+///   each leg of `legs` is a term of `core` paired with exactly its free
+///   indices.
+/// - ensures: on success the weak head of `root` read in `environment`, paired
+///   with the fuel left over — one unit per task the run popped. A leg met in a
+///   configuration already evaluated is not evaluated again: the occurrence
+///   costs the one step that popped it, and the first evaluation of each
+///   configuration one step more, for the task that remembers it.
 /// - provides: the machine behind the overlay evaluator's sharing run. The
 ///   clause states that the produced head resolves in `domain`, in the polarity
 ///   of `root`, and that the remainder does not exceed `fuel`; which
@@ -3225,11 +3226,12 @@ pub fn eval_sharing(
     fuel: Fuel,
     root: CoreTerm,
     legs: BTreeMap<CoreTerm, Free>,
+    environment: Environment,
 ) -> Result<(Glued, Fuel), EvalFault>
 {
     let mut machine = Machine::new(definitions, fuel);
     machine.sharing.legs = legs;
-    let env = Machine::root_env();
+    let env = machine.hold_env(environment);
     machine.tasks.push(match root {
         CoreTerm::Value(term) => Task::Value { term, env },
         CoreTerm::Computation(term) => Task::Comp { term, env },
