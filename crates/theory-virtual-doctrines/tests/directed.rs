@@ -282,27 +282,37 @@ mod tests
     #[test]
     fn directed_j_transports_along_a_covariant_motive()
     {
-        let scrut = DirectedHom::new(nat_sig(), vt(NameRef::from("a")), vt(NameRef::from("b")));
+        let scrut = DirectedHom {
+            sig: nat_sig(),
+            src: vt(NameRef::from("a")),
+            tgt: vt(NameRef::from("b")),
+        };
         // Covariant motive C(x) = hom(c ⇝ x): transports forward to hom(c ⇝ b).
-        let covariant = DirectedJ::new(MotiveShape::CovariantTarget, vt(NameRef::from("c")));
+        let covariant = DirectedJ {
+            motive: MotiveShape::CovariantTarget,
+            fixed: vt(NameRef::from("c")),
+        };
         assert_eq!(
             check_directed_j(&scrut, &covariant),
-            Ok(DirectedHom::new(
-                nat_sig(),
-                vt(NameRef::from("c")),
-                vt(NameRef::from("b"))
-            )),
+            Ok(DirectedHom {
+                sig: nat_sig(),
+                src: vt(NameRef::from("c")),
+                tgt: vt(NameRef::from("b")),
+            }),
             "a covariant motive transports the covariant endpoint forward"
         );
         // Constant motive C(x) = hom(c ⇝ c): admissible, yields the diagonal.
-        let constant = DirectedJ::new(MotiveShape::Constant, vt(NameRef::from("c")));
+        let constant = DirectedJ {
+            motive: MotiveShape::Constant,
+            fixed: vt(NameRef::from("c")),
+        };
         assert_eq!(
             check_directed_j(&scrut, &constant),
-            Ok(DirectedHom::new(
-                nat_sig(),
-                vt(NameRef::from("c")),
-                vt(NameRef::from("c"))
-            )),
+            Ok(DirectedHom {
+                sig: nat_sig(),
+                src: vt(NameRef::from("c")),
+                tgt: vt(NameRef::from("c")),
+            }),
             "a constant motive is admissible"
         );
     }
@@ -310,10 +320,17 @@ mod tests
     #[test]
     fn directed_j_refuses_the_symmetry_motive()
     {
-        let scrut = DirectedHom::new(nat_sig(), vt(NameRef::from("a")), vt(NameRef::from("b")));
+        let scrut = DirectedHom {
+            sig: nat_sig(),
+            src: vt(NameRef::from("a")),
+            tgt: vt(NameRef::from("b")),
+        };
         // Symmetry needs C(x) = hom(x ⇝ a): the moving endpoint in the
         // contravariant source slot — the polarity side condition refuses it.
-        let symmetry = DirectedJ::symmetry(vt(NameRef::from("a")));
+        let symmetry = DirectedJ {
+            motive: MotiveShape::ContravariantSource,
+            fixed: vt(NameRef::from("a")),
+        };
         assert_eq!(
             Err(JError::MotiveNotCovariant),
             check_directed_j(&scrut, &symmetry),
@@ -331,11 +348,17 @@ mod tests
     fn directed_j_on_the_reflexive_hom_is_the_reflexive_hom()
     {
         let c = vt(NameRef::from("c"));
-        let diagonal = DirectedHom::refl(nat_sig(), c.clone());
-        assert_eq!(diagonal, DirectedHom::new(nat_sig(), c.clone(), c.clone()));
+        let diagonal = DirectedHom {
+            sig: nat_sig(),
+            src: c.clone(),
+            tgt: c.clone(),
+        };
         for motive in [MotiveShape::CovariantTarget, MotiveShape::Constant] {
             assert_eq!(
-                check_directed_j(&diagonal, &DirectedJ::new(motive, c.clone())),
+                check_directed_j(&diagonal, &DirectedJ {
+                    motive,
+                    fixed: c.clone(),
+                },),
                 Ok(diagonal.clone())
             );
         }
@@ -350,9 +373,13 @@ mod tests
         let query = Query::new(&store);
         let a = ground_cmd(NameRef::from("A"));
         let b = ground_cmd(NameRef::from("B"));
-        let fwd = DirectedHom::new(nat_sig(), ct(NameRef::from("A")), ct(NameRef::from("B")));
+        let fwd = DirectedHom {
+            sig: nat_sig(),
+            src: ct(NameRef::from("A")),
+            tgt: ct(NameRef::from("B")),
+        };
         assert!(
-            !bool::from(fwd.is_reflexive()),
+            fwd.src != fwd.tgt,
             "the forward hom is a genuine directed cell"
         );
         // Forward is witnessed; backward (symmetry) has NO engine witness.
@@ -376,15 +403,28 @@ mod tests
                 target in "[a-z]{1,3}",
                 fixed in "[a-z]{1,3}",
             ) {
-                let scrut = DirectedHom::new(nat_sig(), vt(NameRef::from(source.as_str())), vt(NameRef::from(target.as_str())));
+                let scrut = DirectedHom {
+                    sig: nat_sig(),
+                    src: vt(NameRef::from(source.as_str())),
+                    tgt: vt(NameRef::from(target.as_str())),
+                };
                 // The symmetry motive is always refused.
                 prop_assert_eq!(
-                    check_directed_j(&scrut, &DirectedJ::symmetry(scrut.src.clone())),
+                    check_directed_j(
+                        &scrut,
+                        &DirectedJ {
+                            motive: MotiveShape::ContravariantSource,
+                            fixed: scrut.src.clone(),
+                        },
+                    ),
                     Err(JError::MotiveNotCovariant),
                     "symmetry is underivable for every directed hom"
                 );
                 // The admissible (covariant) motive never reverses the target endpoint.
-                let covariant = DirectedJ::new(MotiveShape::CovariantTarget, vt(NameRef::from(fixed.as_str())));
+                let covariant = DirectedJ {
+                    motive: MotiveShape::CovariantTarget,
+                    fixed: vt(NameRef::from(fixed.as_str())),
+                };
                 let transported = check_directed_j(&scrut, &covariant)
                     .expect("a covariant motive is admissible");
                 prop_assert_eq!(

@@ -2,7 +2,6 @@
 
 use anodized::spec;
 
-use crate::boundary::DirectedHomReflexivity;
 use crate::boundary::MotiveCovariance;
 use crate::vdc::SignatureRef;
 use crate::vdc::TermRef;
@@ -22,51 +21,6 @@ pub struct DirectedHom
     pub src: TermRef,
     /// The covariant **target** endpoint `b`.
     pub tgt: TermRef,
-}
-
-impl DirectedHom
-{
-    /// The directed hom `hom_sig(src ⇝ tgt)`.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn new(
-        sig: SignatureRef,
-        src: TermRef,
-        tgt: TermRef,
-    ) -> Self
-    {
-        Self { sig, src, tgt }
-    }
-
-    /// The **reflexive** directed hom `hom_sig(term ⇝ term)` — the diagonal the
-    /// directed J's base case inhabits.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn refl(
-        sig: SignatureRef,
-        term: TermRef,
-    ) -> Self
-    {
-        Self {
-            sig,
-            src: term.clone(),
-            tgt: term,
-        }
-    }
-
-    /// Whether this hom is on the diagonal (`src == tgt`) — reflexive.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn is_reflexive(&self) -> DirectedHomReflexivity
-    {
-        DirectedHomReflexivity::from(self.src == self.tgt)
-    }
 }
 
 /// Which slot of the motive's produced hom the **moving** (covariant) endpoint
@@ -127,45 +81,6 @@ pub struct DirectedJ
     pub fixed: TermRef,
 }
 
-impl DirectedJ
-{
-    /// The directed-J elimination with motive `motive` fixing `fixed`.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn new(
-        motive: MotiveShape,
-        fixed: TermRef,
-    ) -> Self
-    {
-        Self { motive, fixed }
-    }
-
-    /// The **symmetry** elimination for a scrutinee whose source is `src` — the
-    /// motive `C(x) = hom(x ⇝ src)` that would transport backward.
-    ///
-    /// # Specification
-    /// - ensures: [`MotiveShape::ContravariantSource`] fixing `src`; passing it
-    ///   to [`check_directed_j`] always yields [`JError::MotiveNotCovariant`]
-    ///   (symmetry is underivable).
-    /// - panics: none.
-    #[inline]
-    #[must_use]
-    /// # Adequacy
-    /// - hypothesis: L3 — the fixed endpoint is retained while the moving
-    ///   endpoint is marked contravariant; directed J refuses that shape.
-    /// - witness: `tests::directed::tests::directed_j_refuses_the_symmetry_motive`
-    #[spec(captures: expected = src.clone(), ensures: |out| out.motive == MotiveShape::ContravariantSource && out.fixed == expected)]
-    pub fn symmetry(src: TermRef) -> Self
-    {
-        Self {
-            motive: MotiveShape::ContravariantSource,
-            fixed: src,
-        }
-    }
-}
-
 /// Why a directed-J elimination is ill-formed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum JError
@@ -201,8 +116,7 @@ pub enum JError
 /// # Adequacy
 /// - hypothesis: L3 pointwise — a covariant motive transports forward to
 ///   `hom(fixed ⇝ b)`; the contravariant (symmetry) motive asserts
-///   [`JError::MotiveNotCovariant`]; the boundary is that
-///   [`DirectedJ::symmetry`] is refused for every generated hom.
+///   [`JError::MotiveNotCovariant`].
 /// - witness: `tests::directed::tests::directed_j_transports_along_a_covariant_motive`
 /// - witness: `tests::directed::tests::directed_j_refuses_the_symmetry_motive`
 /// - witness: `tests::directed::tests::symmetry_is_never_derivable`
