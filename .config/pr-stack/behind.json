@@ -13,7 +13,7 @@
     "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
   },
   {
-    "name": "#4164: a top not queued, BEHIND with its checks pending, that lacks the trunk change arms `pr:await` as a queued one does",
+    "name": "#6760: a top not queued, BEHIND with its checks pending, is restacked onto the trunk, and the branch stacks on it",
     "top": "behind",
     "lower": "apart",
     "reading": {
@@ -23,10 +23,10 @@
       "checks": "PENDING",
       "age": 60
     },
-    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
+    "output": "stacked on lower (the top holds main)"
   },
   {
-    "name": "#4164: a top not queued, BLOCKED and green, arms `pr:await` too",
+    "name": "#6760: a top not queued, BLOCKED and green, behind the trunk, is restacked and takes the branch",
     "top": "behind",
     "lower": "apart",
     "reading": {
@@ -36,7 +36,7 @@
       "checks": "SUCCESS",
       "age": 60
     },
-    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
+    "output": "stacked on lower (the top holds main)"
   },
   {
     "name": "#4164: a top that conflicts with the trunk within its seat's claim window arms `pr:await` on it",
@@ -65,7 +65,7 @@
     "output": "stacked on main, past #1"
   },
   {
-    "name": "#4124: a top not queued whose checks failed is refused, naming the change",
+    "name": "#6760: a top behind the trunk whose checks failed is restacked, so its checks run on the tip, and takes the branch",
     "top": "behind",
     "lower": "apart",
     "reading": {
@@ -75,7 +75,7 @@
       "checks": "FAILURE",
       "age": 60
     },
-    "output": "refused: lacks these changes of main the branch builds on, and a check on its head failed (names trunk B)"
+    "output": "stacked on lower (the top holds main)"
   },
   {
     "name": "#4124: a draft top that lacks the trunk change the branch builds on is refused as held, naming the change",
@@ -101,7 +101,7 @@
       "checks": "PENDING",
       "age": 60
     },
-    "output": "stacked on lower"
+    "output": "stacked on lower (the top holds main)"
   },
   {
     "name": "a conflict with the top's own change is refused without a wait, naming no trunk change",
@@ -128,6 +128,19 @@
       "age": 60
     },
     "restacked": true,
-    "output": "stacked on lower"
+    "output": "stacked on lower (the top holds main)"
+  },
+  {
+    "name": "#6760: a top behind the trunk whose restack conflicts stays as it was, pages its lane, and the branch opens on the trunk beside it",
+    "top": "behind",
+    "lower": "clashes",
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "BEHIND",
+      "checks": "SUCCESS",
+      "age": 60
+    },
+    "output": "stacked on main, past #1, paged"
   }
 ]

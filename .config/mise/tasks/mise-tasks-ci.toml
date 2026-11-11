@@ -4269,19 +4269,26 @@ fi
 # top. A top changed or restacked by
 # then is refused, to be opened again.
 #
-# A top can lack a change of the trunk that the new pull request builds on
-# (#3654): it forked before the change merged. The rebase onto it then
+# The merge queue's own landings move the trunk past an open top, so a branch
+# stacked on it builds on a trunk that lacks each repair since: its gate fails
+# on a test the trunk already repairs (#6760, #6707 on #6759). A top behind
+# the trunk that is not queued, held or conflicting is therefore restacked
+# onto the tip first, its whole stack in one push (`restack_behind`). A
+# restack that stops leaves the top, pages its lanes and the coordinator, and
+# the task opens on the trunk beside it.
+#
+# A top can still lack a change of the trunk that the new pull request builds
+# on (#3654): it forked before the change merged. The rebase onto it then
 # conflicts, though the own commits apply to the trunk. A top bound for the
-# trunk carries the change once it merges or its seat rebases it: one queued,
-# one behind the trunk with its checks pending or passed, which its watch
-# queues (#4124), and one conflicting with the trunk within its seat's claim
-# window. Each is a future event, so the task prints what it waits on and an
-# `arm:` line for `pr:await` on the top, and exits 0 (#4164, `bound.jq`): the
-# seat arms the job and ends its turn, and the job's exit wakes it to run
-# `pr:open` again. A top conflicting past the window has no seat rebasing it,
-# so the task stacks past it, on the highest pull request below it that does
-# not conflict, or on the trunk as a second bottom (`stack_on_top`). A top
-# held as a draft or failed is refused, naming the changes it lacks.
+# trunk carries the change once it merges or its seat rebases it: one queued
+# and one conflicting with the trunk within its seat's claim window. Each is
+# a future event, so the task prints what it waits on and an `arm:` line for
+# `pr:await` on the top, and exits 0 (#4164, `bound.jq`): the seat arms the
+# job and ends its turn, and the job's exit wakes it to run `pr:open` again.
+# A top conflicting past the window has no seat rebasing it, so the task
+# stacks past it, on the highest pull request below it that does not
+# conflict, or on the trunk as a second bottom (`stack_on_top`). A top held
+# as a draft is refused, naming the changes it lacks.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
