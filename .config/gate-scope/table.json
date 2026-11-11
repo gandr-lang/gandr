@@ -37,6 +37,7 @@
     "check:doc",
     "check:landing",
     "check:syntax-exemplars",
+    "check:tests-enforcing",
     "check:witnesses"
   ],
   "paths": [
