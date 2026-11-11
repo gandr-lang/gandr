@@ -22,6 +22,8 @@
 
 // The console's host interface.
 import std.io;
+// The lists of the reals' machine state, which the handler's stack names.
+import std.list;
 // The exact reals' host interface.
 import std.reals;
 // The subject's shared declarations: `witnessed` and `decided`.
