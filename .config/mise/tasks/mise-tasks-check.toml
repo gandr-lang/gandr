@@ -2240,18 +2240,21 @@ fi
 echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read as recorded; a merge group on landing runs the setup, the brake and the $(jq length <<< "$landing") tasks of check:landing alone"
 '''
 
-# The rebase of `landing` onto `main` (#5441, `.config/landing/rebase.bash`).
-# `.config/landing/rebase-cases.bash` builds a bare origin and scratch clones
-# for each case. A `landing` that holds `main` stays. A `landing` with no
-# commit past `main` fast-forwards to it. A fix on `main` moves the later
-# landings onto `main`, with the merge kept, each new commit signed by a
+# The landing rebase (#5441, `.config/landing/rebase.bash`) and its trigger
+# (#6683, `.config/landing/fixes.bash`). `.config/landing/rebase-cases.bash`
+# builds a bare origin and scratch clones for each case. A `landing` that
+# holds `main` stays. One patch under two hashes on `main` and `landing` is
+# no fix, so the trigger reads none and `landing` stays. A true fix on `main`
+# goes on the newest head of `landing` that `integration` took, and only the
+# commits above it move, with the merge kept, each new commit signed by a
 # scratch key and each old commit noted with its new hash. A landing that
-# conflicts with the fix exits 3, and `landing` stays as it was. A fetch that
+# conflicts with the fix exits 3, and `landing` stays as it was. A commit
+# that `main` holds under another hash is not replayed (#5932). A fetch that
 # the remote refuses exits 1 before the rebase, and `landing` stays (#5627).
 # A branch of the merge queue's groups on `landing` holds the rebase until
 # the branch goes, and past the wait the push names the group (#6553).
 ["check:landing-rebase"]
-description = "The rebase of landing onto main keeps a landing that holds main, fast-forwards, moves the landings onto a fix signed and noted, stops on a conflict, stops before the rebase on a refused fetch, and waits while the merge queue builds a group on landing"
+description = "The landing rebase keeps a landing that holds main, reads no fix in a copy, puts a true fix on the head that integration took and moves only the commits above it, signed and noted, stops on a conflict, stops before the rebase on a refused fetch, and waits while the merge queue builds a group on landing"
 run = ".config/landing/rebase-cases.bash"
 
 # The integration cycle's decisions (#5440, `ci:cycle`). `.config/

@@ -32,7 +32,7 @@ def collapsed($summary; $rows): "<details><summary>\($summary)</summary>\n\n\($r
        body: ("The test `\(.test)` of `\(.binary)` fails in the integration cycle on `\($in.verdict.sha | short)`. The test belongs to the soundness suite. Thus its failure is a defect of its own (#5440).\n\n"
          + "## Observation\n\n|Run|Commit|Lanes|\n|---|---|---|\n"
          + "|[\($in.verdict.id)](\($in.verdict.url))|`\($in.verdict.sha | short)`|\(.lanes | join(", "))|\n")}] as $soundness
-| "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing." as $lead
+| "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683)." as $lead
 | (if $in.verdict == null then
       "No cycle has a verdict yet."
     elif $red | not then

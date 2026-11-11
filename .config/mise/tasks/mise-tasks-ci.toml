@@ -1486,9 +1486,10 @@ done < "$scratch/actions"
 # from the dispatched runs of ci.yml on `integration`. A passing verdict
 # fast-forwards `main` to the commit it tested. Until `main`'s ruleset admits
 # the App (#5443), GitHub refuses that, and the step says so. A `main` that
-# moves to a fix that `landing` lacks sets the step output `rebase`, and the
-# factory runner rebases `landing` onto `main` (#5441,
-# `.config/landing/rebase.bash`). `integration`
+# moves to a fix whose patch `landing` lacks (#6683, `.config/landing/
+# fixes.bash`) sets the step output `rebase`. The factory runner then puts
+# the fix on the newest head of `landing` that `integration` took, and moves
+# only the commits above it (#5441, `.config/landing/rebase.bash`). `integration`
 # then takes the tip of `landing`. A fast-forward moves the ref. A merge
 # through the merges API keeps the fixer's commits, and GitHub signs the
 # merge commit of an App. A merge that conflicts goes on the list for the
@@ -1584,8 +1585,19 @@ if [[ $conclusion == success ]]; then
         case $(gh api "repos/$repo/compare/$sha...$landing" --jq .status) in
           ahead | identical) ;;
           *)
-            say "landing at ${landing:0:12} lacks the fix on main: the factory runner rebases it onto main"
-            if [[ -n ${GITHUB_OUTPUT:-} ]]; then echo "rebase=true" >> "$GITHUB_OUTPUT"; fi
+            # The trigger compares patches, not ancestry alone (#6683): a
+            # merge of landing into integration, or a commit that landing
+            # holds under another hash, is no fix. The checkout holds no
+            # tree, and git fetches the trees and blobs that the patches
+            # read: 15 seconds for the heads of 2026-11-11.
+            git fetch --quiet --no-tags origin "$sha" "$landing"
+            fixed=$("$root/.config/landing/fixes.bash" "$sha" "$landing" | wc -l | tr -d ' ')
+            if (( fixed > 0 )); then
+              say "landing at ${landing:0:12} lacks $fixed fix(es) of main: the factory runner puts them on landing above the head that integration took"
+              if [[ -n ${GITHUB_OUTPUT:-} ]]; then echo "rebase=true" >> "$GITHUB_OUTPUT"; fi
+            else
+              say "landing at ${landing:0:12} holds each patch of main at ${sha:0:12}: no rebase"
+            fi
             ;;
         esac
       else
@@ -1811,14 +1823,14 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n' "$line" >> "$GITHUB_STE
 [[ $(jq -r .on <<< "$brake") == false ]]
 '''
 
-# The rebase of `landing` onto `main` (#5441, `.config/landing/rebase.bash`),
-# by hand. The integration cycle's job on the factory runner runs the script
-# after `main` takes a fix that `landing` lacks, and a failed job pages the
+# The landing rebase (#5441, `.config/landing/rebase.bash`), by hand. The
+# integration cycle's job on the factory runner runs the script after `main`
+# takes a fix whose patch `landing` lacks (#6683), and a failed job pages the
 # workflow lane. After a refused push or a lost lease, the lane runs this
 # task again. It signs with the seat's key and pushes with the seat's
 # credentials. A conflict needs a rebase by hand that resolves it.
 ["landing:rebase"]
-description = "Rebase landing onto main, its merges kept, each new commit signed and each old one noted"
+description = "Put each fix of main that landing lacks on the head of landing that integration took, and move only the commits above it, their merges kept, each new commit signed and each old one noted"
 run = ".config/landing/rebase.bash"
 
 # The fixer's mark of a repair that only `landing` carries (#6560): the tag
