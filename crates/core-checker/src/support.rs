@@ -321,6 +321,10 @@ pub struct Supported
     support: Support,
     /// The form the table holds the declaration in.
     entered: Entered,
+    /// The goal memo's consults of the decision, where a module run that
+    /// keeps supports counted them; none otherwise.
+    #[cfg(feature = "instrument")]
+    memo: crate::tally::MemoTally,
 }
 
 impl Supported
@@ -339,7 +343,35 @@ impl Supported
             verdict,
             support,
             entered,
+            #[cfg(feature = "instrument")]
+            memo: crate::tally::MemoTally::NONE,
         }
+    }
+
+    /// This verdict, whose decision consulted the goal memo as `memo` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    pub(crate) const fn consulting(
+        mut self,
+        memo: crate::tally::MemoTally,
+    ) -> Self
+    {
+        self.memo = memo;
+        self
+    }
+
+    /// The goal memo's consults of the decision that gave the verdict.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    #[must_use]
+    pub const fn memo(&self) -> crate::tally::MemoTally
+    {
+        self.memo
     }
 
     /// The verdict.

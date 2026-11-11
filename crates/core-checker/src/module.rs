@@ -595,6 +595,9 @@ pub struct ModuleReport
     /// The policy the run's closed pairs the tier met crossed under, which
     /// the kernel readmitting the report admits them under.
     admitting: gandr_kernel_core::AdmissionPolicy,
+    /// The verdict and the support of each declaration the run decided
+    /// outside a mutual block, by position, when the run kept them.
+    supported: BTreeMap<ConstantIndex, Supported>,
 }
 
 impl ModuleReport
@@ -993,6 +996,20 @@ impl ModuleReport
     pub const fn suspensions(&self) -> &BTreeMap<ConstantIndex, Suspension>
     {
         &self.suspensions
+    }
+
+    /// The verdict and the support of each declaration the run decided outside
+    /// a mutual block, by position: empty unless the run was asked
+    /// ([`ModuleRun::keep_supports`]). Each verdict is the one the
+    /// declaration's own decision gave, before a block's refusal spreads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn supported(&self) -> &BTreeMap<ConstantIndex, Supported>
+    {
+        &self.supported
     }
 
     /// The first sealed atom with no `mobile` mark that a value of `ty` may
@@ -1797,6 +1814,9 @@ fn decide(
                 declaration.stages(),
             );
             if let Some(signed) = signed.take() {
+                // The typed run reads the table again, and those reads are no
+                // part of the judgement's support.
+                let held = context.hold_support();
                 context.own_body(body);
                 let typed = type_value(context, body, direction);
                 // The bridge's crossings in the run are those of the body as
@@ -1813,6 +1833,7 @@ fn decide(
                 );
                 let _typed = context.take_nesting();
                 let _updated = context.take_updates();
+                context.restore_support(held);
             }
             spending = context.worlds_mut().leave();
             match judged {
@@ -2802,6 +2823,9 @@ pub struct ModuleRun
     blocks: Vec<(ConstantIndex, ConstantIndex)>,
     /// What the run keeps of each declaration's typed run, once asked to.
     typed: Option<TypedModule>,
+    /// The verdict and the support of each declaration decided outside a
+    /// mutual block, by position, once asked to.
+    supported: Option<BTreeMap<ConstantIndex, Supported>>,
 }
 
 impl ModuleRun
@@ -2823,6 +2847,7 @@ impl ModuleRun
             open: Maybe::Absent(open::Absent::Lone),
             blocks: Vec::new(),
             typed: None,
+            supported: None,
         }
     }
 
@@ -2919,7 +2944,26 @@ impl ModuleRun
                 Some(_) => Run::Typed,
                 None => Run::Judged,
             };
-            let decision = decide(context, declaration, kind);
+            let decision = match self.supported {
+                // A member of an open block reads its siblings before they
+                // stand, as no judgement of one declaration alone does.
+                Some(ref mut supported) if matches!(self.open, Maybe::Absent(_)) => {
+                    #[cfg(feature = "instrument")]
+                    let before = context.tally();
+                    context.start_support();
+                    let decision = decide(context, declaration, kind);
+                    let support = context.finish_support();
+                    let entered = entered(context, declaration, decision.verdict);
+                    let kept = Supported::new(decision.verdict, support, entered);
+                    // The counts layer charges these consults to the item a
+                    // pass takes the verdict for.
+                    #[cfg(feature = "instrument")]
+                    let kept = kept.consulting(context.tally().since(before));
+                    let _replaced = supported.insert(declaration.constant(), kept);
+                    decision
+                },
+                Some(_) | None => decide(context, declaration, kind),
+            };
             if let Some(ref mut typed) = self.typed {
                 if let Verdict::Refused(refusal) = decision.verdict {
                     let _replaced = typed.refused.insert(declaration.constant(), refusal);
@@ -2991,6 +3035,19 @@ impl ModuleRun
         self.typed.take()
     }
 
+    /// Keep, from here on, the verdict and the support of each declaration
+    /// decided outside a mutual block: the support that
+    /// [`check_declaration_supported`] records of the same declaration in the
+    /// same context. The report then holds them ([`ModuleReport::supported`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn keep_supports(&mut self)
+    {
+        self.supported = Some(BTreeMap::new());
+    }
+
     /// The report of every declaration judged: the mutual block left open
     /// closed, a block's refusal spread over its members, and the context's
     /// tables read.
@@ -3025,12 +3082,14 @@ impl ModuleRun
             open,
             blocks,
             typed: _,
+            supported,
         } = self;
         if let Maybe::Present(_) = open {
             context.close_mutual();
         }
         refuse_whole(&blocks, &mut judged, &mut failures);
         ModuleReport {
+            supported: supported.unwrap_or_default(),
             judged,
             ledger,
             lifts: context.lifts().clone(),
