@@ -4906,13 +4906,11 @@ INSERT INTO purpose VALUES('workflow-prose','rules::procedure','function','The p
 INSERT INTO purpose VALUES('workflow-prose','rules::sentences','function','The findings of one passage''s parsed sentences.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','rules::shaped','function','The head and item findings of the corpus shapes, read over the parsed passages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','error::CostError','enum','Names why a specification-cost ranking could not be produced, so the refusal''s cause is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-spec-cost','ledger::Charge','enum','Names what a sample''s stack was doing, so the charge''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::Frequency','struct','Names the sampling rate in samples per second, so the rate''s value is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::Ledger','struct','Holds every recorded sample per test and per check, so the ledger''s totals are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::RankLimit','struct','Names how many checks the report lists, so the limit''s value is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::Ranking','struct','Holds the report a ledger reads as, so the ranking''s ledger and limits are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::SampleCount','struct','Names a number of samples, so the count''s value is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-spec-cost','ledger::charge','function','Charges a sample''s stack to the specification checks on it, so the charge''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','profile::Suite','struct','Holds a built test binary, so the binary''s executable and tests are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','profile::Suites','struct','Holds the binaries a set of workloads runs in, so the binaries'' executables are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','profile::read_samples','function','Charges every sample of a profile to a workload in a ledger, so the ledger''s totals are read.',NULL,'fits','sound',NULL);

@@ -26,7 +26,7 @@ use crate::stack::Frame;
 
 /// What a sample's stack was doing, by the checks on it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Charge<'regions>
+pub(crate) enum Charge<'regions>
 {
     /// At least one frame runs a specification check.
     Check
@@ -63,7 +63,7 @@ pub enum Charge<'regions>
 /// - witness: `ledger::tests::the_outermost_check_is_charged`
 #[inline]
 #[must_use]
-pub fn charge<'regions>(
+pub(crate) fn charge<'regions>(
     frames: &[Frame],
     regions: &'regions Regions,
 ) -> Charge<'regions>
@@ -301,7 +301,7 @@ impl Ledger
     ///   none; a count added to the wrong check or test changes the ranking.
     /// - witness: `ledger::tests::the_ranking_orders_checks_by_charged_time`
     #[inline]
-    pub fn record(
+    pub(crate) fn record(
         &mut self,
         workload: &Workload,
         charge: Charge<'_>,
