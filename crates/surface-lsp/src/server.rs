@@ -4464,10 +4464,12 @@ impl Server
             let deferred: Vec<Diagnostic> = admitted
                 .declined
                 .iter()
-                .filter_map(|&(constant, declined)| {
+                .filter_map(|&declined| {
                     logged
                         .deferred
-                        .binary_search_by_key(&constant, |candidate| candidate.0)
+                        .binary_search_by_key(&usize::from(declined.constant), |candidate| {
+                            candidate.0
+                        })
                         .ok()
                         .and_then(|index| logged.deferred.get(index))
                         .map(|candidate| match declined.class.tracking() {
@@ -12908,6 +12910,123 @@ mod tests
         assert_eq!(
             resettled_lenses, settled_lenses,
             "an edit's admission resumes the declarations before it, and each keeps its tier"
+        );
+    }
+
+    /// How many declines of an endpoint loop the publications at `version`
+    /// among `messages` carry.
+    ///
+    /// # Specification
+    /// trivial.
+    fn declines(
+        messages: &Value,
+        version: i32,
+    ) -> usize
+    {
+        messages
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|message| {
+                message.get("method").and_then(Value::as_str)
+                    == Some("textDocument/publishDiagnostics")
+                    && message.pointer("/params/version") == Some(&Value::from(version))
+            })
+            .filter_map(|message| message.pointer("/params/diagnostics"))
+            .filter_map(Value::as_array)
+            .flatten()
+            .filter_map(|diagnostic| diagnostic.get("message").and_then(Value::as_str))
+            .filter(|message| message.contains("no kernel image: EndpointLoop"))
+            .count()
+    }
+
+    /// #6810: the admission of an edit resumes the declarations before the
+    /// edit, and it publishes the declines of the document's endpoint loops,
+    /// as the admission of the opening does. A decline numbered past the
+    /// resumed declarations finds no declaration of the judgement, so no
+    /// publication follows, and this test fails.
+    #[test]
+    fn an_edit_s_admission_publishes_each_decline_of_its_loops_6810()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/sessions/endpoint-loop.gandr")
+            .canonicalize()
+            .expect("the sessions subject is checked out");
+        let uri = format!("file://{}", path.display());
+        let text = std::fs::read_to_string(&path).expect("the loops are read");
+        let mut connected = initialized();
+        let opened = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                    "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32,
+                        "text": text}}})
+                .to_string(),
+            ),
+        );
+        let edited = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": uri, "version": 2_i32},
+                    "contentChanges": [{"text": format!("{text}\n")}]}})
+                .to_string(),
+            ),
+        );
+        assert_eq!(
+            (declines(&opened, 1_i32), declines(&edited, 2_i32)),
+            (5_usize, 5_usize),
+            "the admission of the opening and of the edit each publish the five loops' declines"
+        );
+    }
+
+    /// #6810: a second connection opens a document whose import closure the
+    /// admission of a first connection crossed, so the second admission
+    /// resumes that closure from the process. It publishes the declines of
+    /// the document's endpoint loops, as the first admission does. A decline
+    /// numbered past the resumed closure finds no declaration of the
+    /// judgement, so the second connection hears no decline, and this test
+    /// fails.
+    #[test]
+    fn an_opening_after_another_admission_publishes_each_decline_of_its_loops_6810()
+    {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model");
+        let directory =
+            std::env::temp_dir().join(format!("gandr-reopened-6810-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        std::fs::copy(
+            corpus.join("identity/circle-base.gandr"),
+            directory.join("circle-base.gandr"),
+        )
+        .expect("the base is copied");
+        let text = format!(
+            "{}{}",
+            include_str!(
+                "server/fixtures/each-declaration-shows-its-kernel-tier-2517-import.gandr"
+            ),
+            std::fs::read_to_string(corpus.join("sessions/endpoint-loop.gandr"))
+                .expect("the loops are read")
+        );
+        let path = directory.join("loops.gandr");
+        std::fs::write(&path, &text).expect("the importer is written");
+        let open =
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": format!("file://{}", path.display()), "languageId": "gandr",
+                "version": 1_i32, "text": text}}})
+            .to_string();
+        let mut first = initialized();
+        let crossed = send(&mut first, Json(&open));
+        let mut second = initialized();
+        let resumed = send(&mut second, Json(&open));
+        let _removed = std::fs::remove_dir_all(&directory);
+        assert_eq!(
+            (declines(&crossed, 1_i32), declines(&resumed, 1_i32)),
+            (5_usize, 5_usize),
+            "the connection that crosses the closure and the one that resumes it each publish \
+             the five loops' declines"
         );
     }
 
