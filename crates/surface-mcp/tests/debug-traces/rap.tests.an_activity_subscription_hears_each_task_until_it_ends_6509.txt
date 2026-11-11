@@ -1,6 +1,6 @@
 test: rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509
 package: gandr-surface-mcp
-command: .config/debug/trace.bash gandr-surface-mcp rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 --at rap.rs:3402
+command: mise run debug:test gandr-surface-mcp rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 --break Subscriptions>::follow$
 
 (lldb) target create "target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46"
 Current executable set to 'target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46' (arm64).
@@ -12,100 +12,80 @@ Executing commands in '.config/debug/lldbinit'.
 (lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
 (lldb) command script import -c rust_formatters.py
 (lldb) settings set target.max-children-count 16
-(lldb) breakpoint set --file rap.rs --line 3402
-Breakpoint 1: where = gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 + 5144 at rap.rs:3402:26, address = 0x00000001001eaa0c
+(lldb) breakpoint set --func-regex Subscriptions>::follow$
+Breakpoint 1: where = gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::Subscriptions>::follow + 24 at rap.rs:828:26, address = 0x00000001002a5f8c
 (lldb) breakpoint set --name rust_panic
 Breakpoint 2: where = gandr_surface_mcp-a0375bd537d48b46`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000103ad09a8
 (lldb) run
 
 running 1 test
 test rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
-Process 13150 launched: 'target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46' (arm64)
-Process 13150 stopped
-* thread #2, name = 'rap::tests::an_activity_subscription_hears_each_task_until_it_e', stop reason = breakpoint 1.1
-       frame #0: 0x00000001001eaa0c gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 at rap.rs:3402:26
-   3399	            "{}",
-   3400	            manifest.head
-   3401	        );
--> 3402	        let mut editor = Editor::new(&later);
+Process 40545 launched: 'target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46' (arm64)
+Process 40545 stopped
+* thread #6, stop reason = breakpoint 1.1
+       frame #0: 0x00000001002a5f8c gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::Subscriptions>::follow(self={rows:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, generation:{0:0}, watch:Some({activities:{0:strong=2, weak=0}, peer:{0:0}, sender:{inner:{flavor:List(…)}}, watching:false}), run:{0:1794372827552}, occupancy:{0:"[]"}}) at rap.rs:828:26
+   825 	    #[cfg(feature = "instrument")]
+   826 	    fn follow(&mut self) -> io::Result<()>
+   827 	    {
+-> 828 	        let following = !self.activity.is_empty();
     	                         ^
-   3403	        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
-   3404	        let second = admitted(&callback);
-   3405	        assert_ne!(
+   829 	        let Some(ref mut watch) = self.watch
+   830 	        else {
+   831 	            return Ok(());
 (lldb) bt 24
-* thread #2, name = 'rap::tests::an_activity_subscription_hears_each_task_until_it_e', stop reason = breakpoint 1.1
-   * frame #0: 0x00000001001eaa0c gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 at rap.rs:3402:26
-     frame #1: 0x00000001001cab10 gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure#0}((null)={}) at rap.rs:3349:69
-     frame #2: 0x00000001002e0088 gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
-     frame #3: 0x0000000100301918 gandr_surface_mcp-a0375bd537d48b46`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
-     frame #4: 0x0000000100301910 gandr_surface_mcp-a0375bd537d48b46`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
-     frame #5: 0x000000010030ce34 gandr_surface_mcp-a0375bd537d48b46`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
-     frame #6: 0x000000010030ce28 gandr_surface_mcp-a0375bd537d48b46`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
-     frame #7: 0x000000010030ce28 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
-     frame #8: 0x000000010030ce24 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
-     frame #9: 0x000000010030ce24 gandr_surface_mcp-a0375bd537d48b46`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
-     frame #10: 0x000000010030ce24 gandr_surface_mcp-a0375bd537d48b46`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
-     frame #11: 0x000000010030ce18 gandr_surface_mcp-a0375bd537d48b46`test::run_test::{closure#0} at lib.rs:677:43 [opt]
-     frame #12: 0x0000000100307828 gandr_surface_mcp-a0375bd537d48b46`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
-     frame #13: 0x00000001003077c4 gandr_surface_mcp-a0375bd537d48b46`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
-     frame #14: 0x000000010030f2f8 gandr_surface_mcp-a0375bd537d48b46`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
-     frame #15: 0x000000010030f2e8 gandr_surface_mcp-a0375bd537d48b46`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
-     frame #16: 0x000000010030f2e8 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
-     frame #17: 0x000000010030f2e4 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
-     frame #18: 0x000000010030f2e4 gandr_surface_mcp-a0375bd537d48b46`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
-     frame #19: 0x000000010030f2e4 gandr_surface_mcp-a0375bd537d48b46`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
-     frame #20: 0x000000010030f2d4 gandr_surface_mcp-a0375bd537d48b46`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
-     frame #21: 0x0000000103a92078 gandr_surface_mcp-a0375bd537d48b46`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
-     frame #22: 0x0000000103a9206c gandr_surface_mcp-a0375bd537d48b46`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
-     frame #23: 0x000000018ef03c58 libsystem_pthread.dylib`_pthread_start + 136
+error: gandr_surface_mcp-a0375bd537d48b46.gandr_surface_mcp.4d804b2667438cda-cgu.13.rcgu.o 0x40000d000006b4a4: DW_TAG_member 'data' refers to type 0x00000000000015a9 which was unable to be parsed
+* thread #6, stop reason = breakpoint 1.1
+   * frame #0: 0x00000001002a5f8c gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::Subscriptions>::follow(self={rows:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, generation:{0:0}, watch:Some({activities:{0:strong=2, weak=0}, peer:{0:0}, sender:{inner:{flavor:List(…)}}, watching:false}), run:{0:1794372827552}, occupancy:{0:"[]"}}) at rap.rs:828:26
+     frame #1: 0x000000010028bd94 gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::Toolset>::serve::<core::io::util::Sink>(self={listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-40545-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}, workspace={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, accountants:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0, activity:{0:strong=2, weak=0}}}}, peer={0:0}, log={}) at rap.rs:1198:47
+     frame #2: 0x00000001001c39c0 gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::hub::{closure#0}::{closure#0}(workspace=strong=2, weak=0, peer={0:0}) at rap.rs:2300:30
+     frame #3: 0x00000001002d5c94 gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::tests::hub::{closure#0}::{closure#0} as core::ops::function::FnOnce<(alloc::sync::Arc<std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace>>, gandr_surface_lsp::server::Peer)>>::call_once::{shim:vtable#0}((null)={toolset:{listener:{0:{inner:{0:{…}}}}, store:{file:{inner:{0:{…}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-40545-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{…}}, poison:{failed:{…}}, data:{value:{…}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}}, (null)=(strong=2, weak=0, {0:0})) at function.rs:250:5
+     frame #4: 0x00000001002df82c gandr_surface_mcp-a0375bd537d48b46`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(alloc::sync::Arc<std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace>>, gandr_surface_lsp::server::Peer), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<(alloc::sync::Arc<std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace>>, gandr_surface_lsp::server::Peer)>>::call_once(self={pointer:(), vtable:0x0000000104d77aa0}, args=(strong=2, weak=0, {0:0})) at boxed.rs:2318:9
+     frame #5: 0x00000001001568c8 gandr_surface_mcp-a0375bd537d48b46`gandr_surface_lsp::hub::run_hub::<core::io::util::Sink>::{closure#0} at hub.rs:515:13
+     frame #6: 0x00000001002918c0 gandr_surface_mcp-a0375bd537d48b46`std::sys::backtrace::__rust_begin_short_backtrace::<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>(f=<unavailable>) at backtrace.rs:166:18
+     frame #7: 0x00000001000f1a94 gandr_surface_mcp-a0375bd537d48b46`std::thread::lifecycle::spawn_unchecked::<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13
+     frame #8: 0x00000001001bb1cc gandr_surface_mcp-a0375bd537d48b46`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once(self=<unavailable>, (null)=<unavailable>) at unwind_safe.rs:275:9
+     frame #9: 0x0000000100150c78 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1}::{closure#0}>, ()>(data={f:{value:{0:{0:{hooks:{…}, f:{…}}}}}, r:{value:{None:()}}, p:{value:{0:{pointer:(), vtable:0x0000000000000008}}}}) at panicking.rs:576:43
+     frame #10: 0x00000001000f8614 gandr_surface_mcp-a0375bd537d48b46`__rust_try + 32
+     frame #11: 0x00000001000ed28c gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1}::{closure#0}>>(f={0:{hooks:{hooks:{first:None}, to_run:size=0}, f:{opened:{0:strong=2, weak=0}, beside:{pointer:(), vtable:0x0000000104d77aa0}, workspace:strong=2, weak=0}}}) at panicking.rs:544:19
+     frame #12: 0x00000001000ed248 gandr_surface_mcp-a0375bd537d48b46`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1}::{closure#0}>, ()>(f={0:{hooks:{hooks:{first:None}, to_run:size=0}, f:{opened:{0:strong=2, weak=0}, beside:{pointer:(), vtable:0x0000000104d77aa0}, workspace:strong=2, weak=0}}}) at panic.rs:359:14 [inlined]
+     frame #13: 0x00000001000ed248 gandr_surface_mcp-a0375bd537d48b46`std::thread::lifecycle::spawn_unchecked::<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1} at lifecycle.rs:68:26
+     frame #14: 0x00000001002d59b4 gandr_surface_mcp-a0375bd537d48b46`<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}((null)={f:{0:{opened:{0:strong=2, weak=0}, beside:{pointer:(), vtable:0x0000000104d77aa0}, workspace:strong=2, weak=0}}, hooks:{hooks:{first:None}, to_run:size=0}, their_packet:strong=1, weak=0}, (null)=<unavailable>) at function.rs:250:5
+     frame #15: 0x0000000103a92078 gandr_surface_mcp-a0375bd537d48b46`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #16: 0x0000000103a9206c gandr_surface_mcp-a0375bd537d48b46`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+     frame #17: 0x000000018ef03c58 libsystem_pthread.dylib`_pthread_start + 136
 (lldb) frame variable --depth 3
-(gandr_surface_mcp::face::tests::Scratch) earlier = {0:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-earlier"}
-(gandr_surface_mcp::face::tests::Scratch) later = {0:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-later"}
-(std::net::tcp::TcpListener) callback = {0:{inner:{0:{0:{fd:{…}}}}}}
-(serde_json::value::Value) uri = String("file:///tmp/active.gandr") {
-  0 = "file:///tmp/active.gandr" {
-    [0] = 'f'
-    [1] = 'i'
-    [2] = 'l'
-    [3] = 'e'
-    [4] = ':'
-    [5] = '/'
-    [6] = '/'
-    [7] = '/'
-    [8] = 't'
-    [9] = 'm'
-    [10] = 'p'
-    [11] = '/'
-    [12] = 'a'
-    [13] = 'c'
-    [14] = 't'
-    [15] = 'i'
-    ...
-  }
-}
-(gandr_surface_mcp::rap::Toolset) toolset = {listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"f\u{1b}"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}
-(core::net::socket_addr::SocketAddr) address = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59058}) {
-  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59058}
-}
-(gandr_surface_mcp::face::tests::Editor) editor = {writing:{0:{0:{0:{fd:{…}}}}}, reading:{buf:{buf:{data_ptr:{None:(…), value:{…}}, length:8192}, pos:156, filled:156, initialized:false}, inner:{0:{0:{0:{…}}}}}}
-(serde_json::value::Value) first = Number({n:PosInt(1794372657399)}) {
-  0 = {n:PosInt(1794372657399)}
-}
-(gandr_surface_mcp::rap::Toolset) toolset = {listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}
-(core::net::socket_addr::SocketAddr) address = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59064}) {
-  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59064}
-}
-(gandr_surface_mcp::rap::tests::Message) manifest = {head:"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 6973\r\nconnection: close", body:size=6973}
-*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(gandr_surface_mcp::rap::Subscriptions *) self = 0x0000000170835870 {rows:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, generation:{0:0}, watch:Some({activities:{0:strong=2, weak=0}, peer:{0:0}, sender:{inner:{flavor:List(…)}}, watching:false}), run:{0:1794372827552}, occupancy:{0:"[]"}}
 (lldb) up
-frame #1: 0x00000001001cab10 gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure#0}((null)={}) at rap.rs:3349:69
-   3346	    }
-   3347	
-   3348	    #[test]
--> 3349	    fn an_activity_subscription_hears_each_task_until_it_ends_6509()
-    	                                                                    ^
-   3350	    {
-   3351	        let earlier = Scratch::new(&json!("rap-activity-earlier"));
-   3352	        let later = Scratch::new(&json!("rap-activity-later"));
+frame #1: 0x000000010028bd94 gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::Toolset>::serve::<core::io::util::Sink>(self={listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-40545-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}, workspace={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, accountants:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0, activity:{0:strong=2, weak=0}}}}, peer={0:0}, log={}) at rap.rs:1198:47
+   1195	                sender: ticked,
+   1196	                watching: false,
+   1197	            });
+-> 1198	            if let Err(error) = subscriptions.follow() {
+    	                                              ^
+   1199	                drop(writeln!(
+   1200	                    log,
+   1201	                    "the toolset did not watch the activity for its resumed rows: {error}"
 (lldb) frame variable --depth 3
-(gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure_env#0} *)  = 0x00000001700066be {}
+(gandr_surface_mcp::rap::Toolset) self = {listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-40545-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}
+(std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace> *) workspace = 0x000000010ce39740 {inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, accountants:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0, activity:{0:strong=2, weak=0}}}}
+(gandr_surface_lsp::server::Peer) peer = {0:0}
+(core::io::util::Sink) log = {}
+(std::net::tcp::TcpListener) listener = {0:{inner:{0:{0:{fd:{…}}}}}}
+(gandr_surface_mcp::rap::Store) store = {file:{inner:{0:{0:{fd:{…}}}}}, open:0, line:{0:size=0}}
+(alloc::vec::Vec<(gandr_surface_mcp::rap::Pending, core::option::Option<gandr_surface_mcp::rap::Answer>), alloc::alloc::Global>) lost = size=0
+(gandr_surface_mcp::rap::Subscriptions) subscriptions = {rows:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}
+(gandr_surface_mcp::rap::subscriptions::Table) table = {path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-40545-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{0:0}}}}
+(gandr_surface_mcp::rap::deliver::Policy) policy = {first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}
+(gandr_surface_mcp::rap::Subscriptions) subscriptions = {rows:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, generation:{0:0}, watch:Some({activities:{0:strong=2, weak=0}, peer:{0:0}, sender:{inner:{flavor:List(…)}}, watching:false}), run:{0:1794372827552}, occupancy:{0:"[]"}}
+(core::io::util::Sink) log = {}
+(gandr_surface_mcp::rap::Buffer) manifest = {0:size=7065}
+(gandr_surface_mcp::rap::deliver::Deliveries) deliveries = {table:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{lanes:{root:None, length:0, alloc:{…}, _marker:{…}}, due:{data:size=0}, parked:{root:None, length:0, alloc:{…}, _marker:{…}}, tickets:0, closed:false, dropped:0}}}, ready:{inner:{cvar:{ptr:{v:{…}}}, mutex:{v:{value:{…}}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}
+(std::sync::mpsc::Sender<gandr_surface_mcp::rap::Call>) queue = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Receiver<gandr_surface_mcp::rap::Call>) queued = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Sender<gandr_surface_lsp::protocol::DocumentUri>) changed = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Receiver<gandr_surface_lsp::protocol::DocumentUri>) changes = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Sender<gandr_surface_lsp::protocol::DocumentUri>) settled = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Receiver<gandr_surface_lsp::protocol::DocumentUri>) settlements = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Sender<alloc::sync::Arc<gandr_surface_lsp::activity::Tick, alloc::alloc::Global> >) ticked = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Receiver<alloc::sync::Arc<gandr_surface_lsp::activity::Tick, alloc::alloc::Global> >) ticks = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(core::io::error::Error) error = {repr:{0:{pointer:0x0000000000000000}, 1:{}}}
