@@ -31,8 +31,7 @@
 
 import "table" as $table;
 
-def mapped($row; $path):
-  $row.path == $path or (($row.path | endswith("/")) and ($path | startswith($row.path)));
+include "rows";
 
 (.table // $table::table[0]) as $table
 | (.touched // false) as $only

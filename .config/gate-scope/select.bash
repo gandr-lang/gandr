@@ -32,6 +32,11 @@ if ! base=$(git merge-base "origin/$trunk" "${head:-HEAD}" 2> /dev/null); then
     | jq -r '.[]'
   exit 0
 fi
+# The `.rs` paths whose change touches `//` comments alone (`comments.bash`,
+# #6648) go to jq as a file, as the changed paths go on its standard input.
+comments=$(mktemp)
+trap 'rm -f "$comments"' EXIT
+"$here/comments.bash" "$base" ${head:+"$head"} > "$comments"
 # The changed paths reach jq on its standard input, never as an argument: a
 # large change makes a list longer than one argument can hold (#5220).
 {
@@ -41,6 +46,7 @@ fi
     git diff --no-renames --name-only "$base"
     git ls-files --others --exclude-standard
   fi
-} | jq -nR --argjson tasks "$tasks" --argjson landing "$landing" '{tasks: $tasks, changed: [inputs], landing: $landing}' \
+} | jq -nR --argjson tasks "$tasks" --argjson landing "$landing" --rawfile comments "$comments" \
+  '{tasks: $tasks, changed: [inputs], comments: ($comments | split("\n") | map(select(length > 0))), landing: $landing}' \
   | jq -r -L "$here" -f "$here/select.jq" \
   | jq -r '.[]'

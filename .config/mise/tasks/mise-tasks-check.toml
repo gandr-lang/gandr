@@ -15,9 +15,10 @@
 # its whole run, so at most `GANDR_GATE_SLOTS` (default 2) gates share a host,
 # one per lane (`.config/mise/gate.bash`, #3057, #4911). A lane's second gate,
 # or a third gate, waits, naming the holders, or with `--no-wait` refuses at
-# once. A change that selects no check of the table's groups (Rust, corpus,
-# extension) runs only light checks and takes no lock and no slot: it never
-# waits behind a gate that builds the workspace.
+# once. A change that selects no check of the table's groups (Rust, rustdoc,
+# corpus, extension, prose) runs only light checks and takes no lock and no
+# slot: it never waits behind a gate that builds the workspace. A change of
+# `//` comments alone in a crate selects the Rust group alone (#6648).
 #
 # It is the landing's gate (#5458): `pr:open` runs it on a head that no gate
 # passed on, and `pr:land` runs it again when a rebase changes the head's
@@ -2111,6 +2112,10 @@ run = ".config/mise/host-lock-cases.bash"
 # `.config/gate-scope/tests-cases.bash` builds scratch workspaces of two
 # packages (#6595): a change that breaks a test of the package it touches is
 # refused, and the suite of a change to one package keeps the other out.
+# `.config/gate-scope/comments-cases.bash` builds scratch repositories
+# (#6648): a `//` edit in a crate selects neither `check:doc` nor
+# `check:corpus`, a `///` edit, a blank line or one token of code beside a
+# comment selects both, and a corpus comment edit selects `check:prose`.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group or the `landing`
 # list naming no check, fails it. So does a check that builds `GATE_SCOPE`
@@ -2125,6 +2130,7 @@ set -euo pipefail
 .config/gate-scope/carry-cases.bash
 .config/gate-scope/select-cases.bash
 .config/gate-scope/tests-cases.bash
+.config/gate-scope/comments-cases.bash
 findings=$(mise tasks ls --json \
   | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' \
   | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq)

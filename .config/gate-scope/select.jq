@@ -33,24 +33,38 @@
 # packages the change touches, and not over their dependents. The light checks
 # stay, since each takes seconds.
 #
+# A row's path is a file, a directory that ends in `/`, or a glob
+# (`rows.jq`). The globs
+# give `check:prose` the paths it reads (#6648): every `.gandr` file and each
+# crate's README. A `.rs` path whose change touches `//` comments alone
+# (`comments.bash`) takes the table's `comments` groups, not its row's. Such
+# a comment compiles to no item and no documentation, so the change runs no
+# `check:doc` and no `check:corpus`.
+#
 # Input:
-#   tasks    every `check:*` task's name
-#   changed  the paths the change touches
-#   landing  true for the landing's gate; absent, every check the change
-#            selects
-#   table    the table to read; absent, `table.json`
+#   tasks     every `check:*` task's name
+#   changed   the paths the change touches
+#   comments  the changed `.rs` paths whose edits are `//` comments alone;
+#             absent, none
+#   landing   true for the landing's gate; absent, every check the change
+#             selects
+#   table     the table to read; absent, `table.json`
 #
 # Output: the checks to run, sorted.
 
 import "table" as $table;
 
-def mapped($row; $path):
-  $row.path == $path or (($row.path | endswith("/")) and ($path | startswith($row.path)));
+include "rows";
 
 (.landing // false) as $landing
 | (.table // $table::table[0]) as $table
 | ($table.groups | keys) as $every
-| ([.changed[] as $path | (first($table.paths[] | select(mapped(.; $path)) | .groups) // $every)[]] | unique) as $chosen
+| (.comments // []) as $comments
+| ([.changed[] as $path
+    | (if $table.comments != null and ($path | IN($comments[])) then $table.comments
+       else first($table.paths[] | select(mapped(.; $path)) | .groups) // $every
+       end)[]]
+   | unique) as $chosen
 | ([$table.groups[][]] | unique) as $grouped
 | [.tasks[] | select(. as $task | ($task | IN($grouped[]) | not) or any($chosen[]; . as $group | $task | IN($table.groups[$group][])))]
 | map(select(($landing | not) or (IN($grouped[]) | not) or IN(($table.landing // [])[])))

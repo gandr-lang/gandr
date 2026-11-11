@@ -7,7 +7,6 @@
       "check:clippy-enforcing",
       "check:clippy-plain-only",
       "check:corpus-comments",
-      "check:doc",
       "check:doctests",
       "check:dylint",
       "check:fmt",
@@ -17,6 +16,7 @@
       "check:tests-plain-only",
       "check:witnesses"
     ],
+    "doc": ["check:doc"],
     "corpus": [
       "check:corpus",
       "check:corpus-comments",
@@ -26,9 +26,10 @@
       "check:gandr-doc",
       "check:syntax-exemplars"
     ],
-    "extension": ["check:extension", "check:input-table", "check:vscode-smoke"]
+    "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
+    "prose": ["check:prose"]
   },
-  "light": ["check:cases", "check:prose", "check:spec-cost-landed"],
+  "light": ["check:cases", "check:spec-cost-landed"],
   "landing": [
     "check:corpus",
     "check:corpus-comments",
@@ -36,24 +37,41 @@
     "check:corpus-goldens",
     "check:doc",
     "check:landing",
+    "check:prose",
     "check:syntax-exemplars",
     "check:tests-enforcing",
     "check:witnesses"
   ],
+  "comments": ["rust"],
   "paths": [
-    { "path": ".config/nextest.toml", "groups": ["rust"] },
-    { "path": ".config/obligations/", "groups": ["rust"] },
-    { "path": ".config/rust-clippy/", "groups": ["rust"] },
-    { "path": ".config/witnesses/", "groups": ["rust"] },
+    { "path": ".config/nextest.toml", "groups": ["rust", "doc"] },
+    { "path": ".config/obligations/", "groups": ["rust", "doc"] },
+    { "path": ".config/rust-clippy/", "groups": ["rust", "doc"] },
+    { "path": ".config/witnesses/", "groups": ["rust", "doc"] },
+    { "path": ".config/issues/templates/", "groups": ["prose"] },
     { "path": ".config/", "groups": [] },
     { "path": ".github/", "groups": [] },
-    { "path": "crates/", "groups": ["rust", "corpus", "extension"] },
-    { "path": ".cargo/", "groups": ["rust", "corpus", "extension"] },
-    { "path": "Cargo.toml", "groups": ["rust", "corpus", "extension"] },
-    { "path": "Cargo.lock", "groups": ["rust", "corpus", "extension"] },
-    { "path": "rust-toolchain.toml", "groups": ["rust", "corpus", "extension"] },
-    { "path": "clippy.toml", "groups": ["rust"] },
-    { "path": "rustfmt.toml", "groups": ["rust"] },
+    { "path": "crates/workflow-prose/", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    {
+      "path": "crates/workflow-ledger/",
+      "groups": ["rust", "doc", "corpus", "extension", "prose"]
+    },
+    {
+      "path": "crates/surface-render-terminal/tests/golden/",
+      "groups": ["rust", "doc", "corpus", "extension", "prose"]
+    },
+    { "path": "crates/*/README.md", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "crates/**.gandr", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "crates/", "groups": ["rust", "doc", "corpus", "extension"] },
+    { "path": ".cargo/", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "Cargo.toml", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "Cargo.lock", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "rust-toolchain.toml", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
+    { "path": "clippy.toml", "groups": ["rust", "doc"] },
+    { "path": "rustfmt.toml", "groups": ["rust", "doc"] },
+    { "path": "corpus/glossary.toml", "groups": ["corpus", "prose"] },
+    { "path": "corpus/prose.ledger", "groups": ["corpus", "prose"] },
+    { "path": "**.gandr", "groups": ["corpus", "prose"] },
     { "path": "corpus/", "groups": ["corpus"] },
     { "path": "library/", "groups": ["corpus"] },
     { "path": "ledger/", "groups": ["corpus"] },
