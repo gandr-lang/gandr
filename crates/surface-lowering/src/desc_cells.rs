@@ -137,7 +137,8 @@ impl CellDiagnostic
 {
     /// Present the diagnostic as a refusal: a copied variable as a non-linear
     /// rule at its copy, any other cell-language boundary as the member it
-    /// stops, by its own fault, a coherence fault by its own name.
+    /// stops, by its own fault, a rule over a declined operation by that
+    /// operation's fault, a coherence fault by its own name.
     ///
     /// # Specification
     /// trivial.
@@ -145,10 +146,14 @@ impl CellDiagnostic
     {
         let fault = match self.fault {
             CellFault::Coherence(ref fault) => return fault.lowering_refusal(self.span),
-            CellFault::Operation(OpElaborateError::NoOutput) => MemberFault::NoOutput,
-            CellFault::Operation(OpElaborateError::AggregatedOutput) => {
-                MemberFault::AggregatedOutput
-            },
+            CellFault::Operation(OpElaborateError::NoOutput)
+            | CellFault::Rule(ElaborateError::UnrepresentableOperation(
+                OpElaborateError::NoOutput,
+            )) => MemberFault::NoOutput,
+            CellFault::Operation(OpElaborateError::AggregatedOutput)
+            | CellFault::Rule(ElaborateError::UnrepresentableOperation(
+                OpElaborateError::AggregatedOutput,
+            )) => MemberFault::AggregatedOutput,
             CellFault::NonLinear { copy, .. } => {
                 return crate::LoweringRefusal::RulesNonLinear {
                     span: self.span,
@@ -164,9 +169,6 @@ impl CellDiagnostic
             CellFault::Rule(ElaborateError::LhsNotOperation) => MemberFault::LhsNotOperation,
             CellFault::Rule(ElaborateError::EmptyOperation) => MemberFault::EmptyOperation,
             CellFault::Rule(ElaborateError::UnsupportedShape) => MemberFault::NestedOperation,
-            CellFault::Rule(ElaborateError::UnrepresentableOperation) => {
-                MemberFault::UnrepresentableOperation
-            },
             CellFault::Rule(ElaborateError::ResultArity { .. }) => MemberFault::ResultArity,
             CellFault::Rule(ElaborateError::MixedPolarity(_)) => MemberFault::MixedPolarity,
             CellFault::Rule(ElaborateError::IllSorted) => MemberFault::IllSorted,
@@ -202,6 +204,10 @@ pub enum CircuitCell
     },
     /// The reason is owned once by the enclosing report.
     Refused(CellDiagnosticIndex),
+    /// The circuit applies an operation the cell gate declined: that
+    /// operation's refusal owns the cause, and no later check reads the
+    /// circuit.
+    Excluded,
 }
 
 /// The cells and operation alphabet of one description declaration.
@@ -271,11 +277,13 @@ pub struct CellReport
 /// # Specification
 /// - requires: operation provenance corresponds to the supplied descriptions.
 /// - ensures: each declaration owns one store; a declined face never enters it;
-///   readable siblings are elaborated independently in source order; a
-///   declaration the gate declined nothing of has its rules decided as one
-///   rewriting system (`coincide::decide`, from the decision `decisions` kept
-///   for the block when it kept one), a refusal among the diagnostics at the
-///   rule that shows it, and every other declaration is unexamined.
+///   readable siblings are elaborated independently in source order; a face or
+///   a circuit over a declined operation takes no diagnostic of its own, since
+///   the operation's refusal states the fault; a declaration the gate declined
+///   nothing of has its rules decided as one rewriting system
+///   (`coincide::decide`, from the decision `decisions` kept for the block when
+///   it kept one), a refusal among the diagnostics at the rule that shows it,
+///   and every other declaration is unexamined.
 /// - panics: none.
 ///
 /// Missing external provenance is located at its owning declaration, rather
@@ -293,6 +301,7 @@ pub struct CellReport
 /// - witness: `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`
 /// - witness: `desc_cells::tests::a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed`
 /// - witness: `desc_cells::tests::an_ill_formed_rule_is_refused_once_and_left_unexamined_2375`
+/// - witness: `desc_cells::tests::a_rule_over_a_declined_operation_owes_no_refusal_of_its_own_2666`
 /// - witness: `desc_cells::tests::a_two_redex_body_declines_with_both_occurrences`
 /// - witness: `desc_cells::tests::declaration_order_is_the_cell_order`
 /// - witness: `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
@@ -357,6 +366,12 @@ pub fn elaborate_desc_cells(
         }
         let mut declined = Vec::with_capacity(declined_faces.len());
         for (index, error) in declined_faces {
+            declined.push(index);
+            // The operation's own refusal states the fault of a face that
+            // applies it, so the face takes none of its own.
+            if matches!(error, ElaborateError::UnrepresentableOperation(_)) {
+                continue;
+            }
             let at = usize::from(index);
             let span = declaration
                 .description
@@ -389,13 +404,15 @@ pub fn elaborate_desc_cells(
                 CellFault::Rule(error)
             };
             report.diagnostics.push(CellDiagnostic { span, fault });
-            declined.push(index);
         }
         let mut outcomes = Vec::with_capacity(circuits.len());
         for (index, circuit) in circuits.into_iter().enumerate() {
             let outcome = match circuit {
                 CircuitElaboration::Admitted { cell, composite } => {
                     CircuitCell::Admitted { cell, composite }
+                },
+                CircuitElaboration::Declined(ElaborateError::UnrepresentableOperation(_)) => {
+                    CircuitCell::Excluded
                 },
                 CircuitElaboration::Declined(error) => {
                     let span = declaration

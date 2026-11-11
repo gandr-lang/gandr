@@ -125,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 70_usize] = [
+const OWED: [(&str, Owed); 68_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -229,7 +229,6 @@ const OWED: [(&str, Owed); 70_usize] = [
         "UndescribedMember.DependentField",
         Owed::Unwritten(LOWERING),
     ),
-    ("UndescribedMember.NoOutput", Owed::Unwritten(LOWERING)),
     (
         "UndescribedMember.AggregatedOutput",
         Owed::Unreachable(Reason(
@@ -238,10 +237,6 @@ const OWED: [(&str, Owed); 70_usize] = [
     ),
     (
         "UndescribedMember.EmptyOperation",
-        Owed::Unwritten(LOWERING),
-    ),
-    (
-        "UndescribedMember.UnrepresentableOperation",
         Owed::Unwritten(LOWERING),
     ),
     ("UndescribedMember.MixedPolarity", Owed::Unwritten(LOWERING)),
