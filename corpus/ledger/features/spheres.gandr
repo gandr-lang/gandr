@@ -6,7 +6,7 @@
 /// Not implemented: a dependent case at a cell owes transport along the cell,
 /// which does not yet compute.
 ///
-/// - owes: #6458
+/// - owes: #6530
 // The spheres, their cells at their path types, and the cancellations.
 import "../../model/identity/sphere.gandr";
 
