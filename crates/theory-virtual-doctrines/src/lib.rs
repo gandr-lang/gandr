@@ -92,7 +92,6 @@ pub use crate::query::InstanceRow;
 pub use crate::query::InstanceTable;
 pub use crate::query::Query;
 pub use crate::query::RewritePath;
-pub use crate::query::SeamComposite;
 pub use crate::syntax::DerivationId;
 pub use crate::syntax::ProVar;
 pub use crate::syntax::Proterm;
