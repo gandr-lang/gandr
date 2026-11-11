@@ -204,7 +204,7 @@ watch_search() {
 # culprit, `owner.jq` the defect and the page; the watcher files the defect
 # or comments on the open one, claims it for the lane and pages the lane.
 watch_own() {
-  local repo=$1 head=$2 green=$3 check=$4 log=$5 culprit pr open lines input owner number observation
+  local repo=$1 head=$2 green=$3 check=$4 log=$5 culprit pr open input owner number observation
   # A check that fails on the green head too fails for the host, not for
   # the move: the watcher pages the fixer and files nothing.
   if ! watch_run "$green" "$check" "$(mktemp)"; then
@@ -214,11 +214,12 @@ watch_own() {
   culprit=$(watch_search "$green" "$head" "$check") || { echo "landing:watch: the search for \`$check\` failed" >&2; return 1; }
   pr=$(gh api "repos/$repo/commits/$culprit/pulls" --jq '[.[] | {number, branch: .head.ref, title}] | first // null') || pr=null
   open=$(gh issue list -R "$repo" --state open --label kind:defect --search '"landing:" in:title' --limit 100 --json number,title) || return 1
-  lines=$({ grep -F "[$check]" "$log" || :; } | { grep -E 'FAIL|panicked|error|refus' || :; } | awk 'NR <= 30' | jq -R . | jq -s -c .)
-  input=$(jq -n -c --arg check "$check" --arg head "$head" --arg green "$green" --arg culprit "$culprit" \
-    --argjson pr "$pr" --argjson lines "$lines" --argjson open "$open" \
-    '{check: $check, head: $head, green: $green, culprit: $culprit, pr: $pr, lines: $lines, open: $open}')
-  owner=$(jq -c -f "$watch_dir/owner.jq" <<< "$input")
+  # The defect holds the check's own last lines, by its prefix alone (#6659,
+  # `lines.jq`). The log reaches jq on standard input, never as one argument.
+  input=$(jq -R . "$log" | jq -s -c --arg check "$check" --arg head "$head" --arg green "$green" --arg culprit "$culprit" \
+    --argjson pr "$pr" --argjson open "$open" \
+    '{check: $check, head: $head, green: $green, culprit: $culprit, pr: $pr, log: ., open: $open}')
+  owner=$(jq -c -L "$watch_dir" -f "$watch_dir/owner.jq" <<< "$input")
   observation=$(mktemp)
   jq -r .observation <<< "$owner" > "$observation"
   number=$(jq -r '.number // empty' <<< "$owner")
