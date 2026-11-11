@@ -12,6 +12,9 @@
 # test. A change to `green` alone, with `red` broken at the fork, is refused
 # too, and the refusal names the test of `red`.
 set -euo pipefail
+# The head watcher's setting reaches no case (#6739, #6750): each case reads
+# a lane's scope.
+unset GATE_TEST_EVERY_RED
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 scope="$here/test-scope.bash"
 source "$here/../pr-stack/trunk.bash"
