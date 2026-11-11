@@ -227,6 +227,19 @@ status=0
 (cd "$scratch/core-1" && GANDR_GATE_SLOT=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 "$gated" true) > /dev/null 2>&1 || status=$?
 [[ $status == 0 ]] || fail "#4911: a heavy check inside a gate took a slot of its own"
 
+# A background gate (#6638), at niceness 19, takes its lane's lock and no
+# slot, so it runs while the one slot is held. Asked at niceness 0, it takes
+# a slot as any gate does, and with the slot held it is refused.
+status=0
+(cd "$scratch/core-1" && GANDR_GATE_BACKGROUND=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 \
+  nice -n 19 bash -c 'source "$1"; hold_gate_slot watcher; [[ $gate_slot == background ]]' _ "$gate_helper") > /dev/null 2>&1 || status=$?
+[[ $status == 0 ]] || fail "#6638: a background gate at niceness 19 waited for a host slot, exit $status"
+status=0
+refusal=$(cd "$scratch/core-1" && GANDR_GATE_BACKGROUND=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 \
+  bash -c 'source "$1"; hold_gate_slot watcher' _ "$gate_helper" 2>&1) || status=$?
+[[ $status == 2 && $refusal == "gate: every slot on the host is held: mise run "*" alone"* ]] \
+  || fail "#6638: a background gate at niceness 0 took no slot: exit $status, $refusal"
+
 # The lock directory (#6182): with both variables set, a lock takes its file
 # under `GANDR_HOST_LOCK_DIR`, and the runtime directory holds no lock.
 mkdir -p "$scratch/runtime"

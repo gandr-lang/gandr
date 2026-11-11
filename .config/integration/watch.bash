@@ -50,6 +50,18 @@ watch_remember() {
   mv "$watch_state.tmp" "$watch_state"
 }
 
+# A seat's gate runs with `GH_TOKEN` set (#6644). With none, a host's wrapper
+# of gh asks the next gh on `PATH` for a token, and in a case over a gh stub
+# that is the stub, which refuses. So the watcher's gate runs with the token
+# that `gh auth token` gives. A token already set stays, and a failed read
+# leaves it unset, as before.
+watch_token() {
+  local token
+  if [[ -z ${GH_TOKEN:-} ]] && token=$(gh auth token 2> /dev/null) && [[ -n $token ]]; then
+    export GH_TOKEN=$token
+  fi
+}
+
 # Makes the clone when it is absent, then reads `landing`, `main` and
 # `integration` into its `refs/watch/`. A local clone links the objects of
 # this checkout's repository, so it copies no object. A clone of a shallow
@@ -111,17 +123,19 @@ watch_checkout() {
 
 # Runs the check `$2`, or the whole gate when it is `check`, on commit `$1`
 # against the green head, writing its log to `$3`; exits as the check exits.
+# The run is a background gate (#6638): at niceness 19 and in no host slot,
+# so a lane's gate beside it loses neither CPU nor a slot to it.
 watch_run() {
   local commit=$1 check=$2 log=$3
   watch_checkout "$commit"
   if [[ $check == check ]]; then
-    (cd "$watch_tree" && mise run check) > "$log" 2>&1
+    (cd "$watch_tree" && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
   else
     (cd "$watch_tree" \
       && GATE_SCOPE=$(.config/gate-scope/scope.bash 2> /dev/null) \
       && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
       && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_TEST_SCOPE=$GATE_WITNESS_SCOPE \
-      && mise run "$check") > "$log" 2>&1
+      && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$log" 2>&1
   fi
 }
 
@@ -207,6 +221,7 @@ watch_once() {
   git -C "$watch_tree" update-ref refs/remotes/origin/landing "$green"
   git -C "$watch_tree" update-ref refs/remotes/origin/main "$(git -C "$watch_tree" rev-parse refs/watch/main)"
   log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.log"
+  watch_token
   SECONDS=0
   watch_run "$head" check "$log" && status=0 || status=$?
   echo "landing:watch: the gate on ${head::9} ran ${SECONDS}s and exited $status" >&2
@@ -227,7 +242,7 @@ watch_once() {
 }
 
 # Install (`$1` = install) or remove (`$1` = remove) the service that keeps
-# `landing:watch` running from this checkout.
+# `landing:watch` running from this checkout, in the background (#6638).
 watch_service() {
-  service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)'
+  service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)' background
 }

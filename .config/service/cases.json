@@ -90,5 +90,35 @@
       "description": "gandr toolchain follower (toolchain:follow)"
     },
     "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key><string>gandr.toolchain-follow</string>\n  <key>WorkingDirectory</key><string>/srv/gandr</string>\n  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string><key>GIT_CONFIG_GLOBAL</key><string>/home/a&amp;b/.config/git/config</string><key>CARGO_NET_GIT_FETCH_WITH_CLI</key><string>true</string></dict>\n  <key>ProgramArguments</key><array><string>/usr/bin/mise</string><string>run</string><string>toolchain:follow</string></array>\n  <key>KeepAlive</key><true/>\n  <key>ThrottleInterval</key><integer>20</integer>\n</dict>\n</plist>"
+  },
+  {
+    "name": "#6638: the Linux background service runs landing:watch at niceness 19, under the idle CPU policy and the idle IO class",
+    "program": "service.jq",
+    "input": {
+      "os": "linux",
+      "dir": "/srv/gandr",
+      "mise": "/usr/bin/mise",
+      "path": "/usr/bin:/bin",
+      "name": "landing-watch",
+      "task": "landing:watch",
+      "description": "gandr head watcher of landing (landing:watch)",
+      "background": true
+    },
+    "output": "[Unit]\nDescription=gandr head watcher of landing (landing:watch)\n\n[Service]\nWorkingDirectory=/srv/gandr\nEnvironment=PATH=/usr/bin:/bin\nExecStart=/usr/bin/mise run landing:watch\nRestart=always\nRestartSec=20\nNice=19\nCPUSchedulingPolicy=idle\nIOSchedulingClass=idle\n\n[Install]\nWantedBy=default.target"
+  },
+  {
+    "name": "#6638: the macOS background agent runs landing:watch at niceness 19 as a background process",
+    "program": "service.jq",
+    "input": {
+      "os": "macos",
+      "dir": "/srv/gandr",
+      "mise": "/usr/bin/mise",
+      "path": "/usr/bin:/bin",
+      "name": "landing-watch",
+      "task": "landing:watch",
+      "description": "gandr head watcher of landing (landing:watch)",
+      "background": true
+    },
+    "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key><string>gandr.landing-watch</string>\n  <key>WorkingDirectory</key><string>/srv/gandr</string>\n  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string></dict>\n  <key>ProgramArguments</key><array><string>/usr/bin/mise</string><string>run</string><string>landing:watch</string></array>\n  <key>KeepAlive</key><true/>\n  <key>ThrottleInterval</key><integer>20</integer>\n  <key>Nice</key><integer>19</integer>\n  <key>ProcessType</key><string>Background</string>\n</dict>\n</plist>"
   }
 ]

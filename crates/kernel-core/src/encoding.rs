@@ -1158,19 +1158,6 @@ impl From<usize> for ComponentCount
     }
 }
 
-impl From<EncodingLength> for usize
-{
-    /// The same measurement as a component count.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(length: EncodingLength) -> Self
-    {
-        length.0
-    }
-}
-
 /// One step of the iterative encoding walk.
 #[derive(Clone, Copy, Debug)]
 enum EncodeTask
@@ -5956,14 +5943,14 @@ mod tests
         // context inline.
         assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(17));
-        let length = usize::from(table.stream().length());
+        let length = table.stream().length().0;
         assert!(
             length < 512,
             "a 65536-occurrence composite records its 17 distinct nodes, not its occurrences: \
              {length} words"
         );
         // Asking again costs nothing: the session's table already holds it.
-        let before = usize::from(table.stream().length());
+        let before = table.stream().length().0;
         let again = support_key(
             &mut table,
             &arena,
@@ -5975,7 +5962,7 @@ mod tests
         assert_eq!(table.placed.count(), PlacementCount(17));
         assert_eq!(
             before,
-            usize::from(table.stream().length()),
+            table.stream().length().0,
             "a second question about the same content adds no record, which is what keeps key \
              derivation linear across a whole check"
         );
@@ -5992,7 +5979,7 @@ mod tests
         assert_eq!(reminted_key, key);
         assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(34));
-        assert_eq!(usize::from(table.stream().length()), before);
+        assert_eq!(table.stream().length().0, before);
     }
 
     #[test]
