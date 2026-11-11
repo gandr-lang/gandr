@@ -51,6 +51,10 @@ case "$1" in
 esac
 EOF
 chmod +x "$work/bin/gh"
+# The stub reads no token. A host can put a `gh` wrapper first on `PATH`,
+# and with no `GH_TOKEN` that wrapper asks the next `gh`, the stub, for one
+# (#6632). So the case sets a token of its own.
+export GH_TOKEN=case
 failed=0
 count=$(jq length "$cases")
 for (( index = 0; index < count; index++ )); do

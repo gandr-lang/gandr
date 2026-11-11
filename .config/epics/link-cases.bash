@@ -37,6 +37,8 @@ cat > "$work/bin/gh" << 'EOF'
 #!/usr/bin/env bash
 call="$*"
 printf '%s\n' "$call" >> "$STUB_PAGES/calls"
+# Only whether the token is the case's own, so no real token reaches a log.
+if [[ ${GH_TOKEN-} == case ]]; then echo case; elif [[ -z ${GH_TOKEN-} ]]; then echo unset; else echo another; fi >> "$STUB_PAGES/tokens"
 if [[ $1 == api && $2 == rate_limit ]]; then echo 0; exit 0; fi
 query= expr=
 while (($#)); do
@@ -54,6 +56,10 @@ esac
 for page in "${pages[@]}"; do jq -c "$expr" "$page"; done
 EOF
 chmod +x "$work/bin/gh"
+# The stub reads no token. A host can put a `gh` wrapper first on `PATH`,
+# and with no `GH_TOKEN` that wrapper asks the next `gh`, the stub, for one
+# (#6632). So the case sets a token of its own.
+export GH_TOKEN=case
 
 status=0
 output=$(STUB_PAGES=$work/pages GH_REPO=case/case GH_BUDGET_TTL=0 XDG_CACHE_HOME=$work/cache PATH="$work/bin:$PATH" \
@@ -66,6 +72,9 @@ expected=$'#30: would add 1; 1 open of 2 blocked-by\n#20: would add 1; 1 open of
 reads=$(awk '$1 == "api" && $2 != "rate_limit" { print $2 }' "$work/pages/calls" | sort | uniq -c | awk '{ print $2 "=" $1 }' | paste -sd ' ' -)
 [[ $reads == "graphql=2" ]] \
   || fail "#5688: epics:link makes two GraphQL reads, the issues and the open graph, and no REST read" "$reads"
+tokens=$(sort -u "$work/pages/tokens" | paste -sd ' ' -)
+[[ $tokens == "case" ]] \
+  || fail "#6632: each call reaches the stub with the case's own GH_TOKEN, never the caller's, so a wrapper of the host asks the stub for no token" "$tokens"
 
 (( failed == 0 )) || exit 1
 echo "epics:link check OK: the plan is read through GraphQL alone"
