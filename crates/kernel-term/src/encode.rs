@@ -178,6 +178,25 @@ struct Interner
     by_content: BTreeMap<EncodedEntry, GlobalIndex>,
     /// The next free global index.
     next: GlobalIndex,
+    /// What the last segment assigned, when the interner keeps it: a
+    /// [`SegmentEncoder`]'s, so a refused declaration's segment is forgotten.
+    journal: Option<Journal>,
+}
+
+/// What one segment assigned: the nodes it named, the entries it added and
+/// the next free global index before it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+struct Journal
+{
+    /// The nodes the segment named, in the order it named them.
+    nodes: Vec<AnyNode>,
+    /// The entries the segment added, in index order.
+    contents: Vec<EncodedEntry>,
+    /// The next free global index before the segment.
+    next: GlobalIndex,
 }
 
 impl Interner
@@ -217,6 +236,7 @@ impl Interner
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
             next: GlobalIndex::default(),
+            journal: None,
         }
     }
 
@@ -251,6 +271,7 @@ impl Interner
             base: Some(base),
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
+            journal: None,
         }
     }
 
@@ -297,6 +318,23 @@ impl Interner
             .get(&node)
             .copied()
             .or_else(|| self.base.as_ref()?.by_node.get(&node).copied())
+    }
+
+    /// Name `node` by `global`, and keep it in the journal when there is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn assign(
+        &mut self,
+        node: AnyNode,
+        global: GlobalIndex,
+    )
+    {
+        let _prior = self.by_node.insert(node, global);
+        if let Some(ref mut journal) = self.journal {
+            journal.nodes.push(node);
+        }
     }
 
     /// The global index the entry with `entry`'s bytes took, here or in the
@@ -576,12 +614,15 @@ pub fn encode_after(
 ///   sharing with the declarations before it as a whole encoding shares.
 /// - panics: none.
 /// - executable: none — the interner is private and moved only by
-///   [`SegmentEncoder::segment`], whose specification states it.
+///   [`SegmentEncoder::segment`] and [`SegmentEncoder::forget`], whose
+///   specifications state it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a mixed sequence encoded one declaration at a time writes
-///   the prefix encoding's segments, and an open seal is refused.
+///   the prefix encoding's segments, and an open seal is refused; a segment
+///   forgotten leaves the segments after it as if it had never been given.
 /// - witness: `encode::tests::declarations_encoded_one_at_a_time_write_the_prefix_segments`
+/// - witness: `encode::tests::a_forgotten_segment_leaves_the_next_as_if_never_given_6566`
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct SegmentEncoder
@@ -600,7 +641,10 @@ impl Default for SegmentEncoder
     fn default() -> Self
     {
         Self {
-            interner: Interner::new(),
+            interner: Interner {
+                journal: Some(Journal::default()),
+                ..Interner::new()
+            },
         }
     }
 }
@@ -639,6 +683,10 @@ impl SegmentEncoder
         {
             return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
         }
+        if let Some(ref mut journal) = self.interner.journal {
+            journal.nodes.clear();
+            journal.next = self.interner.next;
+        }
         let mut out = EncodedArtifact::new();
         encode_declaration(
             &mut out,
@@ -648,6 +696,51 @@ impl SegmentEncoder
             SealExtent::from(0_usize),
         );
         Maybe::Present(out)
+    }
+
+    /// Forget the last segment given, as if its declaration had never been
+    /// given: the kernel refused it, so it enters no environment, and the
+    /// arena mints its nodes' ids again.
+    ///
+    /// # Specification
+    /// - requires: no segment was given since the one forgotten.
+    /// - ensures: the nodes the last segment named are named no more, the
+    ///   entries it added are held no more, and the next free index is the one
+    ///   before it; a second call changes nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a segment forgotten between two others leaves the
+    ///   last one's bytes as an encoding that never held it writes them.
+    /// - witness: `encode::tests::a_forgotten_segment_leaves_the_next_as_if_never_given_6566`
+    #[inline]
+    #[spec(
+        captures: restored = self.interner.journal.as_ref().map(|journal| journal.next),
+        ensures: self.interner.journal.as_ref().is_none_or(|journal| journal.nodes.is_empty()
+            && journal.contents.is_empty()
+            && Some(self.interner.next) == restored),
+    )]
+    pub fn forget(&mut self)
+    {
+        let Interner {
+            ref mut by_node,
+            ref mut by_content,
+            ref mut next,
+            ref mut journal,
+            ..
+        } = self.interner;
+        let Some(journal) = journal.as_mut()
+        else {
+            return;
+        };
+        for node in journal.nodes.drain(..) {
+            let _named = by_node.remove(&node);
+        }
+        for entry in journal.contents.drain(..) {
+            let _held = by_content.remove(&entry);
+        }
+        *next = journal.next;
     }
 }
 
@@ -992,6 +1085,9 @@ fn encode_declaration(
     out.put_uvarint(WireU64::from(WireUsize::from(segment.len())));
     for entry in &segment {
         out.put_image(entry.0.as_image());
+    }
+    if let Some(ref mut journal) = interner.journal {
+        journal.contents = segment;
     }
     out.put_uvarint(WireU64::from(u64::from(u32::from(root_declared))));
     if let DeclarationContent::LiteralIdentity { test, .. } = *content {
@@ -1581,7 +1677,7 @@ fn intern(
             && let Some(&ValueType::Staged { base, .. }) = arena.value_type(id)
         {
             let global = interner.node(AnyNode::ValueType(base)).unwrap_or_default();
-            let _prior = interner.by_node.insert(node, global);
+            interner.assign(node, global);
             continue;
         }
         child_globals.clear();
@@ -1602,7 +1698,7 @@ fn intern(
             segment.push(encoded);
             assigned
         };
-        let _prior = interner.by_node.insert(node, global);
+        interner.assign(node, global);
     }
     interner.node(root).unwrap_or_default()
 }
@@ -4673,5 +4769,68 @@ mod tests
             ),
             super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
         ));
+    }
+
+    /// #6566: a segment forgotten between two others, its nodes' ids minted
+    /// again for different content and its content given again, leaves the
+    /// segments after it as an encoding that never held it writes them.
+    #[test]
+    fn a_forgotten_segment_leaves_the_next_as_if_never_given_6566()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let first = builder.axiom(LevelSignature::monomorphic(), integer);
+        let kept = arena.watermark();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let universe = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let refused = builder.axiom(LevelSignature::monomorphic(), universe);
+        let mut forgetting = super::SegmentEncoder::default();
+        for declaration in [&first, &refused] {
+            let super::Maybe::Present(_segment) = forgetting.segment(
+                &arena,
+                &MarkedDeclaration::new(AdmissionMark::Checked, declaration.clone()),
+            )
+            else {
+                panic!("no seal is open");
+            };
+        }
+        forgetting.forget();
+        arena.truncate_to(kept);
+        // The next declaration takes the forgotten one's ids for other
+        // content; the one after it gives the forgotten content again.
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit = builder.arena().value_type_unit();
+        let reminted = builder.axiom(LevelSignature::monomorphic(), unit);
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let universe = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let again = builder.axiom(LevelSignature::monomorphic(), universe);
+        let mut never = super::SegmentEncoder::default();
+        let super::Maybe::Present(_first) = never.segment(
+            &arena,
+            &MarkedDeclaration::new(AdmissionMark::Checked, first),
+        )
+        else {
+            panic!("no seal is open");
+        };
+        for declaration in [reminted, again] {
+            let marked = MarkedDeclaration::new(AdmissionMark::Checked, declaration);
+            let (super::Maybe::Present(after), super::Maybe::Present(expected)) = (
+                forgetting.segment(&arena, &marked),
+                never.segment(&arena, &marked),
+            )
+            else {
+                panic!("no seal is open");
+            };
+            assert_eq!(
+                after.as_image().as_ref(),
+                expected.as_image().as_ref(),
+                "a segment after the forgotten one is written as if it had never been given"
+            );
+        }
     }
 }

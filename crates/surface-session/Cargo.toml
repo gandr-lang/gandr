@@ -60,6 +60,7 @@ quenchant-shape.workspace = true
 # its `instrument` feature on.
 [dev-dependencies]
 allocation-counter.workspace = true
+gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-render-terminal.workspace = true

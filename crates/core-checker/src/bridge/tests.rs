@@ -1461,6 +1461,55 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
     assert_eq!(usize::from(distrusting.environment().recalls()), 0);
 }
 
+/// #6566: a readmission resumed from a record reads the source of its own
+/// recall, not the source the record was made under. A cold run under no
+/// source records its leading declaration; a warm run resumes that record
+/// under a source holding the cold run's receipt, and recalls the declarations
+/// after it, to the same outcomes.
+#[test]
+fn a_resumed_readmission_recalls_from_its_own_source_6566()
+{
+    let signer = KernelSigner::from([5_u8; 32]);
+    let trusting = TrustPolicy::Trusted(BTreeSet::from([signer.identity()]));
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Num, At(4));
+    let (cold, record) = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount(1), Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::trusting(trusting.clone(), Arc::new(NoVerdicts)),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    let Maybe::Present(record) = record
+    else {
+        panic!("the cold run records its leading declaration");
+    };
+    let Maybe::Present(receipt) = cold.environment().receipt(&signer)
+    else {
+        panic!("a cold readmission under keys gives a receipt");
+    };
+    let (warm, _) = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount(1), Maybe::Present(&record)),
+        &Recall::trusting(trusting, Arc::new(Held(Arc::new(receipt)))),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    assert_eq!(
+        usize::from(warm.resumed()),
+        1,
+        "the warm run resumes the record"
+    );
+    assert!(
+        usize::from(warm.environment().recalls()) > 0,
+        "the resumed run recalls what the cold run checked after its record"
+    );
+    assert_eq!(warm.readmitted(), cold.readmitted());
+}
+
 /// A run's certificate keeps a code constant it is handed as the constant:
 /// the trace unfolds `Num` inside the call, so the redex crosses with `Num`
 /// as written and the kernel replays the unfolding there.

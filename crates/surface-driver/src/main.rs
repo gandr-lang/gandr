@@ -2187,7 +2187,10 @@ fn main() -> ExitCode
                 spelling,
             );
         },
-        Some(Command::Lsp { .. }) => return lsp(spelling),
+        Some(Command::Lsp { .. }) => {
+            held(&configuration);
+            return lsp(spelling);
+        },
         #[cfg(unix)]
         Some(Command::Serve {
             socket,
@@ -2216,6 +2219,7 @@ fn main() -> ExitCode
                     };
                 },
             };
+            held(&configuration);
             return hub(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
@@ -2286,6 +2290,26 @@ fn main() -> ExitCode
             Ok(()) | Err(_) => ExitCode::from(FAULTED),
         },
     }
+}
+
+/// Hold the kernel's verdicts in the process for a language server or a hub,
+/// under the kernel policy `configuration` names; a policy that cannot be
+/// read, or a cache that cannot be held, is noted on standard error and every
+/// declaration is checked.
+///
+/// # Specification
+/// trivial.
+fn held(configuration: &config::Configuration)
+{
+    let noted = match configuration.kernel() {
+        Ok(kernel) => match verdicts::hold(&kernel) {
+            Ok(()) => return,
+            Err(unheld) => writeln!(std::io::stderr(), "gandr: {unheld}"),
+        },
+        Err(fault) => writeln!(std::io::stderr(), "gandr: {fault}"),
+    };
+    // Unwritable, the note is passed over as the warning it is.
+    drop(noted);
 }
 
 /// Serve the language server over standard input and output until the
