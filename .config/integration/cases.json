@@ -181,6 +181,67 @@
     }
   },
   {
+    "name": "#6560: a failed verdict on the tip takes landing when landing holds the marked repair",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "diverged",
+      "repair": { "sha": "4444444444444444444444444444444444444444", "held": true },
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "merge",
+      "dispatch": true,
+      "repaired": true,
+      "line": "Run 2 fails on the tip of integration, 222222222222, and landing, 111111111111, holds its repair, 444444444444, so integration takes landing, and the suite starts."
+    }
+  },
+  {
+    "name": "#6560: a failed verdict on the tip holds landing when the marked repair is not on landing yet",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "repair": { "sha": "4444444444444444444444444444444444444444", "held": false },
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "Run 2 fails on the tip of integration, 222222222222, so landing, 111111111111, waits for a fix."
+    }
+  },
+  {
     "name": "a verdict on the tip and nothing new on landing leaves the cycle idle",
     "program": "cycle.jq",
     "input": {
