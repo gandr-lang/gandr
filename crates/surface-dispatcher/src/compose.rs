@@ -5130,6 +5130,63 @@ pub fn item_program(
     Ok(program)
 }
 
+/// The sources of the program that [`item_program`] keys `module` into.
+///
+/// The incremental checker's bundle reads them. Each source holds the
+/// declarations of it that the lowering kept, and imports the prelude, then
+/// each source that its path imports resolve to.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one run for each source of `module`'s unit, in the unit's order;
+///   its items are the declarations of it that the lowering did not refuse; its
+///   imports are the prelude, unless it is the prelude, then each source that
+///   its imports resolve to, in the order it writes them.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus closures and each closure inside them, the
+///   prelude and the imports of each source included.
+/// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
+#[spec(ensures: |ret| ret.len() == module.unit().sources().len())]
+#[inline]
+#[must_use]
+pub fn item_sources(module: &LoweredModule<'_>) -> Vec<gandr_core_incremental::SourceRun>
+{
+    let unit = module.unit();
+    let mut counts = vec![0_usize; unit.sources().len()];
+    for lowered in module
+        .declarations()
+        .iter()
+        .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
+    {
+        if let Some(count) = counts.get_mut(usize::from(lowered.introduced().source())) {
+            *count = count.saturating_add(1);
+        }
+    }
+    let prelude = unit.prelude();
+    unit.sources()
+        .iter()
+        .zip(counts)
+        .enumerate()
+        .map(|(position, (source, count))| {
+            let imports = prelude
+                .filter(|&prelude| usize::from(prelude) != position)
+                .into_iter()
+                .chain(source.imports().iter().filter_map(|target| match *target {
+                    ImportTarget::Source(index) => Some(index),
+                    ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => None,
+                }))
+                .map(|index| gandr_core_incremental::SourceOrdinal::from(usize::from(index)))
+                .collect();
+            gandr_core_incremental::SourceRun::new(
+                gandr_core_incremental::ItemCount::from(count),
+                imports,
+            )
+        })
+        .collect()
+}
+
 /// The key of the item `lowered` declares in `unit`: the tag of its source's
 /// name, then its name ([`gandr_core_incremental::ItemKey`]), or its name alone
 /// for an unnamed source. A source's tag tells its items from another

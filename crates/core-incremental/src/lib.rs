@@ -3,7 +3,7 @@
 //! every item's typing exactly as the batch checker would, judging again only
 //! the items whose earlier answer has gone stale.
 //!
-//! # Five pieces
+//! # Six pieces
 //!
 //! **The item seam.** [`Program`] holds [`Item`]s — a front end's
 //! [`ItemKey`] beside the checker's own [`gandr_core_checker::Declaration`] —
@@ -29,6 +29,12 @@
 //! **The synthesis stream.** [`SynthesisStream`] publishes one event per item
 //! — its [`ItemHandle`], typing and adoption — then the match liveness its
 //! producer computed.
+//!
+//! **The bundle.** [`Bundle`] cuts a checked set at the sources that a front
+//! end states. It holds each source's run of checkpoints under a
+//! [`SourceKey`], the digest of the source's content keys and its imports'
+//! keys. So the set of a closure restricts to the set of each closure inside
+//! it by keys alone.
 //!
 //! # Example
 //!
@@ -161,6 +167,7 @@ extern crate alloc;
 include!(concat!(env!("OUT_DIR"), "/refusal.rs"));
 
 mod boundary;
+mod bundle;
 mod checkpoint;
 mod codec;
 mod content;
@@ -184,7 +191,15 @@ pub use crate::boundary::NodeIndex;
 pub use crate::boundary::Occurrence;
 pub use crate::boundary::RecordCount;
 pub use crate::boundary::SourceItemOrdinal;
+pub use crate::boundary::SourceOrdinal;
 pub use crate::boundary::SubmissionOrdinal;
+pub use crate::bundle::Bundle;
+pub use crate::bundle::SourceKey;
+pub use crate::bundle::SourceKeys;
+pub use crate::bundle::SourceRun;
+pub use crate::bundle::SourcesError;
+pub use crate::bundle::unheld;
+pub use crate::bundle::unkeyed;
 pub use crate::checkpoint::Adoption;
 pub use crate::checkpoint::Answer;
 pub use crate::checkpoint::Answered;
