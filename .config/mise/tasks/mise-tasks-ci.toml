@@ -4493,6 +4493,12 @@ mise run --quiet body:prose "$body"
 if ! ledger=$(mise run --quiet ledger:patched "$body" "$from" 2> /dev/null); then
   printf '%s\n' "${ledger:-ledger:patched failed to read the ledger}" | sed 's/^/note: /' >&2
 fi
+# The issues the body closes against the rows that owe them (#6767): GitHub
+# closes each such issue when the pull request merges, and a row that still
+# owes one turns `check:ledger` red for every lane from then on. The gate
+# reads only the commits' `Closes` lines, so the task reads the body here.
+LEDGER_BODY="$body" "$(git rev-parse --show-toplevel)/.config/ledger/check.bash" \
+  || { echo "name an open issue that owes the rest of each row above, or move the row to implemented, then run \`pr:open\` again" >&2; exit 2; }
 # A reserved grammar rule the change lowers without an open issue naming it
 # (#2528, `ledger:reserved`), as notes: `pr:land` refuses it.
 if ! reserved=$(mise run --quiet ledger:reserved "$from" 2> /dev/null); then

@@ -1215,9 +1215,12 @@ echo 'sites check OK: the README carries the fat-object and one-site paragraphs 
 # round-trips and keeps its constraints, every path a row names exists, every
 # language feature names an exemplar, and every implemented row without a
 # witness rests on an open issue, its state read through `gh`
-# (`.config/ledger/check.bash` states each rule). First the cases of
-# `.config/ledger/cases.json` run the check over a stub `gh` (#4018): a failed
-# read stops it with the call and its error, never a verdict on a row.
+# (`.config/ledger/check.bash` states each rule). An issue the change closes
+# owes nothing: a commit's `Closes` line or a closing keyword of the pull
+# request's body, from `LEDGER_BODY` or a pull request's CI event (#6767).
+# First the cases of `.config/ledger/cases.json` run the check over a stub
+# `gh` (#4018): a failed read stops it with the call and its error, never a
+# verdict on a row.
 ["check:ledger"]
 description = "The features ledger round-trips, keeps its constraints, names paths that exist, an exemplar for every language feature and a witness or an open gap for every implemented one"
 tools.jq = "1.8.1"

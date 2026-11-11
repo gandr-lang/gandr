@@ -91,6 +91,8 @@ site = [
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:ledger in each pull request's CI run" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "check:ledger in a seat's gate" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 24, trigger = "check:ledger in each pull request's CI run" },
+  { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "pr:open: the issues its body closes against the rows that owe them, one aliased batch (#6767)" },
+  { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "pr:open: the issues its body closes against the rows that owe them (#6767)" },
 
   # The check tasks.
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "check:tracking", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "check:tracking in a seat's gate: one aliased batch" },

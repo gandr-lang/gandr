@@ -114,9 +114,22 @@ read_issue() {
   echo 'ledger check FAILED' >&2
   exit 1
 }
+# The issues the change closes, which owe nothing once it lands (#6116): each
+# `Closes #n` line of a commit on the branch, and each issue a closing keyword
+# of the pull request's body names, since GitHub closes that issue when the
+# pull request merges (#6767). `pr:open` and `pr:land` give the body as the
+# file `LEDGER_BODY`; a pull request's CI run reads it from its event.
 declare -A closing=()
 read_closing() {
-  local base line
+  local base line body= number
+  if [[ -n ${LEDGER_BODY:-} ]]; then
+    body=$(< "$LEDGER_BODY")
+  elif [[ -n ${GITHUB_EVENT_PATH:-} && -f $GITHUB_EVENT_PATH ]]; then
+    body=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
+  fi
+  for number in $({ grep -oiE '(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+' <<< "$body" || true; } | grep -oE '[0-9]+$'); do
+    closing[$number]=1
+  done
   source "$(dirname "${BASH_SOURCE[0]}")/../pr-stack/trunk.bash"
   if ! base=$(git merge-base "origin/$trunk" HEAD); then return 0; fi
   while IFS= read -r line; do
