@@ -36,6 +36,7 @@
 - `Store::closure` reads where a value resides with no codec: its `Residence`, the chunks a dereference of its pointer loads, each verified, and the `ImageBytes` of their images. The store writes nothing for it.
 - `Store::write_tree` admits a record tree to the record plane through `&self`; `Store::records` is a `NodeBatch` over the plane, a `BlockStore`, for opening a stored root and proving against it.
 - `Register::name` names a pointer by a `RootName` in amortised constant time through `&mut self`, reading under the lock what another store over the same directory named since, so two stores keep each other's roots. A `Namer` hands a naming to the register's owner through `&self`, and `Register::drain` names every naming handed over under one lock. `Store::roots` loads the snapshot the register last published, with no lock.
+- `Store::read_in` reads a directory, a file or a symbolic link into the store as an `Entry` (#6590): a directory is one record tree keyed by name, a file a blob cut by the chunker's byte profile, each piece one value. A tree read again writes no object, and an edit writes only the pieces near it and the trees above it. `Store::write_out` writes an entry into a new path with the same bytes and executable bit, and refuses a name that would leave its directory. `Output` holds a root entry and the addresses it references; its identity is the root's address. The entries need a Unix target.
 - `StoreError` names the file system's faults by path, and carries each plane's own refusal, a chunk or node changed on disk among them.
 
 ## Expected features
@@ -58,6 +59,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | ----- | ------ |
 | The facade's layer, its wall, references | [`src/lib.rs`](src/lib.rs) |
 | The two planes on disk, their listing at open and each call's batch | [`plane`](src/plane.rs) |
+| A built output as a tree of entries, and its blobs | [`entries`](src/entries.rs) |
 | Named roots as a record tree and a journal of the namings since | [`roots`](src/roots.rs) |
 | The one writer of the roots, its namers and the readers' snapshot | [`register`](src/register.rs) |
 | The facade, its profile and its faults | [`store`](src/store.rs) |

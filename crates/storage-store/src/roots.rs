@@ -303,6 +303,8 @@ impl Roots
             | StoreError::Record(_)
             | StoreError::Roots { .. }
             | StoreError::Unowned) => other,
+            #[cfg(unix)]
+            other @ StoreError::Entry(_) => other,
         })?;
         let refs: Vec<RecordRef<'_>> = records.iter().map(Record::as_record_ref).collect();
         let built = RecordTree::build(&refs, TreeParams::current()).map_err(StoreError::Record)?;
@@ -979,7 +981,8 @@ fn header(
 /// - requires: nothing.
 /// - ensures: on success the records of the root node, or of each leaf it
 ///   names, each node verified on its load from `nodes`.
-/// - provides: the walk [`Roots::tree`] builds the tree again from.
+/// - provides: the walk [`Roots::tree`] builds the tree again from, and the
+///   read of an entry's tree (`entries.rs`).
 /// - fails: [`StoreError::Record`] for a node that does not load or decode, or
 ///   an internal node naming a child that is not a leaf.
 /// - panics: none.
@@ -993,7 +996,7 @@ fn header(
 ///   reads the tree another wrote.
 /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
 /// - witness: `tests::store::two_stores_keep_each_other_s_roots_across_a_fold_4081`
-fn leaves(
+pub fn leaves(
     nodes: &NodeDirectory,
     hash: NodeHash,
 ) -> Result<Vec<Record>, StoreError>
@@ -1022,10 +1025,10 @@ fn leaves(
     Ok(records)
 }
 
-/// A root's pointer as its record's value: its digest, then its offset as
-/// four little-endian bytes.
+/// A pointer as a record's value: its digest, then its offset as four
+/// little-endian bytes. A root's record and a blob piece's record hold one.
 #[repr(transparent)]
-struct Recorded([u8; POINTER_LEN]);
+pub struct Recorded([u8; POINTER_LEN]);
 
 impl From<ContentPtr> for Recorded
 {
@@ -1043,13 +1046,41 @@ impl From<ContentPtr> for Recorded
     }
 }
 
+impl TryFrom<&[u8]> for Recorded
+{
+    type Error = core::array::TryFromSliceError;
+
+    /// The recorded pointer `bytes` hold, refused for another count of bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error>
+    {
+        <[u8; POINTER_LEN]>::try_from(bytes).map(Self)
+    }
+}
+
+impl AsRef<[u8]> for Recorded
+{
+    /// The bytes a record's value holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        &self.0
+    }
+}
+
 impl Recorded
 {
     /// The pointer these bytes record.
     ///
     /// # Specification
     /// trivial.
-    fn pointer(&self) -> ContentPtr
+    pub fn pointer(&self) -> ContentPtr
     {
         let (digest, offset) = self.0.split_at(32);
         let mut digested = [0_u8; 32];
@@ -1076,8 +1107,8 @@ fn pointed(
     name: &RootName,
 ) -> Result<ContentPtr, RootsFault>
 {
-    <[u8; POINTER_LEN]>::try_from(record.value().as_ref())
-        .map(|bytes| Recorded(bytes).pointer())
+    Recorded::try_from(record.value().as_ref())
+        .map(|recorded| recorded.pointer())
         .map_err(|_length| RootsFault::Unpointed { name: name.clone() })
 }
 

@@ -1,19 +1,19 @@
 # gandr-storage-chunker
 
-Content-defined chunk boundaries over canonical records or typed boundary events, under parameters a downstream root commits.
+`gandr-storage-chunker` decides content-defined chunk boundaries over canonical records, one byte string or typed boundary events, under parameters a downstream root commits.
 
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Two profiles](#two-profiles)
+- [Three profiles](#three-profiles)
 - [Parameter commitments](#parameter-commitments)
 - [License](#license)
 
 ## Synopsis
 
-**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner and a typed scanner over caller-reported boundary events. The crate uses `core` and `alloc` under `no_std`; the anodized facade supplies executable specification checks.
+**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner, a byte scanner over one byte string and a typed scanner over caller-reported boundary events. The crate uses `core` and `alloc` under `no_std`; the anodized facade supplies executable specification checks.
 
 **Why.** Position-based cuts shift after an insertion, changing the identity of otherwise unchanged chunks. Content-defined cuts let boundaries resynchronize after an edit, enabling storage consumers to share unchanged chunks. Explicit parameter commitments let a root bind the rule that produced its partition.
 
@@ -31,9 +31,10 @@ Content-defined chunk boundaries over canonical records or typed boundary events
 ## Provided features
 
 - `chunk_record_slices` and `chunk_spans` partition canonical records without splitting a record.
+- `chunk_bytes` partitions one byte string under `ByteChunkerParams`; a cut depends on the 64 bytes before it alone, so a byte put before a stream moves no cut past the next chunk (#6590).
 - `TypedChunker::on_boundary` reports a cut or continuation and identifies the cut reason.
-- Validated parameter types reject zero kappa, zero token cap and inconsistent record-safe limits.
-- `ParameterCommitment` encodes either profile for downstream root commitments.
+- Validated parameter types reject zero kappa, zero token cap, inconsistent record-safe limits and byte limits under the 64-byte Gear window.
+- `ParameterCommitment` encodes each profile for downstream root commitments.
 - `ChunkerError` distinguishes invalid parameters, invalid spans and arithmetic failures.
 
 ## Expected features
@@ -85,13 +86,14 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing mise exec -- 
 
 Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Const operations carry executable predicates; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
 
-## Two profiles
+## Three profiles
 
 The profiles admit different cut positions and commit only the fields they use.
 
 | Profile | Input | Cut rule | Parameters |
 | ------- | ----- | -------- | ---------- |
 | Record-safe (`ChunkerParams`) | Canonical record slices, or one buffer with record spans | Masked Gear predicate between complete records, subject to minimums and byte or record caps | Gear table, seed policy and salt, normalization, record-boundary rule, byte limits, record limits |
+| Byte (`ByteChunkerParams`) | One byte string | Masked Gear predicate after any byte, its state shifted left, subject to the minimum and the byte cap | Gear table, byte limits |
 | Typed (`TypedChunkerParams`) | Token count and residue at each admissible boundary | Pending count reaches the token cap, otherwise residue is divisible by kappa | Kappa and token cap |
 
 The typed scanner cuts only at reported events; a multi-token event can take the pending count past the cap. The cap takes precedence over the hash predicate, and a cut resets the count. One token per record with a power-of-two kappa gives the record-boundary rule used by `gandr-storage-records`.

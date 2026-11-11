@@ -28,6 +28,9 @@ pub enum InvalidParameterReason
     ZeroKappa,
     /// The typed profile's token cap was zero.
     ZeroTokenCap,
+    /// The byte profile's minimum was under the 64 bytes a shifted Gear state
+    /// takes to forget a chunk's start.
+    MinByteUnderGearWindow,
 }
 
 impl fmt::Display for InvalidParameterReason
@@ -43,7 +46,7 @@ impl fmt::Display for InvalidParameterReason
     /// - executable: none — the formatter's output sink cannot be read back.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 exhausts all eight parameter-refusal reasons, observing
+    /// - hypothesis: L3 exhausts all nine parameter-refusal reasons, observing
     ///   pairwise-distinct renderings and the exact error from a refusing sink.
     ///   Collapsed alternatives and swallowed sink failures differ under these
     ///   observations; wording remains unconstrained.
@@ -65,6 +68,9 @@ impl fmt::Display for InvalidParameterReason
             },
             Self::ZeroKappa => "kappa is zero",
             Self::ZeroTokenCap => "the token cap is zero",
+            Self::MinByteUnderGearWindow => {
+                "the minimum byte limit is under the 64-byte Gear window"
+            },
         })
     }
 }
@@ -452,6 +458,7 @@ mod tests
             InvalidParameterReason::InvertedRecordLimits,
             InvalidParameterReason::ZeroKappa,
             InvalidParameterReason::ZeroTokenCap,
+            InvalidParameterReason::MinByteUnderGearWindow,
         ];
         distinct(&reasons.map(|value| format!("{value}")));
         for value in reasons {
