@@ -353,6 +353,8 @@ INSERT INTO purpose VALUES('core-incremental','content::WorldContent','enum','Na
 INSERT INTO purpose VALUES('core-incremental','content::WorldRoots','struct','Holds a world declaration''s roots: the row that code at the world performs in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::map_children','function','Copies a content node with every child index replaced by its image, applied left to right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::words::Absent','enum','Names why a nominal type''s presentation holds no free cells: the type is no type of words.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','entry::EntryContent','struct','Holds the table parts of an item its judgement entered elaborated: the judged body, the declared type the table records, the stage signature and the following position, each where the table departs from the written item.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','entry::SeatedEntry','struct','Holds the judged body and the declared type of an entry, minted into an edited arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','footprint::Footprint','struct','Holds what an item''s terms mention, conservatively, its reads apart from its type reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','footprint::HoleMark','enum','Names whether an item''s body is a hole, read against its body-presence field.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','footprint::footprint_of','function','Computes the footprint of an item''s content, its reads and type reads read off the roots.',NULL,'fits','sound',NULL);
