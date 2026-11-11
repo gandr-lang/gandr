@@ -5342,8 +5342,9 @@ impl<'source> Collector<'_, 'source>
     ///   its torn pieces and its terminator, and carries the decorations'
     ///   attributes, so an expectation written before a stray states its
     ///   refusal. The first unreadable decoration refuses the slot instead: at
-    ///   itself when its fault spans bytes it wrote, so it is reported ahead of
-    ///   the child; at the child when its reading stopped short.
+    ///   itself when its fault spans bytes it wrote or stands at a point before
+    ///   its end, so it is reported ahead of the child; at the child when its
+    ///   reading stopped short at its end.
     /// - provides: a refusal for a root child no declaration owns, beside the
     ///   declarations the source keeps.
     /// - fails: never.
@@ -5378,7 +5379,26 @@ impl<'source> Collector<'_, 'source>
             torn,
         } = stray;
         let mut attributes = Vec::new();
-        let attributed = self.decorations(&decorations, child.node, &mut attributes);
+        // A block whose fault names bytes it wrote, or a point before its
+        // end, such as a `)` missing before its `]`, stands before the child,
+        // so that fault is reported ahead of the child's own refusal; a block
+        // whose reading stopped short at its end was torn by what follows
+        // it, and stays behind.
+        let unread = self
+            .decorations(&decorations, child.node, &mut attributes)
+            .err()
+            .map(|(block, unread)| {
+                let own = decorations.iter().any(|placed| {
+                    placed.node == block
+                        && match unread.span() {
+                            Maybe::Present(span) => {
+                                span.start() < span.end() || span.start() < placed.span.end()
+                            },
+                            Maybe::Absent(_) => false,
+                        }
+                });
+                (if own { block } else { child.node }, unread)
+            });
         let name = first_token(self.tree, child.node);
         let top = self.collected.top(child.span.start());
         let held = self.refuse_held(top, name, child, child, refusal);
@@ -5393,16 +5413,8 @@ impl<'source> Collector<'_, 'source>
                 operand: Operand::Signature,
             });
             slot.attributes.append(&mut attributes);
-            // A block whose fault names bytes it wrote stands before the
-            // child, so that fault is reported ahead of the child's own
-            // refusal; a block whose reading stopped short was torn by what
-            // follows it, and stays behind.
-            if let Err((block, unread)) = attributed {
-                let written = match unread.span() {
-                    Maybe::Present(span) => span.start() < span.end(),
-                    Maybe::Absent(_) => false,
-                };
-                slot.refuse(if written { block } else { child.node }, unread);
+            if let Some((at, unread)) = unread {
+                slot.refuse(at, unread);
             }
         }
     }
@@ -15736,6 +15748,67 @@ mod tests
             ),
             "the block is refused at its extra closer: {refused:?}"
         );
+    }
+
+    /// A `)` missing inside an attribute block before a root child that no
+    /// declaration owns is the block's own fault, though its repair spans no
+    /// bytes: the block is refused at the point where the `)` belongs, ahead
+    /// of the child's own refusal (#6684, #6685, #6686). The `)` is deleted
+    /// before the block's `]`, or a `(` is doubled, and the child is an extern
+    /// block or an inner attribute block.
+    #[test]
+    fn a_closer_missing_inside_a_block_before_a_stray_is_refused_at_the_block_6684()
+    {
+        let pbg = grammar();
+        let refusals = |text: &'static str| {
+            let tree = repaired(&pbg, SourceText::from(text));
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            collected
+                .slots
+                .iter()
+                .filter_map(|slot| match slot.refusal {
+                    Maybe::Present((_at, refusal)) => Some(refusal),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let past = |text: &str, written: &str| {
+            let end = text.find(written).unwrap().saturating_add(written.len());
+            span(ByteOffset::from(end), ByteOffset::from(end))
+        };
+        for (text, written) in [
+            (
+                include_str!(
+                    "module/unformatted/a-closer-missing-inside-a-block-before-a-stray-is-refused-at-the-block-6684-deleted.gandr"
+                ),
+                "\"x\"",
+            ),
+            (
+                include_str!(
+                    "module/unformatted/a-closer-missing-inside-a-block-before-a-stray-is-refused-at-the-block-6684-doubled.gandr"
+                ),
+                "\"x\")",
+            ),
+            (
+                include_str!(
+                    "module/unformatted/a-closer-missing-inside-a-block-before-a-stray-is-refused-at-the-block-6684-inner.gandr"
+                ),
+                "\"x\"",
+            ),
+        ] {
+            let refused = refusals(text);
+            assert!(
+                matches!(
+                    refused.as_slice(),
+                    [LoweringRefusal::MalformedForm {
+                        span,
+                        fault: FormFault::Repaired(_),
+                        ..
+                    }] if *span == past(text, written)
+                ),
+                "the block is refused where its `)` belongs: {text:?} {refused:?}"
+            );
+        }
     }
 
     /// A theory whose rule's `==>` is written `=>=` cannot be finished: the
