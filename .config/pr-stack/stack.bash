@@ -609,6 +609,62 @@ restack() {
   git fetch --quiet origin "${heads[@]}"
 }
 
+# The open stacks after a push that moves `$trunk` from outside the merge
+# queue (#6700): the landing rebase, a hold or a repair by hand. Each stack
+# whose bottom stands on the trunk and lacks its new tip is restacked onto it
+# (`restack`), its own commits replayed in one atomic push. Otherwise every
+# lane that opens next waits on a top that nothing moves (`bound.jq`, #3654).
+# A member in the merge queue never moves (#2531). So the act waits for it
+# as `pr:watch`'s heal does (`heal.jq`): it reads the stacks again every
+# `TRUNK_MOVED_POLL` seconds, 30 by default, for at most `TRUNK_MOVED_WAIT`
+# seconds, 600 by default. After that it leaves the stack to the heal, and
+# the queue builds its group on the new tip itself. A restack that conflicts
+# or fails pushes nothing. Prints one line for each stack, and for a restack
+# that stops, `stopped <number>… [<lane>…]: <the reason>`. Returns 3 when a
+# restack stops, 1 when a reading fails, and 0 otherwise. The caller's exit
+# trap runs `drop_scratch`.
+trunk_moved() {
+  local deadline poll open bottom stack numbers lanes queued head out status=0
+  local -a bottoms
+  deadline=$((SECONDS + ${TRUNK_MOVED_WAIT:-600}))
+  poll=${TRUNK_MOVED_POLL:-30}
+  git fetch --quiet origin "$trunk" || return 1
+  gh_budget_stale
+  open=$(landable_prs) || return 1
+  mapfile -t bottoms < <(jq -r --arg trunk "$trunk" '.[] | select(.base == $trunk and (.bot | not)) | .number' <<< "$open")
+  for bottom in "${bottoms[@]}"; do
+    while :; do
+      jq -e --argjson n "$bottom" 'any(.[]; .number == $n)' <<< "$open" > /dev/null || continue 2
+      stack=$(jq -c --argjson n "$bottom" --arg trunk "$trunk" -f "$pr_stack_dir/chain.jq" <<< "$open")
+      numbers=$(jq -r 'map("#\(.number)") | join(" ")' <<< "$stack")
+      queued=$(jq -r --argjson stack "$stack" '[.[] | select(.landing and (.number | IN($stack[].number))) | "#\(.number)"] | join(" ")' <<< "$open")
+      [[ -n $queued ]] || break
+      if (( SECONDS >= deadline )); then
+        echo "stack $numbers: $queued stays in the merge queue, and its pr:watch heals the stack once it lands"
+        continue 2
+      fi
+      sleep "$poll"
+      gh_budget_stale
+      open=$(landable_prs) || return 1
+    done
+    head=$(jq -r '.[0].head' <<< "$stack")
+    git fetch --quiet origin "$head" || return 1
+    if git merge-base --is-ancestor "origin/$trunk" "origin/$head"; then
+      echo "stack $numbers: stands on the tip of $trunk"
+      continue
+    fi
+    if out=$(restack "$stack" 2>&1); then
+      echo "stack $numbers: restacked onto $(git rev-parse --short "origin/$trunk")"
+      [[ -z $out ]] || printf '%s\n' "$out"
+    else
+      lanes=$(jq -r 'map(.head | split("-")[0]) | unique | join(" ")' <<< "$stack")
+      echo "stopped $numbers [$lanes]: $(paste -sd ' ' - <<< "$out")"
+      status=3
+    fi
+  done
+  return "$status"
+}
+
 # The first member of the chain `$2`… (branches, bottom to top, fetched)
 # whose remote tip does not hold the tip below it, the first member's below
 # being the commit `$1` (#5071, #5695). Prints the member's index and fails,

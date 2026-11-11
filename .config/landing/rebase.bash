@@ -30,6 +30,12 @@
 # - One atomic push moves `landing` and the notes. The lease on the old tip
 #   of `landing` refuses the push when a landing arrives during the rebase.
 #   Then the task reads the tips again, at most 3 times in all.
+# - After the push, each open stack lacks the new tip, so the task restacks
+#   them onto it (#6700, `.config/pr-stack/moved.bash`). It waits for a
+#   queued member up to `TRUNK_MOVED_WAIT` seconds, 300 by default here, and
+#   then leaves that stack to its `pr:watch`. A restack that stops pages the
+#   stack's seats and leaves the rebase green: `landing` is moved.
+#   `REBASE_MOVED` names another command for that act.
 # - A fix or a rebase that conflicts stops before the push and exits 3. A
 #   fetch or another git command that fails stops the attempt and exits 1.
 #   Either way `landing` stays as it was, and the job pages the workflow
@@ -158,15 +164,23 @@ attempt() {
     [[ $(git ls-remote "$remote" refs/heads/landing) == "$landing"* ]] && return 1
     return 4
   fi
+  pushed=true
   return 0
 }
 
+pushed=false
 try=1
 while (( try <= 3 )); do
   status=0
   attempt || status=$?
   case $status in
-    0) exit 0 ;;
+    0)
+      if [[ $pushed == true ]]; then
+        TRUNK_MOVED_WAIT=${TRUNK_MOVED_WAIT:-300} "${REBASE_MOVED:-$here/../pr-stack/moved.bash}" \
+          || echo "the restack of the open stacks onto the new landing stops; its seats are paged" >&2
+      fi
+      exit 0
+      ;;
     4)
       echo "the push of landing lost its lease on try $try: a landing arrived during the rebase" >&2
       try=$((try + 1))

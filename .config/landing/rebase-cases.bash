@@ -4,7 +4,8 @@
 # `main`, `integration` and `landing`, lands pull requests on `landing` as
 # merge commits, and moves `integration` and `main` as a green cycle moves
 # them. Then it reads the trigger, runs the rebase in a clone with a scratch
-# signing key and reads `origin` again.
+# signing key and reads `origin` again. The act after the push (#6700,
+# `REBASE_MOVED`) is a recorder: it writes the file `moved` beside the clone.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 rebase=$here/rebase.bash
@@ -13,6 +14,9 @@ source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 failed=0
+printf '#!/usr/bin/env bash\ntouch ../moved\n' > "$scratch/moved-act"
+chmod +x "$scratch/moved-act"
+export REBASE_MOVED=$scratch/moved-act
 
 fail() {
   echo "landing rebase case FAILED: $1"
@@ -113,9 +117,9 @@ got=$(
   land pr1 one 'one'
   before=$(git rev-parse landing)
   status=$(run "$scratch/holds") && again
-  echo "exit $status, $([[ $(git rev-parse origin/landing) == "$before" ]] && echo stays || echo moves)"
+  echo "exit $status, $([[ $(git rev-parse origin/landing) == "$before" ]] && echo stays || echo moves), $([[ -e $scratch/holds/moved ]] && echo restacks || echo "no restack")"
 )
-[[ $got == "exit 0, stays" ]] || fail "#5441: a landing that holds main stays" "$got"
+[[ $got == "exit 0, stays, no restack" ]] || fail "#5441, #6700: a landing that holds main stays, and no stack is restacked" "$got"
 
 # One patch under two hashes: the fixer copies landing's commit onto
 # integration, and the cycle then takes landing. `main` holds the copy and
@@ -161,10 +165,11 @@ got=$(
       log --format=%G? "$floor..$new" | sort -u | paste -sd ' ' -) signed," \
     "shared $(git show "$new:shared" | sed -n 2p)," \
     "$([[ $(git notes --ref=rebased show "$old") == "$new" ]] && echo noted || echo "not noted")," \
-    "then $("$fixes" origin/main origin/landing | wc -l | tr -d ' ') fixes"
+    "then $("$fixes" origin/main origin/landing | wc -l | tr -d ' ') fixes," \
+    "$([[ -e $scratch/moved/moved ]] && echo restacks || echo "no restack")"
 )
-[[ $got == "1 fix, exit 0, floor kept, 2 moved past the floor, 1 merge, G signed, shared fixed, noted, then 0 fixes" ]] \
-  || fail "#6683: a true fix on main goes on the head that integration took, and only the commits above it move" "$got"
+[[ $got == "1 fix, exit 0, floor kept, 2 moved past the floor, 1 merge, G signed, shared fixed, noted, then 0 fixes, restacks" ]] \
+  || fail "#6683, #6700: a true fix on main goes on the head that integration took, only the commits above it move, and the open stacks are restacked" "$got"
 
 # A landing that conflicts with the fix stops before the push: landing stays.
 got=$(

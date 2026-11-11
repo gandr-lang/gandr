@@ -1833,6 +1833,17 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n' "$line" >> "$GITHUB_STE
 description = "Put each fix of main that landing lacks on the head of landing that integration took, and move only the commits above it, their merges kept, each new commit signed and each old one noted"
 run = ".config/landing/rebase.bash"
 
+# The act after a push to `landing` by hand from outside the merge queue
+# (#6700, `.config/pr-stack/moved.bash`): a hold or a repair. Each open stack
+# that lacks the new tip is restacked onto it, so the next lane to open finds
+# a current top. A queued member is waited for, up to `TRUNK_MOVED_WAIT`
+# seconds, 600 by default. A restack that stops pages the stack's seats and
+# the coordinator. The landing rebase runs the same act after its own push.
+["landing:moved"]
+description = "Restack each open stack onto the new tip of landing after a push from outside the merge queue, paging the seats of a stack whose restack stops"
+tools.jq = "1.8.1"
+run = ".config/pr-stack/moved.bash"
+
 # The fixer's mark of a repair that only `landing` carries (#6560): the tag
 # `integration-repair` on commit `<commit>` of `landing`. While the verdict
 # on the tip of `integration` fails, `ci:cycle` takes the tip of `landing`
