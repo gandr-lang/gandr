@@ -70,6 +70,13 @@
 //! put the cost on every presented type rather than on each use of apartness.
 //! **Reversal.** A presented type cased absurdly often enough that the joins
 //! show in profiles caches the verdict on the admitted declaration.
+//!
+//! # References
+//!
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the presented type
+//!   and its loop space as normal forms. Above dimension one the words of the
+//!   spherical cells at a point are abelian, so [`Presentation::normalize`]
+//!   sorts and counts them.
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
