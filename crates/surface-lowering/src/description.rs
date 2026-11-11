@@ -277,8 +277,6 @@ pub enum MemberFault
     EmptyOperation,
     /// A rule with an operation nested in producer position.
     NestedOperation,
-    /// A rule applying an operation whose arity the cell frame cannot hold.
-    UnrepresentableOperation,
     /// A rule returning other than its operation's output count.
     ResultArity,
     /// A rule wearing one variable name as a producer and a consumer.
@@ -348,9 +346,6 @@ impl fmt::Display for MemberFault
             Self::NestedOperation => {
                 "rewrites a term with an operation nested in producer position, which the cell \
                  layer does not read yet"
-            },
-            Self::UnrepresentableOperation => {
-                "applies an operation whose arity the cell layer's frame cannot hold"
             },
             Self::ResultArity => "returns a number of results other than its operation's outputs",
             Self::MixedPolarity => "wears one variable name as a producer and as a consumer",

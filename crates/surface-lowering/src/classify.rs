@@ -179,7 +179,6 @@ impl LoweringRefusal<'_>
                     | MemberFault::AggregatedOutput
                     | MemberFault::NestedOperation
                     | MemberFault::RewrittenIndex
-                    | MemberFault::UnrepresentableOperation
                     | MemberFault::ParallelRedexes,
                 ..
             }
@@ -705,13 +704,13 @@ fn uncovered(fault: Uncovered) -> FailureClass
 /// - requires: nothing.
 /// - ensures: an operation filler, a higher cell, the reversible glyph, a
 ///   nested operation, two redexes in one circuit rule, a field past the
-///   description code, an aggregated output and an operation the cell frame
-///   cannot hold are unimplemented, each naming its issue; a circuit redex off
-///   its own derived boundary, and a decode the lowering's own readings do not
-///   feed, are engine faults; every other fault — a rule from no operation,
-///   from an empty one, of the wrong result count, copying a variable, wearing
-///   one name at both polarities, a wiring with no boundary, an operation with
-///   no output, a sort whose classifier is no universe — is malformed source.
+///   description code and an aggregated output are unimplemented, each naming
+///   its issue; a circuit redex off its own derived boundary, and a decode the
+///   lowering's own readings do not feed, are engine faults; every other fault
+///   — a rule from no operation, from an empty one, of the wrong result count,
+///   copying a variable, wearing one name at both polarities, a wiring with no
+///   boundary, an operation with no output, a sort whose classifier is no
+///   universe — is malformed source.
 /// - provides: the lowering classifier's arm for `UndescribedMember`.
 /// - fails: never.
 /// - panics: none.
@@ -748,8 +747,8 @@ fn undescribed(fault: MemberFault) -> FailureClass
         },
         MemberFault::DependentField => FailureClass::Unimplemented(TrackingIssue::DEPENDENT_FIELD),
         MemberFault::TypeShape => FailureClass::Unimplemented(TrackingIssue::TYPE_SHAPE),
-        MemberFault::AggregatedOutput | MemberFault::UnrepresentableOperation => {
-            FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE)
+        MemberFault::AggregatedOutput => {
+            FailureClass::Unimplemented(TrackingIssue::AGGREGATED_OUTPUT)
         },
         MemberFault::OffBoundary | MemberFault::NativeDecode => FailureClass::EngineFault,
         MemberFault::NoOutput
@@ -1573,11 +1572,7 @@ mod tests
             ),
             (
                 MemberFault::AggregatedOutput,
-                FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE),
-            ),
-            (
-                MemberFault::UnrepresentableOperation,
-                FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE),
+                FailureClass::Unimplemented(TrackingIssue::AGGREGATED_OUTPUT),
             ),
             (MemberFault::NoOutput, FailureClass::MalformedSource),
             (MemberFault::NoUniverse, FailureClass::MalformedSource),

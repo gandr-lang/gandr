@@ -169,6 +169,59 @@ fn an_ill_formed_rule_is_refused_once_and_left_unexamined_2375()
     assert_eq!(cells.declarations[0].coincidence, Coincidence::Unexamined);
 }
 
+/// A rule or a circuit that applies an operation with no output takes no
+/// refusal of its own: the operation's `NoOutput` states the fault once, and
+/// no later check reads the block.
+#[test]
+fn a_rule_over_a_declined_operation_owes_no_refusal_of_its_own_2666()
+{
+    let source = "theory Spill where { sort M : Type; oper unit : () --> M; oper drain : (m : M) --> (); rule gone : drain unit ==> unit; rule spill : (rule p : M ==> M, data x : M) ==> (z : M) { node : p(x) ==> (xp); node : drain(xp) --> (z); }; }";
+    let report = descriptions(source);
+    assert_eq!(
+        report.diagnostics,
+        [],
+        "both rules pass the description route"
+    );
+    let cells = elaborate_desc_cells(&report.declarations, &mut Decisions::none());
+    let [ref diagnostic] = *cells.diagnostics.as_slice()
+    else {
+        panic!("the operation alone is refused: {:?}", cells.diagnostics)
+    };
+    assert_eq!(
+        diagnostic.lowering_refusal(),
+        crate::LoweringRefusal::UndescribedMember {
+            span: diagnostic.span,
+            fault: MemberFault::NoOutput,
+        },
+        "the refusal is the operation's own fault"
+    );
+    assert!(
+        source
+            .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+            .is_some_and(|written| written.starts_with("oper drain")),
+        "the refusal stands at the operation"
+    );
+    let [ref declaration] = *cells.declarations.as_slice()
+    else {
+        panic!("one declaration")
+    };
+    assert_eq!(
+        declaration.declined_faces,
+        [DeclinedFaceIndex::from(0_usize)],
+        "the rule stays out of the sequent reading"
+    );
+    assert_eq!(
+        declaration.circuits,
+        [CircuitCell::Excluded],
+        "the circuit stays out with no diagnostic"
+    );
+    assert_eq!(
+        declaration.coincidence,
+        Coincidence::Unexamined,
+        "no later check reads the block"
+    );
+}
+
 /// #1450: a rule whose left side copies a variable, in a data block, a theory
 /// law or a circuit, is refused by name at the copy's second occurrence.
 #[test]
