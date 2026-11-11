@@ -177,11 +177,36 @@ enum Action
 ///   the 2-cell, whose pieces stand one layer deeper again.
 /// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[repr(transparent)]
 struct Carrying
 {
     /// Every piece, each above the pieces it names.
     pieces: Vec<Piece>,
+    /// What the endpoint carries along the binder.
+    operand: Operand,
+}
+
+/// What a carried endpoint carries along the family's binder.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Operand
+{
+    /// Reflexivity or an empty word: the carried image is the conjugation of
+    /// the family's two images.
+    Reflexive,
+    /// A closed word that holds a letter: the carried image is the identity
+    /// where both of the family's images are empty ([`flatness`]), and no rule
+    /// reads it otherwise.
+    Lettered,
+}
+
+/// Whether both endpoints of a carried family map a cell to the empty word.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Flatness
+{
+    /// Each endpoint never reads the family's binder, or is one call whose
+    /// case writes no arm at the cell.
+    Flat,
+    /// Some endpoint's image may hold a letter.
+    Lettered,
 }
 
 /// One endpoint of a [`Carrying`]: how it acts on a cell, and how many
@@ -661,9 +686,9 @@ fn action(
 ///   as a transport in a family, and each endpoint below it — the family's two,
 ///   and in turn the two of each family read below — is its family's binder,
 ///   ignores it, is one call of one argument as [`routes`] reads it, or is a
-///   transport [`transported`] reads; each piece's depth counts the carried
-///   transports around it, and a call's layers are raised by it; `None`
-///   otherwise. The engine's evaluator reads the same endpoints.
+///   transport of reflexivity [`transported`] reads; each piece's depth counts
+///   the carried transports around it, and a call's layers are raised by it;
+///   `None` otherwise. The engine's evaluator reads the same endpoints.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -682,12 +707,12 @@ fn action(
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|read| matches!(read.pieces.first(), Some(&Piece { shape: Shape::Carried { .. }, .. }))))]
 fn carried(
     arena: &TermArena,
-    presentations: &Presentations,
+    unfoldings: &Unfoldings,
     endpoint: ValueId,
 ) -> Option<Carrying>
 {
     let binder = DeBruijnIndex::from(0_u32);
-    let root = transported(arena, presentations, endpoint)?;
+    let (root, operand) = transported(arena, unfoldings, endpoint)?;
     let mut pieces = Vec::from([Piece {
         depth: Reflexivities::NONE,
         shape: Shape::Fixed,
@@ -727,7 +752,11 @@ fn carried(
             }
             else {
                 // The piece is rewritten when its own family is read.
-                pending.push((transported(arena, presentations, side)?, pieces.len()));
+                let (next, Operand::Reflexive) = transported(arena, unfoldings, side)?
+                else {
+                    return None;
+                };
+                pending.push((next, pieces.len()));
                 Shape::Fixed
             };
             pieces.push(Piece { depth, shape });
@@ -737,36 +766,38 @@ fn carried(
             right: first.saturating_add(1),
         };
     }
-    Some(Carrying { pieces })
+    Some(Carrying { pieces, operand })
 }
 
-/// The family of a transport an endpoint carries along the binder.
+/// The family of a transport an endpoint carries along the binder, and what
+/// it carries.
 ///
 /// The transport of `b` along `q` in `x. Path[.A = C](l, r)` is the
-/// conjugation `ap(l, q)⁻¹ · b · ap(r, q)` for every `b`. The rule reduces it
-/// only at reflexivity: a `b` that holds a letter whiskers the two images, and
-/// the transport stays held.
+/// conjugation `ap(l, q)⁻¹ · b · ap(r, q)` for every `b`. Where both images
+/// are empty, it is `b` whatever `b` holds. Where an image holds a letter, a
+/// `b` that holds a letter whiskers it, and no rule reads the whiskering.
 ///
 /// # Specification
 /// - requires: `endpoint` is read under its family's binder `y`.
-/// - ensures: `Some(A)` exactly when the endpoint is `⟨tr(A, y, b)⟩`, `A` is a
-///   path family `x. Path[.A = C](l, r)` that never reads `y` and whose carrier
-///   `C` reads neither `x` nor `y`, and `b` reads as the empty word ([`head`])
-///   and ignores `y`; `None` otherwise.
+/// - ensures: `Some((A, operand))` exactly when the endpoint is `⟨tr(A, y,
+///   b)⟩`, `A` is a path family `x. Path[.A = C](l, r)` that never reads `y`
+///   and whose carrier `C` reads neither `x` nor `y`, and `b` ignores `y` and
+///   is a word or reflexivity ([`operand`]); `None` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the family at the 2-sphere's cell carries reflexivity at
-///   the point along its binder; read with any other operand, the conjugation
-///   would drop a whiskering.
+///   the point along its binder, and a family whose images are empty carries a
+///   loop; read with no operand, either obligation stays stuck.
 /// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
-#[spec(ensures: |ret| ret.is_none_or(|family| matches!(arena.value_type(family), Some(&ValueType::Path { .. }))))]
+/// - witness: `tests::native_formers::a_carried_loop_moves_past_two_empty_images_6741`
+#[spec(ensures: |ret| ret.is_none_or(|(family, _)| matches!(arena.value_type(family), Some(&ValueType::Path { .. }))))]
 fn transported(
     arena: &TermArena,
-    presentations: &Presentations,
+    unfoldings: &Unfoldings,
     endpoint: ValueId,
-) -> Option<ValueTypeId>
+) -> Option<(ValueTypeId, Operand)>
 {
     let &Value::Returned(call) = arena.value(endpoint)?
     else {
@@ -781,11 +812,11 @@ fn transported(
         return None;
     };
     if !matches!(arena.value(path), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
-        || head(arena, presentations, value) != Head::Empty
         || binder_use(arena, Family::Value(value)) != BinderUse::Ignored
     {
         return None;
     }
+    let operand = operand(arena, unfoldings, value)?;
     let &ValueType::Path {
         domain: carrier, ..
     } = arena.value_type(family)?
@@ -808,7 +839,37 @@ fn transported(
     if read.any(|index| index <= carrying) {
         return None;
     }
-    Some(family)
+    Some((family, operand))
+}
+
+/// What `value` carries as the operand of a carried transport: reflexivity,
+/// or a word, written or named.
+///
+/// # Specification
+/// - requires: nothing — unreadable ids read as no operand.
+/// - ensures: [`Operand::Reflexive`] where `value`, or the word a definition
+///   names by it ([`named`]), is empty by [`head`]; [`Operand::Lettered`] where
+///   it is a letter; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`transported`]: the constant `lp` names a loop's
+///   word, and read as no operand, the carried loop stays stuck.
+/// - witness: `tests::native_formers::a_carried_loop_moves_past_two_empty_images_6741`
+#[spec(ensures: |ret| ret.is_none() || arena.value(value).is_some())]
+fn operand(
+    arena: &TermArena,
+    unfoldings: &Unfoldings,
+    value: ValueId,
+) -> Option<Operand>
+{
+    let word = named(arena, unfoldings, value).unwrap_or(value);
+    match head(arena, unfoldings.presentations(), word) {
+        Head::Empty => Some(Operand::Reflexive),
+        Head::Letter { .. } => Some(Operand::Lettered),
+        Head::Other => None,
+    }
 }
 
 /// The calls an endpoint runs the family's binder through, and a route per
@@ -1984,12 +2045,15 @@ where
 /// letter, and a call's its [`image`] through its raised layers. A carried
 /// piece binds its left piece's image, then its right one's, and transports
 /// the right image along the left in `z. Path[.A = C](z, fixed)`: the left
-/// image inverted, then the right.
+/// image inverted, then the right. A carried word that holds a letter moves
+/// to itself where both of its family's pieces are [`Flatness::Flat`], and no
+/// rule reads it otherwise.
 ///
 /// # Specification
 /// - requires: as [`image`]; `carrying` is read by [`carried`].
 /// - ensures: the first piece's image, each piece's built after the pieces it
-///   names.
+///   names; for [`Operand::Lettered`], the letter's empty word where both
+///   pieces the first names are flat ([`flatness`]), and `None` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2019,6 +2083,22 @@ where
     else {
         return None;
     };
+    if carrying.operand == Operand::Lettered {
+        let &Piece {
+            shape: Shape::Carried { left, right },
+            ..
+        } = carrying.pieces.first()?
+        else {
+            return None;
+        };
+        for position in [left, right] {
+            let shape = &carrying.pieces.get(position)?.shape;
+            if flatness(arena, (table, memo), unfoldings, (shape, at), letter) != Flatness::Flat {
+                return None;
+            }
+        }
+        return Some(arena.computation_return(rest));
+    }
     let mut images: Vec<Option<ComputationId>> = Vec::new();
     images.resize(carrying.pieces.len(), None);
     for (position, piece) in carrying.pieces.iter().enumerate().rev() {
@@ -2056,6 +2136,87 @@ where
         *images.get_mut(position)? = Some(built);
     }
     images.first().copied().flatten()
+}
+
+/// Whether one piece below a carried endpoint maps the letter `letter` to the
+/// empty word by its syntax alone. The engine's evaluator reads the same
+/// endpoints by the same rule.
+///
+/// # Specification
+/// - requires: as [`image`]; `shape` is a piece [`carried`] reads.
+/// - ensures: [`Flatness::Flat`] exactly when `shape` is fixed, or one call
+///   whose case, read through its raised layers ([`cong_case`]), writes no arm
+///   ([`loop_arm`]) for the cell of `letter`, a cell above dimension one;
+///   [`Flatness::Lettered`] otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a map with no arm at the 2-sphere's cell sends it to the
+///   empty word, so a loop carried in its family moves to itself; the map onto
+///   the other sort's cell does not, and the loop would whisker its image.
+/// - witness: `tests::native_formers::a_carried_loop_moves_past_two_empty_images_6741`
+#[spec(ensures: |ret| matches!(*shape, Shape::Fixed | Shape::Call(_)) || matches!(ret, Flatness::Lettered))]
+fn flatness<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    unfoldings: &Unfoldings,
+    (shape, at): (&Shape, ValueId),
+    letter: ValueId,
+) -> Flatness
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let read = match *shape {
+        Shape::Fixed => return Flatness::Flat,
+        Shape::Call(ref read) => read,
+        Shape::Moving | Shape::Carried { .. } => return Flatness::Lettered,
+    };
+    let Head::Letter { tag, words, .. } = head(arena, unfoldings.presentations(), letter)
+    else {
+        return Flatness::Lettered;
+    };
+    let (Some(cell), Some(wrapping)) = (
+        FreeCells::generator(tag),
+        unfoldings
+            .presentations()
+            .presented(words)
+            .and_then(crate::presented::PresentedType::cells)
+            .map(FreeCells::reflexivities),
+    )
+    else {
+        return Flatness::Lettered;
+    };
+    let [ref node] = *read.nodes.as_slice()
+    else {
+        return Flatness::Lettered;
+    };
+    let Some(layers) = usize::from(wrapping).checked_sub(usize::from(node.layers))
+    else {
+        return Flatness::Lettered;
+    };
+    if wrapping == Reflexivities::NONE {
+        return Flatness::Lettered;
+    }
+    let Some(case) = cong_case(
+        arena,
+        unfoldings,
+        (node.function, Arity(node.arguments.len())),
+        (Argument(0), Reflexivities::from(layers)),
+    )
+    else {
+        return Flatness::Lettered;
+    };
+    match loop_arm(
+        arena,
+        (table, memo),
+        unfoldings.presentations(),
+        (case, Argument(0), &[at]),
+        (words, cell),
+    ) {
+        Some(Arm::Unwritten) => Flatness::Flat,
+        Some(Arm::Written(_)) | None => Flatness::Lettered,
+    }
 }
 
 /// One transport step along a word, by the module's rows, where
@@ -2215,7 +2376,7 @@ where
     }
     let read = |endpoint: ValueId| {
         action(arena, endpoint)
-            .or_else(|| carried(arena, presentations, endpoint).map(Action::Carried))
+            .or_else(|| carried(arena, unfoldings, endpoint).map(Action::Carried))
     };
     let (Some(left_action), Some(right_action)) = (read(left), read(right))
     else {
