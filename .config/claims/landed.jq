@@ -24,6 +24,34 @@ include "sections";
 include "targets";
 
 def row: capture("^(?<lead>\\s*[-*] )\\[ \\](?<rest>\\s*(?<text>.*))$");
+def table_key:
+  if test("^\\s*\\|") and (test("^\\s*\\|(\\s*:?-+:?\\s*\\|)+\\s*$") | not)
+  then sub("^\\s*\\|\\s*"; "") | [splits("(?<!\\\\)\\|")][0] | gsub("\\\\\\|"; "|") | row_key
+  else null end;
+
+def open_table_key:
+  table_key as $key
+  | if $key != null and (test("(?<!\\\\)\\|\\s*(landed|fixed|accepted|runner shift)\\b"; "i") | not)
+    then $key
+    else null
+    end;
+
+def marked($named):
+  lines
+  | reduce .[] as $line (
+      {shape: false, lines: []};
+      (if $line | test("^## ") then .shape = ($line | test("^## (Sources|Readings|Concerns|Engineering|Settled)\\s*(:.*)?$")) else . end)
+      | .shape as $shape
+      | ($line | row // null) as $row
+      | ($line | open_table_key) as $table
+      | .lines += [
+          if $row != null and ($named | index($row.text | row_key)) then "\($row.lead)[x]\($row.rest)"
+          elif ($shape | not) and $table != null and ($named | index($table)) then ($line | sub("\\s*\\|\\s*$"; " | landed |"))
+          else $line
+          end
+        ])
+  | .lines | join("\n");
+
 
 # The keys of the rows a landing's body clears in the collector `$n`: none
 # when the body does not advance `$n`.
@@ -39,11 +67,7 @@ def named($n):
 | .number as $n
 | ([$merged] + (.landings // []) | map(named($n)) | add) as $named
 | (.body // "") as $before
-| ($before
-    | lines
-    | map((row // null) as $row
-        | if $row != null and ($named | index($row.text | row_key)) then "\($row.lead)[x]\($row.rest)" else . end)
-    | join("\n")) as $after
+| ($before | marked($named)) as $after
 | ($after | collector_rows | length == 0) as $close
 | select($after != $before or $close)
 | {number, body: $after, close: $close}
