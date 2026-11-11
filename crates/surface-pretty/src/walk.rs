@@ -12623,23 +12623,40 @@ impl Walk<'_, '_>
                 .part(Part::Tight)
                 .text(")");
         };
+        let supplied_juxtaposed = |parts: &mut Parts, head: &str| {
+            let _ = parts
+                .text(format!("{head}[.A = "))
+                .piece(Binding::ARGUMENT)
+                .text("]")
+                .part(Part::Argument(Argument::Other))
+                .part(Part::Argument(Argument::Other));
+        };
         let binding = match *former {
-            // `Path(x, y)` and `Bridge(x, y)`: a carrier the source omitted
-            // reads back as nothing, and each spells through its own
-            // production, its endpoints terms. Neither reads back juxtaposed
-            // in a type until #5750, so a type keeps the call form, and an
-            // expression keeps the printer's notation. A flow is a type
-            // application, juxtaposed as a family's, `Flow x y`.
             Former::Path { carrier: None, .. } => {
-                let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("path_type"), admits)
+                let _ = parts.text("Path").family(Arity(2_usize), self.surface);
+                family_applied(self.surface)
             },
             Former::Bridge { carrier: None, .. } => {
-                let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("bridge_type"), admits)
+                let _ = parts.text("Bridge").family(Arity(2_usize), self.surface);
+                family_applied(self.surface)
             },
             Former::Flow { carrier: None, .. } => {
                 let _ = parts.text("Flow").family(Arity(2_usize), self.surface);
+                family_applied(self.surface)
+            },
+            Former::Path {
+                carrier: Some(_), ..
+            }
+            | Former::Bridge {
+                carrier: Some(_), ..
+            } if self.surface != Surface::Expression => {
+                let head = if matches!(*former, Former::Path { .. }) {
+                    "Path"
+                }
+                else {
+                    "Bridge"
+                };
+                supplied_juxtaposed(&mut parts, head);
                 family_applied(self.surface)
             },
             Former::Path {

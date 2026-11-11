@@ -1597,8 +1597,8 @@ fn a_truth_value_at_a_path_endpoint_spells_as_its_word_2407()
     let bare = core.value_type_path(boolean, first, second);
     let source = CoreSource::new(&core, &[]);
     for (ty, expected) in [
-        (between, "Path[.A = Bool](true, false)"),
-        (bare, "Path[.A = Bool](+{.0 = *{}}, +{.1 = *{}})"),
+        (between, "Path[.A = Bool] true false"),
+        (bare, "Path[.A = Bool] +{.0 = *{}} +{.1 = *{}}"),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(CoreNode::ValueType(ty))),
@@ -1674,6 +1674,8 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     let one = self::integer(&mut core, Sign::NonNegative, Written("1"));
     let path = core.value_type_path(list, alias, one);
     let returns_path = core.comp_type_returner(path);
+    let bridge = core.value_type_bridge(list, alias, one);
+    let returns_bridge = core.comp_type_returner(bridge);
     let flow = core.value_type_flow(list, alias, one);
     let returns_flow = core.comp_type_returner(flow);
     let prefix = core.value_type_prefix(alias);
@@ -1768,7 +1770,11 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         (CoreNode::ValueType(list), "List Integer"),
         (
             CoreNode::CompType(returns_path),
-            "-F Path[.A = List Integer](small, 1)",
+            "-F Path[.A = List Integer] small 1",
+        ),
+        (
+            CoreNode::CompType(returns_bridge),
+            "-F Bridge[.A = List Integer] small 1",
         ),
         (
             CoreNode::CompType(returns_flow),
@@ -1802,12 +1808,12 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     let within = CoreSource::new(&core, &names).within(&context);
     assert_eq!(
         spelled(&within, Root::Type(CoreNode::CompType(over_context))),
-        faithful(Written("(a : Integer) -> -F Path[.A = Integer](a, y)")),
+        faithful(Written("(a : Integer) -> -F Path[.A = Integer] a y")),
         "a variable past the opened binder reads its context binder's name"
     );
     assert_eq!(
         spelled(&within, Root::Type(CoreNode::ValueType(unnamed))),
-        approximate(Written("Path[.A = Integer](x, ?)")),
+        approximate(Written("Path[.A = Integer] x ?")),
         "an unnamed context binder spells `?`"
     );
     for unprintable in ["", "x\ty"] {
@@ -1815,7 +1821,7 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         let within = CoreSource::new(&core, &names).within(&context);
         assert_eq!(
             spelled(&within, Root::Type(CoreNode::ValueType(unnamed))),
-            approximate(Written("Path[.A = Integer](?, ?)")),
+            approximate(Written("Path[.A = Integer] ? ?")),
             "a context binder named {unprintable:?} spells `?`"
         );
     }

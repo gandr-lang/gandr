@@ -212,7 +212,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 32] = [
+pub const REWRITES: [Rewrite; 36] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -471,6 +471,38 @@ pub const REWRITES: [Rewrite; 32] = [
         mold: MoldName("type_application"),
         from: Spelling("F(a, b)"),
         to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("path_type"),
+        from: Spelling("Path(a, b)"),
+        to: Spelling("Path a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("path_type"),
+        from: Spelling("Path(a, b)"),
+        to: Spelling("Path a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("bridge_type"),
+        from: Spelling("Bridge(a, b)"),
+        to: Spelling("Bridge a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("bridge_type"),
+        from: Spelling("Bridge(a, b)"),
+        to: Spelling("Bridge a b"),
         enabled: Enabled::On,
     },
 ];
@@ -3240,6 +3272,48 @@ impl<'source> Respelling<'_, 'source>
         .then_some(Operation::Action { map, path: along })
     }
 
+    fn supplied_path_type(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        let mut opened = false;
+        let mut carrier = false;
+        for part in parts {
+            match part.role {
+                Role::Own(text) => match <&str>::from(text) {
+                    "(" if !opened => opened = true,
+                    "," if opened => {},
+                    ")" if opened => opened = false,
+                    "=" => {
+                        out.gap(Spelling(" "));
+                        out.fragment(text);
+                        carrier = true;
+                    },
+                    _ => out.fragment(text),
+                },
+                Role::Operand(child) => {
+                    let operand = self.operand(child);
+                    if opened {
+                        out.gap(Spelling(" "));
+                        out.place(&operand, Band::Atom);
+                    }
+                    else if carrier {
+                        out.gap(Spelling(" "));
+                        out.place(&operand, Band::Loose);
+                        carrier = false;
+                    }
+                    else {
+                        out.place(&operand, Band::Atom);
+                    }
+                },
+                Role::Comment => return None,
+            }
+        }
+        (!opened && !carrier).then_some(Band::Application)
+    }
+
     /// Write the type application whose parts are `parts`, `F(a, b)`, as the
     /// juxtaposition `F a b`, each argument an atom or in its parentheses.
     /// Nothing is written for a head that is a type variable, which
@@ -3266,16 +3340,26 @@ impl<'source> Respelling<'_, 'source>
         }
         let (owns, operands) = split(parts);
         let (&head, rest) = owns.split_first()?;
+        let head_text = <&str>::from(head);
+        let supplied = matches!(head_text, "Path" | "Bridge")
+            && rest.len() == 7_usize
+            && rest
+                .iter()
+                .map(|&own| <&str>::from(own))
+                .eq(["[", ".", "=", "]", "(", ",", ")"]);
         let opens = rest
             .iter()
             .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)
             .count();
-        if rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0)
+        if (rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0) && !supplied)
             || opens != 1
             || operands.is_empty()
-            || !<&str>::from(head).starts_with(char::is_uppercase)
+            || !head_text.starts_with(char::is_uppercase)
         {
             return None;
+        }
+        if supplied {
+            return self.supplied_path_type(out, parts);
         }
         let operands: Vec<Operand<'source>> = operands
             .into_iter()
@@ -3477,7 +3561,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 36] = [
+const RULES: [MoldName; 37] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3507,6 +3591,7 @@ const RULES: [MoldName; 36] = [
     MoldName("type_application.juxtaposed"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),
+    MoldName("bridge_type"),
     MoldName("type_quote_expression"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
