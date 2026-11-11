@@ -3123,6 +3123,8 @@ INSERT INTO purpose VALUES('surface-lsp','rpc::Progress','enum','A message repor
 INSERT INTO purpose VALUES('surface-lsp','rpc::Refusal','struct','The error object of a refusing response.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','rpc::RequestId','struct','A request''s identifier, echoed in its response: a number, a string, or null for a message whose identifier could not be read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','rpc::Retrigger','struct','Whether the client sends a request the server cancelled again.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','run::Prepared','struct','Holds what a run of one declaration reads, taken under the lock of the workspace, so the run itself goes on the pool with no lock and a keystroke waits for no part of it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','run::Unran','enum','Names why a run shows no line, so the run lens and the toolset answer one sentence for it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','saved::Saved','struct','Where saves keep their copies'' checkpoints and opens restore from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Admissions','struct','The judgements and kernel admissions one connection started.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Awaiting','enum','Whether settling admissions waits for those still running.',NULL,'fits','sound',NULL);

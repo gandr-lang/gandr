@@ -75,6 +75,8 @@ use gandr_surface_lsp::Body;
 use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
+use gandr_surface_lsp::Position;
+use gandr_surface_lsp::Prepared;
 use gandr_surface_lsp::Proposal;
 use gandr_surface_lsp::ProposalRefusal;
 use gandr_surface_lsp::Range;
@@ -796,7 +798,7 @@ pub fn call(
 ///   paths, `replay` answers the admission of a revision, and `run` answers the
 ///   line of a declaration's run.
 /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
-/// - witness: `rap::tests::a_newer_revision_retires_a_check_and_a_cancel_ends_a_job`
+/// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job`
 #[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| matches!(named, "check" | "replay" | "run" | "test")))]
 #[inline]
 pub fn job(
@@ -1167,20 +1169,22 @@ fn tried(
         .collect())
 }
 
-/// The line of a run of the declaration `entry` of `document`, as the run
-/// lens of the document runs it: the first declaration of the outline in
-/// depth-first order that has the name.
+/// What a run of the declaration `entry` of `document` reads, as the run lens
+/// of the document runs it: the first declaration of the outline in
+/// depth-first order that has the name. [`Prepared::run`] then runs it with no
+/// lock of the workspace.
 ///
 /// # Specification
 /// - requires: nothing; any document and name are admitted.
-/// - ensures: the line that the run command of the language server answers for
-///   the position of the name, which is the line that the run lens shows. A
-///   document that the hub does not hold, a name that no declaration has, and a
-///   declaration that does not run are refused.
-/// - provides: the `run` job of the toolset.
+/// - ensures: what [`Workspace::prepared`] takes for the position of the name,
+///   whose run gives the line that the run lens shows. A document that the hub
+///   does not hold, a name that no declaration has, and a declaration that does
+///   not run are refused.
+/// - provides: the `run` job of the toolset, which holds the lock of the
+///   workspace for this call alone.
 /// - fails: as above, with the reason in the refusal.
 /// - panics: none.
-/// - executable: none — the line is what the run computes, and only the run
+/// - executable: none — the run is what the line comes from, and only the run
 ///   computes it.
 ///
 /// # Errors
@@ -1192,10 +1196,10 @@ fn tried(
 ///   name that no declaration has is refused.
 /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
 #[inline]
-pub fn ran(
+pub fn prepared(
     workspace: &Workspace,
     (document, entry): (&DocumentUri, &String),
-) -> Result<String, ToolRefusal>
+) -> Result<Prepared, ToolRefusal>
 {
     let symbols = ask(
         workspace,
@@ -1220,16 +1224,11 @@ pub fn ran(
             "no declaration of {document} is named `{entry}`"
         ))
     })?;
-    let ran = ask(
-        workspace,
-        &json!({
-            "method": "workspace/executeCommand",
-            "params": { "command": "gandr.run", "arguments": [document, position] },
-        }),
-    )?;
-    ran.as_str()
-        .map(String::from)
-        .ok_or_else(|| ToolRefusal(String::from("the run answered no line")))
+    let position = Position::deserialize(position)
+        .map_err(|error| ToolRefusal(alloc::format!("the outline's position: {error}")))?;
+    workspace
+        .prepared(document, position)
+        .map_err(|unran| ToolRefusal(unran.to_string()))
 }
 
 /// The result the language server gives `call`, a method and its
