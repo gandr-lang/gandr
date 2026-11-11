@@ -58,8 +58,9 @@
 //! `⟨tr(x. Path[.A = C](l, r), y, b)⟩`, for the family's binder `y` and `b`
 //! reflexivity, maps a cell as the evaluator reads it: `l`'s image inverted,
 //! then `r`'s, each one `Path.ap` layer deeper ([`carried`],
-//! [`carried_image`]). A `b` that holds a letter whiskers the images, and the
-//! transport sticks.
+//! [`carried_image`]). A `b` that holds a letter moves to itself where both
+//! pieces are empty by their syntax alone ([`flatness`]). Elsewhere it
+//! whiskers the images, and the transport sticks.
 //!
 //! **A named word is read silently.** `loop` is a constant whose body is the
 //! word of its letter, and a δ-free obligation meets it rigid. The reduct
@@ -82,6 +83,9 @@
 //!   spheres as presentations with one cell per dimension, and the eliminator
 //!   whose arm at the cell is a cell of the answer at the reflexivity of the
 //!   arm at the point.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the transport of a
+//!   loop along a cell, which moves it to itself where both images of the cell
+//!   are empty, as the evaluator reads it.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
