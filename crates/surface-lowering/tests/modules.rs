@@ -12,6 +12,8 @@ mod functors;
 
 mod models;
 
+mod paths;
+
 use alloc::sync::Arc;
 use core::fmt::Write as _;
 

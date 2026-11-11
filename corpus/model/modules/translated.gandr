@@ -1,19 +1,22 @@
-// This source shows an importer through a flow.
+// This source shows an importer through a flow and two paths.
 //
 // A package moves on while its importers stay. A flow presents a newer package
 // at an older signature. This source also defines a flow that adds scaling. A
-// renaming presents the newer package at the older signature too.
+// renaming presents the newer package at the older signature too. A path
+// presents a model in both directions.
 //
 // The checker reads a flow as a functor between theory models. It resolves
-// each imported member through the selected flow. It reads a renamed member as
-// the source member that the renaming names. A flow member that is the name of
-// a domain member alone binds the declaration of the source. Any other flow
-// member is the code of this importer.
+// each imported member through the selected flow. A flow member that names a
+// domain member alone binds the source's declaration, and any other flow
+// member is this importer's code. A path is two functions between packed
+// models. Conversion decides each round trip of a member.
 //
 // - see: #3378
 // - see: #3461
+// - see: #3487
 // - see: model/modules/translated-newer.gandr
 // - see: pathological/modules/translated.gandr
+// - see: pathological/modules/round-trip.gandr
 /// `Legacy` states the older answer.
 theory Legacy where
   /// The answer.
@@ -63,3 +66,50 @@ def doubled() -> Integer { counted.scaled 2 }
 /// `renamedAnswer` reads the answer through the renaming.
 @[runs("42")]
 def renamedAnswer() -> Integer { renamed.answer }
+
+/// `Replied` states the answer as a reply.
+theory Replied where
+  /// `reply` names the older answer.
+  oper reply : Integer;
+
+/// `versions` reads a `Legacy` model as a `Replied` model and back.
+path versions : Legacy <~> Replied where
+  into where
+    def reply = answer;
+  from where
+    def answer = reply;
+
+/// `Base` answers 42 at `Legacy`.
+module Base : Model(Legacy) where
+  /// The answer, 42.
+  def answer = 42;
+
+/// `replyOf` reads the reply of a `Replied` model.
+def replyOf(s : Model Replied) -> Integer { s.reply }
+
+/// `forward` reads the base model at `Replied`.
+@[runs("42")]
+def forward() -> Integer { replyOf (versions.into (pack Base at Model Legacy)) }
+
+/// `Magma` states a carrier and an operation.
+theory Magma where
+  /// The carrier.
+  sort M : Type;
+  /// The operation.
+  oper mul : (x : M, y : M) --> M;
+
+/// `Times` states the same structure under other names.
+theory Times where
+  /// The carrier.
+  sort C : Type;
+  /// The operation.
+  oper times : (x : C, y : C) --> C;
+
+/// `carried` moves the carrier and the operation in both directions.
+path carried : Magma <~> Times where
+  into where
+    type C = M;
+    def times = mul;
+  from where
+    type M = C;
+    def mul = times;

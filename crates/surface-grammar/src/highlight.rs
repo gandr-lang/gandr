@@ -163,12 +163,12 @@ const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "bind", "boundary", "break",
     "close", "codata", "continue", "data", "def", "drop", "dup", "else", "end", "ext", "extern",
     "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob", "handle", "hold", "if",
-    "import", "in", "include", "infix", "infixl", "infixr", "is", "law", "let", "loop", "match",
-    "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers", "on", "op", "oper",
-    "pack", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release", "renaming",
-    "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail",
-    "theory", "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while", "with",
-    "world",
+    "import", "in", "include", "infix", "infixl", "infixr", "into", "is", "law", "let", "loop",
+    "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers", "on", "op",
+    "oper", "pack", "path", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release",
+    "renaming", "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
+    "tail", "theory", "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while",
+    "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -187,7 +187,7 @@ const PRIMITIVE_TYPES: &[&str] = &[
 
 /// The keywords whose next identifier names what the declaration defines.
 const DEFINERS: &[&str] = &[
-    "data", "def", "flow", "law", "obs", "op", "oper", "rec", "rule",
+    "data", "def", "flow", "law", "obs", "op", "oper", "path", "rec", "rule",
 ];
 
 /// The keywords whose next identifier binds a name.

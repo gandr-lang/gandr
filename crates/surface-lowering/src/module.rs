@@ -362,6 +362,8 @@ mod model;
 
 mod plicity;
 
+mod path;
+
 mod receiver;
 
 mod reduct;
@@ -422,6 +424,9 @@ pub use self::model::SortCheck;
 pub use self::model::derived;
 pub use self::model::spine_domains;
 pub use self::model::ungrouped;
+pub use self::path::PathDeclaration;
+pub use self::path::RoundTrip;
+pub use self::path::Side;
 pub use self::plicity::Plicity;
 pub use self::plicity::TelescopeEntry;
 pub use self::plicity::merged;
@@ -1691,6 +1696,9 @@ pub struct Collected<'source>
     pub functors: Vec<Functor<'source>>,
     /// The applications, in source order: each an instance of a functor.
     pub instances: Vec<Instance<'source>>,
+    /// The paths, in source order: each two functions between the models of
+    /// two theories and their round trips.
+    pub paths: Vec<PathDeclaration<'source>>,
     /// `Theory`, the presentation code, when a `theory` block that refuses
     /// nothing has minted it.
     pub theory: Maybe<TheorySlot, theory_slot::Absent>,
@@ -3793,6 +3801,7 @@ pub fn begin_collection<'source>(
         sort_checks: BTreeMap::new(),
         functors: Vec::new(),
         instances: Vec::new(),
+        paths: Vec::new(),
         theory: Maybe::Absent(theory_slot::Absent::Unminted),
         theory_sources: BTreeSet::new(),
         blocks: Vec::new(),
@@ -7795,6 +7804,8 @@ enum Header<'source>
 {
     /// A module whose body is read.
     Opened(Opened<'source>),
+    /// A path, its two bodies read as flows' headers.
+    Path(alloc::boxed::Box<path::PathHeader<'source>>),
     /// A functor application binding its instance.
     Applied(Applied<'source>),
     /// A named module refused as a whole, its body unread.
@@ -8098,6 +8109,10 @@ impl<'source> Collector<'_, 'source>
                     let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
                 },
             },
+            Header::Path(path) => {
+                self.path(top, module, &path)?;
+                return Ok(());
+            },
             Header::Applied(applied) => {
                 match dotted {
                     Some(segment) => {
@@ -8118,6 +8133,42 @@ impl<'source> Collector<'_, 'source>
             },
             Header::Unnamed(refusal) => return Err(refusal),
         }
+        self.drain(&mut stack)?;
+        self.close_functor(opened_at);
+
+        Ok(())
+    }
+
+    /// Read every member of the modules open on `stack`, the innermost first,
+    /// closing each once its members are read.
+    ///
+    /// # Specification
+    /// - requires: each module on `stack` was opened by [`Self::open`] or by a
+    ///   path's body.
+    /// - ensures: `stack` is empty; every member of every module on it, and of
+    ///   every module a member opens, is read in pre-order, and each module is
+    ///   closed and decorated after its last member.
+    /// - provides: the body walk of [`Self::module`] and of a path's bodies.
+    /// - fails: [`LoweringRefusal::UnknownMold`] and
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Termination
+    /// Each step reads one member of the finite tree or pops one module.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::module`].
+    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    #[spec(ensures: |ret| ret.is_err() || stack.is_empty())]
+    fn drain(
+        &mut self,
+        stack: &mut Vec<Open<'source>>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
         while let Some(top) = stack.last_mut() {
             let structure = top.structure;
             let Some(&member) = top.members.get(top.next)
@@ -8134,11 +8185,10 @@ impl<'source> Collector<'_, 'source>
             self.fuel.spend()?;
             let mut read = core::mem::take(&mut self.pieces);
             let outcome = read_pieces(self.pbg, self.tree, member.node, &mut read)
-                .and_then(|()| self.member(structure, member, &read, &mut stack));
+                .and_then(|()| self.member(structure, member, &read, stack));
             self.pieces = read;
             outcome?;
         }
-        self.close_functor(opened_at);
 
         Ok(())
     }
@@ -8198,7 +8248,7 @@ impl<'source> Collector<'_, 'source>
                         core::ptr::from_ref::<str>(name.as_ref()),
                         core::ptr::from_ref::<str>(self.name_of(named).as_ref()),
                     ),
-                    | Header::Unnamed(_) => true,
+                    | Header::Path(_) | Header::Unnamed(_) => true,
                 },
             )
         },
@@ -8216,6 +8266,9 @@ impl<'source> Collector<'_, 'source>
         };
         if let Maybe::Present(_) = cursor.tile(TileName::FLOW) {
             return Ok(self.flow_header(form, &mut cursor, pieces));
+        }
+        if let Maybe::Present(_) = cursor.tile(TileName::PATH_KEYWORD) {
+            return Ok(self.path_header(form, &mut cursor, pieces));
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::MODULE) {
             return Ok(unnamed(&cursor));
@@ -8391,7 +8444,7 @@ impl<'source> Collector<'_, 'source>
     #[spec(ensures: |ret| match ret {
         | Header::Opened(ref opened) => matches!(opened.parameter, Maybe::Present(ref parameter) if matches!(parameter.scope, BodyScope::Domain { .. })) && !opened.sealed.0,
         | Header::Refused { .. } | Header::Unnamed(_) => true,
-        | Header::Applied(_) => false,
+        | Header::Applied(_) | Header::Path(_) => false,
     })]
     fn flow_header(
         &mut self,
@@ -9293,6 +9346,9 @@ impl<'source> Collector<'_, 'source>
         }
         match self.header(member, pieces)? {
             Header::Opened(opened) => self.open(container, member, opened, stack),
+            Header::Path(path) => {
+                self.fault_at(structure, member, misplaced_in(form, path.named().span));
+            },
             Header::Applied(applied) => {
                 self.fault_at(structure, member, misplaced_in(form, applied.named.span));
             },

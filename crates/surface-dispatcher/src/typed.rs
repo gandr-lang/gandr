@@ -2169,8 +2169,10 @@ impl TypeTable
             // term in it answers for those bytes (#477); nor does a term of
             // the record a relation between types abbreviates, located at the
             // relation, which writes the two types and nothing the record
-            // holds, or a term of the words a data declaration's loops
-            // present, located at the declaration; nor does a term of the
+            // holds, or of a round trip a path between signatures states,
+            // which the path's bodies never write; nor does a term of the
+            // words a data declaration's loops present, located at the
+            // declaration; nor does a term of the
             // access a method call is, below the call, located at the call, or
             // of the access a place assignment is, located at the place; nor
             // does a term of the bind a typed lambda parameter is read through,

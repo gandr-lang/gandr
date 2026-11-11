@@ -189,6 +189,8 @@ const COUNTED: &[&str] = &[
     "item module_declaration name",
     "item offers_declaration",
     "item offers_declaration name",
+    "item path_declaration",
+    "item path_declaration name",
     "item rec_block",
     "item theory_declaration",
     "item theory_declaration name",

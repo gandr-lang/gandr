@@ -299,6 +299,7 @@ pub use crate::rewrite::Nesting;
 pub use crate::rewrite::Renaming;
 pub use crate::rewrite::Solutions;
 pub use crate::rewrite::Unenclosed;
+pub use crate::rewrite::abstract_constant_value_traced;
 pub use crate::rewrite::abstract_constant_value_type;
 pub use crate::rewrite::build_type_updates;
 pub use crate::rewrite::build_updates;

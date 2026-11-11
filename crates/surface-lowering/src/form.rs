@@ -359,6 +359,10 @@ impl FormName
     /// The flow `flow f : V1 ~~> V2 where { … }`, a translation from the models
     /// of one theory to the models of another, read as a module form.
     pub const FLOW: Self = Self("flow_declaration");
+    /// The path `path p : V1 <~> V2 where { into where { … } from where { … }
+    /// }`, two flows between the models of two theories, one each way, read as
+    /// a module form.
+    pub const PATH: Self = Self("path_declaration");
     /// The derived rule `rule T.r : l <=> r;`.
     pub const DERIVED_RULE_DECLARATION: Self = Self("derived_rule_declaration");
     /// A data block's constructor member `| C : (x : A) --> T(a)`, inlined into
@@ -578,7 +582,8 @@ impl TileName
     pub const FORCE: Self = Self("force");
     /// The fork keyword `fork`, opening a statement.
     pub const FORK: Self = Self("fork");
-    /// The extern block's keyword `from`, before the library it names.
+    /// The keyword `from`: before the library an extern block names, and
+    /// before the body of a path that maps its codomain back.
     pub const FROM: Self = Self("from");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
@@ -614,6 +619,12 @@ impl TileName
     pub const INCLUDE: Self = Self("include");
     /// The flow keyword `flow`, opening a translation between theories.
     pub const FLOW: Self = Self("flow");
+    /// The keyword `into` of a path, before the body that maps its domain to
+    /// its codomain.
+    pub const INTO: Self = Self("into");
+    /// The path keyword `path`, opening two flows between theories, one each
+    /// way.
+    pub const PATH_KEYWORD: Self = Self("path");
     /// The interpolation opener `${`.
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `law`, opening a theory's or a module's law member.
@@ -1220,7 +1231,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 136_usize] = [
+pub const FORMERS: [(&str, Former); 137_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1292,6 +1303,7 @@ pub const FORMERS: [(&str, Former); 136_usize] = [
     ("import_declaration", Former::Import),
     ("module_declaration", Former::Module),
     ("flow_declaration", Former::Module),
+    ("path_declaration", Former::Module),
     ("data_declaration", Former::Data),
     ("rec_block", Former::Mutual),
     ("instantiation_expression", Former::Instantiation),
