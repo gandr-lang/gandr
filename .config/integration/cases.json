@@ -291,6 +291,42 @@
     }
   },
   {
+    "name": "#6540: a list with no row closes its open issue, so an empty list counts as no open defect",
+    "program": "list-state.jq",
+    "input": { "row": false, "state": "OPEN" },
+    "output": { "act": "close" }
+  },
+  {
+    "name": "#6540: a list with no row leaves its closed issue closed",
+    "program": "list-state.jq",
+    "input": { "row": false, "state": "CLOSED" },
+    "output": { "act": null }
+  },
+  {
+    "name": "#6540: a list with a row reopens its closed issue",
+    "program": "list-state.jq",
+    "input": { "row": true, "state": "CLOSED" },
+    "output": { "act": "reopen" }
+  },
+  {
+    "name": "#6540: a list with a row leaves its open issue open",
+    "program": "list-state.jq",
+    "input": { "row": true, "state": "OPEN" },
+    "output": { "act": null }
+  },
+  {
+    "name": "#6540: with no list issue, a row files the list",
+    "program": "list-state.jq",
+    "input": { "row": true, "state": null },
+    "output": { "act": "file" }
+  },
+  {
+    "name": "#6540: with no list issue and no row, the cycle files nothing",
+    "program": "list-state.jq",
+    "input": { "row": false, "state": null },
+    "output": { "act": null }
+  },
+  {
     "name": "a passing cycle lists no test and pages nobody",
     "program": "known-red.jq",
     "input": {
