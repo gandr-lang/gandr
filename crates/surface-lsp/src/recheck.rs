@@ -1211,7 +1211,7 @@ pub struct Admitted
             reason = "The language server owns this state."
         )
     )]
-    pub declined: Vec<(usize, Declined)>,
+    pub declined: Vec<Declined>,
     /// Each declaration of the document's own text with the kernel tier the
     /// admission settled in the session's account, by its admission position,
     /// in admission order: none when the admission did not run, and the one
@@ -1437,7 +1437,9 @@ where
 /// - ensures: the timing carries the admission's wall, the run's and the
 ///   settling's, or the run's sample alone at the timings layer, and, when it
 ///   exported, how many declarations it offered the kernel of those judged;
-///   each judged declaration's kernel tier at its admission position; a kernel
+///   each judged declaration's kernel tier at its admission position; each
+///   decline at its admission position, as the judgement names its declaration,
+///   whether or not the admission resumed declarations before it; a kernel
 ///   disagreement is one error at the origin naming the fault `submit` would
 ///   have reported, to publish in place of the recheck's diagnostics, and one
 ///   tier at the declaration the kernel stopped at, with the rejection's
@@ -1455,6 +1457,8 @@ where
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
+/// - witness: `server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810`
+/// - witness: `server::tests::an_opening_after_another_admission_publishes_each_decline_of_its_loops_6810`
 #[spec(
     captures: before = finished.timing,
     ensures: |ret| ret.timing.forms == before.forms
@@ -1483,35 +1487,22 @@ pub fn settle(
             Vec::new(),
         ),
         |session| match session.settle(ran) {
-            Ok(Maybe::Present(admitted)) => {
-                let resumed =
-                    usize::from(admitted.judged()).saturating_sub(usize::from(admitted.crossed()));
-                (
-                    Maybe::Absent(agreed::Absent::Agreed),
-                    Maybe::Present(Crossing {
-                        crossed: usize::from(admitted.crossed()),
-                        judged: usize::from(admitted.judged()),
-                    }),
-                    admitted
-                        .declined
-                        .iter()
-                        .map(|&declined| {
-                            (
-                                usize::from(declined.constant).saturating_sub(resumed),
-                                declined,
-                            )
-                        })
-                        .collect(),
-                    session
-                        .account()
-                        .rows()
-                        .filter_map(|(constant, _, row)| match row.kernel() {
-                            KernelState::Settled(tier) => Some((constant, Tier::Settled(tier))),
-                            KernelState::Pending => None,
-                        })
-                        .collect(),
-                )
-            },
+            Ok(Maybe::Present(admitted)) => (
+                Maybe::Absent(agreed::Absent::Agreed),
+                Maybe::Present(Crossing {
+                    crossed: usize::from(admitted.crossed()),
+                    judged: usize::from(admitted.judged()),
+                }),
+                admitted.declined,
+                session
+                    .account()
+                    .rows()
+                    .filter_map(|(constant, _, row)| match row.kernel() {
+                        KernelState::Settled(tier) => Some((constant, Tier::Settled(tier))),
+                        KernelState::Pending => None,
+                    })
+                    .collect(),
+            ),
             Ok(Maybe::Absent(_)) => (
                 Maybe::Absent(agreed::Absent::Agreed),
                 Maybe::Absent(admitted::Absent::Unadmitted),
