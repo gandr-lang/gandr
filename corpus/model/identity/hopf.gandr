@@ -1,15 +1,15 @@
-/// This source states the Hopf family over the 2-sphere: a case into the
-/// universe whose arm at the 2-cell is `ua` of a homotopy.
+/// This source states the Hopf family over the 2-sphere. Its arm at the 2-cell
+/// is `ua` of a homotopy.
 ///
 /// `ua` takes an n-cell of `P ≃ P` at each dimension. At dimension two, the
 /// cell is a homotopy of the identity of `P`. Such a map sends each point to a
-/// path from the point to itself. The checker reads the cell by its type.
-/// `ua` of the identity equivalence converts to reflexivity at the type.
-/// Transport of a point `y` along `ua h` is `h y`, in the checker and in the
-/// kernel.
+/// path from the point to itself.
 ///
-/// `Path.ap` of the Hopf family on the 2-cell reduces to its arm,
-/// `ua selfloop`. Transport of `Base` along that cell is `loop`.
+/// The checker reads the cell by its type. `ua` of the identity equivalence
+/// converts to reflexivity at the type. Transport of a point `y` along `ua h`
+/// is `h y`, in the checker and in the kernel. `Path.ap` of the Hopf family on
+/// the 2-cell reduces to its arm, `ua selfloop`. Transport of `Base` along
+/// that cell is `loop`.
 ///
 /// Limits: the image of a cell into the universe is the whole image of one
 /// letter along one call. A word of more letters, or an inverse letter, does
