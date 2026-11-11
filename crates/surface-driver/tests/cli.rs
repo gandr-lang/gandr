@@ -3616,8 +3616,60 @@ fn the_toolset_checks_a_corpus_as_the_command_line_does()
         "id": "check-1", "group_id": "thread-1", "callback_url": format!(
             "http://{}/results", callback.local_addr().expect("the callback listens")) })
     .to_string();
-    let started = std::time::Instant::now();
+    // One counter orders the events: the read of the acknowledgement and the
+    // arrival of each request that the toolset sends to the callback.
+    let order = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    // Each request that the toolset sends to the callback, stamped when it
+    // arrives and answered `200`, until the result.
+    let calls = std::thread::spawn({
+        let order = std::sync::Arc::clone(&order);
+        move || {
+            let mut requests: Vec<(u64, serde_json::Value)> = Vec::new();
+            let mut bytes = Vec::new();
+            loop {
+                let (mut delivery, _peer) = callback.accept().expect("the toolset calls back");
+                let stamp = order.fetch_add(1_u64, std::sync::atomic::Ordering::SeqCst);
+                delivery
+                    .set_read_timeout(Some(core::time::Duration::from_secs(60)))
+                    .expect("the timeout is set");
+                bytes.clear();
+                let mut chunk = [0_u8; 4096];
+                let body = loop {
+                    let read = delivery.read(&mut chunk).expect("the callback reads");
+                    assert_ne!(read, 0_usize, "the toolset ended its request early");
+                    bytes.extend_from_slice(chunk.get(.. read).unwrap_or_default());
+                    let Some(end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+                    else {
+                        continue;
+                    };
+                    let head = String::from_utf8_lossy(bytes.get(.. end).unwrap_or_default())
+                        .to_ascii_lowercase();
+                    let length: usize = head
+                        .split("\r\n")
+                        .find_map(|line| line.strip_prefix("content-length: "))
+                        .and_then(|length| length.parse().ok())
+                        .expect("the request names its length");
+                    let start = end.saturating_add(4);
+                    if let Some(body) = bytes.get(start .. start.saturating_add(length)) {
+                        break serde_json::from_slice::<serde_json::Value>(body)
+                            .expect("the body is JSON");
+                    }
+                };
+                delivery
+                    .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+                    .expect("the toolset reads the answer");
+                let ended = body["type"] == "tool_result";
+                requests.push((stamp, body));
+                if ended {
+                    break requests;
+                }
+            }
+        }
+    });
     let mut stream = std::net::TcpStream::connect(&address).expect("the toolset accepts");
+    stream
+        .set_read_timeout(Some(core::time::Duration::from_secs(60)))
+        .expect("the timeout is set");
     write!(
         stream,
         "POST /invoke HTTP/1.1\r\nhost: {address}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
@@ -3628,57 +3680,31 @@ fn the_toolset_checks_a_corpus_as_the_command_line_does()
     let _read = stream
         .read_to_string(&mut acknowledged)
         .expect("the toolset answers");
-    let acknowledgement = started.elapsed();
-    // Each request that the toolset sends to the callback, answered `200`,
-    // until the result.
-    let mut views: Vec<serde_json::Value> = Vec::new();
-    let mut bytes = Vec::new();
-    let result = loop {
-        let (mut delivery, _peer) = callback.accept().expect("the toolset calls back");
-        delivery
-            .set_read_timeout(Some(core::time::Duration::from_secs(60)))
-            .expect("the timeout is set");
-        bytes.clear();
-        let mut chunk = [0_u8; 4096];
-        let body = loop {
-            let read = delivery.read(&mut chunk).expect("the callback reads");
-            assert_ne!(read, 0_usize, "the toolset ended its request early");
-            bytes.extend_from_slice(chunk.get(.. read).unwrap_or_default());
-            let Some(end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
-            else {
-                continue;
-            };
-            let head =
-                String::from_utf8_lossy(bytes.get(.. end).unwrap_or_default()).to_ascii_lowercase();
-            let length: usize = head
-                .split("\r\n")
-                .find_map(|line| line.strip_prefix("content-length: "))
-                .and_then(|length| length.parse().ok())
-                .expect("the request names its length");
-            let start = end.saturating_add(4);
-            if let Some(body) = bytes.get(start .. start.saturating_add(length)) {
-                break serde_json::from_slice::<serde_json::Value>(body).expect("the body is JSON");
-            }
-        };
-        delivery
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
-            .expect("the toolset reads the answer");
-        if body["type"] == "tool_result" {
-            break body;
-        }
-        views.push(body);
-    };
+    let acknowledgement = order.fetch_add(1_u64, std::sync::atomic::Ordering::SeqCst);
+    let mut requests = calls.join().expect("the callback's thread ends");
     let checked = gandr(&[OsStr::new("check"), corpus.as_os_str()])
         .current_dir(&scratch.0)
         .output()
         .expect("the driver runs");
     drop(hub.kill());
     drop(hub.wait());
-    assert!(acknowledged.starts_with("HTTP/1.1 200 "), "{acknowledged}");
     assert!(
-        acknowledgement < core::time::Duration::from_millis(100),
-        "the call is acknowledged before the check runs: {acknowledgement:?}"
+        acknowledged.starts_with("HTTP/1.1 200 ") && acknowledged.ends_with("\r\n\r\n"),
+        "the acknowledgement holds no result: {acknowledged}"
     );
+    assert!(
+        requests.iter().all(|(stamp, ..)| *stamp > acknowledgement),
+        "the call is acknowledged before the toolset calls back: the acknowledgement at \
+         {acknowledgement}, the callback's requests at {:?}",
+        requests
+            .iter()
+            .map(|(stamp, ..)| *stamp)
+            .collect::<Vec<_>>()
+    );
+    let (_stamp, result) = requests
+        .pop()
+        .expect("the toolset calls back with the result");
+    let views: Vec<serde_json::Value> = requests.into_iter().map(|(_stamp, body)| body).collect();
     let printed = stdout(&checked);
     assert_eq!(
         (
