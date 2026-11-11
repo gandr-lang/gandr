@@ -4927,7 +4927,11 @@ where
                     // self binder takes the recursed-on parameter below the
                     // stage and the body takes it at the stage. A joint one at
                     // a lazy product opens one stage for every component
-                    // (`recursion::open_joint`), each at its own position.
+                    // (`recursion::open_joint`), each at its own position. No
+                    // structural one descends on a coinductive datatype, which
+                    // admits no fold. A guarded one stands at a returner of a
+                    // coinductive datatype, and its body keeps every call of
+                    // it under a constructor of that type (`guard::guarded`).
                     Computation::Fixpoint { body, evidence } => {
                         if matches!(evidence, FixpointEvidence::Partial)
                             && judgement.partial == Partiality::Refused
@@ -4950,6 +4954,14 @@ where
                         let position = evidence.descent();
                         let (own, inside) = match (position, evidence) {
                             (Some(position), _) => {
+                                if guard::descends_on_coinductive(
+                                    arena,
+                                    judgement.entries,
+                                    (expected, position),
+                                ) == guard::Descent::Coinductive
+                                {
+                                    return Err(KernelError::FoldOverCoinductive);
+                                }
                                 root = respect::fold_root(
                                     arena,
                                     judgement.presentations,
@@ -4968,6 +4980,20 @@ where
                                 (opened.own, opened.inside)
                             },
                             (None, FixpointEvidence::Joint { positions }) => {
+                                if let Some(&CompType::With(ref components)) =
+                                    arena.comp_type(expected)
+                                    && components.iter().zip(positions.iter()).any(
+                                        |(&component, position)| {
+                                            guard::descends_on_coinductive(
+                                                arena,
+                                                judgement.entries,
+                                                (component, position),
+                                            ) == guard::Descent::Coinductive
+                                        },
+                                    )
+                                {
+                                    return Err(KernelError::FoldOverCoinductive);
+                                }
                                 let opened = recursion::open_joint(
                                     arena,
                                     &mut stages,
@@ -4977,6 +5003,10 @@ where
                                 staged_bodies = staged_bodies.saturating_add(1);
                                 frames.push(Frame::StageExit);
                                 (opened.own, opened.inside)
+                            },
+                            (None, FixpointEvidence::Guarded) => {
+                                guard::guarded(arena, judgement.entries, (expected, body))?;
+                                (expected, expected)
                             },
                             (
                                 None,
@@ -7418,8 +7448,9 @@ pub(crate) fn form_declared(
 ///   obligations that exhaust the null memo's occurrence budget. Each counter
 ///   is monotone, and the initial formation goal charges at least one
 ///   type-plane event, subject to saturation, unless a data declaration's
-///   occurrence walk refuses it before formation starts. The arena's original
-///   prefix remains available on either verdict.
+///   occurrence walk, or the shape check of a coinductive datatype, refuses it
+///   before formation starts. The arena's original prefix remains available on
+///   either verdict.
 /// - provides: both memo policies through one function. Per-goal accounting,
 ///   memo provenance and typing agreement still require their event history or
 ///   differential witnesses, not a second check inside a return predicate.
@@ -7464,7 +7495,8 @@ pub(crate) fn form_declared(
                     | KernelError::NegativeOccurrence(_)
                     | KernelError::IndexOccurrence(_)
                     | KernelError::NestedOccurrence(_)
-                    | KernelError::NonUniformOccurrence(_)))
+                    | KernelError::NonUniformOccurrence(_)
+                    | KernelError::CoinductiveNotFree))
                 || type_expanded.saturating_add(type_recalled).saturating_add(type_kept)
                     >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(entry_type_kept).saturating_add(1_u64))
     })]
@@ -7496,6 +7528,19 @@ where
         .relating(declaration.related())
         .lawful(declaration.laws())
         .presenting(judgement.entries.presentations());
+    // A coinductive datatype is the final coalgebra of its constructors alone:
+    // it is indexed by nothing, presents no rules or cells, holds no role, and
+    // stands outside a mutual block.
+    if declaration.fixpoint() == gandr_kernel_term::DataFixpoint::Greatest
+        && let DeclarationContent::Data { ref indices, .. } = *declaration.content()
+        && (!indices.is_empty()
+            || !declaration.presentation().rules().is_empty()
+            || declaration.presentation().cells().is_some()
+            || matches!(declaration.role(), Maybe::Present(_))
+            || matches!(judgement.block, Block::Mutual { .. }))
+    {
+        return Err(KernelError::CoinductiveNotFree);
+    }
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every occurrence of a family of the block
     // the stage order cannot place below its constructor, by name, first,
@@ -11059,6 +11104,8 @@ mod codata;
 mod cover;
 
 mod former;
+
+mod guard;
 
 mod loops;
 

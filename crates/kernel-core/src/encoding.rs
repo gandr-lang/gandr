@@ -2992,6 +2992,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     gandr_kernel_term::FixpointEvidence::Joint { .. } => {
                         gandr_kernel_term::FIXPOINT_JOINT
                     },
+                    gandr_kernel_term::FixpointEvidence::Guarded => {
+                        gandr_kernel_term::FIXPOINT_GUARDED
+                    },
                 });
                 match evidence {
                     gandr_kernel_term::FixpointEvidence::Staged { position } => {
@@ -3010,7 +3013,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                         }
                     },
                     gandr_kernel_term::FixpointEvidence::Partial
-                    | gandr_kernel_term::FixpointEvidence::StructuralDescent => {},
+                    | gandr_kernel_term::FixpointEvidence::StructuralDescent
+                    | gandr_kernel_term::FixpointEvidence::Guarded => {},
                 }
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },

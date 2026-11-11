@@ -16,6 +16,8 @@
 //! at its parameter variables in telescope order, so every coinductive
 //! occurrence stands behind an observation. The fixpoints that inhabit a
 //! codata type are partial fixpoints; their productivity is not judged here.
+//! A coinductive datatype at the value universe is the other coinductive form:
+//! a guarded fixpoint inhabits it, and the kernel checks its guard (`guard`).
 //!
 //! # References
 //! - Andreas Abel, Brigitte Pientka, David Thibodeau and Anton Setzer,

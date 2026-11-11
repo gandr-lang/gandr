@@ -2207,6 +2207,103 @@ fn a_partial_fixpoint_that_never_reads_itself_unfolds_at_its_gate_2833()
     );
 }
 
+/// #6647: conversion unfolds a guarded fixpoint where a bind observes it, one
+/// step for each case, and never unfolds a partial one. The stream of ones,
+/// `fix s. return Cons(1, thunk (force s))`, reads its head through one case
+/// and its second element through two. Each step leaves the tail a thunk of
+/// the call, so the walk ends. The same stream as a partial fixpoint declines
+/// at the same observation.
+#[test]
+fn a_guarded_fixpoint_unfolds_once_for_each_case_and_a_partial_one_never_6647()
+{
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let streams = ConstantIndex::from(0_usize);
+    let naturals = ConstantIndex::from(1_usize);
+    let stream = arena.value_type_data(streams, Vec::new());
+    let nat = arena.value_type_data(naturals, Vec::new());
+    let zero = arena.value_constructor(naturals, nat, ConstructorTag::from(0_usize), Vec::new());
+    let one = arena.value_constructor(naturals, nat, ConstructorTag::from(1_usize), alloc::vec![
+        zero
+    ]);
+    let own = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = arena.computation_force(own);
+    let tail = arena.value_thunk(call);
+    let cell =
+        arena.value_constructor(streams, stream, ConstructorTag::from(0_usize), alloc::vec![
+            one, tail
+        ]);
+    let body = arena.computation_return(cell);
+    let guarded = arena.computation_fixpoint(body, FixpointEvidence::Guarded);
+    let partial = arena.computation_fixpoint(body, FixpointEvidence::Partial);
+    // `x ← source; case x { λh. λt. branch }`.
+    let motive = arena.comp_type_returner(nat);
+    let observe = |arena: &mut TermArena, source: ComputationId, branch: ComputationId| {
+        let inner = arena.computation_lambda(branch);
+        let outer = arena.computation_lambda(inner);
+        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(x, motive, alloc::vec![outer]);
+        arena.computation_bind(source, case)
+    };
+    let h = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let returns_head = arena.computation_return(h);
+    let returns_one = arena.computation_return(one);
+    let returns_zero = arena.computation_return(zero);
+    let head = observe(&mut arena, guarded, returns_head);
+    let t = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let rest = arena.computation_force(t);
+    let second_of_rest = observe(&mut arena, rest, returns_head);
+    let second = observe(&mut arena, guarded, second_of_rest);
+    let partial_head = observe(&mut arena, partial, returns_head);
+    let mark = arena.watermark();
+
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(head, returns_one),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Convertible,
+        "one case unfolds the stream once to its head"
+    );
+    assert_ne!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(head, returns_zero),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Convertible,
+        "and the head it reads is 1, not 0"
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(second, returns_one),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Convertible,
+        "two cases unfold it twice, the second time at the tail"
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(partial_head, returns_one),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Declined(ReplayDecline::PartialFixpoint),
+        "the same observation never unfolds a partial fixpoint"
+    );
+    assert_eq!(arena.watermark(), mark);
+}
+
 #[test]
 fn a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first()
 {

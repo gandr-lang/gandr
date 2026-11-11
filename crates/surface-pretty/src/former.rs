@@ -176,7 +176,7 @@ impl From<FixpointEvidence> for Recursion
 {
     /// The claim a fixpoint's calls write: a descent where its evidence
     /// claims structural recursion on any parameter, productive where it
-    /// claims nothing.
+    /// claims a guard or nothing.
     ///
     /// # Specification
     /// trivial.
@@ -187,7 +187,7 @@ impl From<FixpointEvidence> for Recursion
             FixpointEvidence::StructuralDescent
             | FixpointEvidence::Staged { .. }
             | FixpointEvidence::Joint { .. } => Self::Descends,
-            FixpointEvidence::Partial => Self::Productive,
+            FixpointEvidence::Partial | FixpointEvidence::Guarded => Self::Productive,
         }
     }
 }

@@ -1482,6 +1482,7 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
         (FixpointEvidence::Joint { positions }, vec![
             3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
         ]),
+        (FixpointEvidence::Guarded, vec![4]),
     ] {
         let mut bytes = CheckpointBytes::default();
         super::write_evidence(&mut Writer { sink: &mut bytes }, evidence)
@@ -1494,7 +1495,7 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
         assert_eq!(super::read_evidence(&mut reader), Ok(evidence));
         assert_eq!(reader.finish(), Ok(()));
     }
-    for corrupt in [&[4_u8][..], &[3], &[3, 15, 0, 0, 0, 0, 0, 0, 0], &[
+    for corrupt in [&[5_u8][..], &[3], &[3, 15, 0, 0, 0, 0, 0, 0, 0], &[
         3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
     ]] {
         let mut past = Reader {

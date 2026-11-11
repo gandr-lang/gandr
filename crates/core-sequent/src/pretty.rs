@@ -745,6 +745,7 @@ fn producer(
             match evidence {
                 FixpointEvidence::Partial => text!("{x; force(α) ⇒ "),
                 FixpointEvidence::StructuralDescent => text!("[<]{x; force(α) ⇒ "),
+                FixpointEvidence::Guarded => text!("[ν]{x; force(α) ⇒ "),
                 FixpointEvidence::Staged { position } => Piece::Owned(alloc::format!(
                     "[<{}]{{x; force(α) ⇒ ",
                     usize::from(position)
