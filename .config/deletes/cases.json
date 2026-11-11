@@ -37,7 +37,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "the change takes 3 things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)\na `refactor` pull request carries `## Preserved and changed`: one table of the behaviour it keeps, with the test that passes before and after, and one of the behaviour or test it changes, with the reason"
   },
@@ -85,7 +85,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "`kept.txt:v::boundary::Other` (kept) leaves the tree with no row in `## Deletes`"
   },
@@ -110,7 +110,7 @@
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "the `deleted` row of `v::hom::DirectedHom::new` leaves `Future use` empty\nthe `deleted` row of `v::hom::DirectedHom::new` gives `Origin` \"#699\", and the commit that adds it comes from pull request #700\nthe `deleted` row of `v::hom::DirectedHom::new` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   },
@@ -142,7 +142,39 @@
           "changed": ["crates/vd/tests/directed.rs"]
         }
       ],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect", "silvanshade": "" }
+    },
+    "output": ""
+  },
+  {
+    "name": "#6834: the owner's own comment signs a deleted row with no architect heading",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|the owner's comment|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "silvanshade",
+          "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "changed": ["crates/vd/tests/directed.rs"]
+        }
+      ],
+      "architects": { "agent-shade": "(architect", "silvanshade": "" }
     },
     "output": ""
   },
@@ -174,7 +206,7 @@
           "changed": ["crates/vd/src/hom.rs"]
         }
       ],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "the architect's sign-off of `v::hom::DirectedHom::new` names no commit that the head keeps for its files; the architect signs again on the new head"
   },
@@ -198,7 +230,7 @@
           "changed": []
         }
       ],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect", "silvanshade": "" }
     },
     "output": "the `deleted` row of `v::hom::DirectedHom::new` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   },
@@ -230,7 +262,7 @@
           "changed": []
         }
       ],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "the crate's `## Provided features` names `gandr_vd::hom::DirectedHom`: no sign-off admits its deletion until the README line leaves in the same change, with its own row\nno other crate names `vd`, so its items wait for their consumer: the row of `gandr_vd::hom::DirectedHom` is refused, and the dead-weight row reads `find the consumer`"
   },
@@ -247,7 +279,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "`v::kept::Item` is still in the head, and its row says `moved`\nthe `## Deletes` row of `v::gone::Item` says `removed`; the act is one of `deleted`, `moved`, `renamed`, `merged`, `narrowed`, `restored`\nthe `restored` row of `v::back::Item` names no pull request that it reverses in `Why`"
   },
@@ -273,7 +305,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": "the test `tests::directed::directed_j_on_the_reflexive_hom_is_the_reflexive_hom` changes its text: name it in the second table of `## Preserved and changed`, with what it no longer asserts and why"
   },
@@ -290,7 +322,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": ["agent-shade"]
+      "architects": { "agent-shade": "(architect" }
     },
     "output": ""
   }

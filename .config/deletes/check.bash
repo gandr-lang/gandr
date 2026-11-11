@@ -252,7 +252,7 @@ fi
 # The readings go to jq as files: the held set names each file of the corpus,
 # past the kernel's limit for one argument.
 for name in left held tests readme lonely files signoffs; do printf '%s\n' "${!name}" > "$scratch/$name.json"; done
-jq -R . "$here/architects.txt" | jq -s -c 'map(select(test("^[^#]")))' > "$scratch/architects.json"
+jq -Rn -c '[inputs | select(test("^[^#]")) | capture("^(?<login>\\S+)\\s*(?<heading>.*)$") | {(.login): .heading}] | add // {}' "$here/architects.txt" > "$scratch/architects.json"
 findings=$(jq -n -c --rawfile body "$body" --arg title "$title" --arg mode "$mode" \
   --slurpfile left "$scratch/left.json" --slurpfile held "$scratch/held.json" --slurpfile tests "$scratch/tests.json" \
   --slurpfile readme "$scratch/readme.json" --slurpfile lonely "$scratch/lonely.json" --slurpfile files "$scratch/files.json" \
