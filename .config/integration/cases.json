@@ -1212,6 +1212,43 @@
     }
   },
   {
+    "name": "#6750: two red tests that one culprit brings give one defect, which names each test and its own lines",
+    "program": "owner.jq",
+    "input": {
+      "checks": [
+        "check:tests-enforcing gandr-core-checker judgement::tests::pair",
+        "check:tests-enforcing gandr-surface-dispatcher::tests corpus::a_draw"
+      ],
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "open": [],
+      "pr": {
+        "number": 6563,
+        "branch": "reduction-6576-pair-tests",
+        "title": "fix(core): read a declined pair"
+      },
+      "log": [
+        "[check:tests-enforcing]         PASS [   0.010s] (1/4) gandr-core-checker judgement::tests::single",
+        "[check:tests-enforcing]         FAIL [   0.020s] (2/4) gandr-core-checker judgement::tests::pair",
+        "[check:tests-enforcing]   stdout ───",
+        "[check:tests-enforcing]     thread 'judgement::tests::pair' panicked at crates/core-checker/src/judgement/tests.rs:9:5:",
+        "[check:tests-enforcing]         PASS [   0.030s] (3/4) gandr-surface-dispatcher::tests corpus::a_run",
+        "[check:tests-enforcing]         FAIL [   0.040s] (4/4) gandr-surface-dispatcher::tests corpus::a_draw",
+        "[check:tests-enforcing]   stdout ───",
+        "[check:tests-enforcing]     thread 'corpus::a_draw' panicked at crates/surface-dispatcher/tests/corpus.rs:3:5:",
+        "[check:tests-enforcing] ERROR task failed"
+      ]
+    },
+    "output": {
+      "lane": "reduction",
+      "title": "landing: `check:tests-enforcing gandr-core-checker judgement::tests::pair` and 1 more fail from #6563 (c2aaaaaaa)",
+      "number": null,
+      "observation": "## Observation\n\n`landing:watch` runs `check:tests-enforcing gandr-core-checker judgement::tests::pair` and `check:tests-enforcing gandr-surface-dispatcher::tests corpus::a_draw` on the head `fffffffff` of `landing`, and each fails. Each passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where each fails. Pull request #6563, \"fix(core): read a declined pair\", brings it, so the claim goes to the lane `reduction`.\n\nThe failing lines of `check:tests-enforcing gandr-core-checker judgement::tests::pair`:\n\n```text\n[check:tests-enforcing]         FAIL [   0.020s] (2/4) gandr-core-checker judgement::tests::pair\n[check:tests-enforcing]   stdout ───\n[check:tests-enforcing]     thread 'judgement::tests::pair' panicked at crates/core-checker/src/judgement/tests.rs:9:5:\n```\n\nThe failing lines of `check:tests-enforcing gandr-surface-dispatcher::tests corpus::a_draw`:\n\n```text\n[check:tests-enforcing]         FAIL [   0.040s] (4/4) gandr-surface-dispatcher::tests corpus::a_draw\n[check:tests-enforcing]   stdout ───\n[check:tests-enforcing]     thread 'corpus::a_draw' panicked at crates/surface-dispatcher/tests/corpus.rs:3:5:\n```",
+      "page": "FIX #{n}: `check:tests-enforcing gandr-core-checker judgement::tests::pair` and `check:tests-enforcing gandr-surface-dispatcher::tests corpus::a_draw` fail on landing at fffffffff, and #6563 (c2aaaaaaa) brings them. Repair it on landing, never with a revert."
+    }
+  },
+  {
     "name": "#6587: a main that holds landing stands behind it by nothing and pages nothing",
     "program": "gap.jq",
     "input": {

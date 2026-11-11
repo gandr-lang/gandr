@@ -154,33 +154,75 @@ watch_checkout() {
   mise trust --quiet "$watch_tree" > /dev/null 2>&1 || :
 }
 
-# Runs the check `$2`, or the whole gate when it is `check`, on commit `$1`
-# against the green head, writing its log to `$3`; exits as the check exits.
-# The run is a background gate (#6638): at niceness 19 and in no host slot,
-# so a lane's gate beside it loses neither CPU nor a slot to it. The
-# enforcing suite runs over the whole workspace, as in every gate (#6738).
+# Runs the line `$2` of a reading (`watch_failed`), or the whole gate when it
+# is `check`, on commit `$1` against the green head, writing its log to `$3`;
+# exits as the run exits. The run is a background gate (#6638): at niceness
+# 19 and in no host slot, so a lane's gate beside it loses neither CPU nor a
+# slot to it. The enforcing suite runs over the whole workspace, as in every
+# gate (#6738), and past its first red (`GATE_TEST_EVERY_RED`, #6750). A line
+# that names one test runs each test of that name (`watch_test`).
 watch_run() {
   local commit=$1 check=$2 log=$3
   watch_checkout "$commit"
   if [[ $check == check ]]; then
-    (cd "$watch_tree" && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
+    (cd "$watch_tree" && GATE_TEST_EVERY_RED=1 GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
+  elif [[ $check == *' '* ]]; then
+    watch_test "$check" "$log"
   else
     (cd "$watch_tree" \
       && GATE_SCOPE=$(.config/gate-scope/scope.bash 2> /dev/null) \
       && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
-      && GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash 2> /dev/null) \
+      && GATE_TEST_SCOPE=$(GATE_TEST_EVERY_RED=1 .config/gate-scope/test-scope.bash 2> /dev/null) \
       && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_TEST_SCOPE \
       && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$log" 2>&1
   fi
 }
 
-# The failing checks a gate's log `$1` names, one per line.
+# Runs the red test of the line `$1`, `check:tests-enforcing <binary>
+# <test>`, in the watcher's checkout, writing the log to `$2` (#6750). The
+# suite runs each test of that name. nextest refuses a filter that names an
+# absent binary, so the filter names the test alone. The run fails when the
+# log holds a failure of `<binary> <test>`, or when the suite runs no test
+# at all (a build that fails). It passes when the test passes, when the
+# commit lacks it, and when only a test of the same name in another binary
+# fails.
+watch_test() {
+  local check binary test line ran=0
+  read -r check binary test <<< "$1"
+  (cd "$watch_tree" \
+    && GATE_TEST_SCOPE="--workspace --no-tests=pass -E 'test(=$test)'" \
+    && export GATE_TEST_SCOPE \
+    && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$2" 2>&1 && return 0
+  while IFS= read -r line; do
+    line=${line%"${line##*[! ]}"}
+    if [[ $line =~ (FAIL|TIMEOUT|ABORT|SIG[A-Z]+)\ +\[ && $line == *" $binary $test" ]]; then
+      return 1
+    fi
+    [[ $line == *' Starting '* ]] && ran=1
+  done < "$2"
+  (( ran == 1 ))
+}
+
+# The red lines of a gate's log `$1`, one per line (#6750): for the enforcing
+# suite, `check:tests-enforcing <binary> <test>` for each red test that the
+# log names; for every other failing check, and for a suite that names no
+# red test (a build that fails), the check alone.
 watch_failed() {
-  sed -n 's/^\[\(check:[a-z0-9:-]*\)\] ERROR task failed.*/\1/p' "$1" | sort -u
+  local check tests
+  while IFS= read -r check; do
+    if [[ $check == check:tests-enforcing ]]; then
+      tests=$(sed -nE 's/^\[check:tests-enforcing\] +(TRY [0-9]+ )?(FAIL|TIMEOUT|ABORT|SIG[A-Z]+) +\[ *[0-9.]+s\] +(\( *[0-9]+\/[0-9]+\) +)?([^ ]+) +([^ ]+) *$/check:tests-enforcing \4 \5/p' "$1" | sort -u)
+      if [[ -n $tests ]]; then
+        printf '%s\n' "$tests"
+        continue
+      fi
+    fi
+    printf '%s\n' "$check"
+  done < <(sed -n 's/^\[\(check:[a-z0-9:-]*\)\] ERROR task failed.*/\1/p' "$1" | sort -u)
 }
 
 # Searches the first parents between the green head `$1` and the red head
-# `$2` for the first commit where the check `$3` fails; prints it.
+# `$2` for the first commit where the red line `$3` fails; prints it.
 watch_search() {
   local green=$1 head=$2 check=$3 commits results step probe
   commits=$(git -C "$watch_tree" rev-list --first-parent --reverse "$green..$head" | jq -R . | jq -s -c .)
@@ -221,38 +263,45 @@ watch_repaired() {
   printf '%s\n' "$newest"
 }
 
-# Gives the red check `$4` of head `$2` an owner: the search names the
-# culprit, `owner.jq` the defect and the page; the watcher files the defect
-# or comments on the open one, claims it for the lane and pages the lane.
+# The culprit of the red line `$4` of head `$2`: the first commit after the
+# green head `$3` where the line fails (`watch_search`), printed. A line that
+# fails on the green head too fails for the host, not for the move: the
+# watcher pages the fixer, prints nothing and returns 1.
 watch_own() {
-  local repo=$1 head=$2 green=$3 check=$4 log=$5 culprit pr open input owner number observation
-  # A check that fails on the green head too fails for the host, not for
-  # the move: the watcher pages the fixer and files nothing.
+  local head=$2 green=$3 check=$4 log=$5
   if ! watch_run "$green" "$check" "$(mktemp)"; then
     watch_page triage "LANDING \`$check\` fails on the green head ${green::9} too, so the watcher files nothing: read $log"
     return 1
   fi
-  culprit=$(watch_search "$green" "$head" "$check") || { echo "landing:watch: the search for \`$check\` failed" >&2; return 1; }
+  watch_search "$green" "$head" "$check" || { echo "landing:watch: the search for \`$check\` failed" >&2; return 1; }
+}
+
+# Files one defect for the culprit `$4` of head `$2`, which names each of its
+# red lines `$6`…, or comments on the open one (`owner.jq`); claims it for
+# the lane of the culprit's pull request and pages that lane.
+watch_file() {
+  local repo=$1 head=$2 green=$3 culprit=$4 log=$5 pr open input owner number observation
+  shift 5
   pr=$(gh api "repos/$repo/commits/$culprit/pulls" --jq '[.[] | {number, branch: .head.ref, title}] | first // null') || pr=null
   open=$(gh issue list -R "$repo" --state open --label kind:defect --search '"landing:" in:title' --limit 100 --json number,title) || return 1
-  # The defect holds the check's own last lines, by its prefix alone (#6659,
+  # The defect holds each line's own last lines, by its prefix alone (#6659,
   # `lines.jq`). The log reaches jq on standard input, never as one argument.
-  input=$(jq -R . "$log" | jq -s -c --arg check "$check" --arg head "$head" --arg green "$green" --arg culprit "$culprit" \
-    --argjson pr "$pr" --argjson open "$open" \
-    '{check: $check, head: $head, green: $green, culprit: $culprit, pr: $pr, log: ., open: $open}')
+  input=$(jq -R . "$log" | jq -s -c --arg head "$head" --arg green "$green" --arg culprit "$culprit" \
+    --argjson pr "$pr" --argjson open "$open" --args \
+    '{checks: $ARGS.positional, head: $head, green: $green, culprit: $culprit, pr: $pr, log: ., open: $open}' "$@")
   owner=$(jq -c -L "$watch_dir" -f "$watch_dir/owner.jq" <<< "$input")
   observation=$(mktemp)
   jq -r .observation <<< "$owner" > "$observation"
   number=$(jq -r '.number // empty' <<< "$owner")
   if [[ -z $number ]]; then
     number=$(mise run --quiet issue:file "$(jq -r .title <<< "$owner")" "$observation" kind:defect area:workflow priority:high effort:easy \
-      --template landing --fields "$(jq -c '{check: .check, head: .head[0:9], culprit: .culprit[0:9], pr: ((.pr.number // "none") | tostring)}' <<< "$input")" \
+      --template landing --fields "$(jq -c '{check: (.checks | join(", ")), head: .head[0:9], culprit: .culprit[0:9], pr: ((.pr.number // "none") | tostring)}' <<< "$input")" \
       | sed -n 's|.*/issues/\([0-9][0-9]*\)$|\1|p' | tail -n 1)
   else
     gh issue comment "$number" -R "$repo" --body-file "$observation" > /dev/null || :
   fi
   rm -f "$observation"
-  [[ -n $number ]] || { echo "landing:watch: the defect for \`$check\` was not filed" >&2; return 1; }
+  [[ -n $number ]] || { echo "landing:watch: the defect for ${culprit::9} was not filed" >&2; return 1; }
   mise run --quiet claim:take "$number" --lane "$(jq -r .lane <<< "$owner")" || :
   watch_page "$(jq -r .lane <<< "$owner")" "$(jq -r --arg n "$number" '.page | gsub("\\{n\\}"; $n)' <<< "$owner")"
 }
@@ -260,8 +309,9 @@ watch_own() {
 # One reading: the gap, then the gate on the newest head when it moved.
 # Prints the new state.
 watch_once() {
-  local repo=$1 memory gap head green log status check newest
+  local repo=$1 memory gap head green log status check newest culprit
   local -a failed
+  local -A caused=()
   memory=$(watch_memory)
   watch_fetch || { echo "landing:watch: the fetch failed; reading again" >&2; printf '%s\n' "$memory"; return 0; }
   gap=$(watch_gap "$memory")
@@ -294,12 +344,21 @@ watch_once() {
     printf '%s\n' "$memory"
     return 0
   fi
+  # Each red line is read alone (#6750): a newer head that repairs it, the
+  # green head that holds it too, or the culprit that brings it. The lines
+  # of one culprit share one defect.
   for check in "${failed[@]}"; do
     if newest=$(watch_repaired "$head" "$check"); then
       echo "landing:watch: \`$check\` red on ${head::9} is green on ${newest::9}; no search" >&2
       continue
     fi
-    watch_own "$repo" "$head" "$green" "$check" "$log" || :
+    culprit=$(watch_own "$repo" "$head" "$green" "$check" "$log") || continue
+    [[ -n $culprit ]] || continue
+    caused[$culprit]+="$check"$'\n'
+  done
+  for culprit in "${!caused[@]}"; do
+    mapfile -t failed < <(printf '%s' "${caused[$culprit]}")
+    watch_file "$repo" "$head" "$green" "$culprit" "$log" "${failed[@]}" || :
   done
   jq -c --arg head "$head" '.checked = $head' <<< "$memory"
 }
