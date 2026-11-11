@@ -8,7 +8,11 @@
 #
 # Each row of `artifacts.json` names one generated artifact: the paths it
 # lives at, the paths it derives from, the check that regenerates and
-# compares it, and the command that records it again. `due.jq` reads the rows
+# compares it, and the command that records it again. A row MAY name
+# `stale`, the exit statuses of its check that mean the artifacts disagree
+# (#6786): for a nextest check, 100, a red test. Another failing status is
+# the check's own error, as a package that no crate holds (101). A row with
+# no `stale` reads each failing status as stale. `due.jq` reads the rows
 # the replay makes due. The script runs each due row's check on the head, in
 # the current directory, which must hold the head's tree. A check reads the
 # new base as `REPLAY_BASE`, and mise trusts the directory, as `pr:land` runs
@@ -22,6 +26,8 @@
 #   stale.bash <old base> <new base> <head>
 #     Runs the due checks. Exits 0 when none is due or each passes. Exits 1,
 #     naming each stale artifact and the command that records it again.
+#     Exits 2 when a check fails on its own, naming the check and its status:
+#     the replay then cannot read the artifacts.
 #   stale.bash --due <old base> <new base> <head>
 #     Prints the due rows as a JSON array, and runs nothing.
 #
@@ -59,11 +65,17 @@ if [[ $(git rev-parse 'HEAD^{tree}') != "$(git rev-parse "$head^{tree}")" ]]; th
 fi
 trusted=$(git rev-parse --show-toplevel)${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}
 status=0
-while IFS=$'\t' read -r name check record; do
+while IFS=$'\t' read -r name check record stale; do
   echo "replay: the base moved what $name read under ${head::12}; \`$check\` reads them again" >&2
-  if ! REPLAY_BASE=$new MISE_TRUSTED_CONFIG_PATHS=$trusted bash -c "$check" >&2; then
+  ran=0
+  REPLAY_BASE=$new MISE_TRUSTED_CONFIG_PATHS=$trusted bash -c "$check" >&2 || ran=$?
+  (( ran != 0 )) || continue
+  if [[ -z $stale || " $stale " == *" $ran "* ]]; then
     echo "replay: $name are stale on ${head::12}; record them again with \`$record\` on the branch, and land again" >&2
-    status=1
+    (( status == 2 )) || status=1
+  else
+    echo "replay: \`$check\` fails on its own with status $ran, not with a stale artifact ($stale), so it reads nothing of $name; repair the check" >&2
+    status=2
   fi
-done < <(jq -r '.[] | [.name, .check, .record] | @tsv' <<< "$due")
+done < <(jq -r '.[] | [.name, .check, .record, ((.stale // []) | map(tostring) | join(" "))] | @tsv' <<< "$due")
 exit "$status"

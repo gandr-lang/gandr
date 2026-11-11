@@ -52,5 +52,37 @@
       }
     ],
     "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
+  },
+  {
+    "name": "#6786: a row's check that fails with a status outside its stale ones, as nextest with a package no crate holds, refuses the restack as unreadable, not stale, with the upper unmoved",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "exit 101",
+        "stale": [100],
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: cannot read its generated artifacts"
+  },
+  {
+    "name": "#6786: the same row's check that fails with one of its stale statuses refuses the restack as stale",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "exit 100",
+        "stale": [100],
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: leaves generated artifacts stale"
   }
 ]

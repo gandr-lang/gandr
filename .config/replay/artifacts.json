@@ -18,8 +18,9 @@
       "crates/surface-grammar/src/surface/frozen.rs"
     ],
     "inputs": ["corpus/", "crates/surface-grammar/", "crates/surface-syntax/"],
-    "check": ".config/mise/scope cargo nextest run --locked --package gandr-surface-grammar",
-    "record": "UPDATE_EXPECT=1 cargo nextest run --package gandr-surface-grammar"
+    "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/surface-grammar/Cargo.toml",
+    "stale": [100],
+    "record": "UPDATE_EXPECT=1 cargo nextest run --manifest-path crates/surface-grammar/Cargo.toml"
   },
   {
     "name": "the syntax ledger",
@@ -53,7 +54,8 @@
     "name": "the debug traces and goldens of {crate}",
     "paths": ["crates/{crate}/tests/debug-traces/", "crates/{crate}/tests/golden/"],
     "inputs": ["crates/{crate}/"],
-    "check": ".config/mise/scope cargo nextest run --locked --package gandr-{crate}",
-    "record": "UPDATE_EXPECT=1 cargo nextest run --package gandr-{crate}"
+    "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/{crate}/Cargo.toml",
+    "stale": [100],
+    "record": "UPDATE_EXPECT=1 cargo nextest run --manifest-path crates/{crate}/Cargo.toml"
   }
 ]
