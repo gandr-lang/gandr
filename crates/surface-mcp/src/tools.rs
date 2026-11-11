@@ -81,6 +81,8 @@ use gandr_surface_lsp::Range;
 use gandr_surface_lsp::Reached;
 use gandr_surface_lsp::Settles;
 use gandr_surface_lsp::Workspace;
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
 
@@ -117,6 +119,23 @@ fn document_schema() -> Value
             "uri": { "type": "string", "description": "The document's URI, as the editor opened it" },
         },
         "required": ["uri"],
+    })
+}
+
+/// The schema of a subscription to a declaration's account: a document's URI
+/// and the name of a declaration in it.
+///
+/// # Specification
+/// trivial.
+fn account_schema() -> Value
+{
+    json!({
+        "type": "object",
+        "properties": {
+            "uri": { "type": "string", "description": "The document's URI, as the editor opened it" },
+            "declaration": { "type": "string", "description": "The name of a declaration of the document" },
+        },
+        "required": ["uri", "declaration"],
     })
 }
 
@@ -289,6 +308,25 @@ fn position(arguments: &Value) -> Result<Value, ToolRefusal>
     }
 }
 
+/// What a subscription follows: the bus scope that a subscription operation
+/// names.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope
+{
+    /// The frame of one document: its diagnostic and goal cards.
+    Diagnostics(DocumentUri),
+    /// The account card of the declaration of one document that has the name
+    /// `declaration`.
+    Account
+    {
+        /// The document.
+        document: DocumentUri,
+        /// The name of the declaration.
+        declaration: String,
+    },
+}
+
 /// What answers an operation over the hub.
 #[derive(Clone, Copy)]
 enum Answer
@@ -299,6 +337,10 @@ enum Answer
     /// An answer over one document that the hub holds. The call writes the
     /// URI of the document and the version it answered at beside it.
     Document(fn(&mut Workspace, &DocumentUri, &Value) -> Result<Value, ToolRefusal>),
+    /// A subscription: the scope that the call follows, which may name a
+    /// document that the hub does not hold now. The Reactive Agent Protocol
+    /// toolset opens it, and the Model Context Protocol face does not offer it.
+    Subscription(fn(&Value) -> Result<Scope, ToolRefusal>),
 }
 
 /// One operation of the hub, as each face offers it.
@@ -320,8 +362,8 @@ struct Operation
 /// Every operation of the hub, in ascending name order. The Model Context
 /// Protocol's `tools/list` and the Reactive Agent Protocol's manifest each
 /// encode this table, and both faces call through it. Thus a row added here
-/// reaches both faces.
-static OPERATIONS: [Operation; 9] = [
+/// reaches both faces, except a subscription, which the toolset alone serves.
+static OPERATIONS: [Operation; 11] = [
     Operation {
         name: "diagnostics",
         title: "Diagnostics",
@@ -414,6 +456,36 @@ static OPERATIONS: [Operation; 9] = [
         answer: Answer::Document(proposed),
     },
     Operation {
+        name: "subscribe_account",
+        title: "Follow a declaration's account",
+        description: "Follow the account card of the declaration of a document that has the name \
+                      `declaration`. After each admission that changes the card, one event carries \
+                      the card, or null once no declaration has the name. The card holds the \
+                      checker's verdict and the kernel's warrant and title.",
+        schema: account_schema,
+        answer: Answer::Subscription(|arguments| {
+            let declaration = arguments
+                .get("declaration")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ToolRefusal(String::from("`declaration` must name a declaration"))
+                })?;
+            Ok(Scope::Account {
+                document: named(arguments)?,
+                declaration: String::from(declaration),
+            })
+        }),
+    },
+    Operation {
+        name: "subscribe_diagnostics",
+        title: "Follow a document's diagnostics",
+        description: "Follow the diagnostics of a document. After each publication that changes its \
+                      frame, one event carries the frame: the document's version, and its diagnostic \
+                      and goal cards.",
+        schema: document_schema,
+        answer: Answer::Subscription(|arguments| Ok(Scope::Diagnostics(named(arguments)?))),
+    },
+    Operation {
         name: "trial",
         title: "Try candidate fills",
         description: "Judge candidate edits of an open document without changing it, best first: each \
@@ -443,13 +515,15 @@ static OPERATIONS: [Operation; 9] = [
     },
 ];
 
-/// Every tool, in name order, as the Model Context Protocol's `tools/list`
-/// encodes the table: its name, title, description and input schema.
+/// Every tool that the Model Context Protocol face offers, in name order, as
+/// its `tools/list` encodes the table: its name, title, description and input
+/// schema. A subscription is not offered, because the face has no callback for
+/// its events.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tools are listed in strictly ascending name order, each with
-///   a description and an object input schema.
+///   a description and an object input schema, and no subscription is listed.
 /// - provides: `tools/list`, deterministic so a client caches it.
 /// - panics: none.
 ///
@@ -458,12 +532,14 @@ static OPERATIONS: [Operation; 9] = [
 /// - witness: `connection::tests::each_era_opens_and_lists_the_tools`
 #[spec(ensures: |ret| ret.is_sorted_by(|earlier, later| earlier.get("name").and_then(Value::as_str)
         < later.get("name").and_then(Value::as_str))
-    && ret.iter().all(|tool| tool.pointer("/inputSchema/type") == Some(&json!("object"))))]
+    && ret.iter().all(|tool| tool.pointer("/inputSchema/type") == Some(&json!("object"))
+        && tool.get("name").and_then(Value::as_str).is_some_and(|name| !name.starts_with("subscribe_"))))]
 #[must_use]
 pub fn list() -> Vec<Value>
 {
     OPERATIONS
         .iter()
+        .filter(|operation| !matches!(operation.answer, Answer::Subscription(_)))
         .map(|operation| {
             json!({
                 "name": operation.name,
@@ -480,9 +556,9 @@ pub fn list() -> Vec<Value>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the tools are offered in the order of [`list`], each with the
+/// - ensures: every row of the table is offered in name order, each with the
 ///   name, the description and the input schema that [`list`] gives it, and no
-///   title.
+///   title. The subscriptions are offered too.
 /// - provides: the tools of the manifest at `/.well-known/rap-toolset`.
 /// - panics: none.
 ///
@@ -514,23 +590,23 @@ pub fn offered() -> Vec<Value>
 /// - requires: nothing; any name and arguments are admitted.
 /// - ensures: a document tool answers for a document the hub holds, naming its
 ///   URI and the version answered at; a features ledger tool answers from the
-///   ledger under its root; a name no tool has, a document the hub does not
-///   hold, arguments the tool cannot read, and a ledger that cannot be read or
-///   answer are refused.
+///   ledger under its root; a name no tool has, a subscription, a document the
+///   hub does not hold, arguments the tool cannot read, and a ledger that
+///   cannot be read or answer are refused.
 /// - provides: `tools/call`, and the invocations of the Reactive Agent
-///   Protocol's toolset.
+///   Protocol's toolset that open no subscription.
 /// - fails: as above, with the reason in the refusal.
 /// - panics: none.
 ///
 /// # Errors
-/// [`ToolRefusal`] for an unknown tool, unreadable arguments, a document the
-/// hub does not hold, or a features ledger fault.
+/// [`ToolRefusal`] for an unknown tool, a subscription, unreadable arguments,
+/// a document the hub does not hold, or a features ledger fault.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every tool is called through the wire on a held document,
 ///   and one on a document the hub does not hold; the features ledger tools
 ///   list and show the committed ledger, and refuse an unknown area, status and
-///   id.
+///   id. A subscription is refused.
 /// - witness: `connection::tests::each_tool_answers_through_the_wire`
 /// - witness: `connection::tests::the_ledger_tools_read_the_committed_ledger_1827`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(Value::is_object))]
@@ -558,7 +634,59 @@ pub fn call(
             }
             Ok(answered)
         },
+        Answer::Subscription(_) => Err(ToolRefusal(alloc::format!(
+            "`{name}` opens a subscription, which the Reactive Agent Protocol toolset serves"
+        ))),
     }
+}
+
+/// The scope that the subscription `name` opens with `arguments`, or `None`
+/// when `name` names no subscription.
+///
+/// # Specification
+/// - requires: nothing; any name and arguments are admitted.
+/// - ensures: `None` for a name that is not the name of a subscription, and the
+///   name of each subscription starts with `subscribe_`. Otherwise the scope of
+///   the row, or the refusal of arguments that the row cannot read. The
+///   document need not be open in the hub.
+/// - provides: what the toolset's worker opens a subscription on.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — through a running hub, `subscribe_diagnostics` and
+///   `subscribe_account` confirm with their scopes, and their events follow.
+/// - witness: `rap::tests::a_subscription_hears_each_new_frame`
+/// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
+#[spec(ensures: |ret| ret.is_some() == name.as_str().is_some_and(|named| named.starts_with("subscribe_")))]
+#[inline]
+pub fn subscription(
+    name: &Value,
+    arguments: &Value,
+) -> Option<Result<Scope, ToolRefusal>>
+{
+    let name = name.as_str()?;
+    let operation = OPERATIONS
+        .binary_search_by(|operation| operation.name.cmp(name))
+        .ok()
+        .and_then(|row| OPERATIONS.get(row))?;
+    match operation.answer {
+        Answer::Subscription(scope) => Some(scope(arguments)),
+        Answer::Hub(_) | Answer::Document(_) => None,
+    }
+}
+
+/// The document that `arguments` names by its `uri`, whether or not the hub
+/// holds it.
+///
+/// # Specification
+/// trivial.
+fn named(arguments: &Value) -> Result<DocumentUri, ToolRefusal>
+{
+    arguments
+        .get("uri")
+        .and_then(Value::as_str)
+        .map(DocumentUri::from)
+        .ok_or_else(|| ToolRefusal(String::from("`uri` must name a document")))
 }
 
 /// The name of a features ledger tool's argument.

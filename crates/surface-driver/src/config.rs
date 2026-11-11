@@ -337,6 +337,36 @@ pub fn calls() -> Option<PathBuf>
     )
 }
 
+/// The directory the engine hub's toolset keeps its subscription tables in,
+/// `gandr/subscriptions` under the user's state directory.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<home>/gandr/subscriptions` under `$XDG_STATE_HOME` and `$HOME`
+///   by [`directory`]'s rule, with `.local/state` the default; absent when
+///   neither names a directory.
+/// - provides: where `gandr serve` keeps the table of its subscriptions.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hub under a scratch state home serves its toolset.
+/// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+#[cfg(unix)]
+pub fn subscriptions() -> Option<PathBuf>
+{
+    Some(
+        directory(
+            std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+            std::env::var_os("HOME").map(PathBuf::from),
+            Path::new(".local/state"),
+        )?
+        .join("gandr")
+        .join("subscriptions"),
+    )
+}
+
 /// This installation's kernel signing key, `gandr/kernel.key` under the
 /// configuration directory [`located`] reads the file in.
 ///

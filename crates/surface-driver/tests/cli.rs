@@ -3553,6 +3553,8 @@ fn serve_offers_the_toolset_by_default()
             "ledger_show",
             "outline",
             "propose",
+            "subscribe_account",
+            "subscribe_diagnostics",
             "trial",
             "type_of"
         ],

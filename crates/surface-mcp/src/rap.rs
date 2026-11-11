@@ -26,15 +26,41 @@
 //! prints for the same report, and its `version` is the version of the
 //! document.
 //!
-//! A subscription follows the frame of one document. After each publication
-//! that changes the frame, the toolset owes a `subscription_event` to the
-//! callback URL of the subscription. The text of the event is the whole frame,
-//! as the result of `diagnostics` holds it, and never a change to an earlier
-//! frame. A publication that leaves the frame as it was sends nothing.
+//! A subscription follows a scope: the frame of one document, or the account
+//! card of the declaration of one document that has a given name.
+//! `subscribe_diagnostics` and `subscribe_account` open one. The worker
+//! confirms each with a `tool_result` that carries `subscription: true`. Its
+//! text names the subscription by the `id` of the call, which each event
+//! carries as its `tool_call_id`.
+//!
+//! After each publication that changes the frame, the toolset owes a
+//! `subscription_event` to the callback URL of each subscription to the
+//! document. The text of the event is the whole frame, as the result of
+//! `diagnostics` holds it, and never a change to an earlier frame. After each
+//! admission that changes the card of a declaration, the text of the event is
+//! the URI of the document, the name, and the card, or null when no
+//! declaration has the name. The version is in the event alone, so an edit
+//! that leaves the card the same sends nothing. A state that is the same as
+//! the last one sends nothing.
 //!
 //! Each callback carries an `Idempotency-Key` header: the `id` of a result,
 //! and `<tool_call_id>@<version>` for an event. Each event also carries its
 //! version in its JSON. A runtime that receives one key twice keeps one copy.
+//!
+//! # The subscription table
+//!
+//! The subscription table is one file per workspace, readable by its owner
+//! alone, and written whole through a rename after each change: a
+//! subscription opened or dropped, and a state that a runtime took at a later
+//! version. A table with no row has no file. When the toolset opens, it
+//! resumes each row of the table. A resumed row hears no state of the version
+//! that its runtime took, or of an earlier version. A later state that is the
+//! same as the state of that version sends nothing.
+//!
+//! A `POST` to `/cancel_tool_call` with a `tool_call_id` drops that
+//! subscription. A `POST` to `/close_thread` with a `thread_id` drops each
+//! subscription of that `group_id`. Both answer `200` always. A delivery in
+//! flight ends, and no event of the row follows it.
 //!
 //! # Boundaries
 //!
@@ -61,9 +87,6 @@
 //! delivery that a runtime takes or refuses settles its call. A refusal also
 //! drops a subscription. A subscription whose retries are spent stays, and it
 //! is unreachable until a later state reaches it.
-//!
-//! The toolset keeps its subscriptions in memory, and no operation of the
-//! manifest opens one.
 //!
 //! The driver writes the URL of the manifest to the [`Announcement`] beside the
 //! hub's socket, readable by its owner alone. A runtime that did not start the
@@ -110,10 +133,10 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::SystemTime;
 
-use anodized::spec;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::Peer;
 use gandr_surface_lsp::Workspace;
+use gandr_surface_render_remote::AccountCard;
 use gandr_surface_render_remote::DiagCard;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::FrameBody;
@@ -133,10 +156,16 @@ pub use self::deliver::Policy;
 use self::deliver::Post;
 pub use self::deliver::Retries;
 use self::deliver::Row;
+use self::subscriptions::Generation;
+use self::subscriptions::Kept;
+use self::subscriptions::Snapshot;
+use self::subscriptions::Table;
 use crate::face::lock;
 use crate::tools;
+use crate::tools::Scope;
 
 mod deliver;
+mod subscriptions;
 
 /// The name of the tool whose result is a frame of the render bus.
 const DIAGNOSTICS: &str = "diagnostics";
@@ -147,6 +176,12 @@ const MANIFEST: &str = "/.well-known/rap-toolset";
 
 /// The path of the invoke endpoint that the manifest names.
 const INVOKE: &str = "/invoke";
+
+/// The path at which a runtime cancels a subscription, as RAP names it.
+const CANCEL: &str = "/cancel_tool_call";
+
+/// The path at which a runtime closes a conversation, as RAP names it.
+const CLOSE: &str = "/close_thread";
 
 /// What the manifest says the toolset is.
 const DESCRIPTION: &str = "The gandr engine hub: the documents its editors hold open, their \
@@ -298,6 +333,9 @@ struct Answer
     /// The version of the document whose frame the answer is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     version: Option<i32>,
+    /// The scope of the subscription that the answer confirms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subscription: Option<Scope>,
 }
 
 /// The cards of a frame, as the text of a result or of an event holds them.
@@ -311,6 +349,20 @@ struct Cards<'frame>
     diagnostics: &'frame [DiagCard],
     /// The goal cards, in source order.
     goals: &'frame [GoalCard],
+}
+
+/// The card of one declaration, as the text of an event holds it. The event
+/// carries the version, so that a card that an edit leaves the same is the
+/// same text.
+#[derive(Serialize)]
+struct Accounted<'card>
+{
+    /// The URI of the document.
+    uri: &'card DocumentUri,
+    /// The name of the declaration.
+    declaration: &'card str,
+    /// The card, or none when no declaration has the name.
+    card: Option<&'card AccountCard>,
 }
 
 /// Bytes the toolset reads or writes, kept to be used again.
@@ -401,99 +453,261 @@ impl Store
     }
 }
 
-/// A subscription of a runtime to the frames of one document.
+/// A subscription of a runtime to one scope.
 struct Subscription
 {
-    /// Where its events go.
+    /// The row as the table keeps it.
+    kept: Kept,
+    /// Where its events go, shared by each delivery.
     callback_url: Arc<str>,
     /// The bearer that the runtime sent, sent back on each event.
     token: Option<Arc<str>>,
     /// The routing of each event up to its version, encoded once.
     routing: String,
-    /// The document whose frames it follows.
-    scope: DocumentUri,
     /// The text of the last state owed to it.
     last: Option<Arc<str>>,
     /// Whether the retries of its last delivery were spent.
     unreachable: bool,
 }
 
-/// One state of the frame of a document, as each subscription receives it.
-struct State
+impl Subscription
 {
-    /// The version of the document.
-    version: i32,
-    /// The frame as a JSON string, quoted once for all subscriptions.
-    text: Arc<str>,
-}
-
-/// The subscriptions, by row, and the rows of each document.
-#[derive(Default)]
-struct Subscriptions
-{
-    /// Each subscription.
-    rows: BTreeMap<Row, Subscription>,
-    /// The rows that follow each document.
-    scopes: BTreeMap<DocumentUri, BTreeSet<Row>>,
-}
-
-impl Subscriptions
-{
-    /// Drop the subscription `row`.
+    /// Owe `state` to this subscription, the row `row`, when the state is not
+    /// the last one owed and its version is past the one the runtime took.
     ///
     /// # Specification
     /// trivial.
-    fn cancel(
+    fn owe(
         &mut self,
         row: &Row,
-    )
-    {
-        let Some(subscription) = self.rows.remove(row)
-        else {
-            return;
-        };
-        if let Some(rows) = self.scopes.get_mut(&subscription.scope) {
-            let _removed = rows.remove(row);
-            if rows.is_empty() {
-                drop(self.scopes.remove(&subscription.scope));
-            }
-        }
-    }
-
-    /// Owe `state`, a state of `scope`, to each subscription that follows
-    /// `scope` and was last owed another state.
-    ///
-    /// # Specification
-    /// trivial.
-    fn publish(
-        &mut self,
-        scope: &DocumentUri,
         state: &State,
         deliveries: &Deliveries,
     )
     {
-        let Some(rows) = self.scopes.get(scope)
+        let version = state.version;
+        match self.kept.last_version {
+            // One state settles for each version, so this state is the one the
+            // runtime took. A later state that is the same sends nothing.
+            Some(taken) if version == taken => {
+                self.last = Some(Arc::clone(&state.text));
+                return;
+            },
+            Some(taken) if version < taken => return,
+            Some(_) | None => {},
+        }
+        if self.last.as_ref() == Some(&state.text) {
+            return;
+        }
+        self.last = Some(Arc::clone(&state.text));
+        deliveries.owe(row.clone(), Post {
+            callback_url: Arc::clone(&self.callback_url),
+            token: self.token.clone(),
+            key: alloc::format!("{}@{version}", self.kept.tool_call_id),
+            version: Some(version),
+            head: alloc::format!("{}{version},\"text\":", self.routing),
+            text: Arc::clone(&state.text),
+        });
+    }
+}
+
+/// One state of a scope, as each subscription to it receives it.
+struct State
+{
+    /// The version of the document.
+    version: i32,
+    /// The state as a JSON string, quoted once for all subscriptions.
+    text: Arc<str>,
+}
+
+/// The subscriptions by row, the rows that follow each document by their
+/// kind of scope, and the generation of their last change.
+struct Subscriptions
+{
+    /// Each subscription.
+    rows: BTreeMap<Row, Subscription>,
+    /// The rows that follow the frame of each document.
+    diagnostics: BTreeMap<DocumentUri, BTreeSet<Row>>,
+    /// The rows that follow a declaration of each document.
+    accounts: BTreeMap<DocumentUri, BTreeSet<Row>>,
+    /// The generation of the last change that the table must keep.
+    generation: Generation,
+}
+
+impl Subscriptions
+{
+    /// The subscriptions that `kept` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resumed(kept: Vec<Kept>) -> Self
+    {
+        let mut subscriptions = Self {
+            rows: BTreeMap::new(),
+            diagnostics: BTreeMap::new(),
+            accounts: BTreeMap::new(),
+            generation: Generation::default(),
+        };
+        for row in kept {
+            let _row = subscriptions.insert(row);
+        }
+        subscriptions
+    }
+
+    /// Follow the scope of `kept`, replacing a subscription that has the same
+    /// row, and give its row.
+    ///
+    /// # Specification
+    /// trivial.
+    fn insert(
+        &mut self,
+        kept: Kept,
+    ) -> Row
+    {
+        let routing = alloc::format!(
+            "{{\"type\":\"subscription_event\",\"group_id\":{},\"tool_call_id\":{},\"associative\":true,\"final\":false,\"version\":",
+            quoted(&kept.group_id),
+            quoted(&kept.tool_call_id)
+        );
+        let row = Row::Subscription(kept.group_id.clone(), kept.tool_call_id.clone());
+        drop(self.remove(&row));
+        let (index, document) = match kept.scope {
+            Scope::Diagnostics(ref document) => (&mut self.diagnostics, document),
+            Scope::Account { ref document, .. } => (&mut self.accounts, document),
+        };
+        let _fresh = index
+            .entry(document.clone())
+            .or_default()
+            .insert(row.clone());
+        drop(self.rows.insert(row.clone(), Subscription {
+            callback_url: Arc::from(kept.callback_url.as_str()),
+            token: kept.token.as_deref().map(Arc::from),
+            routing,
+            last: None,
+            unreachable: false,
+            kept,
+        }));
+        row
+    }
+
+    /// Drop the subscription `row`, and give it when there was one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn remove(
+        &mut self,
+        row: &Row,
+    ) -> Option<Subscription>
+    {
+        let subscription = self.rows.remove(row)?;
+        let (index, document) = match subscription.kept.scope {
+            Scope::Diagnostics(ref document) => (&mut self.diagnostics, document),
+            Scope::Account { ref document, .. } => (&mut self.accounts, document),
+        };
+        if let Some(rows) = index.get_mut(document) {
+            let _removed = rows.remove(row);
+            if rows.is_empty() {
+                drop(index.remove(document));
+            }
+        }
+        Some(subscription)
+    }
+
+    /// Mark a change that the table must keep, and give the rows as they
+    /// stand, encoded for the table. The caller writes the snapshot after it
+    /// lets go of the lock.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The error encoding a row.
+    fn snapshot(&mut self) -> io::Result<Snapshot>
+    {
+        self.generation = self.generation.next();
+        let rows: Vec<&Kept> = self
+            .rows
+            .values()
+            .map(|subscription| &subscription.kept)
+            .collect();
+        Snapshot::of(self.generation, &rows)
+    }
+
+    /// Owe `state`, a state of the frame of `document`, to each subscription
+    /// that follows the frame.
+    ///
+    /// # Specification
+    /// trivial.
+    fn publish_diagnostics(
+        &mut self,
+        document: &DocumentUri,
+        state: &State,
+        deliveries: &Deliveries,
+    )
+    {
+        let Some(rows) = self.diagnostics.get(document)
         else {
             return;
         };
         for row in rows {
-            let (Some(subscription), &Row::Subscription(_, ref tool_call_id)) =
-                (self.rows.get_mut(row), row)
+            if let Some(subscription) = self.rows.get_mut(row) {
+                subscription.owe(row, state, deliveries);
+            }
+        }
+    }
+
+    /// The names of the declarations of `document` that a subscription
+    /// follows.
+    ///
+    /// # Specification
+    /// trivial.
+    fn declarations(
+        &self,
+        document: &DocumentUri,
+    ) -> BTreeSet<String>
+    {
+        self.accounts
+            .get(document)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| match self.rows.get(row)?.kept.scope {
+                Scope::Account {
+                    ref declaration, ..
+                } => Some(declaration.clone()),
+                Scope::Diagnostics(_) => None,
+            })
+            .collect()
+    }
+
+    /// Owe each subscription that follows a declaration of `document` the
+    /// state of that declaration in `states`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn publish_accounts(
+        &mut self,
+        document: &DocumentUri,
+        states: &BTreeMap<String, State>,
+        deliveries: &Deliveries,
+    )
+    {
+        let Some(rows) = self.accounts.get(document)
+        else {
+            return;
+        };
+        for row in rows {
+            let Some(subscription) = self.rows.get_mut(row)
             else {
                 continue;
             };
-            if subscription.last.as_ref() == Some(&state.text) {
-                continue;
+            let state = match subscription.kept.scope {
+                Scope::Account {
+                    ref declaration, ..
+                } => states.get(declaration),
+                Scope::Diagnostics(_) => None,
+            };
+            if let Some(state) = state {
+                subscription.owe(row, state, deliveries);
             }
-            subscription.last = Some(Arc::clone(&state.text));
-            let version = state.version;
-            deliveries.owe(row.clone(), Post {
-                callback_url: Arc::clone(&subscription.callback_url),
-                token: subscription.token.clone(),
-                key: alloc::format!("{tool_call_id}@{version}"),
-                head: alloc::format!("{}{version},\"text\":", subscription.routing),
-                text: Arc::clone(&state.text),
-            });
         }
     }
 }
@@ -516,6 +730,10 @@ enum Route
     Manifest,
     /// A call.
     Invoke,
+    /// The end of one subscription, by the `tool_call_id` of its call.
+    Cancel,
+    /// The end of each subscription of one conversation, by its `thread_id`.
+    Close,
     /// A path the toolset does not serve.
     Unknown,
     /// A body past [`BODY_LIMIT`].
@@ -534,7 +752,8 @@ struct Request
 }
 
 /// The hub's Reactive Agent Protocol face: a listener, the store of the calls
-/// it acknowledged, the calls that a crash cut short, and the subscriptions.
+/// it acknowledged, the calls that a crash cut short, and the subscriptions
+/// with their table.
 pub struct Toolset
 {
     /// The listener, bound on the loopback interface.
@@ -546,6 +765,8 @@ pub struct Toolset
     lost: Vec<(Pending, Option<Answer>)>,
     /// The subscriptions.
     subscriptions: Subscriptions,
+    /// The table that keeps the subscriptions.
+    table: Table,
     /// When to retry a delivery, and how often.
     policy: Policy,
 }
@@ -553,34 +774,43 @@ pub struct Toolset
 impl Toolset
 {
     /// A toolset that answers on `listener`, keeps its rows in the file
-    /// `calls`, and retries its deliveries as `policy` states.
+    /// `calls` and its subscriptions in the file `subscriptions`, and retries
+    /// its deliveries as `policy` states.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the directory of `calls` exists, made readable by its owner
-    ///   alone when this call made it, and `calls` is open to append, made
-    ///   readable by its owner alone when this call made it. Each row of
-    ///   `calls` that no settlement follows is kept with its answer, when the
-    ///   store holds one, to be delivered again once the toolset serves. A row
-    ///   with no answer is answered with an error.
+    /// - ensures: the directories of `calls` and `subscriptions` exist, made
+    ///   readable by their owner alone when this call made them, and `calls` is
+    ///   open to append, made readable by its owner alone when this call made
+    ///   it. Each row of `calls` that no settlement follows is kept with its
+    ///   answer, when the store holds one, to be delivered again once the
+    ///   toolset serves. A row with no answer is answered with an error. Each
+    ///   row of `subscriptions` is resumed: once the toolset serves, it hears
+    ///   the states of its scope whose version is past its `last_version`.
     /// - provides: `gandr serve`'s face, opened before the hub runs, so a store
-    ///   that cannot open stops the command.
-    /// - fails: when the directory cannot be made, or the file opened or read.
+    ///   or a table that cannot open stops the command.
+    /// - fails: when a directory cannot be made, or a file opened or read, or
+    ///   `subscriptions` holds no table.
     /// - panics: none.
-    /// - executable: none — the effects are a directory and a file.
+    /// - executable: none — the effects are directories and files.
     ///
     /// # Errors
-    /// The error making the directory, or opening or reading the file.
+    /// The error making a directory, or opening or reading a file, or
+    /// [`io::ErrorKind::InvalidData`] for a file that holds no table.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a store that holds an open row, an answered row and a
     ///   settled one opens. The open row is answered with an error, the
-    ///   answered row with its answer, and the store is then empty.
+    ///   answered row with its answer, and the store is then empty. A table
+    ///   that an earlier toolset wrote resumes its subscription, which hears a
+    ///   later state and no state of the version it took.
     /// - witness: `rap::tests::a_call_a_crash_lost_is_answered_with_an_error`
+    /// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
     #[inline]
     pub fn open(
         listener: TcpListener,
         calls: &Path,
+        subscriptions: &Path,
         policy: Policy,
     ) -> io::Result<Self>
     {
@@ -590,6 +820,7 @@ impl Toolset
                 .mode(0o700)
                 .create(directory)?;
         }
+        let (table, kept) = Table::open(subscriptions)?;
         let written = match std::fs::read(calls) {
             Ok(written) => written,
             Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
@@ -631,75 +862,10 @@ impl Toolset
                 line: Buffer::default(),
             },
             lost,
-            subscriptions: Subscriptions::default(),
+            subscriptions: Subscriptions::resumed(kept),
+            table,
             policy,
         })
-    }
-
-    /// Subscribe the runtime at `callback_url` to the frames of the document
-    /// at `scope`, as the row `group_id` and `tool_call_id`, with the bearer
-    /// `token` when it sent one.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: once the toolset serves, each publication that changes the
-    ///   frame of `scope` owes one `subscription_event` to `callback_url`. A
-    ///   subscription that has the same row is replaced.
-    /// - provides: the table that the subscription operations of the toolset
-    ///   fill.
-    /// - fails: when `callback_url` is not an `http` URL.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`io::ErrorKind::InvalidInput`] for a callback URL that is not `http`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — through a running hub, two edits that change the
-    ///   diagnostics of a document reach a subscribed listener as two events
-    ///   with their cards and versions.
-    /// - witness: `rap::tests::a_subscription_hears_each_new_frame`
-    #[spec(
-        captures: [http = callback_url.starts_with("http://")],
-        ensures: |ref ret| ret.is_ok() == http,
-    )]
-    #[inline]
-    pub fn subscribe(
-        &mut self,
-        group_id: String,
-        tool_call_id: String,
-        callback_url: String,
-        token: Option<String>,
-        scope: DocumentUri,
-    ) -> io::Result<()>
-    {
-        if !callback_url.starts_with("http://") {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "the callback URL is not an `http` URL",
-            ));
-        }
-        let routing = alloc::format!(
-            "{{\"type\":\"subscription_event\",\"group_id\":{},\"tool_call_id\":{},\"associative\":true,\"final\":false,\"version\":",
-            quoted(&group_id),
-            quoted(&tool_call_id)
-        );
-        let row = Row::Subscription(group_id, tool_call_id);
-        self.subscriptions.cancel(&row);
-        let _fresh = self
-            .subscriptions
-            .scopes
-            .entry(scope.clone())
-            .or_default()
-            .insert(row.clone());
-        drop(self.subscriptions.rows.insert(row, Subscription {
-            callback_url: Arc::from(callback_url),
-            token: token.map(Arc::from),
-            routing,
-            scope,
-            last: None,
-            unreachable: false,
-        }));
-        Ok(())
     }
 
     /// The address the toolset listens on.
@@ -734,10 +900,16 @@ impl Toolset
     ///   takes or refuses it. The text is the answer of the tool as JSON, or a
     ///   text that starts with `Error: `. The result of `diagnostics` carries
     ///   the cards of the document's frame, its version, and the lines that
-    ///   `gandr view` prints as its `display_as`. Each publication that changes
-    ///   the frame of a document owes one `subscription_event` to each
-    ///   subscription that follows the document. Each delivery is retried as
-    ///   the policy states.
+    ///   `gandr view` prints as its `display_as`. A subscription operation adds
+    ///   a row to the table before its result, which carries `subscription:
+    ///   true`. Each publication that changes the frame of a document owes one
+    ///   `subscription_event` to each subscription to the frame, and each
+    ///   admission that changes the card of a declaration owes one to each
+    ///   subscription to the declaration, unless the runtime took a state of
+    ///   that version or a later one. A `POST` to `/cancel_tool_call` or
+    ///   `/close_thread` is answered `200` once the rows it names are dropped
+    ///   from the table and their deliveries forgotten. Each delivery is
+    ///   retried as the policy states.
     /// - provides: `gandr serve`, the face beside the hub's socket.
     /// - fails: when accepting a connection fails on every acceptor for a
     ///   reason other than an interruption or an aborted connection.
@@ -756,13 +928,17 @@ impl Toolset
     ///   it with an error and no bearer; a body that is not JSON is answered
     ///   `400`; a client that stalls holds no other call. `diagnostics` reaches
     ///   the listener with the cards and the printed lines. A subscription
-    ///   hears one event for each edit that changes the frame. A listener that
-    ///   answers `503` once hears the event again after the first wait, and one
-    ///   that answers `404` hears nothing more.
+    ///   hears one event for each edit that changes the frame, and one for each
+    ///   admission that changes the card it follows. A cancel and a closed
+    ///   thread end their rows. A listener that answers `503` once hears the
+    ///   event again after the first wait, and one that answers `404` hears
+    ///   nothing more.
     /// - witness: `rap::tests::the_toolset_answers_a_call_by_its_callback`
     /// - witness: `rap::tests::a_call_a_crash_lost_is_answered_with_an_error`
     /// - witness: `rap::tests::a_stalled_client_holds_no_other_call`
     /// - witness: `rap::tests::a_subscription_hears_each_new_frame`
+    /// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
+    /// - witness: `rap::tests::a_cancel_and_a_closed_thread_drop_their_rows`
     /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -786,6 +962,7 @@ impl Toolset
             store,
             lost,
             subscriptions,
+            table,
             policy,
         } = self;
         let manifest = manifest(listener.local_addr()?);
@@ -804,7 +981,12 @@ impl Toolset
             }
         }
         let (changed, changes) = channel();
-        lock(workspace).watch(peer, changed);
+        let (settled, settlements) = channel();
+        {
+            let mut watched = lock(workspace);
+            watched.watch(peer, changed);
+            watched.watch_accounts(peer, settled);
+        }
         // An acknowledgement takes the store's lock for one line alone, so
         // acceptors at the host's width answer in parallel. Two at least keep a
         // client that stalls from holding every other call. The deliveries
@@ -824,19 +1006,43 @@ impl Toolset
             &log,
             &deliveries,
         );
+        let table = &table;
         thread::scope(|scope| {
-            drop(scope.spawn(move || work(queued, workspace, store, deliveries, log)));
+            drop(scope.spawn(move || {
+                work(
+                    queued,
+                    workspace,
+                    store,
+                    subscriptions,
+                    table,
+                    deliveries,
+                    log,
+                );
+            }));
             drop(scope.spawn(move || fan_out(changes, workspace, subscriptions, deliveries)));
+            drop(scope.spawn(move || {
+                fan_out_accounts(settlements, workspace, subscriptions, deliveries);
+            }));
             for _delivery in 0 .. width {
                 drop(scope.spawn(move || {
-                    deliveries.run(|row, fate| told(row, &fate, store, subscriptions, log));
+                    deliveries.run(|row, fate| {
+                        told(row, &fate, store, subscriptions, table, log);
+                    });
                 }));
             }
             // Every acceptor starts before the first join.
             let mut acceptors = Vec::with_capacity(width);
             for _acceptor in 0 .. width {
-                let queue = queue.clone();
-                acceptors.push(scope.spawn(move || accept(listener, manifest, store, &queue)));
+                let desk = Desk {
+                    manifest,
+                    store,
+                    queue: queue.clone(),
+                    subscriptions,
+                    table,
+                    deliveries,
+                    log,
+                };
+                acceptors.push(scope.spawn(move || accept(listener, &desk)));
             }
             // The worker ends once every acceptor has ended and it has answered
             // every queued call.
@@ -1016,17 +1222,38 @@ fn manifest(address: SocketAddr) -> Buffer
     Buffer(answer)
 }
 
-/// Accept each connection `listener` takes and answer its one request, until
-/// accepting fails.
+/// What each acceptor reads and writes besides its connection: the manifest,
+/// the store, the worker's queue, the subscriptions and their table, the
+/// deliveries and the log.
+struct Desk<'toolset, Log>
+{
+    /// The answer to a `GET` of the manifest.
+    manifest: &'toolset Buffer,
+    /// The store of rows.
+    store: &'toolset Mutex<Store>,
+    /// The worker's queue.
+    queue: Sender<Call>,
+    /// The subscriptions.
+    subscriptions: &'toolset Mutex<Subscriptions>,
+    /// The table that keeps the subscriptions.
+    table: &'toolset Table,
+    /// The deliveries.
+    deliveries: &'toolset Deliveries,
+    /// Where the toolset tells what went wrong.
+    log: &'toolset Mutex<Log>,
+}
+
+/// Accept each connection `listener` takes and answer its one request at
+/// `desk`, until accepting fails.
 ///
 /// # Specification
 /// trivial.
-fn accept(
+fn accept<Log>(
     listener: &TcpListener,
-    manifest: &Buffer,
-    store: &Mutex<Store>,
-    queue: &Sender<Call>,
+    desk: &Desk<'_, Log>,
 ) -> io::Result<()>
+where
+    Log: Write,
 {
     let mut buffer = Buffer::default();
     loop {
@@ -1043,31 +1270,39 @@ fn accept(
             Err(error) => return Err(error),
         };
         // A client that faults costs its own connection alone.
-        drop(answer(&mut stream, &mut buffer, manifest, store, queue));
+        drop(answer(&mut stream, &mut buffer, desk));
     }
 }
 
-/// Read the one request on `stream` into `buffer`, and answer it.
+/// Read the one request on `stream` into `buffer`, and answer it at `desk`.
 ///
 /// # Specification
 /// trivial.
-fn answer(
+fn answer<Log>(
     stream: &mut TcpStream,
     buffer: &mut Buffer,
-    manifest: &Buffer,
-    store: &Mutex<Store>,
-    queue: &Sender<Call>,
+    desk: &Desk<'_, Log>,
 ) -> io::Result<()>
+where
+    Log: Write,
 {
     stream.set_read_timeout(Some(REQUEST_WAIT))?;
     stream.set_nodelay(true)?;
     let request = read_request(stream, buffer)?;
+    let body = buffer.0.get(request.body).unwrap_or_default();
     match request.route {
-        Route::Manifest => stream.write_all(&manifest.0),
+        Route::Manifest => stream.write_all(&desk.manifest.0),
         Route::Unknown => stream.write_all(NOT_FOUND),
         Route::TooLarge => stream.write_all(TOO_LARGE),
+        // RAP's cancellation and closure are best effort, so each is answered
+        // `200` whatever its body names.
+        Route::Cancel | Route::Close => {
+            // A body that is not JSON names no row.
+            let named = serde_json::from_slice(body).unwrap_or(Value::Null);
+            ended(request.route, &named, desk);
+            stream.write_all(ACKNOWLEDGED)
+        },
         Route::Invoke => {
-            let body = buffer.0.get(request.body).unwrap_or_default();
             let invocation = match serde_json::from_slice::<Invocation>(body) {
                 Ok(invocation) if invocation.callback_url.starts_with("http://") => invocation,
                 Ok(_) => return refuse(stream, &"the callback URL is not an `http` URL"),
@@ -1099,18 +1334,69 @@ fn answer(
                         u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
                     }),
             };
-            if lock(store).opened(&pending).is_err() {
+            if lock(desk.store).opened(&pending).is_err() {
                 return stream.write_all(UNSTORED);
             }
             let acknowledged = stream.write_all(ACKNOWLEDGED);
             // The row is written: the call is answered whether or not the
             // acknowledgement reached its caller.
-            drop(queue.send(Call {
+            drop(desk.queue.send(Call {
                 pending,
                 arguments: Some(arguments),
             }));
             acknowledged
         },
+    }
+}
+
+/// Drop each subscription that `request`, the body of a request on `route`,
+/// names: a cancel names a `tool_call_id`, and narrows to a `group_id` when it
+/// names one. A closure names a `thread_id`, the `group_id` of its rows.
+/// Forget the deliveries of each row dropped, and write the table at `desk`
+/// once. A body that names no row drops nothing.
+///
+/// # Specification
+/// trivial.
+fn ended<Log>(
+    route: Route,
+    request: &Value,
+    desk: &Desk<'_, Log>,
+) where
+    Log: Write,
+{
+    let named = |field| request.get(field).and_then(Value::as_str);
+    let mut subscriptions = lock(desk.subscriptions);
+    let ending: Vec<Row> = subscriptions
+        .rows
+        .keys()
+        .filter(|&row| match (route, row) {
+            (Route::Cancel, &Row::Subscription(ref group_id, ref tool_call_id)) => {
+                named("tool_call_id") == Some(tool_call_id.as_str())
+                    && named("group_id").is_none_or(|named| named == group_id)
+            },
+            (Route::Close, &Row::Subscription(ref group_id, _)) => {
+                named("thread_id") == Some(group_id.as_str())
+            },
+            _ => false,
+        })
+        .cloned()
+        .collect();
+    if ending.is_empty() {
+        return;
+    }
+    for row in &ending {
+        drop(subscriptions.remove(row));
+        desk.deliveries.forget(row);
+    }
+    let snapshot = subscriptions.snapshot();
+    drop(subscriptions);
+    // A flush to the disk takes milliseconds, so the file is written outside
+    // the lock of the subscriptions.
+    if let Err(error) = snapshot.and_then(|snapshot| desk.table.write(&snapshot)) {
+        drop(writeln!(
+            lock(desk.log),
+            "the toolset did not write its table after a request ended a subscription: {error}"
+        ));
     }
 }
 
@@ -1162,6 +1448,8 @@ fn read_request(
                 let route = match (request.method, request.path) {
                     (Some("GET"), Some(MANIFEST)) => Route::Manifest,
                     (Some("POST"), Some(INVOKE)) => Route::Invoke,
+                    (Some("POST"), Some(CANCEL)) => Route::Cancel,
+                    (Some("POST"), Some(CLOSE)) => Route::Close,
                     _ => Route::Unknown,
                 };
                 let mut length = 0_usize;
@@ -1208,8 +1496,9 @@ fn read_request(
 }
 
 /// Answer each call `queued` holds over `workspace`, keep its answer in
-/// `store`, and owe its result to `deliveries`, telling `log` of each answer
-/// that the store does not keep.
+/// `store`, open the subscription it confirms in `subscriptions` and `table`,
+/// and owe its result to `deliveries`, telling `log` of each answer that the
+/// store does not keep.
 ///
 /// # Specification
 /// trivial.
@@ -1217,13 +1506,40 @@ fn work<Log>(
     queued: Receiver<Call>,
     workspace: &Mutex<Workspace>,
     store: &Mutex<Store>,
+    subscriptions: &Mutex<Subscriptions>,
+    table: &Table,
     deliveries: &Deliveries,
     log: &Mutex<Log>,
 ) where
     Log: Write,
 {
     for Call { pending, arguments } in queued {
-        let answer = answered(&pending, arguments, workspace);
+        let mut answer = answered(&pending, arguments, workspace);
+        // A subscription reaches the table before its result is owed. The
+        // lock is held until the result is owed, so that no event of the
+        // subscription is owed before its result. This is the one write of
+        // the table under the lock, and a subscription opens rarely.
+        let opened = if let Some(ref scope) = answer.subscription {
+            let mut held = lock(subscriptions);
+            let row = held.insert(Kept {
+                group_id: pending.group_id.clone(),
+                tool_call_id: pending.id.clone(),
+                callback_url: pending.callback_url.clone(),
+                token: pending.token.clone(),
+                scope: scope.clone(),
+                last_version: None,
+            });
+            if let Err(error) = held.snapshot().and_then(|snapshot| table.write(&snapshot)) {
+                drop(held.remove(&row));
+                answer.subscription = None;
+                answer.text =
+                    alloc::format!("Error: the toolset did not keep the subscription: {error}");
+            }
+            Some(held)
+        }
+        else {
+            None
+        };
         let kept = lock(store).answered(&answer);
         if let Err(error) = kept {
             drop(writeln!(
@@ -1237,6 +1553,7 @@ fn work<Log>(
             Row::Call(pending.group_id.clone(), pending.id.clone()),
             result(&pending, &answer),
         );
+        drop(opened);
     }
 }
 
@@ -1257,6 +1574,7 @@ fn answered(
         text: String::new(),
         display: None,
         version: None,
+        subscription: None,
     };
     answer.text = match arguments {
         None => String::from(LOST),
@@ -1279,14 +1597,25 @@ fn answered(
                 },
             }
         },
-        // The table answers every other operation, and refuses a name that it
+        // A subscription confirms with its scope, and the worker opens it. The
+        // table answers every other operation, and refuses a name that it
         // does not hold.
         Some(arguments) => {
             let name = Value::String(pending.operation.clone());
-            let called = tools::call(&mut lock(workspace), Some(&name), &arguments);
-            match called {
-                Ok(answer) => answer.to_string(),
-                Err(refusal) => alloc::format!("Error: {refusal}"),
+            match tools::subscription(&name, &arguments) {
+                Some(Ok(scope)) => {
+                    let text = json!({ "subscription": pending.id, "scope": &scope }).to_string();
+                    answer.subscription = Some(scope);
+                    text
+                },
+                Some(Err(refusal)) => alloc::format!("Error: {refusal}"),
+                None => {
+                    let called = tools::call(&mut lock(workspace), Some(&name), &arguments);
+                    match called {
+                        Ok(answer) => answer.to_string(),
+                        Err(refusal) => alloc::format!("Error: {refusal}"),
+                    }
+                },
             }
         },
     };
@@ -1371,11 +1700,15 @@ fn result(
         head.push_str(&version.to_string());
         head.push(',');
     }
+    if answer.subscription.is_some() {
+        head.push_str("\"subscription\":true,");
+    }
     head.push_str("\"text\":");
     Post {
         callback_url: Arc::from(pending.callback_url.as_str()),
         token: pending.token.as_deref().map(Arc::from),
         key: pending.id.clone(),
+        version: answer.version,
         head,
         text: Arc::from(quoted(&answer.text)),
     }
@@ -1395,7 +1728,7 @@ fn fan_out(
 )
 {
     for uri in changes {
-        let followed = lock(subscriptions).scopes.contains_key(&uri);
+        let followed = lock(subscriptions).diagnostics.contains_key(&uri);
         if !followed {
             continue;
         }
@@ -1411,14 +1744,89 @@ fn fan_out(
             version: i32::from(document.version),
             text: Arc::from(quoted(&cards(document, report))),
         };
-        lock(subscriptions).publish(&uri, &state, deliveries);
+        lock(subscriptions).publish_diagnostics(&uri, &state, deliveries);
+    }
+}
+
+/// Owe each subscription to a declaration of a document that `settlements`
+/// names the card of that declaration, after each admission that settles the
+/// document, until the workspace ends the watch. A document that no
+/// subscription follows costs a lookup.
+///
+/// # Specification
+/// trivial.
+fn fan_out_accounts(
+    settlements: Receiver<DocumentUri>,
+    workspace: &Mutex<Workspace>,
+    subscriptions: &Mutex<Subscriptions>,
+    deliveries: &Deliveries,
+)
+{
+    // One map serves every pass, and each pass clears it.
+    let mut states: BTreeMap<String, State> = BTreeMap::new();
+    for uri in settlements {
+        states.clear();
+        let declarations = lock(subscriptions).declarations(&uri);
+        if declarations.is_empty() {
+            continue;
+        }
+        let Some((document, cards)) = lock(workspace).accounted(&uri)
+        else {
+            continue;
+        };
+        // The first card of a name in document order is the one that a
+        // subscription to the name follows.
+        for card in &cards {
+            if declarations.contains(&card.name) && !states.contains_key(&card.name) {
+                let accounted = Accounted {
+                    uri: &uri,
+                    declaration: &card.name,
+                    card: Some(card),
+                };
+                let state = account_state(&accounted, &document);
+                drop(states.insert(String::from(card.name.as_str()), state));
+            }
+        }
+        // A subscription to a name that no declaration has follows null.
+        for declaration in declarations {
+            if let alloc::collections::btree_map::Entry::Vacant(vacant) = states.entry(declaration)
+            {
+                let accounted = Accounted {
+                    uri: &uri,
+                    declaration: vacant.key(),
+                    card: None,
+                };
+                let state = account_state(&accounted, &document);
+                let _null = vacant.insert(state);
+            }
+        }
+        lock(subscriptions).publish_accounts(&uri, &states, deliveries);
+    }
+}
+
+/// The state that `accounted` gives each subscription to its declaration in
+/// `document`.
+///
+/// # Specification
+/// trivial.
+fn account_state(
+    accounted: &Accounted<'_>,
+    document: &DocId,
+) -> State
+{
+    State {
+        version: i32::from(document.version),
+        text: Arc::from(quoted(
+            &serde_json::to_string(accounted).unwrap_or_default(),
+        )),
     }
 }
 
 /// Act on `fate`, how the deliveries of `row` ended: settle a call that a
-/// runtime took or refused, drop a subscription that a runtime refused, and
-/// mark one whose retries are spent. Tell `log` of each fate but a delivery
-/// taken, and of a subscription that is reachable again.
+/// runtime took or refused, record the version of a state that a runtime took,
+/// drop a subscription that a runtime refused, and mark one whose retries are
+/// spent. Tell `log` of each fate but a delivery taken, of a subscription that
+/// is reachable again, and of a table that could not be written.
 ///
 /// # Specification
 /// trivial.
@@ -1427,13 +1835,14 @@ fn told<Log>(
     fate: &Fate,
     store: &Mutex<Store>,
     subscriptions: &Mutex<Subscriptions>,
+    table: &Table,
     log: &Mutex<Log>,
 ) where
     Log: Write,
 {
     match (row, fate) {
         (&Row::Call(..), &Fate::Spent(..)) => {},
-        (&Row::Call(..), &(Fate::Taken | Fate::Refused(_))) => {
+        (&Row::Call(..), &(Fate::Taken(_) | Fate::Refused(_))) => {
             let settled = lock(store).settled(row);
             if let Err(error) = settled {
                 drop(writeln!(
@@ -1442,23 +1851,57 @@ fn told<Log>(
                 ));
             }
         },
-        (&Row::Subscription(..), &Fate::Taken) => {
-            let recovered = lock(subscriptions)
-                .rows
-                .get_mut(row)
-                .is_some_and(|subscription| core::mem::take(&mut subscription.unreachable));
+        (&Row::Subscription(..), &Fate::Taken(version)) => {
+            let mut held = lock(subscriptions);
+            let (recovered, advanced) =
+                held.rows
+                    .get_mut(row)
+                    .map_or((false, false), |subscription| {
+                        let advanced = version.is_some_and(|version| {
+                            subscription
+                                .kept
+                                .last_version
+                                .is_none_or(|taken| version > taken)
+                        });
+                        if advanced {
+                            subscription.kept.last_version = version;
+                        }
+                        (core::mem::take(&mut subscription.unreachable), advanced)
+                    });
+            let snapshot = advanced.then(|| held.snapshot());
+            drop(held);
             if recovered {
                 drop(writeln!(lock(log), "{row} is reachable again"));
             }
+            // A flush to the disk takes milliseconds, so the file is written
+            // outside the lock of the subscriptions.
+            let saved = snapshot.map_or(Ok(()), |snapshot| table.write(&snapshot?));
+            if let Err(error) = saved {
+                drop(writeln!(
+                    lock(log),
+                    "the toolset did not write its table after {row} took a state: {error}"
+                ));
+            }
         },
-        (&Row::Subscription(..), &Fate::Refused(_)) => lock(subscriptions).cancel(row),
+        (&Row::Subscription(..), &Fate::Refused(_)) => {
+            let mut held = lock(subscriptions);
+            let snapshot = held.remove(row).map(|_dropped| held.snapshot());
+            drop(held);
+            let saved = snapshot.map_or(Ok(()), |snapshot| table.write(&snapshot?));
+            if let Err(error) = saved {
+                drop(writeln!(
+                    lock(log),
+                    "the toolset did not write its table after it dropped {row}: {error}"
+                ));
+            }
+        },
         (&Row::Subscription(..), &Fate::Spent(..)) => {
             if let Some(subscription) = lock(subscriptions).rows.get_mut(row) {
                 subscription.unreachable = true;
             }
         },
     }
-    if !matches!(*fate, Fate::Taken) {
+    if !matches!(*fate, Fate::Taken(_)) {
         drop(writeln!(lock(log), "the delivery to {row} was {fate}"));
     }
 }
@@ -1475,10 +1918,10 @@ mod tests
     use std::io::Write as _;
     use std::net::TcpListener;
     use std::net::TcpStream;
+    use std::path::Path;
     use std::path::PathBuf;
     use std::thread;
 
-    use gandr_surface_lsp::DocumentUri;
     use gandr_surface_lsp::Peer;
     use gandr_surface_lsp::Workspace;
     use gandr_surface_lsp::bind;
@@ -1612,6 +2055,67 @@ mod tests
         scratch.socket().with_file_name("state").join("calls.jsonl")
     }
 
+    /// The subscription table inside `scratch`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn table(scratch: &Scratch) -> PathBuf
+    {
+        scratch
+            .socket()
+            .with_file_name("state")
+            .join("subscriptions.json")
+    }
+
+    /// A toolset whose store and table are inside `scratch`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opened(scratch: &Scratch) -> Toolset
+    {
+        Toolset::open(
+            loopback(),
+            &calls(scratch),
+            &table(scratch),
+            Policy::default(),
+        )
+        .expect("the store and the table open")
+    }
+
+    /// Each row of the table at `path` as its `tool_call_id` and its
+    /// `last_version`, once they are `expected` or after ten seconds. A table
+    /// with no file has no row.
+    ///
+    /// # Specification
+    /// trivial.
+    fn awaited(
+        path: &Path,
+        expected: &Value,
+    ) -> Value
+    {
+        let deadline = std::time::Instant::now()
+            .checked_add(Duration::from_secs(10))
+            .expect("the deadline is representable");
+        loop {
+            let rows: Value = match std::fs::read(path) {
+                Ok(bytes) => serde_json::from_slice(&bytes).expect("the table is JSON"),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!([]),
+                Err(error) => panic!("the table cannot be read: {error}"),
+            };
+            let summary = Value::Array(
+                rows.as_array()
+                    .expect("the table is an array")
+                    .iter()
+                    .map(|row| json!([row.get("tool_call_id"), row.get("last_version")]))
+                    .collect(),
+            );
+            if &summary == expected || std::time::Instant::now() >= deadline {
+                return summary;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// Send `request` to `address` and read the answer until the toolset
     /// closes the connection.
     ///
@@ -1726,13 +2230,18 @@ mod tests
             .set_nonblocking(true)
             .expect("the listener stops blocking");
         let started = std::time::Instant::now();
+        let mut silent = Answer(true);
         while started.elapsed() < wait {
             if callback.accept().is_ok() {
-                return Answer(false);
+                silent = Answer(false);
+                break;
             }
             thread::sleep(Duration::from_millis(10));
         }
-        Answer(true)
+        callback
+            .set_nonblocking(false)
+            .expect("the listener blocks again");
+        silent
     }
 
     /// The frame that the text of `message`, a result or an event, holds.
@@ -1768,8 +2277,7 @@ mod tests
     fn both_faces_offer_one_table()
     {
         let scratch = Scratch::new(&json!("faces"));
-        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
-            .expect("the store opens");
+        let toolset = opened(&scratch);
         let address = toolset.address().expect("the toolset listens");
         hub(&scratch, toolset);
         let mut editor = Editor::new(&scratch);
@@ -1783,16 +2291,29 @@ mod tests
             body: Vec::new(),
         })
         .json();
-        let offered = entries(manifest.get("tools"));
+        let (subscriptions, called): (Vec<Value>, Vec<Value>) = entries(manifest.get("tools"))
+            .into_iter()
+            .partition(|entry| {
+                entry
+                    .get(0)
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| name.starts_with("subscribe_"))
+            });
         assert_eq!(
-            offered.len(),
-            tools::list().len(),
-            "the manifest offers each row of the table"
+            subscriptions
+                .iter()
+                .map(|entry| entry.get(0))
+                .collect::<Vec<_>>(),
+            [
+                Some(&json!("subscribe_account")),
+                Some(&json!("subscribe_diagnostics"))
+            ],
+            "the manifest alone offers the subscriptions"
         );
         assert_eq!(
-            offered,
+            called,
             entries(listed.pointer("/result/tools")),
-            "the two faces name the same operations with the same schemas"
+            "the two faces name the same calls with the same schemas"
         );
 
         let arguments = json!({ "uri": uri, "line": 0_u32, "character": 4_u32 });
@@ -1844,8 +2365,7 @@ mod tests
     fn the_toolset_answers_a_call_by_its_callback()
     {
         let scratch = Scratch::new(&json!("rap"));
-        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
-            .expect("the store opens");
+        let toolset = opened(&scratch);
         let address = toolset.address().expect("the toolset listens");
         hub(&scratch, toolset);
         let mut editor = Editor::new(&scratch);
@@ -2028,8 +2548,8 @@ mod tests
                 .collect::<String>(),
         )
         .expect("the store is written");
-        let toolset =
-            Toolset::open(loopback(), &calls, Policy::default()).expect("the store opens");
+        let toolset = Toolset::open(loopback(), &calls, &table(&scratch), Policy::default())
+            .expect("the store and the table open");
         hub(&scratch, toolset);
         let mut delivered = Vec::new();
         for _row in 0_i32 .. 2_i32 {
@@ -2070,8 +2590,7 @@ mod tests
     fn a_stalled_client_holds_no_other_call()
     {
         let scratch = Scratch::new(&json!("rap-stalled"));
-        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
-            .expect("the store opens");
+        let toolset = opened(&scratch);
         let address = toolset.address().expect("the toolset listens");
         hub(&scratch, toolset);
         let mut stalled = TcpStream::connect(address).expect("the toolset accepts");
@@ -2095,33 +2614,69 @@ mod tests
         drop(stalled);
     }
 
-    /// A toolset whose store is in `scratch`, with the runtime at `callback`
-    /// subscribed to the frames of `uri` as `watch-1` of `thread-1`, and the
-    /// bearer `abc`.
+    /// Subscribe the runtime at `callback` through the toolset at `address`
+    /// with `invocation`, which names the operation, its arguments, the `id`
+    /// and the `group_id`, with the bearer `abc`. Read the result that
+    /// confirms the subscription, and give its text.
     ///
     /// # Specification
     /// trivial.
     fn subscribed(
-        scratch: &Scratch,
+        address: SocketAddr,
         callback: &TcpListener,
-        uri: &Value,
-    ) -> Toolset
+        invocation: &Value,
+    ) -> Value
     {
-        let mut toolset =
-            Toolset::open(loopback(), &calls(scratch), Policy::default()).expect("the store opens");
-        toolset
-            .subscribe(
-                String::from("thread-1"),
-                String::from("watch-1"),
-                alloc::format!(
+        let mut invocation = invocation.clone();
+        if let Some(fields) = invocation.as_object_mut() {
+            drop(fields.insert(
+                String::from("callback_url"),
+                json!(alloc::format!(
                     "http://{}/events",
                     callback.local_addr().expect("the callback listens")
-                ),
-                Some(String::from("abc")),
-                DocumentUri::from(uri.as_str().unwrap_or_default()),
-            )
-            .expect("the runtime subscribes");
-        toolset
+                )),
+            ));
+        }
+        let acknowledged = invoke(address, &invocation, Some(&json!("abc")));
+        assert!(
+            acknowledged.head.starts_with("HTTP/1.1 200 "),
+            "{}",
+            acknowledged.head
+        );
+        let confirmed = received(callback).json();
+        assert_eq!(
+            (
+                confirmed.get("type"),
+                confirmed.get("id"),
+                confirmed.get("subscription")
+            ),
+            (
+                Some(&json!("tool_result")),
+                invocation.get("id"),
+                Some(&json!(true))
+            ),
+            "the result confirms the subscription: {confirmed}"
+        );
+        framed(&confirmed)
+    }
+
+    /// A `POST` of `body` to the path `path` at `address`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn posted(
+        address: SocketAddr,
+        path: &Value,
+        body: &Value,
+    ) -> Message
+    {
+        let body = body.to_string().into_bytes();
+        let head = alloc::format!(
+            "POST {} HTTP/1.1\r\nhost: {address}\r\ncontent-type: application/json\r\ncontent-length: {}",
+            path.as_str().unwrap_or_default(),
+            body.len()
+        );
+        exchange(address, &Message { head, body })
     }
 
     #[test]
@@ -2130,7 +2685,19 @@ mod tests
         let scratch = Scratch::new(&json!("rap-subscribed"));
         let callback = loopback();
         let uri = json!("file:///tmp/subscribed.gandr");
-        hub(&scratch, subscribed(&scratch, &callback, &uri));
+        let toolset = opened(&scratch);
+        let address = toolset.address().expect("the toolset listens");
+        hub(&scratch, toolset);
+        assert_eq!(
+            subscribed(
+                address,
+                &callback,
+                &json!({ "operation": "subscribe_diagnostics", "arguments": { "uri": uri },
+                    "id": "watch-1", "group_id": "thread-1" })
+            ),
+            json!({ "subscription": "watch-1", "scope": { "diagnostics": uri } }),
+            "the result names the subscription and its scope, before the document opens"
+        );
         let mut editor = Editor::new(&scratch);
         let mut other = json!("file:///tmp/other.gandr");
         for (version, text, count) in [
@@ -2194,12 +2761,239 @@ mod tests
     }
 
     #[test]
+    fn an_account_subscription_outlives_a_restart_of_the_hub()
+    {
+        let earlier = Scratch::new(&json!("rap-account-earlier"));
+        let later = Scratch::new(&json!("rap-account-later"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/account.gandr");
+        let declared = json!("def one : Integer ;\ndef one = 1 ;\n");
+        let toolset = opened(&earlier);
+        let address = toolset.address().expect("the toolset listens");
+        hub(&earlier, toolset);
+        assert_eq!(
+            subscribed(
+                address,
+                &callback,
+                &json!({ "operation": "subscribe_account",
+                    "arguments": { "uri": uri, "declaration": "one" },
+                    "id": "watch-1", "group_id": "thread-1" })
+            ),
+            json!({ "subscription": "watch-1",
+                "scope": { "account": { "document": uri, "declaration": "one" } } }),
+            "the result names the subscription and its scope"
+        );
+        let mut editor = Editor::new(&earlier);
+        editor.edit(&uri, &json!(1_i32), &declared);
+        let first = received(&callback);
+        assert_eq!(
+            first.carries(&json!("idempotency-key: watch-1@1")),
+            Answer(true),
+            "an event is keyed by its version"
+        );
+        let first = first.json();
+        let card = framed(&first);
+        assert_eq!(
+            (
+                first.get("version"),
+                card.get("uri"),
+                card.get("declaration"),
+                card.pointer("/card/name")
+            ),
+            (
+                Some(&json!(1_i32)),
+                Some(&uri),
+                Some(&json!("one")),
+                Some(&json!("one"))
+            ),
+            "the event holds the card of the declaration, and its version beside it"
+        );
+        assert_eq!(
+            awaited(&table(&earlier), &json!([["watch-1", 1_i32]])),
+            json!([["watch-1", 1_i32]]),
+            "the table keeps the version that the runtime took"
+        );
+        drop(editor);
+
+        // A later hub opens the table that the earlier hub wrote, and a fresh
+        // subscription beside the resumed row shows when a state settles.
+        let toolset = Toolset::open(
+            loopback(),
+            &calls(&later),
+            &table(&earlier),
+            Policy::default(),
+        )
+        .expect("the store and the table open");
+        let address = toolset.address().expect("the toolset listens");
+        hub(&later, toolset);
+        drop(subscribed(
+            address,
+            &callback,
+            &json!({ "operation": "subscribe_account",
+                "arguments": { "uri": uri, "declaration": "one" },
+                "id": "watch-2", "group_id": "thread-2" }),
+        ));
+        let mut editor = Editor::new(&later);
+        let heard = |version: i32| {
+            let event = received(&callback).json();
+            assert_eq!(event.get("version"), Some(&json!(version)), "{event}");
+            json!([
+                event.get("tool_call_id"),
+                framed(&event).pointer("/card/name")
+            ])
+        };
+        editor.edit(&uri, &json!(1_i32), &declared);
+        assert_eq!(
+            heard(1_i32),
+            json!(["watch-2", "one"]),
+            "the fresh subscription hears the state of the version that the resumed row took"
+        );
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(300)),
+            Answer(true),
+            "the resumed row hears no state of the version that its runtime took"
+        );
+        editor.edit(
+            &uri,
+            &json!(2_i32),
+            &json!("def one : Integer ;\ndef one = 1 ;\n// a note\n"),
+        );
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(500)),
+            Answer(true),
+            "an edit that leaves the card the same sends nothing"
+        );
+        editor.edit(
+            &uri,
+            &json!(3_i32),
+            &json!("def one : Integer ;\ndef one = 2 ;\n"),
+        );
+        let mut changed = [heard(3_i32), heard(3_i32)];
+        changed.sort_by_key(ToString::to_string);
+        assert_eq!(
+            changed,
+            [json!(["watch-1", "one"]), json!(["watch-2", "one"])],
+            "an edit that changes the card reaches the resumed row and the fresh one"
+        );
+        assert_eq!(
+            awaited(
+                &table(&earlier),
+                &json!([["watch-1", 3_i32], ["watch-2", 3_i32]])
+            ),
+            json!([["watch-1", 3_i32], ["watch-2", 3_i32]]),
+            "the later hub keeps both rows at the version that the runtime took"
+        );
+        drop(editor);
+    }
+
+    #[test]
+    fn a_cancel_and_a_closed_thread_drop_their_rows()
+    {
+        let scratch = Scratch::new(&json!("rap-ended"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/ended.gandr");
+        let toolset = opened(&scratch);
+        let address = toolset.address().expect("the toolset listens");
+        hub(&scratch, toolset);
+        for (id, group_id) in [
+            ("watch-1", "thread-1"),
+            ("watch-2", "thread-1"),
+            ("watch-3", "thread-2"),
+        ] {
+            drop(subscribed(
+                address,
+                &callback,
+                &json!({ "operation": "subscribe_diagnostics", "arguments": { "uri": uri },
+                    "id": id, "group_id": group_id }),
+            ));
+        }
+        let opened = json!([["watch-1", null], ["watch-2", null], ["watch-3", null]]);
+        assert_eq!(
+            awaited(&table(&scratch), &opened),
+            opened,
+            "each subscription is a row of the table"
+        );
+        for (path, body) in [
+            ("/cancel_tool_call", json!({ "tool_call_id": "watch-1" })),
+            (
+                "/cancel_tool_call",
+                json!({ "tool_call_id": "watch-2", "group_id": "thread-2" }),
+            ),
+            ("/cancel_tool_call", json!({ "tool_call_id": "watch-9" })),
+        ] {
+            let ended = posted(address, &json!(path), &body);
+            assert!(
+                ended.head.starts_with("HTTP/1.1 200 "),
+                "a cancel is answered `200` whatever it names: {}",
+                ended.head
+            );
+        }
+        let cancelled = json!([["watch-2", null], ["watch-3", null]]);
+        assert_eq!(
+            awaited(&table(&scratch), &cancelled),
+            cancelled,
+            "a cancel drops its row alone, and one that names another thread drops none"
+        );
+        let mut editor = Editor::new(&scratch);
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let mut heard = [received(&callback), received(&callback)].map(|event| {
+            event
+                .json()
+                .get("tool_call_id")
+                .and_then(Value::as_str)
+                .map(String::from)
+        });
+        heard.sort();
+        assert_eq!(
+            heard,
+            [Some(String::from("watch-2")), Some(String::from("watch-3"))],
+            "the cancelled row hears nothing"
+        );
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(300)),
+            Answer(true),
+            "no other event follows"
+        );
+        for thread in ["thread-1", "thread-2"] {
+            let closed = posted(
+                address,
+                &json!("/close_thread"),
+                &json!({ "thread_id": thread }),
+            );
+            assert!(closed.head.starts_with("HTTP/1.1 200 "), "{}", closed.head);
+        }
+        assert_eq!(
+            (
+                awaited(&table(&scratch), &json!([])),
+                Answer(table(&scratch).exists())
+            ),
+            (json!([]), Answer(false)),
+            "a closed thread drops each of its rows, and a table with no row has no file"
+        );
+        editor.edit(&uri, &json!(2_i32), &json!("def f = missing ;\n"));
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(500)),
+            Answer(true),
+            "a closed thread hears nothing"
+        );
+        drop(editor);
+    }
+
+    #[test]
     fn a_server_error_is_retried_and_a_refusal_is_not()
     {
         let scratch = Scratch::new(&json!("rap-retried"));
         let callback = loopback();
         let uri = json!("file:///tmp/retried.gandr");
-        hub(&scratch, subscribed(&scratch, &callback, &uri));
+        let toolset = opened(&scratch);
+        let address = toolset.address().expect("the toolset listens");
+        hub(&scratch, toolset);
+        drop(subscribed(
+            address,
+            &callback,
+            &json!({ "operation": "subscribe_diagnostics", "arguments": { "uri": uri },
+                "id": "watch-1", "group_id": "thread-1" }),
+        ));
         let mut editor = Editor::new(&scratch);
         editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
         let failed = heard(&callback, &json!("503 Service Unavailable"));
@@ -2234,8 +3028,7 @@ mod tests
     fn an_announcement_names_the_manifest_and_refuses_a_second_hub()
     {
         let scratch = Scratch::new(&json!("rap-announced"));
-        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
-            .expect("the store opens");
+        let toolset = opened(&scratch);
         let address = toolset.address().expect("the toolset listens");
         hub(&scratch, toolset);
         let socket = scratch.socket();
@@ -2263,7 +3056,7 @@ mod tests
         .json();
         assert_eq!(
             entries(manifest.get("tools")).len(),
-            tools::list().len(),
+            tools::offered().len(),
             "a client fetches the manifest at the URL that the file names"
         );
         let refused = Announcement::beside(&socket)

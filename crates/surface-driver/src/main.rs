@@ -3053,24 +3053,26 @@ fn hub(
 }
 
 /// The toolset of the current directory's workspace, listening at `address`,
-/// its calls kept under the user's state directory, its deliveries retried as
-/// `policy` states.
+/// its calls and its subscriptions kept under the user's state directory, its
+/// deliveries retried as `policy` states.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the listener is bound at `address`, and the store of calls is
-///   `<calls>/<workspace>.jsonl`, where `<calls>` is [`config::calls`] and
-///   `<workspace>` is `gandr_surface_lsp::workspace_name` of the current
-///   directory, so every build of the driver reads one store per workspace.
+/// - ensures: the listener is bound at `address`, the store of calls is
+///   `<calls>/<workspace>.jsonl`, and the table of subscriptions is
+///   `<subscriptions>/<workspace>.json`, where `<calls>` is [`config::calls`],
+///   `<subscriptions>` is [`config::subscriptions`] and `<workspace>` is
+///   `gandr_surface_lsp::workspace_name` of the current directory. So every
+///   build of the driver reads one store and one table per workspace.
 /// - provides: `gandr serve`'s face.
 /// - fails: when the address cannot be bound, no directory names the state, the
-///   current directory cannot be read, or the store cannot open.
+///   current directory cannot be read, or the store or the table cannot open.
 /// - panics: none.
-/// - executable: none — the effects are a listener and a file.
+/// - executable: none — the effects are a listener and files.
 ///
 /// # Errors
-/// The error binding, reading the directory, or opening the store, or one that
-/// says no directory names the state.
+/// The error binding, reading the directory, or opening the store or the
+/// table, or one that says no directory names the state.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`hub`].
@@ -3082,13 +3084,15 @@ fn toolset(
 ) -> std::io::Result<gandr_surface_mcp::Toolset>
 {
     let listener = std::net::TcpListener::bind(address)?;
-    let calls = config::calls().ok_or_else(|| {
-        std::io::Error::other("no directory names the state: set `XDG_STATE_HOME` or `HOME`")
-    })?;
+    let unstated =
+        || std::io::Error::other("no directory names the state: set `XDG_STATE_HOME` or `HOME`");
+    let calls = config::calls().ok_or_else(unstated)?;
+    let subscriptions = config::subscriptions().ok_or_else(unstated)?;
     let workspace = gandr_surface_lsp::workspace_name(&std::env::current_dir()?)?;
     gandr_surface_mcp::Toolset::open(
         listener,
-        &calls.join(workspace).with_extension("jsonl"),
+        &calls.join(&workspace).with_extension("jsonl"),
+        &subscriptions.join(&workspace).with_extension("json"),
         policy,
     )
 }
