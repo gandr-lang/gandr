@@ -1,7 +1,7 @@
 # The checks a gate runs for a change (#4911). A gate whose change touches
-# only the workflow built and ran the whole Rust wall, though the merge group
-# runs every check before a landing. So the gate reads the paths the branch
-# changes and runs the checks `table.json` maps them to.
+# only the workflow built and ran the whole Rust wall, though the integration
+# cycle runs every check before `main` moves. So the gate reads the paths the
+# branch changes and runs the checks `table.json` maps them to.
 #
 # The table names groups of heavy checks: `rust` (the build, the lints, the
 # documentation and the test suites), `corpus` (the driver over the corpus
@@ -28,7 +28,10 @@
 # a stale golden, a refusing source with no golden, or a source out of the
 # sugared form (#6489). So the gate runs `check:corpus`, `check:corpus-format`
 # and `check:corpus-goldens` for a change under `corpus/` or `crates/`. The
-# light checks stay, since each takes seconds.
+# queue runs no test lane either, so #6563 broke two tests of the checker and
+# reached `landing` (#6595). So the gate runs `check:tests-enforcing` over the
+# packages the change touches, and not over their dependents. The light checks
+# stay, since each takes seconds.
 #
 # Input:
 #   tasks    every `check:*` task's name

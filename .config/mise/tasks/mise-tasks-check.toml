@@ -22,11 +22,14 @@
 # It is the landing's gate (#5458): `pr:open` runs it on a head that no gate
 # passed on, and `pr:land` runs it again when a rebase changes the head's
 # tree. Six lanes ran the full suite before each pull request opened, more
-# load than the hosts carry, and the merge group runs every check on each
-# group. So it runs the light checks, which take seconds, and of the heavy
-# checks only Clippy and the compiler policy (`check:landing`). It runs no
-# test, no sweep and no specification obligation. `gate:all` runs every check
-# over the whole workspace.
+# load than the hosts carry. The integration cycle runs every check before
+# `main` moves (#5438). The merge group on `landing` runs no test lane. So the
+# gate runs the light checks, which take seconds, and of the heavy checks
+# Clippy and the compiler policy (`check:landing`). It runs the enforcing
+# suite of the packages the change touches (#6595): #6563 broke two tests of
+# the checker, and no stage before `landing` ran them. It runs no sweep and no
+# specification obligation. `gate:all` runs every check over the whole
+# workspace.
 #
 # It runs those checks that the change selects
 # (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
@@ -52,7 +55,7 @@
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
 [check]
-description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, in one of the host's gate slots"
+description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suite of the packages it touches, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -75,12 +78,13 @@ else
   echo "check: the change selects no Clippy or compiler policy check, so it takes no gate slot" >&2
 fi
 mapfile -t checks <<< "$selected"
-echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the merge group and \`mise run gate:all\` run every one" >&2
+echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the integration cycle and \`mise run gate:all\` run every one" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
-if [[ " ${checks[*]} " == *" check:witnesses "* ]]; then
+if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:tests-enforcing "* ]]; then
   GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
-  export GATE_WITNESS_SCOPE
+  GATE_TEST_SCOPE=$GATE_WITNESS_SCOPE
+  export GATE_WITNESS_SCOPE GATE_TEST_SCOPE
 fi
 tasks=()
 for check in "${checks[@]}"; do tasks+=("$check" :::); done
@@ -127,7 +131,7 @@ exit "$status"
 # earlier check gives, so the fixer reads every red of a tip in one pass
 # (#5440); a gate with a red still records no pass.
 ["gate:all"]
-description = "Every check over the whole workspace, about half an hour; the merge group runs it before every landing"
+description = "Every check over the whole workspace, about half an hour; the integration cycle runs every check before main moves"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -595,13 +599,16 @@ run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value
 
 # The test twin under enforcement; the suite's runtime sentinels refuse a
 # target-only or stale macro build. A loaded host lengthens the run and never
-# fails it: the profile kills only a hang past 5 minutes (#3912).
+# fails it: the profile kills only a hang past 5 minutes (#3912). A shard runs
+# the packages of `CI_SHARD_ARGS`. `mise run check` sets `GATE_TEST_SCOPE` to
+# the packages its change touches (#6595), as it sets `GATE_WITNESS_SCOPE`.
+# Without either, the suite runs over `GATE_SCOPE`, or the whole workspace.
 ["check:tests-enforcing"]
 description = "Unit and integration tests over every target, specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% elif env.GATE_TEST_SCOPE is defined %}{{ env.GATE_TEST_SCOPE }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory. With `CI_WITNESS_LISTINGS` naming a directory
@@ -2096,6 +2103,9 @@ run = ".config/mise/host-lock-cases.bash"
 # `.config/gate-scope/select-cases.bash` builds scratch repositories (#5220):
 # a working change and a commit of 4000 paths, a list longer than one
 # argument holds, each select every check.
+# `.config/gate-scope/tests-cases.bash` builds scratch workspaces of two
+# packages (#6595): a change that breaks a test of the package it touches is
+# refused, and the suite of a change to one package keeps the other out.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group or the `landing`
 # list naming no check, fails it. So does a check that builds `GATE_SCOPE`
@@ -2109,6 +2119,7 @@ set -euo pipefail
 .config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq
 .config/gate-scope/carry-cases.bash
 .config/gate-scope/select-cases.bash
+.config/gate-scope/tests-cases.bash
 findings=$(mise tasks ls --json \
   | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' \
   | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq)
