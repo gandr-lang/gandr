@@ -28,7 +28,13 @@
     "extension": ["check:extension", "check:input-table", "check:vscode-smoke"]
   },
   "light": ["check:cases", "check:prose", "check:spec-cost-landed"],
-  "landing": ["check:corpus-comments", "check:landing"],
+  "landing": [
+    "check:corpus-comments",
+    "check:doc",
+    "check:landing",
+    "check:syntax-exemplars",
+    "check:witnesses"
+  ],
   "paths": [
     { "path": ".config/nextest.toml", "groups": ["rust"] },
     { "path": ".config/obligations/", "groups": ["rust"] },

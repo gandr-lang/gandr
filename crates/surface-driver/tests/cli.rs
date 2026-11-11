@@ -4254,8 +4254,9 @@ fn a_terminal_on_standard_input_alone_leaves_the_view_plain()
 
 /// An editor holds a refused document open through a hub, and a view started
 /// with `input` on standard input and its output piped prints the plain report
-/// of it, then the next one after the editor's edit; the hub lingers out once
-/// both have left. The scratch directory is named `name`.
+/// of it, then the next one with one account row per declaration after the
+/// editor's edit; the hub lingers out once both have left. The scratch
+/// directory is named `name`.
 ///
 /// # Specification
 /// trivial.
@@ -4367,10 +4368,21 @@ fn view_follows_an_editor(
             )
             .expect("the editor's edit is written");
     drop(next_from_editor());
+    let second = report();
     assert_eq!(
-        report(),
-        ["uri file:///tmp/viewed.gandr version 2 diagnostics 0 holes 0"],
-        "the editor's edit reaches the view within one check"
+        second.first().map(String::as_str),
+        Some("uri file:///tmp/viewed.gandr version 2 diagnostics 0 holes 0"),
+        "the editor's edit reaches the view within one check: {second:#?}"
+    );
+    assert!(
+        second
+            .get(1_usize)
+            .is_some_and(|heads| heads.starts_with("declaration kernel tier")),
+        "the account sits under its fields' names: {second:#?}"
+    );
+    assert!(
+        second.get(2_usize).is_some_and(|row| row.starts_with("g ")),
+        "the account shows one row per declaration: {second:#?}"
     );
     view.kill().expect("the view stops");
     assert!(

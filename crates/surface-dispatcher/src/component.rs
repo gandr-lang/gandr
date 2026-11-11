@@ -1257,31 +1257,32 @@ fn homed(
 
 /// The sources `given`, in the order given, grouped into the import-connected
 /// components they and the sources they reach make, each source's imports
-/// read as `reading` says.
+/// read as `reading` says and each source reached read as `shadows` holds it.
 ///
 /// # Specification
 /// - requires: each source's path is canonical and its root is that path's.
 /// - ensures: every source a given source reaches through path imports is read
-///   once, each import resolved as [`lay_out`] resolves it; two given sources
-///   at one canonical path stand for one source. Two given sources share a
-///   component exactly when one reaches the other through resolved imports, or
-///   through a chain of given sources so joined, but a given standard library
-///   module joins only standard library modules; a component holds every source
-///   its given sources reach, so a source reached and not given, or a given
-///   standard library module, stands in each component that reaches it, and a
-///   source reached only through an import that does not resolve stands in no
-///   component. Each given source is placed at its own component. Each
-///   component is laid out as [`lay_out`] lays a closure out — the prelude
-///   first, then its sources in dependency order, one newline apart, each
-///   import's target recorded — the depth-first walk starting at its sources in
-///   the order they were given; a component of one source is that source laid
-///   after the prelude alone. Under [`Reading::Whole`] each importer's imports
-///   are those [`lay_out`] reads; under [`Reading::ImportForms`] they are those
-///   its import forms alone write, an importer whose forms write a path import
-///   taken to parse, which [`Component::confirms`] checks. A source at a path
-///   of `apart` is set apart: no import of it or by it joins a component, each
-///   import naming it is unresolved, and a given one is laid out alone, its own
-///   imports unresolved.
+///   once, as `shadows` holds it or else from the file, each import resolved as
+///   [`lay_out_shadowed`] resolves it; two given sources at one canonical path
+///   stand for one source. Two given sources share a component exactly when one
+///   reaches the other through resolved imports, or through a chain of given
+///   sources so joined, but a given standard library module joins only standard
+///   library modules; a component holds every source its given sources reach,
+///   so a source reached and not given, or a given standard library module,
+///   stands in each component that reaches it, and a source reached only
+///   through an import that does not resolve stands in no component. Each given
+///   source is placed at its own component. Each component is laid out as
+///   [`lay_out`] lays a closure out — the prelude first, then its sources in
+///   dependency order, one newline apart, each import's target recorded — the
+///   depth-first walk starting at its sources in the order they were given; a
+///   component of one source is that source laid after the prelude alone. Under
+///   [`Reading::Whole`] each importer's imports are those [`lay_out`] reads;
+///   under [`Reading::ImportForms`] they are those its import forms alone
+///   write, an importer whose forms write a path import taken to parse, which
+///   [`Component::confirms`] checks. A source at a path of `apart` is set
+///   apart: no import of it or by it joins a component, each import naming it
+///   is unresolved, and a given one is laid out alone, its own imports
+///   unresolved.
 /// - provides: the units a walk lowers, each once.
 /// - fails: never.
 /// - panics: none.
@@ -1314,6 +1315,7 @@ pub fn group(
     given: Vec<Given>,
     reading: Reading,
     apart: &BTreeSet<PathBuf>,
+    shadows: &dyn Shadows,
 ) -> Grouped
 {
     let mut graph = Graph {
@@ -1324,7 +1326,7 @@ pub fn group(
         .into_iter()
         .map(|source| graph.admit((source.path.clone(), source.path), source.root, source.text))
         .collect();
-    graph.expand(grammar, &Unshadowed);
+    graph.expand(grammar, shadows);
     for path in apart {
         if let Some(&position) = graph.index.get(path)
             && let Some(read) = graph.read.get_mut(position.0)
@@ -3162,6 +3164,7 @@ mod tests
                 ]),
                 reading,
                 &BTreeSet::new(),
+                &Unshadowed,
             );
             assert_eq!(
                 grouped.components.len(),
@@ -3173,6 +3176,7 @@ mod tests
                 Vec::from([tree.given(Path::new("first.gandr"))]),
                 reading,
                 &BTreeSet::from([tree.given(Path::new("sibling.gandr")).path]),
+                &Unshadowed,
             );
             let [ref alone] = *grouped.components.as_slice()
             else {
@@ -3246,6 +3250,7 @@ mod tests
             }]),
             Reading::Whole,
             &BTreeSet::new(),
+            &Unshadowed,
         );
         let [ref component] = *grouped.components.as_slice()
         else {
@@ -3344,6 +3349,7 @@ mod tests
                 Vec::from([tree.given(Path::new("importer.gandr"))]),
                 Reading::Whole,
                 &BTreeSet::new(),
+                &Unshadowed,
             )
         };
         let first = grouped();
@@ -3720,6 +3726,7 @@ mod tests
                 ]),
                 reading,
                 &BTreeSet::new(),
+                &Unshadowed,
             );
 
             let [ref alone, ref diamond] = *grouped.components.as_slice()
@@ -3802,6 +3809,7 @@ mod tests
                 ]),
                 reading,
                 &BTreeSet::new(),
+                &Unshadowed,
             );
             let texts: Vec<&str> = grouped
                 .components
@@ -3858,6 +3866,7 @@ mod tests
                 ]),
                 reading,
                 &BTreeSet::new(),
+                &Unshadowed,
             );
             let texts: Vec<&str> = grouped
                 .components
@@ -3929,6 +3938,7 @@ mod tests
                 Vec::from([tree.given(Path::new(given))]),
                 Reading::ImportForms,
                 &BTreeSet::new(),
+                &Unshadowed,
             );
             let [ref component] = *grouped.components.as_slice()
             else {
@@ -3954,6 +3964,7 @@ mod tests
             Vec::from([tree.given(Path::new("nested.gandr"))]),
             Reading::Whole,
             &BTreeSet::new(),
+            &Unshadowed,
         );
         assert_eq!(
             whole
@@ -4009,6 +4020,7 @@ mod tests
             Vec::from([tree.given(Path::new("app/importer.gandr"))]),
             Reading::ImportForms,
             &BTreeSet::new(),
+            &Unshadowed,
         );
         let [ref component] = *grouped.components.as_slice()
         else {
@@ -4238,6 +4250,7 @@ mod tests
             Vec::from([tree.given(Path::new("importer.gandr"))]),
             Reading::Whole,
             &BTreeSet::new(),
+            &Unshadowed,
         );
         let [ref component] = *grouped.components.as_slice()
         else {

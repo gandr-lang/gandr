@@ -549,6 +549,66 @@ impl Unfoldings
         }
     }
 
+    /// The unfoldings that the admitted `entries` state.
+    ///
+    /// # Specification
+    /// - ensures: one unfolding per entry, the relation of each lawful atom,
+    ///   and each literal identity test.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass through `entries`, with one body vector
+    ///   allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition, a lawful atom and a literal identity
+    ///   test admitted together give their replay rules at their positions.
+    /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+    /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[spec(ensures: |ret| ret.bodies.len() == usize::from(entries.len()))]
+    #[inline]
+    #[must_use]
+    pub(crate) fn from_entries(entries: &crate::env::Entries) -> Self
+    {
+        let mut bodies = Vec::with_capacity(usize::from(entries.len()));
+        let mut identities = BTreeMap::new();
+        let mut tests = BTreeMap::new();
+        for (position, entry) in entries.iter().enumerate() {
+            let position = ConstantIndex::from(position);
+            match *entry.content() {
+                gandr_kernel_term::DeclarationContent::Def { body, .. } => {
+                    bodies.push(Unfoldable::Body(body));
+                },
+                gandr_kernel_term::DeclarationContent::AbstractType {
+                    interface: quenchant_shape::shape::Maybe::Present(interface),
+                    ..
+                } => {
+                    if let quenchant_shape::shape::Maybe::Present(_) = interface.law() {
+                        let _previous = identities.insert(position, interface.relation());
+                    }
+                    bodies.push(Unfoldable::Opaque);
+                },
+                gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } => {
+                    let _previous = tests.insert(position, test);
+                    bodies.push(Unfoldable::Opaque);
+                },
+                gandr_kernel_term::DeclarationContent::Data { .. }
+                | gandr_kernel_term::DeclarationContent::Codata { .. }
+                | gandr_kernel_term::DeclarationContent::Axiom { .. }
+                | gandr_kernel_term::DeclarationContent::AbstractType { .. } => {
+                    bodies.push(Unfoldable::Opaque);
+                },
+            }
+        }
+        Self {
+            bodies,
+            presentations: crate::presented::Presentations::default(),
+            identities,
+            tests,
+            terminating: Vec::new(),
+        }
+    }
+
     /// These unfoldings, the replay rewriting every presented type's terms by
     /// `presentations`.
     ///

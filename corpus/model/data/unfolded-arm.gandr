@@ -7,7 +7,8 @@
 //! Structural recursion unfolds at constructors.
 //!
 //! - see: #761 — `doubleStep`
-//! - see: `nested-call-sugar.gandr`
+//! - see: `nested-call-sugar.gandr` — an arm that returns constructors over its
+//!   call converts
 //! - cites: [Abel-2004-termination_checking_with_types]
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"

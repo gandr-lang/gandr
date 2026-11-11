@@ -52,7 +52,7 @@
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
 [check]
-description = "The landing's gate: the light checks, and Clippy with the compiler policy over the packages the change reaches, in one of the host's gate slots"
+description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -78,6 +78,10 @@ mapfile -t checks <<< "$selected"
 echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the merge group and \`mise run gate:all\` run every one" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
+if [[ " ${checks[*]} " == *" check:witnesses "* ]]; then
+  GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
+  export GATE_WITNESS_SCOPE
+fi
 tasks=()
 for check in "${checks[@]}"; do tasks+=("$check" :::); done
 mkdir -p target/gate
@@ -604,6 +608,9 @@ run = ".config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHAR
 # itself. With `CI_SHARD_ARGS` it resolves the shard's own members, the
 # packages those cargo flags select: a member's witnesses name its own tests,
 # so each enforcing shard resolves its members against its own listing.
+# `mise run check` sets `GATE_WITNESS_SCOPE` to the packages its change
+# touches (#6433). The gate then lists those packages as a shard does, with
+# the same features as the integration cycle, and resolves their witnesses.
 # A listing holds the tests this host builds, so a witness whose test's own
 # `#[cfg(…)]` builds it on another host is absent from it (#4441). Each
 # `unresolved-witness` line is read against that `cfg` (`.config/witnesses/
@@ -619,7 +626,11 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+summary=$(mktemp)
+listed=$(mktemp)
+trap 'rm -f "$summary" "$listed"' EXIT
 listings=()
+shard=${CI_SHARD_ARGS:-}
 if [[ -n ${CI_WITNESS_LISTINGS:-} ]]; then
   for listing in "$CI_WITNESS_LISTINGS"/*.json; do
     [[ -e $listing ]] && listings+=(--inventory "$listing")
@@ -628,14 +639,16 @@ if [[ -n ${CI_WITNESS_LISTINGS:-} ]]; then
     echo "check:witnesses: no listing under $CI_WITNESS_LISTINGS" >&2
     exit 1
   fi
+elif [[ -n ${GATE_WITNESS_SCOPE:-} ]]; then
+  shard=$GATE_WITNESS_SCOPE
+  CI_SHARD_ARGS=$shard CI_WITNESS_LISTING=$listed mise run ci:witness-listing
+  listings+=(--inventory "$listed")
 fi
 scope=()
-for argument in ${CI_SHARD_ARGS:-}; do
+for argument in $shard; do
   [[ $argument == --workspace ]] || scope+=("$argument")
 done
 witnesses=.config/witnesses
-summary=$(mktemp)
-trap 'rm -f "$summary"' EXIT
 status=0
 report=$(quenchant-gates witnesses --manifest-path Cargo.toml "${listings[@]}" "${scope[@]}" 2> "$summary") || status=$?
 if (( status != 1 )); then

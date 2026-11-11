@@ -19,7 +19,13 @@
 # compiler policy (`check:landing`), and the item comments of the corpus
 # (`check:corpus-comments`). A parser change can move the comment ledger. The
 # queue on `landing` does not run the comment check, so the gate runs it
-# (#6365). The light checks stay, since each takes seconds.
+# (#6365). The queue runs no rustdoc and no witness check either, so a broken
+# link or a renamed witness reached `landing` (#6433). Nor does it run the
+# dispatcher's test of the ledger's exemplars, so a ledger exemplar that no
+# longer verifies reached `landing` (#6430). The gate runs `check:doc`,
+# `check:witnesses` and `check:syntax-exemplars` too, the last of which runs
+# the same verification as that test. The light checks stay, since each takes
+# seconds.
 #
 # Input:
 #   tasks    every `check:*` task's name

@@ -49,6 +49,7 @@
 use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
+use core::fmt;
 use core::time::Duration;
 
 use anodized::spec;
@@ -235,6 +236,8 @@ impl From<Unit> for &'static str
 }
 
 /// A count of things.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Count(pub u64);
@@ -317,6 +320,114 @@ impl From<Count> for Numeral
     }
 }
 
+impl Numeral
+{
+    /// `value`, counted in the base of `unit`, as a numeral in `unit`: a
+    /// count is as [`Numeral::from`] spells it, a time counts nanoseconds, a
+    /// size counts bytes, and a ratio is the plain digits of `value`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a numeral in `unit`. A time or a size is the quotient of
+    ///   `value` by its unit, with three significant digits, cut and not
+    ///   rounded: the whole part from 100 up, its digits past the third set to
+    ///   zero; one decimal from 10 up; two decimals from 1 up; and below 1, the
+    ///   first three significant digits after the point.
+    /// - provides: the one spelling of a quantity in every face, for a
+    ///   sparkline's last value and its scale.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — times and sizes at each boundary of the cut read as
+    ///   three significant digits that the `numerals` rule passes.
+    /// - witness: `visual::tests::a_time_and_a_size_read_as_three_significant_digits`
+    #[spec(ensures: |ref ret| ret.unit == unit)]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        value: Count,
+        unit: Unit,
+    ) -> Self
+    {
+        match unit {
+            Unit::Count => Self::from(value),
+            Unit::Ratio => Self {
+                text: value.0.to_string(),
+                unit,
+            },
+            Unit::Microseconds
+            | Unit::Milliseconds
+            | Unit::Bytes
+            | Unit::Kibibytes
+            | Unit::Mebibytes => Self {
+                text: significant(value, unit),
+                unit,
+            },
+        }
+    }
+}
+
+/// The quotient of `value` by the base of `unit`, with three significant
+/// digits, cut and not rounded, as [`Numeral::of`] states it.
+///
+/// # Specification
+/// trivial.
+fn significant(
+    value: Count,
+    unit: Unit,
+) -> String
+{
+    let per: u128 = match unit {
+        Unit::Count | Unit::Ratio | Unit::Bytes => 1,
+        Unit::Microseconds => 1_000,
+        Unit::Milliseconds => 1_000_000,
+        Unit::Kibibytes => 1 << 10_u32,
+        Unit::Mebibytes => 1 << 20_u32,
+    };
+    let value = u128::from(value.0);
+    let scaled = |times: u128| {
+        value
+            .saturating_mul(times)
+            .checked_div(per)
+            .unwrap_or_default()
+    };
+    let whole = scaled(1);
+    if whole >= 100 {
+        let (mut digits, mut zeros) = (whole, 0_usize);
+        while digits >= 1000 {
+            digits = digits.checked_div(10).unwrap_or_default();
+            zeros = zeros.saturating_add(1);
+        }
+        let mut text = digits.to_string();
+        text.extend(core::iter::repeat_n('0', zeros));
+        return text;
+    }
+    if whole >= 10 {
+        let tenths = scaled(10).checked_rem(10).unwrap_or_default();
+        return alloc::format!("{whole}.{tenths}");
+    }
+    if whole >= 1 {
+        let hundredths = scaled(100).checked_rem(100).unwrap_or_default();
+        return alloc::format!("{whole}.{hundredths:02}");
+    }
+    if value == 0 {
+        return String::from("0");
+    }
+    // Below one: the first power of ten that lifts the quotient to three
+    // digits names how many zeros lead the digits after the point.
+    let mut places = 3_usize;
+    let mut times = 1_000_u128;
+    while scaled(times) < 100 && places < 38 {
+        places = places.saturating_add(1);
+        times = times.saturating_mul(10);
+    }
+    let mut text = String::from("0.");
+    text.extend(core::iter::repeat_n('0', places.saturating_sub(3)));
+    text.push_str(&scaled(times).to_string());
+    text
+}
+
 /// A sparkline: the last 32 samples of a quantity, word-sized, and its last
 /// value.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -330,6 +441,234 @@ pub struct Sparkline
     pub scale: Numeral,
     /// The span of time the samples cover.
     pub window: Numeral,
+}
+
+impl Sparkline
+{
+    /// The sparkline of `samples` under the column scale `scale`, in `unit`:
+    /// none for a ring with no sample.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when `samples` holds a value. Its cells are
+    ///   [`SAMPLES`] block elements: the lowest block for each slot of the ring
+    ///   that no sample fills yet, the oldest slots first, then one block per
+    ///   sample, the oldest first, whose height is the sample's share of
+    ///   `scale` over the eight blocks. A sample at or over `scale` takes the
+    ///   highest block. Its last value and its scale are [`Numeral::of`] in
+    ///   `unit`, and its window is the 32 samples it spans.
+    /// - provides: the one drawing of a sparkline field in every face, so the
+    ///   `sparklines` rule holds of each.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a full ring and a ring of three samples draw their
+    ///   exact cells and numerals, the rendering of each breaks no rule, and an
+    ///   empty ring draws none.
+    /// - witness: `visual::tests::a_ring_draws_thirty_two_cells_and_its_last_value`
+    #[spec(ensures: |ref ret| ret.is_some() != samples.values().is_empty()
+        && ret.as_ref().is_none_or(|line| line.cells.chars().count() == SAMPLES
+            && line.last.unit == unit))]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        samples: &Samples,
+        scale: Count,
+        unit: Unit,
+    ) -> Option<Self>
+    {
+        let values = samples.values();
+        let &last = values.last()?;
+        let top = u128::from(scale.0);
+        let lowest = BLOCKS.first().copied().unwrap_or('▁');
+        let highest = BLOCKS.last().copied().unwrap_or('█');
+        let mut cells: String =
+            core::iter::repeat_n(lowest, SAMPLES.saturating_sub(values.len())).collect();
+        cells.extend(values.iter().map(|&Count(value)| {
+            let step = u128::from(value)
+                .min(top)
+                .saturating_mul(7)
+                .saturating_add(top.checked_div(2).unwrap_or_default())
+                .checked_div(top)
+                .unwrap_or_default();
+            usize::try_from(step)
+                .ok()
+                .and_then(|step| BLOCKS.get(step).copied())
+                .unwrap_or(highest)
+        }));
+        Some(Self {
+            cells,
+            last: Numeral::of(last, unit),
+            scale: Numeral::of(scale, unit),
+            window: Numeral::from(Count(u64::try_from(SAMPLES).unwrap_or(u64::MAX))),
+        })
+    }
+}
+
+/// What the samples of a sparkline field count: things, or nanoseconds.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SampleUnit
+{
+    /// A count of things.
+    Count,
+    /// A time, in nanoseconds.
+    Nanoseconds,
+}
+
+/// The ring of a sparkline field: at most [`SAMPLES`] values of one unit, the
+/// oldest first.
+///
+/// # Specification
+/// - ensures: the ring holds at most [`SAMPLES`] values, whether built by
+///   [`Samples::new`] or decoded.
+/// - provides: the wire image `{"unit": u, "values": [v, …]}` under the `serde`
+///   feature, whose decode refuses a longer ring with [`TooManySamples`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Samples
+{
+    /// What each value counts.
+    unit: SampleUnit,
+    /// The values, the oldest first.
+    values: Vec<Count>,
+}
+
+impl Samples
+{
+    /// The ring of `values` in `unit`, the oldest first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the ring holds exactly `values` in `unit`.
+    /// - provides: the only way to build a ring, so a renderer never draws more
+    ///   than [`SAMPLES`] cells.
+    /// - fails: [`TooManySamples`], with the count offered, past [`SAMPLES`]
+    ///   values.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`TooManySamples`] past [`SAMPLES`] values.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a ring of 32 values builds and decodes, and a ring of
+    ///   33 is refused both ways.
+    /// - witness: `visual::tests::a_ring_holds_at_most_thirty_two_samples`
+    #[spec(captures: [offered = values.len()], ensures: |ref ret| match *ret {
+        Ok(ref ring) => offered <= SAMPLES && ring.unit == unit,
+        Err(ref refused) => offered > SAMPLES && refused.offered == offered,
+    })]
+    #[inline]
+    pub fn new(
+        unit: SampleUnit,
+        values: Vec<Count>,
+    ) -> Result<Self, TooManySamples>
+    {
+        if values.len() > SAMPLES {
+            return Err(TooManySamples {
+                offered: values.len(),
+            });
+        }
+        Ok(Self { unit, values })
+    }
+
+    /// What each value counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unit(&self) -> SampleUnit
+    {
+        self.unit
+    }
+
+    /// The values, the oldest first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn values(&self) -> &[Count]
+    {
+        &self.values
+    }
+}
+
+/// The decode image of a [`Samples`] ring: its unit and its values before the
+/// length check.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct SamplesWire
+{
+    /// The decoded unit.
+    unit: SampleUnit,
+    /// The decoded values.
+    values: Vec<Count>,
+}
+
+#[cfg(feature = "serde")]
+impl<'input> serde::Deserialize<'input> for Samples
+{
+    /// Decode a ring and refuse it past [`SAMPLES`] values.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the ring holds exactly the decoded values.
+    /// - fails: the deserializer's error for a malformed image, and a custom
+    ///   error carrying the [`TooManySamples`] message for a longer ring.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The deserializer's error, or the refusal of a longer ring.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Samples::new`].
+    /// - witness: `visual::tests::a_ring_holds_at_most_thirty_two_samples`
+    #[inline]
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ring| ring.values.len() <= SAMPLES))]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'input>,
+    {
+        let wire = SamplesWire::deserialize(deserializer)?;
+
+        Self::new(wire.unit, wire.values).map_err(serde::de::Error::custom)
+    }
+}
+
+/// The refusal of a ring of more than [`SAMPLES`] values.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TooManySamples
+{
+    /// How many values were offered.
+    pub offered: usize,
+}
+
+impl fmt::Display for TooManySamples
+{
+    /// Write the refusal with the count offered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "a sparkline holds {SAMPLES} samples at most, not {}",
+            self.offered
+        )
+    }
+}
+
+impl core::error::Error for TooManySamples
+{
 }
 
 /// How a renderer paints a cell.
@@ -598,8 +937,8 @@ pub enum Datum
         /// The total.
         total: Count,
     },
-    /// The last samples of a quantity, the oldest first.
-    Samples(Vec<Count>),
+    /// The ring of a sparkline field: its last samples, the oldest first.
+    Samples(Samples),
     /// A warrant.
     Warrant(Warrant),
     /// A count before and the count after.
@@ -1307,7 +1646,8 @@ fn ratio_is_a_pair(shown: &Shown<'_>) -> Result<(), Spot>
 }
 
 /// `change-in-place`: nothing blinks, and a cell whose field did not change
-/// since the frame before is drawn where and as it was.
+/// since the frame before is drawn where and as it was. A field that turned
+/// stale changed, because `stale-is-pending` repaints it.
 ///
 /// # Specification
 /// trivial.
@@ -1316,21 +1656,27 @@ fn change_in_place(shown: &Shown<'_>) -> Result<(), Spot>
     let blinking = cells(shown.rendering)
         .filter(|&(_, cell)| cell.attributes.contains(&Attribute::Blink))
         .map(|(at, _)| Spot::Cell(at));
-    let moved = shown.before.into_iter().flat_map(|(frame, rendering)| {
-        cells(rendering)
-            .filter(move |&(at, cell)| {
-                let kept = encoded(frame, cell).zip(encoded(shown.frame, cell));
-                kept.is_some_and(|(before, after)| before.datum == after.datum)
-                    && shown
+    let stale = |frame: &Frame, field: &Field| field.revision < frame.revision;
+    let moved = shown
+        .before
+        .into_iter()
+        .flat_map(move |(frame, rendering)| {
+            cells(rendering)
+                .filter(move |&(at, cell)| {
+                    let kept = encoded(frame, cell).zip(encoded(shown.frame, cell));
+                    kept.is_some_and(|(before, after)| {
+                        before.datum == after.datum
+                            && stale(frame, before) == stale(shown.frame, after)
+                    }) && shown
                         .rendering
                         .panes
                         .get(at.pane)
                         .and_then(|pane| pane.rows.get(at.row))
                         .and_then(|row| row.cells.get(at.cell))
                         != Some(cell)
-            })
-            .map(|(at, _)| Spot::Cell(at))
-    });
+                })
+                .map(|(at, _)| Spot::Cell(at))
+        });
     first(blinking.chain(moved))
 }
 

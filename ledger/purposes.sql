@@ -302,7 +302,7 @@ INSERT INTO purpose VALUES('core-incremental','checkpoint::Resume','struct','Hol
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ResumeCensus','struct','Counts the work a resume did, per item and per edge, so a witness pins its linearity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ResumeError','enum','Names why a resume could not complete, the order-maintenance structure''s refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::check_program','function','Judges every item of a program under a budget, the batch run at the memo that recalls nothing.','sharing','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','checkpoint::content_keys','function','Gives each item its content key, in order, so a pool keys its work on an item by content.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','checkpoint::content_key','function','Gives one item its content key, so a pool keys its work on an item by content.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::lead','function','Runs the batch pass over a program, keeping the leading state a later revision resumes after.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::resume','function','Recalls each item''s checkpoint by content and adopts it where its support still holds, judging the rest.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::resume_after','function','Resumes onto an edited program after a leading state, judging only the items it lays after the leading ones.',NULL,'fits','sound',NULL);
@@ -3283,6 +3283,15 @@ INSERT INTO purpose VALUES('surface-pretty','scope::BinderIndex','struct','Names
 INSERT INTO purpose VALUES('surface-pretty','scope::ChildSlot','struct','Names the position of one child slot among its node''s children, so the slot''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','scope::Scopes','struct','Holds the binders each node of a term stands under, so a type''s binders are named from the context.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','walk::web_spelled','function','Spells a causal web''s pieces on one line, so a run''s web is written as a `decomposes` payload writes one.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::AccountCard','struct','One declaration''s block of the account: its key, its name, the checker''s verdict, the kernel''s mark and the compile tier, with the counts and the timing once a layer fills them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::AccountCounts','struct','The engine''s counts for one declaration''s judgement, which an account card carries once the counts layer fills them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::AccountEdit','enum','One edit of a renderer''s list of account cards: a put at a position, or a drop by key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::AccountKey','struct','The key of an account card: the declaration''s content key in hexadecimal, with a suffix for a repeat, so a patch names one card across revisions.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::CheckerVerdict','enum','The checker''s verdict on a declaration as the wire spells it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::CompileTier','enum','How the emitter compiled a declaration, as the wire spells it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::KernelMark','struct','Where the kernel stands on a declaration: the warrant its mark draws and the title that says why.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::account_edits','function','The edits that take a held list of account cards to the latest one, none for an unchanged list, so the hub sends only what changed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','account::apply_account_edits','function','Applies a patch to a renderer''s list of account cards, in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','diagnostic::DIAGNOSTIC_CODES','constant','Declares the complete code registry: the enum, the allocation-ordered list, and the two per-code tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','diagnostic::DiagnosticCode','enum','Declares the complete code registry: the enum, the allocation-ordered list, and the two per-code tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','diagnostic::DiagnosticMessage','enum','A diagnostic''s template identity and its named arguments.',NULL,'fits','sound',NULL);
@@ -3335,10 +3344,13 @@ INSERT INTO purpose VALUES('surface-render-remote','visual::Role','enum','What a
 INSERT INTO purpose VALUES('surface-render-remote','visual::Row','struct','One row of a pane: one line of cells.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Rule','struct','A rule of the visual language: its slug and its check.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::SAMPLES','constant','The samples a sparkline holds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','visual::SampleUnit','enum','What the samples of a sparkline field count: things, or nanoseconds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','visual::Samples','struct','The ring of a sparkline field: at most 32 values of one unit, the oldest first, built or decoded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Shown','struct','A frame and its rendering, with the frame and the rendering before them, as the rules read them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Slug','struct','The slug that names a rule of the visual language.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Sparkline','struct','A sparkline: the last 32 samples of a quantity as block elements, its last value, its scale and its window.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Spot','enum','Where a rendering breaks a rule: a cell, a row or a column head.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','visual::TooManySamples','struct','The refusal of a ring of more than 32 samples.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Unit','enum','The unit of a column of numerals, stated once at its head.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::WARRANTS','constant','The five warrants, from the weakest claim to the strongest refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Warrant','enum','How far a layer vouches for what a mark shows: the one variable that a mark''s hue and glyph carry.',NULL,'fits','sound',NULL);

@@ -326,7 +326,6 @@ const SIGNED: &[RewriteName] = &[
     RewriteName::PathAction,
     RewriteName::TailReturn,
     RewriteName::ShortAlias,
-    RewriteName::LinearRun,
     RewriteName::InsertedThunk,
     RewriteName::InsertedReduct,
     RewriteName::InsertedForget,
@@ -1916,6 +1915,31 @@ mod sweeps
     fn the_formatter_spells_each_declaration_as_the_printer_does_755_changed()
     {
         spells_each_declaration(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    #[test]
+    fn seeded_declarations_match_the_printer_6209()
+    {
+        let source = corpus::sources()
+            .expect("the corpus reads")
+            .into_iter()
+            .find(|source| source.path.ends_with("model/probability/seeded.gandr"))
+            .expect("the corpus holds the seeded probability model");
+        let text = std::fs::read_to_string(&source.path).expect("the corpus source is readable");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let found = bodies(
+            &grammar,
+            Written {
+                path: &source.path,
+                text: SourceText::from(text.as_str()),
+            },
+            &source.name,
+        );
+        assert!(
+            found.misses.is_empty(),
+            "the seeded probability model reads back: {}",
+            found.misses.join("\n")
+        );
     }
 
     #[test]

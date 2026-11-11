@@ -1,4 +1,6 @@
 //! Polymorphic lists support length, append and map.
+//! The list is the polymorphic list of Martin-Löf's type theory
+//! [MartinLof-1984-intuitionistic_type_theory].
 //!
 //! An arm can return a call result or elide `return`.
 //! It can nest the call under its constructor.
@@ -8,8 +10,10 @@
 //! The recursive natural-list source instantiates these folds.
 //!
 //! - cites: [Abel-2004-termination_checking_with_types]
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals and the lists.
 import "./data-base.gandr";
@@ -33,7 +37,8 @@ def rec length_nested(a : Type, xs : List a) -> Nat =
     | Cons(x, rest) => Succ (length_nested[<] a rest)
 
 /// This version infers the element type.
-/// Its recursive call omits `a` and descends on `xs`.
+/// Its recursive call omits `a`, passes the function's own `a` and descends on
+/// `xs`.
 pub def rec length_implicit[a : Type](xs : List a) -> Nat =
   match xs where
     | Nil => Zero

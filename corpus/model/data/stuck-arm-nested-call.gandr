@@ -5,6 +5,7 @@
 /// `tailOf(h)` is the argument of another call.
 /// The checker expands both calls.
 /// The kernel replays that expansion.
+/// The arm reads back as a bind of `tailOf(h)` ahead of the call that it feeds.
 ///
 /// - see: #3042
 /// - see: #2832

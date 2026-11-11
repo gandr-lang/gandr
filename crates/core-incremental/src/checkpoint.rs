@@ -466,7 +466,7 @@ impl ItemCheckpoint
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the key [`content_keys`] gives the item, or
+    /// - ensures: the key [`content_key`] gives the item, or
     ///   [`recall::Absent::Opaque`] for content that holds an unresolved node.
     /// - provides: the key a reader files the item's outcomes under, which a
     ///   later revision keeps exactly when it keeps the item's content.
@@ -475,7 +475,7 @@ impl ItemCheckpoint
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a checkpoint's key is the key [`content_keys`] reads
+    /// - hypothesis: L3 — a checkpoint's key is the key [`content_key`] reads
     ///   off its item, and moves only with its content. The attribute checks
     ///   the opaque rejection, not a second hash.
     /// - witness: `checkpoint::tests::a_checkpoint_keeps_the_content_key_of_its_item_6286`
@@ -1905,6 +1905,28 @@ impl ContentKey
     }
 }
 
+impl fmt::Display for ContentKey
+{
+    /// Write the key as 32 lowercase hexadecimal digits: the digest's high
+    /// word, then its low word, so two keys that differ write two texts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{:016x}{:016x}",
+            u64::from(self.0.high()),
+            u64::from(self.0.low())
+        )
+    }
+}
+
 /// The content key of `content`: its digest, unless it is opaque.
 ///
 /// # Specification
@@ -1956,32 +1978,29 @@ const fn keyed(
     }
 }
 
-/// The content key of each of `program`'s items, in order: what a pool keys
-/// the work on an item by, so that work whose item's key a newer revision
-/// keeps need not be retired.
+/// The content key of `program`'s item at `ordinal`: what a pool keys the work
+/// on the item by, so that work whose item's key a newer revision keeps need
+/// not be retired.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: one key per item, in order: the digest the memo buckets the
-///   item's content by; absent as [`recall::Absent::Opaque`] for an item whose
-///   content holds an unresolved node, which no key names.
+/// - requires: `ordinal` is below the program's item count.
+/// - ensures: the digest the memo buckets the item's content by; absent as
+///   [`recall::Absent::Opaque`] for an item whose content holds an unresolved
+///   node, which no key names.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the keys of two revisions agree at the items whose
 ///   content agrees, over arenas numbered apart, and differ at an edited one.
 /// - witness: `checkpoint::tests::an_item_s_content_key_moves_only_with_its_content_1547`
-#[spec(ensures: |ret| ret.len() == program.items().len())]
+#[spec(requires: usize::from(ordinal) < program.items().len())]
 #[inline]
-#[must_use]
-pub fn content_keys(program: &Program) -> Vec<Maybe<ContentKey, recall::Absent>>
+pub fn content_key(
+    program: &Program,
+    ordinal: ItemOrdinal,
+) -> Maybe<ContentKey, recall::Absent>
 {
-    (0 .. program.items().len())
-        .map(|index| {
-            let encoded = encode_item(program.arena(), program.layout(), ItemOrdinal::from(index));
-            content_key_of(&encoded.content)
-        })
-        .collect()
+    content_key_of(&encode_item(program.arena(), program.layout(), ordinal).content)
 }
 
 /// A choice of memo for the pass: the type parameter that separates batch

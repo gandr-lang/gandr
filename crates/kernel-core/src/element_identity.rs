@@ -1530,22 +1530,7 @@ fn decoded_fibre(
         return fibre;
     }
     let entries = interfaces.entries();
-    let unfoldings = Unfoldings::new(
-        entries
-            .iter()
-            .map(|entry| match *entry.content() {
-                DeclarationContent::Def { body, .. } => crate::replay::Unfoldable::Body(body),
-                DeclarationContent::Data { .. }
-                | DeclarationContent::Codata { .. }
-                | DeclarationContent::Axiom { .. }
-                | DeclarationContent::LiteralIdentity { .. }
-                | DeclarationContent::AbstractType { .. } => crate::replay::Unfoldable::Opaque,
-            })
-            .collect(),
-    )
-    .identifying(entries)
-    .testing(entries)
-    .ruling(arena, entries);
+    let unfoldings = Unfoldings::from_entries(entries).ruling(arena, entries);
     crate::replay::read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(fibre)
 }
 

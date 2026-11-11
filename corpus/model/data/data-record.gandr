@@ -22,7 +22,8 @@ def green_channel() -> Integer =
 def blue_channel(color : Color3) -> Integer =
   color.b
 
-/// `reddish` compares red and green fields by name.
+/// `reddish` compares red and green fields by name. With no stated answer,
+/// each field takes the type of its declaration.
 def reddish(color : Color3) -> Bool =
   color.r > color.g
 

@@ -10,11 +10,18 @@
 # (`.config/pr-stack/trunk.bash`) the change is unknown, and the scope is the
 # whole workspace. A change with no Rust path selects no Rust check, and its
 # scope is the whole workspace too, so a Rust check run by hand never excludes
-# every package.
+# every package. With `--touched`, the set is the packages the change touches
+# alone, for `check:witnesses` (#6433).
+#
+# Usage: scope.bash [--touched]
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
 source "$here/../pr-stack/trunk.bash"
+touched=false
+if [[ ${1:-} == --touched ]]; then
+  touched=true
+fi
 if ! base=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then
   echo "scope: no fork from origin/$trunk to read the change against; the whole workspace" >&2
   echo --workspace
@@ -25,7 +32,7 @@ packages=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path 
 # The change goes to `jq` on stdin, as `select.bash` reads it: one argument
 # holds at most 128 KiB, and a change of many paths holds more.
 set=$({ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } \
-  | jq -nR --argjson packages "$packages" '{changed: [inputs], packages: $packages}' \
+  | jq -nR --argjson packages "$packages" --argjson touched "$touched" '{changed: [inputs], packages: $packages, touched: $touched}' \
   | jq -c -L "$here" -f "$here/packages.jq")
 jq -r --argjson packages "$packages" \
   'if . == "workspace" then "scope: the whole workspace"

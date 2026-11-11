@@ -1,4 +1,6 @@
 // Data arrows state constructors, operations, rules and cells.
+// `IntOp` carries an operation that the integers of `data-base.gandr` lack,
+// so it takes another name.
 //
 // A single shaft defines a constructor.
 // A double shaft defines an operation.
@@ -6,10 +8,13 @@
 //
 // Constructors build terms.
 // Operations form terms.
-// Rules compute terms.
+// A directed rule computes its left side to its right side.
+// An invertible rule spells one term two ways, and the term order chooses
+// its direction.
 // Cells add paths between terms.
 //
-// - see: `pathological/identity/directed-cell.gandr`
+// - see: `pathological/identity/directed-cell.gandr` — the checker refuses a
+//   directed cell by name
 
 /// `IntOp` has two constructors, two rules and one operation.
 /// The rules reduce both compositions to `x`, and the operation unfolds
@@ -30,7 +35,8 @@ data IntOp : Type where {
 def collapsed : Path(S (P Z), Z) = Path.here Z;
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
-/// Path[.A = Circle](Base, Base)`.
+/// Path[.A = Circle](Base, Base)`. The paths at the point are the words over
+/// `loop`.
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
