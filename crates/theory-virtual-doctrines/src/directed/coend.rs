@@ -23,16 +23,6 @@ pub struct Diagram
 
 impl Diagram
 {
-    /// A diagram over the given `(object, component)` entries.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn new(entries: Vec<(TermRef, TermRef)>) -> Self
-    {
-        Self { entries }
-    }
-
     /// The component `F(object)` at a carrier object, or `Absent` when the
     /// object is off the carrier.
     ///
