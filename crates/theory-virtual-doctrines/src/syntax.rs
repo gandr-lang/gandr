@@ -591,16 +591,6 @@ impl<'syntax> ProtermNode<'syntax>
     {
         ProtermChildren(self.0.children())
     }
-    /// Copy this subtree into an owned flat table.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn to_owned(self) -> Proterm
-    {
-        Proterm(self.0.to_tree())
-    }
 }
 /// The child nodes of a reflected proterm.
 #[repr(transparent)]
