@@ -921,7 +921,8 @@ impl Deferrals
     ///   [`Self::solutions`]. A slot whose met holes are all bound, one none of
     ///   whose holes the judgement met, and a candidate of another arity, or
     ///   carrying another number of fixed sorts, are left out. At
-    ///   [`Signing::Signature`], a slot left with no elaboration or with two
+    ///   [`Signing::Signature`], a slot left with no elaboration or with two,
+    ///   or with a candidate the machine leaves undecided against the first,
     ///   binds nothing and is not refused: the resolution after the body
     ///   decides it, with the equations the body poses. No slot is no work.
     /// - fails: at [`Signing::Body`] only, [`CheckRefusal::ModelUnanswered`] at
@@ -929,7 +930,9 @@ impl Deferrals
     ///   first met hole the solver bound to a type's code stands for;
     ///   [`CheckRefusal::ModelAmbiguous`] there, naming the first candidate
     ///   left and every one not converting with it, when two elaborations are
-    ///   left.
+    ///   left; [`CheckRefusal::Undecided`] there when the machine leaves a
+    ///   candidate undecided against the first one left. At either part, a
+    ///   machine fault at the slot's first hole, as the machine raises it.
     /// - panics: none.
     ///
     /// # Errors
@@ -949,7 +952,9 @@ impl Deferrals
     ///   hole the judgement never met resolves on the others, and its
     ///   elaboration answers that hole; at the signature, two candidates of the
     ///   forced sort and none bind nothing and refuse nothing, and the same
-    ///   slot after the body is refused.
+    ///   slot after the body is refused; a candidate whose step the machine
+    ///   declines against the first one's leaves the slot open at the signature
+    ///   and undecided at the body, not ambiguous.
     /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
     /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
     /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
@@ -957,9 +962,11 @@ impl Deferrals
     /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
     /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
     /// - witness: `elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158`
+    /// - witness: `elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550`
     #[spec(ensures: |ret| match ret {
         | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => part == Signing::Body && at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
-        | Err((at, refusal)) => part == Signing::Body && matches!(refusal, CheckRefusal::ModelUnanswered { at: named, .. } if named == at),
+        | Err((at, CheckRefusal::ModelUnanswered { at: named, .. } | CheckRefusal::Undecided { at: named })) => part == Signing::Body && named == at,
+        | Err((_, refusal)) => matches!(refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
         | Ok(()) => true,
     })]
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Deferrals"))]
@@ -985,7 +992,7 @@ impl Deferrals
         let mut holes: Vec<(Component, ValueId, MetaId)> = Vec::new();
         let mut equations: Vec<gandr_core_unify::Equation> = Vec::new();
         let mut closed: Vec<Option<ValueId>> = Vec::new();
-        for slot in models {
+        'slots: for slot in models {
             holes.clear();
             holes.extend(
                 slot.holes
@@ -1033,11 +1040,21 @@ impl Deferrals
                 {
                     continue;
                 }
-                if let Some(first) = elaborated
-                    && agreement(arena, definitions, first, candidate)
-                        == MachineVerdict::Convertible
-                {
-                    continue;
+                if let Some(earlier) = elaborated {
+                    match agreement(arena, definitions, earlier, candidate) {
+                        Ok(MachineVerdict::Convertible) => continue,
+                        Ok(_) => {},
+                        // Undecided is no second elaboration: at the
+                        // signature the slot binds nothing and waits for the
+                        // body, which refuses it as undecided.
+                        Err(CheckRefusal::Undecided { .. }) => match part {
+                            Signing::Signature => continue 'slots,
+                            Signing::Body => {
+                                return Err((first, CheckRefusal::Undecided { at: first }));
+                            },
+                        },
+                        Err(fault) => return Err((first, fault)),
+                    }
                 }
                 survivors = survivors.with(CandidatePlace::from(place));
                 count = count.saturating_add(1);
@@ -1163,37 +1180,43 @@ fn pose(
 /// - requires: both candidates' values are closed, as a candidate's are, and
 ///   live in `arena`.
 /// - ensures: [`MachineVerdict::Convertible`] exactly when every pair converts;
-///   otherwise the first pair's verdict that is not, a pair the machine cannot
-///   decide reading as not convertible, so a slot it leaves open stays
-///   ambiguous rather than guessed.
+///   otherwise the first pair's verdict that is not, before any pair after it
+///   is compared.
 /// - provides: uniqueness up to conversion in [`Deferrals::resolve`].
-/// - fails: never.
+/// - fails: [`CheckRefusal::Undecided`] at the first pair the machine leaves
+///   undecided before a pair it refutes; another machine fault as it raises it.
 /// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two candidates passing the same member and the same
-///   carrier convert; two passing different members do not.
+///   carrier convert; two passing different members do not; a step the machine
+///   declines against another is undecided, and not a second elaboration.
 /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
 /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
-#[spec(ensures: |ret| (!one.components.is_empty() && !other.components.is_empty()) || (!one.fixed.is_empty() && !other.fixed.is_empty()) || ret == MachineVerdict::Convertible)]
+/// - witness: `elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550`
+#[spec(ensures: |ret| (!one.components.is_empty() && !other.components.is_empty()) || (!one.fixed.is_empty() && !other.fixed.is_empty()) || ret == Ok(MachineVerdict::Convertible))]
 fn agreement(
     arena: &CoreArena,
     definitions: &crate::code::CodeDefinitions,
     one: &gandr_core_term::model::Candidate,
     other: &gandr_core_term::model::Candidate,
-) -> MachineVerdict
+) -> Result<MachineVerdict, CheckRefusal>
 {
-    one.components
+    for (&left, &right) in one
+        .components
         .iter()
         .zip(&other.components)
         .chain(one.fixed.iter().zip(&other.fixed))
-        .map(|(&left, &right)| {
-            definitions
-                .convert_terms(arena, left, right)
-                .unwrap_or(MachineVerdict::NotConvertible)
-        })
-        .find(|&verdict| verdict != MachineVerdict::Convertible)
-        .unwrap_or(MachineVerdict::Convertible)
+    {
+        let verdict = definitions.convert_terms(arena, left, right)?;
+        if verdict != MachineVerdict::Convertible {
+            return Ok(verdict);
+        }
+    }
+    Ok(MachineVerdict::Convertible)
 }
 
 /// The solver's verdict on `equations`, a candidate's at a slot, run in a

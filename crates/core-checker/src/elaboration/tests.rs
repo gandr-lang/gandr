@@ -1441,6 +1441,61 @@ fn a_model_slot_two_candidates_answer_is_ambiguous_739()
     );
 }
 
+/// #6550: a candidate whose step the machine declines against the first
+/// candidate's step is no second elaboration: at the signature the slot binds
+/// nothing, and after the body it is undecided, not ambiguous.
+#[test]
+fn a_slot_whose_candidates_the_machine_declines_is_undecided_6550()
+{
+    // `Held` passes the integers and a held call of an axiom as its step,
+    // and `Zero` the integers and the literal zero. The call has no body to
+    // unfold, and the machine declines it against the literal.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (holes, at, [integer, _]) = forced_slot(&mut arena, &mut deferrals);
+    let axiom = arena.value_constant(ConstantIndex::from(5_usize));
+    let zero = arena.value_literal(integer_literal());
+    let forced = arena.computation_force(axiom);
+    let call = arena.computation_application(forced, zero);
+    let held = arena.value_returned(call);
+    let undecided = gandr_core_term::model::ModelSlot {
+        holes: Vec::from(holes),
+        fixed: Vec::new(),
+        candidates: Vec::from([
+            gandr_core_term::model::Candidate {
+                components: Vec::from([integer, held]),
+                fixed: Vec::new(),
+            },
+            gandr_core_term::model::Candidate {
+                components: Vec::from([integer, zero]),
+                fixed: Vec::new(),
+            },
+        ]),
+    };
+    let definitions = crate::code::CodeDefinitions::new();
+    assert_eq!(
+        deferrals.resolve(
+            &mut arena,
+            &definitions,
+            core::slice::from_ref(&undecided),
+            super::Signing::Signature
+        ),
+        Ok(()),
+        "the signature refuses no slot the machine leaves undecided"
+    );
+    assert!(
+        !deferrals
+            .solutions(&arena)
+            .is_ok_and(|solved| solved.contains_key(&holes[1])),
+        "the step stays unbound for the body"
+    );
+    assert_eq!(
+        deferrals.resolve(&mut arena, &definitions, &[undecided], super::Signing::Body),
+        Err((at, CheckRefusal::Undecided { at })),
+        "after the body, the slot is undecided, not ambiguous"
+    );
+}
+
 /// A slot the declared type leaves undecided waits for the body (#6158): at
 /// the signature, a slot two candidates of the forced sort answer and one no
 /// candidate answers bind nothing and are not refused; after the body, the
