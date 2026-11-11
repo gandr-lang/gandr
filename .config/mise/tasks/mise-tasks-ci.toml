@@ -4707,7 +4707,9 @@ conflicts() {
 # conflicting one (#2783), a unit at a time,
 # until the caller's own pull request is queued. A stack that holds the
 # commits of a pull request queued on its own waits for that one to merge,
-# then reads the stack again.
+# then reads the stack again. A stack on an old lineage of the trunk is
+# replayed onto it first and queues nothing (#6399, `replay_lineage`): its
+# new heads land once their checks pass.
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 trap 'release_landing; drop_scratch' EXIT
 trap 'exit 130' INT
