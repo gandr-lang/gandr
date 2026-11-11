@@ -337,6 +337,40 @@ pub struct Memory
     origin: Origin,
 }
 
+/// One reading of the host: the three figures that the available memory is
+/// the least of, each read one time.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Readings
+{
+    /// The host's `MemAvailable`.
+    available: Option<Bytes>,
+    /// The `memory.max` of the process's cgroup.
+    cgroup: Option<Bytes>,
+    /// The process's `RLIMIT_AS`.
+    address_space: Option<Bytes>,
+}
+
+impl Readings
+{
+    /// Read the three figures of the host now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn now() -> Self
+    {
+        Self {
+            available: available(),
+            cgroup: cgroup(),
+            address_space: address_space(),
+        }
+    }
+}
+
 impl Memory
 {
     /// The bound that the invocation's `--memory` names.
@@ -353,23 +387,35 @@ impl Memory
         }
     }
 
-    /// The bound that the host gives now: the memory it makes available,
-    /// else half of its physical memory, else 4 GiB.
+    /// The bound that the host gives now: the bound of one reading of the
+    /// host, by [`Memory::of`].
     ///
     /// # Specification
-    /// - ensures: the origin names which of the three the host gave.
-    /// - executable: none — the reading is the host's.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — on a Linux host the bound is at most `MemAvailable`
-    ///   and its origin is the available memory; a reading that skips the least
-    ///   of the three passes it.
-    /// - witness: `regions::tests::the_host_bound_is_at_most_its_available_memory`
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn host() -> Self
     {
-        let available = [available(), cgroup(), address_space()]
+        Self::of(Readings::now())
+    }
+
+    /// The bound that `readings` give: the least of its three figures, else
+    /// half of the host's physical memory, else 4 GiB.
+    ///
+    /// # Specification
+    /// - ensures: the origin names which of the three the readings gave.
+    /// - executable: none — the fallback reads the host's physical memory.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — on a Linux host the bound is at most the
+    ///   `MemAvailable` of its readings and its origin is the available memory;
+    ///   a bound that skips the least of the three passes it.
+    /// - witness: `regions::tests::the_host_bound_is_at_most_its_available_memory_6649`
+    #[inline]
+    #[must_use]
+    fn of(readings: Readings) -> Self
+    {
+        let available = [readings.available, readings.cgroup, readings.address_space]
             .into_iter()
             .flatten()
             .min();
@@ -1174,13 +1220,15 @@ mod tests
     }
 
     /// On a Linux host the bound is at most `MemAvailable`, and its origin
-    /// is the available memory.
+    /// is the available memory. The test reads the host one time, so another
+    /// process cannot move the bound and the figure apart.
     #[cfg(target_os = "linux")]
     #[test]
-    fn the_host_bound_is_at_most_its_available_memory()
+    fn the_host_bound_is_at_most_its_available_memory_6649()
     {
-        let host = Memory::host();
-        let available = super::available().expect("Linux reports MemAvailable");
+        let readings = super::Readings::now();
+        let available = readings.available.expect("Linux reports MemAvailable");
+        let host = Memory::of(readings);
         assert_eq!(Origin::Available, host.origin(), "{host}");
         assert!(host.bytes() <= available, "{host} past {available}");
     }
