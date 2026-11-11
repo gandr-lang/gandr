@@ -9428,11 +9428,9 @@ mod tests
     #[test]
     fn the_outermost_term_in_a_slot_answers_the_type_the_slot_asks()
     {
-        let source = SourceText::from(
-            "def h(c : Integer) -> -F Integer { return c }\n\
-             def g(a : Integer, b : Integer) -> -F Integer { return a + b }\n\
-             def main() -> -F Integer { g 2 (h 1) }\n",
-        );
+        let source = SourceText::from(include_str!(
+            "typed/unformatted/the-outermost-term-in-a-slot-answers-the-type-the-slot-asks.gandr"
+        ));
         let table = table(source);
         let text = <&str>::from(source);
         let span = |needle: &str| {
@@ -9468,10 +9466,9 @@ mod tests
     #[test]
     fn a_type_answers_on_the_line_a_wide_page_lays_out()
     {
-        let source = SourceText::from(
-            "def wide(first : Integer, second : Integer, third : Integer, fourth : Integer) -> -F Integer { return first }\n\
-             def main() -> -F Integer { wide 1 2 3 4 }\n",
-        );
+        let source = SourceText::from(include_str!(
+            "typed/unformatted/a-type-answers-on-the-line-a-wide-page-lays-out.gandr"
+        ));
         let table = table(source);
         let at = ByteOffset::from(<&str>::from(source).rfind("wide").expect("the use occurs"));
         let style = Form::Explicit.into();

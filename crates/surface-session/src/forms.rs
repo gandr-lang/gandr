@@ -597,6 +597,8 @@ impl FormStore
     ///   at no walk of the forms the parse took up whole.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the predicate would read the latest parse's tree
+    ///   again, which the store does not keep.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over generated edits of every class and every corpus

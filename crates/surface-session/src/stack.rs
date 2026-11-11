@@ -53,19 +53,43 @@ struct Entries
 
 impl Entries
 {
-    /// The entries from `start` to the end of a buffer of `length` entries.
+    /// The empty run at the end of `buffer`, where the entries pushed next
+    /// start.
     ///
     /// # Specification
     /// trivial.
-    fn since(
-        start: usize,
-        length: usize,
+    fn open<T>(buffer: &[T]) -> Self
+    {
+        let end = u32::try_from(buffer.len()).unwrap_or(u32::MAX);
+        Self { start: end, end }
+    }
+
+    /// This run, closed at the end of `buffer`: each entry pushed since it
+    /// opened.
+    ///
+    /// # Specification
+    /// trivial.
+    fn closed<T>(
+        self,
+        buffer: &[T],
     ) -> Self
     {
         Self {
-            start: u32::try_from(start).unwrap_or(u32::MAX),
-            end: u32::try_from(length).unwrap_or(u32::MAX),
+            start: self.start,
+            end: u32::try_from(buffer.len()).unwrap_or(u32::MAX),
         }
+    }
+
+    /// Forget each entry of `buffer` pushed since this run opened.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forget<T>(
+        self,
+        buffer: &mut Vec<T>,
+    )
+    {
+        buffer.truncate(usize::try_from(self.start).unwrap_or(usize::MAX));
     }
 
     /// The entries of `buffer` this run names.
@@ -81,6 +105,40 @@ impl Entries
         buffer
             .get(at(self.start) .. at(self.end))
             .unwrap_or_default()
+    }
+}
+
+/// The position of a spine among the spines of one form.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Place(u32);
+
+impl Place
+{
+    /// The place of the last spine of `spines`, when it holds one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn last<T>(spines: &[T]) -> Option<Self>
+    {
+        spines
+            .len()
+            .checked_sub(1)
+            .and_then(|position| u32::try_from(position).ok())
+            .map(Self)
+    }
+}
+
+impl From<Place> for usize
+{
+    /// The position, from zero.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: Place) -> Self
+    {
+        Self::try_from(place.0).unwrap_or(Self::MAX)
     }
 }
 
@@ -104,7 +162,7 @@ struct Spine
     arguments: Entries,
     /// The position of the innermost spine that holds this one, among the
     /// form's spines in order.
-    holder: Option<u32>,
+    holder: Option<Place>,
 }
 
 /// The spines of one form, ascending by where their slots open.
@@ -181,41 +239,37 @@ impl Spines
             parts: Vec::new(),
         };
         let mut found: Vec<Spine> = Vec::new();
-        let mut pending: Vec<(NodeIndex, Option<u32>)> =
+        let mut pending: Vec<(NodeIndex, Option<Place>)> =
             forms.iter().map(|&form| (form, None)).collect();
         while let Some((at, holder)) = pending.pop() {
             if let Some(mut spine) = walk.juxtaposed(at) {
                 spine.holder = holder;
                 found.push(spine);
-                let holder = u32::try_from(found.len().saturating_sub(1)).ok();
+                let holder = Place::last(&found);
                 pending.extend(walk.parts.iter().map(|&part| (part, holder)));
                 continue;
             }
             let below = walk.applied(at).map_or(holder, |mut spine| {
                 spine.holder = holder;
                 found.push(spine);
-                u32::try_from(found.len().saturating_sub(1)).ok()
+                Place::last(&found)
             });
             pending.extend(tree.children(at).map(|child| (child, below)));
         }
         if found.is_empty() {
             return None;
         }
-        let mut order: Vec<u32> = (0 .. found.len())
-            .filter_map(|position| u32::try_from(position).ok())
+        let mut order: Vec<Place> = (0 .. found.len())
+            .filter_map(|position| u32::try_from(position).ok().map(Place))
             .collect();
         order.sort_by_key(|&position| spine_at(&found, position).map(|spine| spine.open));
-        let mut placed = alloc::vec![0_u32; found.len()];
+        let mut placed = alloc::vec![Place(0); found.len()];
         for (rank, &position) in order.iter().enumerate() {
-            if let Some(slot) = placed.get_mut(usize::try_from(position).unwrap_or(usize::MAX)) {
-                *slot = u32::try_from(rank).unwrap_or(u32::MAX);
+            if let Some(slot) = placed.get_mut(usize::from(position)) {
+                *slot = Place(u32::try_from(rank).unwrap_or(u32::MAX));
             }
         }
-        let place = |holder: u32| {
-            placed
-                .get(usize::try_from(holder).unwrap_or(usize::MAX))
-                .copied()
-        };
+        let place = |holder: Place| placed.get(usize::from(holder)).copied();
         let spines: Box<[Spine]> = order
             .iter()
             .filter_map(|&position| spine_at(&found, position).copied())
@@ -244,7 +298,8 @@ impl Spines
         let last = self.each.partition_point(|spine| spine.open <= offset);
         let mut at = last
             .checked_sub(1)
-            .and_then(|position| u32::try_from(position).ok());
+            .and_then(|position| u32::try_from(position).ok())
+            .map(Place);
         core::iter::from_fn(move || {
             while let Some(spine) = at.and_then(|position| spine_at(&self.each, position)) {
                 at = spine.holder;
@@ -263,10 +318,10 @@ impl Spines
 /// trivial.
 fn spine_at(
     spines: &[Spine],
-    position: u32,
+    position: Place,
 ) -> Option<&Spine>
 {
-    spines.get(usize::try_from(position).unwrap_or(usize::MAX))
+    spines.get(usize::from(position))
 }
 
 /// One walk of a form's tree: what it reads under, and the buffers it fills.
@@ -333,7 +388,10 @@ impl Walk<'_, '_>
         if rule != APPLICATION {
             return None;
         }
-        let (separated, argued) = (self.separators.len(), self.arguments.len());
+        let (separated, argued) = (
+            Entries::open(&self.separators),
+            Entries::open(&self.arguments),
+        );
         let mut head = None;
         let mut open = None;
         let mut close = node.span().end();
@@ -379,16 +437,16 @@ impl Walk<'_, '_>
         }
         let (Some(head), Some(open)) = (head, open)
         else {
-            self.separators.truncate(separated);
-            self.arguments.truncate(argued);
+            separated.forget(&mut self.separators);
+            argued.forget(&mut self.arguments);
             return None;
         };
         Some(Spine {
             head: self.span(head),
             open: self.offset(open),
             close: self.offset(close),
-            separators: Entries::since(separated, self.separators.len()),
-            arguments: Entries::since(argued, self.arguments.len()),
+            separators: separated.closed(&self.separators),
+            arguments: argued.closed(&self.arguments),
             holder: None,
         })
     }
@@ -459,7 +517,10 @@ impl Walk<'_, '_>
             .iter()
             .filter_map(|&part| tree.node(part).map(Node::span));
         let head = spans.next()?;
-        let (separated, argued) = (self.separators.len(), self.arguments.len());
+        let (separated, argued) = (
+            Entries::open(&self.separators),
+            Entries::open(&self.arguments),
+        );
         let mut open = None;
         let mut last = None;
         for argument in spans {
@@ -475,16 +536,16 @@ impl Walk<'_, '_>
         }
         let Some(open) = open
         else {
-            self.separators.truncate(separated);
-            self.arguments.truncate(argued);
+            separated.forget(&mut self.separators);
+            argued.forget(&mut self.arguments);
             return None;
         };
         Some(Spine {
             head: self.span(head),
             open: self.offset(open),
             close: self.offset(close),
-            separators: Entries::since(separated, self.separators.len()),
-            arguments: Entries::since(argued, self.arguments.len()),
+            separators: separated.closed(&self.separators),
+            arguments: argued.closed(&self.arguments),
             holder: None,
         })
     }
@@ -542,6 +603,7 @@ pub struct Frame
 ///   the whole parse of the same text.
 /// - witness: `stack::tests::the_innermost_spine_answers_with_its_slot`
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+#[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq)]
 pub struct Stack
 {
@@ -606,6 +668,8 @@ impl Stack
     ///   side view's pane.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the result is a lazy iterator, so the call returns
+    ///   no value that a predicate reads.
     /// - intension: a binary search for the form and one for the last spine
     ///   opened at or before `offset`, then one step per spine that holds it;
     ///   nothing is allocated.
@@ -681,9 +745,9 @@ impl Stack
                         spine.head.shifted(by),
                         shift(spine.open),
                         shift(spine.close),
-                        spine.holder.map(|holder| {
-                            first.saturating_add(usize::try_from(holder).unwrap_or(usize::MAX))
-                        }),
+                        spine
+                            .holder
+                            .map(|holder| first.saturating_add(usize::from(holder))),
                     )
                 })
             })
@@ -756,8 +820,10 @@ mod tests
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::SourceFragment;
     use gandr_surface_syntax::SourceText;
 
+    use super::Slot;
     use super::Stack;
 
     /// A family, a function that matches on it, a call that nests a
@@ -770,13 +836,16 @@ mod tests
     /// # Specification
     /// trivial.
     fn frames(
-        text: &str,
-        marker: &str,
-    ) -> Vec<(String, usize, Option<String>)>
+        text: SourceText<'_>,
+        marker: SourceFragment<'_>,
+    ) -> Vec<(String, Slot, Option<String>)>
     {
         let grammar = built_in().expect("the grammar builds");
-        let parsed = parse(&grammar, SourceText::from(text)).expect("the text parses");
-        let at = text.find(marker).expect("the marker occurs");
+        let parsed = parse(&grammar, text).expect("the text parses");
+        let text = <&str>::from(text);
+        let at = text
+            .find(AsRef::<str>::as_ref(&marker))
+            .expect("the marker occurs");
         let written = |span: ByteSpan| {
             String::from(
                 text.get(usize::from(span.start()) .. usize::from(span.end()))
@@ -785,13 +854,7 @@ mod tests
         };
         Stack::of(&grammar, parsed.tree())
             .at(ByteOffset::from(at))
-            .map(|frame| {
-                (
-                    written(frame.head),
-                    usize::from(frame.slot),
-                    frame.argument.map(written),
-                )
-            })
+            .map(|frame| (written(frame.head), frame.slot, frame.argument.map(written)))
             .collect()
     }
 
@@ -800,9 +863,9 @@ mod tests
     /// # Specification
     /// trivial.
     fn innermost(
-        text: &str,
-        marker: &str,
-    ) -> Option<(String, usize)>
+        text: SourceText<'_>,
+        marker: SourceFragment<'_>,
+    ) -> Option<(String, Slot)>
     {
         frames(text, marker)
             .into_iter()
@@ -813,53 +876,51 @@ mod tests
     #[test]
     fn the_innermost_spine_answers_with_its_slot()
     {
-        let answer = |head: &str, slot: usize| Some((String::from(head), slot));
+        let answer = |head: &str, slot: usize| Some((String::from(head), Slot(slot)));
+        let at = |marker: &str| innermost(SourceText::from(CALLED), SourceFragment::from(marker));
         assert_eq!(
-            innermost(CALLED, "Zero) Zero"),
+            at("Zero) Zero"),
             answer("Succ", 0),
             "a spine nested in an argument answers itself"
         );
         assert_eq!(
-            innermost(CALLED, " Zero }"),
+            at(" Zero }"),
             answer("plus", 0),
             "just past an argument, the argument it ends"
         );
         assert_eq!(
-            innermost(CALLED, "Zero }"),
+            at("Zero }"),
             answer("plus", 1),
             "at the next argument, that argument"
         );
         assert_eq!(
-            innermost(
-                CALLED,
-                include_str!("stack/unformatted/the-innermost-spine-answers-with-its-slot-1.gandr")
-            ),
+            at(include_str!(
+                "stack/unformatted/the-innermost-spine-answers-with-its-slot-1.gandr"
+            )),
             answer("plus", 1),
             "just past the last argument, the spine it ends"
         );
         assert_eq!(
-            innermost(
-                CALLED,
-                include_str!("stack/unformatted/the-innermost-spine-answers-with-its-slot-2.gandr")
-            ),
+            at(include_str!(
+                "stack/unformatted/the-innermost-spine-answers-with-its-slot-2.gandr"
+            )),
             None,
             "past the spine, no spine"
         );
         assert_eq!(
-            innermost(CALLED, "plus (Succ"),
+            at("plus (Succ"),
             None,
             "on the head, not the spine it heads"
         );
         assert_eq!(
-            innermost(
-                CALLED,
-                include_str!("stack/unformatted/the-innermost-spine-answers-with-its-slot-3.gandr")
-            ),
+            at(include_str!(
+                "stack/unformatted/the-innermost-spine-answers-with-its-slot-3.gandr"
+            )),
             answer("plus[<]", 1),
             "a recursive call, headed by its claim"
         );
         assert_eq!(
-            innermost(CALLED, "a)\n"),
+            at("a)\n"),
             answer("List", 0),
             "a family's application in a type"
         );
@@ -870,11 +931,13 @@ mod tests
     {
         // `main` nests three spines; the open call below it closes none.
         let closed = "def main() -> -F Integer { f 1 (g 2 (h ?)) }\n";
+        let framed =
+            |text: &str, marker: &str| frames(SourceText::from(text), SourceFragment::from(marker));
         let frame = |head: &str, slot: usize, argument: Option<&str>| {
-            (String::from(head), slot, argument.map(String::from))
+            (String::from(head), Slot(slot), argument.map(String::from))
         };
         assert_eq!(
-            frames(closed, "?"),
+            framed(closed, "?"),
             [
                 frame("h", 0, Some("?")),
                 frame("g", 1, Some("(h ?)")),
@@ -883,7 +946,7 @@ mod tests
             "the hole stands in each spine around it, innermost first"
         );
         assert_eq!(
-            frames(closed, "h ?"),
+            framed(closed, "h ?"),
             [
                 frame("g", 1, Some("(h ?)")),
                 frame("f", 1, Some("(g 2 (h ?))"))
@@ -891,20 +954,20 @@ mod tests
             "a head stands in the spines around its own"
         );
         assert_eq!(
-            frames(closed, "f 1"),
+            framed(closed, "f 1"),
             [],
             "the outermost head stands in no spine"
         );
         let open = "def main() -> -F Integer { f 1 (g 2 (h \n";
         let at = |marker: &str| {
-            frames(open, marker)
+            framed(open, marker)
                 .into_iter()
                 .map(|(head, slot, _)| (head, slot))
                 .collect::<Vec<_>>()
         };
         assert_eq!(
             at("2 (h"),
-            [(String::from("g"), 0), (String::from("f"), 1)],
+            [(String::from("g"), Slot(0)), (String::from("f"), Slot(1))],
             "an open call keeps the spines the parser repaired"
         );
     }

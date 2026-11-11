@@ -13377,22 +13377,15 @@ mod tests
         );
     }
 
-    /// The result the request `method` at `line` and `character` of the
-    /// document `stacked.gandr` gets from `server`.
+    /// The result that `server` answers `request` with, a request of id 9.
     ///
     /// # Specification
     /// trivial.
     fn asked_at(
         server: &mut Connected,
-        method: &str,
-        (line, character): (usize, usize),
+        request: &Value,
     ) -> Value
     {
-        let request = serde_json::json!({
-            "jsonrpc": "2.0", "id": 9_i32, "method": method,
-            "params": {"textDocument": {"uri": "file:///tmp/stacked.gandr"},
-                "position": {"line": line, "character": character}},
-        });
         send(server, Json(&request.to_string()))
             .as_array()
             .and_then(|messages| {
@@ -13411,9 +13404,20 @@ mod tests
     #[test]
     fn the_context_stack_agrees_with_the_hover_and_the_signature_help()
     {
-        let heads = "def h(c : Integer) -> -F Integer { return c }\n\
-            def g(a : Integer, b : Integer) -> -F Integer { return a + b }\n\
-            def f(a : Integer, b : Integer) -> -F Integer { return a + b }\n";
+        let heads = include_str!(
+            "server/unformatted/the-context-stack-agrees-with-the-hover-and-the-signature-help-heads.gandr"
+        );
+        // The request `method` at `line` and `character` of `stacked.gandr`.
+        let ask = |server: &mut Connected, method: &str, (line, character): (usize, usize)| {
+            asked_at(
+                server,
+                &serde_json::json!({
+                    "jsonrpc": "2.0", "id": 9_i32, "method": method,
+                    "params": {"textDocument": {"uri": "file:///tmp/stacked.gandr"},
+                        "position": {"line": line, "character": character}},
+                }),
+            )
+        };
         let row = |head: &str, (slot, arity): (u32, u32), expected: Option<&str>| {
             (String::from(head), slot, arity, expected.map(String::from))
         };
@@ -13463,15 +13467,14 @@ mod tests
             let line = text.lines().count().saturating_sub(1);
             let marked = main.find(at).expect("the marker occurs");
             assert_eq!(
-                rows(&asked_at(&mut server, "gandr/stack", (line, marked))),
+                rows(&ask(&mut server, "gandr/stack", (line, marked))),
                 stacked,
                 "{main}: the spines around the marker, innermost first"
             );
             for (line, written) in text.lines().enumerate() {
                 for character in 0 ..= written.len() {
-                    let stack = asked_at(&mut server, "gandr/stack", (line, character));
-                    let help =
-                        asked_at(&mut server, "textDocument/signatureHelp", (line, character));
+                    let stack = ask(&mut server, "gandr/stack", (line, character));
+                    let help = ask(&mut server, "textDocument/signatureHelp", (line, character));
                     let first = stack.as_array().and_then(|rows| rows.first());
                     match first.filter(|first| first["declared"].is_string()) {
                         Some(first) => {
@@ -13502,7 +13505,7 @@ mod tests
                             usize::try_from(start["character"].as_u64().unwrap_or_default())
                                 .unwrap_or_default(),
                         );
-                        let hover = asked_at(&mut server, "textDocument/hover", head);
+                        let hover = ask(&mut server, "textDocument/hover", head);
                         let shown = hover["contents"]["value"].as_str().unwrap_or_default();
                         if let Some(ty) = row["type"].as_str() {
                             assert!(
