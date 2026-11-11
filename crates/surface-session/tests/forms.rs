@@ -462,7 +462,7 @@ mod sweeps
     /// seventh a night, the count the nightly's sweeps share (#3013). An
     /// eighth of the corpus scripted with specifications enforced took 67 s
     /// on the nightly runner (run 40602657172).
-    const NIGHTS: Nights = Nights(7);
+    const NIGHTS: Nights = Nights(14);
 
     /// The longest source text, its import closure laid out before it, a
     /// sampled run scripts. A script submits the text ten times, and where
@@ -499,8 +499,15 @@ mod sweeps
                 &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
             )
             .into_iter()
-            .map(|source| source.path)
-            .collect();
+            .collect::<Vec<_>>();
+        let visited: Vec<_> = Sample {
+            name: SAMPLE.name,
+            size: SampleSize(16),
+        }
+        .select(&visited)
+        .into_iter()
+        .map(|source| source.path)
+        .collect();
         assert!(
             visited.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
