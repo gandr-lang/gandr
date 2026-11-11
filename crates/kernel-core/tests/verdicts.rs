@@ -2,6 +2,7 @@
 //! a trusted signer gave over the records as recorded, and never under the
 //! recheck policy.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -22,8 +23,18 @@ use gandr_kernel_core::verdict::VerdictRecord;
 use gandr_kernel_core::verdict::VerdictSource;
 use gandr_kernel_core::verdict::stored;
 use gandr_kernel_core::verdict::verdict_image;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::FreeCell;
+use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::Presentation;
+use gandr_kernel_term::RuleNode;
+use gandr_kernel_term::SealExtent;
+use gandr_kernel_term::SealScope;
+use gandr_kernel_term::TermArena;
 use quenchant_shape::shape::Maybe;
 
 /// A store holding receipts, each answered for every key it attests.
@@ -101,8 +112,8 @@ fn admit_one(
         .admission()
 }
 
-/// Admit two unit definitions, then a unit whose body names the constant at
-/// `named`; answer how each was admitted.
+/// Admit a unit definition, a second that names the first, then a unit whose
+/// body names the constant at `named`; answer how each was admitted.
 ///
 /// # Specification
 /// trivial.
@@ -111,7 +122,7 @@ fn admit(
     named: ConstantIndex,
 ) -> Vec<Admission>
 {
-    [None, None, Some(named)]
+    [None, Some(ConstantIndex::from(0_usize)), Some(named)]
         .into_iter()
         .map(|body| admit_one(environment, body))
         .collect()
@@ -157,8 +168,9 @@ fn a_verdict_is_recalled_only_under_its_own_key()
     let receipt = recorded(&signer, first_unit);
     assert_eq!(
         receipt.records().len(),
-        3,
-        "the receipt holds every checked verdict"
+        5,
+        "the receipt holds every checked verdict under its chain key and its entry key, and \
+         the two definitions with one content under one entry key"
     );
 
     let mut again = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
@@ -332,15 +344,26 @@ fn a_handed_on_environment_keys_on_and_signs_only_its_own()
     else {
         panic!("each run checked a declaration under keys");
     };
-    assert_eq!(whole.records().len(), 3);
-    let [ref own] = *handed.records()
-    else {
-        panic!("the copy signs its one declaration alone");
-    };
-    assert!(
-        whole.records().contains(own),
-        "the copy keys its declaration as the run would have"
+    assert_eq!(
+        whole.records().len(),
+        5,
+        "the two equal units share one entry key"
     );
+    assert_eq!(
+        handed.records().len(),
+        2,
+        "the copy signs its one declaration alone, under its two keys"
+    );
+    // A receipt holds its records in key order, so each is found by key.
+    for own in handed.records() {
+        assert!(
+            whole
+                .records()
+                .binary_search_by_key(&own.key(), VerdictRecord::key)
+                .is_ok_and(|found| whole.records().get(found) == Some(own)),
+            "the copy keys its declaration as the run would have"
+        );
+    }
 
     let mut recalling = Environment::recalling(trusting(&signer), Store::holding(&[&whole]));
     let _recalled = admit_one(&mut recalling, None);
@@ -494,5 +517,381 @@ fn a_stratum_receipt_is_believed_only_as_signed_4034()
         admit(&mut again, named),
         [Admission::Checked; 3],
         "a stratum receipt attests no admission"
+    );
+}
+
+/// How many units a product in these tests holds.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Width(usize);
+
+/// Which form of the tree and forest block a program offers.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Forest
+{
+    /// A tree is a forest; a forest is empty or a tree and a forest.
+    AsWritten,
+    /// A forest is also a tree alone.
+    Edited,
+}
+
+/// One declaration a program in these tests offers.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Offered
+{
+    /// An axiom of the product of so many units.
+    Axiom(Width),
+    /// A definition of the product of so many units, as their tuple.
+    Value(Width),
+    /// A definition of the product of so many units, as the constant at the
+    /// position.
+    Naming(Width, ConstantIndex),
+    /// A definition of the pair of an axiom of two units and one of three,
+    /// as the constants at the two positions.
+    Pair(ConstantIndex, ConstantIndex),
+    /// A unit definition whose body is the unit.
+    Unit,
+    /// An abstract type represented by the unit, manifest for the next so
+    /// many declarations.
+    Sealed(Width),
+    /// A sort of one point.
+    Sort,
+    /// The words of one loop at the point of the sort at the position.
+    Words(ConstantIndex),
+    /// An axiom of the data type at the position.
+    Of(ConstantIndex),
+    /// The tree and forest block, the tree first.
+    Block(Forest),
+}
+
+/// Offer `offered` to `environment`; answer how it was admitted, the block's
+/// members as one.
+///
+/// # Specification
+/// trivial.
+fn offer(
+    environment: &mut Environment,
+    offered: Offered,
+) -> Admission
+{
+    let next = ConstantIndex::from(usize::from(environment.entries().len()));
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let unit = arena.value_type_unit();
+    let point = arena.value_unit();
+    let product =
+        |arena: &mut TermArena, width: Width| arena.value_type_product(&alloc::vec![unit; width.0]);
+    let monomorphic = LevelSignature::monomorphic;
+    let staged = match offered {
+        Offered::Axiom(width) => {
+            let declared = product(arena, width);
+            staging.axiom(monomorphic(), declared)
+        },
+        Offered::Value(width) => {
+            let declared = product(arena, width);
+            let body = arena.value_tuple(&alloc::vec![point; width.0]);
+            staging.def(monomorphic(), declared, body)
+        },
+        Offered::Naming(width, constant) => {
+            let declared = product(arena, width);
+            let body = arena.value_constant(constant);
+            staging.def(monomorphic(), declared, body)
+        },
+        Offered::Pair(left, right) => {
+            let two = product(arena, Width(2));
+            let three = product(arena, Width(3));
+            let declared = arena.value_type_product(&[two, three]);
+            let left = arena.value_constant(left);
+            let right = arena.value_constant(right);
+            let body = arena.value_tuple(&[left, right]);
+            staging.def(monomorphic(), declared, body)
+        },
+        Offered::Unit => staging.def(monomorphic(), unit, point),
+        Offered::Sealed(width) => {
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            staging.abstract_type(
+                monomorphic(),
+                kind,
+                unit,
+                SealScope::Closed(SealExtent::from(width.0)),
+            )
+        },
+        Offered::Sort => {
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            staging.data(
+                monomorphic(),
+                alloc::vec![],
+                alloc::vec![alloc::vec![]],
+                kind,
+            )
+        },
+        Offered::Words(sort) => {
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let own = arena.value_type_data(next, alloc::vec![]);
+            let base = || -> Box<[RuleNode]> {
+                [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+            };
+            let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
+            staging
+                .data(
+                    monomorphic(),
+                    alloc::vec![],
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(Presentation::words(cells))
+        },
+        Offered::Of(family) => {
+            let declared = arena.value_type_data(family, alloc::vec![]);
+            staging.axiom(monomorphic(), declared)
+        },
+        Offered::Block(form) => {
+            let forest = ConstantIndex::from(usize::from(next).saturating_add(1));
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let forests = arena.value_type_data(forest, alloc::vec![]);
+            let tree = staging.data(
+                monomorphic(),
+                alloc::vec![],
+                alloc::vec![alloc::vec![forests]],
+                kind,
+            );
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let trees = arena.value_type_data(next, alloc::vec![]);
+            let forests = arena.value_type_data(forest, alloc::vec![]);
+            let mut constructors = alloc::vec![alloc::vec![], alloc::vec![trees, forests]];
+            if matches!(form, Forest::Edited) {
+                constructors.push(alloc::vec![trees]);
+            }
+            let list = staging.data(monomorphic(), alloc::vec![], constructors, kind);
+            let _block = environment
+                .add_block(alloc::vec![tree, list])
+                .expect("the block admits");
+            return Admission::Checked;
+        },
+    };
+    let admitted = environment
+        .add_decl(staged)
+        .expect("each declaration of these programs admits");
+    environment
+        .entries()
+        .get(usize::from(admitted.position()))
+        .expect("it was appended")
+        .admission()
+}
+
+/// The receipt `signer` gave over a cold run of `program`.
+///
+/// # Specification
+/// trivial.
+fn recorded_program(
+    signer: &KernelSigner,
+    program: &[Offered],
+) -> StoredReceipt
+{
+    let mut cold = Environment::recalling(trusting(signer), Arc::new(NoVerdicts));
+    for &offered in program {
+        assert_eq!(
+            offer(&mut cold, offered),
+            Admission::Checked,
+            "a cold run checks every declaration"
+        );
+    }
+    let Maybe::Present(receipt) = cold.receipt(signer)
+    else {
+        panic!("a run that checked declarations under keys gives a receipt");
+    };
+    receipt
+}
+
+/// How each declaration of `program` is admitted in a run that trusts
+/// `signer` and reads `receipt`.
+///
+/// # Specification
+/// trivial.
+fn rerun(
+    signer: &KernelSigner,
+    receipt: &StoredReceipt,
+    program: &[Offered],
+) -> Vec<Admission>
+{
+    let mut environment = Environment::recalling(trusting(signer), Store::holding(&[receipt]));
+    program
+        .iter()
+        .map(|&offered| offer(&mut environment, offered))
+        .collect()
+}
+
+/// #6568: an edit re-keys the declarations that read the edited one and no
+/// other, and a declaration keeps its key at a new position. A run that
+/// offers a new axiom first and edits the first axiom recalls each
+/// declaration but the new one, the edited one and the one that reads it.
+#[test]
+fn an_edit_re_keys_only_what_reads_it_6568()
+{
+    use Admission::Checked;
+    use Admission::Recalled;
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let receipt = recorded_program(&signer, &[
+        Offered::Axiom(Width(2)),
+        Offered::Axiom(Width(3)),
+        Offered::Naming(Width(2), at(0_usize)),
+        Offered::Naming(Width(3), at(1_usize)),
+    ]);
+    assert_eq!(
+        rerun(&signer, &receipt, &[
+            Offered::Axiom(Width(4)),
+            Offered::Value(Width(2)),
+            Offered::Axiom(Width(3)),
+            Offered::Naming(Width(2), at(1_usize)),
+            Offered::Naming(Width(3), at(2_usize)),
+        ]),
+        [Checked, Checked, Recalled, Checked, Recalled],
+        "the new axiom, the edited one and its reader are checked, and the rest keep their keys"
+    );
+}
+
+/// #6568: a key reads no admission order. A definition naming two axioms is
+/// recalled when the two are admitted in the other order.
+#[test]
+fn a_key_reads_no_admission_order_6568()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let receipt = recorded_program(&signer, &[
+        Offered::Axiom(Width(2)),
+        Offered::Axiom(Width(3)),
+        Offered::Pair(at(0_usize), at(1_usize)),
+    ]);
+    assert_eq!(
+        rerun(&signer, &receipt, &[
+            Offered::Axiom(Width(3)),
+            Offered::Axiom(Width(2)),
+            Offered::Pair(at(1_usize), at(0_usize)),
+        ]),
+        [Admission::Recalled; 3]
+    );
+}
+
+/// #6568: two axioms of one type are two constants, so they take two keys. A
+/// definition naming the first is not recalled from the record of one naming
+/// the second.
+#[test]
+fn two_axioms_of_one_type_take_two_keys_6568()
+{
+    use Admission::Checked;
+    use Admission::Recalled;
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let twice = |named: ConstantIndex| {
+        [
+            Offered::Axiom(Width(2)),
+            Offered::Axiom(Width(2)),
+            Offered::Naming(Width(2), named),
+        ]
+    };
+    let receipt = recorded_program(&signer, &twice(at(1_usize)));
+    assert_eq!(
+        rerun(&signer, &receipt, &twice(at(0_usize))),
+        [Recalled, Recalled, Checked],
+        "the first axiom is not the second"
+    );
+    assert_eq!(rerun(&signer, &receipt, &twice(at(1_usize))), [Recalled; 3]);
+}
+
+/// #6568: a declaration in an atom's scope reads the atom as its
+/// representation, so it takes another key than the same declaration outside
+/// the scope.
+#[test]
+fn an_atom_manifest_at_a_declaration_keys_it_6568()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let receipt = recorded_program(&signer, &[Offered::Sealed(Width(1)), Offered::Unit]);
+    assert_eq!(
+        rerun(&signer, &receipt, &[
+            Offered::Sealed(Width(1)),
+            Offered::Unit,
+            Offered::Unit
+        ]),
+        [Admission::Recalled, Admission::Recalled, Admission::Checked],
+        "the second unit is outside the atom's scope"
+    );
+}
+
+/// #6568: a type of words over a sort a declaration reaches re-keys the
+/// declaration, and one over another sort does not.
+#[test]
+fn words_over_a_reached_sort_re_key_a_declaration_6568()
+{
+    use Admission::Checked;
+    use Admission::Recalled;
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let receipt = recorded_program(&signer, &[
+        Offered::Sort,
+        Offered::Sort,
+        Offered::Of(at(0_usize)),
+    ]);
+    let after = |sort: ConstantIndex| {
+        [
+            Offered::Sort,
+            Offered::Sort,
+            Offered::Words(sort),
+            Offered::Of(at(0_usize)),
+        ]
+    };
+    assert_eq!(
+        rerun(&signer, &receipt, &after(at(1_usize))),
+        [Recalled, Recalled, Checked, Recalled],
+        "words over the other sort"
+    );
+    assert_eq!(
+        rerun(&signer, &receipt, &after(at(0_usize))),
+        [Recalled, Recalled, Checked, Checked],
+        "words over the sort the axiom reads"
+    );
+}
+
+/// #6568: a mutual block is keyed whole, and each member by its place in it.
+/// A declaration that reads a member keeps its key when the block moves, and
+/// an edit of the other member re-keys it.
+#[test]
+fn a_block_member_is_keyed_by_its_whole_block_6568()
+{
+    use Admission::Checked;
+    use Admission::Recalled;
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let receipt = recorded_program(&signer, &[
+        Offered::Block(Forest::AsWritten),
+        Offered::Of(at(0_usize)),
+    ]);
+    assert_eq!(
+        rerun(&signer, &receipt, &[
+            Offered::Axiom(Width(2)),
+            Offered::Block(Forest::AsWritten),
+            Offered::Of(at(1_usize)),
+        ]),
+        [Checked, Checked, Recalled],
+        "a block is checked, and the axiom of its tree keeps its key"
+    );
+    assert_eq!(
+        rerun(&signer, &receipt, &[
+            Offered::Block(Forest::Edited),
+            Offered::Of(at(0_usize)),
+        ]),
+        [Checked, Checked],
+        "an edit of the forest re-keys the tree"
     );
 }

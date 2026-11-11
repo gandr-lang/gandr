@@ -1508,7 +1508,7 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
         .filter(|entry| entry.admission() == Admission::Checked)
         .count();
     assert_eq!(
-        receipt.records().len(),
+        usize::from(cold.environment().recorded()),
         checked,
         "every declaration the kernel checked is recorded"
     );
