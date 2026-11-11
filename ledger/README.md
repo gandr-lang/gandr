@@ -48,7 +48,7 @@ flowchart BT
   surface -->|14| kernel
   surface -->|29| core
   surface -->|8| storage
-  surface -->|3| runtime
+  surface -->|4| runtime
   workflow -->|4| surface
 ```
 <!-- crate-map:end -->

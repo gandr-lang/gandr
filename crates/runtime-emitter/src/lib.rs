@@ -84,10 +84,10 @@
 //! # The runtime support
 //!
 //! Each thread keeps its own heap, frame region, window region and entry
-//! window, each allocated
-//! at its bound and committed as a run first touches it; a run that would
-//! pass a bound takes that region's exit and is declined. A run enters
-//! through `enter` or `execute` with a fresh
+//! window. The heap and the window region reserve the invocation's memory
+//! bound and commit it in chunks ([`regions`]); the frame region is allocated
+//! at its bound. A run that would pass a bound takes that region's exit and
+//! is declined. A run enters through `enter` or `execute` with a fresh
 //! [`gandr_runtime_stencils::Runtime`] record and a halting sentinel frame
 //! under the base mark, and returns when an exit stencil writes its
 //! status. Emitted code carries no unwind tables and calls only the host
@@ -142,9 +142,10 @@
 //! and Mach-O): one relocation view over both formats, maintained with the
 //! toolchain's own backtrace and linker tools. `goblin` was the alternative,
 //! declined for its per-format relocation types; the choice reverses if a
-//! third format needs a reader `object` lacks. Executable memory is mapped
-//! through `libc`: `rustix`, already in the graph, exposes neither `MAP_JIT`
-//! nor `pthread_jit_write_protect_np`; the choice reverses if it grows both.
+//! third format needs a reader `object` lacks. Executable memory, a run's
+//! regions and the host's memory are read and mapped through `libc`:
+//! `rustix`, already in the graph, exposes neither `MAP_JIT` nor
+//! `pthread_jit_write_protect_np`; the choice reverses if it grows both.
 //!
 //! # References
 //!
@@ -183,6 +184,7 @@ mod host;
 mod lower;
 #[cfg(gandr_patcher)]
 mod native;
+pub mod regions;
 mod run;
 mod seam;
 mod trace;

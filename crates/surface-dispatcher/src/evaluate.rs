@@ -4755,9 +4755,10 @@ mod tests
     }
 
     /// The thunk declared as `name` in [`LOOPS`] is a thunk whose force, on
-    /// `tier`, runs until its 2²⁵ jumps are spent or its heap fills, without
-    /// filling the frame region. Each pass gives its window back, so a pass
-    /// holding a frame would fill the frames within those jumps;
+    /// `tier`, runs until its 2²⁵ jumps are spent or its regions fill the
+    /// memory bound, without filling the frame region. Each pass gives its
+    /// window back, so a pass holding a frame would fill the frames within
+    /// those jumps;
     /// `gandr-core-sequent`'s loop suite holds the plain loop to that
     /// contrast. A tier this host lacks holds nothing to run.
     ///
@@ -4802,9 +4803,7 @@ mod tests
         assert!(
             matches!(
                 spent,
-                Err(Declined::Exhausted(
-                    Status::FuelExhausted | Status::HeapExhausted
-                ))
+                Err(Declined::Exhausted(Status::FuelExhausted) | Declined::Memory(_))
             ),
             "`{name}` holds no frame on {tier:?}: {spent:?}"
         );

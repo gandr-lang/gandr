@@ -38,7 +38,8 @@ unsafe extern "rust-preserve-none" {
         environment: *mut Word,
         value: Word,
     ) -> Word;
-    /// The exit taken when an allocation would pass the heap's limit.
+    /// The exit taken when an allocation needs a chunk the heap cannot
+    /// commit.
     pub safe fn hole_heap_exhausted(
         runtime: *mut Runtime,
         heap: *mut Word,
@@ -48,6 +49,15 @@ unsafe extern "rust-preserve-none" {
     ) -> Word;
     /// The exit taken when a push would pass the frame region's limit.
     pub safe fn hole_frames_exhausted(
+        runtime: *mut Runtime,
+        heap: *mut Word,
+        frames: *mut Word,
+        environment: *mut Word,
+        value: Word,
+    ) -> Word;
+    /// The exit taken when a closure entry's window needs a chunk the window
+    /// region cannot commit.
+    pub safe fn hole_windows_exhausted(
         runtime: *mut Runtime,
         heap: *mut Word,
         frames: *mut Word,
@@ -198,6 +208,28 @@ pub extern "rust-preserve-none" fn hole_frames_exhausted(
 ) -> Word
 {
     become crate::transitions::stencil_frames_exhausted(runtime, heap, frames, environment, value)
+}
+
+/// The window exit, taken directly.
+///
+/// # Specification
+/// - ensures: as `stencil_windows_exhausted`.
+/// - executable: none — an exit runs inside a chain of tail calls.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an executor run whose window region commits no chunk
+///   exits by name at its first closure entry.
+/// - witness: `tests::exits::a_full_window_region_exits_by_name`
+#[cfg(not(gandr_stencil_object))]
+pub extern "rust-preserve-none" fn hole_windows_exhausted(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    become crate::transitions::stencil_windows_exhausted(runtime, heap, frames, environment, value)
 }
 
 /// The fuel exit, taken directly.

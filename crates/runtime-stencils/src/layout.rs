@@ -617,6 +617,15 @@ impl Header
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Words(pub usize);
 
+/// The words a region commits at a time.
+///
+/// The heap and the window region each grow by whole chunks, and the
+/// record's memory bound counts them. A chunk is 2²⁰ words, 8 MiB. Past a
+/// region's committed end, the stencil commits the chunks its allocation
+/// needs. So the fast path keeps one compare, and a commit comes once for
+/// each chunk.
+pub const CHUNK: Words = Words(1 << 20);
+
 /// The count word of an object no drop frees: a constant laid out in the
 /// function's data.
 pub const COUNT_IMMORTAL: Word = Word(0);
@@ -642,7 +651,8 @@ pub enum Status
     Halted,
     /// A case met a constructor none of its arms answers.
     Unmatched,
-    /// An allocation would have passed the heap region's limit.
+    /// An allocation found the heap's committed end, and neither the memory
+    /// bound nor the heap's reservation held the chunks it needed.
     HeapExhausted,
     /// A push would have passed the frame region's limit.
     FramesExhausted,
@@ -652,6 +662,10 @@ pub enum Status
     /// word names the destructor — or a host call refused its operands, the
     /// observed word zero and the refusal the host's to name.
     Stuck,
+    /// A closure entry found the window region's committed end, and neither
+    /// the memory bound nor the region's reservation held the chunks its
+    /// window needed.
+    WindowsExhausted,
 }
 
 /// The destructor an observation applied when it took the stuck exit, as the
@@ -743,6 +757,8 @@ pub const STATUS_FRAMES_EXHAUSTED: Word = Word(4);
 pub const STATUS_FUEL_EXHAUSTED: Word = Word(5);
 /// The status word of [`Status::Stuck`].
 pub const STATUS_STUCK: Word = Word(6);
+/// The status word of [`Status::WindowsExhausted`].
+pub const STATUS_WINDOWS_EXHAUSTED: Word = Word(7);
 
 /// A status word no exit writes.
 ///
@@ -771,6 +787,7 @@ impl TryFrom<Word> for Status
             STATUS_FRAMES_EXHAUSTED => Ok(Self::FramesExhausted),
             STATUS_FUEL_EXHAUSTED => Ok(Self::FuelExhausted),
             STATUS_STUCK => Ok(Self::Stuck),
+            STATUS_WINDOWS_EXHAUSTED => Ok(Self::WindowsExhausted),
             other => Err(UnknownStatus(other)),
         }
     }
