@@ -4634,7 +4634,6 @@ pub fn checking_context<'arena>(
 ///   model and the forgetting map the checker applies to it where its theory's
 ///   model is asked, both of which the explicit form writes; a source formatted
 ///   without the checker keeps each.
-/// - witness: `format::tests::a_linear_run_is_written_away_beside_a_checker`
 /// - witness: `format::tests::a_thunk_the_checker_inserts_is_left_to_it_1327`
 /// - witness: `format::tests::a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared`
 /// - witness: `format::tests::a_forgetting_map_the_checker_applies_is_written_out_only_in_the_explicit_form_2130`

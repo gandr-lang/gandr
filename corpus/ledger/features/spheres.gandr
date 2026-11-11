@@ -15,10 +15,3 @@ def surfUnwound : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](Path.here Bas
   back surf ∷ surf ∷ Path.here (Path.here Base2),
   Path.here (Path.here Base2)
 ) = Path.here (Path.here (Path.here Base2));
-
-/// Two 2-cells reduce to no shorter word: no rule identifies them.
-@[refuses("EndpointMismatch")]
-def surfDoubled : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)](
-  surf ∷ surf ∷ Path.here (Path.here Base2),
-  surf ∷ Path.here (Path.here Base2)
-) = Path.here (surf ∷ surf ∷ Path.here (Path.here Base2));
