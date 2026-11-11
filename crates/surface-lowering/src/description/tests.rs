@@ -1743,7 +1743,6 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::LhsNotOperation,
         MemberFault::EmptyOperation,
         MemberFault::NestedOperation,
-        MemberFault::UnrepresentableOperation,
         MemberFault::ResultArity,
         MemberFault::MixedPolarity,
         MemberFault::IllSorted,

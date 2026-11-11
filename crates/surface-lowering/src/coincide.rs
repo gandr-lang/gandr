@@ -1410,7 +1410,7 @@ pub(crate) fn rewriting_store<'store>(
         .iter()
         .filter_map(|circuit| match *circuit {
             CircuitCell::Admitted { cell, .. } => Some(cell),
-            CircuitCell::Refused(_) => None,
+            CircuitCell::Refused(_) | CircuitCell::Excluded => None,
         })
         .filter(|cell| !shared.contains(cell))
         .collect();
@@ -1601,7 +1601,7 @@ impl fmt::Display for NormalFormFault
                 TrackingIssue::NESTED_OPERATION
             ),
             Self::NotACall(
-                ElaborateError::UnrepresentableOperation
+                ElaborateError::UnrepresentableOperation(_)
                 | ElaborateError::ResultArity { .. }
                 | ElaborateError::NonLinear(_)
                 | ElaborateError::MixedPolarity(_)

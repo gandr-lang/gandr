@@ -144,7 +144,8 @@ pub struct Post
     /// The bearer that the caller sent, sent back as `Authorization: Bearer`.
     pub token: Option<Arc<str>>,
     /// The `Idempotency-Key` header: `<tool_call_id>@<version>` for an event
-    /// and the `id` for a result.
+    /// of a document, `<tool_call_id>@<run>.<sequence>` for an event of the
+    /// activity, and the `id` for a result.
     pub key: String,
     /// The version of the state, when the state has one.
     pub version: Option<i32>,

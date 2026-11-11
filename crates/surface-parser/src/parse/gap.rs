@@ -81,6 +81,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RESERVED_WORDS;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_grammar::edit_distance;
 use gandr_surface_syntax::ByteOffset;
@@ -109,7 +110,6 @@ use crate::label::label;
 use crate::meld::Splice;
 use crate::meld::Stands;
 use crate::meld::declaration_head;
-use crate::mold::KEYWORDS;
 use crate::mold::STATEMENT_LEADS;
 use crate::oblig::Oblig;
 use crate::oblig::ObligationInstance;
@@ -296,7 +296,7 @@ fn class(
     let spelled = <&str>::from(spelling(text, token));
     match token.lexeme {
         Lexeme::LowerWord | Lexeme::UpperWord => {
-            let operand = !KEYWORDS.contains(&spelled) && !STATEMENT_LEADS.contains(&spelled);
+            let operand = !RESERVED_WORDS.contains(&spelled) && !STATEMENT_LEADS.contains(&spelled);
             Class {
                 edge: if operand { Edge::Both } else { Edge::Neither },
                 word: operand && token.lexeme == Lexeme::LowerWord && spelled.len() >= 2,
@@ -499,7 +499,7 @@ fn gaps<'text>(
             line_column = column;
         }
         if let Some(start) = attribute.take()
-            && (leads || KEYWORDS.contains(&<&str>::from(spelling(text, token))))
+            && (leads || RESERVED_WORDS.contains(&<&str>::from(spelling(text, token))))
         {
             places.openers.push(opener(start));
         }
@@ -1029,7 +1029,7 @@ fn misspelt(
 {
     let word = <&str>::from(word);
     let length = word.chars().count();
-    KEYWORDS
+    RESERVED_WORDS
         .iter()
         .chain(STATEMENT_LEADS)
         .filter_map(|&keyword| {

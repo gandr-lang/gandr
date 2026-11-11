@@ -8,6 +8,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -21,7 +22,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 
 The same tools reach an agent runtime through the Reactive Agent Protocol, the default face for an agent. A RAP call answers by a callback, so a long call blocks no agent, and an agent can subscribe to new states. One table holds each operation's name, description, schema and function over the hub. `tools/list` and the toolset's manifest each encode that table, and both faces call through it, so the faces cannot drift. `gandr serve` gives the hub a `Toolset` on a free port of the loopback interface, or on the port that `--port` names. The hub writes the manifest's URL to a file beside its socket, with the extension `rap`, and a runtime reads the URL there.
 
-The `Toolset` acknowledges each invocation at once with a row in its store under the XDG state directory, and owes each answer to the caller's callback URL as a `tool_result`. The answer of `diagnostics` is a frame of the render bus: the document's cards and version, with the lines `gandr view` prints as its `display_as`. `subscribe_diagnostics` and `subscribe_account` open a subscription, which the manifest offers and `tools/list` does not. A subscription to a document hears a `subscription_event` that holds the whole frame after each publication that changes it. A subscription to a declaration hears its account card after each admission that changes the card. The subscriptions are rows of one table per workspace under the XDG state directory, so a later hub resumes each row. `/cancel_tool_call` and `/close_thread` drop rows. Each callback carries an `Idempotency-Key`, and each delivery leaves on a thread of the toolset, retried as the `Policy` states.
+The `Toolset` acknowledges each invocation at once with a row in its store under the XDG state directory, and owes each answer to the caller's callback URL as a `tool_result`. The answer of `diagnostics` is a frame of the render bus: the document's cards and version, with the lines `gandr view` prints as its `display_as`. `subscribe_diagnostics` and `subscribe_account` open a subscription, which the manifest offers and `tools/list` does not. A subscription to a document hears a `subscription_event` that holds the whole frame after each publication that changes it. A subscription to a declaration hears its account card after each admission that changes the card. With the `instrument` feature, `subscribe_activity` follows the work ledger of the hub's pool. While a row follows it, the hub folds the activity ring, and the row hears the events that its runtime did not take, 4096 at most, with the count of its drops and the row of each core. The subscriptions are rows of one table per workspace under the XDG state directory, so a later hub resumes each row. `/cancel_tool_call` and `/close_thread` drop rows. Each callback carries an `Idempotency-Key`, and each delivery leaves on a thread of the toolset, retried as the `Policy` states.
 
 The Model Context Protocol stays for compatibility, and `gandr mcp` serves it on request. A runtime that proxies MCP servers reaches `gandr mcp` as any server. A runtime that speaks RAP reads the manifest directly and needs no proxy.
 
@@ -41,7 +42,7 @@ The Model Context Protocol stays for compatibility, and `gandr mcp` serves it on
 - Normalisation and conversion queries, once the session exposes them.
 - The explanation of a refusal, beside the verbosity levels of the diagnostics renderer.
 - A transport beside the hub's socket for the Model Context Protocol: streamable HTTP, and the authorisation it carries.
-- The toolset's long operations and view updates, and a subscription to the engine's activity.
+- The toolset's long operations and view updates.
 
 ## Examples
 
@@ -76,6 +77,12 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The Reactive Agent Protocol's toolset, its store, its bearer, its frames and its subscriptions | [`rap`](src/rap.rs) |
 | The deliveries of the toolset, their lanes and their retries | [`rap::deliver`](src/rap/deliver.rs) |
 | The table of the subscriptions, its file and its resume | [`rap::subscriptions`](src/rap/subscriptions.rs) |
+| The work ledger of a subscription to the activity, its bound and its state in flight | [`rap::activity`](src/rap/activity.rs) |
+
+## References
+
+- `vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8` — anchor: § agent-layer-stream: `subscribe_activity` hears the work ledger as it moves.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-stream: the activity card only appends, keyed by the sequence number.
 
 ## License
 

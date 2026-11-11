@@ -479,6 +479,11 @@ fn lowered(
                     "`{}` is a keyword and cannot stand here in this {form}",
                     stray.written.as_ref()
                 ),
+                FormFault::Repaired(Repair::ReservedName(word)) => write!(
+                    f,
+                    "`{}` is a reserved word and cannot stand as a name in this {form}",
+                    word.as_ref()
+                ),
                 FormFault::Repaired(Repair::GhostClose(close)) => {
                     write!(f, "this {form} is missing its closing `{}`", match close {
                         ClosingClass::Paren => ")",

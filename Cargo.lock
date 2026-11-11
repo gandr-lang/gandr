@@ -1677,6 +1677,7 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "expect-test",
+ "gandr-core-fork",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-storage-records",
@@ -1709,8 +1710,10 @@ dependencies = [
 name = "gandr-surface-mcp"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-fork",
  "gandr-surface-dispatcher",
  "gandr-surface-lsp",
+ "gandr-surface-mcp",
  "gandr-surface-render-remote",
  "gandr-surface-tui",
  "httparse",
@@ -1816,6 +1819,7 @@ name = "gandr-surface-session"
 version = "0.0.0"
 dependencies = [
  "allocation-counter",
+ "blake3",
  "gandr-core-checker",
  "gandr-core-fork",
  "gandr-core-incremental",
