@@ -57,10 +57,13 @@
 //! each that `kernel.trusted` lists by its public half, which `check
 //! --verbosity detailed` prints after `signed by`. `policy = "recheck"`, or
 //! `--recheck` for one invocation, checks every declaration and records
-//! nothing. The `[kernel]` table is the user's file's alone: whose keys to
-//! believe is an installation's decision, never a project's, so the
-//! dispatcher's presentation reader does not read it. A table that names no
-//! policy there is, or a key that is not one, is a fault as a bad spelling is.
+//! nothing. The language server and the hub keep their verdicts in the same
+//! store, under the same key and policy, so a later session recalls what an
+//! earlier session or a `check` kept. The `[kernel]` table is the user's
+//! file's alone: whose keys to believe is an installation's decision, never a
+//! project's, so the dispatcher's presentation reader does not read it. A
+//! table that names no policy there is, or a key that is not one, is a fault
+//! as a bad spelling is.
 //!
 //! The same key and policy sign and believe the certified strata a `ua`
 //! statement reads, kept in `gandr/verdicts/strata`. A later `check` replays

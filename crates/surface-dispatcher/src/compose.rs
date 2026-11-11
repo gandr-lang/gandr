@@ -1154,6 +1154,10 @@ pub enum KernelTier
 {
     /// The kernel re-derived it: a definition, or a nominal declaration.
     Replayed,
+    /// An attested verdict admitted it: a receipt that the policy believes
+    /// holds the kernel's verdict for its key, so the kernel replayed no goal
+    /// of it.
+    Attested,
     /// The kernel admitted its signature as an axiom, since its body is owed.
     Assumed,
     /// It is static: the kernel replays each instance where a later
@@ -1277,24 +1281,54 @@ impl KernelTier
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one entry per readmitted declaration, in the readmission's order,
-///   each with [`KernelTier::of`] its outcome.
+///   each with [`KernelTier::of`] its outcome, save a definition or a nominal
+///   declaration that a recorded verdict admitted, which is attested.
 /// - provides: what [`Resumption::tiers`] keeps.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module's admission keeps one tier per declaration at
-///   its exact position.
+///   its exact position, and a readmission on recorded verdicts keeps attested
+///   where the first kept replayed.
 /// - witness: `compose::tests::an_admission_keeps_each_declaration_s_kernel_tier_2517`
+/// - witness: `verdicts::tests::a_lasting_cache_recalls_its_own_and_the_store_s_6623`
 #[spec(ensures: |ref ret| ret.len() == readmission.readmitted().len()
     && ret.iter().zip(readmission.readmitted()).all(|(&(constant, tier), readmitted)|
-        constant == readmitted.constant() && tier == KernelTier::of(readmitted.outcome())))]
-fn tiers(readmission: &bridge::Readmission) -> Vec<(ConstantIndex, KernelTier)>
+        constant == readmitted.constant()
+            && (tier == KernelTier::of(readmitted.outcome())
+                || (tier == KernelTier::Attested
+                    && KernelTier::of(readmitted.outcome()) == KernelTier::Replayed))))]
+pub fn tiers(readmission: &bridge::Readmission) -> Vec<(ConstantIndex, KernelTier)>
 {
+    let entries = readmission.environment().entries();
     readmission
         .readmitted()
         .iter()
-        .map(|readmitted| (readmitted.constant(), KernelTier::of(readmitted.outcome())))
+        .map(|readmitted| {
+            let outcome = readmitted.outcome();
+            let attested = match *outcome {
+                bridge::Outcome::Defined { admitted, .. }
+                | bridge::Outcome::Data { admitted, .. } => entries
+                    .get(usize::from(admitted.position()))
+                    .is_some_and(|entry| {
+                        matches!(entry.census(), Maybe::Absent(tallied::Absent::Recalled))
+                    }),
+                bridge::Outcome::Assumed { .. }
+                | bridge::Outcome::Marked(_)
+                | bridge::Outcome::Suspended
+                | bridge::Outcome::Static
+                | bridge::Outcome::Refused(_)
+                | bridge::Outcome::Rejected(_) => false,
+            };
+            let tier = if attested {
+                KernelTier::Attested
+            }
+            else {
+                KernelTier::of(outcome)
+            };
+            (readmitted.constant(), tier)
+        })
         .collect()
 }
 

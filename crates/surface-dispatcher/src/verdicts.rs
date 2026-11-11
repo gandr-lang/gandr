@@ -6,10 +6,25 @@
 //! Every readmission the composition makes then admits under the cache's
 //! recall, and one that crossed whole has the kernel sign what it checked and
 //! keeps the receipt. `gandr check` keeps its receipts in a store on disk,
-//! which a later process reads. The language server keeps them in the process
-//! ([`VerdictCache::held`]), which a later readmission of the process reads. A
-//! process that installs none — the sweeps, `gandr check --recheck`, every
-//! test — rechecks every declaration.
+//! which a later process reads ([`VerdictCache::new`]). The language server
+//! and the hub keep them in the same store and in the process
+//! ([`VerdictCache::lasting`]). So a later readmission of the process reads
+//! them, and a later process reads them from the store. A server that finds no
+//! store keeps them in the process alone ([`VerdictCache::held`]). A process
+//! that installs none — the sweeps, `gandr check --recheck`, every test —
+//! rechecks every declaration.
+//!
+//! # Eviction
+//!
+//! No policy evicts a receipt from the store. The store grows by one receipt
+//! for each readmission that checks a declaration. That receipt holds at most
+//! two records for each declaration it checked, one under each key the
+//! admission has. A process reads every receipt when it opens the store, so
+//! the time of the open and the memory of the index are linear in the records
+//! that the store holds (#6734). The operator evicts every receipt when they
+//! remove the cache directory's `receipts`. The receipts that a process keeps
+//! after the open keep to the bound of [`crate::held`]: past 65,536 records,
+//! the oldest receipt goes from the process, and the store still holds it.
 //!
 //! # References
 //!
@@ -32,10 +47,13 @@ use gandr_core_checker::bridge;
 use gandr_core_term::CoreArena;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
+use gandr_kernel_core::verdict::StoredReceipt;
 use gandr_kernel_core::verdict::TrustPolicy;
+use gandr_kernel_core::verdict::VerdictKey;
 use gandr_kernel_core::verdict::VerdictSource;
 use quenchant_shape::shape::Maybe;
 
+use crate::held::Held;
 use crate::held::HeldVerdicts;
 use crate::receipts::StoredVerdicts;
 
@@ -57,6 +75,61 @@ enum Kept
     /// The process's own source, which a later readmission of the process
     /// reads.
     Held(HeldVerdicts),
+    /// A store on disk, which a later process reads at open, and the
+    /// receipts kept after the open, which a later readmission of the process
+    /// reads.
+    Lasting
+    {
+        /// The store, with the receipts it read at open.
+        store: Arc<StoredVerdicts>,
+        /// The receipts this process kept after the open.
+        held: HeldVerdicts,
+    },
+}
+
+/// The receipts a readmission under a lasting cache recalls from: those the
+/// process kept after the store opened, and those the store read at open.
+///
+/// # Specification
+/// - ensures: [`VerdictSource::receipts`] answers, for a key, the receipts the
+///   process held when the readmission started whose records hold it, or else
+///   those the store read at open.
+/// - executable: none — a pair of sources; each one's answer is its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`VerdictCache`].
+/// - witness: `verdicts::tests::a_lasting_cache_recalls_its_own_and_the_store_s_6623`
+#[derive(Debug)]
+struct Layered
+{
+    /// The receipts the process kept after the open, as the readmission
+    /// found them.
+    held: Arc<Held>,
+    /// The store, with the receipts it read at open.
+    store: Arc<StoredVerdicts>,
+}
+
+impl VerdictSource for Layered
+{
+    /// The receipts the process kept whose records hold `key`, or else those
+    /// the store read at open: any one of them attests the same record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn receipts(
+        &self,
+        key: VerdictKey,
+    ) -> &[Arc<StoredReceipt>]
+    {
+        let held = self.held.receipts(key);
+        if held.is_empty() {
+            self.store.receipts(key)
+        }
+        else {
+            held
+        }
+    }
 }
 
 /// Where a process's kernel verdicts are recalled from and recorded to.
@@ -64,16 +137,19 @@ enum Kept
 /// # Specification
 /// - ensures: installed, every readmission admits under the cache's policy and
 ///   source, and each one that crossed whole keeps the receipt its kernel signs
-///   for what it checked; a held cache's next readmission reads that receipt.
+///   for what it checked; the next readmission of a held or a lasting cache
+///   reads that receipt, and a later cache over the same store reads it from
+///   the store.
 /// - executable: none — the store and the counts are shared state.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module readmitted under one cache records what its
 ///   kernel checked, and readmitted under a second over the same store recalls
 ///   each of those declarations, to the same outcomes; readmitted twice under
-///   one held cache, it recalls them the second time.
+///   one held or lasting cache, it recalls them the second time.
 /// - witness: `verdicts::tests::a_second_cache_recalls_what_the_first_recorded_2799`
 /// - witness: `verdicts::tests::a_held_cache_recalls_what_its_process_recorded_6566`
+/// - witness: `verdicts::tests::a_lasting_cache_recalls_its_own_and_the_store_s_6623`
 #[derive(Debug)]
 pub struct VerdictCache
 {
@@ -126,6 +202,31 @@ impl VerdictCache
         )
     }
 
+    /// The cache of a process that readmits many times over its life, a
+    /// language server or a hub. It believes the receipts `policy` trusts from
+    /// `store` and from what the process kept after the open. It keeps each
+    /// receipt it signs with `signer` in both.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn lasting(
+        policy: TrustPolicy,
+        store: StoredVerdicts,
+        signer: KernelSigner,
+    ) -> Self
+    {
+        Self::keeping(
+            policy,
+            Kept::Lasting {
+                store: Arc::new(store),
+                held: HeldVerdicts::default(),
+            },
+            signer,
+        )
+    }
+
     /// The cache under `policy`, keeping receipts in `kept`, signing with
     /// `signer`.
     ///
@@ -148,7 +249,8 @@ impl VerdictCache
     }
 
     /// The recall a readmission that starts now admits under: the cache's
-    /// policy over its store, or over the receipts the process holds now.
+    /// policy over its store, over the receipts the process holds now, or over
+    /// both.
     ///
     /// # Specification
     /// trivial.
@@ -157,6 +259,13 @@ impl VerdictCache
         let source: Arc<dyn VerdictSource> = match self.kept {
             Kept::Stored(ref store) => Arc::<StoredVerdicts>::clone(store),
             Kept::Held(ref held) => held.snapshot(),
+            Kept::Lasting {
+                ref store,
+                ref held,
+            } => Arc::new(Layered {
+                held: held.snapshot(),
+                store: Arc::clone(store),
+            }),
         };
         bridge::Recall::trusting(self.policy.clone(), source)
     }
@@ -182,6 +291,16 @@ impl VerdictCache
                 Kept::Held(ref held) => {
                     held.keep(receipt);
                     true
+                },
+                Kept::Lasting {
+                    ref store,
+                    ref held,
+                } => {
+                    // The process recalls the receipt even when the store
+                    // cannot keep it, and the tally counts it unwritten.
+                    let written = store.keep(&receipt).is_ok();
+                    held.keep(receipt);
+                    written
                 },
             };
             let _before = if kept {
@@ -397,7 +516,9 @@ mod tests
 
     use super::Kept;
     use super::VerdictCache;
+    use crate::compose::KernelTier;
     use crate::compose::adapt;
+    use crate::compose::tiers;
     use crate::receipts::StoredVerdicts;
 
     /// The fixture: two definitions, the second reading the first.
@@ -434,14 +555,14 @@ mod tests
         (arena, report)
     }
 
-    /// The outcomes `cache` readmits the module `text` spells to.
+    /// The readmission `cache` gives the module `text` spells.
     ///
     /// # Specification
     /// trivial.
-    fn readmitted_from(
+    fn readmission_from(
         cache: &VerdictCache,
         text: SourceText<'_>,
-    ) -> Vec<bridge::Outcome>
+    ) -> bridge::Readmission
     {
         let (mut arena, report) = reported(text);
         cache
@@ -456,10 +577,61 @@ mod tests
             )
             .whole()
             .0
+    }
+
+    /// The outcomes of `readmission`, in its order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn outcomes(readmission: &bridge::Readmission) -> Vec<bridge::Outcome>
+    {
+        readmission
             .readmitted()
             .iter()
             .map(|readmitted| readmitted.outcome().clone())
             .collect()
+    }
+
+    /// The kernel tiers of `readmission`, in its order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tiered(readmission: &bridge::Readmission) -> Vec<KernelTier>
+    {
+        tiers(readmission)
+            .into_iter()
+            .map(|(_, tier)| tier)
+            .collect()
+    }
+
+    /// The outcomes `cache` readmits the module `text` spells to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn readmitted_from(
+        cache: &VerdictCache,
+        text: SourceText<'_>,
+    ) -> Vec<bridge::Outcome>
+    {
+        outcomes(&readmission_from(cache, text))
+    }
+
+    /// A lasting cache over the store at `directory`, as a process opens it,
+    /// believing `trusted` and signing with `signer`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lasting(
+        directory: &std::path::Path,
+        trusted: &[&KernelSigner],
+        signer: &KernelSigner,
+    ) -> VerdictCache
+    {
+        VerdictCache::lasting(
+            TrustPolicy::Trusted(trusted.iter().map(|key| key.identity()).collect()),
+            StoredVerdicts::open(directory).expect("the store opens"),
+            signer.clone(),
+        )
     }
 
     /// The outcomes `cache` readmits the fixture to.
@@ -620,5 +792,163 @@ mod tests
             "neither receipt admits a declaration of the module: {tally}"
         );
         assert!(tally.recorded > 0_usize, "{tally}");
+    }
+
+    /// #6623: a lasting cache recalls, on its second readmission, what its
+    /// first checked. A second process over the same store recalls each of
+    /// those declarations as attested, to the same outcomes, and checks
+    /// nothing.
+    #[test]
+    fn a_lasting_cache_recalls_its_own_and_the_store_s_6623()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-dispatcher-lasting-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        let signer = KernelSigner::from([3_u8; 32]);
+        let first = lasting(&directory, &[&signer], &signer);
+        let cold = readmission_from(&first, SourceText::from(READMITTED));
+        let checked = first.tally();
+        assert_eq!(
+            (checked.recalled, checked.unwritten),
+            (0_usize, 0_usize),
+            "{checked}"
+        );
+        assert!(checked.recorded > 0_usize, "{checked}");
+        assert!(
+            tiered(&cold)
+                .iter()
+                .all(|&tier| tier == KernelTier::Replayed),
+            "a cold readmission replays each declaration"
+        );
+        let _again = readmitted(&first);
+        let held = first.tally();
+        assert_eq!(
+            (held.recalled, held.recorded),
+            (checked.recorded, checked.recorded),
+            "the process recalls what it kept after the open: {held}"
+        );
+
+        let second = lasting(&directory, &[&signer], &signer);
+        let warm = readmission_from(&second, SourceText::from(READMITTED));
+        let tally = second.tally();
+        assert_eq!(
+            (tally.recalled, tally.recorded, tally.unwritten),
+            (checked.recorded, 0_usize, 0_usize),
+            "{tally}"
+        );
+        assert_eq!(
+            outcomes(&warm),
+            outcomes(&cold),
+            "a recalled verdict admits as a checked one"
+        );
+        assert!(
+            tiered(&warm)
+                .iter()
+                .all(|&tier| tier == KernelTier::Attested),
+            "each declaration the store recalls is attested"
+        );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// #6623: a store that holds a receipt over records its signer did not
+    /// sign admits nothing, and the process checks each declaration again.
+    #[test]
+    fn a_record_its_signer_did_not_sign_admits_nothing_6623()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-dispatcher-unsigned-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        let signer = KernelSigner::from([3_u8; 32]);
+        // The receipt is ours, signed over the records of another text; the
+        // records are those of the module's text, which no one signed.
+        let signed = receipt(&signer, SourceText::from(FOREIGN));
+        let unsigned = receipt(
+            &KernelSigner::from([5_u8; 32]),
+            SourceText::from(READMITTED),
+        );
+        let forged = StoredReceipt::new(signed.receipt(), unsigned.records().to_vec());
+        StoredVerdicts::open(&directory)
+            .expect("the store opens")
+            .keep(&forged)
+            .expect("the receipt is written");
+        let cache = lasting(&directory, &[&signer], &signer);
+        let readmission = readmission_from(&cache, SourceText::from(READMITTED));
+        let tally = cache.tally();
+        assert_eq!(
+            (tally.recalled, tally.recorded),
+            (0_usize, readmission.readmitted().len()),
+            "the forged records admit nothing, so each declaration is checked: {tally}"
+        );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// #6623: the records of a foreign installation's store admit nothing
+    /// while the owner does not list its key, and admit each declaration once
+    /// the owner lists it.
+    #[test]
+    fn a_foreign_store_s_record_admits_only_when_listed_6623()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-dispatcher-foreign-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        let (ours, theirs) = (
+            KernelSigner::from([3_u8; 32]),
+            KernelSigner::from([5_u8; 32]),
+        );
+        let foreign = lasting(&directory, &[&theirs], &theirs);
+        let _checked = readmitted(&foreign);
+        let kept = foreign.tally().recorded;
+        assert!(kept > 0_usize, "the foreign store keeps its records");
+        // Both caches open the store before either keeps a receipt of ours.
+        let unlisted = lasting(&directory, &[&ours], &ours);
+        let listed = lasting(&directory, &[&ours, &theirs], &ours);
+        let _unlisted = readmitted(&unlisted);
+        let refused = unlisted.tally();
+        assert_eq!(
+            (refused.recalled, refused.recorded),
+            (0_usize, kept),
+            "an unlisted key admits nothing: {refused}"
+        );
+        let _listed = readmitted(&listed);
+        let believed = listed.tally();
+        assert_eq!(
+            (believed.recalled, believed.recorded),
+            (kept, 0_usize),
+            "a listed key admits each record: {believed}"
+        );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// #6623: a stale store, which holds the verdicts of an earlier text of
+    /// the module, recalls nothing, and the process checks each declaration
+    /// again under its own keys.
+    #[test]
+    fn a_stale_store_is_checked_again_6623()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-dispatcher-stale-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        let signer = KernelSigner::from([3_u8; 32]);
+        let earlier = lasting(&directory, &[&signer], &signer);
+        let _earlier = readmitted_from(&earlier, SourceText::from(FOREIGN));
+        assert!(
+            earlier.tally().recorded > 0_usize,
+            "the earlier session keeps its records"
+        );
+        let later = lasting(&directory, &[&signer], &signer);
+        let readmission = readmission_from(&later, SourceText::from(READMITTED));
+        let tally = later.tally();
+        assert_eq!(
+            (tally.recalled, tally.recorded),
+            (0_usize, readmission.readmitted().len()),
+            "no key of the earlier text is the module's: {tally}"
+        );
+        assert!(
+            tiered(&readmission)
+                .iter()
+                .all(|&tier| tier == KernelTier::Replayed),
+            "each declaration is replayed"
+        );
+        drop(std::fs::remove_dir_all(&directory));
     }
 }

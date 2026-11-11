@@ -38,8 +38,8 @@
 //! each dependent's row when a declaration it reads changes, and the session
 //! has no such key: a dependent keeps its tier until the admission writes it.
 //!
-//! **Reversal.** When the attested verdict cache lands, a tier admitted from
-//! it is one more value of the kernel column. When the hub compiles each
+//! **Reversal.** A tier that an attested verdict admitted is one more value of
+//! the kernel column, `KernelTier::Attested`. When the hub compiles each
 //! checked declaration, the emitter's record writes the compile column.
 //!
 //! # References

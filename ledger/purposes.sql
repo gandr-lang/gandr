@@ -2213,7 +2213,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::Composed','enum','What
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Elaborating','struct','The checker the formatter''s meaning check asks for elaborated bodies.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Judged','struct','A lowered module judged and settled, its kernel admission still to run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::JudgedClosure','struct','A closure''s own declarations judged once, held with the closure''s lowering.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','compose::KernelTier','enum','How far the kernel took one declaration that an admission offered it, read off the bridge''s outcome, so an editor shows it beside the declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::KernelTier','enum','How far the kernel took one declaration that an admission offered it, read off the bridge''s outcome and whether a recorded verdict admitted it, so an editor shows it beside the declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowered','enum','What the lowering made of one parsed source, before any checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowering','struct','One source parsed and lowered: what the lowering made of it, beside the completion obligations the parser recorded while committing its tree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::LoweringCount','struct','How many sources a run has lowered.',NULL,'fits','sound',NULL);
