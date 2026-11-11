@@ -142,6 +142,10 @@ use gandr_core_checker::form_value_type;
 use gandr_core_checker::signature_table;
 #[cfg(feature = "instrument")]
 use gandr_core_checker::tally::MemoTally;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::StepBuffer;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::untraced;
 use gandr_core_checker::unfolding;
 #[cfg(feature = "instrument")]
 use gandr_core_term::ArenaWatermark;
@@ -755,6 +759,9 @@ pub struct PassedItem<'pass>
     pub memo: MemoTally,
     /// The arena nodes that the item's step minted.
     pub minted: ArenaLength,
+    /// The steps of the machine's runs for the item, when the observer lent
+    /// the pass a buffer.
+    pub steps: Maybe<&'pass StepBuffer, untraced::Absent>,
     /// The arena nodes that the item's content walk reached.
     sites: &'pass Sites,
 }
@@ -3034,9 +3041,17 @@ where
     let types = crate::content::TypeMemo::default();
     let judged_types = crate::content::TypeMemo::default();
     #[cfg(feature = "instrument")]
+    if let Maybe::Present(buffer) = observer.lend() {
+        context.trace_into(buffer);
+    }
+    #[cfg(feature = "instrument")]
     observer.opened();
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
         if let Demand::Retired(retired) = retirement.demand() {
+            #[cfg(feature = "instrument")]
+            if let Maybe::Present(buffer) = context.take_trace() {
+                observer.restore(buffer);
+            }
             return Polled::Retired(retired, ());
         }
         let ordinal = ItemOrdinal::from(skip.saturating_add(index));
@@ -3052,6 +3067,8 @@ where
         // The memo consults of the decision the pass takes the verdict of.
         #[cfg(feature = "instrument")]
         let mut consulted = MemoTally::default();
+        #[cfg(feature = "instrument")]
+        context.retrace();
         let adopted = match candidates.get(index) {
             Some(&Maybe::Present(ref candidate)) => adopt(&mut context, &AdoptionInput {
                 candidate,
@@ -3128,12 +3145,17 @@ where
             adoption: outcome.adoption,
             memo: context.tally().since(before.0).plus(consulted),
             minted: context.arena().minted_since(before.1),
+            steps: context.trace(),
             sites: &item.sites,
         });
         outcomes.push(outcome);
         supplied.own.push(answer);
     }
     let kept = Kept::keep(&context);
+    #[cfg(feature = "instrument")]
+    if let Maybe::Present(buffer) = context.take_trace() {
+        observer.restore(buffer);
+    }
     Polled::Whole((outcomes, supplied.own, kept))
 }
 

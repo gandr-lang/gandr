@@ -75,7 +75,7 @@ use crate::solution::Migrating;
 
 quenchant_shape::reason_enum! {
     /// Why the memo gives a goal no answer.
-    pub(super) mod unanswered {
+    pub mod unanswered {
         /// The reason it gives none.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
@@ -363,6 +363,16 @@ impl Machine<'_, '_>
             (Plane::Types, Consult::Hit) => tally.type_hit(),
             (Plane::Types, Consult::Miss) => tally.type_miss(),
         }
+    }
+
+    /// The binders that the memo key of the goal keyed last reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    pub(super) fn cover(&self) -> crate::trace::Cover
+    {
+        crate::trace::Cover::from(self.memo.reads.len())
     }
 
     /// Record `produced` as the answer of every goal under way that the ascent
