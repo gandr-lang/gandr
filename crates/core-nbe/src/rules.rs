@@ -1845,14 +1845,19 @@ enum Term
 /// itself eliminates a held endpoint is a bind whose bound computation is the
 /// inner one's bind, so two of those decompose level by level, innermost
 /// first; so does a held elimination against a bind written over a call of
-/// the same head. A held endpoint against any other side declines, since its
-/// spine is a computation's, which a decomposition would compare against the
-/// other side's term rather than its call.
+/// the same head. A held endpoint against a rigid neutral is two neutrals
+/// whose heads differ, neither of which reduces in any environment that
+/// extends this one, so it is not this rule's: [`plan_rigid`] compares them,
+/// after the η steps by former, as it compares two rigid neutrals. A held
+/// endpoint against any other side declines, since its spine is a
+/// computation's, which a decomposition would compare against the other
+/// side's term rather than its call.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `None` when neither side is [`Head::Held`]; a shared
-///   [`Settled::Convertible`] when the walk finds the sides identical or
+/// - ensures: `None` when neither side is [`Head::Held`], and for two values
+///   one of which is held and the other a neutral with [`Head::Rigid`]; a
+///   shared [`Settled::Convertible`] when the walk finds the sides identical or
 ///   structurally equal; otherwise [`Step::Returned`] when both sides are
 ///   values that are returned endpoints with empty spines, the plan
 ///   [`held_eliminations`] or else the decomposition [`held_against_bind`]
@@ -1878,7 +1883,10 @@ enum Term
 ///   convert level by level; a bind over a stuck call converts with the call's
 ///   endpoint forced and applied as its continuation does, and with a transport
 ///   along that endpoint as its continuation transports along the bound path;
-///   an endpoint and a different value decline rather than settle apart.
+///   an endpoint against a rigid neutral is left to [`plan_rigid`], and an
+///   endpoint against a defined constant or a former declines rather than
+///   settles apart.
+/// - witness: `machine::tests::a_held_endpoint_against_a_rigid_neutral_is_apart_6574`
 /// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation_369`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
 /// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
@@ -1887,7 +1895,8 @@ enum Term
 /// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
 /// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
 #[spec(ensures: |ret| match ret.as_ref().map(Option::as_ref) {
-    Ok(None) => !matches!(heads, (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))),
+    Ok(None) => !matches!(heads, (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held)))
+        || matches!((term, heads), (Term::Values(..), (Neutrality::Neutral(_, Head::Held), Neutrality::Neutral(_, Head::Rigid)) | (Neutrality::Neutral(_, Head::Rigid), Neutrality::Neutral(_, Head::Held)))),
     Ok(Some(plan)) => matches!(*plan, Plan::Shared(Settled::Convertible) | Plan::Decline(DeclineReason::Indeterminate))
         || (*plan == Plan::Step(Step::Returned) && matches!(term, Term::Values(left, right)
             if matches!((held_endpoint(domain, left), held_endpoint(domain, right)), (Ok(Some(_)), Ok(Some(_))))))
@@ -1908,6 +1917,22 @@ fn whole(
         heads,
         (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))
     ) {
+        return Ok(None);
+    }
+    // A held endpoint against a rigid neutral is two neutrals, neither of
+    // which reduces in any environment that extends this one: `plan_rigid`
+    // compares them after the η steps by former, as it does two rigid ones.
+    if let (
+        Term::Values(..),
+        Neutrality::Neutral(_, Head::Held),
+        Neutrality::Neutral(_, Head::Rigid),
+    )
+    | (
+        Term::Values(..),
+        Neutrality::Neutral(_, Head::Rigid),
+        Neutrality::Neutral(_, Head::Held),
+    ) = (term, heads.0, heads.1)
+    {
         return Ok(None);
     }
     let settled = match term {
