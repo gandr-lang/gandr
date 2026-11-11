@@ -15,7 +15,7 @@
 //! event. A sink behind a trait object costs one indirect call for each event,
 //! and the compiler cannot remove a call on the silent sink.
 //!
-//! # The activity follows the hub, not the client
+//! # The activity and the trace follow the hub, not the client
 //!
 //! While the hub has a watcher of the activity, each job takes the activity
 //! layer in place of its client's (`Subscription::recording`, with the
@@ -24,11 +24,17 @@
 //! inside it mark their own jobs. The rings follow the pool, which every
 //! connection shares, so one watcher makes every connection's jobs mark them.
 //!
+//! While a render-bus client subscribes to the trace layer, each job takes the
+//! trace layer in the same way (`Subscription::traced`): it folds the steps of
+//! each item it judges into the item's tree, and it marks the rings too while
+//! the hub has a watcher of the activity. A client that shows the derivation
+//! pane needs the tree of each declaration that any editor changes.
+//!
 //! # What it does not cover
 //!
-//! A client cannot subscribe to a layer yet, because the subscription on the
-//! render bus is a later unit. Until then, each connection holds the silent
-//! layer, and a test selects another layer through its constant, such as
+//! An editor cannot subscribe to a layer yet: its subscription is a later
+//! unit, #6291. Until then, each editor's connection holds the silent layer,
+//! and a test selects another layer through its constant, such as
 //! `Subscription::COUNTS`, `Subscription::TIMINGS` or `Subscription::TRACE`,
 //! with the `instrument` feature.
 
@@ -54,7 +60,11 @@ use gandr_surface_session::Timings;
 #[cfg(feature = "instrument")]
 use gandr_surface_session::Trace;
 #[cfg(feature = "instrument")]
+use gandr_surface_session::TraceColumn;
+#[cfg(feature = "instrument")]
 use gandr_surface_session::unrecorded;
+#[cfg(feature = "instrument")]
+use gandr_surface_session::untraced;
 #[cfg(feature = "instrument")]
 use quenchant_shape::shape::Maybe;
 
@@ -93,14 +103,10 @@ pub enum Layer
     Timings,
     /// The trace layer: each job runs at a fresh [`Trace`], so each recheck
     /// folds the steps of each item it judges into the item's tree.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
-        )
-    )]
     Trace,
+    /// The trace layer and the activity: each job runs as one task on the
+    /// rings, at a fresh [`Trace`] that answers the rings too.
+    TracedActivity(Arc<Activity>),
 }
 
 /// What a client subscribed to, read once by each job of a recheck.
@@ -176,6 +182,21 @@ impl Subscription
             layer: Layer::Activity(rings),
         }
     }
+
+    /// The subscription of a job while a render-bus client subscribes to the
+    /// trace layer: the job traces, and it marks `rings` while the hub has a
+    /// watcher of the activity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[must_use]
+    pub(crate) fn traced(rings: Option<Arc<Activity>>) -> Self
+    {
+        Self {
+            layer: rings.map_or(Layer::Trace, Layer::TracedActivity),
+        }
+    }
 }
 
 /// The sink of a job at the activity layer: it answers the rings, so each
@@ -198,6 +219,45 @@ impl Instrument for Rings<'_>
     fn activity(&self) -> Maybe<&Activity, unrecorded::Absent>
     {
         Maybe::Present(self.0)
+    }
+}
+
+/// The sink of a job at the trace layer while the hub has a watcher of the
+/// activity: it answers the rings, so each fork site of the job marks its
+/// jobs, and it folds each judged item's steps into the item's tree.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+struct TracedRings<'activity>
+{
+    /// The rings that the job's fork sites mark.
+    rings: &'activity Activity,
+    /// The trace that folds the job's steps.
+    trace: Trace,
+}
+
+#[cfg(feature = "instrument")]
+impl Instrument for TracedRings<'_>
+{
+    /// The rings that the job's fork sites mark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn activity(&self) -> Maybe<&Activity, unrecorded::Absent>
+    {
+        Maybe::Present(self.rings)
+    }
+
+    /// The column that folds each judged item's steps.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn trace(&mut self) -> Maybe<&mut TraceColumn, untraced::Absent>
+    {
+        self.trace.trace()
     }
 }
 
@@ -247,7 +307,8 @@ impl Subscription
     ///   fresh [`Timings`] for [`Layer::Timings`] and a fresh [`Trace`] for
     ///   [`Layer::Trace`]. At [`Layer::Activity`], `job` runs as one task of
     ///   its kind between two marks on the ring of its thread, at a sink that
-    ///   answers the rings.
+    ///   answers the rings; at [`Layer::TracedActivity`], the same sink also
+    ///   folds the steps of a fresh [`Trace`].
     /// - provides: the one branch of a job on its layer.
     /// - fails: never.
     /// - panics: only by propagating a panic of `job`.
@@ -277,6 +338,14 @@ impl Subscription
             Layer::Activity(ref rings) => {
                 marked(rings, (Run::TASK, World::from(0)), Declared::NONE, || {
                     job.run(&mut Rings(rings))
+                })
+            },
+            Layer::TracedActivity(ref rings) => {
+                marked(rings, (Run::TASK, World::from(0)), Declared::NONE, || {
+                    job.run(&mut TracedRings {
+                        rings,
+                        trace: Trace::default(),
+                    })
                 })
             },
         }

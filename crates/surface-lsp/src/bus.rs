@@ -36,13 +36,26 @@
 //! cursor moves and after each publication, and nothing when the frame did not
 //! change. A document with no cursor sends no card.
 //!
+//! A client that sends a trace frame subscribes to the trace layer
+//! (`Workspace::trace`): each job of every connection then traces while the
+//! client is attached. The face sends it the derivation card of the
+//! declaration at the cursor (`Workspace::derived`), its goals laid out at the
+//! columns that the client stated: at once, then after each publication, each
+//! admission and each move of the cursor, and nothing when the frame did not
+//! change. So a cursor that moves inside one declaration sends no card. A
+//! client that sends no trace frame is sent no card, and its attachment makes
+//! no job trace. A declaration that a job judged before the first trace frame
+//! holds no tree, so its document sends no card until its next job traces it
+//! (#6716).
+//!
 //! In the build with the `instrument` feature, the face also watches the
 //! hub's work ledger at the cadence of the rows while the renderer is
 //! attached. It folds each tick it hears into the renderer's pane
 //! (`activity::Pane`) and sends the pool's activity as one connection-scoped
 //! frame, and nothing when the pane did not change. A tick comes while a row
 //! holds busy time in its window, so the occupancy moves while no event
-//! arrives, and an idle pool sends nothing.
+//! arrives, and an idle pool sends nothing. Without the feature, the hub
+//! traces nothing, and a trace frame changes nothing.
 //!
 //! **Alternatives.** A report built from the judgement's reports rather than
 //! the published diagnostics would carry the typed arguments a card has room
@@ -78,6 +91,7 @@ use std::sync::mpsc::channel;
 use std::thread;
 
 use gandr_surface_render_remote::AccountCard;
+use gandr_surface_render_remote::Count;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::FrameBody;
 use gandr_surface_render_remote::FrameScope;
@@ -156,19 +170,19 @@ fn patched(
     Some(frame)
 }
 
-/// The stack frame of the document at `uri` when it differs from the one
-/// `shown` holds for it, which `shown` then holds; none when it is the same,
-/// and none for a document with no card, whose frame `shown` lets go.
+/// The frame of the document at `uri` when it differs from the one `shown`
+/// holds for it, which `shown` then holds; none when it is the same, and none
+/// for a document with no frame, whose frame `shown` lets go.
 ///
 /// # Specification
 /// trivial.
-fn restacked(
-    stacked: Option<RenderFrame>,
+fn renewed(
+    frame: Option<RenderFrame>,
     uri: &DocumentUri,
     shown: &mut BTreeMap<DocumentUri, RenderFrame>,
 ) -> Option<RenderFrame>
 {
-    let Some(frame) = stacked
+    let Some(frame) = frame
     else {
         drop(shown.remove(uri));
         return None;
@@ -225,12 +239,16 @@ fn send(
 ///   the card frame changed. A resync from the client is answered with the
 ///   named document's whole account, its report at its current version and its
 ///   stack card, nothing for a document the hub does not hold; a detach is
-///   answered with a detach and ends the face. Frames are written one line
-///   each, in the order the face made them. In the build with the `instrument`
-///   feature, each tick of the hub's work ledger that changes the pane sends
-///   the pool's activity, connection-scoped, and a tick that leaves it as it
-///   was sends nothing. The face returns when the client's stream ends, a line
-///   is not a frame, or a write fails.
+///   answered with a detach and ends the face. In the build with the
+///   `instrument` feature, a trace frame subscribes the client to the trace
+///   layer; after it, each of those events and the trace frame itself also send
+///   the derivation card at the document's cursor when its frame changed, and a
+///   resync sends it whole. Frames are written one line each, in the order the
+///   face made them. In the build with the `instrument` feature, each tick of
+///   the hub's work ledger that changes the pane sends the pool's activity,
+///   connection-scoped, and a tick that leaves it as it was sends nothing. The
+///   face returns when the client's stream ends, a line is not a frame, or a
+///   write fails.
 /// - provides: `gandr serve`'s render-bus face, which `gandr view` attaches to.
 /// - fails: never; a fault ends the connection.
 /// - panics: none.
@@ -248,10 +266,13 @@ fn send(
 ///   differs from the one before, and the pane goes back to idle once the busy
 ///   time leaves the window. The view hears the stack card at the cursor the
 ///   editor's signature help names, and a card again after an edit changes it.
+///   A view of the trace layer hears the derivation card of the declaration at
+///   that cursor, and nothing while the cursor moves inside it.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
 /// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -285,6 +306,10 @@ pub fn serve(
     let mut sent: BTreeMap<DocumentUri, Vec<AccountCard>> = BTreeMap::new();
     // The last stack frame each document sent.
     let mut stacks: BTreeMap<DocumentUri, RenderFrame> = BTreeMap::new();
+    // The columns of a client of the trace layer, and the last derivation
+    // frame each document sent it.
+    let mut traced: Option<Count> = None;
+    let mut derivations: BTreeMap<DocumentUri, RenderFrame> = BTreeMap::new();
     let opening = {
         let mut held = lock(workspace);
         held.watch(peer, watcher);
@@ -299,7 +324,7 @@ pub fn serve(
         for uri in &uris {
             opening.extend(patched(held.accounted(uri), uri, &mut sent, Whole::Asked));
             opening.extend(held.rendered(uri));
-            opening.extend(restacked(held.stacked(uri), uri, &mut stacks));
+            opening.extend(renewed(held.stacked(uri), uri, &mut stacks));
         }
         drop(held);
         opening
@@ -356,27 +381,42 @@ pub fn serve(
                 Event::Closed => break,
                 Event::Changed(uri) => {
                     let held = lock(workspace);
-                    let (account, report, card) = (
+                    let (account, report, card, derivation) = (
                         held.accounted(&uri),
                         held.rendered(&uri),
                         held.stacked(&uri),
+                        derived(&held, &uri, traced),
                     );
                     drop(held);
                     let patch = patched(account, &uri, &mut sent, Whole::Owed);
-                    let card = restacked(card, &uri, &mut stacks);
-                    (patch.into_iter().chain(report).chain(card).collect(), false)
-                },
-                Event::Settled(uri) => {
-                    let account = lock(workspace).accounted(&uri);
-                    let patch = patched(account, &uri, &mut sent, Whole::Owed);
-                    (patch.into_iter().collect(), false)
-                },
-                Event::Moved(uri) => {
-                    let card = lock(workspace).stacked(&uri);
+                    let card = renewed(card, &uri, &mut stacks);
+                    let derivation = renewed(derivation, &uri, &mut derivations);
                     (
-                        restacked(card, &uri, &mut stacks).into_iter().collect(),
+                        patch
+                            .into_iter()
+                            .chain(report)
+                            .chain(card)
+                            .chain(derivation)
+                            .collect(),
                         false,
                     )
+                },
+                Event::Settled(uri) => {
+                    let held = lock(workspace);
+                    let (account, derivation) =
+                        (held.accounted(&uri), derived(&held, &uri, traced));
+                    drop(held);
+                    let patch = patched(account, &uri, &mut sent, Whole::Owed);
+                    let derivation = renewed(derivation, &uri, &mut derivations);
+                    (patch.into_iter().chain(derivation).collect(), false)
+                },
+                Event::Moved(uri) => {
+                    let held = lock(workspace);
+                    let (card, derivation) = (held.stacked(&uri), derived(&held, &uri, traced));
+                    drop(held);
+                    let card = renewed(card, &uri, &mut stacks);
+                    let derivation = renewed(derivation, &uri, &mut derivations);
+                    (card.into_iter().chain(derivation).collect(), false)
                 },
                 #[cfg(feature = "instrument")]
                 Event::Ticked(tick) => {
@@ -394,16 +434,41 @@ pub fn serve(
                     (&FrameScope::Document(ref document), &FrameBody::Resync) => {
                         let uri = DocumentUri::from(&document.uri);
                         let held = lock(workspace);
-                        let (account, report, card) = (
+                        let (account, report, card, derivation) = (
                             held.accounted(&uri),
                             held.rendered(&uri),
                             held.stacked(&uri),
+                            derived(&held, &uri, traced),
                         );
                         drop(held);
                         let whole = patched(account, &uri, &mut sent, Whole::Asked);
                         drop(stacks.remove(&uri));
-                        let card = restacked(card, &uri, &mut stacks);
-                        (whole.into_iter().chain(report).chain(card).collect(), false)
+                        let card = renewed(card, &uri, &mut stacks);
+                        drop(derivations.remove(&uri));
+                        let derivation = renewed(derivation, &uri, &mut derivations);
+                        (
+                            whole
+                                .into_iter()
+                                .chain(report)
+                                .chain(card)
+                                .chain(derivation)
+                                .collect(),
+                            false,
+                        )
+                    },
+                    (_, &FrameBody::Trace { columns }) => {
+                        traced = Some(columns);
+                        derivations.clear();
+                        let mut held = lock(workspace);
+                        subscribe(&mut held, peer);
+                        let frames = held
+                            .held()
+                            .filter_map(|(uri, _version)| {
+                                renewed(derived(&held, uri, traced), uri, &mut derivations)
+                            })
+                            .collect();
+                        drop(held);
+                        (frames, false)
                     },
                     (_, &FrameBody::Detach) => (Vec::from([RenderFrame::detach()]), true),
                     (
@@ -414,6 +479,7 @@ pub fn serve(
                         | FrameBody::Accounts { .. }
                         | FrameBody::AccountPatch { .. }
                         | FrameBody::Stack { .. }
+                        | FrameBody::Derivation { .. }
                         | FrameBody::Activity { .. }),
                     ) => (Vec::new(), false),
                 },
@@ -425,4 +491,60 @@ pub fn serve(
             }
         }
     });
+}
+
+/// The derivation frame of the document at `uri` for a client of the trace
+/// layer whose panes are `columns` wide: none for a client that did not
+/// subscribe.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+fn derived(
+    held: &Workspace,
+    uri: &DocumentUri,
+    columns: Option<Count>,
+) -> Option<RenderFrame>
+{
+    held.derived(uri, columns?)
+}
+
+/// None: without the `instrument` feature the hub traces nothing, so no
+/// client is sent a derivation frame.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(feature = "instrument"))]
+const fn derived(
+    _held: &Workspace,
+    _uri: &DocumentUri,
+    _columns: Option<Count>,
+) -> Option<RenderFrame>
+{
+    None
+}
+
+/// Subscribe `peer` to the trace layer of `held`.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+fn subscribe(
+    held: &mut Workspace,
+    peer: Peer,
+)
+{
+    held.trace(peer);
+}
+
+/// Nothing: without the `instrument` feature the hub has no trace layer.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(feature = "instrument"))]
+const fn subscribe(
+    _held: &mut Workspace,
+    _peer: Peer,
+)
+{
 }

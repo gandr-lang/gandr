@@ -23,7 +23,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 ## Provided features
 
 - `serve` and `Served`: one session over a stream pair and a log, ending cleanly at `exit` or boundary EOF after `shutdown`, and abruptly before shutdown.
-- A shared workspace: each connection that opens a document holds its own copy, answered and published for the text that connection holds, so two clients of one buffer each apply an edit once and two diverging editors are each answered for their own text; the copy that synchronised last is the one the other faces read, and the document is forgotten once the last holder closes it or leaves.
+- A shared workspace: each connection that opens a document holds its own copy, answered and published for its own text; the copy that synchronised last is the one the other faces read, and the document is forgotten once the last holder closes it or leaves.
 - `run_hub`, `bind`, `bind::Absent`, `socket_for`, `Unnamed` and `LINGER`, on Unix: one hub per workspace and build, every connection served over the shared workspace on its own threads, a killed client leaving the others served, and the hub removing its socket and returning once no client has connected for its linger.
 - `relay`, on Unix: a client's frames carried to a hub and back, the session ending as a standalone one would.
 - `Face`, on Unix: `run_hub`'s second face, handed every connection whose first byte is `{` rather than a frame's header, over the same workspace.
@@ -31,7 +31,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes judged without submitting any, ranked best first, each with the diagnostics its text would publish; every copy and its session unchanged.
 - `Workspace::propose`, `Proposal` and `ProposalRefusal`: a model's fill of a range kept beside the document once it checks, refused when stale or failing, and withdrawn by the next synchronisation; kept fills served as ghost text, code lenses, code actions and hover notes.
 - `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket, with its greeting, its reports, the stack at the editor's cursor, a resync and a detach as [`bus`](src/bus.rs) states.
-- With the `instrument` feature, `Activities`, `Cadence` and `Tick`: the hub's fold of the activity ring while a watcher follows it, at its cadence, and the pool's pane on the render bus.
+- With the `instrument` feature, `Activities`, `Cadence` and `Tick`: the hub's fold of the activity ring while a watcher follows it, at its cadence, and the pool's pane on the render bus; `Workspace::trace` and `Workspace::derived`: a view's trace layer and the derivation card at the editor's cursor.
 - Incremental synchronisation: each content change applied in order and the document judged again in its session on the worker pool, molding only the forms the change touched; one log line per publication.
 - Notebook synchronisation: a Jupyter `.ipynb` of `gandr` cells judged as one document, each cell published its own diagnostics ([`notebook`](src/notebook.rs)).
 - `Server::admit`, `Server::admitted`, `Admissions` and `Awaiting`: the judgement each synchronisation leaves due, run on the worker pool and published once delivered, then the kernel admission it left, run once its diagnostics are published.
@@ -47,7 +47,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Signature help: each spine at the cursor, innermost first, as its head was written, with its documentation and slot; a space opens the next slot.
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a named tab stop.
 - The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges from the innermost node outward.
-- Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal; inlay hints: binders' unwritten types.
+- Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal; at the trace layer, the derivation path; inlay hints: binders' unwritten types.
 - `page`, `index`, `site` and `sourced`: `gandr doc`'s pages and site, each declaration as its hover shows it.
 - Definitions and declarations: what the name under the cursor refers to, at its definition or its signature, and the families its type names, here or in an imported sibling; links: path imports to their files.
 - Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer in the opened projects; a file renamed: its importers' addresses.

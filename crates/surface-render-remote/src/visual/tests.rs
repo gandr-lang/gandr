@@ -225,6 +225,7 @@ fn example(note: Datum) -> (Frame, Rendering)
         let (spelled, underlined) = match noted {
             Datum::Text(text) => (text, None),
             Datum::Marked { text, run } => (text, Some(Attribute::Underline(run))),
+            Datum::Nested { text, depth } => (text, Some(Attribute::Indent(depth))),
             Datum::Absent
             | Datum::Count(_)
             | Datum::Duration { .. }
@@ -233,6 +234,7 @@ fn example(note: Datum) -> (Frame, Rendering)
             | Datum::Ratio { .. }
             | Datum::Samples(_)
             | Datum::Warrant(_)
+            | Datum::Glyph(_)
             | Datum::Comparison { .. } => (String::new(), None),
         };
         let last = numeral!("31", Unit::Count);
@@ -385,6 +387,96 @@ fn a_rendering_that_keeps_the_language_breaks_no_rule()
         }),
         [],
         "an empty frame renders as nothing"
+    );
+}
+
+#[test]
+fn a_pane_that_shrinks_renames_no_field_of_the_pane_after_it()
+{
+    // Two panes of text: the first holds `rows` records, the second two with
+    // the same text, so the second's records move when the first shrinks.
+    let shown = |rows: usize| {
+        let text = |name: &'static str, spelled: &str| Field {
+            name: FieldName::from(name),
+            datum: Datum::Text(String::from(spelled)),
+            revision: NOW,
+        };
+        let head = |name: &'static str| {
+            Vec::from([Head {
+                name: FieldName::from(name),
+                unit: None,
+            }])
+        };
+        let mut frame = Frame {
+            revision: NOW,
+            records: Vec::new(),
+        };
+        let mut first = Pane {
+            heads: head("head"),
+            rows: Vec::new(),
+        };
+        let mut second = Pane {
+            heads: head("goal"),
+            rows: Vec::new(),
+        };
+        for (record, (name, spelled)) in core::iter::repeat_n(("head", "g"), rows)
+            .chain(core::iter::repeat_n(("goal", "a + b"), 2))
+            .enumerate()
+        {
+            frame.records.push(Record {
+                fields: Vec::from([text(name, spelled)]),
+            });
+            let row = Row {
+                cells: Vec::from([Cell::text(
+                    Place { record, field: 0 },
+                    String::from(spelled),
+                )]),
+            };
+            if record < rows {
+                first.rows.push(row);
+            }
+            else {
+                second.rows.push(row);
+            }
+        }
+        (frame, Rendering {
+            panes: Vec::from([first, second]),
+        })
+    };
+    let (before, earlier) = shown(2);
+    let (frame, mut rendering) = shown(1);
+    assert_eq!(
+        conform(&Shown {
+            frame: &frame,
+            rendering: &rendering,
+            before: Some((&before, &earlier)),
+        }),
+        [],
+        "the second pane's rows stay in place while their records move"
+    );
+    cell(&mut rendering, At {
+        pane: 1,
+        row: 0,
+        cell: 0,
+    })
+    .attributes
+    .push(Attribute::Bold);
+    let moved = conform(&Shown {
+        frame: &frame,
+        rendering: &rendering,
+        before: Some((&before, &earlier)),
+    });
+    assert!(
+        moved.iter().any(|breach| {
+            <&str>::from(breach.rule) == "change-in-place"
+                && breach.spot
+                    == super::Spot::Cell(At {
+                        pane: 1,
+                        row: 0,
+                        cell: 0,
+                    })
+        }),
+        "a kept field drawn another way in its row still moves: {moved:?}"
     );
 }
 
@@ -602,6 +694,60 @@ fn an_underline_marks_only_the_run_its_datum_marks()
         (elsewhere, "a text that marks no run"),
     ] {
         let (mut frame, mut rendering) = example(marked.clone());
+        broken(&mut frame, &mut rendering);
+        let breaches = conform(&Shown {
+            frame: &frame,
+            rendering: &rendering,
+            before: None,
+        });
+        assert!(
+            breaches
+                .iter()
+                .any(|breach| <&str>::from(breach.rule) == "no-decoration"),
+            "{why}: {breaches:?}"
+        );
+    }
+}
+
+#[test]
+fn an_indent_sets_in_only_the_depth_its_datum_states()
+{
+    let nested = Datum::Nested {
+        text: String::from("\\n => n"),
+        depth: Count(2),
+    };
+    let (frame, rendering) = example(nested.clone());
+    assert_eq!(
+        conform(&Shown {
+            frame: &frame,
+            rendering: &rendering,
+            before: None,
+        }),
+        [],
+        "the text is set in by the depth that the datum states"
+    );
+    let deeper: Breaking = |_, rendering| {
+        cell(rendering, At {
+            pane: 1,
+            row: 1,
+            cell: 7,
+        })
+        .attributes = Vec::from([Attribute::Indent(Count(3))]);
+    };
+    let elsewhere: Breaking = |_, rendering| {
+        cell(rendering, At {
+            pane: 1,
+            row: 0,
+            cell: 0,
+        })
+        .attributes
+        .push(Attribute::Indent(Count(1)));
+    };
+    for (broken, why) in [
+        (deeper, "a depth other than the datum's"),
+        (elsewhere, "a text at no depth"),
+    ] {
+        let (mut frame, mut rendering) = example(nested.clone());
         broken(&mut frame, &mut rendering);
         let breaches = conform(&Shown {
             frame: &frame,

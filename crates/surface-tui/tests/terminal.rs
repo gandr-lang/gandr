@@ -18,6 +18,7 @@ use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_repl::Ended;
 use gandr_surface_tui::Following;
 use gandr_surface_tui::Heard;
+use gandr_surface_tui::Layers;
 use gandr_surface_tui::follow;
 
 /// The escape sequence a face writes on entering the alternate screen.
@@ -67,7 +68,7 @@ fn the_side_view_completes_and_restores_its_settings()
     let before = settings();
     let mut written = Vec::new();
     let closed: &[u8] = b"";
-    let ended = follow(closed, &mut written).expect("the side view runs");
+    let ended = follow(closed, &mut written, Layers::Silent).expect("the side view runs");
     assert_eq!(
         settings(),
         before,

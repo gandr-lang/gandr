@@ -57,6 +57,7 @@
 //! | `gandr mcp --socket <path> --linger-ms <ms>` | as `mcp`, through the hub on that socket, a hub it starts lingering that long | as `mcp` |
 //! | `gandr view` | the cards of the document the workspace's hub checked last, full-screen on a terminal; piped, each report's lines then a blank line (Unix) | a stream that failed, a line that is not a frame, or a hub it could not reach |
 //! | `gandr view --socket <path> --linger-ms <ms>` | as `view`, through the hub on that socket, a hub it starts lingering that long | as `view` |
+//! | `gandr view --trace` | as `view`, and on a terminal the derivation pane: the judgement nodes of the declaration at the editor's cursor, which a hub built with `instrument` traces while the view is attached | as `view` |
 //! | `gandr serve` | the URL of the toolset's manifest, then each client's timing lines, on standard error, until it is stopped; the URL also in the address file beside the socket | a socket it cannot bind or serve, an address file that names a toolset that still listens, or a toolset it cannot open |
 //! | `gandr serve --port <port>` | as `serve`, its toolset on that port | as `serve` |
 //! | `gandr serve --no-toolset` | each client's timing lines on standard error, until no client has connected for a minute | a socket it cannot bind or serve |
@@ -173,9 +174,11 @@
 //! diagnostics and holes it carries, then each diagnostic at its one-based row
 //! and column with its code and its derivation, then each hole with its goal
 //! (`gandr-surface-tui`). On a terminal it takes the screen until `q`, Esc or
-//! Ctrl-C; piped, each report prints as its lines and a blank line. A view that
-//! cannot read the hub's frames ends with `gandr: the view: <cause>` on
-//! standard error.
+//! Ctrl-C; piped, each report prints as its lines and a blank line. Under
+//! `--trace` the hub judges each job at the trace layer while the view is
+//! attached, and the terminal shows the derivation pane; Enter shows the whole
+//! goal of the node at the cursor. A view that cannot read the hub's frames
+//! ends with `gandr: the view: <cause>` on standard error.
 //!
 //! `gandr repl` reads declarations a line at a time and submits each buffer the
 //! parser reads as complete, judging it with every declaration kept before it,
@@ -734,6 +737,12 @@ enum Command
         /// last has left, before it exits. Defaults to a minute.
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
+        /// Show the derivation pane: the judgement nodes of the declaration at
+        /// the editor's cursor. A hub built with `instrument` traces each
+        /// judgement while the view is attached; another hub sends no node.
+        /// On a terminal only.
+        #[arg(long)]
+        trace: bool,
     },
     /// Run the read-evaluate loop over standard input and output.
     ///
@@ -2260,11 +2269,21 @@ fn main() -> ExitCode
             return repl(if batch { Face::Batch } else { Face::ByInput }, spelling);
         },
         #[cfg(unix)]
-        Some(Command::View { socket, linger_ms }) => {
+        Some(Command::View {
+            socket,
+            linger_ms,
+            trace,
+        }) => {
             return view(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
+                if trace {
+                    gandr_surface_tui::Layers::Trace
+                }
+                else {
+                    gandr_surface_tui::Layers::Silent
+                },
             );
         },
         #[cfg(not(target_os = "wasi"))]
@@ -2891,10 +2910,10 @@ fn mcp(
 /// - requires: nothing.
 /// - ensures: the attach is sent to the hub [`reach_hub`] reaches; with
 ///   standard input and output both terminals, the bus is followed as
-///   `gandr_surface_tui::follow` states, and otherwise its reports are printed
-///   as `gandr_surface_tui::follow_plain` states. The view exits `0` when it
-///   completes, and `2` when a hub is never reached, a stream fails or the view
-///   ends faulted, the cause noted on standard error when writable.
+///   `gandr_surface_tui::follow` states at `layers`, and otherwise its reports
+///   are printed as `gandr_surface_tui::follow_plain` states. The view exits
+///   `0` when it completes, and `2` when a hub is never reached, a stream fails
+///   or the view ends faulted, the cause noted on standard error when writable.
 /// - provides: `gandr view`, the side view beside an editor.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -2909,6 +2928,7 @@ fn view(
     socket: Option<PathBuf>,
     linger: Duration,
     spelling: Spelling,
+    layers: gandr_surface_tui::Layers,
 ) -> ExitCode
 {
     let attached = reach_hub(socket, linger, spelling).and_then(|mut stream| {
@@ -2922,7 +2942,7 @@ fn view(
     };
     let terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let followed = if terminal {
-        gandr_surface_tui::follow(reading, &mut writing)
+        gandr_surface_tui::follow(reading, &mut writing, layers)
     }
     else {
         gandr_surface_tui::follow_plain(reading, &mut std::io::stdout().lock())

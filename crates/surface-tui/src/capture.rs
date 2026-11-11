@@ -77,12 +77,13 @@ fn named(
 /// - requires: nothing.
 /// - ensures: one SVG document. Each line of the view's layout is one `<text>`
 ///   at its row, and each cell that shows a letter is one `<tspan>` at its
-///   first letter's column. The padding of a cell is not written. A hue is the
-///   class of its colour's name, bold and italic are the font's weight and
-///   style, an underline is a `<tspan>` inside the cell's own with the text
-///   decoration over its run, and the rules refuse every other attribute. Each
-///   warrant's class reads the CSS variable of its name, with a light and a
-///   dark default. The canvas has no background.
+///   first letter's column, so an indented cell starts at its depth. The
+///   padding of a cell is not written. A hue is the class of its colour's name,
+///   bold and italic are the font's weight and style, an underline is a
+///   `<tspan>` inside the cell's own with the text decoration over its run, and
+///   the rules refuse every other attribute. Each warrant's class reads the CSS
+///   variable of its name, with a light and a dark default. The canvas has no
+///   background.
 /// - provides: the rendered capture of a pane, which a test compares with the
 ///   committed file.
 /// - fails: never.
@@ -95,6 +96,7 @@ fn named(
 /// - witness: `tests::captures::the_warrants_scene_renders_as_its_captures`
 /// - witness: `tests::captures::the_schedule_scene_renders_as_its_capture`
 /// - witness: `tests::captures::the_stack_scene_renders_as_its_captures`
+/// - witness: `tests::captures::the_derivation_scene_renders_as_its_captures`
 #[spec(ensures: |ret| ret.starts_with("<svg ") && ret.ends_with("</svg>\n"))]
 #[inline]
 #[must_use]
@@ -183,7 +185,8 @@ pub fn svg(panes: &[Pane]) -> String
                         | Attribute::Background(_)
                         | Attribute::Border
                         | Attribute::Blink
-                        | Attribute::Underline(_) => {},
+                        | Attribute::Underline(_)
+                        | Attribute::Indent(_) => {},
                     }
                 }
                 out.push('>');

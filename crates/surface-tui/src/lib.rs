@@ -176,6 +176,7 @@ pub use crate::app::Key;
 pub use crate::capture::svg;
 pub use crate::follow::Following;
 pub use crate::follow::Heard;
+pub use crate::follow::Layers;
 pub use crate::follow::Seen;
 pub use crate::follow::draw_following;
 pub use crate::follow::drive_following;

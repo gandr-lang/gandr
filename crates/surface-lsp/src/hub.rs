@@ -1691,8 +1691,10 @@ mod tests
             FrameBody::Hello { .. }
             | FrameBody::Frame { .. }
             | FrameBody::Stack { .. }
+            | FrameBody::Derivation { .. }
             | FrameBody::Resync
             | FrameBody::Activity { .. }
+            | FrameBody::Trace { .. }
             | FrameBody::Detach => {},
         }
     }
@@ -1760,7 +1762,9 @@ mod tests
             | FrameBody::Accounts { .. }
             | FrameBody::AccountPatch { .. }
             | FrameBody::Stack { .. }
+            | FrameBody::Derivation { .. }
             | FrameBody::Activity { .. }
+            | FrameBody::Trace { .. }
             | FrameBody::Detach => {
                 panic!("a report was owed, not {frame:?}")
             },
@@ -2074,6 +2078,161 @@ mod tests
                 ]),
             }),
             "an edit that changes the stack at the cursor sends the card again"
+        );
+        drop(reading);
+        drop(view);
+        drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    /// #6295: a view of the trace layer hears the derivation card of the
+    /// declaration at the editor's cursor. The view subscribes after the
+    /// editor opened the document, so the edit that follows traces the two
+    /// declarations it changes and adopts the third. A move of the cursor
+    /// inside the declaration sends no card, and a move into the other changed
+    /// declaration sends its card. A face that sent the card of another
+    /// declaration, placed a goal outside its declaration, or sent a card for a
+    /// move inside one fails here.
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn an_attached_view_follows_the_derivation_at_the_editors_cursor()
+    {
+        let scratch = Scratch::new(Json("derivation"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut editor = Client::new(&socket);
+        let opened = |g: &str, main: &str| {
+            format!(
+                "def f(a : Integer, b : Integer) -> -F Integer {{ return a + b }}\ndef g(a : Integer, b : Integer) -> -F Integer {{ return {g} }}\ndef main() -> -F Integer {{ {main} }}\n"
+            )
+        };
+        let uri = "file:///tmp/derivation.gandr";
+        editor.send(Json(
+            &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri, "version": 1_i32,
+                    "text": opened("a + b", "f 1 (g 2 3)")}}})
+            .to_string(),
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
+        // The editor's signature help names the cursor: before `2`, in `main`.
+        let help = |editor: &mut Client, id: i32, line: i32, character: usize| {
+            editor.send(Json(
+                &serde_json::json!({"jsonrpc": "2.0", "id": id,
+                    "method": "textDocument/signatureHelp",
+                    "params": {"textDocument": {"uri": uri},
+                        "position": {"line": line, "character": character}}})
+                .to_string(),
+            ));
+            while editor.receive().get("id") != Some(&serde_json::json!(id)) {}
+        };
+        let inside = "def main() -> -F Integer { f 1 (g ".len();
+        help(&mut editor, 2_i32, 2_i32, inside);
+        let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.set_read_timeout(Some(OWED))
+            .expect("the stream takes a deadline");
+        view.write_all(RENDER_BUS_PREFACE.as_bytes())
+            .expect("the hub reads");
+        let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
+        let document = |version: i32| DocId {
+            uri: gandr_surface_render_remote::DocumentUri::from(String::from(uri)),
+            version: DocVersion::from(version),
+        };
+        // The resync's whole account comes after the subscription took hold,
+        // since the face reads the client's frames in order; a publication
+        // sends a patch, never a whole account.
+        let encoded = |frame: &RenderFrame| serde_json::to_string(frame).expect("a frame encodes");
+        let asked = format!(
+            "{}\n{}\n",
+            encoded(&RenderFrame::trace(Count(80))),
+            encoded(&RenderFrame::resync(document(1_i32)))
+        );
+        view.write_all(asked.as_bytes()).expect("the hub reads");
+        let mut accounts = 0_usize;
+        while accounts < 2 {
+            let (_line, frame) = next_frame(&mut reading);
+            assert!(
+                !matches!(*frame.body(), FrameBody::Derivation { .. }),
+                "an untraced judgement sends no card: {frame:?}"
+            );
+            if matches!(*frame.body(), FrameBody::Accounts { .. }) {
+                accounts = accounts.saturating_add(1);
+            }
+        }
+        editor.send(Json(
+            &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                "params": {"textDocument": {"uri": uri, "version": 2_i32},
+                    "contentChanges": [{"text": opened("b + a", "f 1 (g 2 4)")}]}})
+            .to_string(),
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
+        let derived = |reading: &mut BufReader<UnixStream>| loop {
+            let (_line, frame) = next_frame(reading);
+            if let FrameBody::Derivation { ref card } = *frame.body() {
+                return (frame.scope().clone(), card.clone());
+            }
+        };
+        let text = opened("b + a", "f 1 (g 2 4)");
+        let lines: Vec<&str> = text.split_inclusive('\n').collect();
+        let declared = |line: usize| {
+            let start: usize = lines.iter().take(line).map(|held| held.len()).sum();
+            (
+                start,
+                start.saturating_add(lines.get(line).map_or(0, |held| held.len())),
+            )
+        };
+        let within =
+            |card: &gandr_surface_render_remote::DerivationCard, (start, end): (usize, usize)| {
+                card.rows.iter().filter_map(|row| row.span).all(|span| {
+                    usize::from(span.start()) >= start && usize::from(span.end()) <= end
+                })
+            };
+        let (scope, main) = derived(&mut reading);
+        assert_eq!(scope, FrameScope::Document(document(2_i32)));
+        assert_eq!(
+            main.declaration, "main",
+            "the card is the declaration at the cursor"
+        );
+        assert_eq!(
+            main.columns,
+            Count(80),
+            "the goals are laid out at the stated columns"
+        );
+        assert!(
+            main.rows.first().is_some_and(|root| root.depth == Count(0))
+                && main.rows.iter().any(|row| row.span.is_some())
+                && within(&main, declared(2)),
+            "the tree opens at a root and each placed goal lies in `main`: {main:?}"
+        );
+        let cursor =
+            gandr_surface_render_remote::ByteOffset::from(declared(2).0.saturating_add(inside));
+        assert!(
+            main.focus(cursor)
+                .and_then(|at| main.rows.get(at.0))
+                .and_then(|row| row.span)
+                .is_some_and(|span| span.start() <= cursor && cursor <= span.end()),
+            "a node of the card holds the cursor"
+        );
+        // A move inside `main`, then a move into `g`'s body.
+        help(
+            &mut editor,
+            3_i32,
+            2_i32,
+            "def main() -> -F Integer { f ".len(),
+        );
+        help(
+            &mut editor,
+            4_i32,
+            1_i32,
+            "def g(a : Integer, b : Integer) -> -F Integer { return b".len(),
+        );
+        let (_scope, g) = derived(&mut reading);
+        assert_eq!(
+            g.declaration, "g",
+            "a move inside `main` sends no card, and a move into `g` sends its card"
+        );
+        assert!(
+            within(&g, declared(1)),
+            "each placed goal lies in `g`: {g:?}"
         );
         drop(reading);
         drop(view);

@@ -101,6 +101,10 @@ use gandr_surface_lowering::SourceIndex;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::AccountCard;
+#[cfg(feature = "instrument")]
+use gandr_surface_render_remote::Count;
+#[cfg(feature = "instrument")]
+use gandr_surface_render_remote::DerivationCard;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
@@ -576,6 +580,35 @@ impl Document
     {
         let lent = self.session();
         Ok(self.text.hovering(&uri.path(), lent.as_ref()?, shadows))
+    }
+
+    /// The derivation card of the declaration with a content key whose range
+    /// holds `position`, each goal and type laid out at `columns`: none when
+    /// no such declaration holds it or the session's account holds no tree
+    /// for it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn derived(
+        &self,
+        position: Position,
+        columns: Count,
+    ) -> Option<DerivationCard>
+    {
+        let at = self.tiers.at(position)?;
+        let index = LineIndex::new(<&str>::from(self.text.source()).into());
+        let start = at.range.start.byte(&index);
+        let lent = self.session();
+        match lent.as_ref().ok()?.account().derivation_at(at.constant) {
+            Maybe::Present(derivation) => Some(crate::derivation::card(
+                &derivation,
+                (at.key, String::from(at.name)),
+                start,
+                columns,
+            )),
+            Maybe::Absent(_) => None,
+        }
     }
 }
 
@@ -1516,6 +1549,10 @@ pub struct Workspace
     accountants: BTreeMap<Peer, Sender<DocumentUri>>,
     /// Where each render-bus connection hears which document's cursor moved.
     stackers: BTreeMap<Peer, Sender<DocumentUri>>,
+    /// Each render-bus connection that subscribed to the trace layer: while
+    /// one does, each job of every connection traces.
+    #[cfg(feature = "instrument")]
+    tracers: BTreeSet<Peer>,
     /// The cursor that a signature-help or a context-stack request named last
     /// in the latest copy of each document: where the render bus reads the
     /// stack card. What the editor asked, so it changes under a shared borrow.
@@ -1708,9 +1745,10 @@ impl Workspace
         &self.activity
     }
 
-    /// The subscription a job of `connection` runs at: the activity layer
-    /// while the hub has a watcher of the activity, and the connection's own
-    /// otherwise.
+    /// The subscription a job of `connection` runs at: the trace layer while
+    /// a render-bus connection subscribes to it, marking the rings while the
+    /// hub has a watcher of the activity; else the activity layer while the
+    /// hub has a watcher; and the connection's own otherwise.
     ///
     /// # Specification
     /// trivial.
@@ -1720,9 +1758,13 @@ impl Workspace
         connection: &Subscription,
     ) -> Subscription
     {
-        self.activity
-            .rings()
-            .map_or_else(|| connection.clone(), Subscription::recording)
+        let rings = self.activity.rings();
+        if self.tracers.is_empty() {
+            rings.map_or_else(|| connection.clone(), Subscription::recording)
+        }
+        else {
+            Subscription::traced(rings)
+        }
     }
 
     /// The subscription a job of `connection` runs at: the connection's own,
@@ -1791,6 +1833,21 @@ impl Workspace
     )
     {
         let _prior = self.stackers.insert(peer, stacker);
+    }
+
+    /// Subscribe `peer`, a render-bus connection, to the trace layer: each job
+    /// of every connection traces until `peer` departs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn trace(
+        &mut self,
+        peer: Peer,
+    )
+    {
+        let _new = self.tracers.insert(peer);
     }
 
     /// Keep `position` as the cursor of the document at `uri` when `peer` is
@@ -2182,6 +2239,47 @@ impl Workspace
         ))
     }
 
+    /// The render bus's derivation card of the document at `uri`: the
+    /// judgement nodes of the declaration at the cursor a request named last
+    /// in its latest copy, each goal and type laid out at `columns`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` for a document no connection holds, one with no
+    ///   cursor, one whose cursor is in no declaration with a content key, and
+    ///   one whose account holds no tree for that declaration; otherwise a
+    ///   frame scoped to the document at its latest copy's version, carrying
+    ///   the [`crate::derivation::card`] of that declaration.
+    /// - provides: what the render-bus face sends a client of the trace layer
+    ///   when the cursor moves to another declaration or the tree changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view of the trace layer attached to a hub hears the
+    ///   card of the declaration at the cursor the editor's signature help
+    ///   names, and nothing while the cursor moves inside it.
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+    #[cfg(feature = "instrument")]
+    #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
+    #[inline]
+    #[must_use]
+    pub fn derived(
+        &self,
+        uri: &DocumentUri,
+        columns: Count,
+    ) -> Option<RenderFrame>
+    {
+        let position = *self.cursors.borrow().get(uri)?;
+        let document = &self.documents.get(uri)?.document;
+        Some(RenderFrame::derivation(
+            DocId {
+                uri: uri.into(),
+                version: document.version.into(),
+            },
+            document.derived(position, columns)?,
+        ))
+    }
+
     /// Judge each of `changes`, applied alone to the latest copy of the
     /// document at `uri` as it stands, without submitting any: that copy's
     /// version and each candidate's result, best first.
@@ -2430,6 +2528,8 @@ impl Workspace
         let _watcher = self.watchers.remove(&peer);
         let _accountant = self.accountants.remove(&peer);
         let _stacker = self.stackers.remove(&peer);
+        #[cfg(feature = "instrument")]
+        let _tracer = self.tracers.remove(&peer);
         let _editor = self.editors.remove(&peer);
         let _reporting = self.reporting.remove(&peer);
         #[cfg(feature = "instrument")]
@@ -7066,11 +7166,13 @@ impl Workspace
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document yields Nothing; otherwise the hover
     ///   [`hover()`] shows in `style`, read against the text's reading, what
-    ///   the copy keeps for its hovers and its session, followed by the notes
-    ///   of the kept proposals whose range holds the position and explain
-    ///   themselves, in `style`'s markup, or those notes alone over the first
-    ///   one's range when the hover shows nothing there or the grammar did not
-    ///   build. Nothing when neither shows anything.
+    ///   the copy keeps for its hovers and its session, followed by the
+    ///   derivation section of the declaration at the position when the account
+    ///   holds its tree, then by the notes of the kept proposals whose range
+    ///   holds the position and explain themselves, in `style`'s markup, or
+    ///   those notes alone over the first one's range when the hover shows
+    ///   nothing there or the grammar did not build. Nothing when neither shows
+    ///   anything.
     /// - provides: the answer to `textDocument/hover`.
     /// - fails: never.
     /// - panics: none.
@@ -7081,6 +7183,7 @@ impl Workspace
     ///   answers; one inside an explained proposal carries its note.
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+    /// - witness: `server::tests::a_traced_hover_shows_the_node_at_the_cursor_and_its_ancestors_6295`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Hover(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn hover(
@@ -7110,6 +7213,26 @@ impl Workspace
                 )
             },
         );
+        // At the trace layer, the section of the node at the position follows
+        // the type and the documentation.
+        #[cfg(feature = "instrument")]
+        let shown = match shown {
+            Maybe::Present(mut shown) => {
+                let index = LineIndex::new(<&str>::from(document.text.source()).into());
+                let offset = gandr_surface_render_remote::ByteOffset::from(usize::from(
+                    position.byte(&index),
+                ));
+                if let Some(section) = document
+                    .derived(position, crate::derivation::HOVERED)
+                    .and_then(|card| crate::derivation::section(&card, offset))
+                {
+                    shown.contents.value.push_str("\n\n---\n\n");
+                    shown.contents.value.push_str(&section);
+                }
+                Maybe::Present(shown)
+            },
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
         match (shown, notes(&document.proposals, position, style.markup)) {
             (Maybe::Present(mut shown), Some((_range, notes))) => {
                 shown.contents.value.push_str("\n\n---\n\n");
@@ -13038,6 +13161,88 @@ mod tests
             trees(&connected),
             first,
             "a second recheck adopts each item and keeps each tree"
+        );
+    }
+
+    /// #6295: at the trace layer a hover inside a declaration's body adds the
+    /// derivation section after the type: the line of the root first, then the
+    /// line of each node down to the one at the position, each set in two
+    /// spaces deeper than the line before it. The same hover at the silent
+    /// layer adds no section. A section that left out the root, or listed
+    /// siblings rather than the path, fails here.
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn a_traced_hover_shows_the_node_at_the_cursor_and_its_ancestors_6295()
+    {
+        let text = "def f(a : Integer, b : Integer) -> -F Integer { return a + b }\n";
+        let hovered = |subscription: crate::instrument::Subscription, uri: &str| {
+            let mut connected = initialized();
+            connected.server.subscription = subscription;
+            let _opened = send(
+                &mut connected,
+                Json(
+                    &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                        "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}})
+                    .to_string(),
+                ),
+            );
+            let character = text.find("+ b").expect("the sum").saturating_add(2);
+            let answered = send(
+                &mut connected,
+                Json(
+                    &serde_json::json!({"jsonrpc": "2.0", "id": 2_i32, "method": "textDocument/hover",
+                        "params": {"textDocument": {"uri": uri},
+                            "position": {"line": 0_i32, "character": character}}})
+                    .to_string(),
+                ),
+            );
+            answered
+                .as_array()
+                .and_then(|messages| {
+                    messages
+                        .iter()
+                        .find(|message| message.get("id") == Some(&serde_json::json!(2_i32)))
+                })
+                .and_then(|message| message.pointer("/result/contents/value"))
+                .and_then(Value::as_str)
+                .map(String::from)
+                .expect("the hover answers")
+        };
+        let traced = hovered(
+            crate::instrument::Subscription::TRACE,
+            "file:///a-traced-hover-6295.gandr",
+        );
+        let section = traced
+            .split("```text\n")
+            .nth(1)
+            .and_then(|rest| rest.split("```").next())
+            .expect("the hover holds the derivation section");
+        let depths: Vec<usize> = section
+            .lines()
+            .map(|line| line.len().saturating_sub(line.trim_start().len()))
+            .collect();
+        assert!(
+            depths.len() >= 2
+                && depths.first() == Some(&0_usize)
+                && depths.windows(2).all(
+                    |pair| pair.get(1).copied() == pair.first().map(|&at| at.saturating_add(2))
+                ),
+            "the root's line comes first and each line goes one level deeper: {section}"
+        );
+        assert!(
+            section
+                .lines()
+                .last()
+                .is_some_and(|line| line.contains('b')),
+            "the last line is the node at the position: {section}"
+        );
+        let silent = hovered(
+            crate::instrument::Subscription::SILENT,
+            "file:///a-silent-hover-6295.gandr",
+        );
+        assert!(
+            !silent.contains("```text"),
+            "the silent layer adds no section: {silent}"
         );
     }
 

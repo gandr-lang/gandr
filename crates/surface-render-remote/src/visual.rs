@@ -30,7 +30,9 @@
 //! MiB. A sparkline is 32 cells of the eight block elements `▁▂▃▄▅▆▇█` and its
 //! last value as a numeral. A label is the name of its field. An absent datum
 //! draws nothing. A marked text draws its marked run underlined, and an
-//! underline anywhere else is decoration.
+//! underline anywhere else is decoration. A nested text is set in by two
+//! columns for each level of its depth, and an indent anywhere else is
+//! decoration. A derivation's glyph draws as itself.
 //!
 //! Each rule is one private function named by the rule's slug, over a
 //! [`Shown`]: the frame, its rendering, and the frame and rendering before it
@@ -764,6 +766,9 @@ pub enum Attribute
     Blink,
     /// A line drawn under the run of the cell's text that its datum marks.
     Underline(ByteRange),
+    /// The text set in by two columns for each level of the depth that its
+    /// datum states.
+    Indent(Count),
 }
 
 /// What a cell shows of its field: the field's name, or its datum.
@@ -1030,6 +1035,18 @@ pub enum Datum
     Samples(Samples),
     /// A warrant.
     Warrant(Warrant),
+    /// A glyph of a derivation: the direction of a judgement, or the memo's
+    /// mark.
+    Glyph(Glyph),
+    /// A text at a depth of a tree: the goal of a derivation node, which a
+    /// renderer sets in by its depth.
+    Nested
+    {
+        /// The text.
+        text: String,
+        /// The depth: zero at a root.
+        depth: Count,
+    },
     /// A count before and the count after.
     Comparison
     {
@@ -1348,7 +1365,12 @@ fn quantity(datum: &Datum) -> Option<()>
         | Datum::Ratio { .. }
         | Datum::Samples(_)
         | Datum::Comparison { .. } => Some(()),
-        Datum::Absent | Datum::Text(_) | Datum::Marked { .. } | Datum::Warrant(_) => None,
+        Datum::Absent
+        | Datum::Text(_)
+        | Datum::Marked { .. }
+        | Datum::Warrant(_)
+        | Datum::Glyph(_)
+        | Datum::Nested { .. } => None,
     }
 }
 
@@ -1399,7 +1421,8 @@ fn ink_is_data(shown: &Shown<'_>) -> Result<(), Spot>
 }
 
 /// `no-decoration`: no background, no border, no line drawn as text that its
-/// datum does not hold, and no underline but the run that its datum marks.
+/// datum does not hold, no underline but the run that its datum marks, and no
+/// indent but the depth that its datum states.
 ///
 /// # Specification
 /// trivial.
@@ -1407,7 +1430,11 @@ fn no_decoration(shown: &Shown<'_>) -> Result<(), Spot>
 {
     let ruled = |cell: &Cell| {
         let spelled = match encoded(shown.frame, cell).map(|field| &field.datum) {
-            Some(&(Datum::Text(ref text) | Datum::Marked { ref text, .. })) => text.as_str(),
+            Some(
+                &(Datum::Text(ref text)
+                | Datum::Marked { ref text, .. }
+                | Datum::Nested { ref text, .. }),
+            ) => text.as_str(),
             Some(_) | None => "",
         };
         cell.text
@@ -1420,6 +1447,12 @@ fn no_decoration(shown: &Shown<'_>) -> Result<(), Spot>
             Some(&Datum::Marked { run, .. }) if run == underlined
         )
     };
+    let nested = |cell: &Cell, indent: Count| {
+        matches!(
+            encoded(shown.frame, cell).map(|field| &field.datum),
+            Some(&Datum::Nested { depth, .. }) if depth == indent
+        )
+    };
     first(
         cells(shown.rendering)
             .filter(|&(_, cell)| {
@@ -1427,6 +1460,7 @@ fn no_decoration(shown: &Shown<'_>) -> Result<(), Spot>
                     || cell.attributes.iter().any(|attribute| match *attribute {
                         Attribute::Background(_) | Attribute::Border => true,
                         Attribute::Underline(run) => !marked(cell, run),
+                        Attribute::Indent(depth) => !nested(cell, depth),
                         Attribute::Hue(_)
                         | Attribute::Bold
                         | Attribute::Italic
@@ -1460,7 +1494,8 @@ fn hue_is_warrant(shown: &Shown<'_>) -> Result<(), Spot>
                     | Attribute::Background(_)
                     | Attribute::Border
                     | Attribute::Blink
-                    | Attribute::Underline(_) => false,
+                    | Attribute::Underline(_)
+                    | Attribute::Indent(_) => false,
                 })
             })
             .map(|(at, _)| Spot::Cell(at)),
@@ -1750,7 +1785,10 @@ fn ratio_is_a_pair(shown: &Shown<'_>) -> Result<(), Spot>
 
 /// `change-in-place`: nothing blinks, and a cell whose field did not change
 /// since the frame before is drawn where and as it was. A field that turned
-/// stale changed, because `stale-is-pending` repaints it.
+/// stale changed, because `stale-is-pending` repaints it. A field is named by
+/// where it is drawn: the record of its row in its pane, and its place in that
+/// record. So a pane whose rows grow or shrink renames no field of a pane after
+/// it, and two panes that follow the cursor each keep their own rows in place.
 ///
 /// # Specification
 /// trivial.
@@ -1766,21 +1804,55 @@ fn change_in_place(shown: &Shown<'_>) -> Result<(), Spot>
         .flat_map(move |(frame, rendering)| {
             cells(rendering)
                 .filter(move |&(at, cell)| {
-                    let kept = encoded(frame, cell).zip(encoded(shown.frame, cell));
-                    kept.is_some_and(|(before, after)| {
-                        before.datum == after.datum
-                            && stale(frame, before) == stale(shown.frame, after)
-                    }) && shown
+                    let row = shown
                         .rendering
                         .panes
                         .get(at.pane)
-                        .and_then(|pane| pane.rows.get(at.row))
-                        .and_then(|row| row.cells.get(at.cell))
-                        != Some(cell)
+                        .and_then(|pane| pane.rows.get(at.row));
+                    let renamed = row
+                        .and_then(|held| held.cells.iter().find_map(|drawn| drawn.place))
+                        .zip(cell.place)
+                        .map(|(now, was)| Place {
+                            record: now.record,
+                            field: was.field,
+                        });
+                    let kept = encoded(frame, cell)
+                        .zip(renamed.and_then(|place| field(shown.frame, place)));
+                    kept.is_some_and(|(before, after)| {
+                        before.name == after.name
+                            && before.datum == after.datum
+                            && stale(frame, before) == stale(shown.frame, after)
+                    }) && row
+                        .and_then(|held| held.cells.get(at.cell))
+                        .and_then(|drawn| alike(drawn, cell, renamed))
+                        .is_none()
                 })
                 .map(|(at, _)| Spot::Cell(at))
         });
     first(blinking.chain(moved))
+}
+
+/// `Some` when `drawn` draws what `was` drew, with `was` encoding the field
+/// at `renamed`.
+///
+/// # Specification
+/// trivial.
+fn alike(
+    drawn: &Cell,
+    was: &Cell,
+    renamed: Option<Place>,
+) -> Option<()>
+{
+    (drawn.place == renamed
+        && drawn.role == was.role
+        && drawn.text == was.text
+        && drawn.glyph == was.glyph
+        && drawn.warrant == was.warrant
+        && drawn.numeral == was.numeral
+        && drawn.sparkline == was.sparkline
+        && drawn.attributes == was.attributes
+        && drawn.align == was.align)
+        .then_some(())
 }
 
 /// `density`: one line per row, no padding within a cell, and no row that

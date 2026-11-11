@@ -3,7 +3,7 @@
 //!
 //! The crate parses, lowers, types and marks nothing, and names no other
 //! crate of the workspace, so a language server, a terminal face or an agent
-//! links it without linking the checker. Seven modules:
+//! links it without linking the checker. Eight modules:
 //!
 //! - `present`: highlight and mark spans over validated byte ranges, diagnostic
 //!   and goal cards, transcript blocks, and the projection from a byte offset
@@ -18,6 +18,9 @@
 //!   for each core and the totals row.
 //! - `stack`: the [`StackCard`] of a document, the context stack at its cursor,
 //!   one [`SpineRow`] for each spine, the innermost first.
+//! - `derivation`: the [`DerivationCard`] of the declaration at a cursor, one
+//!   [`DerivationRow`] for each judgement node, and the rows that the
+//!   derivation pane shows when it follows the cursor.
 //! - `wire`: the render-bus [`RenderFrame`] — a document-scoped or
 //!   connection-scoped [`FrameBody`] under the wire schema version
 //!   [`WIRE_SCHEMA_VERSION`].
@@ -118,6 +121,7 @@
 //! | `AccountCard`, `AccountEdit`, `account_edits`, `Samples`, `Sparkline::of` | the engine hub's render-bus face, which sends each document's account and its patches, and the side view, which shows one row per declaration |
 //! | `PoolActivity`, `CoreActivity`, `Load`, `Lengths`, `TaskKind` | the engine hub's render-bus face, which folds its work ledger once for each tick, and the side view, whose activity pane shows one row per core |
 //! | `StackCard`, `SpineRow`, `Datum::Marked`, `Attribute::Underline` | the engine hub's render-bus face, which sends the stack at the cursor that the editor asked about last, and the side view, whose stack pane underlines the parameter of the cursor's slot |
+//! | `DerivationCard`, `DerivationRow`, `Direction`, `Memo`, `Datum::Nested`, `Datum::Glyph`, `Attribute::Indent` | the engine hub's render-bus face, which sends the judgement nodes of the declaration at the cursor to a client of the trace layer, the language server's hover, and the side view, whose derivation pane sets each goal in by its depth |
 //!
 //! # A leaf beside the pipeline
 //!
@@ -190,6 +194,7 @@ extern crate alloc;
 
 mod account;
 mod activity;
+mod derivation;
 mod diagnostic;
 mod present;
 mod stack;
@@ -210,6 +215,11 @@ pub use crate::activity::Lengths;
 pub use crate::activity::Load;
 pub use crate::activity::PoolActivity;
 pub use crate::activity::TaskKind;
+pub use crate::derivation::DerivationCard;
+pub use crate::derivation::DerivationRow;
+pub use crate::derivation::Direction;
+pub use crate::derivation::Memo;
+pub use crate::derivation::NodeAt;
 pub use crate::diagnostic::DIAGNOSTIC_CODES;
 pub use crate::diagnostic::DiagnosticCode;
 pub use crate::diagnostic::DiagnosticMessage;
