@@ -2689,10 +2689,13 @@ where
     ///   is not replaced by its normal form, the depth unchanged;
     ///   [`Presenting::Exhausted`] when the run's budget ran out first. A side
     ///   reads a reflexivity at a looped point as its empty word only when the
-    ///   other side is no reflexivity ([`Reflexive::facing`]). The nodes the
+    ///   other side is no reflexivity ([`Reflexive::facing`]). A side that is
+    ///   `ua` of a cell facing a reflexivity reads its cell as what the cell
+    ///   returns ([`crate::presented::univalence_cell`]). The nodes the
     ///   rewriting compared or copied are charged to the run.
     /// - provides: conversion modulo a presented type's rules.
-    /// - fails: every fault [`crate::presented::normal_form`] raises.
+    /// - fails: every fault [`crate::presented::normal_form`] or
+    ///   [`crate::presented::univalence_cell`] raises.
     /// - panics: none.
     ///
     /// # Errors
@@ -2701,7 +2704,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — a circle word converts with its reduced word, the
     ///   kernel replaying the derivation, and not without the circle's rules.
+    ///   `ua` of the identity record converts with reflexivity.
     /// - witness: `presented::tests::a_circle_word_reads_as_its_reduced_word`
+    /// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
     #[spec(
         captures: [spent = self.spent.0, depth = goal.depth],
         ensures: |ret| self.spent.0 >= spent && goal.depth == depth,
@@ -2725,14 +2730,32 @@ where
                 .into_iter()
                 .zip(reads)
         {
-            match crate::presented::normal_form(
-                self.core,
-                self.domain,
-                self.definitions,
-                value,
-                reflexive,
-                &mut fuel,
-            )? {
+            // `ua` of a cell facing a reflexivity reads its cell first, so
+            // the identity cell meets reflexivity as the empty word.
+            let read = if reflexive == Reflexive::Kept
+                && matches!(
+                    self.domain.value(value),
+                    Some(&DomainValue::Univalence { .. })
+                ) {
+                crate::presented::univalence_cell(
+                    self.core,
+                    self.domain,
+                    self.definitions,
+                    value,
+                    &mut fuel,
+                )?
+            }
+            else {
+                crate::presented::normal_form(
+                    self.core,
+                    self.domain,
+                    self.definitions,
+                    value,
+                    reflexive,
+                    &mut fuel,
+                )?
+            };
+            match read {
                 NormalForm::Kept => {},
                 NormalForm::Rewritten(normal) => {
                     Self::set_side(goal, side, Slot::Ready(Glued::Value(normal)));

@@ -1542,6 +1542,97 @@ fn transport_along_univalence_applies_the_forward_map()
     );
 }
 
+/// #6530: along the cell `ua(h)` of the universe, the lifted family
+/// `z. Path[.A = Bool](y, ⟨tr(X. El(X), z, y)⟩)` carries reflexivity at `y`
+/// to `h y`, `uaBeta` one dimension up.
+#[test]
+fn transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530()
+{
+    // `h = λy. return #{y, falsity}`: its answer names the point it ran at.
+    let mut core = CoreArena::new();
+    let [truth, falsity] = booleans(&mut core);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let marked = core.value_tuple(&[bound, falsity]);
+    let returned = core.computation_return(marked);
+    let lambda = core.computation_lambda(returned);
+    let homotopy = core.value_thunk(lambda);
+    let forward = gandr_core_term::identity::univalence_forward(&mut core, homotopy);
+    let cell = core.value_univalence(homotopy, forward);
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let decode = core.value_type_element(bound, Level::zero());
+    let walked = core.computation_path_transport(decode, bound, truth);
+    let right = core.value_returned(walked);
+    let family = core.value_type_path(boolean, truth, right);
+    let here = core.value_here(truth);
+    let transported = core.computation_path_transport(family, cell, here);
+    let [at_point, elsewhere] = [truth, falsity].map(|point| {
+        let pair = core.value_tuple(&[point, falsity]);
+        core.computation_return(pair)
+    });
+    assert_eq!(
+        normalises_to(&mut core, transported, at_point),
+        CertificateEquality::Equal,
+        "reflexivity at the point moves to the homotopy at the point"
+    );
+    assert_eq!(
+        normalises_to(&mut core, transported, elsewhere),
+        CertificateEquality::Different
+    );
+}
+
+/// #6530: `ua` of the identity record converts with reflexivity, as the
+/// empty word of the universe's paths; `ua` of negation does not.
+#[test]
+fn ua_of_the_identity_equivalence_is_reflexivity_6530()
+{
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let here = core.value_here(bound);
+    let returned = core.computation_return(here);
+    let lambda = core.computation_lambda(returned);
+    let law = core.value_thunk(lambda);
+    let univalence = |core: &mut CoreArena, map: Map| {
+        let map = boolean_map(core, map);
+        let left = core.value_tuple(&[map, law]);
+        let right = core.value_tuple(&[map, law]);
+        let inverses = core.value_tuple(&[left, right]);
+        let record = core.value_tuple(&[map, inverses]);
+        let forward = gandr_core_term::identity::univalence_forward(core, record);
+        core.value_univalence(record, forward)
+    };
+    let identity = univalence(&mut core, Map::Same);
+    let negation = univalence(&mut core, Map::Not);
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let code = core.value_quote(boolean);
+    let reflexivity = core.value_here(code);
+    let mut domain = DomainArena::new();
+    let [identity, negation, reflexivity] =
+        evaluated(&core, &mut domain, [identity, negation, reflexivity]);
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut decided = |left, right| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(left, right),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(decided(identity, reflexivity), MachineVerdict::Convertible);
+    assert_eq!(decided(reflexivity, identity), MachineVerdict::Convertible);
+    assert_eq!(
+        decided(negation, reflexivity),
+        MachineVerdict::NotConvertible
+    );
+}
+
 /// A map on the booleans, `truth` the left injection of the unit.
 #[derive(Clone, Copy)]
 enum Map

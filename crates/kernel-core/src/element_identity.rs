@@ -2338,6 +2338,19 @@ where
             left,
             right,
         } => {
+            // Along the cell `ua(h)` of the universe, the lifted family
+            // carries reflexivity at `y` to the path `h y`: `uaBeta` one
+            // dimension up, as the evaluator reads it.
+            if let Some(&Value::Univalence(cell)) = arena.value(path)
+                && matches!(arena.value(value), Some(&Value::Here { .. }))
+                && let Some(point) = universe_cell(arena, (domain, left, right))
+            {
+                let point = crate::rewrite::substitute_value(arena, table, memo, point, path);
+                let forced = arena.computation_force(cell);
+                return Ok(Reduction::Reduced(
+                    arena.computation_application(forced, point),
+                ));
+            }
             let singleton = matches!(arena.value(right), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
                 && matches!(arena.value(value), Some(&Value::Here { .. }))
                 && binder_use(arena, Family::Type(domain)) == BinderUse::Ignored
@@ -2388,6 +2401,51 @@ where
         | ValueType::StaticPi { .. }
         | ValueType::Staged { .. } => Ok(Reduction::Stuck),
     }
+}
+
+/// The point a path family carries along a cell of the universe: `y` when the
+/// family is the lifted family `z. Path[.A = C](l, ⟨tr(X. X, z, y)⟩)`, as the
+/// evaluator reads it.
+///
+/// # Specification
+/// - requires: the three parts are a path family's, read under its binder.
+/// - ensures: `Some(y)` exactly when the right endpoint returns the transport
+///   of `y` along the binder in the motive that decodes its own binder at level
+///   zero, and the carrier, the left endpoint and `y` ignore the binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Path.ap` of the transport of a point along its argument
+///   is the lifted family, and a family whose fixed endpoint moves is no such
+///   family.
+/// - witness: `element_identity::tests::transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530`
+#[spec(ensures: |ret| ret.is_none_or(|point| arena.value(point).is_some()))]
+fn universe_cell(
+    arena: &TermArena,
+    (domain, left, right): (ValueTypeId, ValueId, ValueId),
+) -> Option<ValueId>
+{
+    let binder = |value| matches!(arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32));
+    let &Value::Returned(call) = arena.value(right)?
+    else {
+        return None;
+    };
+    let &gandr_kernel_term::Computation::PathTransport {
+        motive,
+        path,
+        value: point,
+    } = arena.computation(call)?
+    else {
+        return None;
+    };
+    let decoded = matches!(arena.value_type(motive), Some(&ValueType::Element { code, ref target }) if binder(code) && *target == Level::zero());
+    (decoded
+        && binder(path)
+        && binder_use(arena, Family::Type(domain)) == BinderUse::Ignored
+        && binder_use(arena, Family::Value(left)) == BinderUse::Ignored
+        && binder_use(arena, Family::Value(point)) == BinderUse::Ignored)
+        .then_some(point)
 }
 
 /// A path the transport table holds as the transport that formed it.

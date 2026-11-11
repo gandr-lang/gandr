@@ -3464,6 +3464,65 @@ fn transport_reads_its_family_s_shape_before_it_reduces()
     );
 }
 
+/// #6530: along the cell `ua(h)` of the universe, the lifted family carries
+/// reflexivity at `y` to `h y`, `uaBeta` one dimension up; a family whose
+/// fixed endpoint reads its binder is no lifted family and sticks.
+#[test]
+fn transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530()
+{
+    // `y` at `#1` and `h` at `#0`; under the family's binder `z`, `y` is
+    // `#2`, and under the decode's binder `X`, `z` is `#0` in the path.
+    let mut arena = TermArena::new();
+    let mut table = ContentTable::new();
+    let mut memo = gandr_kernel_check_memo::NullMemo;
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let homotopy = binder;
+    let point = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let inner_point = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let carrier = arena.value_type_unit();
+    let decoded = arena.value_type_element(binder, Level::zero());
+    let walked = arena.computation_path_transport(decoded, binder, inner_point);
+    let right = arena.value_returned(walked);
+    let cell = arena.value_univalence(homotopy);
+    let here = arena.value_here(point);
+
+    let lifted = arena.value_type_path(carrier, inner_point, right);
+    let Ok(Reduction::Reduced(reduct)) =
+        transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+            motive: lifted,
+            path: cell,
+            value: here,
+        })
+    else {
+        panic!("reflexivity carried along a cell of the universe reduces");
+    };
+    let Some(&Computation::Application(forced, argument)) = arena.computation(reduct)
+    else {
+        panic!("to an application: {:?}", arena.computation(reduct));
+    };
+    assert_eq!(
+        arena.computation(forced),
+        Some(&Computation::Force(homotopy)),
+        "of the homotopy"
+    );
+    assert_eq!(
+        arena.value(argument),
+        Some(&Value::Variable(DeBruijnIndex::from(1_u32))),
+        "at the point, read outside the family's binder"
+    );
+
+    let moving = arena.value_type_path(carrier, binder, right);
+    assert_eq!(
+        transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+            motive: moving,
+            path: cell,
+            value: here,
+        }),
+        Ok(Reduction::Stuck),
+        "a family whose fixed endpoint reads its binder sticks"
+    );
+}
+
 #[test]
 fn a_decoded_endpoint_passes_exactly_where_its_code_reads_as_the_other_type()
 {

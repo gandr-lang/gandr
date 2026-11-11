@@ -2,13 +2,19 @@
 /// Implemented: a data declaration declares a cell at the reflexivity of a
 /// point. The checker and the kernel take the path type at that wrapped point
 /// as the cell's words. A case over a sphere takes an arm at its cell, and
-/// `Path.ap` of the case on the cell reduces to that arm.
-/// Not implemented: a dependent case at a cell owes transport along the cell,
-/// which does not yet compute.
+/// `Path.ap` of the case on the cell reduces to that arm. A case into the
+/// universe takes `ua` of a homotopy at the 2-cell, and transport along that
+/// cell applies the homotopy at the point.
 ///
-/// - owes: #6530
+/// Not implemented: a dependent case whose answer at the point holds a letter
+/// owes the whiskering of the cell, which does not yet compute.
+///
+/// - owes: #6531
 // The spheres, their cells at their path types, and the cancellations.
 import "../../model/identity/sphere.gandr";
+// The circle, `selfloop` and `ua`.
+import "../../model/identity/circle-base.gandr";
+import "../../model/identity/univalence.gandr";
 
 /// The 2-cell and its inverse reduce to the empty word, by conversion.
 @[checks]
@@ -30,3 +36,25 @@ def surfMapped : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base
   Path.ap surfKept surf,
   surf
 ) = Path.here surf;
+
+/// The Hopf family takes `ua selfloop` at the 2-cell.
+@[checks]
+def hopfFamily(x : S2) -> Type =
+  match x where
+    | Base2 => return Circle
+    | surf => ua selfloop
+
+/// The transport of a point along a 2-cell of the universe at the circle.
+@[checks]
+def walkAlong(
+  y : Circle,
+  c : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle)
+) -> Path[.A = Circle](y, y) =
+  Path.ap (fun (r) { Path.walk (fun (X) { X }) r y }) c
+
+/// The transport of `Base` along the 2-cell in the Hopf family is the loop.
+@[checks]
+def hopfWalked : Path[.A = Path[.A = Circle](Base, Base)](
+  walkAlong Base (Path.ap hopfFamily surf),
+  loop
+) = Path.here loop;

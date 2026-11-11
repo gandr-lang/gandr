@@ -523,3 +523,39 @@ fn univalence_carries_the_record_s_forward_map()
         );
     }
 }
+
+/// #6530: the cell `ua` reads at dimension two is a homotopy of the identity,
+/// a map from each point to a path from that point to itself.
+#[test]
+fn a_homotopy_of_the_identity_returns_a_path_from_the_point_to_itself_6530()
+{
+    // Over `El(#0)`: under the map's binder the carrier is `El(#1)` and the
+    // point is `#0`.
+    let mut arena = CoreArena::new();
+    let carrier = open_carrier(&mut arena, 0_u32.into());
+    let built = super::self_homotopy(&mut arena, carrier);
+
+    let written = |arena: &mut CoreArena, over: u32, (left, right): (u32, u32)| {
+        let shifted = open_carrier(arena, over.into());
+        let from = variable(arena, left.into());
+        let to = variable(arena, right.into());
+        let path = arena.value_type_path(shifted, from, to);
+        let returned = arena.comp_type_returner(path);
+        let dependent = arena.comp_type_pi(carrier, returned);
+        arena.value_type_thunk(dependent)
+    };
+    let expected = written(&mut arena, 1, (0, 0));
+    assert_eq!(
+        compared_types(&arena, built, expected),
+        CertificateEquality::Equal,
+        "the map returns a path over the shifted carrier from the point to itself"
+    );
+    let unshifted = written(&mut arena, 0, (0, 0));
+    let outer = written(&mut arena, 1, (0, 1));
+    for wrong in [unshifted, outer] {
+        assert_eq!(
+            compared_types(&arena, built, wrong),
+            CertificateEquality::Different
+        );
+    }
+}

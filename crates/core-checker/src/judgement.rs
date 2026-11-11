@@ -5912,14 +5912,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Dialogue(_) => self.check_dialogue(term, expected),
             // Against an identity at `Type`, a univalence checks its record
             // against the record type the two codes name, so a record literal
-            // checks; the path it then synthesises meets `expected` at the
-            // bridge. Against any other type it is synthesised.
+            // checks; one dimension up it checks its cell against the
+            // homotopy of the identity. The path it then synthesises meets
+            // `expected` at the bridge. Against any other type it is
+            // synthesised.
             Value::Univalence(record, forward) => {
                 match crate::univalence::checked(self.context, (record, forward), expected)? {
-                    crate::univalence::Reading::Record {
-                        record: record_type,
-                        path,
-                    } => {
+                    crate::univalence::Reading::Cell { cell, path } => {
                         self.wait(Frame::ValueBridge {
                             at: term,
                             expected: entered,
@@ -5927,7 +5926,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         self.wait(Frame::UnivalenceChecked { path });
                         Ok(Step::Descend(Goal::Value {
                             term: record,
-                            direction: Direction::Check(record_type),
+                            direction: Direction::Check(cell),
                         }))
                     },
                     crate::univalence::Reading::Synthesised => {

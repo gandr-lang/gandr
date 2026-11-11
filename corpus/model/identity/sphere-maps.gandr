@@ -23,10 +23,10 @@
 ///
 /// - see: #6458 — `selfrefl2`, `throughName2`, `selfrefl3`, `flattenRefl`
 /// - see: #6477 — `apEmptyCell`
-/// - see: #6530 — the dependent form into the universe
 /// - see: #6531 — the answer at the point that holds a letter
 /// - see: corpus/model/identity/sphere.gandr
 /// - see: corpus/model/identity/circle-maps.gandr
+/// - see: corpus/model/identity/hopf.gandr
 
 // The 2-sphere and the 3-sphere.
 import "./sphere.gandr";

@@ -4116,6 +4116,25 @@ where
                     goal = Goal::CheckValue(equivalence, record);
                     continue 'expand;
                 },
+                // One dimension up, at an identity over an identity at the
+                // value universe, a univalence checks its cell against the
+                // homotopy of the identity, and the identity at reflexivity it
+                // then stands at converts with `expected`.
+                Goal::CheckValue(id, expected)
+                    if matches!(arena.value(id), Some(&Value::Univalence(_)))
+                        && crate::path_universe::cell_code(arena, expected).is_ok() =>
+                {
+                    let Value::Univalence(cell) = *read_value(arena, id)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (homotopy, path) = crate::path_universe::univalence_cell(arena, expected)
+                        .map_err(KernelError::Path)?;
+                    frames.push(Frame::ConvertValue(expected));
+                    frames.push(Frame::ProduceValue(path));
+                    goal = Goal::CheckValue(cell, homotopy);
+                    continue 'expand;
+                },
                 // An introduction form checked at an identity checks at the
                 // fibre the identity fold computes for its domain and
                 // endpoints, or at a dependent pair's at a Σ domain, or at

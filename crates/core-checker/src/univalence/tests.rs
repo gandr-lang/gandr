@@ -431,6 +431,65 @@ fn a_record_whose_law_fails_does_not_build_a_path()
     );
 }
 
+/// #6530: at dimension two `ua` takes a homotopy of the identity of the
+/// carrier, read by its type, and refuses a map that is no such homotopy.
+/// `ua` of the identity record converts to reflexivity at the type.
+#[test]
+fn a_homotopy_of_the_identity_is_the_cell_of_ua_at_dimension_two_6530()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let boolean = arena.value_type_sum(&[unit, unit]);
+    let code = arena.value_quote(boolean);
+    let at_type = universe(&mut arena);
+    let loops = arena.value_type_path(at_type, code, code);
+    let here = arena.value_here(code);
+    let cells = arena.value_type_path(loops, here, here);
+    // `ua(λy. here(y))`: reflexivity at each point is a homotopy of the
+    // identity.
+    let reflexive = map(&mut arena, CoreArena::value_here);
+    let cell = univalence(&mut arena, reflexive);
+    // `ua(λy. here(true))`: reflexivity at one point is no path from each
+    // point to itself.
+    let constant = map(&mut arena, |arena, _| {
+        let empty = arena.value_unit();
+        let truth = arena.value_injection(0_usize.into(), empty);
+        arena.value_here(truth)
+    });
+    let stray = univalence(&mut arena, constant);
+    // `here(here(⌜Bool⌝)) : Path(ua(id), here(⌜Bool⌝))`.
+    let same = map(&mut arena, |_, point| point);
+    let identity = record(&mut arena, [same, same, same]);
+    let along = univalence(&mut arena, identity);
+    let flat = arena.value_type_path(loops, along, here);
+    let reflexivity = arena.value_here(here);
+
+    let (report, readmission) = judged(&mut arena, &[
+        declaration(At(0), Maybe::Present(cells), cell),
+        declaration(At(1), Maybe::Present(cells), stray),
+        declaration(At(2), Maybe::Present(flat), reflexivity),
+    ]);
+    for position in [At(0), At(2)] {
+        assert!(
+            matches!(verdict(&report, position), Verdict::Checked { .. }),
+            "{position:?} checks: {report:?}"
+        );
+    }
+    assert!(
+        matches!(
+            verdict(&report, At(1)),
+            Verdict::Refused(CheckRefusal::EndpointMismatch { .. })
+        ),
+        "a map that is no homotopy of the identity is no cell: {report:?}"
+    );
+    assert_eq!(
+        defined(&readmission, &[At(0), At(2)]),
+        Admission::Defined,
+        "the kernel admits what checked: {:?}",
+        readmission.readmitted()
+    );
+}
+
 #[test]
 fn transport_along_ua_computes_the_forward_map()
 {

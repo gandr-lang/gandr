@@ -838,6 +838,7 @@ INSERT INTO purpose VALUES('core-term','identity::cong_codomain','function','The
 INSERT INTO purpose VALUES('core-term','identity::cong_lifted','function','The transport congruence along a path, lifted to a map of a function.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::map_type','function','The type of a map from one type to another, both read where the map stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::quasi_inverse','function','The record type A isomorph B abbreviates: a map, a map back, and the two round trips.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','identity::self_homotopy','function','The type of a homotopy of the identity of a type: a map from each point to a path from the point to itself, the cell `ua` reads at dimension two.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::then','function','The transport then along two paths, their composition in a family of paths.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::univalence_forward','function','The forward translator of a univalence statement, read at its source description.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::whisker','function','The whisker of a path between halves of a composite: the transport composing with the half that stays.',NULL,'fits','sound',NULL);

@@ -411,6 +411,7 @@ use crate::conv::pending_endpoints;
 use crate::descent::Descent;
 use crate::element_identity::BinderUse;
 use crate::encoding::ContentTable;
+use crate::path_universe::CellIdentity;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_computation;
@@ -6752,6 +6753,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
  else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
  else if let (Some(&Value::Here { point: one_point, .. }), Some(&Value::Here { point: other_point, .. })) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_point, other_point)]) }
  else if let (Some(&Value::Univalence(one)), Some(&Value::Univalence(other))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]) }
+ else if matches!((matched_left_value, matched_right_value), (Some(&Value::Univalence(_)), Some(&Value::Here { .. })) | (Some(&Value::Here { .. }), Some(&Value::Univalence(_)))) { matches!(ret, Ok(Structure::Leaf(_)) | Err(_)) }
  else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
@@ -6886,6 +6888,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             (&Value::Univalence(one), &Value::Univalence(other)) => {
                 Structure::of(Vec::from([Premise::values(one, other)]))
             },
+            // `ua` of the identity cell is the empty word of the universe's
+            // paths, which reflexivity is; `ua` of any other cell is apart
+            // from reflexivity, as core-nbe decides them.
+            (&Value::Univalence(cell), &Value::Here { .. })
+            | (&Value::Here { .. }, &Value::Univalence(cell)) => {
+                Structure::Leaf(if self.identity_cell(cell)? == CellIdentity::Identity {
+                    Expect::Convertible
+                }
+                else {
+                    Expect::NotConvertible
+                })
+            },
             (
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
@@ -7010,6 +7024,83 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         Ok(structure)
     }
 
+    /// Whether `cell` is the identity cell, which `ua` reads as the empty word
+    /// of the universe's paths, as core-nbe reads it.
+    ///
+    /// The identity cell at dimension one is the identity equivalence `#{id,
+    /// #{#{id, refl}, #{id, refl}}}`, and at dimension two the homotopy `λy.
+    /// here(y)`. The cell and each of its parts are read to the value they
+    /// return first, so a cell a definition gives reads as its body.
+    ///
+    /// # Specification
+    /// - requires: `cell` lives in the arena.
+    /// - ensures: [`CellIdentity::Identity`] exactly when `cell` reads to a
+    ///   thunk of `λ. return here(#0)`, or to a pair of a thunk of `λ. return
+    ///   #0` with a pair of two pairs, each a thunk of `λ. return #0` beside a
+    ///   thunk of `λ. return here(#0)`.
+    /// - fails: as [`Self::normalize_returned`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `ua` of the identity record over the booleans
+    ///   converts with reflexivity at the booleans, and `ua` of the record of
+    ///   negation does not.
+    /// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
+    #[spec(ensures: |ret| !matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget)]
+    fn identity_cell(
+        &mut self,
+        cell: ValueId,
+    ) -> Result<CellIdentity, Stop>
+    {
+        use crate::path_universe::Returns;
+        use crate::path_universe::identity_map;
+        let read = |this: &mut Self, at| {
+            this.normalize_returned(at, Reduction::Plain, DefinedHead::Unfold)
+        };
+        let pair = |arena: &TermArena, at| match arena.value(at) {
+            Some(&Value::Tuple(ref parts)) => match **parts {
+                [first, second] => Some([first, second]),
+                _ => None,
+            },
+            Some(_) | None => None,
+        };
+        let cell = read(self, cell)?;
+        if matches!(self.arena.value(cell), Some(&Value::Thunk(_))) {
+            return Ok(identity_map(self.arena, cell, Returns::Reflexivity));
+        }
+        let Some([map, inverses]) = pair(self.arena, cell)
+        else {
+            return Ok(CellIdentity::Other);
+        };
+        let map = read(self, map)?;
+        if identity_map(self.arena, map, Returns::Point) == CellIdentity::Other {
+            return Ok(CellIdentity::Other);
+        }
+        let inverses = read(self, inverses)?;
+        let Some(inverses) = pair(self.arena, inverses)
+        else {
+            return Ok(CellIdentity::Other);
+        };
+        for inverse in inverses {
+            let inverse = read(self, inverse)?;
+            let Some([back, law]) = pair(self.arena, inverse)
+            else {
+                return Ok(CellIdentity::Other);
+            };
+            let back = read(self, back)?;
+            let law = read(self, law)?;
+            if identity_map(self.arena, back, Returns::Point) == CellIdentity::Other
+                || identity_map(self.arena, law, Returns::Reflexivity) == CellIdentity::Other
+            {
+                return Ok(CellIdentity::Other);
+            }
+        }
+        Ok(CellIdentity::Identity)
+    }
+
     /// Close a `ComparedShared` goal, or report that it decides nothing.
     ///
     /// # Specification
@@ -7098,6 +7189,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 Apart::Defer => return Ok(Compared::Deferred(parted)),
                 Apart::Part => {},
             }
+        }
+        // `ua` of the identity cell closes against reflexivity, the empty word
+        // of the universe's paths: the engine closed the pair as one by the
+        // cell's syntax.
+        if let (Term::Value(left), Term::Value(right)) = (goal.left, goal.right)
+            && let (Some(&Value::Univalence(cell)), Some(&Value::Here { .. }))
+            | (Some(&Value::Here { .. }), Some(&Value::Univalence(cell))) =
+                (self.arena.value(left), self.arena.value(right))
+            && self.identity_cell(cell)? == CellIdentity::Identity
+        {
+            return Ok(Compared::Equal);
         }
         if self
             .rigidity(goal.left)

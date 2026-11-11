@@ -726,6 +726,252 @@ pub(crate) fn binder_read(
         .holds(DeBruijnIndex::from(0_u32)))
 }
 
+/// The point a path family carries along a cell of the universe: `y` when the
+/// family is the lifted family `z. Path[.A = C](l, ⟨tr(X. X, z, y)⟩)`.
+///
+/// The family's binder `z` is a path in `Type`, so a path it moves along is a
+/// 2-cell there, and `ua(h)` is such a cell for a homotopy `h`. The transport
+/// of reflexivity along `ua(h)` in this family is the path `h y`: `uaBeta`
+/// one dimension up.
+///
+/// # Specification
+/// - requires: `family` is a transport motive's value type, read under its one
+///   binder.
+/// - ensures: `Some(y)` exactly when `family` is a path type whose right
+///   endpoint returns the transport of `y` along the binder in the motive that
+///   decodes its own binder, and whose carrier, left endpoint and `y` never
+///   read the binder; `None` otherwise.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Path.ap` of the transport of a point along its argument
+///   is the lifted family, and a family whose fixed endpoint moves is no such
+///   family.
+/// - witness: `identity::tests::transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|point| core.value(point).is_some())))]
+pub(crate) fn universe_cell(
+    core: &CoreArena,
+    family: ValueTypeId,
+) -> Result<Option<gandr_core_term::ValueId>, FreeFault>
+{
+    let bound = DeBruijnIndex::from(0_u32);
+    let binder = |value| {
+        matches!(
+            core.value(value),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) if index == bound
+        )
+    };
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = core.value_type(family)
+    else {
+        return Ok(None);
+    };
+    let Some(&Value::Returned(call)) = core.value(right)
+    else {
+        return Ok(None);
+    };
+    let Some(&gandr_core_term::Computation::PathTransport {
+        motive,
+        path,
+        value: point,
+    }) = core.computation(call)
+    else {
+        return Ok(None);
+    };
+    let decoded =
+        matches!(core.value_type(motive), Some(&ValueType::Element { code, .. }) if binder(code));
+    if !decoded || !binder(path) {
+        return Ok(None);
+    }
+    let mut free = FreeIndices::default();
+    if free.of_type(core, carrier)?.intuitionistic().holds(bound) == Membership::Held {
+        return Ok(None);
+    }
+    for fixed in [left, point] {
+        if free
+            .of(core, CoreTerm::Value(fixed))?
+            .intuitionistic()
+            .holds(bound)
+            == Membership::Held
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(point))
+}
+
+/// Whether a map or a cell of `ua` is the identity, read by its syntax.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CellIdentity
+{
+    /// The identity map, or the identity cell.
+    Identity,
+    /// Any other map or cell.
+    Other,
+}
+
+/// Whether `cell` is the identity cell, which `ua` reads as the empty word of
+/// the universe's paths: reflexivity.
+///
+/// The identity cell at dimension one is the identity equivalence `#{id,
+/// #{#{id, refl}, #{id, refl}}}`, and at dimension two the homotopy `λy.
+/// here(y)`: the reflexivity at the identity equivalence. The cell is read by
+/// its syntax, each map `λy. return y` and each law `λy. return here(y)`.
+///
+/// # Specification
+/// - requires: `cell` is the cell a domain univalence holds.
+/// - ensures: [`CellIdentity::Identity`] exactly when `cell` is a thunk of `λy.
+///   return here(y)`, or a pair of a thunk of `λy. return y` with a pair of two
+///   pairs, each a thunk of `λy. return y` beside a thunk of `λy. return
+///   here(y)`.
+/// - fails: [`DomainFault::Dangling`] for a node the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `ua` of the identity record converts with reflexivity,
+///   and `ua` of the record of negation does not.
+/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
+pub(crate) fn identity_cell(
+    core: &CoreArena,
+    domain: &DomainArena,
+    cell: DomainValueId,
+) -> Result<CellIdentity, DomainFault>
+{
+    let other = Ok(CellIdentity::Other);
+    let held = domain.value(cell).ok_or(DomainFault::Dangling)?;
+    if matches!(*held, DomainValue::Thunk { .. }) {
+        return identity_map(core, domain, cell, Returns::Reflexivity);
+    }
+    let DomainValue::Tuple { fields, .. } = *held
+    else {
+        return other;
+    };
+    let &[map, inverses] = domain.fields(fields)?
+    else {
+        return other;
+    };
+    let Some(&DomainValue::Tuple { fields: pair, .. }) = domain.value(inverses)
+    else {
+        return other;
+    };
+    let &[left, right] = domain.fields(pair)?
+    else {
+        return other;
+    };
+    if identity_map(core, domain, map, Returns::Point)? == CellIdentity::Other {
+        return other;
+    }
+    for inverse in [left, right] {
+        let Some(&DomainValue::Tuple { fields: halves, .. }) = domain.value(inverse)
+        else {
+            return other;
+        };
+        let &[back, law] = domain.fields(halves)?
+        else {
+            return other;
+        };
+        if identity_map(core, domain, back, Returns::Point)? == CellIdentity::Other
+            || identity_map(core, domain, law, Returns::Reflexivity)? == CellIdentity::Other
+        {
+            return other;
+        }
+    }
+    Ok(CellIdentity::Identity)
+}
+
+/// What a map of the identity cell returns at its bound point.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Returns
+{
+    /// The point itself: `λy. return y`.
+    Point,
+    /// Reflexivity at the point: `λy. return here(y)`.
+    Reflexivity,
+}
+
+/// Whether `map` is a thunk of the abstraction that returns what `returns`
+/// names at its bound point.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`CellIdentity::Identity`] exactly when `map` is a thunk over a
+///   source computation `λy. return v`, `v` the bound point or `here` of it as
+///   `returns` names.
+/// - fails: [`DomainFault::Dangling`] for a closure the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identity_cell`].
+/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
+fn identity_map(
+    core: &CoreArena,
+    domain: &DomainArena,
+    map: DomainValueId,
+    returns: Returns,
+) -> Result<CellIdentity, DomainFault>
+{
+    let other = Ok(CellIdentity::Other);
+    let Some(&DomainValue::Thunk { body, .. }) = domain.value(map)
+    else {
+        return other;
+    };
+    let closure = domain.comp_closure(body).ok_or(DomainFault::Dangling)?;
+    let crate::closure::CompBody::Source(lambda) = closure.body()
+    else {
+        return other;
+    };
+    let Some(&gandr_core_term::Computation::Lambda(inner)) = core.computation(lambda)
+    else {
+        return other;
+    };
+    let Some(&gandr_core_term::Computation::Return(returned)) = core.computation(inner)
+    else {
+        return other;
+    };
+    let point = match (returns, core.value(returned)) {
+        (Returns::Point, _) => returned,
+        (Returns::Reflexivity, Some(&Value::Here(point))) => point,
+        (Returns::Reflexivity, _) => return other,
+    };
+    let bound = matches!(
+        core.value(point),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) if index == DeBruijnIndex::from(0_u32)
+    );
+    Ok(if bound {
+        CellIdentity::Identity
+    }
+    else {
+        CellIdentity::Other
+    })
+}
+
 /// Whether a telescope motive's returned type reads either of its two
 /// entries: the path's endpoint `y` or the identity over it `z`.
 ///

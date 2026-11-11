@@ -6973,7 +6973,9 @@ fn step_transport(
 ///   operand's.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, along
-///   a word and along a composite — and its stuck form.
+///   a word, along a composite, and along a cell `ua(h)` of the universe in the
+///   lifted family, where reflexivity at `y` moves to `h y` — and its stuck
+///   form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
 ///   closure holding no type; [`EvalFault::TransportedNonPath`] for a path that
 ///   is neither reflexivity nor stuck over an operand that is not stuck; domain
@@ -7016,6 +7018,7 @@ fn step_transport(
 /// - witness: `identity::tests::a_suspension_moves_its_result_along_an_equivalence`
 /// - witness: `machine::tests::a_transport_of_a_call_s_result_unfolds_the_call_first_3806`
 /// - witness: `identity::tests::transport_along_a_stuck_composite_moves_along_each_path_in_order`
+/// - witness: `identity::tests::transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -7055,6 +7058,21 @@ fn step_path_transport(
         machine
             .comps
             .push(domain.comp_return(value, CompTermFace::Reduced));
+        return Ok(());
+    }
+    // Along the cell `ua(h)` of the universe, the lifted family carries
+    // reflexivity at `y` to the path `h y`: `uaBeta` one dimension up.
+    if let DomainValue::Univalence { record: cell, .. } = carried
+        && matches!(domain.value(value), Some(&DomainValue::Here { .. }))
+        && let Some(point) = crate::identity::universe_cell(core, family).map_err(free)?
+    {
+        let mut env = environment;
+        env.extend(gandr_core_term::Zone::Intuitionistic, path);
+        machine.tasks.push(Task::Apply);
+        machine.tasks.push(Task::Force);
+        machine.tasks.push(Task::Supply(cell));
+        let env = machine.hold_env(env);
+        machine.tasks.push(Task::Value { term: point, env });
         return Ok(());
     }
     match (

@@ -482,6 +482,70 @@ fn cong_along_the_2_cell_is_the_arm_s_image()
     );
 }
 
+/// #6530: `Path.ap` of a case into the universe on the 2-cell is its arm
+/// there, `ua` of a cell, which no word holds.
+#[test]
+fn cong_into_the_universe_at_the_2_cell_is_the_arm_6530()
+{
+    let mut core = CoreArena::new();
+    let (sphere, mut chain) = two_sphere(&mut core);
+    let universe = core.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let code = core.value_quote(boolean);
+    // `h = λy. return #{y, y}`: an arm the machine runs, not a word.
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let doubled = core.value_tuple(&[bound, bound]);
+    let returned = core.computation_return(doubled);
+    let lambda = core.computation_lambda(returned);
+    let homotopy = core.value_thunk(lambda);
+    let forward = gandr_core_term::identity::univalence_forward(&mut core, homotopy);
+    let cell = core.value_univalence(homotopy, forward);
+    let typed = core.comp_type_returner(universe);
+    let arms = vec![core.computation_return(code), core.computation_return(cell)];
+    let case =
+        core.computation_data_case(bound, typed, arms, [0_usize].map(FieldCount::from).to_vec());
+    let lambda = core.computation_lambda(case);
+    let family = core.value_thunk(lambda);
+    let hopf = 5_usize;
+    let _height = chain
+        .define(
+            ConstantIndex::from(hopf),
+            GlobalIndex::from(3_u32),
+            Transparency::Manifest,
+            &[],
+            family,
+        )
+        .expect("the definition admits");
+    let reflexivity = core.value_here(sphere.point);
+    let levels = [(sphere.point, sphere.point), (reflexivity, reflexivity)];
+    let map = core.value_constant(ConstantIndex::from(hopf));
+    let image = gandr_core_term::identity::cong_above(
+        &mut core,
+        (map, sphere.carrier),
+        &levels,
+        sphere.named,
+    )
+    .expect("two levels build");
+    let armed = core.computation_return(cell);
+    let here = core.value_here(code);
+    let flat = core.value_here(here);
+    let stayed = core.computation_return(flat);
+    assert_eq!(
+        decided(&core, &chain, (image, armed)),
+        Some(MachineVerdict::Convertible),
+        "the family's image of the 2-cell is its arm's answer"
+    );
+    assert_eq!(
+        decided(&core, &chain, (image, stayed)),
+        Some(MachineVerdict::NotConvertible),
+        "and not reflexivity"
+    );
+}
+
 /// #6458: the family a dependent case owes at the 2-cell carries its answer
 /// along its binder, and the transport along the cell reads that endpoint.
 #[test]

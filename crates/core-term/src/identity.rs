@@ -288,6 +288,38 @@ pub fn bi_invertible(
     arena.value_type_sigma(forward, inverses)
 }
 
+/// The type `(y : A) => Path[.A = A](y, y)` of a homotopy from the identity of
+/// `A` to itself: the cell `ua` reads one dimension above the record.
+///
+/// # Specification
+/// - requires: `carrier` is a value type of `arena` in a context `Γ`.
+/// - ensures: the thunk of the dependent arrow over `carrier`, returning the
+///   path over `carrier` shifted past the binder from the bound point to
+///   itself: the core the written `(y : A) => Path[.A = A](y, y)` lowers to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over an open carrier the path reads the carrier one
+///   binder further out, from the bound point to itself; an unshifted carrier
+///   or another endpoint changes the built type.
+/// - witness: `identity::tests::a_homotopy_of_the_identity_returns_a_path_from_the_point_to_itself_6530`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&crate::syntax::ValueType::Thunk(_))))]
+#[inline]
+#[must_use]
+pub fn self_homotopy(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+) -> ValueTypeId
+{
+    let over = shift_value_type(arena, carrier, Binders::ONE).settle(arena);
+    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let path = arena.value_type_path(over, point, point);
+    let returned = arena.comp_type_returner(path);
+    let dependent = arena.comp_type_pi(carrier, returned);
+    arena.value_type_thunk(dependent)
+}
+
 /// The forward map of a bi-invertible record, `thunk (λx. f ← e.0; force f
 /// x)`, which univalence `ua(e)` carries so that transport along it applies
 /// the map.
