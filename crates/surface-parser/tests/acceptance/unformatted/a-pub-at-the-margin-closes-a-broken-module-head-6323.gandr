@@ -1,0 +1,5 @@
+pub module Counted : Model(Kept) with V = Integer where
+  type C = Integer;
+  def get(key : Integer, k : Integer -> Integer) -> Integer { k key }
+
+pub def after : Integer = 1;

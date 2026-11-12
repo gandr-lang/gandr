@@ -3371,8 +3371,8 @@ impl<'pbg> MeldState<'pbg>
     /// # Specification
     /// - requires: `candidates` are the molds gathered for the head that the
     ///   prefix stands before, at this state.
-    /// - ensures: when [`bounds_declaration`](Self::bounds_declaration) holds
-    ///   for `candidates`, force-closes every form on the slope; the state is
+    /// - ensures: when [`bounds_top_level`](Self::bounds_top_level) holds for
+    ///   `candidates`, force-closes every form on the slope; the state is
     ///   untouched otherwise.
     /// - provides: the top-level boundary at a prefix.
     /// - fails: never; invalid molds are ignored.
@@ -3394,7 +3394,7 @@ impl<'pbg> MeldState<'pbg>
         candidates: &[MoldId],
     )
     {
-        if bool::from(self.bounds_declaration(candidates)) {
+        if bool::from(self.bounds_top_level(candidates)) {
             self.collapse(StackFloor::from(StackIndex::from(0)));
         }
     }
@@ -3452,6 +3452,51 @@ impl<'pbg> MeldState<'pbg>
                     .is_some_and(
                         |cell| matches!(cell.role, Role::FormTile { sort, .. } if !bool::from(is_item_position(sort))),
                     ),
+        )
+    }
+
+    /// Return whether a declaration head among `candidates`, after a prefix at
+    /// the margin, closes every open form at this state.
+    ///
+    /// A prefix at the margin, as `pub`, starts an item and nothing else, so
+    /// none of the guards of [`bounds_declaration`](Self::bounds_declaration)
+    /// binds there. A form that the head would continue is a form the dropped
+    /// token broke: a module whose head lost `sort` reads its `with` clause as
+    /// a view, and the view takes `module` as its own tile. An open item form
+    /// is a container whose member the dropped token broke.
+    ///
+    /// The stream weighs this close against the window read as it stands
+    /// (`Molder::settle_before_prefixed_head`). A window that only looks ahead
+    /// keeps the guards of the head's close, so a reading that leaves a
+    /// declaration open costs no less there than it does without this close.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are molds of this state's PBG.
+    /// - ensures: true exactly when some candidate opens a declaration and some
+    ///   form is open; leaves `self` unchanged.
+    /// - provides: the test of the close at the margin.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a theory whose member lost a token, and a module
+    ///   whose head lost one, each close at the next `pub` at the margin, and a
+    ///   whole source does not; the head's guards here leave both open past the
+    ///   next declaration.
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_a_broken_container_6323`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == (candidates.iter().any(|&mold| bool::from(self.opens_declaration(mold))) && bool::from(self.has_open_form())))]
+    pub fn bounds_top_level(
+        &self,
+        candidates: &[MoldId],
+    ) -> DeclarationBound
+    {
+        DeclarationBound::from(
+            candidates
+                .iter()
+                .any(|&mold| bool::from(self.opens_declaration(mold)))
+                && bool::from(self.has_open_form()),
         )
     }
 
