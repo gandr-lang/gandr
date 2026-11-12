@@ -1,0 +1,9 @@
+pub theory Kept where
+  sort V : Type+;
+  sort C : Type;
+  oper get : (key : V, k : pi+ v : V). C) --> C;
+  oper put : (key : V, value : V, k : C) --> C;
+
+pub offers [store = Counted];
+
+pub def after : Integer = 1;

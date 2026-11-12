@@ -287,6 +287,7 @@ use crate::label::SourceBytes;
 use crate::label::Token;
 use crate::label::bracket;
 use crate::meld::CandidateLabels;
+use crate::meld::DeclarationBound;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
 use crate::meld::HeadOperandPresence;
@@ -2677,33 +2678,37 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Gather the menu of `head`, the head of a declaration that a prefix at
-    /// the margin stands before, and return the head's labels when that menu
-    /// bounds the open declaration ([`MeldState::bounds_declaration`]).
+    /// the margin stands before, and return the head's labels when `bounds`
+    /// says that menu closes the open forms: the head's own close
+    /// ([`MeldState::bounds_declaration`]) in a window, and the margin's
+    /// ([`MeldState::bounds_top_level`]) on the stream.
     ///
     /// # Specification
     /// - requires: `head` came from `source` through [`prefixed_head`].
     /// - ensures: the candidate buffer holds the head's menu at `state`;
-    ///   returns the head's labels exactly when that menu bounds the open
-    ///   declaration, so the buffer then holds at least the head's mold.
+    ///   returns the head's labels exactly when `bounds` holds for that menu,
+    ///   so the buffer then holds at least the head's mold.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as
     ///   [`settle_before_prefixed_head`](Self::settle_before_prefixed_head).
     /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_a_broken_container_6323`
     #[spec(ensures: |ret| ret.is_none() || !self.candidates.is_empty())]
     fn bounding_head(
         &mut self,
         state: &MeldState<'_>,
         head: Token,
         source: &SourceFragment<'_>,
+        bounds: impl Fn(&MeldState<'_>, &[MoldId]) -> DeclarationBound,
     ) -> Option<LabelIds>
     {
         let slice = head.text(source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
         let labels = LabelIds::resolve(self.pbg, &candidate_labels(head.lexeme, text));
         self.gather(state, head.lexeme, text, &labels, Ahead::Nothing);
-        bool::from(state.bounds_declaration(&self.candidates)).then_some(labels)
+        bool::from(bounds(state, &self.candidates)).then_some(labels)
     }
 
     /// Close the open declaration in a window before a prefix at the margin,
@@ -2746,7 +2751,15 @@ impl<'pbg> Molder<'pbg>
         else {
             return;
         };
-        if self.bounding_head(state, head, source).is_some() {
+        if self
+            .bounding_head(
+                state,
+                head,
+                source,
+                |state: &MeldState<'_>, candidates: &[MoldId]| state.bounds_declaration(candidates),
+            )
+            .is_some()
+        {
             state.settle_top_level_boundary(&self.candidates);
         }
         let ahead = Ahead::Stream {
@@ -2806,7 +2819,12 @@ impl<'pbg> Molder<'pbg>
             index,
             source,
         };
-        let Some(head_labels) = self.bounding_head(state, head, source)
+        let Some(head_labels) = self.bounding_head(
+            state,
+            head,
+            source,
+            |state: &MeldState<'_>, candidates: &[MoldId]| state.bounds_top_level(candidates),
+        )
         else {
             self.gather(state, lexeme, text, labels, ahead);
             return;

@@ -1603,6 +1603,48 @@ fn a_pub_at_the_margin_closes_the_open_declaration_6101() -> Result<(), Box<dyn 
     Ok(())
 }
 
+/// A container that a dropped token broke ends at the next `pub` at the
+/// margin, and the declarations after it owe nothing.
+///
+/// A theory whose member lost its `(` kept the theory open, since the close
+/// at a `pub` at the margin refused an open item form. A module whose head
+/// lost `sort` read its `with` clause as a view, which took `pub` and the
+/// next head as its own tiles. Either way the declarations after the damage
+/// nested in it: `pub offers [store = Counted];` owed 3 missing tiles in
+/// `pathological/worlds/offers` (#6323). A `pub` at the margin now closes
+/// every open form before a declaration head.
+#[test]
+fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Box<dyn Error>>
+{
+    for damaged in [
+        include_str!(
+            "acceptance/unformatted/a-pub-at-the-margin-closes-a-broken-theory-6323.gandr"
+        ),
+        include_str!(
+            "acceptance/unformatted/a-pub-at-the-margin-closes-a-broken-module-head-6323.gandr"
+        ),
+    ] {
+        let result = parse(built(), SourceText::from(damaged))?;
+        let next = damaged
+            .find("\n\npub")
+            .ok_or("the source holds a declaration after the damaged one")?;
+        let late: Vec<_> = result
+            .obligations()
+            .iter()
+            .filter(|obligation| usize::from(obligation.span.start()) > next)
+            .collect();
+        assert!(
+            late.is_empty(),
+            "the declarations after the damage owe nothing, yet owe {late:?} in {damaged:?}"
+        );
+        assert!(
+            !result.obligations().is_empty(),
+            "the damage itself owes its repair in {damaged:?}"
+        );
+    }
+    Ok(())
+}
+
 /// A group pattern whose first label has no dot recovers with the one
 /// missing tile, and the declaration around it stays one form.
 ///
