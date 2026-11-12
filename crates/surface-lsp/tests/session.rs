@@ -710,18 +710,45 @@ fn a_hosted_workload_answers_what_it_read()
     );
 }
 
+/// The bytes a session wrote, back to back.
+#[derive(Default)]
+#[repr(transparent)]
+struct Written(Vec<u8>);
+
+impl Written
+{
+    /// How many frames the bytes begin: one header end for each.
+    ///
+    /// # Specification
+    /// trivial.
+    fn frames(&self) -> Frames
+    {
+        Frames(
+            self.0
+                .windows(4)
+                .filter(|window| *window == b"\r\n\r\n")
+                .count(),
+        )
+    }
+}
+
+/// A count of frames.
+#[derive(Clone, Copy, Default, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+struct Frames(usize);
+
 /// A session's output, which the test's client reads while the session
 /// writes it, and which can make the session answer slowly.
 #[derive(Clone, Default)]
 struct Shared
 {
     /// The bytes written, and the signal of each write.
-    written: Arc<(Mutex<Vec<u8>>, Condvar)>,
+    written: Arc<(Mutex<Written>, Condvar)>,
     /// How long each write waits while the output holds fewer than
     /// `answered` frames: a session slow to answer, as on a loaded host.
     slow: Duration,
     /// How many frames the slow writes cover.
-    answered: usize,
+    answered: Frames,
 }
 
 impl Shared
@@ -733,17 +760,19 @@ impl Shared
     /// trivial.
     fn await_frames(
         &self,
-        count: usize,
+        count: Frames,
         ceiling: Duration,
     )
     {
-        let (bytes, wrote) = &*self.written;
-        let held = bytes
+        let held = self
+            .written
+            .0
             .lock()
             .expect("no write panics while it holds the output");
         drop(
-            wrote
-                .wait_timeout_while(held, ceiling, |bytes| header_ends(bytes) < count)
+            self.written
+                .1
+                .wait_timeout_while(held, ceiling, |written| written.frames() < count)
                 .expect("no write panics while it holds the output"),
         );
     }
@@ -752,13 +781,16 @@ impl Shared
     ///
     /// # Specification
     /// trivial.
-    fn bytes(&self) -> Vec<u8>
+    fn body(&self) -> Body
     {
-        self.written
-            .0
-            .lock()
-            .expect("no write panics while it holds the output")
-            .clone()
+        Body::from(
+            self.written
+                .0
+                .lock()
+                .expect("no write panics while it holds the output")
+                .0
+                .clone(),
+        )
     }
 }
 
@@ -774,20 +806,17 @@ impl std::io::Write for Shared
         buf: &[u8],
     ) -> std::io::Result<usize>
     {
-        let (bytes, wrote) = &*self.written;
-        let short = header_ends(
-            &bytes
-                .lock()
-                .expect("no write panics while it holds the output"),
-        ) < self.answered;
+        let short = self.written.0.lock().map_err(poisoned)?.frames() < self.answered;
         if short && !self.slow.is_zero() {
             std::thread::sleep(self.slow);
         }
-        bytes
+        self.written
+            .0
             .lock()
-            .expect("no write panics while it holds the output")
+            .map_err(poisoned)?
+            .0
             .extend_from_slice(buf);
-        wrote.notify_all();
+        self.written.1.notify_all();
         Ok(buf.len())
     }
 
@@ -801,16 +830,14 @@ impl std::io::Write for Shared
     }
 }
 
-/// How many frames `bytes` begins: one header end for each.
+/// The error of a write that finds the output poisoned: a write before it
+/// panicked while it held the lock.
 ///
 /// # Specification
 /// trivial.
-fn header_ends(bytes: &[u8]) -> usize
+fn poisoned<Guard>(_poisoned: std::sync::PoisonError<Guard>) -> std::io::Error
 {
-    bytes
-        .windows(4)
-        .filter(|window| *window == b"\r\n\r\n")
-        .count()
+    std::io::Error::other("a write panicked while it held the output")
 }
 
 /// How long a client waits for the session to answer its frames before it
@@ -831,7 +858,7 @@ struct Lingering
     written: Shared,
     /// How many frames the session writes in answer before the linger
     /// starts.
-    answered: usize,
+    answered: Frames,
     /// How long the stream stays open after the answer.
     linger: Duration,
 }
@@ -936,7 +963,7 @@ fn idled(
         }}),
     ];
     // The answer to `initialize`, and a publication for each version.
-    let answered = 3_usize;
+    let answered = Frames(3_usize);
     let output = Shared {
         written: Arc::default(),
         slow,
@@ -957,7 +984,7 @@ fn idled(
     )
     .expect("the streams carry the session");
     assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
-    written(&Body::from(output.bytes()))
+    written(&output.body())
         .iter()
         .map(|message| {
             message.get("method").map_or_else(
