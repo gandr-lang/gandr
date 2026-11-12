@@ -63,7 +63,6 @@ use gandr_core_checker::bridge::AdmissionCost;
 use gandr_core_fork::Bound;
 use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
-use gandr_kernel_core::AdmittedDeclaration;
 use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::tallied;
 use gandr_kernel_term::ByteCount;
@@ -226,9 +225,10 @@ pub struct CheckSchedule
     jobs: Vec<ConstantIndex>,
     /// The dependences of the jobs, each by its place in `jobs`.
     dependences: Dependences,
-    /// How many jobs carry no time, each at no cost: a member of a mutual
-    /// block, which the kernel admits with its block.
-    untimed: usize,
+    /// The kernel position of each job that carries no time, ascending, each
+    /// at no cost: a member of a mutual block, which the kernel admits with
+    /// its block.
+    untimed: Vec<ConstantIndex>,
     /// What a schedule of the jobs can reach.
     bound: Bound,
 }
@@ -243,10 +243,10 @@ impl CheckSchedule
     /// - ensures: one job for each readmitted declaration after the resumed
     ///   ones whose outcome is a definition, an axiom or a nominal declaration,
     ///   at its kernel position, in position order. A job waits on each other
-    ///   job at a position that its entry's references name. Its cost is the
-    ///   time that its admission took, and nothing when no time was read, which
-    ///   the untimed count counts. The bound is [`Dependences::bound`] over
-    ///   those dependences and costs.
+    ///   job at a position that the kernel's `Entries::waits_on` names for it.
+    ///   Its cost is the time that its admission took, and nothing when no time
+    ///   was read, which the untimed jobs name. The bound is
+    ///   [`Dependences::bound`] over those dependences and costs.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -254,7 +254,7 @@ impl CheckSchedule
     ///   chain and beside it, a job waits on exactly the jobs that its
     ///   definition names, and the critical path covers the chain's costs.
     /// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
-    #[spec(ensures: |ret| ret.untimed <= ret.jobs.len()
+    #[spec(ensures: |ret| ret.untimed.len() <= ret.jobs.len()
         && ret.jobs.len() <= readmission.readmitted().len())]
     #[must_use]
     pub(crate) fn of(readmission: &bridge::Readmission) -> Self
@@ -279,29 +279,25 @@ impl CheckSchedule
             .collect();
         timed.sort_unstable_by_key(|&(position, _)| position);
         let jobs: Vec<ConstantIndex> = timed.iter().map(|&(position, _)| position).collect();
-        let mut untimed = 0_usize;
+        let mut untimed = Vec::new();
         let costs: Vec<Duration> = timed
             .iter()
-            .map(|&(_, took)| match took {
+            .map(|&(position, took)| match took {
                 Maybe::Present(spent) => spent.wall(),
                 Maybe::Absent(_) => {
-                    untimed = untimed.saturating_add(1);
+                    untimed.push(position);
                     Duration::ZERO
                 },
             })
             .collect();
         let held = &jobs;
         let dependences = Dependences::new(held.iter().enumerate().flat_map(|(after, &position)| {
-            entries
-                .get(usize::from(position))
-                .map_or(&[][..], AdmittedDeclaration::references)
-                .iter()
-                .filter_map(move |reference| {
-                    held.binary_search(reference)
-                        .ok()
-                        .filter(|&before| before < after)
-                        .map(|before| Dependence { before, after })
-                })
+            entries.waits_on(position).filter_map(move |reference| {
+                held.binary_search(&reference)
+                    .ok()
+                    .filter(|&before| before < after)
+                    .map(|before| Dependence { before, after })
+            })
         }))
         // Each edge waits on an earlier job, so none is backward.
         .unwrap_or_default();
@@ -336,15 +332,16 @@ impl CheckSchedule
         &self.dependences
     }
 
-    /// How many jobs carry no time, each counted at no cost.
+    /// The kernel position of each job that carries no time, ascending, each
+    /// counted at no cost.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn untimed(&self) -> usize
+    pub fn untimed(&self) -> &[ConstantIndex]
     {
-        self.untimed
+        &self.untimed
     }
 
     /// What a schedule of the jobs can reach: the serial cost, the critical
@@ -369,7 +366,7 @@ impl CheckSchedule
         self.bound
             .chain()
             .iter()
-            .filter_map(|&item| self.jobs.get(item).copied())
+            .filter_map(|&item| self.jobs.get(usize::from(item)).copied())
     }
 }
 

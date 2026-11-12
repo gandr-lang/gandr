@@ -2081,6 +2081,53 @@ mod tests
         );
     }
 
+    /// #3476: the check of an entry waits on each position that it names and
+    /// on the types of words over each of them that rank below it. An entry
+    /// before the words does not wait on them.
+    #[test]
+    fn a_check_waits_on_the_words_over_each_sort_it_names_3476()
+    {
+        /// Admit an axiom of the sort's type.
+        ///
+        /// # Specification
+        /// trivial.
+        fn element(environment: &mut Environment) -> ConstantIndex
+        {
+            let mut staging = environment.stage();
+            let declared = staging
+                .arena()
+                .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+            let staged = staging.axiom(LevelSignature::monomorphic(), declared);
+            environment
+                .add_decl(staged)
+                .map(crate::env::CheckedId::position)
+                .expect("an element of the sort admits")
+        }
+
+        let mut environment = point();
+        let sort = ConstantIndex::from(0_usize);
+        let before = element(&mut environment);
+        let words = words(&mut environment, Presentation::words(looped(sort)))
+            .expect("the words of the loop at `base` admit");
+        let after = element(&mut environment);
+        let entries = environment.entries();
+        assert_eq!(
+            entries.waits_on(after).collect::<Vec<_>>(),
+            [sort, words],
+            "an entry after the words waits on the sort and on the words over it"
+        );
+        assert_eq!(
+            entries.waits_on(before).collect::<Vec<_>>(),
+            [sort],
+            "an entry before the words waits on the sort alone"
+        );
+        assert_eq!(
+            entries.waits_on(ConstantIndex::from(99_usize)).count(),
+            0,
+            "a position past the entries waits on nothing"
+        );
+    }
+
     #[test]
     fn a_side_spells_only_its_own_sort_s_tags()
     {
