@@ -893,7 +893,7 @@ fn answer<Log>(
         version: None,
         subscription: None,
     };
-    owe_answer(pending, &answer, held.store, held.deliveries, held.log);
+    owe_answer(pending, &answer, held.rows, held.deliveries, held.log);
     #[cfg(feature = "instrument")]
     lock(held.subscriptions).unview(
         &Row::Call(pending.group_id.clone(), pending.id.clone()),

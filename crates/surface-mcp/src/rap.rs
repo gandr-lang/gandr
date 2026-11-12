@@ -99,11 +99,14 @@
 //! states.
 //!
 //! The store is one file of JSON lines per workspace, and only its owner can
-//! read it. The toolset writes the row of a call before it sends the `200`,
-//! and the answer of the call before its first delivery. Thus a crash of the
+//! read it. One thread of the toolset, the writer of the rows, owns the file.
+//! The other threads send it their rows through a channel, with no lock, and
+//! it writes them in the order that it receives them. The toolset writes the
+//! row of a call before it sends the `200`, and the answer of the call before
+//! its first delivery: each waits for the writer's reply. Thus a crash of the
 //! hub loses no call that it acknowledged. When the toolset opens its store,
 //! it delivers again each answer that no settlement follows. The worker
-//! answers each row with no answer with an error. The toolset empties the file
+//! answers each row with no answer with an error. The writer empties the file
 //! each time no call is pending.
 //!
 //! The toolset accepts connections on one thread for each hardware thread of
@@ -160,7 +163,9 @@ use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 use std::sync::mpsc::channel;
+use std::sync::mpsc::sync_channel;
 use std::thread;
 use std::time::SystemTime;
 
@@ -412,61 +417,69 @@ struct Accounted<'card>
 struct Buffer(Vec<u8>);
 
 /// The file of rows, how many of its rows no settlement follows, and the
-/// buffer each line is encoded in.
+/// buffer each settlement is encoded in. One thread owns it, the writer of the
+/// rows, so no lock guards it.
 struct Store
 {
     /// The file, open to append.
     file: File,
     /// The rows in the file that no settlement follows.
     open: usize,
-    /// The line being written, kept so a row allocates nothing once the
-    /// buffer has grown to the longest row.
+    /// The line of a settlement being written, kept so a settlement allocates
+    /// nothing once the buffer has grown to the longest one.
     line: Buffer,
 }
 
 impl Store
 {
-    /// Append `entry` to the file as one line, with one write.
+    /// Write each row that `rowed` carries, in the order that it carries
+    /// them, until every sender is gone. Answer each write that a sender waits
+    /// for, and tell `log` of a settlement that the file did not take.
     ///
     /// # Specification
-    /// trivial.
-    fn append<Line>(
-        &mut self,
-        entry: &Line,
-    ) -> io::Result<()>
-    where
-        Line: Serialize,
-    {
-        self.line.0.clear();
-        serde_json::to_writer(&mut self.line.0, entry).map_err(io::Error::other)?;
-        self.line.0.push(b'\n');
-        self.file.write_all(&self.line.0)
-    }
-
-    /// Record that the toolset acknowledged `pending`.
+    /// - requires: nothing.
+    /// - ensures: the file takes the rows in the order that the channel gives
+    ///   them. A call's row counts as open once the file takes it, and the file
+    ///   empties when a settlement leaves no row open, on this thread, so no
+    ///   append races the emptying.
+    /// - panics: none.
+    /// - executable: none — the effects are lines in a file.
     ///
-    /// # Specification
-    /// trivial.
-    fn opened(
-        &mut self,
-        pending: &Pending,
-    ) -> io::Result<()>
+    /// # Adequacy
+    /// - hypothesis: L3 — a store that holds an open row, an answered row and a
+    ///   settled one opens, and the toolset answers each call that the file
+    ///   keeps.
+    /// - witness: `rap::tests::a_call_a_crash_lost_is_answered_with_an_error`
+    /// - witness: `rap::tests::the_toolset_answers_a_call_by_its_callback`
+    fn write<Log>(
+        mut self,
+        rowed: Receiver<Rowed>,
+        log: &Mutex<Log>,
+    ) where
+        Log: Write,
     {
-        self.append(&Opened { opened: pending })?;
-        self.open = self.open.saturating_add(1);
-        Ok(())
-    }
-
-    /// Record the answer of a call, before its first delivery.
-    ///
-    /// # Specification
-    /// trivial.
-    fn answered(
-        &mut self,
-        answer: &Answer,
-    ) -> io::Result<()>
-    {
-        self.append(&Answered { answered: answer })
+        for row in rowed {
+            match row {
+                Rowed::Opened(Buffer(line), reply) => {
+                    let written = self.file.write_all(&line);
+                    if written.is_ok() {
+                        self.open = self.open.saturating_add(1);
+                    }
+                    drop(reply.send(written));
+                },
+                Rowed::Answered(Buffer(line), reply) => {
+                    drop(reply.send(self.file.write_all(&line)));
+                },
+                Rowed::Settled(row) => {
+                    if let Err(error) = self.settled(&row) {
+                        drop(writeln!(
+                            lock(log),
+                            "the toolset did not settle {row}: {error}"
+                        ));
+                    }
+                },
+            }
+        }
     }
 
     /// Record that a runtime took or refused the result of `row`, and empty
@@ -488,10 +501,112 @@ impl Store
         if self.open == 0 {
             return self.file.set_len(0);
         }
-        self.append(&Settled {
+        self.line.0.clear();
+        serde_json::to_writer(&mut self.line.0, &Settled {
             settled: (group_id, id),
         })
+        .map_err(io::Error::other)?;
+        self.line.0.push(b'\n');
+        self.file.write_all(&self.line.0)
     }
+}
+
+/// A row that a thread of the toolset sends the writer of the rows.
+enum Rowed
+{
+    /// The line of an acknowledged call, and where the writer answers its
+    /// write.
+    Opened(Buffer, SyncSender<io::Result<()>>),
+    /// The line of a call's answer, and where the writer answers its write.
+    Answered(Buffer, SyncSender<io::Result<()>>),
+    /// A row whose result a runtime took or refused.
+    Settled(Row),
+}
+
+/// The hand-off to the writer of the rows: each thread of the toolset sends
+/// its rows here, with no lock.
+#[repr(transparent)]
+struct Rows(Sender<Rowed>);
+
+impl Rows
+{
+    /// Write the row of `pending`, a call that the toolset acknowledges, and
+    /// wait until the file takes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opened(
+        &self,
+        pending: &Pending,
+    ) -> io::Result<()>
+    {
+        let line = line(&Opened { opened: pending })?;
+        self.written(|reply| Rowed::Opened(line, reply))
+    }
+
+    /// Write the answer of a call, and wait until the file takes it, before
+    /// its first delivery.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answered(
+        &self,
+        answer: &Answer,
+    ) -> io::Result<()>
+    {
+        let line = line(&Answered { answered: answer })?;
+        self.written(|reply| Rowed::Answered(line, reply))
+    }
+
+    /// Send the settlement of `row` to the writer, which writes it in turn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn settled(
+        &self,
+        row: &Row,
+    ) -> io::Result<()>
+    {
+        self.0
+            .send(Rowed::Settled(row.clone()))
+            .map_err(|_gone| io::Error::other(UNWRITTEN))
+    }
+
+    /// Send the row that `rowed` makes with a reply, and wait for the reply.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written<Made>(
+        &self,
+        rowed: Made,
+    ) -> io::Result<()>
+    where
+        Made: FnOnce(SyncSender<io::Result<()>>) -> Rowed,
+    {
+        let (reply, replied) = sync_channel(1);
+        self.0
+            .send(rowed(reply))
+            .map_err(|_gone| io::Error::other(UNWRITTEN))?;
+        replied
+            .recv()
+            .unwrap_or_else(|_gone| Err(io::Error::other(UNWRITTEN)))
+    }
+}
+
+/// Why a row was not written once the writer of the rows is gone.
+const UNWRITTEN: &str = "the writer of the rows is gone";
+
+/// `entry` as one line of the file of rows.
+///
+/// # Specification
+/// trivial.
+fn line<Entry>(entry: &Entry) -> io::Result<Buffer>
+where
+    Entry: Serialize,
+{
+    let mut line = serde_json::to_vec(entry).map_err(io::Error::other)?;
+    line.push(b'\n');
+    Ok(Buffer(line))
 }
 
 /// A subscription of a runtime to one scope.
@@ -1423,7 +1538,7 @@ impl Toolset
         dylint_lib = "quenchant_dylints",
         expect(
             pool_only_threads,
-            reason = "io: the worker, the jobs and the fan-out block on the workspace lock or a channel, each delivery on its callback's socket, and each acceptor on its client's socket, for the toolset's life"
+            reason = "io: the writer of the rows, the worker, the jobs and the fan-out block on a channel or the workspace lock, each delivery on its callback's socket, and each acceptor on its client's socket, for the toolset's life"
         )
     )]
     #[inline]
@@ -1497,113 +1612,117 @@ impl Toolset
             }
             ticks
         };
-        // An acknowledgement takes the store's lock for one line alone, so
-        // acceptors at the host's width answer in parallel. Two at least keep a
-        // client that stalls from holding every other call. The deliveries
-        // take as many threads again, so a callback that stalls holds its own
-        // row alone.
+        // An acknowledgement waits for the writer of the rows to write its one
+        // line, so acceptors at the host's width answer in parallel. Two at
+        // least keep a client that stalls from holding every other call. The
+        // deliveries take as many threads again, so a callback that stalls
+        // holds its own row alone.
         let width = thread::available_parallelism().map_or(2, |width| width.get().max(2));
-        let (store, subscriptions, log) = (
-            Mutex::new(store),
-            Mutex::new(subscriptions),
-            Mutex::new(log),
-        );
-        let (listener, manifest, store, subscriptions, log, deliveries) = (
-            &listener,
-            &manifest,
-            &store,
-            &subscriptions,
-            &log,
-            &deliveries,
-        );
+        let (subscriptions, log) = (Mutex::new(subscriptions), Mutex::new(log));
+        let (listener, manifest, subscriptions, log, deliveries) =
+            (&listener, &manifest, &subscriptions, &log, &deliveries);
         let table = &table;
-        let held = Held {
-            workspace,
-            verbs: verbs.as_ref(),
-            store,
-            #[cfg(feature = "instrument")]
-            subscriptions,
-            deliveries,
-            log,
-        };
-        thread::scope(|scope| {
-            let worker = {
-                let jobs = jobs.clone();
-                scope.spawn(move || {
-                    work(
-                        queued,
-                        (workspace, &jobs),
-                        store,
-                        subscriptions,
-                        table,
-                        deliveries,
-                        log,
-                    );
-                })
-            };
-            let finished = jobs.clone();
-            let held = &held;
-            drop(scope.spawn(move || jobs::run(commands, finished, held)));
-            let changing = jobs.clone();
-            drop(scope.spawn(move || {
-                fan_out(changes, (workspace, &changing), subscriptions, deliveries);
-            }));
-            let settling = jobs.clone();
-            drop(scope.spawn(move || {
-                fan_out_accounts(
-                    settlements,
-                    (workspace, &settling),
-                    subscriptions,
-                    deliveries,
-                );
-            }));
-            #[cfg(feature = "instrument")]
-            drop(scope.spawn(move || fan_out_activity(ticks, subscriptions, deliveries)));
-            for _delivery in 0 .. width {
-                drop(scope.spawn(move || {
-                    deliveries.run(|row, fate| {
-                        told(row, &fate, store, subscriptions, table, deliveries, log);
-                    });
-                }));
-            }
-            // Every acceptor starts before the first join.
-            let mut acceptors = Vec::with_capacity(width);
-            for _acceptor in 0 .. width {
-                let desk = Desk {
-                    manifest,
-                    store,
+        let (sender, rowed) = channel();
+        let rows = Rows(sender);
+        thread::scope(|outer| {
+            // The writer ends once its last sender is gone, after every thread
+            // below has ended, so it writes each row that they sent.
+            let writer = outer.spawn(move || store.write(rowed, log));
+            let accepted = {
+                let rows = &rows;
+                let held = Held {
                     workspace,
-                    queue: queue.clone(),
-                    written: Arc::default(),
+                    verbs: verbs.as_ref(),
+                    rows,
+                    #[cfg(feature = "instrument")]
                     subscriptions,
-                    table,
                     deliveries,
                     log,
                 };
-                acceptors.push(scope.spawn(move || accept(listener, &desk)));
-            }
-            // The worker ends once every acceptor has ended and it has answered
-            // every queued call.
-            drop(queue);
-            let accepted = acceptors
-                .into_iter()
-                .map(|acceptor| {
-                    acceptor
-                        .join()
-                        .unwrap_or_else(|_panic| Err(io::Error::other("an acceptor panicked")))
+                thread::scope(|scope| {
+                    let worker = {
+                        let jobs = jobs.clone();
+                        scope.spawn(move || {
+                            work(
+                                queued,
+                                (workspace, &jobs),
+                                rows,
+                                subscriptions,
+                                table,
+                                deliveries,
+                                log,
+                            );
+                        })
+                    };
+                    let finished = jobs.clone();
+                    let held = &held;
+                    drop(scope.spawn(move || jobs::run(commands, finished, held)));
+                    let changing = jobs.clone();
+                    drop(scope.spawn(move || {
+                        fan_out(changes, (workspace, &changing), subscriptions, deliveries);
+                    }));
+                    let settling = jobs.clone();
+                    drop(scope.spawn(move || {
+                        fan_out_accounts(
+                            settlements,
+                            (workspace, &settling),
+                            subscriptions,
+                            deliveries,
+                        );
+                    }));
+                    #[cfg(feature = "instrument")]
+                    drop(scope.spawn(move || fan_out_activity(ticks, subscriptions, deliveries)));
+                    for _delivery in 0 .. width {
+                        drop(scope.spawn(move || {
+                            deliveries.run(|row, fate| {
+                                told(row, &fate, rows, subscriptions, table, deliveries, log);
+                            });
+                        }));
+                    }
+                    // Every acceptor starts before the first join.
+                    let mut acceptors = Vec::with_capacity(width);
+                    for _acceptor in 0 .. width {
+                        let desk = Desk {
+                            manifest,
+                            rows,
+                            workspace,
+                            queue: queue.clone(),
+                            written: Arc::default(),
+                            subscriptions,
+                            table,
+                            deliveries,
+                            log,
+                        };
+                        acceptors.push(scope.spawn(move || accept(listener, &desk)));
+                    }
+                    // The worker ends once every acceptor has ended and it has
+                    // answered every queued call.
+                    drop(queue);
+                    let accepted = acceptors
+                        .into_iter()
+                        .map(|acceptor| {
+                            acceptor.join().unwrap_or_else(|_panic| {
+                                Err(io::Error::other("an acceptor panicked"))
+                            })
+                        })
+                        .fold(Ok(()), Result::and);
+                    // The jobs end once the worker started its last one. A job
+                    // that did not end keeps its row, which the next toolset
+                    // answers.
+                    drop(worker.join());
+                    drop(jobs.send(Command::Stop));
+                    // The fan-out ends with its watch, and each delivery thread
+                    // once its attempt in flight ends. The store keeps each
+                    // answer that no runtime took.
+                    lock(workspace).depart(peer);
+                    #[cfg(feature = "instrument")]
+                    drop(lock(subscriptions).watch.take());
+                    deliveries.close();
+                    accepted
                 })
-                .fold(Ok(()), Result::and);
-            // The jobs end once the worker started its last one. A job that did
-            // not end keeps its row, which the next toolset answers.
-            drop(worker.join());
-            drop(jobs.send(Command::Stop));
-            // The fan-out ends with its watch, and each delivery thread once
-            // its attempt in flight ends. The store keeps each answer that no
-            // runtime took.
-            lock(workspace).depart(peer);
-            #[cfg(feature = "instrument")]
-            drop(lock(subscriptions).watch.take());
-            deliveries.close();
+            };
+            drop(rows);
+            drop(writer.join());
             accepted
         })
     }
@@ -1785,8 +1904,8 @@ struct Held<'toolset, Log>
     workspace: &'toolset Arc<Mutex<Workspace>>,
     /// The verbs that the driver gave, when it gave them.
     verbs: Option<&'toolset Arc<dyn Verbs>>,
-    /// The store of the calls.
-    store: &'toolset Mutex<Store>,
+    /// The hand-off to the writer of the rows.
+    rows: &'toolset Rows,
     /// The subscriptions, which hold the views of the running jobs.
     #[cfg(feature = "instrument")]
     subscriptions: &'toolset Mutex<Subscriptions>,
@@ -1803,8 +1922,8 @@ struct Desk<'toolset, Log>
 {
     /// The answer to a `GET` of the manifest.
     manifest: &'toolset Buffer,
-    /// The store of rows.
-    store: &'toolset Mutex<Store>,
+    /// The hand-off to the writer of the rows.
+    rows: &'toolset Rows,
     /// The hub's documents, whose versions a call's job reads.
     workspace: &'toolset Mutex<Workspace>,
     /// The worker's queue, which a cancel and a closure end jobs on too.
@@ -1913,7 +2032,7 @@ where
                         u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
                     }),
             };
-            if lock(desk.store).opened(&pending).is_err() {
+            if desk.rows.opened(&pending).is_err() {
                 return stream.write_all(UNSTORED);
             }
             // The job of the call reads the documents at the versions that
@@ -2123,7 +2242,7 @@ fn read_request(
 fn work<Log>(
     queued: Receiver<Queued>,
     (workspace, jobs): (&Mutex<Workspace>, &Sender<Command>),
-    store: &Mutex<Store>,
+    rows: &Rows,
     subscriptions: &Mutex<Subscriptions>,
     table: &Table,
     deliveries: &Deliveries,
@@ -2153,7 +2272,7 @@ fn work<Log>(
                 continue;
             },
             Some(Err(refused)) => {
-                owe_answer(&pending, &refused, store, deliveries, log);
+                owe_answer(&pending, &refused, rows, deliveries, log);
                 continue;
             },
             None => {},
@@ -2194,7 +2313,7 @@ fn work<Log>(
         else {
             None
         };
-        owe_answer(&pending, &answer, store, deliveries, log);
+        owe_answer(&pending, &answer, rows, deliveries, log);
         drop(opened);
     }
 }
@@ -2222,21 +2341,21 @@ fn job_of(
     }))
 }
 
-/// Keep `answer`, the answer of the call `pending`, in `store`, and owe its
-/// result to `deliveries`, telling `log` when the store does not keep it.
+/// Keep `answer`, the answer of the call `pending`, through `rows`, and owe
+/// its result to `deliveries`, telling `log` when the store does not keep it.
 ///
 /// # Specification
 /// trivial.
 fn owe_answer<Log>(
     pending: &Pending,
     answer: &Answer,
-    store: &Mutex<Store>,
+    rows: &Rows,
     deliveries: &Deliveries,
     log: &Mutex<Log>,
 ) where
     Log: Write,
 {
-    let kept = lock(store).answered(answer);
+    let kept = rows.answered(answer);
     if let Err(error) = kept {
         drop(writeln!(
             lock(log),
@@ -2591,7 +2710,7 @@ fn fan_out_activity(
 fn told<Log>(
     row: &Row,
     fate: &Fate,
-    store: &Mutex<Store>,
+    rows: &Rows,
     subscriptions: &Mutex<Subscriptions>,
     table: &Table,
     #[cfg_attr(
@@ -2609,7 +2728,7 @@ fn told<Log>(
     match (row, fate) {
         (&Row::Call(..), &Fate::Spent(..)) => {},
         (&Row::Call(..), &(Fate::Taken(_) | Fate::Refused(_))) => {
-            let settled = lock(store).settled(row);
+            let settled = rows.settled(row);
             if let Err(error) = settled {
                 drop(writeln!(
                     lock(log),
@@ -4484,24 +4603,15 @@ mod tests
             .create(true)
             .open(&calls)
             .expect("the file of rows opens");
-        let store = std::sync::Mutex::new(super::Store {
+        let store = super::Store {
             file,
             open: 0,
             line: Buffer::default(),
-        });
+        };
         #[cfg(feature = "instrument")]
         let subscriptions = std::sync::Mutex::new(super::Subscriptions::resumed(Vec::new()));
         let deliveries = super::Deliveries::new(Policy::default());
         let log = std::sync::Mutex::new(std::io::sink());
-        let held = super::Held {
-            workspace: &workspace,
-            verbs: None,
-            store: &store,
-            #[cfg(feature = "instrument")]
-            subscriptions: &subscriptions,
-            deliveries: &deliveries,
-            log: &log,
-        };
         let pending = super::Pending {
             group_id: String::from("thread-1"),
             id: String::from("run-1"),
@@ -4511,10 +4621,27 @@ mod tests
             operation: String::from("run"),
             started: 0,
         };
-        let (commands, heard) = std::sync::mpsc::channel();
-        drop(commands.send(super::Command::Start(pending, job, pinned)));
-        drop(commands.send(super::Command::Stop));
-        super::jobs::run(heard, commands, &held);
+        let (sender, rowed) = std::sync::mpsc::channel();
+        let rows = super::Rows(sender);
+        thread::scope(|scope| {
+            let log = &log;
+            let writer = scope.spawn(move || store.write(rowed, log));
+            let held = super::Held {
+                workspace: &workspace,
+                verbs: None,
+                rows: &rows,
+                #[cfg(feature = "instrument")]
+                subscriptions: &subscriptions,
+                deliveries: &deliveries,
+                log,
+            };
+            let (commands, heard) = std::sync::mpsc::channel();
+            drop(commands.send(super::Command::Start(pending, job, pinned)));
+            drop(commands.send(super::Command::Stop));
+            super::jobs::run(heard, commands, &held);
+            drop(rows);
+            writer.join().expect("the writer of the rows ends");
+        });
 
         let texts: Vec<Value> = std::fs::read_to_string(&calls)
             .expect("the file of rows reads")
