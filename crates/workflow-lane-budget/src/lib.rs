@@ -46,7 +46,8 @@
 //! runner of our own counts in no sum. A `--summed NAME=BUDGET/CEILING`
 //! argument holds a workflow to the two and adds a table of every active
 //! workflow's wall and summed times with the cache's usage; a budgeted
-//! workflow over keeps the issue open as an over lane does.
+//! workflow over, or a cache past 9 GiB, keeps the issue open as an over lane
+//! does.
 //!
 //! # References
 //!
