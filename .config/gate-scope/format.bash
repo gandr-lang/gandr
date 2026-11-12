@@ -41,7 +41,12 @@ jq -n --rawfile changed "$work/changed" --rawfile tracked "$work/tracked" \
   '{changed: ($changed | split("\n") | map(select(length > 0))), tracked: ($tracked | split("\n") | map(select(length > 0)))}' \
   | jq -c -L "$here" -f "$here/format.jq" > "$work/paths"
 if [[ $(< "$work/paths") == '"tree"' ]]; then
-  echo "format: the change touches a formatter's configuration or a pin, so the check reads the whole tree" >&2
+  # The paths that read as configuration or a pin, named for the log (#6976).
+  jq -nr -L "$here" --rawfile changed "$work/changed" \
+    'import "table" as $table; include "rows";
+     $table::table[0].formatting.configuration as $rows
+     | [$changed | split("\n")[] | select(length > 0) | . as $path | select(any($rows[]; mapped({path: .}; $path)))]
+     | "format: the change touches \(length) paths of the formatter configuration or a pin, as \(.[:5] | join(" ")), so the check reads the whole tree"' >&2
   mise run --quiet aube:install
   exec treefmt --ci --formatters "$formatters"
 fi

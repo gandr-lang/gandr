@@ -19,6 +19,12 @@
 # (#6812). With `--lints`, a change of a lint's configuration reads the whole
 # workspace (`table.json`'s `lints`), for the lints of the queue (#6894).
 #
+# A scope of the whole workspace names on stderr how many paths the change
+# holds and the first of them that lie in no package directory (#6976). The
+# queue of `landing` read the whole workspace for a group whose change the
+# same rule reads as three packages outside the queue, and its log named no
+# path.
+#
 # Usage: scope.bash [--touched] [--readers] [--lints]
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
@@ -49,14 +55,19 @@ packages=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path 
   | jq -c --arg root "$root/" '[.packages[] | {name, dir: (.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml")), deps: [.dependencies[].name]}]')
 # The change goes to `jq` on stdin, as `select.bash` reads it: one argument
 # holds at most 128 KiB, and a change of many paths holds more.
-set=$({ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } \
-  | jq -nR --argjson packages "$packages" --argjson touched "$touched" --argjson lints "$lints" '{changed: [inputs], packages: $packages, touched: $touched, lints: $lints}' \
+change=$(mktemp)
+trap 'rm -f "$change" "$change.outside"' EXIT
+{ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } > "$change"
+set=$(jq -nR --argjson packages "$packages" --argjson touched "$touched" --argjson lints "$lints" '{changed: [inputs], packages: $packages, touched: $touched, lints: $lints}' < "$change" \
   | jq -c -L "$here" -f "$here/packages.jq")
 if [[ $readers == true ]]; then
   set=$(jq -c --slurpfile table "$here/table.json" 'if . == "workspace" then . else . + $table[0].readers | unique end' <<< "$set")
 fi
-jq -r --argjson packages "$packages" \
-  'if . == "workspace" then "scope: the whole workspace"
+# The paths in no package go to `jq` as a file, as the change does.
+jq -nR --argjson packages "$packages" '{changed: [inputs | select(length > 0)], packages: $packages}' < "$change" \
+  | jq -c -f "$here/outside.jq" > "$change.outside"
+jq -r --argjson packages "$packages" --slurpfile outside "$change.outside" --arg paths "$(wc -l < "$change" | tr -d ' ')" \
+  'if . == "workspace" then "scope: the whole workspace; the change holds \($paths) paths, \($outside[0] | length) in no package: \($outside[0][:5] | join(" "))"
    elif length == 0 then "scope: no Rust path changes; a Rust check run by hand runs over the whole workspace"
    else "scope: \(length) of \($packages | length) packages: \(join(" "))" end' <<< "$set" >&2
 jq -r --argjson packages "$packages" \

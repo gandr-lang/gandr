@@ -1310,5 +1310,23 @@
       "tracked": ["README.md"]
     },
     "output": []
+  },
+  {
+    "name": "#6983: a change names each of its paths that lies in no package directory, a sibling directory of a package's own name included",
+    "program": "outside.jq",
+    "input": {
+      "changed": [
+        "crates/surface-lsp/src/hub.rs",
+        "ledger/purposes.sql",
+        "crates/surface-lsp-extra/notes.md",
+        "crates/core-term/Cargo.toml",
+        "stray.txt"
+      ],
+      "packages": [
+        { "name": "gandr-surface-lsp", "dir": "crates/surface-lsp", "deps": [] },
+        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }
+      ]
+    },
+    "output": ["ledger/purposes.sql", "crates/surface-lsp-extra/notes.md", "stray.txt"]
   }
 ]
