@@ -139,15 +139,15 @@ impl Fuel
         }
     }
 
-    /// How many steps are left.
+    /// The allowance that is left.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn remaining(&self) -> usize
+    pub const fn remaining(&self) -> LoweringBudget
     {
-        self.remaining
+        LoweringBudget(self.remaining)
     }
 
     /// The allowance the caller set, which a refusal names.

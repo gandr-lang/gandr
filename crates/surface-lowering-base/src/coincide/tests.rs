@@ -24,14 +24,12 @@ use crate::unit::Unit;
 /// # Specification
 /// trivial.
 fn reached<const N: usize>(
-    source: &str,
-    calls: [&str; N],
+    source: SourceText<'_>,
+    calls: [CallText<'_>; N],
 ) -> [Result<String, NormalFormFault>; N]
 {
     let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
+    let tree = parse(&grammar, source).unwrap().into_tree();
     let described = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     let cells = elaborate_desc_cells(&described.declarations, &mut Decisions::none());
     let (&[ref block], &[ref cells]) = (
@@ -41,9 +39,7 @@ fn reached<const N: usize>(
     else {
         panic!("one described block")
     };
-    calls.map(|call| {
-        normal_form(&block.description, cells, CallText::from(call)).map(|normal| normal.spelling())
-    })
+    calls.map(|call| normal_form(&block.description, cells, call).map(|normal| normal.spelling()))
 }
 
 #[test]
@@ -66,7 +62,9 @@ fn a_call_reads_as_the_term_it_spells_or_says_why_not()
     let normal = |spelling: &str| Ok(String::from(spelling));
     assert_eq!(
         reached(
-            include_str!("tests/unformatted/a-call-reads-its-normal-form-or-says-why-not.gandr"),
+            SourceText::from(include_str!(
+                "tests/unformatted/a-call-reads-its-normal-form-or-says-why-not.gandr"
+            )),
             [
                 "divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)))",
                 " divmod ( Zero , Zero ) ",
@@ -75,7 +73,8 @@ fn a_call_reads_as_the_term_it_spells_or_says_why_not()
                 "divmod(Zero,)",
                 "plus(Zero, Zero)",
                 "Succ(Zero)",
-            ],
+            ]
+            .map(CallText::from),
         ),
         [
             normal("(Succ(Succ(Zero)), Succ(Zero))"),
@@ -89,16 +88,17 @@ fn a_call_reads_as_the_term_it_spells_or_says_why_not()
     );
     assert_eq!(
         reached(
-            include_str!(
+            SourceText::from(include_str!(
                 "tests/unformatted/a-call-reads-its-normal-form-or-says-why-not-restriction.gandr"
-            ),
+            )),
             [
                 "nu(bind b . out(b, nil))",
                 "nu(bind a . nu(bind b . out(a, nil)))",
                 "nu(bind b . out(c, nil))",
                 "out(b, nu(bind b . nil))",
                 "nu(bind b . out(b, nil)",
-            ],
+            ]
+            .map(CallText::from),
         ),
         [
             normal("nil"),

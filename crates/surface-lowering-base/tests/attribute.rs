@@ -18,8 +18,9 @@ use gandr_surface_syntax::SourceText;
 #[test]
 fn a_deprecated_use_carries_its_bytes_its_name_and_its_texts()
 {
-    let text = "@[deprecated(*{since = \"0.2\"})]\ndef square = 1;\ndef cube = 3;\ndef a = \
-                square;\ndef b = cube;";
+    let text = include_str!(
+        "attribute/unformatted/a-deprecated-use-carries-its-bytes-its-name-and-its-texts.gandr"
+    );
     let grammar = grammar();
     let tree = parsed(&grammar, SourceText::from(text));
     let mut arena = CoreArena::new();

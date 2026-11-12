@@ -17,10 +17,13 @@ use gandr_surface_syntax::SourceText;
 #[test]
 fn a_lowered_theory_reads_its_description_and_its_model()
 {
-    let text = alloc::format!(
-        "{}\ndata Flag : Type where {{ | On : Flag | Off : Flag }}\n",
-        include_str!("../src/model/tests/unformatted/cat-shape.gandr")
-    );
+    let text = [
+        include_str!("../src/model/tests/unformatted/cat-shape.gandr"),
+        include_str!(
+            "model/unformatted/a-lowered-theory-reads-its-description-and-its-model-flag.gandr"
+        ),
+    ]
+    .concat();
     let grammar = grammar();
     let tree = parsed(&grammar, SourceText::from(text.as_str()));
     let mut arena = CoreArena::new();

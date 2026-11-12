@@ -1,0 +1,5 @@
+pub theory A where { sort S : Type; }
+theory B where { sort S : Type; }
+theory C where { sort S : Type; }
+pub theory D where { sort S : Type; }
+theory E where { sort S : Type; }

@@ -17,10 +17,10 @@ use gandr_surface_syntax::SourceText;
 ///
 /// # Specification
 /// trivial.
-fn roles(text: &str) -> Vec<(String, Role)>
+fn roles(text: SourceText<'_>) -> Vec<(String, Role)>
 {
     let grammar = grammar();
-    let tree = parsed(&grammar, SourceText::from(text));
+    let tree = parsed(&grammar, text);
     let mut arena = CoreArena::new();
     let module = lower_module(
         &grammar,
@@ -50,17 +50,16 @@ fn each_slot_is_read_with_its_role()
 {
     let named = |name: &str, role| (String::from(name), role);
     assert_eq!(
-        roles(
+        roles(SourceText::from(
             "module M where { def f : +U (Integer -> -F Integer); def f(x : Integer) -> -F \
              Integer { return x } }"
-        ),
+        )),
         [named("f", Role::Declared), named("f", Role::Witness)]
     );
     assert_eq!(
-        roles(
-            "module Counter :> *{type T, seed : T} where { type T = Integer; def seed = 7; }\ndef \
-             held : Counter.T = Counter.seed;\ndef n : Integer = Counter.seed;\n"
-        ),
+        roles(SourceText::from(include_str!(
+            "slot/unformatted/each-slot-is-read-with-its-role-sealed.gandr"
+        ))),
         [
             named("T", Role::Abstract),
             named("seed", Role::Declared),

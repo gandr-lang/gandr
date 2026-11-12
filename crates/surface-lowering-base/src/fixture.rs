@@ -306,7 +306,7 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - ensures: mold lookup uses the supplied grammar, independently of the
     ///   recorded fingerprint; the finished tree retains the supplied source.
     /// - provides: a fixture whose recorded grammar may intentionally differ
-    ///   from the grammar used to select its molds.
+    ///   from the grammar that selects its molds.
     /// - fails: never replaces the requested fingerprint with the lookup one.
     /// - panics: if the builder identity space is exhausted.
     ///

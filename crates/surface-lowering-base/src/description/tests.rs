@@ -1234,10 +1234,9 @@ fn a_codata_self_reference_reads_its_written_steps_2188()
     use crate::description::written::Applied;
 
     let grammar = grammar();
-    let source = "codata Swap(a : Type, b : Type) : Type[-] where { head : a; tail : Swap(b, a); \
-                  }\ncodata Twisted(a : Type) : Type[-] where { head : a; tail : \
-                  Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] where { head : a; \
-                  tail : Stream Small; }\ndata Small : Type where { | Mk : Small }\n";
+    let source = include_str!(
+        "tests/unformatted/a-codata-self-reference-reads-its-written-steps-2188.gandr"
+    );
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     let read: Vec<(&str, Vec<Result<&str, usize>>)> = report
@@ -1289,9 +1288,9 @@ fn a_declaration_sees_its_own_source_and_what_its_imports_export()
     use crate::unit::SourceIndex;
     use crate::unit::UnitSource;
 
-    let source = "pub theory A where { sort S : Type; }\ntheory B where { sort S : Type; }\ntheory \
-                  C where { sort S : Type; }\npub theory D where { sort S : Type; }\ntheory E \
-                  where { sort S : Type; }\n";
+    let source = include_str!(
+        "tests/unformatted/a-declaration-sees-its-own-source-and-what-its-imports-export.gandr"
+    );
     let report = elaborated(SourceText::from(source));
     let at = |name: &str| ByteOffset::from(source.find(name).unwrap());
     let unit = Unit::new(Vec::from([

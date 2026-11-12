@@ -918,9 +918,9 @@ mod tests
         use crate::form::Placed;
 
         let grammar = grammar();
-        let text = "import \"file:///no/such/\\\"place\\\".gandr\" as far;\nimport \"./base.gandr\" \
-                    : Older via downgrade;\nimport \"./base.gandr\" as old : Older renaming { \
-                    reply as answer, label as tag };\ndef x : Integer;\ndef x = 3;\n";
+        let text = include_str!(
+            "written_import/tests/unformatted/each-import-a-root-writes-reads-whole-in-order.gandr"
+        );
         let tree = parsed(&grammar, SourceText::from(text));
         let spelled = |at: Placed| {
             text.get(usize::from(at.span.start()) .. usize::from(at.span.end()))
@@ -1003,8 +1003,9 @@ mod tests
         use crate::unit::Unit;
         use crate::unit::UnitSource;
 
-        let text = "def a = 1;\ndef b = 2;\nimport \"./zero.gandr\";\nimport \"./one.gandr\" as \
-                    one;\nimport \"file:///far.gandr\";\ndef c = 3;\n";
+        let text = include_str!(
+            "written_import/tests/unformatted/a-source-sees-what-it-imports-unqualified-and-the-prelude.gandr"
+        );
         let at = |written: &str| ByteOffset::from(text.find(written).unwrap());
         let written = Unit::new(Vec::from([
             UnitSource::new(ByteOffset::from(0_usize), Vec::new()),

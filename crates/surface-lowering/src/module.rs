@@ -12961,6 +12961,8 @@ impl<'source> LoweredModule<'source>
     ///   declaration, and a codata family written in its own observation
     ///   answers at its kind.
     /// - witness: `tests::described::each_family_answers_at_its_own_declaration_6908`
+    #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
+        && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
     #[inline]
     pub fn described_types(
         &self,

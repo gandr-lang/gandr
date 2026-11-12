@@ -6828,20 +6828,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
     #[spec(
         captures: before = (
-            self.fuel.remaining(),
+            usize::from(self.fuel.remaining()),
             self.collected.slots.len(),
             self.plans.count(),
         ),
         ensures: |ret| {
             self.collected.slots.len() == before.1
                 && self.plans.count() == before.2
-                && self.fuel.remaining() <= before.0
+                && usize::from(self.fuel.remaining()) <= before.0
                 && ret
                     .as_ref()
                     .err()
                     .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
                 && (ret.is_err()
-                    || self.fuel.remaining()
+                    || usize::from(self.fuel.remaining())
                         <= before.0.saturating_sub(self.own.len()))
         },
     )]
@@ -23377,20 +23377,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     #[spec(
         captures: before = (
-            self.fuel.remaining(),
+            usize::from(self.fuel.remaining()),
             slots.iter().fold(0_usize, |count, slot| {
                 count.saturating_add(slot.attributes.len())
             }),
             usize::from(table.attributed_count()),
         ),
         ensures: |ret| {
-            self.fuel.remaining() <= before.0
+            usize::from(self.fuel.remaining()) <= before.0
                 && usize::from(table.attributed_count()) >= before.2
                 && ret
                     .as_ref()
                     .err()
                     .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
-                && (ret.is_err() || self.fuel.remaining() == before.0.saturating_sub(before.1))
+                && (ret.is_err() || usize::from(self.fuel.remaining()) == before.0.saturating_sub(before.1))
         },
     )]
     fn attribute_slots(
