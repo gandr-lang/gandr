@@ -201,9 +201,11 @@ fn serial_runs_each_job_then_its_fold_in_order()
         let mut items: Vec<Stamped> = core::iter::repeat_with(Stamped::default)
             .take(count)
             .collect();
-        let chain =
-            Dependences::new((1 .. count).map(|after| (after.checked_sub(1).unwrap(), after)))
-                .unwrap();
+        let chain = Dependences::new((1 .. count).map(|after| Dependence {
+            before: after.checked_sub(1).unwrap(),
+            after,
+        }))
+        .unwrap();
         Serial.schedule(
             &mut items,
             &chain,
@@ -233,22 +235,32 @@ fn serial_runs_each_job_then_its_fold_in_order()
 #[test]
 fn dependences_keep_forward_edges_once_in_order()
 {
-    let kept = Dependences::new([(2, 5), (0, 1), (2, 5), (0, 3)]).unwrap();
-    assert_eq!(kept.edges(), [(0, 1), (0, 3), (2, 5)]);
+    let edges = |pairs: &[(usize, usize)]| -> Vec<Dependence> {
+        pairs
+            .iter()
+            .map(|&(before, after)| Dependence { before, after })
+            .collect()
+    };
+    let kept = Dependences::new(edges(&[(2, 5), (0, 1), (2, 5), (0, 3)])).unwrap();
+    assert_eq!(kept.edges(), edges(&[(0, 1), (0, 3), (2, 5)]));
     assert_eq!(Dependences::new([]).unwrap(), Dependences::default());
     assert_eq!(
-        Dependences::new([(0, 1), (3, 3)]),
+        Dependences::new(edges(&[(0, 1), (3, 3)])),
         Err(Backward {
-            before: 3,
-            after: 3
+            edge: Dependence {
+                before: 3,
+                after: 3
+            }
         }),
         "an item cannot wait on itself"
     );
     assert_eq!(
-        Dependences::new([(4, 2)]),
+        Dependences::new(edges(&[(4, 2)])),
         Err(Backward {
-            before: 4,
-            after: 2
+            edge: Dependence {
+                before: 4,
+                after: 2
+            }
         }),
         "an item cannot wait on a later one"
     );

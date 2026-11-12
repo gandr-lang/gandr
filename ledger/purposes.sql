@@ -289,6 +289,7 @@ INSERT INTO purpose VALUES('core-checker','worlds::WorldMove','enum','One move o
 INSERT INTO purpose VALUES('core-checker','worlds::WorldName','struct','The name of a world, as a host names one before any source declares it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Backward','struct','An edge whose waiting item does not come after the item that it waits on, so slice order would not be a schedule.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Deferred','struct','A job the serial spawner holds until its wait.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Dependence','struct','One edge of a schedule''s dependences, by slice position: the job of the later item waits on the job of the earlier one.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Dependences','struct','The jobs that each job of a schedule waits on, by slice position.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run inside a fork''s scope, handed the scope''s spawner.','fork','fits','sound',NULL);

@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
+use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork as _;
 use gandr_core_fork::activity::Activity;
@@ -203,8 +204,11 @@ fn a_recorded_schedule_marks_each_job_with_its_declaration()
     let activity = pool.activity(slots());
     let recording = pool.recording(&activity, (Task::Replay, World::from(0)), past_a_hundred);
     let mut items = [0_u32; 64];
-    let fan = Dependences::new((1_usize .. 64).map(|later| (later.checked_div(2).unwrap(), later)))
-        .unwrap();
+    let fan = Dependences::new((1_usize .. 64).map(|later| Dependence {
+        before: later.checked_div(2).unwrap(),
+        after: later,
+    }))
+    .unwrap();
     let mut folded = Vec::new();
     recording.schedule(
         &mut items,

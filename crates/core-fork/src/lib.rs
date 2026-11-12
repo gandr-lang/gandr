@@ -5,9 +5,8 @@
 //! certificate or per family. The driver owns the threads, their number and
 //! their pool, as it owns a walk's width. [`Serial`] runs every job on the
 //! calling thread in order. It is the reference that a forked check equals.
-//!
-//! The trait lives in a crate of its own. So a consumer at any layer from the
-//! core upward takes it without a dependency on the checker.
+//! The trait lives in a crate of its own, so any layer takes it without the
+//! checker.
 //!
 //! A job whose start and whose wait are apart runs in a scope. [`Fork::scope`]
 //! opens one, and its body spawns through a [`Spawn`]. A wait runs a job that
@@ -20,15 +19,8 @@
 //! starts a thread or a pool outside the driver's pool is refused. A site that
 //! owns its thread states why in an expectation at the site.
 //!
-//! A check whose jobs read each other's results hands them to
-//! [`Fork::schedule`]. The calling thread folds each item into the state that
-//! it holds, in slice order, as soon as the item's own job has returned. A job
-//! starts once the calling thread has folded every item that it waits on. So a
-//! job reads only results that the check has committed, and the check commits
-//! its results one at a time, behind its jobs, and not after all of them.
-//! [`Dependences`] names the edges. Each edge goes from an earlier item to a
-//! later one, so slice order is always a valid schedule, and it is the serial
-//! one.
+//! Jobs that read each other's results go to [`Fork::schedule`], in the order
+//! that [`Dependences`] names.
 //!
 //! With the `instrument` feature, the `activity` module records which task
 //! each worker runs, and when. Each worker writes into a lock-free ring of its
@@ -223,15 +215,16 @@ pub trait Fork: Sync
 ///   refused, and repeated edges are kept once in order.
 /// - witness: `tests::dependences_keep_forward_edges_once_in_order`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct Dependences
 {
-    /// Every edge, `(before, after)`, sorted and without repeats.
-    edges: Vec<(usize, usize)>,
+    /// Every edge, sorted and without repeats.
+    edges: Vec<Dependence>,
 }
 
 impl Dependences
 {
-    /// The dependences that `edges` names, each `(before, after)`.
+    /// The dependences that `edges` names.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -248,37 +241,54 @@ impl Dependences
     /// - hypothesis: L3 — as [`Dependences`].
     /// - witness: `tests::dependences_keep_forward_edges_once_in_order`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|dependences| {
-        dependences.edges.iter().all(|&(before, after)| before < after)
+        dependences.edges.iter().all(|edge| edge.before < edge.after)
             && dependences.edges.iter().zip(dependences.edges.iter().skip(1)).all(|(first, second)| first < second)
     }))]
     #[inline]
     pub fn new<Edges>(edges: Edges) -> Result<Self, Backward>
     where
-        Edges: IntoIterator<Item = (usize, usize)>,
+        Edges: IntoIterator<Item = Dependence>,
     {
         let mut kept = Vec::new();
-        for (before, after) in edges {
-            if before >= after {
-                return Err(Backward { before, after });
+        for edge in edges {
+            if edge.before >= edge.after {
+                return Err(Backward { edge });
             }
-            kept.push((before, after));
+            kept.push(edge);
         }
         kept.sort_unstable();
         kept.dedup();
         Ok(Self { edges: kept })
     }
 
-    /// Every edge, `(before, after)`, sorted by its earlier item and then by
-    /// its later one.
+    /// Every edge, sorted by its earlier item and then by its later one.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn edges(&self) -> &[(usize, usize)]
+    pub fn edges(&self) -> &[Dependence]
     {
         &self.edges
     }
+}
+
+/// One edge of [`Dependences`], by slice position: the job of the item at
+/// `after` waits on the job of the item at `before`.
+///
+/// # Specification
+/// - provides: the two positions as given; the order is by `before`, then by
+///   `after`.
+/// - panics: none.
+/// - executable: none — a type-level block: a plain record that
+///   [`Dependences::new`] orders and checks.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Dependence
+{
+    /// The item waited on.
+    pub before: usize,
+    /// The item that waits.
+    pub after: usize,
 }
 
 /// An edge whose waiting item does not come after the item that it waits on,
@@ -290,12 +300,12 @@ impl Dependences
 /// - executable: none — a type-level block: a plain record of the refusal of
 ///   [`Dependences::new`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct Backward
 {
-    /// The item waited on.
-    pub before: usize,
-    /// The item that waits, at or before `before`.
-    pub after: usize,
+    /// The edge as given, whose item that waits is at or before the item
+    /// that it waits on.
+    pub edge: Dependence,
 }
 
 impl fmt::Display for Backward
@@ -313,7 +323,7 @@ impl fmt::Display for Backward
         write!(
             f,
             "item {} cannot wait on item {}, which does not come before it",
-            self.after, self.before
+            self.edge.after, self.edge.before
         )
     }
 }
