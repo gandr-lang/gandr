@@ -64,7 +64,7 @@ const fn unsupported(
 fn a_profile_rebuilt_from_its_choices_commits_the_same_bytes()
 {
     let salted = ChunkerParams::new(
-        GearTableVersion::V1,
+        GearTableVersion::V2,
         SeedPolicy::PublicSalt(SeedSalt::from([7_u8; 32])),
         NormalizationPolicy::PreserveBytes,
         RecordBoundaryRule::BetweenRecords,
@@ -159,7 +159,7 @@ fn the_default_record_safe_commitment_is_pinned()
 {
     let mut expected = b"gandr:storage-chunker:params:v1".to_vec();
     expected.extend_from_slice(&[0x01, 0x00]);
-    expected.extend_from_slice(&[0x01, 0x00]);
+    expected.extend_from_slice(&[0x02, 0x00]);
     expected.push(0x00);
     expected.extend_from_slice(&[0_u8; 32]);
     expected.push(0x00);
@@ -210,7 +210,7 @@ fn each_record_safe_field_moves_the_commitment()
     // An all-zero public salt commits the same salt bytes as no salt; the seed
     // kind is what tells them apart.
     let zero_salted = ChunkerParams::new(
-        GearTableVersion::V1,
+        GearTableVersion::V2,
         SeedPolicy::PublicSalt(SeedSalt::from([0_u8; 32])),
         NormalizationPolicy::PreserveBytes,
         RecordBoundaryRule::BetweenRecords,
@@ -232,7 +232,7 @@ fn a_public_salt_is_committed_in_the_clear()
     descending.reverse();
     let salted = |salt: [u8; 32]| {
         ChunkerParams::new(
-            GearTableVersion::V1,
+            GearTableVersion::V2,
             SeedPolicy::PublicSalt(SeedSalt::from(salt)),
             NormalizationPolicy::PreserveBytes,
             RecordBoundaryRule::BetweenRecords,
@@ -262,8 +262,8 @@ fn raw_discriminators_round_trip_and_refuse_by_field()
             _ => Err(unsupported(ProfileField::Algorithm, RawDiscriminator(raw))),
         };
         assert_eq!(AlgorithmVersion::try_from(raw), algorithm);
-        let gear = if raw == 1 {
-            Ok(GearTableVersion::V1)
+        let gear = if raw == 2 {
+            Ok(GearTableVersion::V2)
         }
         else {
             Err(unsupported(ProfileField::GearTable, RawDiscriminator(raw)))

@@ -61,14 +61,14 @@ pub fn limits(
     .expect("a fixture's limits are valid")
 }
 
-/// Builds the unsalted version-1 record-safe profile over `limits`.
+/// Builds the unsalted version-2 record-safe profile over `limits`.
 ///
 /// # Specification
 /// trivial.
 pub const fn params(limits: ChunkLimits) -> ChunkerParams
 {
     ChunkerParams::new(
-        GearTableVersion::V1,
+        GearTableVersion::V2,
         SeedPolicy::Unsalted,
         NormalizationPolicy::PreserveBytes,
         RecordBoundaryRule::BetweenRecords,

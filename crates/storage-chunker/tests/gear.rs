@@ -14,9 +14,15 @@ use gandr_storage_chunker::CanonicalBytes;
 use gandr_storage_chunker::CanonicalRecords;
 use gandr_storage_chunker::ChunkLimits;
 use gandr_storage_chunker::ChunkerError;
+use gandr_storage_chunker::ChunkerParams;
+use gandr_storage_chunker::GearTableVersion;
 use gandr_storage_chunker::InvalidParameterReason;
+use gandr_storage_chunker::NormalizationPolicy;
+use gandr_storage_chunker::RecordBoundaryRule;
 use gandr_storage_chunker::RecordCount;
 use gandr_storage_chunker::RecordPosition;
+use gandr_storage_chunker::SeedPolicy;
+use gandr_storage_chunker::SeedSalt;
 use gandr_storage_chunker::chunk_record_slices;
 use gandr_storage_chunker::chunk_spans;
 
@@ -272,7 +278,11 @@ fn empty_input_and_final_remainder_partition_the_input()
 #[test]
 fn minimum_limits_suppress_an_early_hash_cut()
 {
-    let records: [&[u8]; 24] = [&[0xAB_u8]; 24];
+    // Distinct bytes: a state that shifts reads only the last few bytes under
+    // a small mask, so one repeated byte would give the same masked state at
+    // each record and never cut.
+    let bytes = *b"abcdefghijklmnopqrstuvwx";
+    let records: Vec<&[u8]> = bytes.chunks(1).collect();
     let records = CanonicalRecords::from(records.as_slice());
     let minimums = ByteCount::from(8_u64);
     let gated = params(limits(
@@ -511,5 +521,110 @@ fn empty_records_keep_their_record_positions()
             &params
         ),
         Ok(chunks)
+    );
+}
+
+#[test]
+fn a_one_byte_insertion_moves_only_the_cuts_near_it_6714()
+{
+    // #6714: a state that rotates keeps every byte since its chunk started, so
+    // one byte put before a stream moved every later cut. The stream is
+    // `SplitMix64` output mapped to 64 printable bytes, so no period repeats.
+    let mut state = 0x243F_6A88_85A3_08D3_u64;
+    let first: Vec<u8> = core::iter::repeat_with(|| {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15_u64);
+        let mixed = (state ^ state.wrapping_shr(30)).wrapping_mul(0xBF58_476D_1CE4_E5B9_u64);
+        let mixed = (mixed ^ mixed.wrapping_shr(27)).wrapping_mul(0x94D0_49BB_1331_11EB_u64);
+        b'0'.wrapping_add(u8::try_from(mixed.wrapping_shr(58)).expect("six bits fit a byte"))
+    })
+    .take(0x1_0000)
+    .collect();
+    let second: Vec<u8> = core::iter::once(b'#')
+        .chain(first.iter().copied())
+        .collect();
+    let params = params(limits(
+        [64, 256, 1024].map(ByteCount::from),
+        [64, 256, 1024].map(RecordCount::from),
+    ));
+    let cut = |bytes: &[u8]| {
+        let records: Vec<&[u8]> = bytes.chunks(1).collect();
+        chunk_record_slices(CanonicalRecords::from(records.as_slice()), &params)
+            .expect("the stream chunks")
+    };
+
+    let before = cut(&first);
+    let after = cut(&second);
+    let hash_cuts = before
+        .iter()
+        .filter(|chunk| chunk.reason() == BoundaryReason::HashPredicate)
+        .count();
+    assert!(
+        hash_cuts >= 32,
+        "the hash predicate places the cuts, not the caps alone: {hash_cuts} hash cuts"
+    );
+    let before_ends: alloc::collections::BTreeSet<u64> = before
+        .iter()
+        .map(|chunk| u64::from(chunk.bytes().end()))
+        .collect();
+    for chunk in after.iter().skip(1) {
+        let end = u64::from(chunk.bytes().end());
+        let shifted = end
+            .checked_sub(1)
+            .expect("a cut after the first chunk is past zero");
+        assert!(
+            before_ends.contains(&shifted),
+            "the cut at {end} after the edit lies one byte after no cut before it"
+        );
+    }
+}
+
+#[test]
+fn a_public_salt_moves_the_cuts_6714()
+{
+    // #6714: a state that shifts moves the initial state out of the masked
+    // bits within a few bytes. So the salt keys each table value too, or a
+    // salted scan would cut where an unsalted one does.
+    let mut state = 0x6A09_E667_F3BC_C909_u64;
+    let bytes: Vec<u8> = core::iter::repeat_with(|| {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15_u64);
+        let mixed = (state ^ state.wrapping_shr(30)).wrapping_mul(0xBF58_476D_1CE4_E5B9_u64);
+        let mixed = (mixed ^ mixed.wrapping_shr(27)).wrapping_mul(0x94D0_49BB_1331_11EB_u64);
+        b'0'.wrapping_add(u8::try_from(mixed.wrapping_shr(58)).expect("six bits fit a byte"))
+    })
+    .take(0x4000)
+    .collect();
+    let records: Vec<&[u8]> = bytes.chunks(1).collect();
+    let records = CanonicalRecords::from(records.as_slice());
+    let limits = limits(
+        [64, 256, 1024].map(ByteCount::from),
+        [64, 256, 1024].map(RecordCount::from),
+    );
+    let ends = |profile: &ChunkerParams| -> alloc::collections::BTreeSet<u64> {
+        chunk_record_slices(records, profile)
+            .expect("the stream chunks")
+            .iter()
+            .map(|chunk| u64::from(chunk.bytes().end()))
+            .collect()
+    };
+
+    let unsalted = ends(&params(limits));
+    let salted = ends(&ChunkerParams::new(
+        GearTableVersion::V2,
+        SeedPolicy::PublicSalt(SeedSalt::from([7_u8; 32])),
+        NormalizationPolicy::PreserveBytes,
+        RecordBoundaryRule::BetweenRecords,
+        limits,
+    ));
+    let shared = unsalted.intersection(&salted).count();
+
+    assert!(
+        unsalted.len() >= 16,
+        "the stream has cuts to compare: {}",
+        unsalted.len()
+    );
+    assert!(
+        shared.saturating_mul(2) < unsalted.len(),
+        "the salted scan shares {shared} of {} cuts with the unsalted one",
+        unsalted.len()
     );
 }

@@ -5,12 +5,17 @@
 //!
 //! Each chunk keeps a Gear state, reset at the chunk's first record to an
 //! initial state derived from the committed seed policy. Every byte of every
-//! record mixes into it: the state rotates left by one and adds the table's
-//! value for the byte. After a complete record, the chunk ends when it has
-//! reached the byte or record cap, or — once it has met both minimum limits —
-//! when the state masked by the target's power-of-two mask is zero. The scan
-//! reads each byte once and never looks ahead, so a cut a record induces
-//! travels with that record's bytes.
+//! record mixes into it: the state shifts left by one and adds the table's
+//! value for the byte, as the Gear hash of `FastCDC` does. A salt seeds the
+//! whole table, so the seed policy enters the term of every byte. A
+//! shift moves each byte's term out of the state after 64 more bytes, so the
+//! state reads only the bytes near the cut, and a cut far from an edit stays
+//! where it was. A rotation keeps every bit, so each cut after an edit
+//! moves. After a complete record, the chunk ends when it has reached the
+//! byte or record cap, or — once it has met both minimum limits — when the
+//! state masked by the target's power-of-two mask is zero. The scan reads each
+//! byte once and never looks ahead, so a cut a record induces travels with that
+//! record's bytes.
 //!
 //! # The committed fields
 //!
@@ -24,10 +29,12 @@
 //!
 //! # The Gear table
 //!
-//! The version-1 table is the first 256 outputs of `SplitMix64` seeded with
+//! The unsalted table is the first 256 outputs of `SplitMix64` seeded with
 //! the first sixty-four fractional bits of the square root of two, built at
 //! compile time from that statement rather than carried as a literal, so its
-//! provenance is the code.
+//! provenance is the code. Under a public salt, the seed is that value xored
+//! with the salt's fold, and the profile builds its table once. A salted table
+//! then keeps no algebraic relation to the public one.
 
 use alloc::vec::Vec;
 
@@ -54,9 +61,9 @@ use crate::units::RecordPosition;
 /// The number of entries in a Gear table: one per byte value.
 const GEAR_TABLE_LEN: usize = 0x100_usize;
 
-/// The seed of the version-1 Gear table: the first sixty-four fractional bits
-/// of the square root of two.
-const GEAR_TABLE_V1_SEED: u64 = 0x6A09_E667_F3BC_C909_u64;
+/// The seed of the Gear table: the first sixty-four fractional bits of the
+/// square root of two.
+const GEAR_TABLE_SEED: u64 = 0x6A09_E667_F3BC_C909_u64;
 
 /// The `SplitMix64` state increment: the sixty-four-bit golden-ratio constant.
 const SPLITMIX_GAMMA: u64 = 0x9E37_79B9_7F4A_7C15_u64;
@@ -79,22 +86,27 @@ const SEED_SALT_LEN: usize = 0x20_usize;
 
 /// A Gear table: one mixing value per byte value.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct GearTable([u64; GEAR_TABLE_LEN]);
 
-/// The version-1 Gear table, built at compile time.
-const GEAR_TABLE_V1: GearTable = gear_table_v1();
+/// The `SplitMix64` seed a Gear table is built from.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TableSeed(u64);
 
-/// Builds the version-1 Gear table: `SplitMix64`'s first 256 outputs from
-/// [`GEAR_TABLE_V1_SEED`].
+/// The unsalted Gear table, built at compile time.
+const GEAR_TABLE: GearTable = gear_table(TableSeed(GEAR_TABLE_SEED));
+
+/// Builds a Gear table: `SplitMix64`'s first 256 outputs from `seed`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: entry `n` is `SplitMix64`'s `n + 1`-th output from the seed — the
+/// - ensures: entry `n` is `SplitMix64`'s `n + 1`-th output from `seed` — the
 ///   state advanced by `n + 1` increments, then the two xor-shift-multiply
 ///   rounds and a final xor-shift.
-/// - provides: the table [`GearTableVersion::V1`] names, with its provenance
-///   stated as code.
+/// - provides: the table [`GearTableVersion::V2`] mixes bytes with: from
+///   [`GEAR_TABLE_SEED`] unsalted, and from that seed xored with the salt's key
+///   under a salt, with its provenance stated as code.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -102,14 +114,16 @@ const GEAR_TABLE_V1: GearTable = gear_table_v1();
 /// - hypothesis: L2 agreement against a pinned golden — entries at both ends
 ///   and in the middle are asserted equal to the published table they were
 ///   first carried as, so a changed seed, increment or mixing constant moves at
-///   least one.
-/// - witness: `gear::tests::the_v1_table_is_pinned`
+///   least one — and L3 for the claim that the seed moves the cuts: a salted
+///   and an unsalted scan of one stream cut in different places.
+/// - witness: `gear::tests::the_table_is_pinned`
+/// - witness: `tests::gear::a_public_salt_moves_the_cuts_6714`
 #[spec(ensures: |ref ret| {
     let mut entries = ret.0.as_slice();
     let mut ordinal = 1_u64;
     let mut equal = true;
     while let Some((entry, tail)) = entries.split_first() {
-        let state = GEAR_TABLE_V1_SEED.wrapping_add(ordinal.wrapping_mul(SPLITMIX_GAMMA));
+        let state = seed.0.wrapping_add(ordinal.wrapping_mul(SPLITMIX_GAMMA));
         let first = (state ^ (state >> 30_u32)).wrapping_mul(SPLITMIX_MIX_FIRST);
         let second = (first ^ (first >> 27_u32)).wrapping_mul(SPLITMIX_MIX_SECOND);
         equal = equal && *entry == second ^ (second >> 31_u32);
@@ -118,10 +132,10 @@ const GEAR_TABLE_V1: GearTable = gear_table_v1();
     }
     equal
 })]
-const fn gear_table_v1() -> GearTable
+const fn gear_table(seed: TableSeed) -> GearTable
 {
     let mut table = [0_u64; GEAR_TABLE_LEN];
-    let mut state = GEAR_TABLE_V1_SEED;
+    let mut state = seed.0;
     let mut rest: &mut [u64] = &mut table;
 
     while let Some((slot, tail)) = rest.split_first_mut() {
@@ -136,12 +150,18 @@ const fn gear_table_v1() -> GearTable
     GearTable(table)
 }
 
-/// The Gear table a record-safe profile mixes bytes with.
+/// The Gear version a record-safe profile mixes bytes with: its table and its
+/// step.
+///
+/// Version 1 rotates the state, so each cut after an edit moves. This
+/// build carries no version-1 scan, so a root cut under version 1 is refused
+/// rather than read as a cut under version 2.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum GearTableVersion
 {
-    /// The `SplitMix64` table this module documents.
-    V1,
+    /// The `SplitMix64` table this module documents, under a state that shifts
+    /// left by one for each byte.
+    V2,
 }
 
 impl GearTableVersion
@@ -155,7 +175,7 @@ impl GearTableVersion
     pub const fn discriminator(self) -> RawDiscriminator
     {
         match self {
-            Self::V1 => RawDiscriminator(0x0001_u16),
+            Self::V2 => RawDiscriminator(0x0002_u16),
         }
     }
 }
@@ -182,8 +202,8 @@ impl TryFrom<u16> for GearTableVersion
     ///   field tags and raw payloads distinguish acceptance and error
     ///   mutations.
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
-    #[spec(ensures: |ret| ret == if raw == 1 {
-        Ok(Self::V1)
+    #[spec(ensures: |ret| ret == if raw == 2 {
+        Ok(Self::V2)
     } else {
         Err(ChunkerError::UnsupportedProfileValue {
             field: ProfileField::GearTable, raw: RawDiscriminator::from(raw),
@@ -192,8 +212,8 @@ impl TryFrom<u16> for GearTableVersion
     #[inline]
     fn try_from(raw: u16) -> Result<Self, Self::Error>
     {
-        if raw == u16::from(Self::V1.discriminator()) {
-            return Ok(Self::V1);
+        if raw == u16::from(Self::V2.discriminator()) {
+            return Ok(Self::V2);
         }
 
         Err(ChunkerError::UnsupportedProfileValue {
@@ -373,13 +393,15 @@ impl AsRef<[u8]> for SeedSalt
     }
 }
 
-/// How each chunk's initial Gear state is seeded.
+/// How each chunk's initial Gear state and the Gear table are seeded.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SeedPolicy
 {
-    /// No salt: the initial state is the fixed one every deployment shares.
+    /// No salt: the initial state and the table are the fixed ones every
+    /// deployment shares.
     Unsalted,
-    /// A public salt is mixed into the initial state.
+    /// A public salt is mixed into the initial state, and the table is built
+    /// from a seed that the salt keys.
     PublicSalt(SeedSalt),
 }
 
@@ -411,6 +433,83 @@ impl SeedPolicy
         match *self {
             Self::Unsalted => SeedSalt([0_u8; SEED_SALT_LEN]),
             Self::PublicSalt(salt) => salt,
+        }
+    }
+
+    /// Folds the seed kind and the salt into one Gear state.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the fixed initial state xored with the seed kind, then each
+    ///   salt byte folded in by a five-bit rotation, an xor and a
+    ///   multiplication, in salt order.
+    /// - provides: the initial state of every chunk, and the key a salt gives
+    ///   the table's seed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on unsalted, zero-salted and ascending-byte salts;
+    ///   exact independently calculated words distinguish seed-kind, order,
+    ///   rotation and mixing mutations, not collisions over every salt.
+    /// - witness: `gear::tests::seed_states_match_independent_goldens`
+    #[spec(ensures: |ret| {
+        let [kind_low, kind_high] = self.discriminator().0.to_le_bytes();
+        let mut expected = GEAR_STATE_IV ^ u64::from_le_bytes([kind_low, kind_high, 0, 0, 0, 0, 0, 0]);
+        let salt = self.salt();
+        let mut rest = salt.0.as_slice();
+        while let Some((byte, tail)) = rest.split_first() {
+            expected = (expected.rotate_left(5_u32) ^ u64::from_le_bytes([*byte, 0, 0, 0, 0, 0, 0, 0]))
+                .wrapping_mul(SEED_MIX_MULTIPLIER);
+            rest = tail;
+        }
+        ret.0 == expected
+    })]
+    const fn folded(&self) -> GearState
+    {
+        let [kind_low, kind_high] = self.discriminator().0.to_le_bytes();
+        let mut state = GEAR_STATE_IV ^ u64::from_le_bytes([kind_low, kind_high, 0, 0, 0, 0, 0, 0]);
+        let salt = self.salt();
+        let mut rest = salt.0.as_slice();
+
+        while let Some((byte, tail)) = rest.split_first() {
+            state = state.rotate_left(5_u32) ^ u64::from_le_bytes([*byte, 0, 0, 0, 0, 0, 0, 0]);
+            state = state.wrapping_mul(SEED_MIX_MULTIPLIER);
+            rest = tail;
+        }
+
+        GearState(state)
+    }
+
+    /// Returns the seed the policy's Gear table is built from.
+    ///
+    /// A state that shifts moves the initial state out of the masked bits
+    /// within a few bytes, so a salt in the initial state alone moves no cut.
+    /// The salt's key therefore seeds the whole table, and a salted table keeps
+    /// no algebraic relation to the public one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`GEAR_TABLE_SEED`] for [`SeedPolicy::Unsalted`], and that
+    ///   seed xored with [`SeedPolicy::folded`] under a salt.
+    /// - provides: the seed [`gear_table`] builds this policy's table from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on the two policies: the unsalted scan reads the pinned
+    ///   table, and a salted scan of one stream cuts in other places.
+    /// - witness: `gear::tests::the_unsalted_table_is_the_pinned_table`
+    /// - witness: `tests::gear::a_public_salt_moves_the_cuts_6714`
+    #[spec(ensures: |ret| ret.0 == match *self {
+        Self::Unsalted => GEAR_TABLE_SEED,
+        Self::PublicSalt(_) => GEAR_TABLE_SEED ^ self.folded().0,
+    })]
+    const fn table_seed(&self) -> TableSeed
+    {
+        match *self {
+            Self::Unsalted => TableSeed(GEAR_TABLE_SEED),
+            Self::PublicSalt(_) => TableSeed(GEAR_TABLE_SEED ^ self.folded().0),
         }
     }
 }
@@ -690,6 +789,9 @@ pub struct ChunkerParams
     record_boundary_rule: RecordBoundaryRule,
     /// The validated limits.
     limits: ChunkLimits,
+    /// The Gear table the seed policy gives, built once with the profile so
+    /// that each scan borrows it.
+    table: GearTable,
 }
 
 impl ChunkerParams
@@ -698,7 +800,8 @@ impl ChunkerParams
     ///
     /// # Specification
     /// - requires: nothing beyond the invariant carried by `limits`.
-    /// - ensures: the profile carries exactly the five choices offered.
+    /// - ensures: the profile carries exactly the five choices offered, and the
+    ///   table that the seed policy's table seed builds.
     /// - provides: a record-safe profile assembled from five deliberate
     ///   choices.
     /// - fails: never — validation lives in the limits and the conversions.
@@ -719,6 +822,14 @@ impl ChunkerParams
             equal = equal && *left == *right;
             actual = left_tail;
             expected = right_tail;
+        }
+        let expected_table = crate::gear::gear_table(seed_policy.table_seed());
+        let mut actual_entries = ret.table.0.as_slice();
+        let mut expected_entries = expected_table.0.as_slice();
+        while let (Some((left, left_tail)), Some((right, right_tail))) = (actual_entries.split_first(), expected_entries.split_first()) {
+            equal = equal && *left == *right;
+            actual_entries = left_tail;
+            expected_entries = right_tail;
         }
         equal && ret.gear_table.discriminator().0 == gear_table.discriminator().0
             && ret.seed_policy.discriminator().0 == seed_policy.discriminator().0
@@ -747,10 +858,16 @@ impl ChunkerParams
             normalization,
             record_boundary_rule,
             limits,
+            // An unsalted profile reads the table built at compile time, so
+            // only a salted profile builds one.
+            table: match seed_policy {
+                SeedPolicy::Unsalted => GEAR_TABLE,
+                SeedPolicy::PublicSalt(_) => crate::gear::gear_table(seed_policy.table_seed()),
+            },
         }
     }
 
-    /// Returns the default record-safe profile: the version-1 table, no salt,
+    /// Returns the default record-safe profile: the version-2 Gear, no salt,
     /// bytes preserved, cuts between records, and the default limits.
     ///
     /// # Specification
@@ -760,7 +877,7 @@ impl ChunkerParams
     pub fn default_fastcdc() -> Self
     {
         Self::new(
-            GearTableVersion::V1,
+            GearTableVersion::V2,
             SeedPolicy::Unsalted,
             NormalizationPolicy::PreserveBytes,
             RecordBoundaryRule::BetweenRecords,
@@ -792,7 +909,7 @@ impl ChunkerParams
         .is_some_and(|fields| {
             fields.len() == 75
                 && fields.get(0..2) == Some([1, 0].as_slice())
-                && fields.get(2..4) == Some([1, 0].as_slice())
+                && fields.get(2..4) == Some(u16::from(self.gear_table.discriminator()).to_le_bytes().as_slice())
                 && fields.get(4).copied().map(u16::from) == Some(u16::from(self.seed_policy.discriminator()))
                 && fields.get(5..37) == Some(self.seed_policy.salt().as_ref())
                 && fields.get(37..39) == Some([0, 0].as_slice())
@@ -887,9 +1004,7 @@ impl ChunkerParams
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the fixed initial state xored with the seed kind, then each
-    ///   salt byte folded in by a five-bit rotation, an xor and a
-    ///   multiplication, in salt order.
+    /// - ensures: [`SeedPolicy::folded`] of the profile's seed policy.
     /// - provides: the per-chunk starting state, a function of the committed
     ///   seed policy alone.
     /// - fails: never.
@@ -900,27 +1015,10 @@ impl ChunkerParams
     ///   exact independently calculated words distinguish seed-kind, order,
     ///   rotation and mixing mutations, not collisions over every salt.
     /// - witness: `gear::tests::seed_states_match_independent_goldens`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the check folds the salt once, as the body does"
-        )
-    )]
-    #[spec(ensures: |ret| ret.0 == self.seed_policy.salt().as_ref().iter().fold(
-        GEAR_STATE_IV ^ u64::from(u16::from(self.seed_policy.discriminator())),
-        |state, byte| (state.rotate_left(5) ^ u64::from(*byte)).wrapping_mul(SEED_MIX_MULTIPLIER),
-    ))]
-    fn initial_state(&self) -> GearState
+    #[spec(ensures: |ret| ret.0 == self.seed_policy.folded().0)]
+    const fn initial_state(&self) -> GearState
     {
-        let mut state = GEAR_STATE_IV ^ u64::from(u16::from(self.seed_policy.discriminator()));
-
-        for byte in self.seed_policy.salt().as_ref() {
-            state = state.rotate_left(5_u32) ^ u64::from(*byte);
-            state = state.wrapping_mul(SEED_MIX_MULTIPLIER);
-        }
-
-        GearState(state)
+        self.seed_policy.folded()
     }
 
     /// Derives the cut mask from the target byte limit.
@@ -1304,12 +1402,14 @@ enum MinimumLimits
 /// - witness: `tests::gear::the_caps_force_their_reasons`
 /// - witness: `tests::gear::empty_input_and_final_remainder_partition_the_input`
 /// - witness: `tests::gear::low_entropy_streams_stay_within_the_caps`
-struct ChunkScan
+struct ChunkScan<'params>
 {
     /// The validated limits.
     limits: ChunkLimits,
     /// The state each chunk opens with.
     initial_state: GearState,
+    /// The profile's Gear table, borrowed so that a scan builds none.
+    table: &'params GearTable,
     /// The hash predicate's mask.
     cut_mask: CutMask,
     /// The chunks emitted so far.
@@ -1328,14 +1428,14 @@ struct ChunkScan
     last_record_end: BytePosition,
 }
 
-impl ChunkScan
+impl<'params> ChunkScan<'params>
 {
     /// Opens a scan with room for one boundary per record.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: no chunk emitted, the open chunk empty at position zero, and
-    ///   its state the profile's initial state.
+    /// - ensures: no chunk emitted, the open chunk empty at position zero, its
+    ///   state the profile's initial state, and its table the profile's table.
     /// - provides: the scan both entry points drive.
     /// - fails: never.
     /// - panics: none.
@@ -1348,9 +1448,10 @@ impl ChunkScan
         && ret.chunk_start_byte == BytePosition::ZERO && ret.chunk_start_record == RecordPosition::ZERO
         && ret.chunk_bytes == ByteCount::ZERO && ret.chunk_records == RecordCount::ZERO
         && ret.last_record_end == BytePosition::ZERO && ret.state == params.initial_state()
-        && ret.initial_state == ret.state && ret.limits == params.limits() && ret.cut_mask == params.cut_mask())]
+        && ret.initial_state == ret.state && core::ptr::eq(core::ptr::from_ref(ret.table), &raw const params.table)
+        && ret.limits == params.limits() && ret.cut_mask == params.cut_mask())]
     fn new(
-        params: &ChunkerParams,
+        params: &'params ChunkerParams,
         capacity: ScanCapacity,
     ) -> Self
     {
@@ -1359,6 +1460,7 @@ impl ChunkScan
         Self {
             limits: params.limits(),
             initial_state,
+            table: &params.table,
             cut_mask: params.cut_mask(),
             chunks: Vec::with_capacity(capacity.0),
             state: initial_state,
@@ -1450,12 +1552,13 @@ impl ChunkScan
         }
 
         for byte in record.0 {
-            let gear = GEAR_TABLE_V1
+            let gear = self
+                .table
                 .0
                 .get(usize::from(*byte))
                 .copied()
                 .unwrap_or(0_u64);
-            self.state = GearState(self.state.0.rotate_left(1_u32).wrapping_add(gear));
+            self.state = GearState(self.state.0.wrapping_shl(1_u32).wrapping_add(gear));
         }
         self.chunk_bytes = self
             .chunk_bytes
@@ -1614,18 +1717,32 @@ impl ChunkScan
 #[cfg(test)]
 mod tests
 {
-    use super::GEAR_TABLE_V1;
+    use super::GEAR_TABLE;
 
     #[test]
-    fn the_v1_table_is_pinned()
+    fn the_table_is_pinned()
     {
         // The first two, a middle and the last entry of the table as first
         // published: a seed, increment or mixing constant that moved would
         // move all of them.
-        assert_eq!(GEAR_TABLE_V1.0.first(), Some(&0x63CF_C62A_2B09_7592_u64));
-        assert_eq!(GEAR_TABLE_V1.0.get(1), Some(&0xDC07_46B4_1946_6AEC_u64));
-        assert_eq!(GEAR_TABLE_V1.0.get(0x80), Some(&0x9F92_CAD8_40DB_5CD4_u64));
-        assert_eq!(GEAR_TABLE_V1.0.last(), Some(&0xCED3_4DD0_5B9A_775A_u64));
+        assert_eq!(GEAR_TABLE.0.first(), Some(&0x63CF_C62A_2B09_7592_u64));
+        assert_eq!(GEAR_TABLE.0.get(1), Some(&0xDC07_46B4_1946_6AEC_u64));
+        assert_eq!(GEAR_TABLE.0.get(0x80), Some(&0x9F92_CAD8_40DB_5CD4_u64));
+        assert_eq!(GEAR_TABLE.0.last(), Some(&0xCED3_4DD0_5B9A_775A_u64));
+    }
+
+    #[test]
+    fn the_unsalted_table_is_the_pinned_table()
+    {
+        // A key of zero leaves the seed as it was, so an unsalted profile
+        // reads the table that every deployment shares; a salt changes it.
+        assert_eq!(
+            super::gear_table(super::SeedPolicy::Unsalted.table_seed()),
+            GEAR_TABLE
+        );
+        assert_eq!(super::ChunkerParams::default_fastcdc().table, GEAR_TABLE);
+        let salted = super::SeedPolicy::PublicSalt(super::SeedSalt::from([7; 32]));
+        assert_ne!(super::gear_table(salted.table_seed()), GEAR_TABLE);
     }
 
     #[test]
@@ -1735,10 +1852,8 @@ mod tests
     #[test]
     fn record_position_overflow_refuses_without_emission()
     {
-        let mut scan = super::ChunkScan::new(
-            &super::ChunkerParams::default_fastcdc(),
-            super::ScanCapacity(1),
-        );
+        let params = super::ChunkerParams::default_fastcdc();
+        let mut scan = super::ChunkScan::new(&params, super::ScanCapacity(1));
         scan.chunk_start_record = super::RecordPosition::from(u64::MAX);
         scan.chunk_records = super::RecordCount::from(1_u32);
         scan.chunk_bytes = super::ByteCount::from(1_u64);
