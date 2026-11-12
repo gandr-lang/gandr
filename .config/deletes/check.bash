@@ -126,7 +126,7 @@ done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
   fi
 done | jq -s -c .)
 
-left='[]' held='[]' tests='[]' readme='[]'
+left='[]' held='[]' tests='[]' features='{}'
 if [[ $mode == full ]]; then
   # The packages whose files the change touches, each with its directory.
   touched=$(jq -R . "$scratch/changed" | jq -s -c --argjson packages "$packages" \
@@ -252,27 +252,13 @@ if [[ $mode == full ]]; then
   held=$({ jq -r '.[].id' "$scratch/items-head.json"; cat "$scratch/ledger-head" "$scratch/files-head"; sed 's/^/kept.txt:/' "$scratch/kept-head"; } | jq -R . | jq -s -c 'unique')
   # Each test of both sides whose lines differ (`tests.bash`).
   tests=$("$here/tests.bash" "$base" "$scratch/items-base.json" "$scratch/items-head.json")
-  # Each left item that the crate's `## Provided features` names on a line
-  # that the head keeps: by its own segment or its owner's, in backquotes or
-  # as the words of its name.
-  readme=$(jq -c '.[] | select(.kind == "item")' <<< "$left" | while IFS= read -r item; do
-    file=$(jq -r .file <<< "$item")
-    [[ $file == crates/*/* ]] || continue
-    readme_file="crates/$(cut -d/ -f2 <<< "$file")/README.md"
-    features() { git show "$1:$readme_file" 2> /dev/null | awk '/^## /{ on = ($0 == "## Provided features") ; next } on'; }
-    features "$base" > "$scratch/features-base"
-    features HEAD > "$scratch/features-head"
-    jq -r '.id | split("::") | map(gsub("<.*$"; "")) | .[-2:][] | select(test("^[A-Za-z_][A-Za-z0-9_]*$"))' <<< "$item" | while IFS= read -r name; do
-      words=$(sed -E 's/([a-z0-9])([A-Z])/\1 \2/g' <<< "$name" | tr '[:upper:]' '[:lower:]')
-      while IFS= read -r line; do
-        lower=$(tr '[:upper:]' '[:lower:]' <<< "$line")
-        if [[ $line == *"\`$name\`"* || ( $words == *" "* && $lower == *"$words"* ) ]] && grep -qxF -e "$line" "$scratch/features-head"; then
-          jq -r .id <<< "$item"
-          break 2
-        fi
-      done < "$scratch/features-base"
-    done
-  done | jq -R . | jq -s -c 'unique')
+  # The lines of `## Provided features` of each crate that a left item lives
+  # in, at the base and at the head: `deletes.jq` reads which items they name.
+  features=$(jq -r '[.[] | select(.kind == "item") | .file // "" | select(test("^crates/[^/]+/")) | split("/")[1]] | unique[]' <<< "$left" | while IFS= read -r dir; do
+    lines() { git show "$1:crates/$dir/README.md" 2> /dev/null | awk '/^## /{ on = ($0 == "## Provided features") ; next } on'; }
+    jq -n -c --arg dir "$dir" --rawfile base <(lines "$base") --rawfile head <(lines HEAD) \
+      '{($dir): {base: ($base | split("\n")), head: ($head | split("\n"))}}'
+  done | jq -s -c 'add // {}')
 fi
 
 # The item's half of each sign-off (#6852): the files that join the readers
@@ -302,13 +288,13 @@ done | jq -s -c .)
 
 # The readings go to jq as files: the held set names each file of the corpus,
 # past the kernel's limit for one argument.
-for name in left held tests readme lonely files signoffs; do printf '%s\n' "${!name}" > "$scratch/$name.json"; done
+for name in left held tests features lonely files signoffs; do printf '%s\n' "${!name}" > "$scratch/$name.json"; done
 jq -Rn -c '[inputs | select(test("^[^#]")) | capture("^(?<login>\\S+)\\s*(?<heading>.*)$") | {(.login): .heading}] | add // {}' "$architects" > "$scratch/architects.json"
 findings=$(jq -n -c --rawfile body "$body" --arg title "$title" --arg mode "$mode" \
   --slurpfile left "$scratch/left.json" --slurpfile held "$scratch/held.json" --slurpfile tests "$scratch/tests.json" \
-  --slurpfile readme "$scratch/readme.json" --slurpfile lonely "$scratch/lonely.json" --slurpfile files "$scratch/files.json" \
+  --slurpfile features "$scratch/features.json" --slurpfile lonely "$scratch/lonely.json" --slurpfile files "$scratch/files.json" \
   --slurpfile signoffs "$scratch/signoffs.json" --slurpfile architects "$scratch/architects.json" \
-  '{body: $body, title: $title, mode: $mode, left: $left[0], held: $held[0], tests: $tests[0], readme: $readme[0],
+  '{body: $body, title: $title, mode: $mode, left: $left[0], held: $held[0], tests: $tests[0], features: $features[0],
     lonely: $lonely[0], files: $files[0], signoffs: $signoffs[0], architects: $architects[0]}' \
   | jq -r -L "$root/.config/claims" -L "$here" -f "$here/deletes.jq")
 if [[ -n $findings ]]; then
