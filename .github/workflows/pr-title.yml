@@ -66,6 +66,18 @@ jobs:
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
           cache: "false"
+      # The signers of a `deleted` row are the factory's state and not the
+      # tree's (#6962). The repository variable holds them, and the owner
+      # alone sets it. The step writes them where `check:deletes` reads them
+      # on a host, and prints nothing of them. With no variable it writes
+      # nothing, and the check refuses by name with the path to write.
+      - &write-delete-signers
+        name: write the signers of a deletion
+        if: ${{ github.event_name == 'merge_group' && vars.GANDR_DELETE_SIGNERS != '' }}
+        shell: bash
+        env:
+          GANDR_DELETE_SIGNERS: ${{ vars.GANDR_DELETE_SIGNERS }}
+        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
 
   title:
     name: lint the pull request title
@@ -149,6 +161,7 @@ jobs:
           GATE_BASE: ${{ github.event.merge_group.base_sha }}
           LEDGER_BODY: ${{ runner.temp }}/bodies
         run: mise exec -- .config/ledger/check.bash
+      - *write-delete-signers
       # The account of what each pull request takes out of the tree (#6817),
       # read again where it lands: a body edited, or a head pushed past the
       # architect's sign-off, is refused. `pr:open` read the records of both

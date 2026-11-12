@@ -40,8 +40,9 @@ def covers($item; $thing):
 # The last segment of a path, without a trait implementation's brackets.
 def segment: sub("^.*::"; "") | gsub("[<>]"; "");
 
-# Whether the comment `$c` comes from a login of `architects.txt`, with the
-# heading that the login's line asks of it.
+# Whether the comment `$c` comes from a login of the signers file,
+# `$XDG_CONFIG_HOME/gandr/architects.txt`, with the heading that the login's
+# line asks of it.
 def signer($c; $architects):
   $architects[$c.author] as $heading | $heading != null and ($c.body | contains($heading));
 
