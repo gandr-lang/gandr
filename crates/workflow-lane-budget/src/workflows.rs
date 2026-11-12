@@ -37,6 +37,11 @@ use crate::report::lower_median;
 /// Bytes in a gibibyte, for the cache line's `10.0 GiB`.
 const GIBIBYTE: u128 = 1 << 30;
 
+/// The bound of the Actions cache: 9 GiB, under the 10 GiB that GitHub keeps,
+/// with room for a new generation of each state. Past it, GitHub evicts the
+/// states that the runs restore.
+const CACHE_BOUND: u64 = 9 << 30;
+
 /// A workflow's display name, as its `name:` spells it.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -238,6 +243,31 @@ impl FromStr for CacheUsage
             bytes: bytes.parse().ok().ok_or(NotAUsage::Shape)?,
             caches: caches.parse().ok().ok_or(NotAUsage::Shape)?,
         })
+    }
+}
+
+impl CacheUsage
+{
+    /// How the cache stands against [`CACHE_BOUND`]: over past it, otherwise
+    /// within.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a usage under the bound and one past it; comparing
+    ///   with GitHub's 10 GiB or dropping the comparison changes the standing.
+    /// - witness: `workflows::tests::a_cache_past_its_bound_holds_the_issue_open_6951`
+    #[inline]
+    #[must_use]
+    pub const fn standing(&self) -> Standing
+    {
+        if self.bytes > CACHE_BOUND {
+            Standing::Over
+        }
+        else {
+            Standing::Within
+        }
     }
 }
 
@@ -636,19 +666,23 @@ impl Workflows
         Self { asked, rows, cache }
     }
 
-    /// How the table stands: over when any workflow is over, otherwise within.
+    /// How the table stands: over when any workflow is over or the cache is
+    /// past its bound, otherwise within.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Row::standing`].
+    /// - hypothesis: L3 — as [`Row::standing`] and [`CacheUsage::standing`].
     /// - witness: `workflows::tests::a_budgeted_workflow_is_held_by_its_summed_median`
+    /// - witness: `workflows::tests::a_cache_past_its_bound_holds_the_issue_open_6951`
     #[inline]
     #[must_use]
     pub fn standing(&self) -> Standing
     {
-        if self.rows.iter().any(|row| row.standing() == Standing::Over) {
+        if self.cache.standing() == Standing::Over
+            || self.rows.iter().any(|row| row.standing() == Standing::Over)
+        {
             Standing::Over
         }
         else {
@@ -735,7 +769,12 @@ impl fmt::Display for Workflows
                 .count()
         };
         let over = counted(Standing::Over);
-        let verdict = if over > 0 { "over" } else { "within" };
+        let verdict = if over > 0 || self.cache.standing() == Standing::Over {
+            "over"
+        }
+        else {
+            "within"
+        };
         let workflows = if self.rows.len() == 1 {
             "workflow"
         }
@@ -806,7 +845,17 @@ impl fmt::Display for Workflows
         for line in grown {
             writeln!(f, "{line}")?;
         }
-        writeln!(f, "\nThe Actions cache holds {}.\n\n</details>", self.cache)
+        match self.cache.standing() {
+            Standing::Over => writeln!(
+                f,
+                "\nThe Actions cache holds {}, **over** its bound of 9.0 GiB: GitHub evicts past \
+                 10 GiB (#6951).\n\n</details>",
+                self.cache
+            ),
+            Standing::Within | Standing::Unmeasured => {
+                writeln!(f, "\nThe Actions cache holds {}.\n\n</details>", self.cache)
+            },
+        }
     }
 }
 
@@ -845,10 +894,10 @@ mod tests
         };
     }
 
-    /// The usage a fake listing reports: just past ten gibibytes.
+    /// The usage a fake listing reports: eight gibibytes, under the bound.
     macro_rules! cache {
         () => {
-            "10738220202\t144".parse::<CacheUsage>().unwrap()
+            "8589934592\t144".parse::<CacheUsage>().unwrap()
         };
     }
 
@@ -879,7 +928,7 @@ mod tests
     #[test]
     fn the_cache_reads_as_gibibytes_and_caches()
     {
-        assert_eq!(cache!().to_string(), "10.0 GiB in 144 caches");
+        assert_eq!(cache!().to_string(), "8.0 GiB in 144 caches");
         assert_eq!(
             "1610612736\t1".parse::<CacheUsage>().unwrap().to_string(),
             "1.5 GiB in 1 cache"
@@ -929,7 +978,7 @@ mod tests
              | CI | 1 | 33m 20s | 33m 20s | 50m 0s | — | — | unbudgeted |\n\
              | Nightly | 3 | 5m 0s | 6m 40s | 8m 20s | 1 past 8m 20s | 0 past 11m 40s | within |\n\
              | Coverage | 0 | — | — | — | 0 past 1m 0s | 0 past 2m 0s | unmeasured |\n\
-             \nThe Actions cache holds 10.0 GiB in 144 caches.\n\n</details>\n"
+             \nThe Actions cache holds 8.0 GiB in 144 caches.\n\n</details>\n"
         );
         // Summed 700, 500 and 600 after the third run grows: the median, 600,
         // passes the budget.
@@ -1016,5 +1065,36 @@ mod tests
         assert_eq!(past, [
             "Nightly run 9: 21m 40s summed, past its 20m 0s ceiling"
         ]);
+    }
+
+    #[test]
+    fn a_cache_past_its_bound_holds_the_issue_open_6951()
+    {
+        let budgets = ["Nightly=900/1200".parse::<Summed>().unwrap()];
+        let table = |cache: &str| {
+            Workflows::new(
+                &budgets,
+                "1".parse::<RunCount>().unwrap(),
+                vec![(WorkflowName::from("Nightly"), vec![timed!("9", 600, [(
+                    600, "sweep"
+                )])])],
+                cache.parse::<CacheUsage>().unwrap(),
+            )
+        };
+        // 9 GiB stands within; one byte past it, 11.0 GiB on 2026-11-12, and a
+        // night within its budget hold the issue open.
+        let at = table("9663676416\t18");
+        assert_eq!(at.standing(), Standing::Within);
+        assert!(at.to_string().contains("— within: 0 over"), "{at}");
+        for usage in ["9663676417\t18", "11811160064\t18"] {
+            let past = table(usage);
+            assert_eq!(past.standing(), Standing::Over, "{usage}");
+            let text = past.to_string();
+            assert!(text.contains("— over: 0 over"), "{text}");
+            assert!(
+                text.contains("**over** its bound of 9.0 GiB: GitHub evicts past 10 GiB (#6951)."),
+                "{text}"
+            );
+        }
     }
 }

@@ -14,7 +14,14 @@ use crate::units::UnitHash;
 use crate::units::Units;
 
 /// The directories of a profile directory whose entries carry a unit hash.
+///
+/// Under the new build layout, `build` holds a directory for each package,
+/// and each of its directories `build/<package>/<hash>` is one unit.
 pub const UNIT_DIRECTORIES: [&str; 4] = ["deps", "build", ".fingerprint", "examples"];
+
+/// The directory of [`UNIT_DIRECTORIES`] that holds the unit directories of
+/// the new build layout.
+const BUILD: &str = "build";
 
 /// What a prune removed and kept.
 ///
@@ -90,10 +97,11 @@ pub fn prune(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each entry of an existing unit directory whose name is UTF-8 and
-///   carries a hash, once; a missing unit directory contributes none.
+///   carries a hash, once; and each directory `build/<package>/<hash>` of the
+///   new layout, once; a missing unit directory contributes none.
 /// - provides: the candidates of a prune.
 /// - fails: [`BuildStateError::Io`] when `profile` is not a readable directory
-///   or a unit directory cannot be listed.
+///   or a unit directory or a package directory cannot be listed.
 /// - panics: none.
 /// - executable: none — the outcome is the directory listing.
 ///
@@ -103,6 +111,7 @@ pub fn prune(
 /// # Adequacy
 /// - hypothesis: L3 — as [`prune`].
 /// - witness: `prune::tests::a_prune_keeps_exactly_the_recorded_units`
+/// - witness: `prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951`
 /// - witness: `prune::tests::a_missing_profile_is_refused`
 fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateError>
 {
@@ -114,8 +123,8 @@ fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateEr
         });
     }
     let mut entries = Vec::new();
-    for directory in UNIT_DIRECTORIES {
-        let directory = profile.join(directory);
+    for unit_directory in UNIT_DIRECTORIES {
+        let directory = profile.join(unit_directory);
         let listing = match fs::read_dir(&directory) {
             Ok(listing) => listing,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
@@ -130,6 +139,22 @@ fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateEr
             };
             if let Ok(hash) = name.parse::<UnitHash>() {
                 entries.push((entry.path(), hash));
+                continue;
+            }
+            let package = entry.path();
+            if unit_directory != BUILD
+                || !entry
+                    .file_type()
+                    .map_err(|error| io(&package, &error))?
+                    .is_dir()
+            {
+                continue;
+            }
+            for unit in fs::read_dir(&package).map_err(|error| io(&package, &error))? {
+                let unit = unit.map_err(|error| io(&package, &error))?;
+                if let Ok(hash) = UnitHash::of_directory(&unit.file_name()) {
+                    entries.push((unit.path(), hash));
+                }
             }
         }
     }
@@ -142,8 +167,9 @@ fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateEr
 /// - requires: `entries` the hashed entries of the profile directory the
 ///   uplifted paths were copied out of.
 /// - ensures: for each uplifted path, the hash of the entry that is the same
-///   file, or, where none is, the hash of every entry whose stem is the path's
-///   file name with `-` read as `_` or as written.
+///   file, or of the unit directory of the new layout whose `out` holds the
+///   same file, or, where none is, the hash of every entry whose stem is the
+///   path's file name with `-` read as `_` or as written.
 /// - provides: the units a prune keeps for the executables Cargo copied out.
 /// - fails: [`BuildStateError::Io`] when an uplifted path or an entry cannot be
 ///   read.
@@ -156,6 +182,7 @@ fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateEr
 /// # Adequacy
 /// - hypothesis: L3 — as [`prune`].
 /// - witness: `prune::tests::a_prune_keeps_exactly_the_recorded_units`
+/// - witness: `prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951`
 /// - witness: `prune::tests::an_uplifted_copy_keeps_the_units_its_name_stems`
 fn uplifted_units(
     units: &Units,
@@ -172,6 +199,23 @@ fn uplifted_units(
                 let entry = fs::symlink_metadata(path).map_err(|error| io(path, &error))?;
                 if entry.is_file() {
                     identities.insert(FileIdentity::of(&entry), hash);
+                    continue;
+                }
+                // A unit of the new layout keeps its executable in `out`
+                // (#6951), and Cargo hard-links the uplifted copy to it.
+                let out = path.join("out");
+                let listing = match fs::read_dir(&out) {
+                    Ok(listing) => listing,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(io(&out, &error)),
+                };
+                for file in listing {
+                    let file = file.map_err(|error| io(&out, &error))?.path();
+                    let metadata =
+                        fs::symlink_metadata(&file).map_err(|error| io(&file, &error))?;
+                    if metadata.is_file() {
+                        identities.insert(FileIdentity::of(&metadata), hash);
+                    }
                 }
             }
             indexed = true;
@@ -430,6 +474,82 @@ mod tests
         }
         assert!(!profile.join("build/b-00000000000000f2").exists());
         assert!(!profile.join(".fingerprint/a-00000000000000f1").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951()
+    {
+        let root = std::env::temp_dir().join(format!("build-state-{}-layout", std::process::id()));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let profile = root.join("debug");
+        let file = |path: &str, bytes: usize| {
+            let path = profile.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, vec![0_u8; bytes]).unwrap();
+        };
+        let kept = [
+            "build/a/00000000000000a1/out/liba-00000000000000a1.rlib",
+            "build/a/00000000000000a1/fingerprint/lib-a",
+            "build/b/00000000000000b1/out/build-script-build",
+            "build/b/00000000000000b2/out/generated.rs",
+            "build/b/00000000000000b2/run/stdout",
+            "build/gandr/00000000000000c1/out/gandr-00000000000000c1",
+            ".cargo-build-lock",
+        ];
+        let stale = [
+            (
+                "build/a/00000000000000f1/out/liba-00000000000000f1.rlib",
+                100,
+            ),
+            ("build/b/00000000000000f2/run/stdout", 7),
+            (
+                "build/gandr/00000000000000f3/out/gandr-00000000000000f3",
+                1000,
+            ),
+        ];
+        for path in kept {
+            file(path, 3);
+        }
+        for (path, bytes) in stale {
+            file(path, bytes);
+        }
+        fs::hard_link(
+            profile.join("build/gandr/00000000000000c1/out/gandr-00000000000000c1"),
+            profile.join("gandr"),
+        )
+        .unwrap();
+        let messages = format!(
+            concat!(
+                r#"{{"reason":"compiler-artifact","filenames":["{p}/build/a/00000000000000a1/out/liba-00000000000000a1.rlib"]}}"#,
+                "\n",
+                r#"{{"reason":"compiler-artifact","filenames":["{p}/build/b/00000000000000b1/out/build-script-build"]}}"#,
+                "\n",
+                r#"{{"reason":"build-script-executed","out_dir":"{p}/build/b/00000000000000b2/out"}}"#,
+                "\n",
+                r#"{{"reason":"compiler-artifact","filenames":["{p}/gandr"]}}"#,
+                "\n",
+                r#"{{"reason":"build-finished","success":true}}"#,
+                "\n",
+            ),
+            p = profile.display()
+        );
+        let mut units = Units::default();
+        units
+            .read(Path::new("units.jsonl"), Messages::from(messages.as_str()))
+            .unwrap();
+        let pruned = prune(&profile, &units).unwrap();
+        assert_eq!((pruned.removed, pruned.bytes, pruned.kept), (3, 1107, 4));
+        for path in kept {
+            assert!(profile.join(path).exists(), "{path} kept");
+        }
+        for (path, _) in stale {
+            assert!(!profile.join(path).exists(), "{path} removed");
+        }
+        assert!(!profile.join("build/b/00000000000000f2").exists());
+        assert!(profile.join("gandr").exists());
         fs::remove_dir_all(&root).unwrap();
     }
 

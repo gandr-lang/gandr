@@ -1,19 +1,22 @@
 //! The units a build used, read from Cargo's JSON messages.
 //!
-//! Cargo names every file and directory a unit writes with the unit's hash:
-//! `libname-<hash>.rlib` and `name-<hash>` under `deps`, `name-<hash>` under
-//! `.fingerprint`, `build` and `examples`. The hash covers the package, its
-//! features, the profile and the hashes of its dependencies, never its
-//! source, so an edit rebuilds a unit in place while a changed dependency or
-//! feature set writes a unit under a new hash beside the old one. A build's
-//! `compiler-artifact` messages name every unit it used, fresh ones
-//! included, and its `build-script-executed` messages every build-script
-//! output directory.
+//! Cargo names every file and directory a unit writes with the unit's hash.
+//! The old build layout writes `libname-<hash>.rlib` and `name-<hash>` under
+//! `deps`, and `name-<hash>` under `.fingerprint`, `build` and `examples`.
+//! The new build layout keeps each unit in a directory
+//! `build/<package>/<hash>`, with its `fingerprint`, `out` and `run` inside it.
+//! The hash covers the package, its features, the profile and the
+//! hashes of its dependencies, never its source, so an edit rebuilds a unit in
+//! place while a changed dependency or feature set writes a unit under a new
+//! hash beside the old one. A build's `compiler-artifact` messages name every
+//! unit it used, fresh ones included, and its `build-script-executed` messages
+//! every build-script output directory.
 
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
 use core::str::FromStr;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -38,8 +41,9 @@ pub struct UnitHash(u64);
 pub enum Unhashed
 {
     /// No `-` in the name is followed by sixteen lowercase hexadecimal digits
-    /// that end the name or precede a `.`: an output Cargo copied out under
-    /// its plain name, a lock file, or a directory units share.
+    /// that end the name or precede a `.`, or, for a directory of the new
+    /// layout, the name is not sixteen such digits: an output Cargo copied
+    /// out under its plain name, a lock file, or a directory units share.
     Unnamed,
 }
 
@@ -95,6 +99,47 @@ impl FromStr for UnitHash
             }
         }
         Err(Unhashed::Unnamed)
+    }
+}
+
+impl UnitHash
+{
+    /// The unit hash that a unit directory of the new build layout,
+    /// `build/<package>/<hash>`, carries as its whole name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` exactly when `name` is sixteen lowercase hexadecimal
+    ///   digits, holding their value.
+    /// - provides: the unit a directory of the new layout belongs to.
+    /// - fails: [`Unhashed::Unnamed`] for any other name.
+    /// - panics: none.
+    /// - executable: none — the outcome is the parse itself.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hash, a hash with a package's name before it, and
+    ///   names of fifteen or seventeen digits or with uppercase digits;
+    ///   accepting a dash, ignoring the length or accepting uppercase changes a
+    ///   parsed hash.
+    /// - witness: `units::tests::a_build_of_the_new_layout_names_its_units_6951`
+    #[inline]
+    pub fn of_directory(name: &OsStr) -> Result<Self, Unhashed>
+    {
+        let digits = name.to_str().ok_or(Unhashed::Unnamed)?;
+        let lower_hex = digits.len() == HASH_DIGITS
+            && digits
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a' ..= b'f').contains(&byte));
+        if !lower_hex {
+            return Err(Unhashed::Unnamed);
+        }
+        u64::from_str_radix(digits, 16)
+            .ok()
+            .map(Self)
+            .ok_or(Unhashed::Unnamed)
     }
 }
 
@@ -237,7 +282,8 @@ impl Units
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the hash the file's name carries, else its parent
-    ///   directory's, is in the set; a path carrying neither is uplifted.
+    ///   directory's, else the hash of the unit directory of the new layout
+    ///   that holds it, is in the set; a path carrying none is uplifted.
     /// - provides: the one place a message's path becomes a unit.
     /// - fails: never.
     /// - panics: none.
@@ -246,6 +292,7 @@ impl Units
     /// # Adequacy
     /// - hypothesis: L3 — as [`Units::read`].
     /// - witness: `units::tests::a_build_names_its_units`
+    /// - witness: `units::tests::a_build_of_the_new_layout_names_its_units_6951`
     #[inline]
     fn insert(
         &mut self,
@@ -256,7 +303,8 @@ impl Units
             .into_iter()
             .flatten()
             .filter_map(|name| name.to_str())
-            .find_map(|name| name.parse::<UnitHash>().ok());
+            .find_map(|name| name.parse::<UnitHash>().ok())
+            .or_else(|| unit_directory(&path));
         match named {
             Some(hash) => {
                 self.hashes.insert(hash);
@@ -307,6 +355,38 @@ impl Units
     {
         self.uplifted.iter().map(PathBuf::as_path)
     }
+}
+
+/// The unit of the new build layout that holds `path`: the hash that names
+/// the directory `build/<package>/<hash>` among the three directories above
+/// `path`, where a unit's file or output directory lies.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` exactly when one of the three nearest ancestors of `path`
+///   is a directory whose name [`UnitHash::of_directory`] reads and whose
+///   grandparent is named `build`, holding the nearest such hash.
+/// - provides: the unit of a path that carries no hash in its own name or its
+///   parent's.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the outcome is the path itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a build script's executable and a build script's output
+///   directory of the new layout, and an uplifted copy outside `build`;
+///   dropping the grandparent test or reading one ancestor alone changes the
+///   set.
+/// - witness: `units::tests::a_build_of_the_new_layout_names_its_units_6951`
+fn unit_directory(path: &Path) -> Option<UnitHash>
+{
+    path.ancestors().skip(1).take(3).find_map(|directory| {
+        let build = directory.parent()?.parent()?;
+        if build.file_name()? != "build" {
+            return None;
+        }
+        UnitHash::of_directory(directory.file_name()?).ok()
+    })
 }
 
 #[cfg(test)]
@@ -366,6 +446,50 @@ mod tests
         ] {
             assert_eq!(name.parse::<UnitHash>(), Err(Unhashed::Unnamed), "{name}");
         }
+    }
+
+    #[test]
+    fn a_build_of_the_new_layout_names_its_units_6951()
+    {
+        use std::ffi::OsStr;
+
+        let one = UnitHash::of_directory(OsStr::new("0123456789abcdef"));
+        assert_eq!(one, "x-0123456789abcdef".parse::<UnitHash>());
+        for name in [
+            "x-0123456789abcdef",
+            "0123456789abcde",
+            "0123456789abcdef0",
+            "0123456789ABCDEF",
+            "gandr-lang",
+        ] {
+            assert_eq!(
+                UnitHash::of_directory(OsStr::new(name)),
+                Err(Unhashed::Unnamed),
+                "{name}"
+            );
+        }
+        let build = concat!(
+            r#"{"reason":"compiler-artifact","package_id":"a","filenames":["/t/debug/build/a/00000000000000a1/out/liba-00000000000000a1.rlib"],"executable":null,"fresh":true}"#,
+            "\n",
+            r#"{"reason":"compiler-artifact","package_id":"b","filenames":["/t/debug/build/b/00000000000000b1/out/build-script-build"],"executable":null,"fresh":true}"#,
+            "\n",
+            r#"{"reason":"build-script-executed","package_id":"b","out_dir":"/t/debug/build/b/00000000000000b2/out"}"#,
+            "\n",
+            r#"{"reason":"compiler-artifact","package_id":"c","filenames":["/t/debug/gandr"],"executable":"/t/debug/gandr","fresh":true}"#,
+            "\n",
+            r#"{"reason":"build-finished","success":true}"#,
+            "\n",
+        );
+        let mut units = Units::default();
+        units
+            .read(Path::new("units.jsonl"), Messages::from(build))
+            .unwrap();
+        let hashes = ["00000000000000a1", "00000000000000b1", "00000000000000b2"]
+            .map(|digits| UnitHash::of_directory(OsStr::new(digits)).unwrap());
+        assert_eq!(units.hashes().iter().copied().collect::<Vec<_>>(), hashes);
+        assert_eq!(units.uplifted().collect::<Vec<_>>(), [Path::new(
+            "/t/debug/gandr"
+        )]);
     }
 
     #[test]

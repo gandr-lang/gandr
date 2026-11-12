@@ -539,7 +539,8 @@ fn a_summed_budget_tables_every_workflow()
              it.\n\n| workflow | run | summed | ceiling | job | time | median |\n\
              | --- | ---: | ---: | ---: | --- | ---: | ---: |\n\
              | Nightly | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |\n\
-             \nThe Actions cache holds 10.0 GiB in 144 caches.\n\n</details>\n\
+             \nThe Actions cache holds 10.0 GiB in 144 caches, **over** its bound of 9.0 GiB: \
+             GitHub evicts past 10 GiB (#6951).\n\n</details>\n\
              \nThe newest run passed its ceiling: Nightly run 6: 11m 5s summed, past its 10m \
              0s ceiling.\n\
              \nOpened https://example.invalid/issues/7.\n"

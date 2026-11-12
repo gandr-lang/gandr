@@ -1,0 +1,81 @@
+test: prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951
+package: gandr-workflow-build-state
+command: mise run debug:test gandr-workflow-build-state prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951 --break prune::unit_entries
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-build-state/ce4db7d113d2687b/out/gandr_workflow_build_state-ce4db7d113d2687b"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-build-state/ce4db7d113d2687b/out/gandr_workflow_build_state-ce4db7d113d2687b' (x86_64).
+(lldb) settings set -- target.run-args  "prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex prune::unit_entries
+Breakpoint 1: 11 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_workflow_build_state-ce4db7d113d2687b`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000011b578
+(lldb) run
+
+running 1 test
+test prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3844494 launched: 'target/debug-trace/debug/build/gandr-workflow-build-state/ce4db7d113d2687b/out/gandr_workflow_build_state-ce4db7d113d2687b' (x86_64)
+Process 3844494 stopped
+* thread #2, name = 'prune::tests::a', stop reason = breakpoint 1.1
+       frame #0: 0x00005555555d5377 gandr_workflow_build_state-ce4db7d113d2687b`gandr_workflow_build_state::prune::unit_entries(profile="/tmp/build-state-3844494-layout/debug") at prune.rs:118:9
+   115 	/// - witness: `prune::tests::a_missing_profile_is_refused`
+   116 	fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateError>
+   117 	{
+-> 118 	    let profile_metadata = fs::metadata(profile).map_err(|error| io(profile, &error))?;
+    	        ^
+   119 	    if !profile_metadata.is_dir() {
+   120 	        return Err(BuildStateError::Io {
+   121 	            path: profile.to_owned(),
+(lldb) bt 24
+* thread #2, name = 'prune::tests::a', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555555d5377 gandr_workflow_build_state-ce4db7d113d2687b`gandr_workflow_build_state::prune::unit_entries(profile="/tmp/build-state-3844494-layout/debug") at prune.rs:118:9
+     frame #1: 0x00005555555d7653 gandr_workflow_build_state-ce4db7d113d2687b`gandr_workflow_build_state::prune::prune(profile="/tmp/build-state-3844494-layout/debug", units={hashes:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:3, alloc:{value:{0:{…}}}, _marker:{}}}, uplifted:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}}) at prune.rs:79:19
+     frame #2: 0x00005555555c7418 gandr_workflow_build_state-ce4db7d113d2687b`gandr_workflow_build_state::prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951 at prune.rs:543:22
+     frame #3: 0x00005555555bf667 gandr_workflow_build_state-ce4db7d113d2687b`gandr_workflow_build_state::prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951::{closure#0}((null)={}) at prune.rs:481:73
+     frame #4: 0x00005555555d2b76 gandr_workflow_build_state-ce4db7d113d2687b`<gandr_workflow_build_state::prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x0000555555613e8b gandr_workflow_build_state-ce4db7d113d2687b`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #6: 0x0000555555613e89 gandr_workflow_build_state-ce4db7d113d2687b`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #7: 0x00005555556213d5 gandr_workflow_build_state-ce4db7d113d2687b`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #8: 0x00005555556213d0 gandr_workflow_build_state-ce4db7d113d2687b`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #9: 0x00005555556213d0 gandr_workflow_build_state-ce4db7d113d2687b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #10: 0x00005555556213bb gandr_workflow_build_state-ce4db7d113d2687b`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #11: 0x00005555556213bb gandr_workflow_build_state-ce4db7d113d2687b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #12: 0x00005555556213bb gandr_workflow_build_state-ce4db7d113d2687b`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #13: 0x00005555556213a6 gandr_workflow_build_state-ce4db7d113d2687b`test::run_test::{closure#0} at lib.rs:677:43
+     frame #14: 0x000055555561bd94 gandr_workflow_build_state-ce4db7d113d2687b`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #15: 0x000055555561bd19 gandr_workflow_build_state-ce4db7d113d2687b`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #16: 0x0000555555624532 gandr_workflow_build_state-ce4db7d113d2687b`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #17: 0x0000555555624523 gandr_workflow_build_state-ce4db7d113d2687b`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x0000555555624523 gandr_workflow_build_state-ce4db7d113d2687b`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #19: 0x0000555555624513 gandr_workflow_build_state-ce4db7d113d2687b`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #20: 0x0000555555624513 gandr_workflow_build_state-ce4db7d113d2687b`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #21: 0x0000555555624513 gandr_workflow_build_state-ce4db7d113d2687b`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #22: 0x0000555555624504 gandr_workflow_build_state-ce4db7d113d2687b`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #23: 0x000055555569521f gandr_workflow_build_state-ce4db7d113d2687b`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+(lldb) frame variable --depth 3
+(&std::path::Path) profile = "/tmp/build-state-3844494-layout/debug" {
+  data_ptr = 0x00007ffff0000d50 {inner:{inner:{inner:"/tmp/build-state-3844494-layout/debug"}}}
+  length = 37
+}
+(lldb) up
+frame #1: 0x00005555555d7653 gandr_workflow_build_state-ce4db7d113d2687b`gandr_workflow_build_state::prune::prune(profile="/tmp/build-state-3844494-layout/debug", units={hashes:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:3, alloc:{value:{0:{…}}}, _marker:{}}}, uplifted:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}}) at prune.rs:79:19
+   76  	    units: &Units,
+   77  	) -> Result<Pruned, BuildStateError>
+   78  	{
+-> 79  	    let entries = unit_entries(profile)?;
+    	                  ^
+   80  	    let lifted = uplifted_units(units, &entries)?;
+   81  	    let mut pruned = Pruned::default();
+   82  	    for (path, hash) in entries {
+(lldb) frame variable --depth 3
+(&std::path::Path) profile = "/tmp/build-state-3844494-layout/debug" {
+  data_ptr = 0x00007ffff0000d50 {inner:{inner:{inner:"/tmp/build-state-3844494-layout/debug"}}}
+  length = 37
+}
+(gandr_workflow_build_state::units::Units *) units = 0x00007ffff79fde68 {hashes:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:3, alloc:{value:{0:{…}}}, _marker:{}}}, uplifted:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}}}

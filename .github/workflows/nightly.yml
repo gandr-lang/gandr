@@ -454,7 +454,9 @@ jobs:
   # is this workflow's summed time of its jobs on hosted runners per run
   # (`--summed`): 15 minutes for its median, 20 the ceiling no night passes.
   # A job on a runner of our own counts in no hosted sum (#6868). The table
-  # times every active workflow and reads the cache's usage.
+  # times every active workflow and reads the cache's usage. A cache past
+  # 9 GiB keeps the issue open: GitHub evicts past 10 GiB, and the night then
+  # finds no saved state (#6951).
   reports:
     name: report and file the night's findings
     needs: [ci-image-ref, sweeps]
