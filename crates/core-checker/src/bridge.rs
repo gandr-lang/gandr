@@ -520,6 +520,10 @@
 //!   kernel-verdict-reuse — a recorded readmission hands its environment on
 //!   without the verdicts it recalled, so a resumed run's receipt attests only
 //!   its own checks.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: keys across the
+//!   bridge (§ kernel-reassessment-design item 1): the fold names each image in
+//!   the session's table when it mints the image, so the kernel's key walks no
+//!   image.
 //!
 //! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
 
@@ -3593,15 +3597,17 @@ where
             Offer::Definition { restated, .. } => restated,
             Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
         };
+        let (target, names) = staging.minting();
         let mut erasure = Erasure::new(arena, source, positions, base)
             .crossing_block(crossing)
-            .restating(restated);
+            .restating(restated)
+            .naming(names);
         let erased = erasure
-            .offer(staging.arena(), offer)
+            .offer(target, offer)
             .map_err(|refusal| (refusal, Vec::new()))
             .and_then(|erased| {
                 erasure
-                    .replay_certificates(staging.arena(), vouch)
+                    .replay_certificates(target, vouch)
                     .map(|replayed| (erased, replayed))
             });
         // Each match's derivation crosses at its root's image, its families
@@ -6257,6 +6263,9 @@ struct Erasure<'source, 'positions>
     /// yet — a native operation's signature or a handled effect's free model
     /// — which stops it.
     unseeded: Option<Seed>,
+    /// The session's table, which names each image when the fold mints it,
+    /// so the kernel's keys and the naming of a definition read the names.
+    names: Option<gandr_kernel_core::MintNames<'source>>,
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
@@ -6294,6 +6303,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             crossing: &[],
             restated: &[],
             unseeded: None,
+            names: None,
         }
     }
 
@@ -6325,6 +6335,20 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Self
     {
         self.restated = restated;
+        self
+    }
+
+    /// The same erasure naming each image in the session's table `names` when
+    /// it mints the image.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn naming(
+        mut self,
+        names: gandr_kernel_core::MintNames<'source>,
+    ) -> Self
+    {
+        self.names = Some(names);
         self
     }
 
@@ -7256,7 +7280,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   its own level; a decode of a constant that crossed with a body is the
     ///   decode of that body, its certificate collected for replay; a decode of
     ///   any other code is the kernel's decode of its image. A node already
-    ///   erased by this machine is not minted again.
+    ///   erased by this machine is not minted again. An erasure that names its
+    ///   images names each image the fold ascends, after its children.
     /// - fails: [`Refusal::Withheld`] for a constant whose declaration did not
     ///   cross; [`Refusal::OutOfFragment`] for a former the fragment has no
     ///   rule for; [`Refusal::Session`] for a receive, an offer or a
@@ -7310,9 +7335,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         loop {
             step = match step {
                 Step::Descend(node) => self.descend(target, node)?,
-                Step::Ascend(image) => match self.frames.pop() {
-                    Some(frame) => self.resume(target, frame, image)?,
-                    None => return Ok(image),
+                Step::Ascend(image) => {
+                    if let Some(ref mut names) = self.names {
+                        names.name(target, image);
+                    }
+                    match self.frames.pop() {
+                        Some(frame) => self.resume(target, frame, image)?,
+                        None => return Ok(image),
+                    }
                 },
             };
         }

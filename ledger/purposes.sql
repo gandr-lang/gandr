@@ -1112,6 +1112,7 @@ INSERT INTO purpose VALUES('kernel-core','encoding::ContentTable','struct','The 
 INSERT INTO purpose VALUES('kernel-core','encoding::EncodingLength','struct','The byte length of a ContentEncoding.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::Exact','enum','The identity on content: the identification a record name is taken up to when no datum relates two records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::Identification','trait','What a record name identifies records up to, and the context its key derives under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::MintNames','struct','Lends the session''s content table to the fold that mints a declaration''s content, so the fold names each image when it mints it.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::ObligationGoal','enum','One obligation that a formation owes the checker, by the type node that holds its inputs.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::RecordName','struct','A record''s name: BLAKE3 over its tag, its payload and its members'' names, alike in every session that holds the record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::RewriteGoal','enum','One rewrite obligation, as the key derivation names it.',NULL,'fits','sound',NULL);

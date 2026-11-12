@@ -81,6 +81,14 @@
 //! [`ContentTable::new`] names nothing and pays one branch for each fresh
 //! record.
 //!
+//! The environment's session table names its records. The bridge's fold
+//! borrows that table through [`MintNames`]. It names each image when it
+//! mints the image, after the image's children. A key then finds each image
+//! named, and it places only the nodes that the kernel minted itself. The
+//! digest of a plain definition is the digest of two names: its declared
+//! type's and its body's. So the naming of a definition walks no node that
+//! the fold named.
+//!
 //! # The encoding is injective by construction
 //!
 //! Prefix-free, tagged, length-prefixed, and mirroring the term relation
@@ -119,11 +127,12 @@
 //!
 //! # References
 //!
-//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: a key is the
-//!   kernel's whole input only when the constants it reaches are named by
-//!   content (§ kernel-reassessment-design item 2), and those names are
-//!   table-local, agreeing across tables by re-interned records (item 10), as
-//!   the definition record is.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: keys across the
+//!   bridge (§ kernel-reassessment-design item 1): the fold names each image at
+//!   mint, so a key reads the names and walks no image. A key is the kernel's
+//!   whole input only when the constants it reaches are named by content (item
+//!   2). Those names are table-local, and they agree across tables by
+//!   re-interned records (item 10), as the definition record does.
 //! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: a record's name is
 //!   its key up to an identification, with the identification as a parameter (§
 //!   storage-conjecture-chunk-descent). `RecordName` takes `Exact`, the
@@ -1117,6 +1126,38 @@ impl Names
         let name = RecordName::of(&self.key, &self.payload, &self.members);
         self.column.push(name);
     }
+
+    /// The digest of the names `first` and `second`, in order: the words of
+    /// the two names folded as [`ContentEncoding::digest`] folds them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: two equal pairs of names give one digest. The digest reads no
+    ///   content id, so a table's order of interning does not reach it.
+    /// - provides: a definition's digest from the names of its declared type
+    ///   and its body, through the payload buffer naming reuses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentTable::definition_digest`].
+    /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
+    fn pair_digest(
+        &mut self,
+        first: RecordName,
+        second: RecordName,
+    ) -> ContentDigest
+    {
+        self.payload.0.clear();
+        for name in [first, second] {
+            let bytes: [u8; 32] = name.into();
+            let (words, _rest) = bytes.as_chunks::<4>();
+            self.payload
+                .0
+                .extend(words.iter().map(|&word| u32::from_le_bytes(word)));
+        }
+        self.payload.digest()
+    }
 }
 
 /// Whether a table names its records.
@@ -1717,6 +1758,41 @@ impl ContentTable
             )
     }
 
+    /// The digest of a definition whose declared type and body this table
+    /// holds at `declared` and `body`: the digest of their two names. So no
+    /// content id, and no order the table met the content in, reaches it.
+    ///
+    /// # Specification
+    /// - requires: the table holds a record at `declared` and at `body`.
+    /// - ensures: two tables that name their records give one digest for one
+    ///   pair of contents. A table that names nothing gives every pair the
+    ///   default digest, so the table's comparison decides each candidate.
+    /// - provides: [`name_definition`]'s digest, read from two names with no
+    ///   walk.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one definition admitted into two environments that
+    ///   met its content in two orders takes one digest in each.
+    /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
+    fn definition_digest(
+        &mut self,
+        declared: ContentId,
+        body: ContentId,
+    ) -> ContentDigest
+    {
+        let (Maybe::Present(declared), Maybe::Present(body)) =
+            (self.name(declared), self.name(body))
+        else {
+            return ContentDigest::default();
+        };
+        match self.naming {
+            Naming::On(ref mut names) => names.pair_digest(declared, body),
+            Naming::Off => ContentDigest::default(),
+        }
+    }
+
     /// Name the record the table admitted last, when the table names its
     /// records and the record has no name yet.
     ///
@@ -1753,42 +1829,6 @@ impl ContentTable
         if let Naming::On(mut names) = core::mem::take(&mut self.naming) {
             names.name(|record| write(self, record));
             self.naming = Naming::On(names);
-        }
-    }
-
-    /// Empty the table as [`Self::new`] makes it, keeping every buffer's
-    /// capacity, so placing into it again allocates only past what it held.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the table holds no record, placement or constant name.
-    /// - provides: a scratch table that numbers, records and names whatever it
-    ///   places next as a fresh table does.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — content placed, the table cleared, then other content
-    ///   and the first content again, each against a fresh table, distinguish a
-    ///   clear that keeps a record, a placement or the index.
-    /// - witness: `encoding::tests::a_cleared_table_places_as_a_fresh_one_does`
-    #[inline]
-    #[spec(ensures: self.records == 0 && self.stream.0.is_empty()
-        && self.placed.count() == PlacementCount(0) && self.constants.is_empty())]
-    pub(crate) fn clear(&mut self)
-    {
-        self.stream.0.clear();
-        self.spans.clear();
-        self.interned.clear();
-        self.placed.forget_from(ArenaWatermark::default());
-        self.seen = TruncationStamp::default();
-        self.records = 0;
-        self.scratch.0.clear();
-        self.members.clear();
-        self.tasks.clear();
-        self.constants.clear();
-        if let Naming::On(ref mut names) = self.naming {
-            names.column.clear();
         }
     }
 
@@ -1830,10 +1870,40 @@ impl ContentTable
         entries: &crate::env::Entries,
     )
     {
+        self.name_constants_before(entries, ConstantIndex::from(usize::from(entries.len())));
+    }
+
+    /// Name the constants of `entries` before `end`, past those already named,
+    /// as [`Self::name_constants`] names them.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::name_constants`].
+    /// - ensures: the table names the constants before `end` that `entries`
+    ///   holds, each as its admission named it; the names it held before are
+    ///   unchanged, and no constant from `end` on takes a name here.
+    /// - provides: the naming of a definition that keeps a unit's later members
+    ///   unnamed until their own admission names them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::name_constants`], and a kept unit reads as
+    ///   a fresh admission of it.
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    #[spec(captures: named_before = self.constants.len(),
+        ensures: self.constants.len()
+            == named_before.max(usize::from(entries.len()).min(usize::from(end))))]
+    pub(crate) fn name_constants_before(
+        &mut self,
+        entries: &crate::env::Entries,
+        end: ConstantIndex,
+    )
+    {
         let named = self.constants.len();
         self.constants.extend(
             entries
                 .iter()
+                .take(usize::from(end))
                 .skip(named)
                 .map(crate::env::AdmittedDeclaration::key_name),
         );
@@ -4885,9 +4955,15 @@ pub fn content_digest(
 }
 
 /// The name of a plain definition of `declared` and `body` about to be
-/// admitted after `entries` at the rank `below`: its two roots and its order
-/// among the definitions ranked below it and named by the same two, each
-/// constant they reach read by its position.
+/// admitted at `position` after `entries`, at the rank `below`: its two roots,
+/// the digest of their names, and its order among the definitions ranked below
+/// it and named by the same two.
+///
+/// `table` is the session's table, which names each record from its members'
+/// names. The fold that minted the roots named them there, so the naming
+/// reads two names and walks nothing the fold named. Each constant the roots
+/// reach reads as the session names it, and the naming first names the
+/// constants before `position`, as a check names them before it keys.
 ///
 /// Each earlier entry's order already counts the identical entries ranked
 /// below it, and identity in content is an equivalence. So the identical
@@ -4896,20 +4972,17 @@ pub fn content_digest(
 /// identical definitions compares each new one against one twin, not against
 /// all of them (#3686).
 ///
-/// `table` is scratch: the naming clears it, digests the two roots, and places
-/// each candidate's roots beside them, so admission names every definition
-/// through one table's buffers.
-///
 /// # Specification
 /// - requires: the roots, and those of every definition `entries` names by
-///   content, live in `arena`; every definition `entries` names by content is
-///   ordered by the identical entries ranked below it.
+///   content, live in `arena`; `table` is the session's table over `arena`;
+///   every definition `entries` names by content is ordered by the identical
+///   entries ranked below it.
 /// - ensures: a definition name over `declared` and `body`, ordered by the
 ///   entries ranked below `below` whose declared types and bodies are identical
 ///   in reachable content: one past the order of the one ranked last, or zero
-///   when none is. A digest filters the entries and one table decides each
-///   candidate, so no digest decides. Whatever `table` held before does not
-///   reach the name.
+///   when none is. A digest filters the entries and the table decides each
+///   candidate, so no digest decides. The digest reads names and no content id,
+///   so the order the table met the content in does not reach it.
 /// - provides: admission's naming of a plain definition, injective on the
 ///   environment's positions.
 /// - fails: never.
@@ -4917,32 +4990,37 @@ pub fn content_digest(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — three definitions of one type and body admitted into one
-///   environment, a definition of other content between them, rank 0, 1 and 2,
-///   each named through the table the one before it left full; the predicate
-///   checks the roots kept.
+///   environment, a definition of other content between them, rank 0, 1 and 2;
+///   the predicate checks the roots kept. One definition admitted into two
+///   environments that met its content in two orders takes one digest.
 /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
+/// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
 #[must_use]
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
     if kept_declared == declared && kept_body == body))]
 pub(crate) fn name_definition(
     table: &mut ContentTable,
     arena: &TermArena,
-    (entries, below): (&crate::env::Entries, gandr_kernel_term::SourceRank),
+    (entries, position, below): (
+        &crate::env::Entries,
+        ConstantIndex,
+        gandr_kernel_term::SourceRank,
+    ),
     declared: ValueTypeId,
     body: ValueId,
 ) -> ConstantName
 {
-    table.clear();
+    table.name_constants_before(entries, position);
     let placed_declared = table.place(arena, AnyNode::ValueType(declared));
     let placed_body = table.place(arena, AnyNode::Value(body));
-    let digest = table.stream().digest();
+    let digest = table.definition_digest(placed_declared, placed_body);
     // The environment keeps the definitions of each digest, so the search
     // reads only the candidates and no other entry.
     let rank = entries
         .digested(digest, below)
         .iter()
         .rev()
-        .filter_map(|&position| entries.get(usize::from(position)))
+        .filter_map(|&earlier| entries.get(usize::from(earlier)))
         .find_map(|entry| match entry.key_name() {
             ConstantName::Definition {
                 declared: earlier_declared,
@@ -4963,6 +5041,55 @@ pub(crate) fn name_definition(
         body,
         rank: DefinitionRank(rank),
         digest,
+    }
+}
+
+/// The session's table, lent to the fold that mints a declaration's content,
+/// so that the fold names each image when it mints it.
+///
+/// The name of an image is the [`RecordName`] of its record, formed from the
+/// names of its children, which the fold named before it. So a later key, or
+/// the naming of a definition, reads the name and walks nothing.
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct MintNames<'table>(&'table mut ContentTable);
+
+impl<'table> MintNames<'table>
+{
+    /// Lend `table` to a fold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn new(table: &'table mut ContentTable) -> Self
+    {
+        Self(table)
+    }
+
+    /// Name `image`, which the fold minted in `arena` after its children.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena the table names nodes of.
+    /// - ensures: the table holds a placement for `image` and for each node it
+    ///   reaches, and a name for each record it holds.
+    /// - provides: the fold's name of each image, formed once at mint. A child
+    ///   the fold named costs no walk, so an image costs one record.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition whose images are named one by one as
+    ///   they are minted, then named: each image costs one placement, and the
+    ///   naming places no node.
+    /// - witness: `encoding::tests::a_definition_named_at_mint_is_named_with_no_walk`
+    #[inline]
+    pub fn name(
+        &mut self,
+        arena: &TermArena,
+        image: AnyNode,
+    )
+    {
+        let _id = self.0.place(arena, image);
     }
 }
 
@@ -6081,41 +6208,6 @@ mod tests
     }
 
     #[test]
-    fn a_cleared_table_places_as_a_fresh_one_does()
-    {
-        let mut arena = TermArena::new();
-        let mut earlier = arena.value_unit();
-        for _step in 0 .. 8_u32 {
-            earlier = arena.value_tuple(&[earlier, earlier]);
-        }
-        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let unit = arena.value_unit();
-        let later = arena.value_tuple(&[variable, unit]);
-        let mut table = ContentTable::new();
-        let _earlier = table.place(&arena, AnyNode::Value(earlier));
-        table.clear();
-        let mut fresh = ContentTable::new();
-        assert_eq!(
-            table.place(&arena, AnyNode::Value(later)),
-            fresh.place(&arena, AnyNode::Value(later)),
-            "a cleared table numbers its first record as a fresh one does"
-        );
-        assert_eq!(table.records, fresh.records);
-        assert_eq!(table.placed.count(), fresh.placed.count());
-        assert_eq!(
-            table.stream(),
-            fresh.stream(),
-            "a cleared table's stream holds only what it placed since"
-        );
-        assert_eq!(
-            table.place(&arena, AnyNode::Value(earlier)),
-            fresh.place(&arena, AnyNode::Value(earlier)),
-            "content placed before the clear is recorded again, not recalled"
-        );
-        assert_eq!(table.stream(), fresh.stream());
-    }
-
-    #[test]
     fn a_rewrite_under_an_inactive_memo_encodes_nothing_487()
     {
         let mut arena = TermArena::new();
@@ -6523,6 +6615,112 @@ mod tests
             table.place(environment.arena(), AnyNode::Value(right)),
             "two definitions keep two names however alike their content: a key \
              never answers for one with the other"
+        );
+    }
+
+    /// The digest `name_definition` gives a definition of `declared` and
+    /// `body` through `table`, admitted first into `environment`.
+    ///
+    /// # Specification
+    /// - requires: the roots live in `arena`.
+    /// - ensures: the digest of the content name the naming gives.
+    /// - provides: the digest the naming cases compare.
+    /// - fails: never.
+    /// - panics: when the naming gives a positional name.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the cases compare digests across tables and bodies.
+    /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
+    fn definition_digest(
+        table: &mut ContentTable,
+        (arena, environment): (&TermArena, &crate::env::Environment),
+        declared: ValueTypeId,
+        body: ValueId,
+    ) -> gandr_kernel_check_memo::ContentDigest
+    {
+        let first = (
+            environment.entries(),
+            ConstantIndex::from(0_usize),
+            gandr_kernel_term::SourceRank::from(0_usize),
+        );
+        match super::name_definition(table, arena, first, declared, body) {
+            super::ConstantName::Definition { digest, .. } => digest,
+            super::ConstantName::Position => panic!("a plain definition is named by its content"),
+        }
+    }
+
+    #[test]
+    fn a_definition_takes_one_digest_in_either_admission_order()
+    {
+        let environment = crate::env::Environment::new();
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let declared = arena.value_type_product(&[unit, unit]);
+        let first = arena.value_unit();
+        let body = arena.value_tuple(&[first, first]);
+        let other = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let mut cold = ContentTable::named();
+        let mut warmed = ContentTable::named();
+        let _other = warmed.place(&arena, AnyNode::Value(other));
+        let _body = warmed.place(&arena, AnyNode::Value(body));
+        assert_ne!(
+            cold.place(&arena, AnyNode::Value(body)),
+            warmed.place(&arena, AnyNode::Value(body)),
+            "the two tables number the body apart"
+        );
+        let named = definition_digest(&mut cold, (&arena, &environment), declared, body);
+        assert_eq!(
+            named,
+            definition_digest(&mut warmed, (&arena, &environment), declared, body),
+            "a definition takes one digest whatever order a table met its content in"
+        );
+        assert_ne!(
+            named,
+            definition_digest(&mut cold, (&arena, &environment), declared, other),
+            "a definition of another body takes another digest"
+        );
+    }
+
+    #[test]
+    fn a_definition_named_at_mint_is_named_with_no_walk()
+    {
+        let environment = crate::env::Environment::new();
+        let mut arena = TermArena::new();
+        let mut table = ContentTable::named();
+        let unit = arena.value_type_unit();
+        let declared = arena.value_type_product(&[unit, unit]);
+        let mut body = arena.value_unit();
+        let mut minted = vec![
+            AnyNode::ValueType(unit),
+            AnyNode::ValueType(declared),
+            AnyNode::Value(body),
+        ];
+        for _step in 0 .. 8_u32 {
+            body = arena.value_tuple(&[body, body]);
+            minted.push(AnyNode::Value(body));
+        }
+        let mut names = super::MintNames::new(&mut table);
+        for &image in &minted {
+            let before = names.0.placed.count();
+            names.name(&arena, image);
+            assert_eq!(
+                names.0.placed.count(),
+                PlacementCount(before.0.saturating_add(1)),
+                "an image whose children are named costs one placement"
+            );
+        }
+        let placed = table.placed.count();
+        let named = definition_digest(&mut table, (&arena, &environment), declared, body);
+        assert_eq!(
+            table.placed.count(),
+            placed,
+            "the naming of a definition named at mint places no node"
+        );
+        let mut walked = ContentTable::named();
+        assert_eq!(
+            definition_digest(&mut walked, (&arena, &environment), declared, body),
+            named,
+            "the names formed at mint give the digest a walk gives"
         );
     }
 

@@ -133,10 +133,11 @@ use crate::rewrite::RewritePlane;
 /// under the parameters of its judgement. The declaration's memo, the rewrite
 /// memo and the open accruals belong to each admission.
 /// [`SupportContext::begin_admission`] starts them empty.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SupportContext
 {
-    /// The canonical content numbering, the key's records among it.
+    /// The canonical content numbering, the key's records among it. It names
+    /// each record it admits fresh, so a definition's naming reads two names.
     table: ContentTable,
     /// The read binders of the goal being keyed, reused across goals.
     read: Vec<(DeBruijnIndex, ValueTypeId)>,
@@ -149,6 +150,26 @@ pub struct SupportContext
     /// The names of the keys of the obligations this declaration's check owes.
     /// Its drain checks each of them before the declaration is admitted.
     owing: BTreeSet<(ContentId, ContentId)>,
+}
+
+impl Default for SupportContext
+{
+    /// A session over nothing, whose table names each record it admits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            table: ContentTable::named(),
+            read: Vec::new(),
+            rewrites: RewriteMemo::default(),
+            open: Vec::new(),
+            kept: KeptMemo::default(),
+            owing: BTreeSet::new(),
+        }
+    }
 }
 
 /// One open goal, the binders its judgement has read so far and the keys of
@@ -315,6 +336,17 @@ impl SupportContext
     )
     {
         self.table.name_constants(entries);
+    }
+
+    /// The session's table, to name a definition or to lend a fold that names
+    /// each image at mint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn table_mut(&mut self) -> &mut ContentTable
+    {
+        &mut self.table
     }
 
     /// Open an admission's check on this session: its rewrite memo, its open

@@ -742,6 +742,7 @@ pub use crate::encoding::ContentTable;
 pub use crate::encoding::EncodingLength;
 pub use crate::encoding::Exact;
 pub use crate::encoding::Identification;
+pub use crate::encoding::MintNames;
 pub use crate::encoding::ObligationGoal;
 pub use crate::encoding::RecordName;
 pub use crate::encoding::RewriteGoal;
