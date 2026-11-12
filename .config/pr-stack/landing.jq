@@ -43,6 +43,12 @@
 #   Without the token, a green stack's lowest green member is told
 #   `pr-green`, its seat to land it, and a dequeued pull request is told
 #   `pr-dequeued`.
+#   A workflow change, a pull request that changes a file under
+#   `.github/workflows/`, is read as without the token, and so is each
+#   member of its stack (#6915). GitHub refuses `LANDING_TOKEN` the
+#   auto-merge and the push of such a change, because the token holds no
+#   permission over workflows. The seat's `pr:land` queues it with the
+#   seat's own token.
 #
 # GitHub starts no `CI` run for a push that reaches a pull request while it
 # conflicts with its base, and none for a base edit, which it sends as
@@ -65,7 +71,8 @@
 #          failed automatic change from the base it still has, `upstream`
 #          the subjects described below, `marks` the `<event>:<head>` marks
 #          its comments carry, `unrun` whether its head has no `CI` run and
-#          is older than the margin `read_prs` allows a new head.
+#          is older than the margin `read_prs` allows a new head, and
+#          `workflow` whether it changes a file under `.github/workflows/`.
 #
 #   A removal for `failed_checks` is the entry's own run failing: the
 #   enforcing lane runs only in the merge group, so the pull request's own
@@ -94,6 +101,7 @@ def state:
   end;
 def marked($event): .oid as $oid | (.marks // []) | any(. == "\($event):\($oid)");
 def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
+def workflow: .workflow // false;
 
 .token as $token
 | [.prs[] | . + {state: state}] as $prs
@@ -104,7 +112,7 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
     | if .state == "dirty" then (if marked("pr-dirty") then empty else {number, act: "dirty"} end)
       elif .state == "red" then (if marked("pr-red") then empty else {number, act: "red", failed: .reading.failed} end)
       elif .state == "dequeued" then
-        if $token and restacks < 3 and .removal != "failed_checks"
+        if $token and (workflow | not) and restacks < 3 and .removal != "failed_checks"
           and all($members[]; ((.reading.failed // []) == []) and (.queued | not))
         then {number, act: "restack", told: marked("pr-dequeued")}
         elif marked("pr-dequeued") then empty
@@ -117,7 +125,7 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
         else {number, act: "unrun"}
         end
       elif .state == "green" and all($members[]; .state != "dequeued") then
-        if $token then {number, act: "land", key: key, told: marked("pr-dequeued")}
+        if $token and all($members[]; workflow | not) then {number, act: "land", key: key, told: marked("pr-dequeued")}
         else {number, act: "green", key: key, told: marked("pr-green")}
         end
       else empty
