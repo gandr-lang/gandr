@@ -44,12 +44,11 @@
 source "${BASH_SOURCE[0]%/*}/host-lock.bash"
 source "${BASH_SOURCE[0]%/*}/../claims/lanes.bash"
 
-# One slot for each 8 cores (#6699). Four gates of a code edit on 32 cores
-# end soonest at 4 slots, where each gate takes 8 build jobs. At 6 and at 8
-# slots each gate takes 5 or 4 jobs, the cores stand partly idle, and each
-# gate takes longer. A host that runs more lanes at once than its slots
-# makes the later gates wait, and a gate that waits costs less than four
-# gates that each run slower.
+# One slot for each 8 cores (#6699). Nine rounds of four gates of a code
+# edit on 32 cores select 4 slots. At 8 slots a gate runs past 15 minutes,
+# and 4 and 6 slots differ by less than the noise. At 4 slots each gate
+# takes 8 build jobs, and the cores stay full. No gate waits for a slot at
+# 4, 6 or 8 slots: the time of a gate is its work (#6963).
 gate_cores=$(getconf _NPROCESSORS_ONLN)
 gate_slots=${GANDR_GATE_SLOTS:-$(( gate_cores / 8 > 1 ? gate_cores / 8 : 1 ))}
 
