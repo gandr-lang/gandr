@@ -9,16 +9,19 @@
 name: claims
 
 # `status:claimed` means a seat is on the issue now (#1270). The claim comes
-# off when a merged pull request's body says `Advances #n` or closes the
-# issue, when the issue is closed, when its label is 4 hours old with no open
-# pull request naming the issue (#2534, #3915), and always on a `kind:epic`
-# issue. The age is the label's: a comment on the issue leaves it alone.
+# off when a merged pull request's body closes the issue, when the issue is
+# closed, when its label is 4 hours old with no open pull request naming the
+# issue (#2534, #3915), and always on a `kind:epic` issue. An issue a merge
+# advances (`Advances #n`) keeps its claim while it stays open (#6954). The
+# age is the label's, or a later release of the claim's own lane: a comment
+# on the issue leaves it alone.
 # `pr:open` refuses a body that names no such line for the branch's
-# issue (#2462), so every landing unclaims what it worked.
+# issue (#2462), so every landing names what it worked.
 # `.config/claims/claims.sh` reads, decides (`decide.jq`) and removes;
 # the removals are printed in the run log and nothing is posted for them.
 # A merge also writes a release marker on each open issue it advances, so the
-# branch's lane claims the continuation first (#3915), and it ticks the
+# branch's lane claims the continuation first and the claim's age counts from
+# the merge (#3915, #6954), and it ticks the
 # `## Rows` of each `collector` it advances and closes one it leaves with no
 # open row, its comment naming the landing (#3732). Every run reads silence,
 # a merge's too: GitHub runs the schedule far less often than it states, so

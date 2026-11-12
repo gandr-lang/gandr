@@ -1,6 +1,6 @@
 [
   {
-    "name": "a merge unclaims the issues it advances or closes, and reads every other claim's silence as the sweep does",
+    "name": "#6954: a merge unclaims the issues it closes, keeps the claim of an open issue it advances, and reads every other claim's silence as the sweep does",
     "input": {
       "now": 1760000000,
       "claimed": [
@@ -26,10 +26,10 @@
       "open_prs": [],
       "merged_body": "The pool.\n\nAdvances #1250\nAdvances #1252\nCloses #1264\n"
     },
-    "output": "1250\tadvanced\n1264\tclosed\n1263\tsilent"
+    "output": "1264\tclosed\n1263\tsilent"
   },
   {
-    "name": "a merge reads every closing keyword, and a target both advanced and closed is advanced",
+    "name": "a merge reads every closing keyword, and a target both advanced and closed is closed",
     "input": {
       "now": 1760000000,
       "claimed": [
@@ -61,7 +61,7 @@
       "open_prs": [],
       "merged_body": "fixes #5, Resolved #6\nAdvances #7 closes #7\nsee #8"
     },
-    "output": "5\tclosed\n6\tclosed\n7\tadvanced"
+    "output": "5\tclosed\n6\tclosed\n7\tclosed"
   },
   {
     "name": "the sweep takes the claim off a closed issue however fresh",
@@ -95,9 +95,36 @@
         { "number": 123, "labels": ["status:claimed"], "claimed_at": "2025-10-09T06:53:20Z" }
       ],
       "open_prs": [],
-      "merged_body": "advances #123"
+      "merged_body": "CLOSES #123"
     },
-    "output": "123\tadvanced"
+    "output": "123\tclosed"
+  },
+  {
+    "name": "#6954: a claim whose label is 5 hours old keeps its seat while a release of its own lane is 1 hour old, and a release of another lane renews nothing",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 60,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z",
+          "lane": "triage",
+          "released": { "lane": "triage", "at": 1759996400 }
+        },
+        {
+          "number": 61,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z",
+          "lane": "triage",
+          "released": { "lane": "flex", "at": 1759996400 }
+        }
+      ],
+      "open_prs": [],
+      "merged_body": null
+    },
+    "output": "61\tsilent"
   },
   {
     "name": "an epic loses the claim however fresh",
