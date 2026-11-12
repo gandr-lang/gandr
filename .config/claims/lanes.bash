@@ -15,13 +15,18 @@ lanes_file() {
   printf '%s\n' "${GANDR_LANES:-${XDG_CONFIG_HOME:-$HOME/.config}/gandr/lanes.toml}"
 }
 
-# lanes_keys: the lanes of the table as one JSON array, `[]` with no table.
-lanes_keys() {
+# lanes_list: the lanes of the table, one on each line, none with no table.
+# The gate reads it with no jq (`.config/mise/gate.bash`).
+lanes_list() {
   local file
   file=$(lanes_file)
-  [[ -r $file ]] || { echo '[]'; return 0; }
-  awk '/^\[lane\]/ { on = 1; next } /^\[/ { on = 0 } on && /^[a-z0-9-]+ *=/ { sub(/ *=.*/, ""); print }' "$file" \
-    | jq -Rnc '[inputs]'
+  [[ -r $file ]] || return 0
+  awk '/^\[lane\]/ { on = 1; next } /^\[/ { on = 0 } on && /^[a-z0-9-]+ *=/ { sub(/ *=.*/, ""); print }' "$file"
+}
+
+# lanes_keys: the lanes of the table as one JSON array, `[]` with no table.
+lanes_keys() {
+  lanes_list | jq -Rnc '[inputs]'
 }
 
 # lanes_has <lane>: whether the table holds a row for the lane.

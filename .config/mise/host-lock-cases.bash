@@ -9,9 +9,10 @@
 # daemon` does. A gate releases its slot as it exits, whether it ends or is
 # stopped by `TERM`, while a daemon one of its steps started keeps the
 # descriptor open (#4421). A lane holds one slot, and a heavy check run alone
-# takes one (#4911). The lock directory comes before the runtime directory,
-# so a harness keeps its locks apart without moving the runtime directory
-# (#6182).
+# takes one (#4911). The lane table names the lanes, so two lanes whose names
+# share a first word hold two slots (#6699). The lock directory comes before
+# the runtime directory, so a harness keeps its locks apart without moving the
+# runtime directory (#6182).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 scratch=$(mktemp -d)
@@ -23,6 +24,9 @@ cleanup() {
 }
 trap cleanup EXIT
 export GANDR_HOST_LOCK_DIR=$scratch
+# The cases read a lane table of their own, never the host's.
+printf '[lane]\nflex-a = []\nflex-b = []\n' > "$scratch/lanes.toml"
+export GANDR_LANES=$scratch/lanes.toml
 # A gate that runs these cases in the background asks for no background
 # gate here (#6656).
 unset GANDR_GATE_SLOT GATE_NO_WAIT GANDR_GATE_BACKGROUND
@@ -210,6 +214,31 @@ done
 [[ $(< "$scratch/lane-waiter.err") == "gate-lane-surface: waiting on first (pid"* ]] || fail "#4911: the lane's waiting gate named no lane lock: $(< "$scratch/lane-waiter.err")"
 wait "$waiter" 2> /dev/null || true
 
+# The lane table names the lanes (#6699). The worktrees `lane-flex-a` and
+# `lane-flex-b` are two lanes of the table, so their gates take two slots at
+# once. The worktree of a branch, `flex-a-6699-scope`, is the lane `flex-a`,
+# so its gate refuses beside the gate of `lane-flex-a`, naming that lane's
+# lock.
+mkdir -p "$scratch/lane-flex-a" "$scratch/lane-flex-b" "$scratch/flex-a-6699-scope"
+gate_in lane-flex-a 'source "$1"; hold_gate_slot flex-a; echo $$ > "$2/flex-a.pid"; : > "$2/flex-a.held"; exec sleep 300' _ "$gate_helper" "$scratch" > /dev/null 2>&1 &
+pids+=("$!")
+tries=0
+until [[ -e $scratch/flex-a.held ]]; do
+  (( ++tries < 100 )) || { fail "#6699: the gate of the lane flex-a never took its slot"; break; }
+  sleep 0.1
+done
+flex_a=$(< "$scratch/flex-a.pid")
+pids+=("$flex_a")
+status=0
+refusal=$(gate_in lane-flex-b 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot flex-b' _ "$gate_helper" 2>&1) || status=$?
+[[ $status == 0 ]] || fail "#6699: the gate of the lane flex-b waited for the gate of the lane flex-a: exit $status, $refusal"
+status=0
+refusal=$(gate_in flex-a-6699-scope 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot branch' _ "$gate_helper" 2>&1) || status=$?
+[[ $status == 2 && $refusal == "gate-lane-flex-a: every slot on the host is held: flex-a (pid"* ]] \
+  || fail "#6699: the gate of a branch of the lane flex-a took no lock of that lane: exit $status, $refusal"
+kill -KILL "$flex_a"
+wait "$flex_a" 2> /dev/null || true
+
 # A heavy check run alone holds a slot through `gated`, so another lane's gate
 # finds none of one slot free; inside a gate, which exports `GANDR_GATE_SLOT`,
 # `gated` takes none.
@@ -275,4 +304,4 @@ GANDR_HOST_LOCK_DIR=$scratch/apart XDG_RUNTIME_DIR=$scratch/runtime bash -c 'sou
 [[ -z $(ls -A "$scratch/runtime") ]] || fail "#6182: a lock wrote under XDG_RUNTIME_DIR while GANDR_HOST_LOCK_DIR was set"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; two lanes of the lane table that share a first word held two slots; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"
