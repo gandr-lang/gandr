@@ -91,5 +91,33 @@ recast=$(commit recast)
 (cd "$repo" && reshaped "$fork" "$base" src/error.rs 3 3) \
   && fail "#6852: a landing below that leaves the file unchanged leaves the record unchanged" "changed"
 
+# The merge queue's clone is shallow (#6920). The architect signs a commit,
+# and the restack leaves it on no branch. The queue's clone fetches it by its
+# name at depth 1, so the clone holds no fork. `signed_fork` fetches the two
+# lines and reads the fork. GitHub leaves a commit fetched by its name at
+# depth 1 under a `--deepen`, and a local origin deepens it, so the case reads
+# the fork that `signed_fork` gives, not the refusal of the old deepening.
+origin=$work/origin
+git init --quiet --initial-branch landing "$origin"
+git -C "$origin" config user.email cases@example.invalid
+git -C "$origin" config user.name cases
+git -C "$origin" config uploadpack.allowAnySHA1InWant true
+at() { git -C "$origin" commit --quiet --no-verify --allow-empty -m "$1" && git -C "$origin" rev-parse HEAD; }
+at root > /dev/null
+shallow_fork=$(at fork)
+git -C "$origin" checkout --quiet -b change
+at signed-parent > /dev/null
+shallow_signed=$(at signed)
+git -C "$origin" checkout --quiet landing
+git -C "$origin" branch --quiet -D change
+at below > /dev/null
+shallow_base=$(at base)
+git clone --quiet --depth=1 --branch landing "file://$origin" "$work/clone" 2> /dev/null
+git -C "$work/clone" fetch --quiet --depth=1 origin "$shallow_signed" 2> /dev/null
+got=$(git -C "$work/clone" merge-base "$shallow_signed" "$shallow_base" 2> /dev/null) || got=none
+[[ $got == none ]] || fail "#6920: a shallow clone that fetched the signed commit at depth 1 holds no fork, as the queue's clone does" "$got"
+got=$(cd "$work/clone" && signed_fork "$shallow_signed" "$shallow_base") || got=none
+[[ $got == "$shallow_fork" ]] || fail "#6920: in a shallow clone, the fork of a signed commit that no branch holds is read" "$got"
+
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a shallow clone reads the fork of a signed commit on no branch"
