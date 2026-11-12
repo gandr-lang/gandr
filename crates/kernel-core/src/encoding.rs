@@ -2561,45 +2561,8 @@ impl ContentTable
         // An overlay that names one more constant copies the names it shares
         // with the table below: a fork names the constants first, so its jobs
         // name none.
-        Arc::make_mut(&mut self.constants).extend(
-            entries
-                .iter()
-                .take(usize::from(end))
-                .skip(named)
-                .map(crate::env::AdmittedDeclaration::key_name),
-        );
-    }
-
-    /// Forget the names of the constants from `first` on: the members a failed
-    /// block admitted, which its rollback removes from the environment.
-    ///
-    /// # Specification
-    /// - requires: every arena node that references one of those constants was
-    ///   truncated with the block, so no kept placement reads their names.
-    /// - ensures: the table names exactly the constants before `first` it named
-    ///   before.
-    /// - provides: the entries [`Self::name_constants`] extends again after a
-    ///   rollback, so a constant admitted at a reused position is named as its
-    ///   own admission names it.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a block refused after one of its members was
-    ///   admitted, then a plain definition admitted at that member's position;
-    ///   a table that kept the member's positional name names the definition by
-    ///   position, where a fresh table names it by its content.
-    /// - witness: `env::tests::a_definition_at_a_refused_member_s_position_is_named_by_its_content`
-    #[inline]
-    #[spec(ensures: self.constants.len() <= usize::from(first))]
-    pub(crate) fn forget_constants_from(
-        &mut self,
-        first: ConstantIndex,
-    )
-    {
-        if self.constants.len() > usize::from(first) {
-            Arc::make_mut(&mut self.constants).truncate(usize::from(first));
-        }
+        Arc::make_mut(&mut self.constants)
+            .extend(entries.key_names().take(usize::from(end)).skip(named));
     }
 
     /// How the table names the constant at `index`, when it has named it.

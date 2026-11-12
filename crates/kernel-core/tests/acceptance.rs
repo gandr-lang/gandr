@@ -1699,7 +1699,7 @@ fn the_public_admission_entry_cannot_be_handed_a_memo()
         "admission re-derives the obligation with a memo it built itself"
     );
     assert_eq!(
-        environment.entries().len(),
+        usize::from(environment.entries().admitted()),
         0_usize,
         "and nothing entered the environment"
     );

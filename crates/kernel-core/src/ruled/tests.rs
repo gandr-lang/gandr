@@ -194,9 +194,10 @@ fn rules_over_the_environment_admit_and_a_forged_pair_is_refused()
         })),
         "`or(True, True)` rewrites to two normal forms"
     );
-    // A rule calling past its own position names nothing admitted.
-    let later = vec![rule(&[or!(2_usize), var!(0_u32), var!(1_u32)], &[
-        or!(3_usize),
+    // A rule calling past its own position names nothing admitted. The forged
+    // rules leave a vacancy at 2, so this operation stands at 3.
+    let later = vec![rule(&[or!(3_usize), var!(0_u32), var!(1_u32)], &[
+        or!(4_usize),
         var!(0_u32),
         var!(1_u32),
     ])];
@@ -243,7 +244,8 @@ fn a_body_is_admitted_only_as_its_rules_decision_tree()
     };
     let [no, yes] = [FALSE, TRUE].map(ConstructorTag::from);
     // `or(False, True)` is `True` by the second rule; a body answering
-    // `False` there computes something the rules do not.
+    // `False` there computes something the rules do not. Each refused offer
+    // leaves a vacancy, so each offer stands one position past the one before.
     assert_eq!(
         admit_or(&mut environment, rules(1), [no, no, yes]),
         Err(KernelError::OperationBodyUnlinked(
@@ -252,14 +254,14 @@ fn a_body_is_admitted_only_as_its_rules_decision_tree()
         "the leaf is not its rule's right side"
     );
     assert_eq!(
-        admit(&mut environment, rules(1)),
+        admit(&mut environment, rules(2)),
         Err(KernelError::OperationBodyUnlinked(
             OperationBodyFault::Shape
         )),
         "a body that is no fixpoint over the inputs is no decision tree"
     );
     assert_eq!(
-        admit_or(&mut environment, rules(1), [no, yes, yes]),
+        admit_or(&mut environment, rules(3), [no, yes, yes]),
         Ok(()),
         "the tree the lowering compiles is admitted"
     );

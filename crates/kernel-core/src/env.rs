@@ -1758,8 +1758,8 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Debug, Default)]
 struct EntryLog
 {
-    /// The admitted declarations, in admission order.
-    family: Family<AdmittedDeclaration>,
+    /// The slot at each position, in admission order.
+    family: Family<Slot>,
     /// The presented types, and the types of words over each sort.
     presentations: crate::presented::Presentations,
     /// The position of each ruled definition, by the fixpoint its body thunks.
@@ -1779,10 +1779,66 @@ struct EntryLog
     ranked: BTreeMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
     order: Order,
+    /// How many slots are vacancies.
+    vacancies: usize,
 }
 
-/// No admitted declaration.
-static NO_FAMILY: Family<AdmittedDeclaration> = Family::new();
+/// The slot at one position of the entries: an admitted declaration, or the
+/// vacancy that a refused declaration leaves.
+///
+/// A refused declaration keeps its position, so no later position moves when
+/// a refusal comes after it. Its content leaves the arena, so its slot holds
+/// no declaration and no content. No read sees a vacancy, no rank table holds
+/// it, no reach holds it, and the chain passes it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per position, read by every check; boxing the declaration would allocate per \
+              admission and add an indirection to every read to shrink the rare vacant slot"
+)]
+enum Slot
+{
+    /// An admitted declaration, live or retired.
+    Admitted(AdmittedDeclaration),
+    /// The position of a refused declaration.
+    Vacant,
+}
+
+impl Slot
+{
+    /// The admitted declaration in this slot: none for a vacancy.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn admitted(&self) -> Option<&AdmittedDeclaration>
+    {
+        match *self {
+            Self::Admitted(ref entry) => Some(entry),
+            Self::Vacant => None,
+        }
+    }
+
+    /// The admitted declaration in this slot, to change in place: none for a
+    /// vacancy.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn admitted_mut(&mut self) -> Option<&mut AdmittedDeclaration>
+    {
+        match *self {
+            Self::Admitted(ref mut entry) => Some(entry),
+            Self::Vacant => None,
+        }
+    }
+}
+
+/// No slot.
+static NO_FAMILY: Family<Slot> = Family::new();
 
 /// No admitted declaration: what a judgement over an empty environment reads.
 pub(crate) static NO_ENTRIES: Entries = Entries::new();
@@ -1845,17 +1901,34 @@ impl Entries
         }
     }
 
-    /// The admitted declarations, read outside any support.
+    /// The slots, read outside any support.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn family(&self) -> &Family<AdmittedDeclaration>
+    fn family(&self) -> &Family<Slot>
     {
         self.log.as_deref().map_or(&NO_FAMILY, |log| &log.family)
     }
 
-    /// How many entries there are.
+    /// The admitted declaration at `offset`, live or retired, read outside
+    /// any support: none for a vacancy, and none past the entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn at<Offset>(
+        &self,
+        offset: Offset,
+    ) -> Option<&AdmittedDeclaration>
+    where
+        Offset: Into<gandr_kernel_term::ArenaLength>,
+    {
+        self.family().get(offset).and_then(Slot::admitted)
+    }
+
+    /// How many slots there are, each vacancy included: the position that
+    /// the next admission takes.
     ///
     /// # Specification
     /// trivial.
@@ -1864,6 +1937,31 @@ impl Entries
     pub fn len(&self) -> gandr_kernel_term::ArenaLength
     {
         self.family().len()
+    }
+
+    /// How many admitted entries there are, live or retired: the slots less
+    /// each vacancy.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the count of [`Self::iter`], read in constant time.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the count of [`Self::iter`] walks every slot, and a
+    ///   clause may not walk the entries.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a count that misses a vacancy or an entry that a
+    ///   refused block drops differs from the count of [`Self::iter`].
+    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    #[inline]
+    #[must_use]
+    pub fn admitted(&self) -> gandr_kernel_term::ArenaLength
+    {
+        gandr_kernel_term::ArenaLength::from(
+            usize::from(self.len())
+                .saturating_sub(self.log.as_deref().map_or(0, |log| log.vacancies)),
+        )
     }
 
     /// The entry at `offset`, read through the support of the check that
@@ -1903,7 +2001,7 @@ impl Entries
     {
         let position = usize::from(offset.into());
         let log = self.log.as_deref()?;
-        let entry = log.family.get(position)?;
+        let entry = log.family.get(position)?.admitted()?;
         if entry.kind == EntryKind::Retired || entry.rank >= self.horizon() {
             return None;
         }
@@ -1939,7 +2037,7 @@ impl Entries
         Offset: Into<gandr_kernel_term::ArenaLength>,
     {
         let position = usize::from(offset.into());
-        let entry = self.family().get(position)?;
+        let entry = self.at(position)?;
         if entry.kind == EntryKind::Retired || entry.rank >= self.horizon() {
             return None;
         }
@@ -1957,7 +2055,8 @@ impl Entries
         }
     }
 
-    /// The entry admitted last, read outside any support.
+    /// The entry admitted last, read outside any support: a vacancy after it
+    /// is passed.
     ///
     /// # Specification
     /// trivial.
@@ -1965,11 +2064,13 @@ impl Entries
     #[must_use]
     pub fn last(&self) -> Option<&AdmittedDeclaration>
     {
-        self.family().last()
+        self.family().iter().rev().find_map(Slot::admitted)
     }
 
-    /// Every entry, in admission order, read outside any support: for a
-    /// reader outside a check.
+    /// Every admitted entry, live or retired, in admission order, read outside
+    /// any support: for a reader outside a check. A vacancy gives nothing, so
+    /// a reader that needs each position counts it from [`Self::len`], and a
+    /// reader that needs the count of entries reads [`Self::admitted`].
     ///
     /// # Specification
     /// trivial.
@@ -1977,7 +2078,22 @@ impl Entries
     #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &AdmittedDeclaration>
     {
-        self.family().iter()
+        self.family().iter().filter_map(Slot::admitted)
+    }
+
+    /// How a memo key names a reference to each position, in admission
+    /// order: as the admission of its entry named it, and a vacancy by its
+    /// position, which no read reaches.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn key_names(&self) -> impl Iterator<Item = ConstantName> + '_
+    {
+        self.family().iter().map(|slot| {
+            slot.admitted()
+                .map_or(ConstantName::Position, |entry| entry.key_name)
+        })
     }
 
     /// The presented types among the entries, and the types of words over
@@ -2022,8 +2138,7 @@ impl Entries
         position: ConstantIndex,
     ) -> Option<&AdmittedDeclaration>
     {
-        self.family()
-            .get(usize::from(position))
+        self.at(usize::from(position))
             .filter(|entry| entry.kind == EntryKind::Live)
     }
 
@@ -2335,7 +2450,7 @@ impl Entries
             return Box::default();
         };
         let words = |position: ConstantIndex| {
-            let entry = log.family.get(usize::from(position))?;
+            let entry = log.family.get(usize::from(position))?.admitted()?;
             let sort = entry.declaration.presentation().cells()?.sort();
             let mut over = log.presentations.over(sort);
             over.any(|words| words == position).then_some(sort)
@@ -2470,7 +2585,33 @@ impl Entries
         }
         let _previous = log.ranked.insert(rank, position);
         log.dependents.admit(position, &entry.references);
-        log.family.push(entry);
+        log.family.push(Slot::Admitted(entry));
+    }
+
+    /// Leave a vacancy at the next position: the slot of a refused
+    /// declaration, which holds no declaration and no content.
+    ///
+    /// # Specification
+    /// - requires: the declaration staged at the next position is refused, and
+    ///   the arena holds none of its content.
+    /// - ensures: one more slot, which no read sees and no table holds; each
+    ///   live position's place in rank order is read through [`Self::places`]
+    ///   from now on.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::add_decl`].
+    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
+    pub(crate) fn vacate(&mut self)
+    {
+        let log = self.log_mut();
+        let position = ConstantIndex::from(usize::from(log.family.len()));
+        log.order = Order::Ranked;
+        log.dependents.admit(position, &[]);
+        log.vacancies = log.vacancies.saturating_add(1);
+        log.family.push(Slot::Vacant);
     }
 
     /// Retire the live entry at `position`: no read sees it after, and its
@@ -2499,7 +2640,10 @@ impl Entries
     )
     {
         let log = self.log_mut();
-        let Some(entry) = log.family.get_mut(usize::from(position))
+        let Some(entry) = log
+            .family
+            .get_mut(usize::from(position))
+            .and_then(Slot::admitted_mut)
         else {
             return;
         };
@@ -2542,7 +2686,10 @@ impl Entries
     )
     {
         let log = self.log_mut();
-        let Some(entry) = log.family.get_mut(usize::from(position))
+        let Some(entry) = log
+            .family
+            .get_mut(usize::from(position))
+            .and_then(Slot::admitted_mut)
         else {
             return;
         };
@@ -2557,7 +2704,7 @@ impl Entries
             ref mut ranked,
             ..
         } = *log;
-        let Some(entry) = family.get(usize::from(position))
+        let Some(entry) = family.get(usize::from(position)).and_then(Slot::admitted)
         else {
             return;
         };
@@ -2605,8 +2752,11 @@ impl Entries
         let first = ConstantIndex::from(length);
         let log = self.log_mut();
         let dropped = usize::from(log.family.len()).saturating_sub(usize::from(length));
-        for entry in log.family.iter().rev().take(dropped) {
-            log.dependents.forget(&entry.references);
+        for slot in log.family.iter().rev().take(dropped) {
+            match *slot {
+                Slot::Admitted(ref entry) => log.dependents.forget(&entry.references),
+                Slot::Vacant => log.vacancies = log.vacancies.saturating_sub(1),
+            }
         }
         log.dependents.truncate(first);
         log.family.truncate(length);
@@ -2652,7 +2802,10 @@ impl Entries
         Offset: Into<gandr_kernel_term::ArenaLength>,
     {
         self.log.as_ref()?;
-        self.log_mut().family.get_mut(offset)
+        self.log_mut()
+            .family
+            .get_mut(offset)
+            .and_then(Slot::admitted_mut)
     }
 
     /// Open a check of the declaration ranked at `rank`, whose support starts
@@ -2738,12 +2891,12 @@ impl Entries
 /// # Specification
 /// trivial.
 fn sort_constructors<'family>(
-    family: &'family Family<AdmittedDeclaration>,
+    family: &'family Family<Slot>,
     declaration: &Declaration,
 ) -> Option<&'family [Vec<ValueTypeId>]>
 {
     let cells = declaration.presentation().cells()?;
-    match *family.get(usize::from(cells.sort()))?.content() {
+    match *family.get(usize::from(cells.sort()))?.admitted()?.content() {
         DeclarationContent::Data {
             ref constructors, ..
         } => Some(constructors.as_slice()),
@@ -2762,7 +2915,7 @@ fn sort_constructors<'family>(
 /// # Specification
 /// trivial.
 fn place_definition(
-    family: &Family<AdmittedDeclaration>,
+    family: &Family<Slot>,
     definitions: &mut BTreeMap<ContentDigest, Vec<ConstantIndex>>,
     digest: ContentDigest,
     (position, rank): (ConstantIndex, SourceRank),
@@ -2772,6 +2925,7 @@ fn place_definition(
     let at = positions.partition_point(|&held| {
         family
             .get(usize::from(held))
+            .and_then(Slot::admitted)
             .is_some_and(|earlier| earlier.rank < rank)
     });
     positions.insert(at, position);
@@ -3359,7 +3513,7 @@ impl Environment
     ///   rejection before it changes no later key.
     /// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
     /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
-    /// - witness: `env::tests::a_rejected_declaration_leaves_the_environment_unchanged`
+    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     /// - witness: `env::tests::a_rejection_keeps_a_prior_admission_resolvable`
     /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
     /// - witness: `env::tests::an_in_order_producer_is_never_refused`
@@ -3403,7 +3557,9 @@ impl Environment
             return Err(KernelError::OutstandingStagedContent { above });
         }
         let position = ConstantIndex::from(usize::from(self.entries.len()));
-        let rank = rank.unwrap_or_else(|| SourceRank::from(position));
+        // A declaration staged with no rank ranks past every live entry, so a
+        // vacancy before it moves its position and not its rank.
+        let rank = rank.unwrap_or_else(|| self.entries.past_ranks());
         let content_end = self.arena.watermark();
         // The rejection mark: this declaration's content-start, clamped into
         // `[admission floor, content-end]`, so a rollback can neither delete an
@@ -3420,8 +3576,10 @@ impl Environment
             Ok(levels) => levels,
             Err(error) => {
                 // No key was taken: the chain reads the declarations the
-                // environment holds, and a rejected one enters none.
+                // environment holds, and a rejected one enters none. Its
+                // position stays as a vacancy.
                 self.arena.truncate_to(rejected);
+                self.entries.vacate();
                 return Err(error);
             },
         };
@@ -3579,8 +3737,8 @@ impl Environment
     /// - requires: `lone` is the declaration staged at the next position, and
     ///   the arena holds its content below `lone.marks.0`.
     /// - ensures: on an outcome that admits, one entry at `lone.place.0` and
-    ///   the admission floor at `lone.marks.0`; on a refusal, the entries as
-    ///   they stood and the arena truncated to `lone.marks.1`.
+    ///   the admission floor at `lone.marks.0`; on a refusal, a vacancy at
+    ///   `lone.place.0` and the arena truncated to `lone.marks.1`.
     /// - panics: none.
     ///
     /// # Errors
@@ -3588,11 +3746,12 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_decl`].
-    /// - witness: `env::tests::a_rejected_declaration_leaves_the_environment_unchanged`
+    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
-    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| match ret.as_ref() {
+    #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted()], ensures: |ret| match ret.as_ref() {
         Ok(id) => usize::from(id.position()) == usize::from(entry_len) && self.admission_floor == self.arena.watermark(),
-        Err(_) => self.entries.len() == entry_len,
+        Err(_) => usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1)
+            && self.entries.admitted() == admitted,
     })]
     fn commit(
         &mut self,
@@ -3649,8 +3808,9 @@ impl Environment
             },
             Err(error) => {
                 // Drop this declaration's content, down to the admission floor
-                // and no further.
+                // and no further. Its position stays as a vacancy.
                 self.arena.truncate_to(rejected);
+                self.entries.vacate();
                 self.verdicts.refused();
                 Err(error)
             },
@@ -3779,7 +3939,7 @@ impl Environment
     #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
         && self
             .entries
-            .last()
+            .at(entry_len)
             .is_some_and(|entry| entry.admission == Admission::Unchecked)
         && self.arena.watermark() == entry_watermark
         && self.admission_floor == self.arena.watermark())]
@@ -3797,7 +3957,7 @@ impl Environment
         let position = ConstantIndex::from(usize::from(self.entries.len()));
         // The bypass refuses nothing, so a held rank gives way to the rank past
         // every live one: two entries never share a rank.
-        let rank = rank.unwrap_or_else(|| SourceRank::from(position));
+        let rank = rank.unwrap_or_else(|| self.entries.past_ranks());
         let rank = match self.entries.ranked(rank) {
             None => rank,
             Some(_) => self.entries.past_ranks(),
@@ -3851,9 +4011,10 @@ impl Environment
     ///   positions from the current length, exactly when every definition's
     ///   declared type forms with the families in scope, every family passes
     ///   the occurrence walk over the block and forms, and every definition's
-    ///   body checks; each member's audit is the union of the block's. On any
-    ///   failure the arena, the entries and the manifest are as they were
-    ///   before the call.
+    ///   body checks; each member's audit is the union of the block's. On a
+    ///   failure of a member's check, a vacancy at each member's position, and
+    ///   the arena and the manifest as they were before the call. On a refusal
+    ///   before any position is taken, the entries as they were too.
     /// - provides: the one checked entry for declarations that name each other,
     ///   by the same choke point [`Self::add_decl`] is.
     /// - fails: [`KernelError::OutstandingStagedContent`] when a declaration
@@ -3868,7 +4029,7 @@ impl Environment
     /// - hypothesis: L3 — a universe and its decoder are admitted together; a
     ///   decoder that names itself at a place that does not descend, and a
     ///   field naming its family under a function domain, are each refused with
-    ///   the environment unchanged.
+    ///   a vacancy at each member's position.
     /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
     /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark(), members = staged.len()],
@@ -3876,7 +4037,8 @@ impl Environment
             Ok(ids) => ids.len() == members
                 && usize::from(self.entries.len()).checked_sub(usize::from(entry_len)) == Some(members)
                 && self.admission_floor == self.arena.watermark(),
-            Err(_) => self.entries.len() == entry_len
+            Err(_) => (usize::from(self.entries.len()) == usize::from(entry_len)
+                    || usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(members))
                 && self.arena.watermark().clamped_into(gandr_kernel_term::ArenaWatermark::default(), entry_watermark) == self.arena.watermark(),
         })]
     #[inline]
@@ -3905,10 +4067,15 @@ impl Environment
         let base = self.entries.len();
         let content_end = self.arena.watermark();
         let rejected = content_start.clamped_into(self.admission_floor, content_end);
+        // A member staged with no rank ranks past every live entry, after the
+        // members before it.
+        let past = self.entries.past_ranks();
         let mut ranks = Vec::with_capacity(staged.len());
         for (offset, member) in staged.iter().enumerate() {
             let position = ConstantIndex::from(usize::from(base).saturating_add(offset));
-            let rank = member.rank.unwrap_or_else(|| SourceRank::from(position));
+            let rank = member
+                .rank
+                .unwrap_or_else(|| SourceRank::from(usize::from(past).saturating_add(offset)));
             // A member ranks above the member before it, at a rank no live
             // entry holds.
             let taken = match ranks.last() {
@@ -3934,14 +4101,14 @@ impl Environment
                 Ok(ids)
             },
             Err(error) => {
-                self.entries.truncate(base);
                 // The members admitted before the refusal leave the
-                // environment, so their names leave the table: a constant
-                // admitted at a reused position is named as its own admission
-                // names it.
-                self.names
-                    .session_mut()
-                    .forget_constants_from(ConstantIndex::from(usize::from(base)));
+                // environment, and each member's position stays as a vacancy.
+                // No later admission takes those positions, so the names and
+                // the kept outcomes that read a member stay unread.
+                self.entries.truncate(base);
+                for _member in &members {
+                    self.entries.vacate();
+                }
                 self.manifest = manifest;
                 self.arena.truncate_to(rejected);
                 Err(error)
@@ -4110,7 +4277,8 @@ impl Environment
         }
         // The members name each other, so each rests on what any rests on.
         let mut rested = BTreeSet::new();
-        for entry in self.entries.iter().skip(base) {
+        for entry in (base .. usize::from(self.entries.len())).filter_map(|at| self.entries.at(at))
+        {
             rested.extend(entry.rested_on.iter().copied());
         }
         for offset in base .. usize::from(self.entries.len()) {
@@ -4167,7 +4335,11 @@ impl Environment
         for &position in positions {
             match self.entries.family().get(usize::from(position)) {
                 None => return Err(KernelError::UnboundConstant { index: position }),
-                Some(entry) if entry.kind == EntryKind::Retired => {
+                Some(slot)
+                    if slot
+                        .admitted()
+                        .is_none_or(|entry| entry.kind == EntryKind::Retired) =>
+                {
                     return Err(KernelError::KindTaken {
                         position,
                         kind: EntryKind::Retired,
@@ -4179,8 +4351,7 @@ impl Environment
         for &position in positions {
             let Some(unit) = self
                 .entries
-                .family()
-                .get(usize::from(position))
+                .at(usize::from(position))
                 .map(|entry| entry.unit)
             else {
                 continue;
@@ -4254,7 +4425,7 @@ impl Environment
             position: first,
             refusal,
         };
-        let Some(entry) = self.entries.family().get(usize::from(first))
+        let Some(entry) = self.entries.at(usize::from(first))
         else {
             return Err(KernelError::UnboundConstant { index: first });
         };
@@ -4300,14 +4471,14 @@ impl Environment
             UnitShape::Block => {
                 let declarations: Vec<Declaration> = (usize::from(unit.first)
                     .. usize::from(unit.end))
-                    .filter_map(|member| self.entries.family().get(member))
+                    .filter_map(|member| self.entries.at(member))
                     .map(|member| member.declaration.clone())
                     .collect();
                 self.content_key(&declarations, (first, ranks))
             },
         };
         let generative = (usize::from(unit.first) .. usize::from(unit.end))
-            .filter_map(|member| self.entries.family().get(member))
+            .filter_map(|member| self.entries.at(member))
             .any(|member| {
                 !matches!(
                     *member.content(),
@@ -4329,12 +4500,7 @@ impl Environment
                 UnitShape::Lone => unit_key,
                 UnitShape::Block => unit_key.member(crate::verdict::KeyedCount::from(offset)),
             };
-            match self
-                .entries
-                .family()
-                .get(member)
-                .map(AdmittedDeclaration::key)
-            {
+            match self.entries.at(member).map(AdmittedDeclaration::key) {
                 Some(Maybe::Present(held)) if held == expected => {},
                 Some(Maybe::Present(_)) => return Err(unkept(KeepRefusal::KeyChanged)),
                 Some(Maybe::Absent(_)) | None => return Err(unkept(KeepRefusal::Unkeyed)),
@@ -4342,11 +4508,7 @@ impl Environment
         }
         for (member, &rank) in (usize::from(unit.first) .. usize::from(unit.end)).zip(ranks) {
             let position = ConstantIndex::from(member);
-            let Some(held) = self
-                .entries
-                .family()
-                .get(member)
-                .map(|entry| entry.key_name)
+            let Some(held) = self.entries.at(member).map(|entry| entry.key_name)
             else {
                 continue;
             };
@@ -4732,8 +4894,7 @@ impl Environment
             ) = (
                 self.entries.key(atom),
                 self.entries
-                    .family()
-                    .get(usize::from(atom))
+                    .at(usize::from(atom))
                     .map(AdmittedDeclaration::content),
             )
             else {
@@ -4770,7 +4931,7 @@ impl Environment
                     registry.push((word_rank, word));
                 }
             }
-            if let Some(entry) = self.entries.family().get(usize::from(position)) {
+            if let Some(entry) = self.entries.at(usize::from(position)) {
                 reached.extend(
                     entry
                         .references
@@ -6382,7 +6543,7 @@ mod tests
     }
 
     #[test]
-    fn a_definition_at_a_refused_member_s_position_is_named_by_its_content()
+    fn a_definition_after_a_refused_block_is_named_by_its_content()
     {
         let mut environment = Environment::new();
         let admitted = {
@@ -6411,6 +6572,12 @@ mod tests
             .add_decl(definition)
             .expect("a unit definition admits")
             .position();
+        assert_eq!(
+            ConstantIndex::from(2_usize),
+            definition,
+            "each member of the refused block leaves a vacancy, so the \
+             definition takes the next position"
+        );
         let reference = {
             let mut staging = environment.stage();
             let declared = staging.arena().value_type_unit();
@@ -6425,13 +6592,13 @@ mod tests
                 environment.names.session().constant_name(definition),
                 Some(crate::encoding::ConstantName::Definition { .. })
             ),
-            "the refused member's positional name leaves the table with it, so \
-             the definition admitted at its position is named by its content"
+            "the positions of the refused members stay vacant, so the \
+             definition after them is named by its content"
         );
     }
 
     #[test]
-    fn a_rejected_declaration_leaves_the_environment_unchanged()
+    fn a_rejected_declaration_leaves_a_vacancy_at_its_position()
     {
         let mut environment = Environment::new();
         let before = environment.arena().watermark();
@@ -6453,9 +6620,25 @@ mod tests
             "and the arena holds exactly what it held before the call"
         );
         assert_eq!(
-            environment.entries().len(),
-            0_usize,
-            "with nothing appended"
+            usize::from(environment.entries().len()),
+            1_usize,
+            "with a vacancy at the refused declaration's position"
+        );
+        assert!(
+            environment.entries().get(0_usize).is_none()
+                && environment.entries().iter().next().is_none(),
+            "which no read sees and no walk of the entries yields"
+        );
+        let good = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        assert_eq!(
+            Ok(ConstantIndex::from(1_usize)),
+            environment.add_decl(good).map(CheckedId::position),
+            "the next declaration takes the position after the vacancy"
         );
     }
 
@@ -7695,22 +7878,24 @@ mod tests
             "a universe is no field of a type in that universe. The type's own \
              field formed at its level first"
         );
+        let one_up = ConstantIndex::from(1_usize);
         let admitted = stage_member(
             &mut environment,
             &Member::Data(one, vec![Field::Own, Field::Universe(zero)]),
-            position,
+            one_up,
             &[],
         );
         assert_eq!(
-            Ok(position),
+            Ok(one_up),
             environment.add_decl(admitted).map(CheckedId::position),
-            "one level up, the declaration admits at the refused one's position"
+            "one level up, the declaration admits past the vacancy of the \
+             refused one"
         );
         let successor = stage_member(
             &mut environment,
             &Member::Data(zero, vec![Field::Earlier(0)]),
-            ConstantIndex::from(1_usize),
-            &[position],
+            ConstantIndex::from(2_usize),
+            &[one_up],
         );
         let verdict = environment.add_decl(successor).map(CheckedId::position);
         assert!(
@@ -7722,7 +7907,7 @@ mod tests
     }
 
     #[test]
-    fn a_refused_block_s_outcomes_do_not_answer_at_its_positions()
+    fn a_refused_block_s_outcomes_answer_no_later_family()
     {
         let mut environment = Environment::new();
         let family = ConstantIndex::from(0_usize);
@@ -7751,29 +7936,31 @@ mod tests
             "the block refuses at its last member, after its codata member's \
              observation formed at the bottom over the family before it"
         );
+        let later = ConstantIndex::from(3_usize);
         let second_family = stage_member(
             &mut environment,
             &Member::Data(LevelConstant::from(1_u64), vec![]),
-            family,
+            later,
             &[],
         );
         assert_eq!(
-            Ok(family),
+            Ok(later),
             environment.add_decl(second_family).map(CheckedId::position),
-            "a family one level up admits at the refused family's position"
+            "a family one level up admits after the vacancy of each member of \
+             the refused block"
         );
         let staged = stage_member(
             &mut environment,
             &observer,
-            ConstantIndex::from(1_usize),
-            &[family],
+            ConstantIndex::from(4_usize),
+            &[later],
         );
         let verdict = environment.add_decl(staged).map(CheckedId::position);
         assert!(
             matches!(verdict, Err(KernelError::UniverseViolation(_))),
-            "the same observation now returns a type one level up. The refused \
-             block's codata member formed it at the bottom under the same \
-             parameters: {verdict:?}"
+            "the same observation over the later family returns a type one \
+             level up. The refused block's codata member formed one at the \
+             bottom over the refused family: {verdict:?}"
         );
     }
 
@@ -8321,7 +8508,12 @@ mod tests
             .flatten()
             .find_map(|positions| positions.first().copied())
             .map_or(length, usize::from);
-        let retired: Vec<ConstantIndex> = (from .. length).map(ConstantIndex::from).collect();
+        // A readmission retires its reach, which holds the live entries alone:
+        // a vacancy has nothing to retire.
+        let retired: Vec<ConstantIndex> = (from .. length)
+            .filter(|&position| kept.entries().get(position).is_some())
+            .map(ConstantIndex::from)
+            .collect();
         let watermark = kept.arena().watermark();
         proptest::prop_assert_eq!(kept.retire(&retired), Ok(()));
         proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
@@ -8413,10 +8605,11 @@ mod tests
             }
         }
         proptest::prop_assert_eq!(read_by_rank(&kept), read_by_rank(&fresh));
+        let vacant = fresh.entries().admitted() < fresh.entries().len();
         proptest::prop_assert_eq!(
-            fresh.entries().places(),
-            Maybe::Absent(super::places::Absent::InOrder),
-            "a fresh admission builds no places"
+            matches!(fresh.entries().places(), Maybe::Present(_)),
+            vacant,
+            "a fresh admission builds places exactly when a refusal left a vacancy"
         );
         proptest::prop_assert_eq!(
             exported(&kept),
@@ -8432,7 +8625,8 @@ mod tests
         /// An environment that keeps its content outcomes gives every
         /// admission the verdict that a fresh session gives. A kept outcome
         /// answers only under its own parameters. The generated environments
-        /// reuse the positions that refused declarations and blocks free.
+        /// leave a vacancy at each position that a refused declaration or
+        /// block takes.
         #[test]
         fn kept_outcomes_leave_every_verdict_as_fresh_sessions_give(
             admissions in proptest::collection::vec(generated(), 1 .. 12),
@@ -8552,16 +8746,17 @@ mod tests
     ) -> Vec<ConstantIndex>
     {
         let length = usize::from(entries.len());
+        // A vacancy stands in no reach, as a retired entry does not.
         let mut reached: BTreeSet<ConstantIndex> = edited
             .iter()
             .copied()
-            .filter(|&position| usize::from(position) < length)
+            .filter(|&position| entries.get(usize::from(position)).is_some())
             .collect();
         let mut support = BTreeSet::new();
         let mut pending: Vec<ConstantIndex> = Vec::new();
         loop {
             let before = reached.len();
-            for (at, entry) in entries.iter().enumerate() {
+            for (at, entry) in (0 .. length).filter_map(|at| Some((at, entries.get(at)?))) {
                 let consumer = ConstantIndex::from(at);
                 if reached.contains(&consumer) {
                     continue;

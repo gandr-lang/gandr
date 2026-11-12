@@ -2786,8 +2786,8 @@ enum Decoded
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the kernel's verdict on the block, which leaves the environment
-///   as it was on a refusal.
+/// - ensures: the kernel's verdict on the block, which admits no member on a
+///   refusal and leaves a vacancy at each member's position.
 /// - panics: none.
 ///
 /// # Errors
@@ -2798,8 +2798,8 @@ enum Decoded
 ///   fields, so each verdict is that field's.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
-#[spec(captures: before = environment.entries().len(), ensures: |ret| ret.as_ref().map_or_else(
-        |_| environment.entries().len() == before,
+#[spec(captures: [before = environment.entries().len(), admitted = environment.entries().admitted()], ensures: |ret| ret.as_ref().map_or_else(
+        |_| environment.entries().admitted() == admitted,
         |ids| ids.len() >= 2 && environment.entries().len() == usize::from(before).saturating_add(ids.len()),
     ))]
 fn universe(
@@ -2925,7 +2925,7 @@ fn a_mutual_block_is_refused_whole()
         matches!(negative, Err(KernelError::NegativeOccurrence(_))),
         "{negative:?}"
     );
-    assert_eq!(environment.entries().len(), 0_usize);
+    assert_eq!(usize::from(environment.entries().admitted()), 0_usize);
 }
 
 /// A family named through a definition of its block stands where the
@@ -2967,7 +2967,7 @@ fn a_definition_of_the_block_is_read_through_602()
             field: FieldPosition::from(0_usize),
         }))
     );
-    assert_eq!(environment.entries().len(), 0_usize);
+    assert_eq!(usize::from(environment.entries().admitted()), 0_usize);
 }
 
 /// Where a rose tree's recursion over its block's two families calls

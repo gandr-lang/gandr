@@ -559,7 +559,7 @@ fn a_bridge_at_a_sealed_type_is_refused()
         let declaration = staging.def(LevelSignature::monomorphic(), bridged, unit);
         environment.add_decl(declaration).map(|_| ())
     };
-    let admitted = environment.entries().len();
+    let admitted = environment.entries().admitted();
     let at_atom = bridged(&mut environment, |arena, [atom, point, _]| {
         (arena.value_type_abstract(atom), arena.value_constant(point))
     });
@@ -584,7 +584,7 @@ fn a_bridge_at_a_sealed_type_is_refused()
         in_a_list,
         Err(KernelError::Identity(IdentityError::BridgeAtSealedType(_)))
     ));
-    assert_eq!(environment.entries().len(), admitted);
+    assert_eq!(environment.entries().admitted(), admitted);
 
     // The identity at the same atom still forms: the refusal is bridge
     // mode's alone.
@@ -693,7 +693,7 @@ fn an_interfaced_atom_bears_its_relation_as_its_bridge()
 
     // The interface states no identity law, so an identity between the two
     // points has no fibre to read; reflexivity at the atom still forms.
-    let admitted = environment.entries().len();
+    let admitted = environment.entries().admitted();
     let identity = at(&mut environment, Mode::Identity, (first, second), unit);
     let Err(KernelError::Identity(error @ IdentityError::AtomTransport(_))) = identity
     else {
@@ -703,7 +703,7 @@ fn an_interfaced_atom_bears_its_relation_as_its_bridge()
         error.to_string(),
         "an identity at a sealed type whose interface states no identity law"
     );
-    assert_eq!(environment.entries().len(), admitted);
+    assert_eq!(environment.entries().admitted(), admitted);
     at(&mut environment, Mode::Identity, (first, first), here).expect("reflexivity at the atom");
 }
 
@@ -731,7 +731,7 @@ fn an_interface_is_checked_where_its_atom_is_admitted()
         irreflexive.is_err(),
         "a reflexivity outside its relation's diagonal"
     );
-    assert_eq!(environment.entries().len(), 0_usize);
+    assert_eq!(usize::from(environment.entries().admitted()), 0_usize);
 }
 
 /// An atom over `representation` at the value universe, admitted with the
@@ -1014,7 +1014,7 @@ fn a_law_is_checked_where_its_atom_is_admitted()
         matches!(unfunctional, Err(KernelError::ValueShapeMismatch { .. })),
         "a law that is no function: {unfunctional:?}"
     );
-    assert_eq!(environment.entries().len(), 0_usize);
+    assert_eq!(usize::from(environment.entries().admitted()), 0_usize);
 }
 
 /// The relation relating two points of the unit type by the paths between
