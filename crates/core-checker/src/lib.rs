@@ -578,69 +578,109 @@ extern crate alloc;
 #[cfg(feature = "hotpath")]
 extern crate std;
 
-pub mod access;
-pub mod bridge;
-mod canonical;
-mod capability;
-pub mod codata;
-mod code;
-pub mod comonoid;
-mod compose;
-mod context;
-mod conversion;
-mod coverage;
-mod declaration;
-mod discharge;
-mod divergence;
+pub use gandr_core_checker_base::access;
+#[allow(unused_imports)]
+use gandr_core_checker_base::canonical;
+#[allow(unused_imports)]
+use gandr_core_checker_base::capability;
+pub use gandr_core_checker_base::codata;
+#[allow(unused_imports)]
+use gandr_core_checker_base::code;
+pub use gandr_core_checker_base::comonoid;
+#[allow(unused_imports)]
+use gandr_core_checker_base::compose;
+#[allow(unused_imports)]
+use gandr_core_checker_base::context;
+#[allow(unused_imports)]
+use gandr_core_checker_base::conversion;
+#[allow(unused_imports)]
+use gandr_core_checker_base::coverage;
+#[allow(unused_imports)]
+use gandr_core_checker_base::declaration;
+#[allow(unused_imports)]
+use gandr_core_checker_base::discharge;
+#[allow(unused_imports)]
+use gandr_core_checker_base::divergence;
+pub use gandr_core_checker_bridge::bridge;
 pub mod elaborating;
-pub mod elaboration;
-pub mod eliminator;
-mod equiv;
-mod failure;
-pub mod fill;
+pub use gandr_core_checker_base::elaboration;
+pub use gandr_core_checker_base::eliminator;
+#[allow(unused_imports)]
+use gandr_core_checker_base::equiv;
+#[allow(unused_imports)]
+use gandr_core_checker_base::failure;
+pub use gandr_core_checker_base::fill;
 #[cfg(test)]
 mod fixture;
-mod flow;
-mod formation;
-mod former;
-mod forward;
-mod funext;
-mod handler;
-mod judge;
-mod judgement;
-mod ledger;
-mod loops;
+#[allow(unused_imports)]
+use gandr_core_checker_base::flow;
+#[allow(unused_imports)]
+use gandr_core_checker_base::formation;
+#[allow(unused_imports)]
+use gandr_core_checker_base::former;
+#[allow(unused_imports)]
+use gandr_core_checker_base::forward;
+#[allow(unused_imports)]
+use gandr_core_checker_base::funext;
+#[allow(unused_imports)]
+use gandr_core_checker_base::handler;
+#[allow(unused_imports)]
+use gandr_core_checker_base::judge;
+#[allow(unused_imports)]
+use gandr_core_checker_base::judgement;
+#[allow(unused_imports)]
+use gandr_core_checker_base::ledger;
+#[allow(unused_imports)]
+use gandr_core_checker_base::loops;
 mod module;
-mod nested;
-mod occurrence;
-mod product;
-pub mod program;
-mod quantified;
-mod record;
-mod recursion;
-mod refusal;
-mod regioned;
-mod relatedness;
-mod report;
-mod respect;
-mod retire;
-mod seal;
-pub mod session;
-mod solution;
-pub mod stage;
+#[allow(unused_imports)]
+use gandr_core_checker_base::nested;
+#[allow(unused_imports)]
+use gandr_core_checker_base::occurrence;
+#[allow(unused_imports)]
+use gandr_core_checker_base::product;
+pub use gandr_core_checker_base::program;
+#[allow(unused_imports)]
+use gandr_core_checker_base::quantified;
+#[allow(unused_imports)]
+use gandr_core_checker_base::record;
+#[allow(unused_imports)]
+use gandr_core_checker_base::recursion;
+#[allow(unused_imports)]
+use gandr_core_checker_base::refusal;
+#[allow(unused_imports)]
+use gandr_core_checker_base::regioned;
+#[allow(unused_imports)]
+use gandr_core_checker_base::relatedness;
+#[allow(unused_imports)]
+use gandr_core_checker_base::report;
+#[allow(unused_imports)]
+use gandr_core_checker_base::respect;
+#[allow(unused_imports)]
+use gandr_core_checker_base::retire;
+#[allow(unused_imports)]
+use gandr_core_checker_base::seal;
+pub use gandr_core_checker_base::session;
+#[allow(unused_imports)]
+use gandr_core_checker_base::solution;
+pub use gandr_core_checker_base::stage;
 pub mod staging;
-mod support;
-mod tactic;
+#[allow(unused_imports)]
+use gandr_core_checker_base::support;
+#[allow(unused_imports)]
+use gandr_core_checker_base::tactic;
 #[cfg(feature = "instrument")]
-pub mod tally;
-pub mod template;
-pub mod tier;
+pub use gandr_core_checker_base::tally;
+pub use gandr_core_checker_base::tier;
 #[cfg(feature = "instrument")]
-pub mod trace;
-pub mod ua;
-mod univalence;
-mod view;
-pub mod worlds;
+pub use gandr_core_checker_base::trace;
+pub use gandr_core_checker_base::ua;
+#[allow(unused_imports)]
+use gandr_core_checker_base::univalence;
+#[allow(unused_imports)]
+use gandr_core_checker_base::view;
+pub use gandr_core_checker_base::worlds;
+pub use gandr_core_checker_bridge::template;
 
 pub use crate::capability::Grants;
 pub use crate::capability::HostGrant;
