@@ -3224,6 +3224,7 @@ INSERT INTO purpose VALUES('surface-lsp','server::Reported','struct','The progre
 INSERT INTO purpose VALUES('surface-lsp','server::Served','enum','How a session ended.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Server','struct','One connection''s state.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Settled','struct','What settling a connection''s ended judgements and admissions produced.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','server::Settlement','enum','Whether the latest copy of a document holds the judgement of its version, so the render bus sends no card while the judgement runs.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Workspace','struct','What every connection to one server shares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::serve','function','Serve the protocol over `input` and `output` until the session ends.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','session_trace::Divergence','struct','Where a replay parted from its trace, and how.',NULL,'fits','sound',NULL);

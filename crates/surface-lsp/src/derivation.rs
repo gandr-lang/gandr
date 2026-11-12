@@ -76,7 +76,7 @@ use quenchant_shape::shape::Maybe;
 ///   declaration at the editor's cursor, its first row the root at depth zero,
 ///   each goal written inside the declaration and each goal on one line within
 ///   its room.
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
 #[spec(ensures: |ret| ret.rows.len() == derivation.nodes().len() && ret.columns == columns)]
 #[must_use]
 pub fn card(
@@ -124,7 +124,7 @@ pub fn card(
 /// # Adequacy
 /// - hypothesis: L3 — a view that opens the node at the cursor hears its whole
 ///   goal, and the row's line is that goal on one line.
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
 #[spec(ensures: |ret| ret.is_none() || at.0 < derivation.nodes().len())]
 #[must_use]
 pub fn whole(

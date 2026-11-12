@@ -2245,13 +2245,15 @@ mod tests
     /// its depth, and an open frame for the node at the cursor answers its
     /// whole goal (#6755). A move of the cursor inside the declaration sends
     /// no card, and a move into the other changed declaration sends its card.
-    /// A face that sent the card of another declaration, placed a goal outside
-    /// its declaration, sent a goal longer than its room, answered no whole
-    /// goal, sent a card for a move inside one, or sent no card before an edit
-    /// fails here.
+    /// The face sends no card while the edit's judgement runs, so the card of
+    /// the edit names the key that an open frame reads (#6930). A face that
+    /// sent the card of another declaration, placed a goal outside its
+    /// declaration, sent a goal longer than its room, answered no whole goal,
+    /// sent a card for a move inside one, sent a card with a stale key, or
+    /// sent no card before an edit fails here.
     #[cfg(feature = "instrument")]
     #[test]
-    fn an_attached_view_follows_the_derivation_at_the_editors_cursor_6716()
+    fn an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930()
     {
         let scratch = Scratch::new(Json("derivation"));
         let socket = scratch.socket();
@@ -2342,8 +2344,20 @@ mod tests
                     usize::from(span.start()) >= start && usize::from(span.end()) <= end
                 })
             };
-        let (scope, main) = derived(&mut reading);
-        assert_eq!(scope, FrameScope::Document(document(2_i32)));
+        // The face can read the resync after the publication of the
+        // subscription's judgement. The resync then sends the card of version
+        // 1 again, before the card of the edit (#6930).
+        let main = loop {
+            let (scope, card) = derived(&mut reading);
+            if scope == FrameScope::Document(document(2_i32)) {
+                break card;
+            }
+            assert_eq!(
+                (scope, card.declaration.as_str()),
+                (FrameScope::Document(document(1_i32)), "main"),
+                "a card before the edit's is the resync's card of version 1"
+            );
+        };
         assert_eq!(
             main.declaration, "main",
             "the card is the declaration at the cursor"

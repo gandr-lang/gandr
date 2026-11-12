@@ -713,6 +713,18 @@ enum Judgement
     Running(Refresh),
 }
 
+/// Whether the latest copy of a document holds the judgement of its
+/// version, as the render-bus face reads it before it sends a card (#6930).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Settlement
+{
+    /// The copy's tiers name the declarations of its text.
+    Settled,
+    /// The copy's judgement is due or runs: its tiers name the declarations of
+    /// the text before its last edit.
+    Running,
+}
+
 /// Whether a copy's next judgement asks a client that refreshes its semantic
 /// tokens or its inlay hints for them again: its closure changed, so each use
 /// is classified, and each binder typed, by a judgement the client never asked
@@ -2347,11 +2359,14 @@ impl Workspace
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `None` for a document no connection holds, one with no
-    ///   cursor, one whose cursor is in no declaration with a content key, and
-    ///   one whose account holds no tree for that declaration; otherwise a
-    ///   frame scoped to the document at its latest copy's version, carrying
-    ///   the [`crate::derivation::card`] of that declaration.
+    /// - ensures: `None` for a document no connection holds, one whose latest
+    ///   copy's judgement has not settled, one with no cursor, one whose cursor
+    ///   is in no declaration with a content key, and one whose account holds
+    ///   no tree for that declaration; otherwise a frame scoped to the document
+    ///   at its latest copy's version, carrying the [`crate::derivation::card`]
+    ///   of that declaration. Until the judgement settles, the copy's tiers
+    ///   name the declarations of the text before the edit, so a card read then
+    ///   pairs a stale key with the new version (#6930).
     /// - provides: what the render-bus face sends a client of the trace layer
     ///   when the cursor moves to another declaration or the tree changes.
     /// - panics: none.
@@ -2360,7 +2375,7 @@ impl Workspace
     /// - hypothesis: L3 — a view of the trace layer attached to a hub hears the
     ///   card of the declaration at the cursor the editor's signature help
     ///   names, and nothing while the cursor moves inside it.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
     #[cfg(feature = "instrument")]
     #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
     #[inline]
@@ -2371,8 +2386,11 @@ impl Workspace
         columns: Count,
     ) -> Option<RenderFrame>
     {
-        let position = *self.cursors.borrow().get(uri)?;
         let document = &self.documents.get(uri)?.document;
+        if document.judgement != Judgement::Settled {
+            return None;
+        }
+        let position = *self.cursors.borrow().get(uri)?;
         Some(RenderFrame::derivation(
             DocId {
                 uri: uri.into(),
@@ -2380,6 +2398,25 @@ impl Workspace
             },
             document.derived(position, columns)?,
         ))
+    }
+
+    /// Whether the judgement of the latest copy of the document at `uri` is
+    /// settled: [`Settlement::Settled`] for a document that no connection
+    /// holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn settled(
+        &self,
+        uri: &DocumentUri,
+    ) -> Settlement
+    {
+        match self.documents.get(uri) {
+            Some(held) if held.document.judgement != Judgement::Settled => Settlement::Running,
+            Some(_) | None => Settlement::Settled,
+        }
     }
 
     /// The render bus's answer to a client that opens the node at `at` of the
@@ -2399,7 +2436,7 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — a view of the trace layer that opens the node at the
     ///   cursor hears its whole goal laid out at its columns.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
     #[cfg(feature = "instrument")]
     #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
     #[inline]
@@ -5029,7 +5066,7 @@ impl Server
     /// # Adequacy
     /// - hypothesis: L3 — a view that subscribes after the editor judged its
     ///   document hears the card at the cursor with no edit.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
     #[inline]
     pub fn traced_elsewhere(
         &self,

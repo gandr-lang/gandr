@@ -120,6 +120,7 @@ use crate::activity::Tick;
 use crate::hub::lock;
 use crate::protocol::DocumentUri;
 use crate::server::Peer;
+use crate::server::Settlement;
 use crate::server::Workspace;
 
 /// The line a render-bus client opens its connection with: the attach, naming
@@ -291,7 +292,7 @@ fn send(
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
 /// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
 /// - witness: `hub::tests::an_attached_view_hears_the_store_6296`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -416,7 +417,7 @@ pub fn serve(
                     drop(held);
                     let patch = patched(account, &uri, &mut sent, Whole::Owed);
                     let card = renewed(card, &uri, &mut stacks);
-                    let derivation = renewed(derivation, &uri, &mut derivations);
+                    let derivation = rederived(derivation, &uri, &mut derivations);
                     (
                         patch
                             .into_iter()
@@ -433,7 +434,7 @@ pub fn serve(
                         (held.accounted(&uri), derived(&held, &uri, traced));
                     drop(held);
                     let patch = patched(account, &uri, &mut sent, Whole::Owed);
-                    let derivation = renewed(derivation, &uri, &mut derivations);
+                    let derivation = rederived(derivation, &uri, &mut derivations);
                     (patch.into_iter().chain(derivation).collect(), false)
                 },
                 Event::Moved(uri) => {
@@ -441,7 +442,7 @@ pub fn serve(
                     let (card, derivation) = (held.stacked(&uri), derived(&held, &uri, traced));
                     drop(held);
                     let card = renewed(card, &uri, &mut stacks);
-                    let derivation = renewed(derivation, &uri, &mut derivations);
+                    let derivation = rederived(derivation, &uri, &mut derivations);
                     (card.into_iter().chain(derivation).collect(), false)
                 },
                 #[cfg(feature = "instrument")]
@@ -471,7 +472,7 @@ pub fn serve(
                         drop(stacks.remove(&uri));
                         let card = renewed(card, &uri, &mut stacks);
                         drop(derivations.remove(&uri));
-                        let derivation = renewed(derivation, &uri, &mut derivations);
+                        let derivation = rederived(derivation, &uri, &mut derivations);
                         (
                             whole
                                 .into_iter()
@@ -490,7 +491,7 @@ pub fn serve(
                         let frames = held
                             .held()
                             .filter_map(|(uri, _version)| {
-                                renewed(derived(&held, uri, traced), uri, &mut derivations)
+                                rederived(derived(&held, uri, traced), uri, &mut derivations)
                             })
                             .collect();
                         drop(held);
@@ -529,6 +530,52 @@ pub fn serve(
     });
 }
 
+/// What the face reads of the derivation of a document for a client of the
+/// trace layer.
+enum Derived
+{
+    /// The document's judgement runs: its tiers name the declarations of the
+    /// text before the edit, so the client keeps the card it holds (#6930).
+    Held,
+    /// The document's derivation frame, or none to show.
+    Read(Option<RenderFrame>),
+}
+
+/// The derivation of the document at `uri` for a client of the trace layer
+/// whose panes are `columns` wide.
+///
+/// # Specification
+/// trivial.
+fn derived(
+    held: &Workspace,
+    uri: &DocumentUri,
+    columns: Option<Count>,
+) -> Derived
+{
+    match held.settled(uri) {
+        Settlement::Settled => Derived::Read(derivation(held, uri, columns)),
+        Settlement::Running => Derived::Held,
+    }
+}
+
+/// The frame of `found` for the document at `uri` when it differs from the
+/// one `shown` holds, as [`renewed`] gives it; none while the document's
+/// judgement runs, and `shown` keeps its frame.
+///
+/// # Specification
+/// trivial.
+fn rederived(
+    found: Derived,
+    uri: &DocumentUri,
+    shown: &mut BTreeMap<DocumentUri, RenderFrame>,
+) -> Option<RenderFrame>
+{
+    match found {
+        Derived::Held => None,
+        Derived::Read(frame) => renewed(frame, uri, shown),
+    }
+}
+
 /// The derivation frame of the document at `uri` for a client of the trace
 /// layer whose panes are `columns` wide: none for a client that did not
 /// subscribe.
@@ -536,7 +583,7 @@ pub fn serve(
 /// # Specification
 /// trivial.
 #[cfg(feature = "instrument")]
-fn derived(
+fn derivation(
     held: &Workspace,
     uri: &DocumentUri,
     columns: Option<Count>,
@@ -551,7 +598,7 @@ fn derived(
 /// # Specification
 /// trivial.
 #[cfg(not(feature = "instrument"))]
-const fn derived(
+const fn derivation(
     _held: &Workspace,
     _uri: &DocumentUri,
     _columns: Option<Count>,
