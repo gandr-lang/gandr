@@ -20,11 +20,13 @@ harness = false
 name = "activity"
 path = "benches/activity.rs"
 
-# The trait names no thread and no pool, so the crate depends on nothing. A
-# driver implements it over its own pool. The activity ring of the
-# `instrument` feature writes each event into a bounded lock-free queue, and
-# states an event that names no declaration in the workspace's absent shape.
+# The trait names no thread and no pool, so the crate depends on no runtime.
+# `anodized` checks the executable specifications. A driver implements the
+# trait over its own pool. The activity ring of the `instrument` feature
+# writes each event into a bounded lock-free queue, and states an event that
+# names no declaration in the workspace's absent shape.
 [dependencies]
+anodized.workspace = true
 crossbeam-queue = { workspace = true, optional = true }
 quenchant-shape = { workspace = true, optional = true }
 
