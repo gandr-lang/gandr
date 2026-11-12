@@ -60,22 +60,6 @@ watch_remember() {
   mv "$watch_state.tmp" "$watch_state"
 }
 
-# Makes the service's checkout when it is absent, then sets it to
-# `origin/landing` (#6653). A local clone links the objects of this
-# checkout's repository, so it copies no object, and it keeps them when a
-# sweep removes that checkout. Its `origin` is the remote of this checkout.
-watch_home_sync() {
-  if [[ ! -d "$watch_home/.git" ]]; then
-    mkdir -p "$(dirname "$watch_home")"
-    git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$watch_home" || return 1
-    git -C "$watch_home" remote set-url origin "$(git remote get-url origin)" || return 1
-  fi
-  git -C "$watch_home" fetch --quiet origin '+refs/heads/landing:refs/remotes/origin/landing' || return 1
-  git -C "$watch_home" checkout --quiet --force --detach refs/remotes/origin/landing || return 1
-  git -C "$watch_home" clean --quiet --force -d
-  mise trust --quiet "$watch_home" > /dev/null 2>&1 || :
-}
-
 # One reading of the repository `$1` in a fresh shell (#6653). The shell
 # sources this script from the checkout again, so a change to the checkout
 # takes effect at the next reading, with no restart of the service. The
@@ -422,7 +406,7 @@ watch_once() {
 # there (#6653).
 watch_service() {
   if [[ $1 == install ]]; then
-    watch_home_sync || { echo "landing:watch --install: $watch_home cannot take origin/landing" >&2; return 1; }
+    service_home_sync "$watch_home" || { echo "landing:watch --install: $watch_home cannot take origin/landing" >&2; return 1; }
   fi
   (cd "$watch_home" 2> /dev/null || :; service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)' background)
 }

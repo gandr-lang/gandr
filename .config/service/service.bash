@@ -7,17 +7,39 @@
 # `gandr-<name>.service` under `$XDG_CONFIG_HOME/systemd/user/` on Linux, a
 # `launchd` agent `gandr.<name>.plist` under `~/Library/LaunchAgents/` on
 # macOS. With `background`, the service runs at the host's lowest priority
-# (#6638). The service runs from this checkout at the commit it holds, so
-# `--install` again restarts it at that tree's head. It runs under the
-# installing shell's `PATH` and, where that shell sets them, the variables of
-# `service_carried`, so git in the service reads the configuration the shell's
-# git reads, never the host user's (#4866).
+# (#6638). The service runs from the checkout of the call at the commit it
+# holds, so `--install` again restarts it at that tree's head. It runs under
+# the installing shell's `PATH` and, where that shell sets them, the
+# variables of `service_carried`, so git in the service reads the
+# configuration the shell's git reads, never the host user's (#4866).
+#
+# `service_home_sync <home>` makes a service's own checkout `home` when it is
+# absent, then sets it to `origin/landing` (#6653). A watcher that runs from
+# such a checkout and sets it before each reading runs landing's own scripts
+# (#7002): `landing:watch` and `stall:watch` do.
 
 service_dir="$(git rev-parse --show-toplevel)/.config/service"
 
 # The variables a service carries from the installing shell beside `PATH`:
 # git's global configuration, and Cargo fetching git dependencies through git.
 service_carried=(GIT_CONFIG_GLOBAL CARGO_NET_GIT_FETCH_WITH_CLI)
+
+# A local clone links the objects of this checkout's repository, so it copies
+# no object, and it keeps them when a sweep removes that checkout. No sweep
+# of a lane's worktrees removes the clone, since it is no worktree. Its
+# `origin` is the remote of this checkout.
+service_home_sync() {
+  local home=$1
+  if [[ ! -d "$home/.git" ]]; then
+    mkdir -p "$(dirname "$home")"
+    git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$home" || return 1
+    git -C "$home" remote set-url origin "$(git remote get-url origin)" || return 1
+  fi
+  git -C "$home" fetch --quiet origin '+refs/heads/landing:refs/remotes/origin/landing' || return 1
+  git -C "$home" checkout --quiet --force --detach refs/remotes/origin/landing || return 1
+  git -C "$home" clean --quiet --force -d
+  mise trust --quiet "$home" > /dev/null 2>&1 || :
+}
 
 # launchd tears an agent down after `launchctl bootout` returns, and a
 # bootstrap of its label before then fails `5: Input/output error` (#4875).

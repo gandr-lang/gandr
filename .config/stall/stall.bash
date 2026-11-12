@@ -29,6 +29,7 @@ stall_dir="$(git rev-parse --show-toplevel)/.config/stall"
 stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
 stall_hold="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/hold"
 stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall.json"
+stall_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall-service"
 source "$stall_dir/../claims/deps.bash"
 source "$stall_dir/../claims/lanes.bash"
 source "$stall_dir/../service/service.bash"
@@ -112,8 +113,18 @@ stall_liveness() {
 
 # Install (`$1` = install) or remove (`$1` = remove) the service that keeps
 # `stall:watch` running (#4167), through `.config/service/service.bash`. The
-# service runs from this checkout at the commit it holds, so it belongs in a
-# `wip/` worktree on the trunk, which `wt:sweep` keeps.
+# service runs from a checkout of its own, `stall_home` under the state
+# directory, which an install sets to `origin/landing` first (#7002).
 stall_service() {
-  service_unit "$1" stall-watch stall:watch 'gandr stall detector (stall:watch)'
+  if [[ $1 == install ]]; then
+    service_home_sync "$stall_home" || { echo "stall:watch --install: $stall_home cannot take origin/landing" >&2; return 1; }
+  fi
+  (cd "$stall_home" 2> /dev/null || :; service_unit "$1" stall-watch stall:watch 'gandr stall detector (stall:watch)')
+}
+
+# Whether a move of the service's checkout from `$1` to its `HEAD` changes a
+# file that `stall:watch` reads: one under `.config/` or `mise.toml`. The
+# watch then starts again from the new scripts (#7002).
+stall_scripts_moved() {
+  ! git -C "$stall_home" diff --quiet "$1" HEAD -- .config mise.toml
 }
