@@ -384,7 +384,8 @@ jobs:
         run: mise run "$CI_PRUNE_TASK"
       # Keep modes and mtimes in a zstd tar; upload without zip recompression.
       # Each flavor keeps only its own test-profile target directory, with
-      # the sources it was built from recorded inside (#3206).
+      # the sources it was built from recorded inside (#3206). The documentation
+      # lane's is `check:doc`'s own build directory, `target/gate-doc` (#6698).
       # Dispatches also upload, so warm measurements cover the promotion path;
       # a lane on main caches its state itself and uploads none.
       # The plain baseline only reads state: its full plain build would evict
@@ -395,7 +396,7 @@ jobs:
         if: *hand-on-state
         shell: bash
         env:
-          CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || 'target/debug' }}
+          CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || env.CI_DOCS == 'true' && 'target/gate-doc/debug' || 'target/debug' }}
         run: |
           mise run --quiet ci:sources-record "$CI_BUILD_TARGET"
           tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"

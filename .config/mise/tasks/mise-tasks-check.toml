@@ -1095,9 +1095,17 @@ exit "$status"
 # and each reader of the default build do, and with every feature on. A link
 # to an item behind a feature resolves in one pass alone, so the other pass
 # refuses it (#6508).
+#
+# The two passes build in a build directory of their own, `target/gate-doc`
+# (#6698). Cargo holds one lock on a build directory. In a shared one, the two
+# passes hold it for 594 of a gate's 955 s, and `check:corpus`,
+# `check:corpus-goldens` and `check:clippy-plain-only` wait behind them. A
+# caller's own `CARGO_TARGET_DIR` stands: `check:doc-features` sets one for its
+# scratch crates.
 ["check:doc"]
 description = "Private-item rustdoc with every rustdoc lint denied, with the default features and with every feature on"
 env.RUSTDOCFLAGS = "-D warnings"
+env.CARGO_TARGET_DIR = "{{ env.CARGO_TARGET_DIR | default(value=config_root ~ '/target/gate-doc') }}"
 run = [
   ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --locked --no-deps --document-private-items",
   ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --all-features --locked --no-deps --document-private-items",
