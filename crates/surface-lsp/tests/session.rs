@@ -10,11 +10,15 @@
 //! test code rather than as shipping code.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::convert::Infallible;
 use core::fmt::Write as _;
 use core::ops::ControlFlow;
+use core::time::Duration;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Condvar;
+use std::sync::Mutex;
 
 use anodized::spec;
 use gandr_surface_diagnostics::AnnotationKind;
@@ -706,16 +710,157 @@ fn a_hosted_workload_answers_what_it_read()
     );
 }
 
-/// A client's stream that, once its frames are read, stays open for a
-/// while before it closes, as an editor sits idle.
+/// The bytes a session wrote, back to back.
+#[derive(Default)]
+#[repr(transparent)]
+struct Written(Vec<u8>);
+
+impl Written
+{
+    /// How many frames the bytes begin: one header end for each.
+    ///
+    /// # Specification
+    /// trivial.
+    fn frames(&self) -> Frames
+    {
+        Frames(
+            self.0
+                .windows(4)
+                .filter(|window| *window == b"\r\n\r\n")
+                .count(),
+        )
+    }
+}
+
+/// A count of frames.
+#[derive(Clone, Copy, Default, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+struct Frames(usize);
+
+/// A session's output, which the test's client reads while the session
+/// writes it, and which can make the session answer slowly.
+#[derive(Clone, Default)]
+struct Shared
+{
+    /// The bytes written, and the signal of each write.
+    written: Arc<(Mutex<Written>, Condvar)>,
+    /// How long each write waits while the output holds fewer than
+    /// `answered` frames: a session slow to answer, as on a loaded host.
+    slow: Duration,
+    /// How many frames the slow writes cover.
+    answered: Frames,
+}
+
+impl Shared
+{
+    /// Wait until the session wrote `count` frames, or until `ceiling`
+    /// passes, whichever comes first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn await_frames(
+        &self,
+        count: Frames,
+        ceiling: Duration,
+    )
+    {
+        let held = self
+            .written
+            .0
+            .lock()
+            .expect("no write panics while it holds the output");
+        drop(
+            self.written
+                .1
+                .wait_timeout_while(held, ceiling, |written| written.frames() < count)
+                .expect("no write panics while it holds the output"),
+        );
+    }
+
+    /// Every byte the session wrote.
+    ///
+    /// # Specification
+    /// trivial.
+    fn body(&self) -> Body
+    {
+        Body::from(
+            self.written
+                .0
+                .lock()
+                .expect("no write panics while it holds the output")
+                .0
+                .clone(),
+        )
+    }
+}
+
+impl std::io::Write for Shared
+{
+    /// Wait out `slow` while the answer is short, then append `buf`, and
+    /// wake the client that waits for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn write(
+        &mut self,
+        buf: &[u8],
+    ) -> std::io::Result<usize>
+    {
+        let short = self.written.0.lock().map_err(poisoned)?.frames() < self.answered;
+        if short && !self.slow.is_zero() {
+            std::thread::sleep(self.slow);
+        }
+        self.written
+            .0
+            .lock()
+            .map_err(poisoned)?
+            .0
+            .extend_from_slice(buf);
+        self.written.1.notify_all();
+        Ok(buf.len())
+    }
+
+    /// Nothing to flush: each write lands whole.
+    ///
+    /// # Specification
+    /// trivial.
+    fn flush(&mut self) -> std::io::Result<()>
+    {
+        Ok(())
+    }
+}
+
+/// The error of a write that finds the output poisoned: a write before it
+/// panicked while it held the lock.
+///
+/// # Specification
+/// trivial.
+fn poisoned<Guard>(_poisoned: std::sync::PoisonError<Guard>) -> std::io::Error
+{
+    std::io::Error::other("a write panicked while it held the output")
+}
+
+/// How long a client waits for the session to answer its frames before it
+/// lingers anyway: past it the assertion names what did not come.
+const ANSWER: Duration = Duration::from_secs(120);
+
+/// A client's stream that, once its frames are read and the session answers
+/// them, stays open for a while before it closes, as an editor sits idle.
+/// The linger starts at the answer, not at the last frame, so the time the
+/// session takes to judge a change never eats into it (#6945).
 struct Lingering
 {
     /// The frames, back to back.
     frames: Vec<u8>,
     /// How many bytes were read.
     read: usize,
-    /// How long the stream stays open after its last frame.
-    linger: core::time::Duration,
+    /// What the session writes.
+    written: Shared,
+    /// How many frames the session writes in answer before the linger
+    /// starts.
+    answered: Frames,
+    /// How long the stream stays open after the answer.
+    linger: Duration,
 }
 
 impl std::io::Read for Lingering
@@ -744,16 +889,17 @@ impl std::io::Read for Lingering
 
 impl std::io::BufRead for Lingering
 {
-    /// What is left of the frames; once none is, wait out the linger
-    /// once, then close.
+    /// What is left of the frames; once none is, wait for the session's
+    /// answer, wait out the linger once, then close.
     ///
     /// # Specification
     /// trivial.
     fn fill_buf(&mut self) -> std::io::Result<&[u8]>
     {
         if self.read == self.frames.len() && !self.linger.is_zero() {
+            self.written.await_frames(self.answered, ANSWER);
             std::thread::sleep(self.linger);
-            self.linger = core::time::Duration::ZERO;
+            self.linger = Duration::ZERO;
         }
         Ok(self.frames.get(self.read ..).unwrap_or_default())
     }
@@ -785,12 +931,16 @@ impl gandr_surface_lsp::Unread for Lingering
 
 /// What a session writes when the client, its quiet interval the setting
 /// `quiet`, opens a document, types an unfinished declaration into it and
-/// then sits idle for a second: each message's `id`, and each
-/// publication's version and codes.
+/// then sits idle for a second once the session answers the change: each
+/// message's `id`, and each publication's version and codes. Each write of
+/// the answer first waits `slow`, as a session on a loaded host answers.
 ///
 /// # Specification
 /// trivial.
-fn idled(quiet: &Value) -> Vec<Value>
+fn idled(
+    quiet: &Value,
+    slow: Duration,
+) -> Vec<Value>
 {
     let uri = "file:///strict/idle.gandr";
     let messages = [
@@ -812,21 +962,29 @@ fn idled(quiet: &Value) -> Vec<Value>
             }],
         }}),
     ];
+    // The answer to `initialize`, and a publication for each version.
+    let answered = Frames(3_usize);
+    let output = Shared {
+        written: Arc::default(),
+        slow,
+        answered,
+    };
     let mut input = Lingering {
         frames: frames(&messages).as_ref().to_vec(),
         read: 0_usize,
-        linger: core::time::Duration::from_secs(1),
+        written: output.clone(),
+        answered,
+        linger: Duration::from_secs(1),
     };
-    let mut output = Vec::new();
     let served = serve(
         &mut input,
-        &mut output,
+        &mut output.clone(),
         &mut Vec::new(),
         Workspace::spelled(Spelling::Unicode),
     )
     .expect("the streams carry the session");
     assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
-    written(&Body::from(output))
+    written(&output.body())
         .iter()
         .map(|message| {
             message.get("method").map_or_else(
@@ -864,7 +1022,7 @@ fn a_held_diagnostic_publishes_once_the_document_is_quiet()
     let publication =
         |version: i32, codes: &[&str]| json!(["textDocument/publishDiagnostics", version, codes]);
     assert_eq!(
-        idled(&json!(0.05_f64)),
+        idled(&json!(0.05_f64), Duration::ZERO),
         [
             json!(0_i32),
             publication(1_i32, &[]),
@@ -875,13 +1033,31 @@ fn a_held_diagnostic_publishes_once_the_document_is_quiet()
              document is quiet, with no frame arriving"
     );
     assert_eq!(
-        idled(&json!(0_i32)),
+        idled(&json!(0_i32), Duration::ZERO),
         [
             json!(0_i32),
             publication(1_i32, &[]),
             publication(2_i32, &["MalformedForm"]),
         ],
         "a zero interval publishes it with its change, and nothing after"
+    );
+}
+
+#[test]
+fn a_held_diagnostic_publishes_after_a_slow_answer_6945()
+{
+    let publication =
+        |version: i32, codes: &[&str]| json!(["textDocument/publishDiagnostics", version, codes]);
+    assert_eq!(
+        idled(&json!(0.05_f64), Duration::from_millis(400)),
+        [
+            json!(0_i32),
+            publication(1_i32, &[]),
+            publication(2_i32, &[]),
+            publication(2_i32, &["MalformedForm"]),
+        ],
+        "the quiet interval runs from the publication that holds, so a session that takes \
+             longer than the client's idle second to answer still publishes what it held"
     );
 }
 

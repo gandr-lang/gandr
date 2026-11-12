@@ -35,6 +35,8 @@ env:
   GANDR_RISCV64_TARGET_DIR: /tmp/gandr-riscv64-target
   GANDR_RISCV64_TARGET: riscv64gc-unknown-linux-gnu
   GANDR_RISCV64_ARCHIVE: riscv64-tests.tar.zst
+  # The host lock that the riscv64 host's measures hold (#6945).
+  GANDR_RISCV64_LOCK: /run/lock/gandr/par.lock
   # The sweeps run their samples here; main measured at its own head has no
   # change to add to them.
   GANDR_SWEEP_BASE: HEAD
@@ -98,7 +100,9 @@ jobs:
     needs: archive
     runs-on: *riscv64
     permissions: *contents-read
-    timeout-minutes: 30
+    # The run takes about 15 minutes. It can first wait for one measure that
+    # holds the host lock: 27 minutes at the most in the record (#6945).
+    timeout-minutes: 60
     steps:
       - *git-checkout
       - *link-source
@@ -113,5 +117,18 @@ jobs:
       # target path that the binaries name.
       - name: link the extracted target directory at the target path of the archive
         run: ln -sfn "$RUNNER_TEMP/riscv64-tests/target" "$GANDR_RISCV64_TARGET_DIR"
+      # The riscv64 host also runs timed measures, each under the host lock
+      # `par` (`bench:scaling`, #6879). A test run beside a measure loads the
+      # host past the tests' timeouts, and the measure times the run's load
+      # (#6945). So the step holds the same lock for its run. The measuring
+      # account owns the lock file. The host refuses to open the file of
+      # another account for writing in the shared lock directory, so the step
+      # opens it to read and creates none. A host with no file runs no measure
+      # since it started.
       - name: test the workspace from the archive
-        run: cargo nextest run --archive-file "$RUNNER_TEMP/riscv64-tests/$GANDR_RISCV64_ARCHIVE" --extract-to "$RUNNER_TEMP/riscv64-tests" --workspace-remap "$GANDR_RISCV64_SOURCE" --profile riscv64
+        run: |
+          if [[ -e $GANDR_RISCV64_LOCK ]]; then
+            exec 9< "$GANDR_RISCV64_LOCK"
+            flock -n 9 || { echo "test: a measure holds the host lock par, and the run waits for it"; flock 9; }
+          fi
+          cargo nextest run --archive-file "$RUNNER_TEMP/riscv64-tests/$GANDR_RISCV64_ARCHIVE" --extract-to "$RUNNER_TEMP/riscv64-tests" --workspace-remap "$GANDR_RISCV64_SOURCE" --profile riscv64
