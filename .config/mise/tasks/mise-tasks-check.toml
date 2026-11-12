@@ -2229,10 +2229,10 @@ run = [".config/replay/cases.bash", ".config/replay/replays.bash"]
 
 # The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
 # job that starts the CI image, restores no build state and so is a step of
-# `reports`, a `reports` step a failure before it would hide, and a step after
-# the lane budget. Each case in `.config/nightly/cases.json` gives its
-# refusals; then `.github/workflows/nightly.yml`'s own jobs, anchors expanded,
-# give none.
+# `reports`, a `reports` step a failure before it would hide, a step after
+# the lane budget, and two jobs that restore one build state at one commit
+# (#6704). Each case in `.config/nightly/cases.json` gives its refusals; then
+# `.github/workflows/nightly.yml`'s own jobs, anchors expanded, give none.
 ["check:nightly"]
 description = "The nightly's reporting work runs as one job, each step after a failure still running and the lane budget last"
 tools.jq = "1.8.1"
