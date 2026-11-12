@@ -1,0 +1,31 @@
+/// `parallel-checking`: Parallel checking over supports.
+/// Implemented: `gandr check` of fewer sources than its threads checks apart
+/// the code obligations of each last drain that holds 64 of them or more, in
+/// runs of 16 or more, one run for each thread, and gives the verdict of the
+/// serial check.
+/// Not implemented: the forks at the arguments of an application and at the
+/// branches of a case, the fork in a run of as many sources as threads or
+/// more, and the schedule of the checks of a component.
+///
+/// - owes: #2802 — the forks at the frames of a check
+/// - owes: #3476 — the schedule of the checks of a component
+
+// `cylinderComposite2`.
+import std.math.cylinder (cylinderComposite2);
+
+/// Two squares of paths side by side, at identity verticals. The check of
+/// this source readmits `std.math.cylinder`, whose composites hold last drains
+/// of 64 obligations or more, so a check on more than one thread forks them.
+def sideBySide(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f0 : Path[.A = A](x, y),
+  f1 : Path(x, y),
+  a : Path[.A = Path[.A = A](x, y)](f0, f1),
+  g0 : Path(y, z),
+  g1 : Path(y, z),
+  b : Path[.A = Path[.A = A](y, z)](g0, g1)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f0 g0, Path.step f1 g1) =
+  cylinderComposite2 A x y f0 x y f1 (Path.here x) (Path.here y) a z g0 z g1 (Path.here z) b

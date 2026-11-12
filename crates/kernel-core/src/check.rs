@@ -272,6 +272,7 @@
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
+use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
@@ -8292,10 +8293,11 @@ where
 /// Check every code a formation walk owed, and every code those checks owe in
 /// turn.
 ///
-/// A judgement that forks checks the obligations the drain holds at its start
-/// apart, one part for each, and folds the parts in the serial order
-/// ([`drain_forked`]). When a part refuses, the drain checks serially from the
-/// state that it held before the fork, which the parts did not change.
+/// A judgement that forks checks the obligations of a drain that holds
+/// [`FORKED_DRAIN`] or more at its start apart, in runs of [`FORKED_PART`] or
+/// more, and folds the runs in the serial order ([`drain_forked`]). When a run
+/// refuses, the drain checks serially from the state that it held before the
+/// fork, which the runs did not change.
 ///
 /// # Specification
 /// - requires: `owed` holds the obligations the declaration's own walks
@@ -8379,7 +8381,7 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     if let Some(fork) = judgement.forking.fork()
-        && owed.len() > 1
+        && owed.len() >= FORKED_DRAIN
         && let Some(ledger) = drain_forked(arena, judgement, fork, memo, session, census, &owed)
     {
         ledger.record(memo, session);
@@ -8390,6 +8392,14 @@ where
     ledger.record(memo, session);
     Ok(())
 }
+
+/// The fewest obligations a drain forks. A smaller drain checks on the calling
+/// thread, because a part costs more to fork and to join than a few
+/// obligations cost to check.
+const FORKED_DRAIN: usize = 64;
+
+/// The fewest obligations one part of a forked drain checks.
+const FORKED_PART: usize = 16;
 
 /// What one drain checked: its count against the ceiling, and the keys whose
 /// verdicts it records when the whole drain passes.
@@ -8670,8 +8680,8 @@ where
     Ok(())
 }
 
-/// One obligation of a forked drain, with the state its check runs on: a
-/// clone of the arena, and overlays of the memo and of the session.
+/// One run of obligations of a forked drain, with the state its check runs
+/// on: a clone of the arena, and overlays of the memo and of the session.
 ///
 /// # Specification
 /// trivial.
@@ -8690,7 +8700,7 @@ struct DrainPart<'part>
     session: SupportContext,
     /// The goals the part expanded and recalled.
     census: ExpansionCensus,
-    /// The obligation, until the part runs.
+    /// The run of obligations, until the part runs.
     owed: Vec<CodeObligation>,
     /// What the part checked.
     ledger: DrainLedger,
@@ -8700,7 +8710,7 @@ struct DrainPart<'part>
 
 impl crate::fork::Job for DrainPart<'_>
 {
-    /// Drain the part's obligation, and every obligation its check owes.
+    /// Drain the part's run of obligations, and every obligation they owe.
     ///
     /// # Specification
     /// trivial.
@@ -8727,16 +8737,18 @@ impl crate::fork::Job for DrainPart<'_>
     }
 }
 
-/// Check each obligation of `owed` apart, one part for each, through `fork`,
-/// and fold the parts in the serial order: the last owed first, as the serial
-/// drain pops them.
+/// Check the obligations of `owed` apart, in contiguous runs, one part for
+/// each run, through `fork`, and fold the parts in the serial order: the last
+/// run first, as the serial drain pops them. The runs are as many as the
+/// fork's width, with [`FORKED_PART`] obligations or more in each.
 ///
 /// # Specification
 /// - requires: as [`drain_code_obligations`].
 /// - ensures: a ledger of the keys the parts checked, each one time, when each
 ///   part passed and the parts drained no more than the ceiling. The arena, the
 ///   session, the memo and the census then hold the parts' folds, and the memo
-///   keeps no outcome that names a node of a part's own. None when the memo
+///   keeps no outcome that names a node of a part's own. None when the fork's
+///   width or the size of `owed` gives fewer than two runs, when the memo
 ///   cannot fork, when a part refused or did not run, or when the parts drained
 ///   more than the ceiling. The arena's nodes, the memo's answers, the
 ///   session's names and the census are then as the call found them.
@@ -8762,8 +8774,15 @@ fn drain_forked<M>(
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
-    let mut memos = Vec::with_capacity(owed.len());
-    for _obligation in owed {
+    let runs = NonZeroUsize::from(fork.workers())
+        .get()
+        .min(owed.len().div_euclid(FORKED_PART));
+    if runs < 2 {
+        return None;
+    }
+    let run = owed.len().div_ceil(runs);
+    let mut memos = Vec::with_capacity(runs);
+    for _run in owed.chunks(run) {
         memos.push(memo.fork_child()?);
     }
     let taken = judgement.taking.taken();
@@ -8772,17 +8791,17 @@ where
     let unforked = judgement.forking(None);
     let refused = AtomicBool::new(false);
     let mut parts: Vec<DrainPart<'_>> = owed
-        .iter()
+        .chunks(run)
         .rev()
         .zip(memos)
-        .map(|(obligation, part_memo)| DrainPart {
+        .map(|(obligations, part_memo)| DrainPart {
             judgement: unforked,
             refused: &refused,
             arena: arena.clone(),
             memo: part_memo,
             session: session.fork(arena),
             census: ExpansionCensus::new(),
-            owed: alloc::vec![obligation.clone()],
+            owed: obligations.to_vec(),
             ledger: DrainLedger::default(),
             answer: None,
         })
@@ -8813,9 +8832,15 @@ where
             ..
         } = part;
         // A failed fork folds no entry: the join only lets the memo settle
-        // its frozen layer.
+        // its frozen layer. An outcome that names a node of the part's own
+        // names a node that the join leaves out, so the memo does not keep it.
         memo.join_child(part_memo, |_, outcome| {
-            passed && outcome_stands(arena, outcome)
+            passed
+                && match *outcome {
+                    NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                    NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                    NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                }
         });
         if passed {
             session.join(arena, part_session);
@@ -8824,25 +8849,6 @@ where
         }
     }
     passed.then_some(ledger)
-}
-
-/// Whether `outcome` names only nodes of `arena`. At the join of a forked
-/// drain, an outcome that names a node of a part's own names a node that the
-/// join leaves out, so the memo does not keep it.
-///
-/// # Specification
-/// trivial.
-#[inline]
-fn outcome_stands(
-    arena: &TermArena,
-    outcome: &NodeOutcome,
-) -> bool
-{
-    match *outcome {
-        NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
-        NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
-        NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
-    }
 }
 
 /// Check a closed value without admitting a declaration or retaining a memo.
@@ -11628,8 +11634,16 @@ mod tests
         );
     }
 
-    /// Runs the parts of a drain in order, on the calling thread: the fork at
-    /// width one.
+    /// The width of each test fork: four workers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn four() -> crate::fork::ForkWidth
+    {
+        crate::fork::ForkWidth::from(core::num::NonZeroUsize::MIN.saturating_add(3))
+    }
+
+    /// Runs the parts of a drain in order, on the calling thread.
     ///
     /// # Specification
     /// trivial.
@@ -11649,6 +11663,15 @@ mod tests
             for job in jobs.iter_mut() {
                 job.run();
             }
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
         }
     }
 
@@ -11672,6 +11695,15 @@ mod tests
             for job in jobs.iter_mut().rev() {
                 job.run();
             }
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
         }
     }
 
@@ -11699,6 +11731,15 @@ mod tests
                 }
             });
         }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
     }
 
     /// Runs no part, so the drain must check serially.
@@ -11719,12 +11760,22 @@ mod tests
         )
         {
         }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
     }
 
     /// Counts the parts it is handed, and runs them in order.
     ///
     /// # Specification
     /// trivial.
+    #[repr(transparent)]
     struct Counting(core::sync::atomic::AtomicUsize);
 
     impl crate::fork::ObligationFork for Counting
@@ -11745,12 +11796,23 @@ mod tests
                 job.run();
             }
         }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
     }
 
     /// A declaration's last drain gives the verdict of the serial drain at
     /// each order of its parts: in order, last first, at once, and not run at
     /// all. A refusing part sends the check back to the serial drain, and a
-    /// passing fork expands no less than the serial check.
+    /// passing fork expands no less than the serial check. A drain of 64
+    /// obligations or more forks into one run for each worker, and a smaller
+    /// drain does not fork.
     #[test]
     fn a_forked_drain_gives_the_serial_verdict_at_each_order()
     {
@@ -11769,12 +11831,13 @@ mod tests
                 .expect("a code axiom admits")
                 .position()
         })
-        .take(3)
+        .take(super::FORKED_DRAIN)
         .collect();
         let mut arena = environment.arena().clone();
-        // Each element type owes its code to the universe: three codes that
-        // check, and the unit value, which is no code, second of four.
-        let (passing, refused) = {
+        // Each element type owes its code to the universe: 64 codes that
+        // check, the same with the unit value second, which is no code, and
+        // three codes, too few to fork.
+        let (passing, refused, few) = {
             let mut builder = gandr_kernel_term::DeclarationBuilder::new(&mut arena);
             let elements: Vec<ValueTypeId> = codes
                 .iter()
@@ -11788,14 +11851,20 @@ mod tests
             let mut refusing = elements.clone();
             refusing.insert(1, refused);
             let refusing = builder.arena().value_type_product(&refusing);
+            let few = builder
+                .arena()
+                .value_type_product(elements.get(.. 3).expect("64 elements hold three"));
             let passing = builder.arena().value_type_product(&elements);
             (
                 builder.axiom(LevelSignature::monomorphic(), passing),
                 refusing,
+                few,
             )
         };
         let refusing = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
             .axiom(LevelSignature::monomorphic(), refused);
+        let few = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .axiom(LevelSignature::monomorphic(), few);
         let levels = level_context(LevelParamCount::from(0_u32));
         let content_end = arena.watermark();
         let mut check = |declaration: &gandr_kernel_term::Declaration,
@@ -11816,7 +11885,11 @@ mod tests
                 .sum::<u64>();
             (verdict, goals)
         };
-        for (declaration, parts, passes) in [(&passing, 3_usize, true), (&refusing, 4, false)] {
+        for (declaration, parts, passes) in [
+            (&passing, 4_usize, true),
+            (&refusing, 4, false),
+            (&few, 0, true),
+        ] {
             let (serial, serial_goals) = check(declaration, None);
             assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
             let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
@@ -11834,7 +11907,7 @@ mod tests
             assert_eq!(
                 counting.0.into_inner(),
                 parts,
-                "the drain forks one part for each obligation it holds"
+                "the drain forks one run for each worker, or none below the grain"
             );
         }
     }

@@ -86,6 +86,7 @@ impl From<AdmittedCount> for u32
 /// # Specification
 /// trivial.
 #[derive(Debug, Default)]
+#[repr(transparent)]
 pub(crate) struct Tally(AtomicU32);
 
 impl Tally

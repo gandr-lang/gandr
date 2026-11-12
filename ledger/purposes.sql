@@ -1174,6 +1174,7 @@ INSERT INTO purpose VALUES('kernel-core','flow_universe::motive::check_motive','
 INSERT INTO purpose VALUES('kernel-core','flow_universe::rules::CertificateType','enum','A formed classifier retaining its independent certificate family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','flow_universe::rules::form_certificate','function','Check a native certificate against its expected family, without coercion.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','flow_universe::rules::replay_ride','function','Check a closed ride and an expected result, then replay their conversion.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','fork::ForkWidth','struct','How many jobs a fork runs at once, which the forked drain splits its obligations by.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','fork::Job','trait','One part of a declaration''s check that a fork runs apart, which keeps its answer in itself.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','fork::ObligationFork','trait','Runs the parts of one declaration''s check on the workers the driver provides: the object-safe seam a judgement carries.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','fork::SharedFork','struct','The fork that an environment''s checks run their obligations through, shared with each copy of the environment.','fork','fits','sound',NULL);

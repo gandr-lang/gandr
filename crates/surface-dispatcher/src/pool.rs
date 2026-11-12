@@ -90,6 +90,7 @@ use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
+use gandr_kernel_core::fork::ForkWidth;
 use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
 use quenchant_shape::shape::Maybe;
@@ -591,6 +592,29 @@ impl ObligationFork for Pool
     )
     {
         self.each(jobs, || (), |_worker, job| job.run());
+    }
+
+    /// The threads the pool runs, as the host resolved its width: one when
+    /// the host refused the pool's threads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same width on each call, the threads that [`Fork::each`]
+    ///   runs the parts on.
+    /// - panics: none.
+    /// - executable: none — the width is the host's, resolved once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Self::run_jobs`].
+    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+    #[inline]
+    fn workers(&self) -> ForkWidth
+    {
+        let threads = self
+            .started()
+            .as_ref()
+            .map_or(Threads::ONE, |started| started.threads);
+        ForkWidth::from(NonZeroUsize::from(threads))
     }
 }
 

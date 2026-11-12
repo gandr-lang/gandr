@@ -10,12 +10,24 @@
 //! drain. So the seam adds no trust, and a forked check gives the verdict of
 //! the serial check.
 //!
+//! A job costs more to fork and to join than a few obligations cost to check.
+//! So only a drain of many obligations forks, and each job checks a run of
+//! them. The runs read the size of the drain and the [`ForkWidth`] alone, so
+//! a check at one width forks the same jobs each time.
+//!
 //! The seam is object-safe, so a [`Judgement`](crate::Judgement) carries it
 //! without a type parameter. The kernel sits below the core crates, so it
 //! states the seam itself. The driver's pool implements it.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — newest: §
+//!   kernel-reassessment-design item 11 — the independent obligations of one
+//!   check fork under one seam, and the serial check is the reference.
 
 use alloc::sync::Arc;
 use core::fmt;
+use core::num::NonZeroUsize;
 
 /// One part of a declaration's check that a fork runs apart.
 ///
@@ -70,6 +82,55 @@ pub trait ObligationFork: Sync
         &self,
         jobs: &mut [&mut dyn Job],
     );
+
+    /// How many jobs this fork runs at once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same width on each call.
+    /// - panics: none.
+    /// - executable: none — the width is the implementation's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the forked drain's witnesses split a drain at the
+    ///   width of their fork, and count the jobs.
+    /// - declaration-only: the obligation is each implementation's.
+    fn workers(&self) -> ForkWidth;
+}
+
+/// How many jobs a fork runs at once: the workers it has, the calling thread
+/// among them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct ForkWidth(NonZeroUsize);
+
+impl From<NonZeroUsize> for ForkWidth
+{
+    /// A fork of `workers` workers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(workers: NonZeroUsize) -> Self
+    {
+        Self(workers)
+    }
+}
+
+impl From<ForkWidth> for NonZeroUsize
+{
+    /// The workers of `width`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(width: ForkWidth) -> Self
+    {
+        width.0
+    }
 }
 
 /// Whether one check forks its independent obligations, and through which

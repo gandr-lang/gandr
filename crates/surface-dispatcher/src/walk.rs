@@ -133,6 +133,7 @@ use crate::pool::Helped;
 use crate::pool::Pool;
 use crate::reader::Reader;
 use crate::report::RunReport;
+use crate::report::SourceCount;
 use crate::root::Descent;
 use crate::root::SourceRoot;
 use crate::root::classify;
@@ -675,6 +676,43 @@ impl Walk
     {
         self.positioning = Positioning::Positioned;
         self
+    }
+
+    /// How many sources the paths of this walk reach, counted up to `bound`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the smaller of `bound` and the sources that a visit of the
+    ///   walk's paths reaches, as [`Self::visit`] reaches them. The walk itself
+    ///   does not change.
+    /// - fails: never; a path that cannot be listed counts no source.
+    /// - panics: none.
+    /// - intension: lists each directory at most one time, reads no source, and
+    ///   stops when the count reaches `bound`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tree of five sources, a skipped link and a file
+    ///   that is not a source counts five under a larger bound and the bound
+    ///   under a smaller one.
+    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    #[inline]
+    #[must_use]
+    pub fn sources_up_to(
+        &self,
+        bound: SourceCount,
+    ) -> SourceCount
+    {
+        let mut traversal =
+            Traversal::new(self.traversal.arguments.iter().rev().cloned().collect());
+        let mut count = SourceCount::default();
+        while count < bound
+            && let Maybe::Present(reached) = traversal.reach()
+        {
+            if matches!(reached, Reached::Source) {
+                count = SourceCount::from(usize::from(count).saturating_add(1));
+            }
+        }
+        count
     }
 
     /// Hand every step of the walk to `visitor`, in walk order, lowering the
@@ -2354,6 +2392,16 @@ pub mod tests
         .expect("the link is made");
 
         let paths = vec![scratch.0.join("tree"), scratch.0.join("named.source")];
+        assert_eq!(
+            Walk::new(paths.clone()).sources_up_to(SourceCount::from(8_usize)),
+            SourceCount::from(5_usize),
+            "a count under a larger bound reaches each source the visit reaches"
+        );
+        assert_eq!(
+            Walk::new(paths.clone()).sources_up_to(SourceCount::from(2_usize)),
+            SourceCount::from(2_usize),
+            "a count stops at its bound"
+        );
         let (seen, report) = visited(&scratch.0, paths.clone(), Width::SERIAL);
         assert_eq!(
             seen,

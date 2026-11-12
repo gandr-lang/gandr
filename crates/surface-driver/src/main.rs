@@ -403,6 +403,7 @@ use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::Secrets;
 use gandr_surface_dispatcher::Site;
+use gandr_surface_dispatcher::SourceCount;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Standing;
@@ -3755,8 +3756,13 @@ fn render(
             width,
         } => {
             let pool = Arc::new(Pool::new(width));
-            if width.threads() != Threads::ONE {
-                // A process renders one outcome, so no fork is installed yet.
+            // The forked drain gains only where the pool has workers to
+            // spare: in a run of fewer sources than threads. In a wider run
+            // the other sources keep each worker busy. A process renders one
+            // outcome, so no fork is installed yet.
+            let threads = width.threads();
+            let spare = SourceCount::from(NonZeroUsize::from(threads).get());
+            if threads != Threads::ONE && walk.sources_up_to(spare) < spare {
                 let _installed = gandr_surface_dispatcher::install_obligation_fork(
                     gandr_kernel_core::fork::SharedFork::through(Arc::<Pool>::clone(&pool)),
                 );

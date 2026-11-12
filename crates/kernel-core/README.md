@@ -25,7 +25,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
 - **Recorded verdicts.** `Environment::recalling` admits a key that a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself ([`verdict`](src/verdict.rs)).
 - **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
-- **The forked drain.** `Environment::forking`: each check's last drain runs apart through a `SharedFork` ([`fork`](src/fork.rs)).
+- **The forked drain.** `Environment::forking`: a check's long last drain runs apart through a `SharedFork` ([`fork`](src/fork.rs)).
 - **Sealing.** An abstract type carries its representation and the extent of its minting admission; [`seal`](src/seal.rs) states what reads the atom as its representation.
 - **The checking machine.** `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`; only `Environment` admits.
 - **Type formation.** An iterative walk computing a type's universe level; [`check`](src/check.rs) tables its gates.
