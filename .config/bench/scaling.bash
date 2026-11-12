@@ -65,11 +65,13 @@ scaling_page() {
 }
 
 # Run the measure command with the arguments `$@`, its output in
-# `$scratch/out`. Exit with the command's status.
+# `$scratch/out`. Exit with the command's status. The command reads no stdin:
+# ssh reads its stdin to the end, and in the loop over the widths that stdin
+# is the list of the widths that remain.
 scaling_run() {
   local measure
   mapfile -t measure < <(jq -r '.measure[]' <<< "$config")
-  "${measure[@]}" "$@" > "$scratch/out" 2>&1
+  "${measure[@]}" "$@" < /dev/null > "$scratch/out" 2>&1
 }
 
 # Measure the head `$1` and print its row for `account.jq`, or print the
