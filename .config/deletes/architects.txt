@@ -1,6 +1,0 @@
-# The logins whose comments sign a `deleted` row (#6817): one a line, then the
-# heading text that the comment must hold, if any. Every seat writes as
-# agent-shade, so its comment signs only with the `(architect` heading. The
-# owner's own comment signs with no heading.
-agent-shade (architect
-silvanshade

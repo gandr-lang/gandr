@@ -22,7 +22,11 @@
 # groups ahead of it in the queue move no sign-off.
 #
 # The sign-offs are the comments of the issues that the body works. gh reads
-# each issue's comments: one REST read for each page of 100 comments.
+# each issue's comments: one REST read for each page of 100 comments. The
+# logins that sign, each with the heading its comment must hold, are the
+# factory's state and not the tree's, so they live outside it (#6962), in
+# `$XDG_CONFIG_HOME/gandr/architects.txt`: one login a line, then the heading
+# if any, and `#` starts a comment line. A host without the file refuses.
 #
 # Usage: check.bash [--rows-only [--head <rev>]] [--title <title>] <body> <base>
 # Exits 1 on a refusal and 2 on a failed read.
@@ -45,6 +49,11 @@ body=${1:?usage: check.bash [--rows-only [--head <rev>]] [--title <title>] <body
 base=$(git rev-parse --verify --quiet "${2:?usage: check.bash [--rows-only [--head <rev>]] [--title <title>] <body> <base>}^{commit}") \
   || { echo "check:deletes: $2 is no commit" >&2; exit 2; }
 head=$(git rev-parse --verify --quiet "$head^{commit}") || { echo "check:deletes: the head is no commit" >&2; exit 2; }
+architects="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt"
+[[ -f $architects ]] || {
+  echo "check:deletes: no signers at $architects: write each login that signs a \`deleted\` row there, one a line, then the heading its comment must hold (#6962)" >&2
+  exit 2
+}
 scratch=$(mktemp -d)
 cleanup() {
   if [[ -d $scratch/base ]]; then git -C "$root" worktree remove --force "$scratch/base" > /dev/null 2>&1 || :; fi
@@ -294,7 +303,7 @@ done | jq -s -c .)
 # The readings go to jq as files: the held set names each file of the corpus,
 # past the kernel's limit for one argument.
 for name in left held tests readme lonely files signoffs; do printf '%s\n' "${!name}" > "$scratch/$name.json"; done
-jq -Rn -c '[inputs | select(test("^[^#]")) | capture("^(?<login>\\S+)\\s*(?<heading>.*)$") | {(.login): .heading}] | add // {}' "$here/architects.txt" > "$scratch/architects.json"
+jq -Rn -c '[inputs | select(test("^[^#]")) | capture("^(?<login>\\S+)\\s*(?<heading>.*)$") | {(.login): .heading}] | add // {}' "$architects" > "$scratch/architects.json"
 findings=$(jq -n -c --rawfile body "$body" --arg title "$title" --arg mode "$mode" \
   --slurpfile left "$scratch/left.json" --slurpfile held "$scratch/held.json" --slurpfile tests "$scratch/tests.json" \
   --slurpfile readme "$scratch/readme.json" --slurpfile lonely "$scratch/lonely.json" --slurpfile files "$scratch/files.json" \
