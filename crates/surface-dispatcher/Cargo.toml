@@ -88,6 +88,7 @@ gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
+gandr-surface-features.workspace = true
 gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true

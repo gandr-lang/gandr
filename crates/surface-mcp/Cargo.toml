@@ -12,9 +12,9 @@ publish.workspace = true
 
 # The server reads the language server's shared workspace: its documents, the
 # diagnostics last published for each, and its read-only requests answered
-# off them; and the dispatcher's features ledger reader, which the language
-# server already links. The wire is newline-delimited JSON, built and read
-# through serde_json's value tree; the relay reads only each line's envelope,
+# off them; and the features ledger, through gandr-surface-features. The wire
+# is newline-delimited JSON, built and read through serde_json's value tree;
+# the relay reads only each line's envelope,
 # through a serde derive, so a line's payload is never built. The toolset
 # reads each HTTP head through httparse, in place, and writes each callback's
 # routing through serde_json. It sends the render bus's cards of a frame
@@ -28,6 +28,7 @@ publish.workspace = true
 anodized.workspace = true
 gandr-core-fork = { workspace = true, optional = true }
 gandr-surface-dispatcher.workspace = true
+gandr-surface-features.workspace = true
 gandr-surface-lsp.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-tui.workspace = true

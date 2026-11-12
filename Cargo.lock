@@ -1350,6 +1350,7 @@ dependencies = [
  "gandr-storage-store",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-features",
  "gandr-surface-format",
  "gandr-surface-grammar",
  "gandr-surface-lsp",
@@ -1571,6 +1572,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-features",
  "gandr-surface-format",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
@@ -1600,6 +1602,14 @@ dependencies = [
  "sysctl",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "gandr-surface-features"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
+ "serde_json",
 ]
 
 [[package]]
@@ -1743,6 +1753,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-fork",
  "gandr-surface-dispatcher",
+ "gandr-surface-features",
  "gandr-surface-lsp",
  "gandr-surface-mcp",
  "gandr-surface-render-remote",
