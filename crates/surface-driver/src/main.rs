@@ -3745,27 +3745,38 @@ fn render(
             Ok(ExitCode::SUCCESS)
         },
         // The driver's pool: one per process, at the verb's width, its threads
-        // started on the first fork of two items or more.
+        // started on the first fork of two items or more. Wider than one
+        // thread, the last drain of each kernel check forks its obligations
+        // on it too.
         Outcome::Run {
             verb,
             lints,
             walk,
             width,
-        } => run(
-            Pass {
-                verb,
-                lints,
-                packages: reached.0,
-                workspaces: reached.1,
-                store,
-                rings: Rings::default(),
-            },
-            walk,
-            &Pool::new(width),
-            printing,
-            stdout,
-            stderr,
-        ),
+        } => {
+            let pool = Arc::new(Pool::new(width));
+            if width.threads() != Threads::ONE {
+                // A process renders one outcome, so no fork is installed yet.
+                let _installed = gandr_surface_dispatcher::install_obligation_fork(
+                    gandr_kernel_core::fork::SharedFork::through(Arc::<Pool>::clone(&pool)),
+                );
+            }
+            run(
+                Pass {
+                    verb,
+                    lints,
+                    packages: reached.0,
+                    workspaces: reached.1,
+                    store,
+                    rings: Rings::default(),
+                },
+                walk,
+                &pool,
+                printing,
+                stdout,
+                stderr,
+            )
+        },
         Outcome::Script(mut runnable) => {
             if let Some(binding) = hosting.network {
                 let mut net = Net::new(binding);

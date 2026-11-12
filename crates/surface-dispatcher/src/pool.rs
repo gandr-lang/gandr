@@ -90,6 +90,8 @@ use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
+use gandr_kernel_core::fork::Job;
+use gandr_kernel_core::fork::ObligationFork;
 use quenchant_shape::shape::Maybe;
 
 use self::spawning::Spawning;
@@ -562,6 +564,33 @@ impl Fork for Pool
             ),
             Ok(Forked::Serial) | Err(_) => Serial.schedule(items, after, start, job, fold),
         }
+    }
+}
+
+/// The pool as the fork of a kernel check's obligations: the parts of a
+/// declaration's last drain run as [`Fork::each`] runs its items.
+impl ObligationFork for Pool
+{
+    /// Run each part once, as [`Fork::each`] runs an item, with no state for
+    /// a worker.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Fork::each`] ensures.
+    /// - panics: a part's panic, at the end of the fork.
+    /// - executable: none — the schedule is the pool's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the export gate readmits each corpus source through a
+    ///   pool of four threads and against the serial readmission.
+    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+    #[inline]
+    fn run_jobs(
+        &self,
+        jobs: &mut [&mut dyn Job],
+    )
+    {
+        self.each(jobs, || (), |_worker, job| job.run());
     }
 }
 

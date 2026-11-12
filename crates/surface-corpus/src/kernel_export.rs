@@ -143,11 +143,13 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_kernel_core::fork::SharedFork;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::EncodedArtifact;
@@ -171,6 +173,7 @@ use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::fixture::declarations;
 use crate::refusal::Refusal;
@@ -549,7 +552,8 @@ fn class_of(
 
 /// The source at `path` under `root`, parsed, lowered, checked, readmitted and
 /// exported — over the siblings it imports, laid out by the dispatcher's
-/// `lay_out`, when it imports any.
+/// `lay_out`, when it imports any. The readmission drains the obligations of
+/// each kernel check through `fork`, or serially when `fork` is none.
 ///
 /// # Specification
 /// - requires: `path` is a readable UTF-8 corpus source and `pbg` is its
@@ -614,10 +618,11 @@ fn class_of(
     }
 },
 )]
-fn export(
+fn export_through(
     pbg: &Pbg,
     path: PathBuf,
     root: Root,
+    fork: Option<&SharedFork>,
 ) -> Swept
 {
     let read = fs::read_to_string(&path)
@@ -650,7 +655,24 @@ fn export(
             )
         })
         .collect();
-    let readmission = bridge::readmit(&mut arena, &verdicts);
+    let readmission = match fork {
+        None => bridge::readmit(&mut arena, &verdicts),
+        Some(fork) => {
+            bridge::readmit_retiring(
+                &mut arena,
+                &verdicts,
+                (
+                    bridge::LeadingCount::NONE,
+                    Maybe::Absent(bridge::crossed::Absent::Unasked),
+                ),
+                &bridge::Recall::recheck().forking(fork.clone()),
+                &Unretired,
+                &mut bridge::Untimed,
+            )
+            .whole()
+            .0
+        },
+    };
     let names = module.structured_names();
     let mut judged = verdicts.judged().iter().zip(readmission.readmitted());
     let mut classes = Vec::new();
@@ -715,6 +737,20 @@ fn export(
         crossed_names,
         artifact,
     })
+}
+
+/// The source at `path` under `root`, exported as [`export_through`] exports
+/// it with each kernel check's obligations drained serially.
+///
+/// # Specification
+/// trivial.
+fn export(
+    pbg: &Pbg,
+    path: PathBuf,
+    root: Root,
+) -> Swept
+{
+    export_through(pbg, path, root, None)
 }
 
 /// A laid-out source, lowered and checked.
@@ -804,7 +840,8 @@ struct Shard(usize);
 
 /// The sources of both roots in `shard` that the lowering reads, exported, in
 /// root and then path order: every `SHARDS`-th source of each root's listing,
-/// starting at the shard's own index.
+/// starting at the shard's own index. Each readmission drains the obligations
+/// of its checks through `fork`, or serially when `fork` is none.
 ///
 /// # Specification
 /// - requires: `shard` is below `SHARDS`; both committed corpus trees remain
@@ -846,13 +883,16 @@ struct Shard(usize);
             })
 },
 )]
-fn corpus(shard: Shard) -> Vec<Exported>
+fn corpus(
+    shard: Shard,
+    fork: Option<&SharedFork>,
+) -> Vec<Exported>
 {
     let pbg = built_in().expect("the built-in grammar builds");
     let mut exported = Vec::new();
     for root in [Root::Strict, Root::Fixture] {
         for path in sources(root).into_iter().skip(shard.0).step_by(SHARDS) {
-            if let Swept::Exported(source) = export(&pbg, path, root) {
+            if let Swept::Exported(source) = export_through(&pbg, path, root, fork) {
                 exported.push(source);
             }
         }
@@ -900,11 +940,17 @@ fn commit(artifact: &EncodedArtifact) -> (ArtifactManifest, InMemoryBlockStore)
 mod kernel_export_gate
 {
     use alloc::collections::BTreeSet;
+    use alloc::sync::Arc;
+    use core::num::NonZeroUsize;
 
     use anodized::spec;
+    use gandr_kernel_core::fork::SharedFork;
     use gandr_kernel_term::decode;
     use gandr_kernel_term::encode;
     use gandr_storage_records::TreeParams;
+    use gandr_surface_dispatcher::Pool;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Width;
 
     use super::Class;
     use super::Root;
@@ -962,17 +1008,19 @@ mod kernel_export_gate
         gate(Shard(7));
     }
 
-    /// The sources of `shard` exported twice: each artifact is a function of
-    /// its text and reads back through the record plane and the decoder as
-    /// itself.
+    /// The sources of `shard` exported twice, the second time with the
+    /// obligations of each kernel check drained apart on four threads: each
+    /// artifact is a function of its text and not of the fork, and reads back
+    /// through the record plane and the decoder as itself.
     ///
     /// # Specification
     /// - requires: `shard` is below `SHARDS`.
     /// - ensures: both sweeps of `shard` export the same sources to the same
-    ///   bytes and identities; each artifact decodes, re-encodes byte for byte
-    ///   and reads back through its records; and the sources of `shard` export
-    ///   a definition or an assumption from each root that has a source in
-    ///   `shard` (the strict root's few sources fill only the first shards).
+    ///   bytes, identities and classes; each artifact decodes, re-encodes byte
+    ///   for byte and reads back through its records; and the sources of
+    ///   `shard` export a definition or an assumption from each root that has a
+    ///   source in `shard` (the strict root's few sources fill only the first
+    ///   shards).
     /// - panics: when any of those fails.
     ///
     /// # Adequacy
@@ -983,8 +1031,12 @@ mod kernel_export_gate
     #[spec(requires: shard.0 < SHARDS)]
     fn gate(shard: Shard)
     {
-        let first = corpus(shard);
-        let second = corpus(shard);
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).expect("four threads"),
+        )));
+        let forked = SharedFork::through(Arc::new(pool));
+        let first = corpus(shard, None);
+        let second = corpus(shard, Some(&forked));
         assert_eq!(
             first.len(),
             second.len(),
@@ -996,6 +1048,10 @@ mod kernel_export_gate
             assert_eq!(
                 one.artifact, two.artifact,
                 "{path}: the export is a function of the source"
+            );
+            assert_eq!(
+                one.classes, two.classes,
+                "{path}: a forked drain gives each declaration the serial class"
             );
             let (manifest, store) = commit(&one.artifact);
             let (again, _again_store) = commit(&two.artifact);
@@ -1395,7 +1451,7 @@ mod kernel_corpus_partition
     {
         let mut classes = BTreeMap::new();
         let mut seeded: BTreeSet<StructuredName> = BTreeSet::new();
-        for exported in corpus(shard) {
+        for exported in corpus(shard, None) {
             let path = exported.path.display();
             classes.clear();
             seeded.clear();

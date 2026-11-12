@@ -429,7 +429,8 @@ digraph crates {
   "theory-deep-inference" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-discrete-morse" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-exact-reals" -> "theory-graded-posets" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
-  "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
+  "core-fork" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
+  "kernel-core" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-session" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];

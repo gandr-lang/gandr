@@ -14,9 +14,11 @@
 //! A check counts the answers it took. The
 //! [`Environment`](crate::Environment) records no verdict for a declaration
 //! whose check took one, since a receipt attests only what the kernel checked
-//! itself, and it sums the run's answers for its report.
+//! itself, and it sums the run's answers for its report. The parts of one
+//! check that a fork runs apart count into one [`Tally`].
 
-use core::cell::Cell;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::Ordering;
 
 use anodized::spec;
 use gandr_kernel_term::TermArena;
@@ -78,6 +80,66 @@ impl From<AdmittedCount> for u32
     }
 }
 
+/// The answers one check took, counted from each worker that runs a part of
+/// the check.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub(crate) struct Tally(AtomicU32);
+
+impl Tally
+{
+    /// A tally of no answer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn new() -> Self
+    {
+        Self(AtomicU32::new(0))
+    }
+
+    /// The answers taken so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn get(&self) -> AdmittedCount
+    {
+        AdmittedCount(self.0.load(Ordering::Relaxed))
+    }
+
+    /// Set the tally back to `count`: the count before a forked part of the
+    /// check that the kernel discards and checks again serially.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn reset(
+        &self,
+        count: AdmittedCount,
+    )
+    {
+        self.0.store(count.0, Ordering::Relaxed);
+    }
+
+    /// Count one more answer, saturating.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take_one(&self)
+    {
+        // The update never declines, so its result carries nothing.
+        let _previous = self
+            .0
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                Some(count.saturating_add(1))
+            });
+    }
+}
+
 /// Where one check stands on admitted results: deriving each, or taking each
 /// closed pair's and counting it.
 ///
@@ -89,7 +151,7 @@ pub(crate) enum Taking<'check>
     /// Derive every admitted result.
     Deriving,
     /// Take each closed pair's admitted result, counting it here.
-    Counting(&'check Cell<AdmittedCount>),
+    Counting(&'check Tally),
 }
 
 /// What [`Taking::take`] did with a pair.
@@ -115,7 +177,7 @@ impl<'check> Taking<'check>
     #[inline]
     pub(crate) const fn under(
         policy: AdmissionPolicy,
-        taken: &'check Cell<AdmittedCount>,
+        taken: &'check Tally,
     ) -> Self
     {
         match policy {
@@ -134,6 +196,22 @@ impl<'check> Taking<'check>
         match self {
             Self::Deriving => AdmittedCount::NONE,
             Self::Counting(taken) => taken.get(),
+        }
+    }
+
+    /// Set the count of this stance back to `count`, as [`Tally::reset`]
+    /// does. A deriving stance counts nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn reset(
+        self,
+        count: AdmittedCount,
+    )
+    {
+        if let Self::Counting(taken) = self {
+            taken.reset(count);
         }
     }
 
@@ -177,7 +255,7 @@ impl<'check> Taking<'check>
         if !closed {
             return Took::Derived;
         }
-        taken.set(taken.get().and(AdmittedCount(1)));
+        taken.take_one();
         Took::Taken
     }
 }

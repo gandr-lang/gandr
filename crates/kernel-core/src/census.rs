@@ -395,6 +395,42 @@ impl ExpansionCensus
     {
         self.term_kept.plus(self.type_kept)
     }
+
+    /// Add the counts of `part` to this census: the census of a part of this
+    /// check that a fork ran apart.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each of the six counters is its saturating sum with the same
+    ///   counter of `part`.
+    /// - provides: the fold of a forked part's census at its join.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on six distinct counts and a sum past the ceiling;
+    ///   exact counters distinguish a misrouted, omitted or wrapped operand.
+    /// - witness: `census::tests::a_part_s_census_adds_counter_by_counter`
+    #[spec(captures: before = *self,
+    ensures: self.term_expanded.0 == before.term_expanded.0.saturating_add(part.term_expanded.0)
+        && self.term_recalled.0 == before.term_recalled.0.saturating_add(part.term_recalled.0)
+        && self.term_kept.0 == before.term_kept.0.saturating_add(part.term_kept.0)
+        && self.type_expanded.0 == before.type_expanded.0.saturating_add(part.type_expanded.0)
+        && self.type_recalled.0 == before.type_recalled.0.saturating_add(part.type_recalled.0)
+        && self.type_kept.0 == before.type_kept.0.saturating_add(part.type_kept.0))]
+    #[inline]
+    pub(crate) fn absorb(
+        &mut self,
+        part: &Self,
+    )
+    {
+        self.term_expanded = self.term_expanded.plus(part.term_expanded);
+        self.term_recalled = self.term_recalled.plus(part.term_recalled);
+        self.term_kept = self.term_kept.plus(part.term_kept);
+        self.type_expanded = self.type_expanded.plus(part.type_expanded);
+        self.type_recalled = self.type_recalled.plus(part.type_recalled);
+        self.type_kept = self.type_kept.plus(part.type_kept);
+    }
 }
 
 #[cfg(test)]
@@ -553,5 +589,34 @@ mod tests
                 expected
             );
         }
+    }
+
+    #[test]
+    fn a_part_s_census_adds_counter_by_counter()
+    {
+        let census_of = |[
+            term_expanded,
+            term_recalled,
+            term_kept,
+            type_expanded,
+            type_recalled,
+            type_kept,
+        ]: [u64; 6]| {
+            ExpansionCensus {
+                term_expanded: ExpansionCount::from(term_expanded),
+                term_recalled: ExpansionCount::from(term_recalled),
+                term_kept: ExpansionCount::from(term_kept),
+                type_expanded: ExpansionCount::from(type_expanded),
+                type_recalled: ExpansionCount::from(type_recalled),
+                type_kept: ExpansionCount::from(type_kept),
+            }
+        };
+        let mut census = census_of([2, 3, 4, 5, 7, u64::MAX.saturating_sub(1)]);
+        census.absorb(&census_of([13, 17, 19, 23, 29, 31]));
+        assert_eq!(
+            census,
+            census_of([15, 20, 23, 28, 36, u64::MAX]),
+            "each counter adds its own and saturates alone"
+        );
     }
 }
