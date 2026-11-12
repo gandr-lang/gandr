@@ -79,6 +79,7 @@ digraph crates {
     "surface-grammar";
     "surface-layout";
     "surface-lowering";
+    "surface-lowering-base";
     "surface-lsp";
     "surface-mcp";
     "surface-parser";
@@ -266,6 +267,7 @@ digraph crates {
   "surface-lowering" -> "kernel-strata";
   "surface-lowering" -> "kernel-term";
   "surface-lowering" -> "surface-grammar";
+  "surface-lowering" -> "surface-lowering-base";
   "surface-lowering" -> "surface-syntax";
   "surface-lowering" -> "theory-cell-complexes";
   "surface-lowering" -> "theory-circuit-algebras";
@@ -276,6 +278,10 @@ digraph crates {
   "surface-lowering" -> "theory-shapes";
   "surface-lowering" -> "theory-spec-combinators";
   "surface-lowering" -> "theory-stone-duality";
+  "surface-lowering-base" -> "core-term";
+  "surface-lowering-base" -> "surface-syntax";
+  "surface-lowering-base" -> "theory-circuit-algebras";
+  "surface-lowering-base" -> "theory-levitation";
   "surface-lsp" -> "core-fork";
   "surface-lsp" -> "core-incremental";
   "surface-lsp" -> "kernel-term";
@@ -437,8 +443,8 @@ digraph crates {
   "storage-chunker" -> "storage-records" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "storage-records" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "storage-values" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
-  "surface-dispatcher" -> "surface-lowering" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
-  "surface-lowering" -> "surface-parser" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "surface-dispatcher" -> "surface-lowering-base" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "surface-lowering-base" -> "surface-parser" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "surface-parser" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "surface-session" -> "theory-cell-complexes" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "theory-cell-complexes" -> "theory-cellular-sheaves" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];

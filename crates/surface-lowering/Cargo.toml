@@ -3,7 +3,7 @@ name = "gandr-surface-lowering"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Lowering the gandr surface into the core: resolution tables, module collection, imports, the namespace engine, the attribute side table, the origin table and the refusal classifier"
+description = "Lowering the gandr surface into the core: resolution tables, module collection, imports, the attribute side table, the origin table and the refusal classifier, over the lowering's base crate"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -20,7 +20,9 @@ path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the executable specifications of the
 # readers and minters; logic/BigInt stays disabled in this no_std library.
-# The specification combinators bound a clause to what a call appended.
+# The base crate holds the namespace engine, the per-node table, the form
+# stretches and the circuit readings. The specification combinators bound a
+# clause to what a call appended.
 # The graded posets, over finite Stone duality's orders, hold a record type's
 # faces and their meets. self_cell holds a closure's text beside its parse
 # and its suspended lowering, which borrow it. `hotpath` profiles a rule
@@ -31,6 +33,7 @@ gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-surface-grammar.workspace = true
+gandr-surface-lowering-base.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-cell-complexes.workspace = true
 gandr-theory-circuit-algebras.workspace = true

@@ -1,0 +1,41 @@
+[package]
+name = "gandr-surface-lowering-base"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The base of gandr's lowering: the namespace engine, the per-node table, the form stretches and the circuit readings that the lowering's families share"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "lowering", "namespace", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies the executable specifications. The
+# circuit readings wire a body through the circuit algebras. The levitation
+# crate names a circuit body's nodes and the namespace's segments.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-circuit-algebras.workspace = true
+gandr-theory-levitation.workspace = true
+quenchant-shape.workspace = true
+
+# The integration target lowers a unit through the lowering, which depends on
+# this crate. Cargo admits that cycle for a test target, and the test links
+# one copy of this crate.
+[dev-dependencies]
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+
+[lints]
+workspace = true

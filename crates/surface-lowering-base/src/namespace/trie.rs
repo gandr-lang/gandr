@@ -1954,7 +1954,7 @@ impl<'trie, Data, Tag> Iterator for Bindings<'trie, Data, Tag>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body clones the path to the binding it yields; the check compares that path once and looks it up along the same segments"
+            reason = "parity: the body clones the path to the binding it yields; the check compares that path once and looks it up along the same segments; #104 owns the cost of the clause"
         )
     )]
     #[spec(

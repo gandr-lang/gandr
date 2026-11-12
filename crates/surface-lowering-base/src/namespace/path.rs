@@ -287,7 +287,7 @@ impl NamePath
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body copies every segment of both paths once; the check compares each once"
+            reason = "parity: the body copies every segment of both paths once; the check compares each once; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -326,7 +326,7 @@ impl NamePath
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body compares the prefix and copies the remainder; the check compares each segment once"
+            reason = "parity: the body compares the prefix and copies the remainder; the check compares each segment once; #104 owns the cost of the clause"
         )
     )]
     #[spec(

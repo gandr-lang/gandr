@@ -1,17 +1,21 @@
 //! A per-node table whose cells a suspended lowering shares with every
-//! lowering resumed from it. A lowering suspended after an import closure
-//! holds a cell for each of the closure's nodes in each of its per-node
-//! tables; each lowering resumed from it reads them, and adds the document's
-//! blocks after them. [`NodeTable`] keeps the suspended cells behind one `Arc`,
-//! so a resumed lowering copies none of them, and keeps a cell written at a
-//! shared node apart, copied from the shared cell the first time it is
-//! written. A node's cell is named by its layout block and its offset there;
-//! the table keeps each block's cells side by side, so a top-level form's
-//! descendants hold one run of cells.
+//! lowering resumed from it.
+//!
+//! A lowering suspended after an import closure holds a cell for each of the
+//! closure's nodes in each of its per-node tables; each lowering resumed from
+//! it reads them, and adds the document's blocks after them. [`NodeTable`]
+//! keeps the suspended cells behind one `Arc`, so a resumed lowering copies
+//! none of them, and keeps a cell written at a shared node apart, copied from
+//! the shared cell the first time it is written. A node's cell is named by its
+//! layout block and its offset there; the table keeps each block's cells side
+//! by side, so a top-level form's descendants hold one run of cells.
 //!
 //! # Witnesses
 //! - `table::tests::a_write_to_a_shared_cell_is_the_writer_s_own_776`
-//! - `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+//! - `table::tests::filling_a_block_writes_its_cells_alone`
+//!
+//! The integration target of `gandr-surface-lowering` resumes whole
+//! documents over the table.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -40,7 +44,6 @@ use gandr_surface_syntax::NodeIndex;
 /// # Adequacy
 /// - hypothesis: L3 — as the module's witnesses.
 /// - witness: `table::tests::a_write_to_a_shared_cell_is_the_writer_s_own_776`
-/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[derive(Clone, Debug)]
 pub struct NodeTable<Cell>
 {
@@ -99,6 +102,7 @@ impl<Cell: Clone> NodeTable<Cell>
     /// - witness: `table::tests::a_write_to_a_shared_cell_is_the_writer_s_own_776`
     #[spec(ensures: |ret| usize::from(ret) == self.shared.len().saturating_add(self.own.len()))]
     #[inline]
+    #[must_use]
     pub fn count(&self) -> NodeCount
     {
         NodeCount::from(self.shared.len().saturating_add(self.own.len()))
@@ -113,9 +117,10 @@ impl<Cell: Clone> NodeTable<Cell>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`NodeTable`].
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    /// - witness: `table::tests::a_write_to_a_shared_cell_is_the_writer_s_own_776`
     #[spec(ensures: |ret| usize::from(ret) == self.starts.len())]
     #[inline]
+    #[must_use]
     pub fn blocks(&self) -> LayoutBlock
     {
         LayoutBlock::from(self.starts.len())
@@ -271,7 +276,8 @@ impl<Cell: Clone> NodeTable<Cell>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`NodeTable`].
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    /// - witness: `table::tests::a_write_to_a_shared_cell_is_the_writer_s_own_776`
+    /// - witness: `table::tests::filling_a_block_writes_its_cells_alone`
     #[spec(
         captures: held = self.count(),
         ensures: usize::from(self.count()) >= usize::from(held),
