@@ -3497,9 +3497,11 @@ impl Environment
 
     /// Run `check` against a view of this environment: a clone of the frozen
     /// arena that it mints its intermediates into, a judgement over the
-    /// entries below `rank` through the support that `roots` start, and the
-    /// session that it names records in. The check reads and writes no other
-    /// part of the environment, and its intermediates leave with the clone.
+    /// entries below `rank` through the support that `roots` start, and a
+    /// job's session, forked from the environment's at this release, that it
+    /// names records in. The check reads and writes no other part of the
+    /// environment, its intermediates leave with the clone, and the job's
+    /// session folds back into the environment's.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -3540,18 +3542,28 @@ impl Environment
         let mut arena = self.arena.clone();
         let checked = {
             let Self {
+                arena: ref frozen,
                 ref manifest,
                 ref mut names,
                 admitting,
                 ..
             } = *self;
-            check(
+            let session = names.session_mut();
+            // The session names the view's constants before the fork, so the
+            // job shares the names by reference and names none.
+            session.name_constants(&view);
+            let mut job = session.fork(frozen);
+            let checked = check(
                 &mut arena,
                 check::Judgement::new(&view, levels)
                     .unsealing(manifest)
                     .taking(crate::admitted::Taking::under(admitting, taken)),
-                names.session_mut(),
-            )
+                &mut job,
+            );
+            // The serial run folds each job at its commit, which follows at
+            // once.
+            names.session_mut().join(frozen, job);
+            checked
         };
         // A reader that names nodes by their positions forgets the clone's.
         self.arena.dropped(&arena);

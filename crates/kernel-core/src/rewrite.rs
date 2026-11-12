@@ -91,6 +91,7 @@ use crate::encoding::ContentEncoding;
 use crate::encoding::ContentTable;
 use crate::encoding::RewriteGoal;
 use crate::encoding::encode_rewrite;
+use crate::encoding::record_name;
 use crate::hashed::HashedMap;
 use crate::hashed::hashed_entry;
 
@@ -398,10 +399,11 @@ impl RewriteOutcome
 
 /// The complete support of one rewrite step, as content.
 ///
-/// It holds no arena id: the canonical encoding of the subject, the binder
-/// depth, and the rewrite's parameter, plus that encoding's digest. Equality is
-/// word equality of the encoding — the deciding comparison — and the digest
-/// narrows a bucket without ever deciding.
+/// It holds no arena id and no content id: the canonical encoding of the
+/// direction, the subject's name, the binder depth, and the rewrite's
+/// parameter, plus that encoding's digest. Equality is word equality of the
+/// encoding — the deciding comparison — and the digest narrows a bucket without
+/// ever deciding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RewriteSupport
 {
@@ -421,7 +423,9 @@ impl RewriteSupport
     /// - requires: `table` is this session's and `arena` is the one it has been
     ///   used with.
     /// - ensures: two supports are equal exactly when the two goals rewrite the
-    ///   same content the same way at the same binder depth.
+    ///   same content the same way at the same binder depth. Absent when the
+    ///   table names nothing, so a rewrite over such a table keeps its answers
+    ///   in the walk's own memo.
     /// - provides: the rewrite memo's key; the predicate checks its plane.
     ///   Session provenance and agreement across goals require the paired
     ///   witnesses rather than another encoding of the same invocation.
@@ -434,30 +438,33 @@ impl RewriteSupport
     ///   two encodings) and by one subject at two depths, each asserted
     ///   exactly.
     /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
-    #[spec(ensures: |ret| ret.plane == match goal {
-        RewriteGoal::Shift { .. } => RewritePlane::Shift,
-        RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
-        RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref support) => support.plane == match goal {
+            RewriteGoal::Shift { .. } => RewritePlane::Shift,
+            RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
+            RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
+        },
+        Maybe::Absent(_) => true,
     })]
-    #[must_use]
     fn build(
         table: &mut ContentTable,
         arena: &TermArena,
         goal: RewriteGoal,
-    ) -> Self
+    ) -> Maybe<Self, record_name::Absent>
     {
         let plane = match goal {
             RewriteGoal::Shift { .. } => RewritePlane::Shift,
             RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
             RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
         };
-        let encoding = encode_rewrite(table, arena, goal);
-        let digest = encoding.digest();
-        Self {
-            plane,
-            encoding,
-            digest,
-        }
+        encode_rewrite(table, arena, goal).map(|encoding| {
+            let digest = encoding.digest();
+            Self {
+                plane,
+                encoding,
+                digest,
+            }
+        })
     }
 }
 
@@ -1656,8 +1663,12 @@ where
                 // memoless walk encodes nothing.
                 let hit = match step.goal(node, depth) {
                     Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
-                        let support = RewriteSupport::build(table, arena, goal);
-                        memo.recall(&support).map(|hit| *hit.outcome())
+                        match RewriteSupport::build(table, arena, goal) {
+                            Maybe::Present(support) => {
+                                memo.recall(&support).map(|hit| *hit.outcome())
+                            },
+                            Maybe::Absent(_) => None,
+                        }
                     },
                     Maybe::Present(_) | Maybe::Absent(keyed::Absent::Local) => None,
                 }
@@ -1906,11 +1917,13 @@ fn remember_rewrite<M>(
 {
     let stored = match step.goal(node, depth) {
         Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
-            let support = RewriteSupport::build(table, arena, goal);
-            matches!(
-                memo.remember(support, outcome),
-                Ok(MemoRecord::Recorded | MemoRecord::Replaced)
-            )
+            match RewriteSupport::build(table, arena, goal) {
+                Maybe::Present(support) => matches!(
+                    memo.remember(support, outcome),
+                    Ok(MemoRecord::Recorded | MemoRecord::Replaced)
+                ),
+                Maybe::Absent(_) => false,
+            }
         },
         Maybe::Present(_) | Maybe::Absent(keyed::Absent::Local) => false,
     };

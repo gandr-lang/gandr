@@ -108,6 +108,7 @@ pub mod accounting;
 pub mod digest;
 pub mod key;
 pub mod memo;
+pub mod overlay;
 pub mod table;
 
 pub use crate::accounting::MemoBucketCount;
@@ -123,6 +124,7 @@ pub use crate::memo::MemoActivity;
 pub use crate::memo::MemoHit;
 pub use crate::memo::MemoRecord;
 pub use crate::memo::NullMemo;
+pub use crate::overlay::OverlaidMemo;
 pub use crate::table::HashIndex;
 pub use crate::table::Probe;
 pub use crate::table::TableFull;

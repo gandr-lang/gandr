@@ -314,8 +314,8 @@ use crate::conv::case_branch_mismatch;
 use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
 use crate::conv::pending_endpoints;
-use crate::encoding::ContentId;
 use crate::encoding::ObligationGoal;
+use crate::encoding::RecordName;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
 use crate::env::Entries;
@@ -975,8 +975,8 @@ enum KeptParameters
     /// The judgement does not ask or keep. [`Judgement::parameters`] gives
     /// none for it.
     Uncrossed,
-    /// Named in the session's table.
-    Named(ContentId),
+    /// Named in the session's table, by the record's name.
+    Named(RecordName),
 }
 
 impl KeptParameters
@@ -992,7 +992,7 @@ impl KeptParameters
         arena: &TermArena,
         judgement: &Judgement<'_>,
         session: &mut SupportContext,
-    ) -> Option<ContentId>
+    ) -> Option<RecordName>
     {
         if matches!(*self, Self::Unnamed) {
             *self = judgement
@@ -1764,7 +1764,7 @@ fn discharged<M>(
     memo: &M,
     session: &SupportContext,
     owed: &Owed,
-    parameters: Option<ContentId>,
+    parameters: Option<RecordName>,
 ) -> Discharge
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
@@ -8361,8 +8361,8 @@ where
     // its verdict is kept under. A check owes obligations of its own, so its
     // verdict holds only once the whole drain passes. The drain records the
     // keys then. A key it checked already is not checked again.
-    let mut passed: Vec<(NodeSupport, Option<ContentId>)> = Vec::new();
-    let mut seen: BTreeSet<(ContentId, ContentId)> = BTreeSet::new();
+    let mut passed: Vec<(NodeSupport, Option<RecordName>)> = Vec::new();
+    let mut seen: BTreeSet<(RecordName, RecordName)> = BTreeSet::new();
     while let Some(obligation) = owed.pop() {
         if drained >= usize::from(MAX_CODE_OBLIGATIONS) {
             return Err(KernelError::CodeObligationCeiling {
