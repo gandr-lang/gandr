@@ -582,9 +582,9 @@ impl ObligationFork for Pool
     /// - executable: none — the schedule is the pool's.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the export gate readmits each corpus source through a
-    ///   pool of four threads and against the serial readmission.
-    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+    /// - hypothesis: L2 — a pool of four threads and a serial pool each run 16
+    ///   parts of a drain, and each part runs once.
+    /// - witness: `pool::tests::the_pool_runs_each_part_of_a_drain_once_at_its_width`
     #[inline]
     fn run_jobs(
         &self,
@@ -605,8 +605,9 @@ impl ObligationFork for Pool
     /// - executable: none — the width is the host's, resolved once.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — as [`Self::run_jobs`].
-    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+    /// - hypothesis: L2 — a pool of four threads gives four workers, and a
+    ///   serial pool gives one.
+    /// - witness: `pool::tests::the_pool_runs_each_part_of_a_drain_once_at_its_width`
     #[inline]
     fn workers(&self) -> ForkWidth
     {
@@ -2190,5 +2191,51 @@ mod tests
             ran.iter().all(|&ran| ran == (Some(caller), Some(caller))),
             "a serial pool runs every job and every fold on the caller"
         );
+    }
+
+    /// A part of a drain that counts each run of it.
+    #[repr(transparent)]
+    struct Counted<'runs>(&'runs AtomicUsize);
+
+    impl gandr_kernel_core::fork::Job for Counted<'_>
+    {
+        /// Count one run of this part.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run(&mut self)
+        {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn the_pool_runs_each_part_of_a_drain_once_at_its_width()
+    {
+        use gandr_kernel_core::fork::ForkWidth;
+        use gandr_kernel_core::fork::Job as Part;
+        use gandr_kernel_core::fork::ObligationFork;
+
+        let wide = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        for (threads, pool) in [(4_usize, wide), (1_usize, Pool::default())] {
+            assert_eq!(
+                ObligationFork::workers(&pool),
+                ForkWidth::from(NonZeroUsize::new(threads).unwrap()),
+                "the fork's workers are the pool's threads"
+            );
+            let runs: [AtomicUsize; 16] = core::array::from_fn(|_| AtomicUsize::new(0));
+            let mut parts: Vec<Counted<'_>> = runs.iter().map(Counted).collect();
+            let mut jobs: Vec<&mut dyn Part> = parts
+                .iter_mut()
+                .map(|part| -> &mut dyn Part { part })
+                .collect();
+            ObligationFork::run_jobs(&pool, &mut jobs);
+            assert!(
+                runs.iter().all(|runs| runs.load(Ordering::Relaxed) == 1),
+                "each part of the drain runs once on a pool of {threads}"
+            );
+        }
     }
 }
