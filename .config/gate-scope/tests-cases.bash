@@ -12,8 +12,10 @@
 # `check:tests-enforcing` runs it.
 set -euo pipefail
 # Each case reads a lane's scope, and the watcher's case sets the watcher's
-# setting on its own call alone (#6739).
-unset GATE_TEST_EVERY_RED
+# setting on its own call alone (#6739). The scope reads the change against
+# the scratch workspace's fork, never against the base of the gate that runs
+# the check (`GATE_BASE`, #6894).
+unset GATE_TEST_EVERY_RED GATE_BASE
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 scope="$here/test-scope.bash"
 source "$here/../pr-stack/trunk.bash"

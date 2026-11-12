@@ -24,12 +24,20 @@
 # no package held it, and two tests of `gandr-surface-dispatcher` that read it
 # reached `landing` red.
 #
+# With `lints`, the set is the one that the lints of the queue on `landing`
+# read (#6894). A lint's configuration decides its verdict on every package,
+# as a formatter's configuration does on every file. So a change that
+# touches a path of the table's `lints.configuration` reads the whole
+# workspace. The rest of the workspace keeps the verdict of the group's base,
+# and the set grows as the gate's set does.
+#
 # Input:
 #   changed   the paths the change touches
 #   packages  the workspace's packages: [{name, dir, deps: [name]}], `dir`
 #             the package's directory relative to the root, with no
 #             trailing `/`
 #   touched   true for the touched packages alone; absent, the set grows
+#   lints     true for the set of the queue's lints; absent, false
 #   table     the table to read; absent, `table.json`
 #
 # Output: `"workspace"`, or the package names to run over, sorted. A change
@@ -41,15 +49,18 @@ include "rows";
 
 (.table // $table::table[0]) as $table
 | (.touched // false) as $only
+| (.lints // false) as $lints
 | ($table.groups | keys) as $every
 | .packages as $packages
-| [.changed[] as $path
+| .changed as $changed
+| [$changed[] as $path
     | ((first($table.paths[] | select(mapped(.; $path)) | .groups) // $every) as $groups
       | if ($groups | index("rust")) then
           (first($packages[] | select(.dir as $dir | $path | startswith($dir + "/")) | .name) // null)
         elif ($groups | index("corpus-tests")) then ($table.readers // [])[]
         else empty end)] as $touched
 | if any($touched[]; . == null) then "workspace"
+  elif $lints and any($changed[]; . as $path | any($table.lints.configuration[]; mapped({path: .}; $path))) then "workspace"
   else
     def grow: . as $set
       | ($set + [$packages[] | select(any(.deps[]; IN($set[]))) | .name] | unique) as $next

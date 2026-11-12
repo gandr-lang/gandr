@@ -15,6 +15,9 @@
 # commit lacks the test's package: nextest refuses a filter that names an
 # absent binary.
 set -euo pipefail
+# The scope reads the change against the scratch workspace's fork, never
+# against the base of the gate that runs the check (`GATE_BASE`, #6894).
+unset GATE_BASE
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 scope="$here/../gate-scope/test-scope.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-watch-each-red.XXXXXX")
