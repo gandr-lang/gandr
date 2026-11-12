@@ -4285,7 +4285,8 @@ fn write_parameters<const NAMED: bool>(
 /// derived from.
 ///
 /// The variants are the two machines' goals: the checker's four directions over
-/// terms, and the type-formation walk's two over types.
+/// terms, the type-formation walk's two over types, and the check of what a
+/// formation owes the checker.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SupportGoal
 {
@@ -4323,6 +4324,47 @@ pub enum SupportGoal
         /// The computation-type node.
         CompTypeId,
     ),
+    /// Check one obligation that a formation owes the checker, named by its
+    /// inputs: the key of its verdict.
+    Obligation(
+        /// The obligation and its inputs.
+        ObligationGoal,
+    ),
+}
+
+/// One obligation that a formation owes the checker, by its inputs.
+///
+/// The key names the obligation's inputs by the content of the type node that
+/// owes it. That node holds the inputs and nothing else: an identity type its
+/// domain and its two endpoints, an element type its code and its level, and
+/// an application its family and its arguments. The node's family names the
+/// universe's sort. So the verdict of one obligation answers each formation
+/// that owes it, and the walk mints no node for its key.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ObligationGoal
+{
+    /// Both endpoints of an identity type inhabit its domain.
+    Endpoints(
+        /// The identity type.
+        ValueTypeId,
+    ),
+    /// The code of an element type inhabits the universe the element type
+    /// names.
+    Universe(
+        /// The element type: a value type or a computation type.
+        AnyNode,
+    ),
+    /// The arguments of a data application check at its family's parameters.
+    Data(
+        /// The data application.
+        ValueTypeId,
+    ),
+    /// The arguments of a codata application check at its family's
+    /// parameters.
+    Codata(
+        /// The codata application.
+        CompTypeId,
+    ),
 }
 
 quenchant_shape::reason_enum! {
@@ -4335,6 +4377,8 @@ quenchant_shape::reason_enum! {
             Synthesis,
             /// A formation goal asks for a universe level.
             Formation,
+            /// An obligation checks its inputs against no supplied type.
+            Obligation,
         }
     }
 }
@@ -4355,6 +4399,10 @@ impl SupportGoal
             Self::CheckComp(..) => WireTag::from(0x03_u8),
             Self::ValueTypeLevel(_) => WireTag::from(0x04_u8),
             Self::CompTypeLevel(_) => WireTag::from(0x05_u8),
+            Self::Obligation(ObligationGoal::Endpoints(_)) => WireTag::from(0x06_u8),
+            Self::Obligation(ObligationGoal::Universe(_)) => WireTag::from(0x07_u8),
+            Self::Obligation(ObligationGoal::Data(_)) => WireTag::from(0x08_u8),
+            Self::Obligation(ObligationGoal::Codata(_)) => WireTag::from(0x09_u8),
         }
     }
 
@@ -4368,8 +4416,14 @@ impl SupportGoal
         match self {
             Self::SynthValue(id) | Self::CheckValue(id, _) => AnyNode::Value(id),
             Self::SynthComp(id) | Self::CheckComp(id, _) => AnyNode::Computation(id),
-            Self::ValueTypeLevel(id) => AnyNode::ValueType(id),
-            Self::CompTypeLevel(id) => AnyNode::CompType(id),
+            Self::ValueTypeLevel(id)
+            | Self::Obligation(ObligationGoal::Endpoints(id) | ObligationGoal::Data(id)) => {
+                AnyNode::ValueType(id)
+            },
+            Self::CompTypeLevel(id) | Self::Obligation(ObligationGoal::Codata(id)) => {
+                AnyNode::CompType(id)
+            },
+            Self::Obligation(ObligationGoal::Universe(element)) => element,
         }
     }
 
@@ -4377,17 +4431,19 @@ impl SupportGoal
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: checking retains the supplied type and its family; synthesis
-    ///   and formation return their respective absence reasons.
+    /// - ensures: checking retains the supplied type and its family; synthesis,
+    ///   formation and an obligation return their respective absence reasons.
     /// - provides: the checked type, or [`Absent`] with `Synthesis` for a
-    ///   synthesis goal and `Formation` for a universe-formation goal.
+    ///   synthesis goal, `Formation` for a universe-formation goal and
+    ///   `Obligation` for an obligation.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — the const predicate fixes family and absence
-    ///   reason for all six goal variants. Checking-key pairs vary the expected
-    ///   type in both families; synthesis/checking and formation fixtures
-    ///   exercise presence without claiming exhaustive content equality.
+    ///   reason for all seven goal variants. Checking-key pairs vary the
+    ///   expected type in both families; synthesis/checking and formation
+    ///   fixtures exercise presence without claiming exhaustive content
+    ///   equality.
     /// - witness: `encoding::tests::the_direction_is_part_of_the_key`
     /// - witness: `encoding::tests::expected_type_content_changes_checking_keys`
     /// - witness: `encoding::tests::computation_type_formers_keep_distinct_content`
@@ -4398,7 +4454,8 @@ impl SupportGoal
         (Self::CheckValue(..), Maybe::Present(AnyNode::ValueType(_)))
         | (Self::CheckComp(..), Maybe::Present(AnyNode::CompType(_)))
         | (Self::SynthValue(_) | Self::SynthComp(_), Maybe::Absent(expected_type::Absent::Synthesis))
-        | (Self::ValueTypeLevel(_) | Self::CompTypeLevel(_), Maybe::Absent(expected_type::Absent::Formation))))]
+        | (Self::ValueTypeLevel(_) | Self::CompTypeLevel(_), Maybe::Absent(expected_type::Absent::Formation))
+        | (Self::Obligation(_), Maybe::Absent(expected_type::Absent::Obligation))))]
     const fn expected(self) -> Maybe<AnyNode, expected_type::Absent>
     {
         match self {
@@ -4410,6 +4467,7 @@ impl SupportGoal
             Self::ValueTypeLevel(_) | Self::CompTypeLevel(_) => {
                 Maybe::Absent(expected_type::Absent::Formation)
             },
+            Self::Obligation(_) => Maybe::Absent(expected_type::Absent::Obligation),
         }
     }
 }
@@ -4587,7 +4645,11 @@ fn write_goal<const NAMED: bool>(
             record.put_tag(component_present());
             record.put_content(id);
         },
-        Maybe::Absent(expected_type::Absent::Synthesis | expected_type::Absent::Formation) => {
+        Maybe::Absent(
+            expected_type::Absent::Synthesis
+            | expected_type::Absent::Formation
+            | expected_type::Absent::Obligation,
+        ) => {
             record.put_tag(component_absent());
         },
     }

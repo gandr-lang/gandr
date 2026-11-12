@@ -22,6 +22,8 @@ mod guard;
 #[cfg(test)]
 mod levels;
 #[cfg(test)]
+mod memo_order;
+#[cfg(test)]
 mod native_formers;
 #[cfg(test)]
 mod quantified;

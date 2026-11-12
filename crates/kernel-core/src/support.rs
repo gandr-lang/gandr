@@ -79,6 +79,8 @@
 //!   synthesizes the context it consulted as its output, and the memo records
 //!   its entry by it (§ successor-synthesized-context); here for the binders.
 
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -144,9 +146,13 @@ pub struct SupportContext
     open: Vec<Accrual>,
     /// The content outcomes the environment's earlier admissions answered.
     kept: KeptMemo,
+    /// The names of the keys of the obligations this declaration's check owes.
+    /// Its drain checks each of them before the declaration is admitted.
+    owing: BTreeSet<(ContentId, ContentId)>,
 }
 
-/// One open goal and the binders its judgement has read so far, or a barrier.
+/// One open goal, the binders its judgement has read so far and the keys of
+/// the obligations it owes, or a barrier.
 #[derive(Clone, Debug)]
 enum Accrual
 {
@@ -159,6 +165,8 @@ enum Accrual
         depth: BinderDepth,
         /// The binders read so far.
         reads: Reads,
+        /// The keys of the obligations owed so far, each one time.
+        owed: Vec<NodeSupport>,
     },
     /// The machine swapped its context for one that does not extend the open
     /// goal's, so nothing read until the barrier closes is a binder of it.
@@ -212,6 +220,7 @@ fn accrue(
     let Some(&mut Accrual::Goal {
         depth: at,
         reads: ref mut held,
+        ..
     }) = open.last_mut()
     else {
         return;
@@ -230,6 +239,54 @@ fn accrue(
             |beyond| reads.under(Binders::from(beyond)),
         );
     *held = core::mem::replace(held, Reads::closed()).join(&seen);
+}
+
+/// Join `keys` into the innermost goal `open` holds, past every barrier above
+/// it.
+///
+/// An obligation's key names its inputs by their content, so it holds in
+/// every context. A barrier stops a read, but it does not stop a key. The
+/// goal keeps each key one time when it closes, as
+/// [`SupportContext::close_owing`] states.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the innermost goal gains each key of `keys`. Nothing open, or
+///   only barriers, gains nothing. No accrual opens or closes.
+/// - provides: every key a goal owes: its own obligations, a closed subgoal's
+///   and a recalled entry's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a key owed under a barrier and a key owed two times
+///   distinguish a barrier that drops a key and a close that repeats one.
+/// - witness: `support::tests::an_owed_key_passes_a_barrier_and_joins_one_time`
+#[spec(captures: count = open.len(), ensures: open.len() == count)]
+#[inline]
+fn owe_into(
+    open: &mut [Accrual],
+    keys: &[NodeSupport],
+)
+{
+    if let Some(held) = open.iter_mut().rev().find_map(|accrual| match *accrual {
+        Accrual::Goal { ref mut owed, .. } => Some(owed),
+        Accrual::Barrier => None,
+    }) {
+        held.extend_from_slice(keys);
+    }
+}
+
+/// Whether the obligation a key names lets a recall serve: its verdict holds,
+/// or the check that recalls owes it already.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Discharge
+{
+    /// The key holds a checked verdict, or this declaration's check owes it,
+    /// so its drain checks it before the declaration is admitted.
+    Held,
+    /// The key holds no such verdict, so a recall that owes it declines.
+    Open,
 }
 
 impl SupportContext
@@ -261,8 +318,8 @@ impl SupportContext
     }
 
     /// Open an admission's check on this session: its rewrite memo, its open
-    /// accruals and its read buffer start empty, and the table keeps the
-    /// names it holds.
+    /// accruals, the obligations it owes and its read buffer start empty, and
+    /// the table keeps the names it holds.
     ///
     /// The rewrite memo answers with arena ids, which the previous admission's
     /// truncation may have dropped, so it is each admission's own.
@@ -274,6 +331,7 @@ impl SupportContext
     {
         self.rewrites = RewriteMemo::new();
         self.open.clear();
+        self.owing.clear();
         self.read.clear();
     }
 
@@ -396,6 +454,48 @@ impl SupportContext
         recalled
     }
 
+    /// Whether an earlier admission kept `key` as checked under `parameters`.
+    ///
+    /// # Specification
+    /// - requires: `key` was built in this session. `parameters` names the
+    ///   asking judgement's parameters in it.
+    /// - ensures: [`Discharge::Held`] exactly when the kept memo holds `key`
+    ///   under `parameters` with a checked outcome.
+    /// - provides: the probe a recalled formation takes of each obligation it
+    ///   owes.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a probe of the kept memo. A predicate
+    ///   could restate it only by probing the memo again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a formation kept by a refused admission and recalled
+    ///   by a later one, whose obligation the later one refuses.
+    /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+    #[inline]
+    #[must_use]
+    pub(crate) fn kept_checked(
+        &self,
+        key: &NodeSupport,
+        parameters: ContentId,
+    ) -> Discharge
+    {
+        let held = self
+            .kept
+            .filed(kept_digest(key.asked, parameters))
+            .any(|hit| {
+                hit.support().parameters == parameters
+                    && hit.support().support == *key
+                    && *hit.outcome() == NodeOutcome::Checked
+            });
+        if held {
+            Discharge::Held
+        }
+        else {
+            Discharge::Open
+        }
+    }
+
     /// Keep `outcome` as `support`'s answer under `parameters` when it is
     /// content. Content is a check that succeeded or a level that a type
     /// formed at.
@@ -422,7 +522,7 @@ impl SupportContext
         outcome: &NodeOutcome,
     )
     {
-        if matches!(*outcome, NodeOutcome::Checked | NodeOutcome::Formed(_)) {
+        if matches!(*outcome, NodeOutcome::Checked | NodeOutcome::Formed(..)) {
             let _recorded = self.kept.remember(
                 KeptSupport {
                     support: support.clone(),
@@ -522,6 +622,7 @@ impl SupportContext
         self.open.push(Accrual::Goal {
             depth: depth_of(context),
             reads: Reads::closed(),
+            owed: Vec::new(),
         });
         at
     }
@@ -576,6 +677,76 @@ impl SupportContext
         accrue(&mut self.open, reads, depth_of(context));
     }
 
+    /// Join `keys` into the innermost open goal, past every barrier.
+    ///
+    /// # Specification
+    /// - requires: each key was built in this session.
+    /// - ensures: as [`owe_into`].
+    /// - provides: a recalled formation's keys.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`owe_into`].
+    /// - witness: `support::tests::an_owed_key_passes_a_barrier_and_joins_one_time`
+    #[spec(captures: count = self.open.len(), ensures: self.open.len() == count)]
+    #[inline]
+    pub(crate) fn owe(
+        &mut self,
+        keys: &[NodeSupport],
+    )
+    {
+        owe_into(&mut self.open, keys);
+    }
+
+    /// Owe the obligation `key` names: join it into the innermost open goal,
+    /// past every barrier, and hold it as owed by this declaration's check.
+    ///
+    /// # Specification
+    /// - requires: `key` was built in this session, and the obligation it names
+    ///   joins the worklist that this declaration's drain checks.
+    /// - ensures: as [`owe_into`], and [`Self::owes`] holds for `key` until the
+    ///   next declaration's check opens.
+    /// - provides: the formation walk's key of each obligation it owes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a formation recalled twice in one declaration whose
+    ///   drain refuses the obligation, and the same formation in a later
+    ///   declaration.
+    /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+    #[spec(captures: count = self.open.len(), ensures: self.open.len() == count)]
+    #[inline]
+    pub(crate) fn owe_obligation(
+        &mut self,
+        key: &NodeSupport,
+    )
+    {
+        let _new = self.owing.insert(key.names());
+        owe_into(&mut self.open, core::slice::from_ref(key));
+    }
+
+    /// Whether this declaration's check owes the obligation `key` names, so
+    /// that its drain checks it before the declaration is admitted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn owes(
+        &self,
+        key: &NodeSupport,
+    ) -> Discharge
+    {
+        if self.owing.contains(&key.names()) {
+            Discharge::Held
+        }
+        else {
+            Discharge::Open
+        }
+    }
+
     /// Close the accrual `opened` names, join it into the goal open around it,
     /// and return the binders its goal read.
     ///
@@ -614,7 +785,45 @@ impl SupportContext
         while self.open.len() > opened.0.saturating_add(1) {
             let _inner = self.close_innermost();
         }
-        self.close_innermost()
+        self.close_innermost().0
+    }
+
+    /// Close the accrual `opened` names, as [`Self::close`] does, and return
+    /// the binders its goal read with the keys of the obligations it owes.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::close`].
+    /// - ensures: as [`Self::close`]. The keys join the goal around it as
+    ///   [`owe_into`] does, and they are returned, each one time. An accrual
+    ///   the stack does not hold returns none: its keys are lost, so no entry
+    ///   may record it.
+    /// - provides: a formation's support and the keys its entry carries.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`owe_into`].
+    /// - witness: `support::tests::an_owed_key_passes_a_barrier_and_joins_one_time`
+    #[spec(
+        captures: count = self.open.len(),
+        ensures: self.open.len() == core::cmp::min(count, opened.0),
+    )]
+    #[inline]
+    pub(crate) fn close_owing(
+        &mut self,
+        opened: Opened,
+    ) -> Option<(Reads, Owed)>
+    {
+        if self.open.len() <= opened.0 {
+            return None;
+        }
+        while self.open.len() > opened.0.saturating_add(1) {
+            let _inner = self.close_innermost();
+        }
+        let (reads, mut owed) = self.close_innermost();
+        owed.sort_unstable_by_key(NodeSupport::names);
+        owed.dedup_by_key(|key| key.names());
+        Some((reads, Owed((!owed.is_empty()).then(|| owed.into()))))
     }
 
     /// Close the innermost accrual into the one around it.
@@ -622,19 +831,21 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    fn close_innermost(&mut self) -> Reads
+    fn close_innermost(&mut self) -> (Reads, Vec<NodeSupport>)
     {
         match self.open.pop() {
-            Some(Accrual::Goal { depth, reads }) => {
+            Some(Accrual::Goal { depth, reads, owed }) => {
                 accrue(&mut self.open, &reads, depth);
-                reads
+                owe_into(&mut self.open, &owed);
+                (reads, owed)
             },
-            Some(Accrual::Barrier) | None => Reads::closed(),
+            Some(Accrual::Barrier) | None => (Reads::closed(), Vec::new()),
         }
     }
 
-    /// Close every accrual unjoined, so a declaration's check opens on an
-    /// empty stack whatever an earlier refusal left on it.
+    /// Close every accrual unjoined and forget the obligations owed, so a
+    /// declaration's check opens on an empty stack whatever an earlier refusal
+    /// left on it.
     ///
     /// # Specification
     /// trivial.
@@ -642,6 +853,7 @@ impl SupportContext
     pub(crate) fn reset_accruals(&mut self)
     {
         self.open.clear();
+        self.owing.clear();
     }
 }
 
@@ -717,14 +929,56 @@ pub enum NodeOutcome
         /// The synthesized type.
         CompTypeId,
     ),
-    /// A type formed at this level.
+    /// A type formed at this level, and its formation owes these
+    /// obligations.
     Formed(
         /// The universe level.
         Level,
+        /// The keys of the obligations the formation owes.
+        Owed,
     ),
 }
 
+/// The keys of the obligations that a formation owes the checker, each one
+/// time.
+///
+/// A recall of the formation serves its level only when each key holds a
+/// checked outcome. A key with no checked outcome makes the recall decline,
+/// and the formation expands and owes its obligations again. A formation
+/// that owes nothing holds no allocation.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Owed(Option<Arc<[NodeSupport]>>);
+
+impl Owed
+{
+    /// A formation that owes nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn none() -> Self
+    {
+        Self(None)
+    }
+
+    /// The keys, each one time.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keys(&self) -> &[NodeSupport]
+    {
+        self.0.as_deref().unwrap_or(&[])
+    }
+}
+
 /// The machine a goal belongs to.
+///
+/// An obligation's verdict is the checking machine's answer, so its key is a
+/// term-plane key.
 ///
 /// # Specification
 /// trivial.
@@ -736,7 +990,8 @@ const fn plane_of(goal: SupportGoal) -> SupportPlane
         SupportGoal::SynthValue(_)
         | SupportGoal::CheckValue(..)
         | SupportGoal::SynthComp(_)
-        | SupportGoal::CheckComp(..) => SupportPlane::Term,
+        | SupportGoal::CheckComp(..)
+        | SupportGoal::Obligation(_) => SupportPlane::Term,
     }
 }
 
@@ -992,6 +1247,18 @@ impl NodeSupport
     pub(crate) const fn reads(&self) -> &Reads
     {
         &self.reads
+    }
+
+    /// The two names that identify this support among the supports of one
+    /// plane: its question and its goal record over the binders read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn names(&self) -> (ContentId, ContentId)
+    {
+        (self.asked, self.goal)
     }
 }
 
@@ -1618,6 +1885,43 @@ mod tests
             Reads::closed(),
             session.close(goal),
             "and nothing read past it reaches the goal it was opened under"
+        );
+    }
+
+    #[test]
+    fn an_owed_key_passes_a_barrier_and_joins_one_time()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let mut session = SupportContext::new();
+        let key = NodeSupport::recorded(
+            &arena,
+            &mut session,
+            SupportGoal::Obligation(crate::encoding::ObligationGoal::Data(unit_type)),
+            &[],
+            &Reads::closed(),
+        );
+        let goal = session.open(&[]);
+        let barrier = session.open_barrier();
+        let inner = session.open(&[]);
+        session.owe(core::slice::from_ref(&key));
+        session.owe(core::slice::from_ref(&key));
+        let (_, owed) = session.close_owing(inner).expect("the inner goal is open");
+        assert_eq!(
+            core::slice::from_ref(&key),
+            owed.keys(),
+            "a key owed two times is held one time"
+        );
+        let _barrier = session.close(barrier);
+        let (_, owed) = session.close_owing(goal).expect("the goal is open");
+        assert_eq!(
+            core::slice::from_ref(&key),
+            owed.keys(),
+            "a key names content, so it passes the barrier to the goal around it"
+        );
+        assert!(
+            session.close_owing(goal).is_none(),
+            "a goal already closed gives no keys, so no entry records it"
         );
     }
 
