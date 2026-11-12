@@ -17,15 +17,16 @@
 //! implements [`Fork`] itself, so a session's molding and its trials fork on
 //! the same threads, and a scope's jobs spawn there too.
 //!
-//! **A schedule counts readiness on the pool, with no rings.** A job of
-//! [`Fork::schedule`] starts when the last job that it waits on returns: that
-//! job counts its successors down and spawns one task for each successor that
-//! reaches zero. The calling thread folds each item in slice order. While it
-//! waits for its next item, it runs a queued job itself, and it blocks only
-//! when no job is queued. The measurements of the dependence schedule found
-//! that the pool's hand-off costs at most 1.4 % of a replay node while the
-//! pool is busy, so a ring at this grain pays for nothing. The choice
-//! reverses on a measurement where a ring beats the pool at this grain.
+//! **A schedule counts readiness on the pool, with no rings.** The calling
+//! thread folds each item of a [`Fork::schedule`] in slice order. Each fold
+//! counts down the items that wait on the folded one, and queues each one that
+//! reaches zero. At most one task for each pool thread takes queued jobs, and
+//! a task ends when the queue is empty. While the calling thread waits for its
+//! next item, it runs a queued job itself, and it blocks only when no job is
+//! queued. The measurements of the dependence schedule found that the pool's
+//! hand-off costs at most 1.4 % of a replay node while the pool is busy, so a
+//! ring at this grain pays for nothing. The choice reverses on a measurement
+//! where a ring beats the pool at this grain.
 //!
 //! **One pool, not one per verb.** Before, the walk started scoped threads for
 //! each visit and the staging built a `rayon` pool for each run. A process
@@ -68,15 +69,14 @@
 pub mod recording;
 mod spawning;
 
-use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
 use core::fmt;
 use core::num::NonZeroUsize;
+use core::panic::AssertUnwindSafe;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
-use std::panic::AssertUnwindSafe;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::OnceLock;
@@ -84,6 +84,7 @@ use std::sync::PoisonError;
 use std::sync::mpsc;
 
 use anodized::spec;
+use crossbeam_queue::ArrayQueue;
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
 use gandr_core_fork::Scoped;
@@ -510,9 +511,8 @@ impl Fork for Pool
         }
     }
 
-    /// Run every job on the pool's threads once the jobs that it waits on
-    /// have returned, and fold each item on the calling thread in slice
-    /// order.
+    /// Run every job on the pool's threads once every item that it waits on is
+    /// folded, and fold each item on the calling thread in slice order.
     ///
     /// # Specification
     /// - ensures: as [`Fork::schedule`]. One item or none, a pool of one thread
@@ -685,18 +685,23 @@ impl Fork for Pooled
         rayon::in_place_scope(|scope| body.run(&Spawning::new(scope)))
     }
 
-    /// Run every job on the pool once the jobs that it waits on have
-    /// returned, and fold each item on the calling thread in slice order.
+    /// Run every job on the pool once every item that it waits on is folded,
+    /// and fold each item on the calling thread in slice order.
     ///
     /// # Specification
-    /// - ensures: as [`Fork::schedule`]. Each item holds a count of the jobs
-    ///   that it waits on and that have not returned. A returning job counts
-    ///   its successors down and queues each one that reaches zero, with one
-    ///   task spawned for each queued job. The calling thread folds its next
-    ///   item as soon as that item has returned. While it waits, it runs a
-    ///   queued job itself, and it blocks only when no job is queued. A
-    ///   schedule of one item, or a pool of one worker, runs on the calling
-    ///   thread. Each thread that runs a job keeps one state for all its jobs.
+    /// - ensures: as [`Fork::schedule`]. Each item holds a count of the items
+    ///   that it waits on and that are not folded. Each fold counts down the
+    ///   items that wait on the folded one, and queues each one that reaches
+    ///   zero. At most one task for each pool thread takes queued jobs, and a
+    ///   task ends when the queue is empty. A fold starts at most one task, and
+    ///   a task that takes a job while more jobs wait starts one more, so the
+    ///   tasks pay for the spawns. The calling thread folds its next item as
+    ///   soon as that item has returned. It keeps the job of that item for
+    ///   itself when a fold has just queued it, so a chain needs no task. While
+    ///   it waits, it runs a queued job itself, and it blocks only when no job
+    ///   is queued. A schedule of one item, or a pool of one worker, runs on
+    ///   the calling thread. Each thread that runs a job keeps one state for
+    ///   all its jobs.
     /// - panics: a panic of `start`, `job` or `fold`, resumed on the calling
     ///   thread once it has returned; no queued job starts after it.
     /// - executable: none — the schedule is the pool's.
@@ -704,9 +709,9 @@ impl Fork for Pooled
     /// # Adequacy
     /// - hypothesis: L3 — graphs with no edge, a chain and a scattered fan over
     ///   no item, one item and many, stamping each job's start and end and each
-    ///   fold, distinguish a job run before a job that it waits on has
-    ///   returned, a skipped or repeated job, a fold out of order, before its
-    ///   job or off the calling thread, and a state made per job.
+    ///   fold, distinguish a job run before an item that it waits on is folded,
+    ///   a skipped or repeated job, a fold out of order, before its job or off
+    ///   the calling thread, and a state made per job.
     /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
     #[inline]
@@ -819,11 +824,12 @@ fn each_indexed<Item, State, Start, Job>(
     });
 }
 
-/// Run `job` on every item and its index once the jobs that it waits on have
-/// returned, on `pool` or on the pool that the calling thread runs in, at
-/// most `workers` at once beside the calling thread, and `fold` on every item
-/// on the calling thread in slice order. At one worker, or one item, the
-/// items run on the calling thread in slice order, from one state.
+/// Run `job` on every item and its index once the calling thread has folded
+/// every item that it waits on, on `pool` or on the pool that the calling
+/// thread runs in, with at most `workers` tasks beside the calling thread, and
+/// `fold` on every item on the calling thread in slice order. At one worker,
+/// or one item, the items run on the calling thread in slice order, from one
+/// state.
 ///
 /// # Specification
 /// - ensures: as [`Pooled`]'s `schedule`, with the item's place in `items`
@@ -871,12 +877,14 @@ fn schedule_indexed<Item, State, Start, Job, Fold>(
     // Each job reports once, so a buffer of one slot for each item never
     // fills, and no report allocates.
     let (returned, arrivals) = mpsc::sync_channel(count);
-    let (schedule, ready) = Scheduled::new(pool, items, after, threads, start, job, returned);
+    let (schedule, waiting) = Scheduled::new(pool, items, after, threads, start, job, returned);
     match pool {
         Some(pool) => {
-            pool.in_place_scope(|scope| schedule.drive(scope, ready, &arrivals, &mut fold))
+            pool.in_place_scope(|scope| schedule.drive(scope, waiting, &arrivals, &mut fold));
         },
-        None => rayon::in_place_scope(|scope| schedule.drive(scope, ready, &arrivals, &mut fold)),
+        None => {
+            rayon::in_place_scope(|scope| schedule.drive(scope, waiting, &arrivals, &mut fold));
+        },
     }
 }
 
@@ -887,10 +895,10 @@ type Returned<'items, Item> = Result<(usize, &'items mut Item), Box<dyn Any + Se
 /// One schedule's shared state, read by every task of its scope.
 ///
 /// # Specification
-/// - provides: each item's readiness count and its successors; the items that
-///   still wait and those queued to run; one state slot for each pool thread,
-///   and one for a thread outside the pool; the jobs' channel back to the
-///   calling thread.
+/// - provides: the bounded queue of the items whose jobs may run, which the
+///   calling thread alone pushes and every task pops with no lock; the count of
+///   the tasks that pop it; one state slot for each pool thread, and one for a
+///   thread outside the pool; the jobs' channel back to the calling thread.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
@@ -898,17 +906,13 @@ struct Scheduled<'items, 'pool, Item, State, Start, Job>
 {
     /// The pool that the scope spawns on, or the pool of the calling thread.
     pool: Option<&'pool rayon::ThreadPool>,
-    /// Each item's count of the jobs that it waits on and that have not
-    /// returned.
-    waiting: Vec<AtomicUsize>,
-    /// Every edge within the slice, sorted by its earlier item.
-    edges: Vec<(usize, usize)>,
-    /// Where each item's edges start in `edges`, and one past the last.
-    starts: Vec<usize>,
-    /// The items whose jobs still wait on another job.
-    held: Mutex<Vec<Option<&'items mut Item>>>,
-    /// The items whose jobs may run, in the order that they became ready.
-    ready: Mutex<VecDeque<(usize, &'items mut Item)>>,
+    /// The most tasks that run at once: one for each pool thread.
+    threads: usize,
+    /// The items whose jobs may run, in the order that they became ready, with
+    /// room for every item.
+    ready: ArrayQueue<(usize, &'items mut Item)>,
+    /// How many tasks pop `ready` now: at most `threads`.
+    running: AtomicUsize,
     /// Each pool thread's state, then the state of a thread outside the pool.
     /// A job takes its thread's state out and puts it back when it returns.
     states: Vec<Mutex<Option<State>>>,
@@ -923,6 +927,84 @@ struct Scheduled<'items, 'pool, Item, State, Start, Job>
     stopped: AtomicBool,
 }
 
+/// What the calling thread alone holds of a schedule: each item's successors,
+/// its count of the items that it waits on and that are not folded, and the
+/// items whose jobs still wait.
+///
+/// # Specification
+/// - provides: the edges within the slice, sorted by their earlier item, and
+///   where each item's edges start; a count and a held item for each item.
+/// - panics: none.
+/// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
+///   obligations.
+struct Waiting<'items, Item>
+{
+    /// Every edge within the slice, sorted by its earlier item.
+    edges: Vec<(usize, usize)>,
+    /// Where each item's edges start in `edges`, and one past the last.
+    starts: Vec<usize>,
+    /// Each item's count of the items that it waits on and that are not
+    /// folded.
+    counts: Vec<usize>,
+    /// The items whose jobs still wait on an item that is not folded.
+    held: Vec<Option<&'items mut Item>>,
+}
+
+impl<'items, Item> Waiting<'items, Item>
+{
+    /// Count down every item that waits on the item at `position`. The item
+    /// right after it, when it waits on nothing more, is the calling thread's
+    /// next job. Each other item that waits on nothing more goes on `ready`,
+    /// in the order of its edges.
+    ///
+    /// # Specification
+    /// - ensures: each successor's count falls by one; a successor that reaches
+    ///   zero leaves the held items. The answer holds the item at `position +
+    ///   1` when it left, and the number of items queued.
+    /// - panics: none.
+    #[spec(ensures: |ret| ret.1 <= self.held.len())]
+    fn release(
+        &mut self,
+        position: usize,
+        ready: &ArrayQueue<(usize, &'items mut Item)>,
+    ) -> (Option<&'items mut Item>, usize)
+    {
+        let successors = self
+            .starts
+            .get(position)
+            .zip(self.starts.get(position.saturating_add(1)))
+            .and_then(|(&first, &last)| self.edges.get(first .. last))
+            .unwrap_or_default();
+        let mine = position.saturating_add(1);
+        let mut kept = None;
+        let mut queued = 0_usize;
+        for &(_, later) in successors {
+            let freed = self.counts.get_mut(later).is_some_and(|waits| {
+                *waits = waits.saturating_sub(1);
+                *waits == 0
+            });
+            if let Some(item) = self
+                .held
+                .get_mut(later)
+                .filter(|_| freed)
+                .and_then(Option::take)
+            {
+                if later == mine {
+                    kept = Some(item);
+                }
+                else {
+                    // `ready` holds room for every item, and an item leaves
+                    // the held items once, so no push is refused.
+                    let refused = ready.push((later, item)).is_err();
+                    debug_assert!(!refused, "a schedule's queue holds room for every item");
+                    queued = queued.saturating_add(usize::from(!refused));
+                }
+            }
+        }
+        (kept, queued)
+    }
+}
+
 impl<'items, 'pool, Item, State, Start, Job> Scheduled<'items, 'pool, Item, State, Start, Job>
 where
     Item: Send,
@@ -930,16 +1012,17 @@ where
     Start: Fn() -> State + Sync,
     Job: Fn(&mut State, ItemIndex, &mut Item) + Sync,
 {
-    /// A schedule of `items` under `after` on `threads` pool threads, and how
-    /// many items are ready at once.
+    /// A schedule of `items` under `after` with at most `threads` tasks, and
+    /// what the calling thread holds of it.
     ///
     /// # Specification
     /// - ensures: an item is queued, in slice order, exactly when no edge
     ///   within the slice ends at it; the rest are held; edges past the slice
-    ///   are dropped. The queue holds room for every item, so no later push
-    ///   allocates.
+    ///   are dropped. The plan takes one pass over the items and the edges. The
+    ///   queue holds room for every item, so no later push allocates. No task
+    ///   runs yet.
     /// - panics: none.
-    #[spec(ensures: |ret| ret.1 <= count_of(&ret.0))]
+    #[spec(ensures: |ret| ret.1.held.len() == ret.1.counts.len())]
     fn new(
         pool: Option<&'pool rayon::ThreadPool>,
         items: &'items mut [Item],
@@ -948,7 +1031,7 @@ where
         start: Start,
         job: Job,
         returned: mpsc::SyncSender<Returned<'items, Item>>,
-    ) -> (Self, usize)
+    ) -> (Self, Waiting<'items, Item>)
     {
         let count = items.len();
         let edges: Vec<(usize, usize)> = after
@@ -957,34 +1040,40 @@ where
             .copied()
             .filter(|&(_, later)| later < count)
             .collect();
-        let starts = (0 ..= count)
-            .map(|position| edges.partition_point(|&(earlier, _)| earlier < position))
-            .collect();
-        let mut waiting = alloc::vec![0_usize; count];
-        for &(_, later) in &edges {
-            if let Some(waits) = waiting.get_mut(later) {
-                *waits = waits.saturating_add(1);
+        // The edges are sorted by their earlier item, so one sweep finds where
+        // each item's edges start.
+        let mut starts = Vec::with_capacity(count.saturating_add(1));
+        let mut first = 0_usize;
+        let mut counts = alloc::vec![0_usize; count];
+        for position in 0 ..= count {
+            while let Some(&(_, later)) =
+                edges.get(first).filter(|&&(earlier, _)| earlier < position)
+            {
+                if let Some(waits) = counts.get_mut(later) {
+                    *waits = waits.saturating_add(1);
+                }
+                first = first.saturating_add(1);
             }
+            starts.push(first);
         }
         let mut held = Vec::with_capacity(count);
-        let mut ready = VecDeque::with_capacity(count);
-        for ((position, item), &waits) in items.iter_mut().enumerate().zip(&waiting) {
+        let ready = ArrayQueue::new(count.max(1));
+        for ((position, item), &waits) in items.iter_mut().enumerate().zip(&counts) {
             if waits == 0 {
-                ready.push_back((position, item));
+                // `ready` holds room for every item, so no push is refused.
+                let refused = ready.push((position, item)).is_err();
+                debug_assert!(!refused, "a schedule's queue holds room for every item");
                 held.push(None);
             }
             else {
                 held.push(Some(item));
             }
         }
-        let queued = ready.len();
         let schedule = Self {
             pool,
-            waiting: waiting.into_iter().map(AtomicUsize::new).collect(),
-            edges,
-            starts,
-            held: Mutex::new(held),
-            ready: Mutex::new(ready),
+            threads,
+            ready,
+            running: AtomicUsize::new(0),
             states: core::iter::repeat_with(|| Mutex::new(None))
                 .take(threads.saturating_add(1))
                 .collect(),
@@ -993,16 +1082,27 @@ where
             returned,
             stopped: AtomicBool::new(false),
         };
-        (schedule, queued)
+        let waiting = Waiting {
+            edges,
+            starts,
+            counts,
+            held,
+        };
+        (schedule, waiting)
     }
 
-    /// Spawn one task for each of the `ready` jobs, then fold every item on
-    /// the calling thread in slice order, each once its job has returned.
+    /// Start one task when more than one job is queued, then fold every item
+    /// on the calling thread in slice order, each once its job has returned,
+    /// and release the items that wait on it.
     ///
     /// # Specification
-    /// - ensures: `fold` ran once on every item, in slice order. While the next
-    ///   item's job has not returned, the calling thread runs a queued job, or
-    ///   blocks until a job reports when none is queued.
+    /// - ensures: `fold` ran once on every item, in slice order. Each fold
+    ///   counts down the items that wait on the folded one, and queues each one
+    ///   that waits on nothing more. The calling thread keeps for itself the
+    ///   job of the item that it folds next, when that fold frees it, and
+    ///   queues it for no task. A fold that queues a job starts at most one
+    ///   task. While the next item's job has not returned, the calling thread
+    ///   runs a queued job, or blocks until a job reports when none is queued.
     /// - panics: the first panic of a job or of `fold`, after it sets the stop
     ///   so that no queued job starts.
     /// - executable: none — each fold is a call of the caller's closure, and
@@ -1010,41 +1110,44 @@ where
     fn drive<'scope, Fold>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
-        ready: usize,
+        mut waiting: Waiting<'items, Item>,
         arrivals: &mpsc::Receiver<Returned<'items, Item>>,
         fold: &mut Fold,
     ) where
         'items: 'scope,
         Fold: FnMut(&mut Item),
     {
-        for _ in 0 .. ready {
-            self.spawn(scope);
+        if self.ready.len() > 1 {
+            self.start_task(scope);
         }
-        let count = self.waiting.len();
+        let count = waiting.held.len();
         let mut arrived: Vec<Option<&mut Item>> =
             core::iter::repeat_with(|| None).take(count).collect();
+        let mut own = None;
         for next in 0 .. count {
             let item = loop {
                 if let Some(item) = arrived.get_mut(next).and_then(Option::take) {
                     break item;
                 }
-                let returning = match arrivals.try_recv() {
-                    Ok(returning) => returning,
-                    Err(_) => {
-                        // The guard drops at the end of this statement, so
-                        // the job can queue its successors.
-                        let queued = lock(&self.ready).pop_front();
-                        match queued {
-                            Some((position, item)) => self.run(position, item, scope),
-                            None => match arrivals.recv() {
-                                Ok(returning) => returning,
-                                // The schedule holds the sender until the
-                                // scope ends, so the channel never closes
-                                // here.
-                                Err(mpsc::RecvError) => return,
-                            },
-                        }
-                    },
+                let returning = if let Some(item) = own.take() {
+                    self.run(next, item)
+                }
+                else if let Ok(returning) = arrivals.try_recv() {
+                    returning
+                }
+                else if let Some((position, item)) = self.take(scope) {
+                    self.run(position, item)
+                }
+                else {
+                    // The calling thread alone queues jobs, so an empty queue
+                    // stays empty here. The next item's job runs on a task,
+                    // and it reports.
+                    match arrivals.recv() {
+                        Ok(returning) => returning,
+                        // The schedule holds the sender until the scope ends,
+                        // so the channel never closes here.
+                        Err(mpsc::RecvError) => return,
+                    }
                 };
                 match returning {
                     Ok((position, item)) => {
@@ -1057,6 +1160,11 @@ where
             };
             if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(|| fold(item))) {
                 self.stop(panic);
+            }
+            let (kept, queued) = waiting.release(next, &self.ready);
+            own = kept;
+            if queued > 0 {
+                self.start_task(scope);
             }
         }
     }
@@ -1076,11 +1184,78 @@ where
         std::panic::resume_unwind(panic)
     }
 
-    /// Spawn one task that runs one queued job, if one is still queued when
-    /// the task starts, and reports it to the calling thread.
+    /// Take the next queued job, unless the stop is set. A job taken while
+    /// more jobs wait starts one more task, so the tasks and not the calling
+    /// thread pay for most spawns.
     ///
     /// # Specification
-    /// - ensures: one task spawned on `scope`.
+    /// - ensures: the job taken, if any; one more task when jobs still wait and
+    ///   fewer tasks run than the pool has threads.
+    /// - panics: none.
+    /// - executable: none — the queue is shared with the tasks that run beside
+    ///   this call, so no postcondition reads it at one instant.
+    fn take<'scope>(
+        &'scope self,
+        scope: &rayon::Scope<'scope>,
+    ) -> Option<(usize, &'items mut Item)>
+    where
+        'items: 'scope,
+    {
+        if self.stopped.load(Ordering::Acquire) {
+            return None;
+        }
+        let next = self.ready.pop();
+        if next.is_some() && !self.ready.is_empty() {
+            self.start_task(scope);
+        }
+        next
+    }
+
+    /// Count in one more task, and spawn it, when fewer tasks run than the
+    /// pool has threads.
+    ///
+    /// # Specification
+    /// - ensures: at most one task spawned; the count of tasks stays at most
+    ///   `threads`.
+    /// - panics: none.
+    /// - executable: none — the spawned task runs after the call returns.
+    fn start_task<'scope>(
+        &'scope self,
+        scope: &rayon::Scope<'scope>,
+    ) where
+        'items: 'scope,
+    {
+        if self.count_in() {
+            self.spawn(scope);
+        }
+    }
+
+    /// Count in one more task when fewer tasks run than the pool has threads.
+    ///
+    /// # Specification
+    /// - ensures: `true` exactly when the count rose by one, to at most
+    ///   `threads`.
+    /// - panics: none.
+    /// - executable: none — the count is shared with the tasks that run beside
+    ///   this call, so no postcondition reads it at one instant.
+    fn count_in(&self) -> bool
+    {
+        self.running
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |running| {
+                (running < self.threads).then(|| running.saturating_add(1))
+            })
+            .is_ok()
+    }
+
+    /// Spawn one counted-in task, which takes queued jobs and reports each to
+    /// the calling thread until the queue is empty.
+    ///
+    /// # Specification
+    /// - ensures: one task spawned on `scope`. A task that finds the queue
+    ///   empty, or the stop set, counts itself out and ends. It first looks at
+    ///   the queue once more. A job that the calling thread queued while the
+    ///   count still held this task started no task, so the task counts itself
+    ///   in again and takes that job.
     /// - panics: none.
     /// - executable: none — the spawned task runs after the call returns.
     fn spawn<'scope>(
@@ -1090,43 +1265,42 @@ where
         'items: 'scope,
     {
         scope.spawn(move |scope| {
-            if self.stopped.load(Ordering::Acquire) {
-                return;
-            }
-            let queued = lock(&self.ready).pop_front();
-            if let Some((position, item)) = queued {
-                // The calling thread holds the receiver until the scope ends,
-                // and the buffer holds a slot for each job, so the report
-                // never waits and is never refused.
-                self.returned
-                    .send(self.run(position, item, scope))
-                    .unwrap_or_default();
+            loop {
+                while let Some((position, item)) = self.take(scope) {
+                    // The calling thread holds the receiver until the scope
+                    // ends, and the buffer holds a slot for each job, so the
+                    // report never waits and is never refused.
+                    self.returned
+                        .send(self.run(position, item))
+                        .unwrap_or_default();
+                }
+                self.running.fetch_sub(1, Ordering::SeqCst);
+                if self.stopped.load(Ordering::Acquire) || self.ready.is_empty() || !self.count_in()
+                {
+                    return;
+                }
             }
         });
     }
 
-    /// Run the job of the item at `position` on this thread's state, then
-    /// release the jobs that wait on it.
+    /// Run the job of the item at `position` on this thread's state.
     ///
     /// # Specification
-    /// - ensures: the item and its position, once its job has returned and its
-    ///   successors are counted down; or the panic of `start` or of the job.
-    ///   The job takes its thread's state out of the slot, or makes one when
-    ///   the slot is empty, and puts it back when it returns. So a job that its
-    ///   thread runs while another job of that thread waits inside a nested
-    ///   fork gets a state of its own, and no state goes to two jobs at once.
+    /// - ensures: the item and its position, once its job has returned; or the
+    ///   panic of `start` or of the job. The job takes its thread's state out
+    ///   of the slot, or makes one when the slot is empty, and puts it back
+    ///   when it returns. So a job that its thread runs while another job of
+    ///   that thread waits inside a nested fork gets a state of its own, and no
+    ///   state goes to two jobs at once.
     /// - panics: none; a panic of `start` or of the job is returned, and the
     ///   state that it held is dropped.
     /// - executable: none — the state's ownership is a property of the
     ///   schedule, which a postcondition over the returned item cannot observe.
-    fn run<'scope>(
-        &'scope self,
+    fn run(
+        &self,
         position: usize,
         item: &'items mut Item,
-        scope: &rayon::Scope<'scope>,
     ) -> Returned<'items, Item>
-    where
-        'items: 'scope,
     {
         let thread = self.pool.map_or_else(
             rayon::current_thread_index,
@@ -1149,57 +1323,8 @@ where
                 *kept = Some(state);
             }
         }
-        self.release(position, scope);
         Ok((position, item))
     }
-
-    /// Count down every job that waits on the item at `position`, and queue
-    /// each one that waits on nothing more, with a task to run it.
-    ///
-    /// # Specification
-    /// - ensures: each successor's count falls by one; a successor that reaches
-    ///   zero leaves the held items for the queue.
-    /// - panics: none.
-    /// - executable: none — the counts are shared with the tasks that run
-    ///   beside this one, so no postcondition reads them at one instant.
-    fn release<'scope>(
-        &'scope self,
-        position: usize,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        'items: 'scope,
-    {
-        let successors = self
-            .starts
-            .get(position)
-            .zip(self.starts.get(position.saturating_add(1)))
-            .and_then(|(&first, &last)| self.edges.get(first .. last))
-            .unwrap_or_default();
-        for &(_, later) in successors {
-            let freed = self
-                .waiting
-                .get(later)
-                .is_some_and(|waits| waits.fetch_sub(1, Ordering::AcqRel) == 1);
-            if !freed {
-                continue;
-            }
-            let item = lock(&self.held).get_mut(later).and_then(Option::take);
-            if let Some(item) = item {
-                lock(&self.ready).push_back((later, item));
-                self.spawn(scope);
-            }
-        }
-    }
-}
-
-/// How many items a schedule holds, queued or held.
-///
-/// # Specification
-/// trivial.
-fn count_of<Item, State, Start, Job>(schedule: &Scheduled<'_, '_, Item, State, Start, Job>)
--> usize
-{
-    schedule.waiting.len()
 }
 
 /// The value that `mutex` guards, whether or not a job panicked while it held
@@ -1785,7 +1910,9 @@ mod tests
                 let clock = AtomicUsize::new(0);
                 let made = AtomicUsize::new(0);
                 let tick = || clock.fetch_add(1, Ordering::SeqCst);
-                let mut items: Vec<Stamped> = (0 .. count).map(|_| Stamped::default()).collect();
+                let mut items: Vec<Stamped> = core::iter::repeat_with(Stamped::default)
+                    .take(count)
+                    .collect();
                 let caller = threads.install(|| {
                     fork.schedule(
                         &mut items,
@@ -1820,15 +1947,19 @@ mod tests
                     );
                 }
                 for pair in items.windows(2) {
+                    let [ref first, ref second] = *pair
+                    else {
+                        panic!("{case}: a window of two holds two items");
+                    };
                     assert!(
-                        pair[0].folds[0].0 < pair[1].folds[0].0,
+                        first.folds[0].0 < second.folds[0].0,
                         "{case}: folds in slice order"
                     );
                 }
                 for &(before, later) in after.edges().iter().filter(|&&(_, later)| later < count) {
                     assert!(
-                        items[later].started > items[before].returned,
-                        "{case}: item {later}'s job starts after item {before}'s returned"
+                        items[later].started > items[before].folds[0].0,
+                        "{case}: item {later}'s job starts after item {before} is folded"
                     );
                 }
                 let made = made.load(Ordering::Relaxed);

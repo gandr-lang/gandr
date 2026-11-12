@@ -21,13 +21,14 @@
 //! owns its thread states why in an expectation at the site.
 //!
 //! A check whose jobs read each other's results hands them to
-//! [`Fork::schedule`]. Each job starts once every job that it waits on has
-//! returned. The calling thread folds each item into the state that it holds,
-//! in slice order, as soon as the item's own job has returned. So a check
-//! commits its results one at a time, behind its jobs, and not after all of
-//! them. [`Dependences`] names the edges. Each edge goes from an earlier item
-//! to a later one, so slice order is always a valid schedule, and it is the
-//! serial one.
+//! [`Fork::schedule`]. The calling thread folds each item into the state that
+//! it holds, in slice order, as soon as the item's own job has returned. A job
+//! starts once the calling thread has folded every item that it waits on. So a
+//! job reads only results that the check has committed, and the check commits
+//! its results one at a time, behind its jobs, and not after all of them.
+//! [`Dependences`] names the edges. Each edge goes from an earlier item to a
+//! later one, so slice order is always a valid schedule, and it is the serial
+//! one.
 //!
 //! With the `instrument` feature, the `activity` module records which task
 //! each worker runs, and when. Each worker writes into a lock-free ring of its
@@ -151,15 +152,15 @@ pub trait Fork: Sync
         body.run(&Serial)
     }
 
-    /// Run `job` once on every item, each once the jobs of the items that it
-    /// waits on have returned, and `fold` on every item on the calling thread,
-    /// in slice order.
+    /// Run `job` once on every item, each once `fold` has run on every item
+    /// that it waits on, and `fold` on every item on the calling thread, in
+    /// slice order.
     ///
     /// # Specification
     /// - requires: nothing; an edge of `after` that names an item past the
     ///   slice is ignored.
-    /// - ensures: on return `job` has run exactly once on every item, after the
-    ///   job of every item that `after` names before it has returned, from a
+    /// - ensures: on return `job` has run exactly once on every item, after
+    ///   `fold` has run on every item that `after` names before it, from a
     ///   state handed as [`Fork::each`] hands it; `fold` has run exactly once
     ///   on every item, on the calling thread, in slice order, each after the
     ///   item's own job has returned.
@@ -251,7 +252,9 @@ impl Dependences
             && dependences.edges.iter().zip(dependences.edges.iter().skip(1)).all(|(first, second)| first < second)
     }))]
     #[inline]
-    pub fn new(edges: impl IntoIterator<Item = (usize, usize)>) -> Result<Self, Backward>
+    pub fn new<Edges>(edges: Edges) -> Result<Self, Backward>
+    where
+        Edges: IntoIterator<Item = (usize, usize)>,
     {
         let mut kept = Vec::new();
         for (before, after) in edges {
@@ -304,11 +307,11 @@ impl fmt::Display for Backward
     #[inline]
     fn fmt(
         &self,
-        formatter: &mut fmt::Formatter<'_>,
+        f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
         write!(
-            formatter,
+            f,
             "item {} cannot wait on item {}, which does not come before it",
             self.after, self.before
         )

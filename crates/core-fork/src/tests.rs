@@ -198,7 +198,9 @@ fn serial_runs_each_job_then_its_fold_in_order()
         let made = AtomicUsize::new(0);
         let clock = AtomicUsize::new(0);
         let tick = || clock.fetch_add(1, Ordering::Relaxed);
-        let mut items: Vec<Stamped> = (0 .. count).map(|_| Stamped::default()).collect();
+        let mut items: Vec<Stamped> = core::iter::repeat_with(Stamped::default)
+            .take(count)
+            .collect();
         let chain =
             Dependences::new((1 .. count).map(|after| (after.checked_sub(1).unwrap(), after)))
                 .unwrap();

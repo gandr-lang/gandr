@@ -38,6 +38,8 @@ path = "benches/reals.rs"
 # normaliser's staging observer programs and checks them through the
 # checker's program entry, on the driver's `rayon` pool. The pool implements
 # the fork crate's trait, so every consumer forks on it through that trait.
+# The pool's dependence schedule queues the jobs that may run in the bounded
+# queue of crossbeam-queue, which every task pops with no lock.
 # The reader maps a source above its crossover through memmap2, and rewrites
 # a mapped source through the one writer. The `ledger`
 # verb writes the syntax ledger's machine form through serde_json, and reads
@@ -67,6 +69,7 @@ path = "benches/reals.rs"
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
+crossbeam-queue.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-incremental.workspace = true
