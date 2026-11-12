@@ -562,15 +562,17 @@ run = [
 
 # The documentation lane's builds, with the arguments `check:doc` gives
 # them: the private-item rustdoc with the default features and with every
-# feature on, and the pruning binary itself.
+# feature on, and the pruning binary itself, all in `check:doc`'s own build
+# directory, `target/gate-doc`.
 ["ci:prune-docs"]
 description = "Prune the documentation state to the units this run's builds used"
 env.RUSTDOCFLAGS = "-D warnings"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/gate-doc"
 run = [
-  ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items --message-format json > target/debug/units-doc-default.jsonl",
-  ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/debug/units-doc.jsonl",
-  ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
-  "target/debug/build-state prune --profile-dir target/debug target/debug/units-doc-default.jsonl target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
+  ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items --message-format json > target/gate-doc/units-doc-default.jsonl",
+  ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/gate-doc/units-doc.jsonl",
+  ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/gate-doc/units-tool.jsonl",
+  "target/gate-doc/debug/build-state prune --profile-dir target/gate-doc/debug target/gate-doc/units-doc-default.jsonl target/gate-doc/units-doc.jsonl target/gate-doc/units-tool.jsonl",
 ]
 
 # The examples lane's builds, with the arguments `check:doctests` gives
@@ -627,7 +629,7 @@ run = '''
 set -euo pipefail
 source .config/build-state/sources.bash
 records=()
-for dir in target/debug target/enforcing/debug; do
+for dir in target/debug target/enforcing/debug target/gate-doc/debug; do
   if [[ -e $dir/$SOURCES_RECORD ]]; then records+=("$dir/$SOURCES_RECORD"); fi
 done
 sources_restamp "${records[@]}"
