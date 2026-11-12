@@ -1423,9 +1423,11 @@ echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no c
 # step that writes or restores a tarball raises a flag in `GITHUB_ENV` and
 # the conditions read the flag. For the same reason a `hashFiles` call never
 # walks a build directory with `**`. A step tests one file at the
-# directory's root (#6888).
+# directory's root (#6888). A job of a workflow that runs on an edit of a
+# pull request reads a field of `github.event.changes` in its condition, so
+# an edit of the body alone skips it (#6774).
 ["check:workflow-hashing"]
-description = "No hashFiles over a tarball or a build directory, or unavailable context, in a workflow"
+description = "No hashFiles over a tarball or a build directory, no unavailable context, and no job on a pull request edit that reads no change, in a workflow"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1436,7 +1438,7 @@ program=$root/.config/workflow-contexts/jobs.jq
 .config/cases/run.bash workflow-contexts .config/workflow-contexts/cases.json --program "$program" --mode c
 failed=0
 while IFS= read -r workflow; do
-  refusals=$(workflow="$workflow" yq -o=json '{"workflow": strenv(workflow), "jobs": .jobs}' "$workflow" | jq -c -f "$program")
+  refusals=$(workflow="$workflow" yq -o=json '{"workflow": strenv(workflow), "on": .on, "jobs": .jobs}' "$workflow" | jq -c -f "$program")
   [[ "$refusals" == "[]" ]] && continue
   while IFS= read -r refusal; do
     printf 'workflow context check FAILED: %s\n' "$refusal" >&2
@@ -1450,12 +1452,18 @@ if git grep -nIE -e 'hashFiles[(][^)]*[.]tar' -- ':/.github'; then
   echo 'workflow hashing check FAILED: hashFiles over a tarball; raise a flag where the tarball is written' >&2
   exit 1
 fi
-echo 'workflow hashing check OK: no hashFiles over a tarball or a build directory, and no unavailable context'
+echo 'workflow hashing check OK: no hashFiles over a tarball or a build directory, no unavailable context, and no job on a pull request edit that reads no change'
 '''
 
 ["check:workflow-hashing-shell"]
 description = "The workflow hashing task names its Bash interpreter"
 run = ".config/workflow-contexts/workflow-hashing-shell-cases.bash"
+
+# The title lint reads the title apart from commitlint, so a failed read
+# names itself and commitlint lints only a title that the read gives (#6774).
+["check:pr-title"]
+description = "The title lint names a failed read of the title, and commitlint lints only a title that the read gives"
+run = ".config/pr-title/lint-cases.bash"
 
 # A landing with no enforcing shard report writes a skip result (#5496).
 # `.config/spec-cost/landed-cases.bash` invokes its runner.
