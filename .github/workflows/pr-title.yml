@@ -15,6 +15,12 @@ name: PR title
 # edited title must re-run the check alone: an `edited` run of ci.yml would
 # repeat every lane or report them skipped, and a skipped check counts as
 # passed.
+#
+# In a merge group the job is the queue's required check of each entry's
+# text (#6883): the header, the authored commits, the issues the entries
+# close against the features ledger, and the account of what each entry
+# takes out. Each check takes seconds and reads what the entries change,
+# never the whole tree.
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, ready_for_review]
@@ -33,8 +39,9 @@ env:
   # The commitlint config's title mode: no author, no trailers, nothing
   # ignored (commitlint.config.mjs).
   COMMITLINT_TITLE: "1"
-  # commitlint alone: aube installs the npm package, node runs it.
-  MISE_ENABLE_TOOLS: "node,github:aubepkg/aube,npm:@commitlint/cli"
+  # commitlint, and the pinned sqlite3 of the features ledger's check: aube
+  # installs the npm package, node runs it.
+  MISE_ENABLE_TOOLS: "node,github:aubepkg/aube,npm:@commitlint/cli,conda:sqlite"
 
 jobs:
   # Definitions only: aliases run in each consuming job's context.
@@ -98,6 +105,14 @@ jobs:
         env:
           GROUP_BASE: ${{ github.event.merge_group.base_sha }}
         run: .config/queue/entries.bash --fetch "$GITHUB_SHA" "$GROUP_BASE" > "$RUNNER_TEMP/entries"
+      # One read of each entry's body serves the ledger's check and the
+      # account of what the entry takes out (#6883).
+      - name: read the body of each entry
+        if: ${{ github.event_name == 'merge_group' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: .config/queue/bodies.bash "$RUNNER_TEMP/entries" "$RUNNER_TEMP/bodies"
       # Each queue merge commit lands; a title edited after the pull
       # request's check is caught here. GitHub appends ` (#N)` to the title,
       # which is stripped so both checks lint the same header. Bash, for
@@ -112,6 +127,23 @@ jobs:
             git log -1 --format=%s "$merge" | sed -E 's/ \(#[0-9]+\)$//' | mise exec -- commitlint || status=1
           done < "$RUNNER_TEMP/entries"
           exit "$status"
+      # The commit rules over each entry's authored commits, as the gate of
+      # `pr:open` reads them on the lane's host (#6883). The walk deepens the
+      # shallow checkout until each head meets its merge's first parent.
+      - name: lint the authored commits of each entry
+        if: ${{ github.event_name == 'merge_group' }}
+        run: .config/queue/commits.bash --fetch "$GITHUB_SHA" "$RUNNER_TEMP/entries"
+      # The features ledger against the issues that the group closes
+      # (#6883): pull request 6762 closed #3381 while a row still owed it,
+      # and only the integration cycle read the tree it landed.
+      - name: check the features ledger against the issues the group closes
+        if: ${{ github.event_name == 'merge_group' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GATE_BASE: ${{ github.event.merge_group.base_sha }}
+          LEDGER_BODY: ${{ runner.temp }}/bodies
+        run: mise exec -- .config/ledger/check.bash
       # The account of what each pull request takes out of the tree (#6817),
       # read again where it lands: a body edited, or a head pushed past the
       # architect's sign-off, is refused. `pr:open` read the records of both
@@ -123,4 +155,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: .config/deletes/queue.bash "$RUNNER_TEMP/entries"
+        run: .config/deletes/queue.bash "$RUNNER_TEMP/entries" "$RUNNER_TEMP/bodies"

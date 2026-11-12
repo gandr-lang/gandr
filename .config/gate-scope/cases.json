@@ -1020,5 +1020,88 @@
         "test": "none"
       }
     }
+  },
+  {
+    "name": "#6883: a change formats the paths it touches and no other",
+    "program": "format.jq",
+    "input": {
+      "changed": [
+        ".github/workflows/ci.yml",
+        ".config/gate-scope/format.bash",
+        "crates/core-term/src/lib.rs"
+      ],
+      "tracked": [
+        ".config/gate-scope/format.bash",
+        ".github/workflows/ci.yml",
+        "contrib/gandr-vscode/src/extension.ts",
+        "crates/core-term/src/lib.rs",
+        "treefmt.toml"
+      ]
+    },
+    "output": [
+      ".config/gate-scope/format.bash",
+      ".github/workflows/ci.yml",
+      "crates/core-term/src/lib.rs"
+    ]
+  },
+  {
+    "name": "#6883: a change of a formatter's configuration reads the whole tree",
+    "program": "format.jq",
+    "input": {
+      "changed": ["README.md", "treefmt.toml"],
+      "tracked": ["README.md", "treefmt.toml"]
+    },
+    "output": "\"tree\""
+  },
+  {
+    "name": "#6883: a change of a pin under a directory of the configuration reads the whole tree",
+    "program": "format.jq",
+    "input": {
+      "changed": [".mise/locks/npm-oxfmt.json"],
+      "tracked": [".mise/locks/npm-oxfmt.json"]
+    },
+    "output": "\"tree\""
+  },
+  {
+    "name": "#6883: a change of one TypeScript source formats every TypeScript source, since the type-aware lint reads the whole program",
+    "program": "format.jq",
+    "input": {
+      "changed": ["README.md", "contrib/gandr-vscode/src/extension.ts"],
+      "tracked": [
+        "README.md",
+        "contrib/gandr-vscode/scripts/bundle.mts",
+        "contrib/gandr-vscode/src/client.ts",
+        "contrib/gandr-vscode/src/extension.ts",
+        "crates/core-term/src/lib.rs"
+      ]
+    },
+    "output": [
+      "README.md",
+      "contrib/gandr-vscode/scripts/bundle.mts",
+      "contrib/gandr-vscode/src/client.ts",
+      "contrib/gandr-vscode/src/extension.ts"
+    ]
+  },
+  {
+    "name": "#6883: a change of the extension's compiler settings formats every TypeScript source and the settings",
+    "program": "format.jq",
+    "input": {
+      "changed": ["contrib/gandr-vscode/tsconfig.json"],
+      "tracked": [
+        "contrib/gandr-vscode/src/client.ts",
+        "contrib/gandr-vscode/tsconfig.json",
+        "crates/core-term/src/lib.rs"
+      ]
+    },
+    "output": ["contrib/gandr-vscode/src/client.ts", "contrib/gandr-vscode/tsconfig.json"]
+  },
+  {
+    "name": "#6883: a change that touches no path formats nothing",
+    "program": "format.jq",
+    "input": {
+      "changed": [],
+      "tracked": ["README.md"]
+    },
+    "output": []
   }
 ]

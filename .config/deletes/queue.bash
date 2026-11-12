@@ -6,29 +6,28 @@
 # head, the merge's second parent, so the entries ahead of it move no
 # sign-off.
 #
-# `<entries>` is the output of `.config/queue/entries.bash`. gh reads each
-# entry's body: one REST read for each entry, beside the reads of
-# `check.bash`.
+# `<entries>` is the output of `.config/queue/entries.bash`, and `<bodies>`
+# the directory of the entries' bodies that `.config/queue/bodies.bash`
+# reads (#6883). An entry whose body did not read is refused.
 #
-# Usage: queue.bash <entries>
-# Exits 1 when an entry's account is refused and 2 on a failed read; it reads
-# every entry before it exits.
+# Usage: queue.bash <entries> <bodies>
+# Exits 1 when an entry's account is refused and 2 on a body that did not
+# read; it reads every entry before it exits.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
-entries=${1:?usage: queue.bash <entries>}
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+entries=${1:?usage: queue.bash <entries> <bodies>}
+bodies=${2:?usage: queue.bash <entries> <bodies>}
 status=0
 worst() { (( $1 > status )) && status=$1 || :; }
 while read -r merge number head; do
   echo "pull request #$number at ${head:0:9}:"
-  if ! gh api "repos/{owner}/{repo}/pulls/$number" --jq '.body // ""' > "$work/$number.md" < /dev/null; then
-    echo "queue: the body of pull request #$number does not read" >&2
+  if [[ ! -f $bodies/$number.md ]]; then
+    echo "queue: the body of pull request #$number did not read" >&2
     worst 2
     continue
   fi
   code=0
-  "$here/check.bash" --rows-only --head "$head" "$work/$number.md" "$merge^1" < /dev/null || code=$?
+  "$here/check.bash" --rows-only --head "$head" "$bodies/$number.md" "$merge^1" < /dev/null || code=$?
   worst "$code"
 done < "$entries"
 exit "$status"
