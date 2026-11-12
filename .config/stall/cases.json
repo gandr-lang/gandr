@@ -2916,5 +2916,29 @@
         }
       ]
     }
+  },
+  {
+    "name": "#6985: the watcher's `pr-green` comment pages its seat `green`",
+    "program": "events.jq",
+    "input": {
+      "seen": 20,
+      "comments": [
+        {
+          "id": 21,
+          "issue_url": "https://api.github.com/repos/o/r/issues/6981",
+          "body": "pr-green #6981\n\nEvery required check passed on this head and the pull request is out of the merge queue: `pr:land 6981` queues its stack's ready prefix.\n\n<!-- landing:pr-green:d693a06b9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -->"
+        }
+      ]
+    },
+    "output": {
+      "seen": 21,
+      "events": [
+        {
+          "number": 6981,
+          "kind": "green",
+          "line": "EVENT green #6981: pr-green #6981"
+        }
+      ]
+    }
   }
 ]
