@@ -347,6 +347,13 @@ if [[ $(jq length "$output/pending.json") != 0 ]]; then
   union=$(jq -r '[.[].filter | sub("^package\\(=[^)]*\\) & "; "")] | unique | join(" | ")' "$output/pending.json")
   (cd "$schema" && "$scope" cargo nextest run --locked --package "$crate" "${selectors[@]}" --no-tests=fail -E "package(=$crate) & ($union)") > "$output/logs/witnesses.log" 2>&1 \
     || { printf 'the witnesses fail unmutated; see %s\n' "$output/logs/witnesses.log" >&2; exit 1; }
+  # The lanes reuse the one build. Nextest reads the test binaries and the
+  # workspace from two files, and no lane runs cargo. A lane that ran cargo
+  # would wait on the lock of the build directory, and the lanes would start
+  # their tests one at a time.
+  (cd "$schema" && cargo metadata --locked --format-version 1 > "$scratch/metadata.json" \
+    && "${mutants_scope[@]}" cargo nextest list --locked --package "$crate" "${selectors[@]}" --list-type binaries-only \
+      --message-format json > "$scratch/binaries.json") 2>> "$output/logs/witnesses.log"
   # The lanes share one list of work, in order: each mutant in the schema,
   # then each group of the mutants out of it. A lane claims the next item
   # that no other lane holds, so a slow item holds one lane alone and the
@@ -383,8 +390,8 @@ if [[ $(jq length "$output/pending.json") != 0 ]]; then
     [[ -z "$2" ]] || (( $2 >= limit )) || limit=$2
     id=$(jq -r .id <<< "$mutant")
     status=0
-    (cd "$schema" && GANDR_MUTANT=$id timeout --kill-after=30 "$limit" "${mutants_scope[@]}" cargo nextest run --locked --package "$crate" \
-      "${selectors[@]}" --test-threads 1 --no-tests=fail -E "$(jq -r .filter <<< "$mutant")") > "$output/logs/mutant-$id.log" 2>&1 || status=$?
+    (cd "$schema" && GANDR_MUTANT=$id timeout --kill-after=30 "$limit" "${mutants_scope[@]}" cargo nextest run --binaries-metadata "$scratch/binaries.json" \
+      --cargo-metadata "$scratch/metadata.json" --test-threads 1 --no-tests=fail -E "$(jq -r .filter <<< "$mutant")") > "$output/logs/mutant-$id.log" 2>&1 || status=$?
     case $status in
       0) record "$(jq -r .key <<< "$mutant")" missed ;;
       124 | 137) (( limit != timeout )) || record "$(jq -r .key <<< "$mutant")" timeout ;;
