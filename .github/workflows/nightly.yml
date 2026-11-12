@@ -17,8 +17,9 @@ name: Nightly
 # since the last successful run; each lane runs at the commit of main whose
 # test state it restores. A failure is a red run on main, never a blocked
 # queue. A dispatch always runs. Beside them, every day, each CI lane's
-# median job time against its budget. The whole workflow is held to fifteen
-# minutes summed over its jobs.
+# median job time against its budget. The sweeps and the recovery sweep run
+# on a runner of our own while one is online (#6868). The whole workflow is
+# held to fifteen minutes summed over its jobs on hosted runners.
 on:
   schedule:
     - cron: "0 4 * * *"
@@ -67,13 +68,20 @@ jobs:
       # Every other job checks out the run's own commit.
       - &git-checkout
         name: git checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: &checkout actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ env.CI_COMMIT }}
           fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
+      # A runner of our own (`CI_RUNNER=integration`, #6868) runs on its host
+      # as the host stands: the host's git, toolchain and tools, and the kept
+      # tree in place of a restored state (`.config/nightly/tree.bash`). So
+      # it skips the steps that set up a hosted runner. They would write the
+      # host's global git configuration and its Cargo home, and download a
+      # state that the job does not read.
       - &trust-workspace
         name: trust the workspace for git
+        if: &hosted ${{ env.CI_RUNNER != 'integration' }}
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - &find-image
         id: image
@@ -84,10 +92,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - &install-policy-tools
         name: install mise-managed policy tools
-        if: ${{ needs.ci-image-ref.outputs.ref == '' }}
+        if: ${{ needs.ci-image-ref.outputs.ref == '' && env.CI_RUNNER != 'integration' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
       - &setup-rust
         name: setup rust
+        if: *hosted
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ needs.ci-image-ref.outputs.ref == '' }}
@@ -103,6 +112,7 @@ jobs:
         run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
       - &restore-test-state
         name: restore complete test state
+        if: *hosted
         uses: ./.github/actions/restore-test-state # zizmor: ignore[self-repository]
       # Whether the state came down, tested once in the shell: `hashFiles`
       # over a tarball reads the whole archive inside the expression engine,
@@ -153,18 +163,30 @@ jobs:
   # it covers as the artifact `night-commit`, a run that skipped the lanes
   # included, so the comparison stays exact across skips, and a failed lane
   # runs again the next day. A last run with no record compares its tip.
+  #
+  # The job also chooses the night's runner (#6868). A runner of our own
+  # with the label `integration` takes `sweeps`, with its recovery sweep,
+  # while one is online, as it takes the cycle's suite
+  # (`.config/integration/runner.jq`, #5526). Only the schedule and a
+  # dispatch of `main` in gandr-lang/gandr read the runners, through the
+  # App's token that holds `Administration: read`. No pull request reaches
+  # our runner. A fork has no App, so its night runs on the hosted runner,
+  # and so does a night whose read fails.
   freshness:
     name: choose the night's commit and whether it moved
     runs-on: *linux
     permissions:
       actions: read
+      contents: read
     outputs:
       enforcing: ${{ steps.states.outputs.enforcing }}
       plain: ${{ steps.states.outputs.plain }}
       stale: ${{ steps.compare.outputs.stale }}
+      runner: ${{ steps.runner.outputs.runner || 'hosted' }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      LANDING_APP_ID: ${{ secrets.LANDING_APP_ID }}
     steps:
       - id: states
         name: find the commit of each saved test state
@@ -200,6 +222,33 @@ jobs:
           name: night-commit
           path: ${{ runner.temp }}/night/commit
           retention-days: 30
+      - name: check out the choice of the runner
+        if: &own-runners ${{ github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' && env.LANDING_APP_ID != '' }}
+        uses: *checkout
+        with:
+          persist-credentials: false
+          sparse-checkout: .config/integration/runner.jq
+          sparse-checkout-cone-mode: false
+      - name: mint the token that reads the runners
+        id: runners
+        if: *own-runners
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          permission-administration: read
+      - id: runner
+        name: choose the night's runner
+        if: ${{ steps.runners.outputs.token != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.runners.outputs.token }}
+        run: gh api "repos/$GH_REPO/actions/runners?per_page=100" --jq '{runners}' | jq -c -f .config/integration/runner.jq | jq -r '"runner=\(.runner)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
+      - name: say the night's runner
+        env:
+          LINE: ${{ steps.runner.outputs.line || 'The night runs on the hosted runner, since it reads no self-hosted runner.' }}
+        run: printf '%s\n' "$LINE" >> "$GITHUB_STEP_SUMMARY"
 
   # The sweeps restore main's enforcing test state, which Cargo's
   # fingerprints bring up to date, and run the nightly task. The plain build
@@ -213,28 +262,35 @@ jobs:
   # its 240 s limit ends and passes, and the job uploads its JUnit report for
   # `reports` to file (#3975).
   #
-  # The recovery sweep (`mise run ledger:recovery`, #1782) runs in this job
-  # after the sweeps, from the same enforcing state, so one container start
-  # and one restore serve both (#6704). Each of them runs once the setup
-  # passes, whatever the other gives. The rotation of the sweeps (#6704)
-  # holds the two together at about 5 minutes, inside the job's 15. The
-  # recovery sweep covers every literal tile of every syntax exemplar, missed
-  # and deleted. Its causes and counts are the job summary, the whole backlog
-  # visible whether or not it is filed; the report goes to `reports`, which
-  # holds the write token. The sweep runs the driver the restored test build
-  # links, resolved as that state was, so the step is the sweep: 7175
-  # mutants on one thread take 20 s locally (#3289).
+  # The recovery sweep (`mise run ci:recovery-nightly`, #1782) runs in this
+  # job after the sweeps, from the same enforcing state, so one container
+  # start and one restore serve both (#6704). Each of them runs once the
+  # setup passes, whatever the other gives. The rotation of the sweeps
+  # (#6704) holds the two together at about 5 minutes, inside the job's 15.
+  # The recovery sweep covers every literal tile of every syntax exemplar,
+  # missed and deleted. Its causes and counts are the job summary, the whole
+  # backlog visible whether or not it is filed; the report goes to
+  # `reports`, which holds the write token. The sweep runs the driver the
+  # restored test build links, resolved as that state was, so the step is
+  # the sweep: 7175 mutants on one thread take 20 s locally (#3289).
+  #
+  # On a runner of our own the job keeps its tree and its target directory on
+  # the host, and restores no state (`.config/nightly/tree.bash`, #6868).
+  # Each of the two sweeps waits for a gate slot of the host, so the job's
+  # limit holds that wait: 60 minutes there, 15 on the hosted runner. Its
+  # time counts in no hosted budget.
   sweeps:
     name: sweep the night's inputs, specifications enforced
     needs: [ci-image-ref, freshness]
     if: &main-moved ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
-    runs-on: *linux
+    runs-on: ${{ needs.freshness.outputs.runner == 'integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04-arm' }}
     permissions: *image-read-permissions
-    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
-    timeout-minutes: 15
+    container: ${{ needs.freshness.outputs.runner != 'integration' && needs.ci-image-ref.outputs.ref || '' }} # zizmor: ignore[unpinned-images]
+    timeout-minutes: ${{ needs.freshness.outputs.runner == 'integration' && 60 || 15 }}
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+      CI_RUNNER: ${{ needs.freshness.outputs.runner }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -247,39 +303,26 @@ jobs:
       - *fetch-dependencies
       - id: night-sweeps
         name: run the night's sweeps
-        run: mise run ci:sweeps-nightly
+        run: .config/nightly/tree.bash mise run ci:sweeps-nightly
       - name: upload the sweeps' test report
         if: ${{ always() }}
         continue-on-error: true
         uses: *upload-artifact
         with:
           name: junit-sweeps
-          path: target/nextest/nightly/junit.xml
+          path: ${{ steps.night-sweeps.outputs.tree }}/target/nextest/nightly/junit.xml
           retention-days: 7
           if-no-files-found: ignore
-      - name: sweep the exemplars for recovery
+      - id: night-recovery
+        name: sweep the exemplars for recovery
         if: &swept ${{ !cancelled() && steps.night-sweeps.outcome != 'skipped' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/enforcing
-          CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
-          CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
-        shell: bash
-        run: |
-          mkdir -p recovery.out
-          .config/mise/enforcing mise run ledger:recovery recovery.out/report.txt > recovery.out/causes.txt
-          {
-            echo '## Recovery sweep'
-            echo
-            grep -e ' mutants swept: ' recovery.out/causes.txt
-            echo
-            sed -n 's/^cause: /- /p' recovery.out/causes.txt
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: .config/nightly/tree.bash mise run ci:recovery-nightly
       - name: upload the recovery report
         if: *swept
         uses: *upload-artifact
         with:
           name: recovery-report
-          path: recovery.out/report.txt
+          path: ${{ steps.night-recovery.outputs.tree }}/recovery.out/report.txt
           retention-days: 7
 
   # Each crate's tests with every feature it declares on, one of those crates
@@ -296,7 +339,7 @@ jobs:
     if: *main-moved
     runs-on: *linux
     permissions: *image-read-permissions
-    container: *ci-image # zizmor: ignore[unpinned-images]
+    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 15
     env:
       CI_BUILD_STATE: cargo-test-plain-only
@@ -407,10 +450,11 @@ jobs:
   # crate's 840 s held over `--daily`, its job's own limit. Both come back
   # with the lanes. This workflow's own all-features lane is held over its
   # scheduled runs (`--nightly`): about 1.5 times the 194 to 216 s each
-  # third of the all-features crates took on a dispatch. The
-  # hosted budget is this workflow's summed job time per run (`--summed`): 15
-  # minutes for its median, 20 the ceiling no night passes; the table times
-  # every active workflow and reads the cache's usage.
+  # third of the all-features crates took on a dispatch. The hosted budget
+  # is this workflow's summed time of its jobs on hosted runners per run
+  # (`--summed`): 15 minutes for its median, 20 the ceiling no night passes.
+  # A job on a runner of our own counts in no hosted sum (#6868). The table
+  # times every active workflow and reads the cache's usage.
   reports:
     name: report and file the night's findings
     needs: [ci-image-ref, sweeps]
