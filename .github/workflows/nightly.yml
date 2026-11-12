@@ -13,15 +13,21 @@ name: Nightly
 # ci:sweeps-nightly`), the costliest sweeps each over the night's slice of
 # the corpus; one crate that declares features a night, its tests with
 # every feature on; and the recovery sweep over the syntax
-# exemplars, its causes filed. Daily on main when main moved since the last
-# successful run; a failure is a red run on main, never a blocked queue. A
-# dispatch always runs. Beside them, every day, each CI lane's median job
-# time against its budget. The whole workflow is held to fifteen minutes
-# summed over its jobs.
+# exemplars, its causes filed. Daily on main when the night's commit moved
+# since the last successful run; each lane runs at the commit of main whose
+# test state it restores. A failure is a red run on main, never a blocked
+# queue. A dispatch always runs. Beside them, every day, each CI lane's
+# median job time against its budget. The whole workflow is held to fifteen
+# minutes summed over its jobs.
 on:
   schedule:
     - cron: "0 4 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tip:
+        description: "Run the tip of the dispatched ref, not each saved test state's commit"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -57,11 +63,14 @@ jobs:
       contents: read
       packages: read
     steps:
+      # A lane sets `CI_COMMIT` to the commit of the test state it restores.
+      # Every other job checks out the run's own commit.
       - &git-checkout
         name: git checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT }}
           fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
       - &trust-workspace
         name: trust the workspace for git
@@ -129,24 +138,68 @@ jobs:
       - *git-checkout
       - *find-image
 
-  # The scheduled run measures only when main moved since the last successful
-  # run; a dispatch always runs. A run that skipped the lanes succeeds at the
-  # commit the last full run covered, so the comparison stays exact across
-  # skips, and a failed lane runs again the next day.
+  # The night runs each lane at the commit of main whose test state the lane
+  # restores, so its build is warm by construction (#6863). Main keeps one
+  # cache entry per state (`ci:delete-superseded`), and the entry's key ends
+  # in the commit that saved it. A push of main saves its states 7 to 19
+  # minutes after the move, so the tip can be newer than every saved state,
+  # and a lane at the tip rebuilds a cycle of landings. The enforcing state's
+  # commit is the night's commit. A dispatch with `tip` runs the tip of its
+  # ref, which a probe of a branch's own sources needs. With no entry of a
+  # state, its lanes run the tip as well.
+  #
+  # The scheduled run measures only when the night's commit moved since the
+  # last successful run; a dispatch always runs. Each run records the commit
+  # it covers as the artifact `night-commit`, a run that skipped the lanes
+  # included, so the comparison stays exact across skips, and a failed lane
+  # runs again the next day. A last run with no record compares its tip.
   freshness:
-    name: decide whether main moved since the last successful run
+    name: choose the night's commit and whether it moved
     runs-on: *linux
     permissions:
       actions: read
     outputs:
+      enforcing: ${{ steps.states.outputs.enforcing }}
+      plain: ${{ steps.states.outputs.plain }}
       stale: ${{ steps.compare.outputs.stale }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - id: compare
-        name: compare main against the last successful run
+      - id: states
+        name: find the commit of each saved test state
+        if: ${{ !inputs.tip }}
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: gh run list --workflow nightly.yml --branch main --status success --limit 1 --json headSha --jq '"stale=" + ((.[0].headSha // "") != env.GITHUB_SHA | tostring)' >> "$GITHUB_OUTPUT"
+          PREFIX: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-
+        run: >-
+          gh cache list --ref refs/heads/main --key "$PREFIX" --limit 100 --json key,createdAt
+          --jq 'def newest($state): map(select(.key | startswith(env.PREFIX + $state + "-")))
+          | max_by(.createdAt) | .key // "" | split("-") | last;
+          "enforcing=\(newest("cargo-test-enforcing"))", "plain=\(newest("cargo-test-plain-only"))"'
+          >> "$GITHUB_OUTPUT"
+      - id: compare
+        name: compare the night's commit against the last successful run
+        shell: bash
+        env:
+          NIGHT: ${{ steps.states.outputs.enforcing || github.sha }}
+        run: |
+          found=$(gh run list --workflow nightly.yml --branch main --status success --limit 1 \
+            --json databaseId,headSha --jq '.[0] // {} | "\(.databaseId // "") \(.headSha // "")"')
+          read -r run last <<< "$found"
+          if [[ -n $run ]] && gh run download "$run" --name night-commit --dir "$RUNNER_TEMP/last"; then
+            last=$(<"$RUNNER_TEMP/last/commit")
+          fi
+          mkdir -p "$RUNNER_TEMP/night"
+          printf '%s\n' "$NIGHT" > "$RUNNER_TEMP/night/commit"
+          printf 'stale=%s\n' "$([[ $NIGHT != "${last:-}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          printf 'The night runs `%s`. The tip of `%s` is `%s`. The last successful night covers `%s`.\n' \
+            "$NIGHT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "${last:-none}" >> "$GITHUB_STEP_SUMMARY"
+      - name: record the night's commit
+        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: night-commit
+          path: ${{ runner.temp }}/night/commit
+          retention-days: 30
 
   # The sweeps restore main's enforcing test state, which Cargo's
   # fingerprints bring up to date, and run the nightly task. The plain build
@@ -169,6 +222,7 @@ jobs:
     timeout-minutes: 15
     env:
       CI_BUILD_STATE: cargo-test-enforcing
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -184,7 +238,7 @@ jobs:
       - name: upload the sweeps' test report
         if: ${{ always() }}
         continue-on-error: true
-        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: *upload-artifact
         with:
           name: junit-sweeps
           path: target/nextest/nightly/junit.xml
@@ -211,6 +265,7 @@ jobs:
     timeout-minutes: 15
     env:
       CI_BUILD_STATE: cargo-test-enforcing
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -262,6 +317,7 @@ jobs:
     timeout-minutes: 15
     env:
       CI_BUILD_STATE: cargo-test-plain-only
+      CI_COMMIT: ${{ needs.freshness.outputs.plain }}
       GANDR_SWEEP_BASE: HEAD
       NEXTEST_PROFILE: ci
     steps:
