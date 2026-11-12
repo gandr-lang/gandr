@@ -907,8 +907,12 @@ pub struct TermArena
 /// One family's nodes in allocation order.
 ///
 /// Those frozen by [`Family::freeze`] come first, shared with every clone of
-/// the family made after, then the nodes minted since. [`TermArena`] keeps
-/// its four families so, and an arena outside the kernel may keep its own.
+/// the family made after, then the nodes minted since. A freeze moves the
+/// nodes minted since the last one to the newest segment while no clone shares
+/// it, and into a segment of their own when one does. So a freeze costs those
+/// nodes alone, and a family that no clone outlives keeps one segment.
+/// [`TermArena`] keeps its four families so, and an arena outside the kernel
+/// may keep its own.
 ///
 /// # Specification
 /// - executable: none — a data declaration; [`Self::get`], [`Self::truncate`]
@@ -918,13 +922,29 @@ pub struct TermArena
 /// - hypothesis: L3 — a family read, minted into, truncated and compared across
 ///   a freeze answers as one never frozen does.
 /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+/// - witness: `arena::tests::a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476`
 #[derive(Clone, Debug)]
 pub struct Family<Node>
 {
-    /// The nodes frozen before the family's own, shared by reference.
-    frozen: Option<alloc::sync::Arc<[Node]>>,
+    /// The nodes frozen before the family's own, as segments, oldest first.
+    /// Each clone shares the list and each segment by reference.
+    frozen: Option<alloc::sync::Arc<Vec<Segment<Node>>>>,
+    /// How many nodes the segments hold, so a read finds its side at once.
+    frozen_len: usize,
     /// The nodes minted after them.
     own: Vec<Node>,
+}
+
+/// The nodes that one or more freezes moved out of a family's own, shared by
+/// reference, and the offset of the first in the family.
+#[derive(Clone, Debug)]
+struct Segment<Node>
+{
+    /// The offset of the segment's first node in its family.
+    start: usize,
+    /// The nodes, in allocation order. A freeze adds to them in place while no
+    /// clone shares them.
+    nodes: alloc::sync::Arc<Vec<Node>>,
 }
 
 impl<Node> Default for Family<Node>
@@ -938,6 +958,7 @@ impl<Node> Default for Family<Node>
     {
         Self {
             frozen: None,
+            frozen_len: 0,
             own: Vec::new(),
         }
     }
@@ -954,6 +975,7 @@ impl<Node> From<Vec<Node>> for Family<Node>
     {
         Self {
             frozen: None,
+            frozen_len: 0,
             own: nodes,
         }
     }
@@ -972,7 +994,7 @@ impl<Node: PartialEq> PartialEq for Family<Node>
         other: &Self,
     ) -> bool
     {
-        // Two families frozen over one shared base hold its nodes alike, so
+        // Two families frozen over one shared list hold its nodes alike, so
         // only the nodes minted since are read.
         if let (Some(mine), Some(theirs)) = (self.frozen.as_ref(), other.frozen.as_ref())
             && alloc::sync::Arc::ptr_eq(mine, theirs)
@@ -999,19 +1021,82 @@ impl<Node> Family<Node>
     {
         Self {
             frozen: None,
+            frozen_len: 0,
             own: Vec::new(),
         }
     }
 
-    /// The nodes frozen before the family's own.
+    /// How many of this family's frozen nodes `other` holds by the same
+    /// reference: the nodes of each segment, from the oldest, that both hold
+    /// at one place. Zero when they share no segment.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn frozen(&self) -> &[Node]
+    pub fn shared_frozen(
+        &self,
+        other: &Self,
+    ) -> ArenaLength
     {
-        self.frozen.as_deref().unwrap_or_default()
+        let shared = self
+            .segments()
+            .iter()
+            .zip(other.segments())
+            .take_while(|&(left, right)| alloc::sync::Arc::ptr_eq(&left.nodes, &right.nodes))
+            .last();
+        ArenaLength(shared.map_or(0, |(segment, _)| {
+            segment.start.saturating_add(segment.nodes.len())
+        }))
+    }
+
+    /// The frozen segments, oldest first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn segments(&self) -> &[Segment<Node>]
+    {
+        self.frozen.as_deref().map_or(&[], Vec::as_slice)
+    }
+
+    /// The frozen node at `offset`, or `None` at or past the frozen length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn frozen_at(
+        &self,
+        offset: ArenaLength,
+    ) -> Option<&Node>
+    {
+        let segments = self.segments();
+        // The newest segment first: it holds the content that a check reads
+        // most. A family that no clone outlives holds no other.
+        let newest = segments.last()?;
+        match offset.0.checked_sub(newest.start) {
+            Some(within) => newest.nodes.get(within),
+            None => Self::searched(segments, offset),
+        }
+    }
+
+    /// The node at `offset` among `segments`, found by one binary search over
+    /// their starts; kept out of line, so a read stays small where it inlines.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline(never)]
+    fn searched(
+        segments: &[Segment<Node>],
+        offset: ArenaLength,
+    ) -> Option<&Node>
+    {
+        let segment = segments.get(
+            segments
+                .partition_point(|segment| segment.start <= offset.0)
+                .checked_sub(1)?,
+        )?;
+        segment.nodes.get(offset.0.checked_sub(segment.start)?)
     }
 
     /// The nodes minted since the last freeze: what a clone copies.
@@ -1033,7 +1118,7 @@ impl<Node> Family<Node>
     #[must_use]
     pub fn len(&self) -> ArenaLength
     {
-        ArenaLength(self.frozen().len().saturating_add(self.own.len()))
+        ArenaLength(self.frozen_len.saturating_add(self.own.len()))
     }
 
     /// The node at `offset` in allocation order, or `None` past the family.
@@ -1050,16 +1135,10 @@ impl<Node> Family<Node>
         Offset: Into<ArenaLength>,
     {
         let offset = offset.into();
-        // The frozen nodes are read first, so a read of one costs what a read
-        // of an unfrozen family does.
-        self.frozen.as_deref().map_or_else(
-            || self.own.get(offset.0),
-            |frozen| {
-                frozen
-                    .get(offset.0)
-                    .or_else(|| self.own.get(offset.0.wrapping_sub(frozen.len())))
-            },
-        )
+        match offset.0.checked_sub(self.frozen_len) {
+            Some(own) => self.own.get(own),
+            None => self.frozen_at(offset),
+        }
     }
 
     /// The node minted last, or `None` for an empty family.
@@ -1070,7 +1149,11 @@ impl<Node> Family<Node>
     #[must_use]
     pub fn last(&self) -> Option<&Node>
     {
-        self.own.last().or_else(|| self.frozen().last())
+        self.own.last().or_else(|| {
+            self.segments()
+                .last()
+                .and_then(|segment| segment.nodes.last())
+        })
     }
 
     /// Every node, in allocation order, read from either end.
@@ -1081,7 +1164,10 @@ impl<Node> Family<Node>
     #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Node>
     {
-        self.frozen().iter().chain(&self.own)
+        self.segments()
+            .iter()
+            .flat_map(|segment| segment.nodes.iter())
+            .chain(&self.own)
     }
 
     /// Mint `node` after every node the family holds.
@@ -1106,8 +1192,10 @@ impl<Node: Clone> Family<Node>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the family holds its first `length.min(entry)` nodes, each as
-    ///   it was. A truncation into the frozen nodes takes the family's own copy
-    ///   of those it keeps, so no clone made before it changes.
+    ///   it was. A truncation into the frozen nodes keeps each segment below
+    ///   `length` by reference. The segment that `length` cuts keeps its first
+    ///   nodes in place while no clone shares it; otherwise the family takes
+    ///   its own copy of them. So no clone made before the truncation changes.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1125,14 +1213,35 @@ impl<Node: Clone> Family<Node>
         length: ArenaLength,
     )
     {
-        let frozen = self.frozen().len();
-        if let Some(own) = length.0.checked_sub(frozen) {
+        if let Some(own) = length.0.checked_sub(self.frozen_len) {
             self.own.truncate(own);
+            return;
         }
-        else {
-            self.own = self.frozen().get(.. length.0).unwrap_or_default().to_vec();
-            self.frozen = None;
+        self.own.clear();
+        // Into the frozen nodes: the segments that start at or past `length`
+        // go. The segment that `length` cuts keeps its first nodes in place
+        // when no clone shares it, and gives them to the family's own when
+        // one does.
+        let mut shared = self.frozen.take();
+        if let Some(list) = shared.as_mut() {
+            let segments = alloc::sync::Arc::make_mut(list);
+            segments.truncate(segments.partition_point(|segment| segment.start < length.0));
+            if let Some(mut segment) = segments.pop() {
+                let kept = length.0.saturating_sub(segment.start);
+                if let Some(nodes) = alloc::sync::Arc::get_mut(&mut segment.nodes) {
+                    nodes.truncate(kept);
+                    segments.push(segment);
+                }
+                else {
+                    self.own
+                        .extend_from_slice(segment.nodes.get(.. kept).unwrap_or_default());
+                }
+            }
         }
+        self.frozen = shared.filter(|segments| !segments.is_empty());
+        self.frozen_len = self.segments().last().map_or(0, |segment| {
+            segment.start.saturating_add(segment.nodes.len())
+        });
     }
 
     /// Share every node the family holds with every clone made after: the
@@ -1141,14 +1250,20 @@ impl<Node: Clone> Family<Node>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the family holds the same nodes in the same order, all of
-    ///   them frozen.
+    ///   them frozen. The freeze moves the nodes minted since the last one, at
+    ///   an amortized cost of those nodes, and copies no node that a clone
+    ///   shares. The nodes join the newest segment in place when no clone
+    ///   shares it, and start a segment of their own when one does; the list of
+    ///   segments is copied first when a clone shares it.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a family frozen twice, with nodes minted between,
-    ///   reads back every node at its offset.
+    /// - hypothesis: L3 — a family frozen many times, with nodes minted between
+    ///   and a clone taken after some of the freezes, reads back every node at
+    ///   its offset, and each clone keeps the nodes it shares.
     /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    /// - witness: `arena::tests::a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476`
     #[spec(
         captures: entry = self.len(),
         ensures: self.len() == entry && self.own.is_empty(),
@@ -1159,10 +1274,22 @@ impl<Node: Clone> Family<Node>
         if self.own.is_empty() {
             return;
         }
-        let own = core::mem::take(&mut self.own);
-        self.frozen = Some(match self.frozen.take() {
-            None => alloc::sync::Arc::from(own),
-            Some(frozen) => frozen.iter().cloned().chain(own).collect(),
+        let start = self.frozen_len;
+        self.frozen_len = start.saturating_add(self.own.len());
+        let segments = alloc::sync::Arc::make_mut(self.frozen.get_or_insert_default());
+        // The newest segment takes the nodes in place while no clone shares
+        // it, so a family that no clone outlives keeps one segment, and a
+        // read finds each node in one step.
+        if let Some(nodes) = segments
+            .last_mut()
+            .and_then(|segment| alloc::sync::Arc::get_mut(&mut segment.nodes))
+        {
+            nodes.append(&mut self.own);
+            return;
+        }
+        segments.push(Segment {
+            start,
+            nodes: alloc::sync::Arc::new(core::mem::take(&mut self.own)),
         });
     }
 
@@ -1171,8 +1298,8 @@ impl<Node: Clone> Family<Node>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the node [`Self::get`] reads at `offset`. A node among the
-    ///   frozen ones is reached through the family's own copy of them, taken
-    ///   when another clone shares them, so no clone made before the change
+    ///   frozen ones is reached through the family's own copy of its segment,
+    ///   taken when another clone shares it, so no clone made before the change
     ///   sees it; the family's length is unchanged.
     /// - fails: never.
     /// - panics: none.
@@ -1192,14 +1319,16 @@ impl<Node: Clone> Family<Node>
         Offset: Into<ArenaLength>,
     {
         let offset = offset.into();
-        let frozen = self.frozen().len();
-        if let Some(own) = offset.0.checked_sub(frozen) {
-            self.own.get_mut(own)
+        if let Some(own) = offset.0.checked_sub(self.frozen_len) {
+            return self.own.get_mut(own);
         }
-        else {
-            let shared = self.frozen.as_mut()?;
-            alloc::sync::Arc::make_mut(shared).get_mut(offset.0)
-        }
+        let segments = alloc::sync::Arc::make_mut(self.frozen.as_mut()?);
+        let at = segments
+            .partition_point(|segment| segment.start <= offset.0)
+            .checked_sub(1)?;
+        let segment = segments.get_mut(at)?;
+        let within = offset.0.checked_sub(segment.start)?;
+        alloc::sync::Arc::make_mut(&mut segment.nodes).get_mut(within)
     }
 }
 
@@ -5003,11 +5132,7 @@ mod tests
             (value, value_type, computation, comp_type)
         };
         let shares = |left: &TermArena, right: &TermArena| {
-            !left.values.frozen().is_empty()
-                && core::ptr::eq(
-                    &raw const *left.values.frozen(),
-                    &raw const *right.values.frozen(),
-                )
+            left.values.shared_frozen(&right.values) != 0_usize
         };
         let constant = |index: usize| super::Value::Constant(super::ConstantIndex::from(index));
         let mut plain = TermArena::new();

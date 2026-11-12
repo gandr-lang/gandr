@@ -687,13 +687,8 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         let comp_type = arena.comp_type_returner(value_type);
         (value, value_type, computation, comp_type)
     };
-    let shares = |left: &CoreArena, right: &CoreArena| {
-        !left.values.frozen().is_empty()
-            && core::ptr::eq(
-                &raw const *left.values.frozen(),
-                &raw const *right.values.frozen(),
-            )
-    };
+    let shares =
+        |left: &CoreArena, right: &CoreArena| left.values.shared_frozen(&right.values) != 0_usize;
     let mut plain = CoreArena::new();
     let mut frozen = CoreArena::new();
     let first = round(&mut plain, 0, Some(BaseType::Integer));
