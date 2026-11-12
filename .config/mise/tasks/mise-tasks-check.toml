@@ -342,7 +342,12 @@ done
 # invalidates the driver: `rm -rf ~/.dylint_drivers target/dylint` before the
 # wall runs again. The run reads `GATE_SCOPE` as the Clippy passes do, and
 # unifies the features over the whole workspace, so a scoped run builds the
-# units of a whole one (#6894).
+# units of a whole one (#6894). A scoped run also lints each workspace
+# package that its packages depend on. The driver builds that package too,
+# and the denied lints apply to it. Under `--no-deps` the driver loads no
+# library for it, so the compiler refuses each denied lint as unknown
+# (#6946). After its run the task runs the case of #6946
+# (`.config/policy/scope-cases.bash`) through the same command, `policy`.
 ["check:dylint"]
 description = "quenchant's policy library over the workspace"
 env.CARGO_INCREMENTAL = "0"
@@ -513,6 +518,8 @@ directory = "{{ config_root }}/target/embedded-sources"
 # from an empty `target/dylint` too. A state with no second stamp keeps its
 # units and takes the stamp.
 run = '''
+#!/usr/bin/env bash
+set -euo pipefail
 rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
 revision=$(mise run --quiet workflow:revision)
@@ -524,12 +531,20 @@ if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ] \
   printf '%s\n' "$revision" > target/dylint/quenchant-revision
 fi
 printf '%s\n' "$dylint" > target/dylint/dylint-version
-set -- .config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --config 'resolver.feature-unification="workspace"'
-if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver" ]; then
-  channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
-  set -- .github/docker/rust-clippy.bash "${XDG_CACHE_HOME:-$HOME/.cache}/gandr/rust-clippy.git" "$channel" "$@"
-fi
-.config/mise/gated "$@"
+# The policy over the packages that the arguments select, in a gate slot.
+policy() {
+  local -a run=(.config/mise/scope cargo dylint --lib quenchant_dylints -- "$@" --all-targets --config 'resolver.feature-unification="workspace"')
+  local channel
+  if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver" ]; then
+    channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
+    run=(.github/docker/rust-clippy.bash "${XDG_CACHE_HOME:-$HOME/.cache}/gandr/rust-clippy.git" "$channel" "${run[@]}")
+  fi
+  .config/mise/gated "${run[@]}"
+}
+policy {{ env.GATE_SCOPE | default(value='--workspace') }}
+export toolchain
+export -f policy
+.config/policy/scope-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
