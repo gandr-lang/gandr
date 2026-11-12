@@ -2064,19 +2064,18 @@ mod tests
         let _unrelated = environment
             .add_decl(unrelated)
             .expect("a unit definition admits");
-        let entries = environment.entries();
         assert_eq!(
-            &*entries.reach([words]),
+            &*environment.reach([words]),
             &[words, after, through],
             "an entry after the words holds them through the sort, and one before them does not"
         );
         assert_eq!(
-            &*entries.reach([before]),
+            &*environment.reach([before]),
             &[before, through],
             "the entry that names an edited one is in the reach"
         );
         assert_eq!(
-            &*entries.reach([sort]),
+            &*environment.reach([sort]),
             &[sort, before, words, after, through],
             "each entry that names the sort is in its reach, and the unrelated one is not"
         );

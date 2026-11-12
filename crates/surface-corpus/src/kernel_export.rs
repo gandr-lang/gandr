@@ -1286,14 +1286,14 @@ mod kernel_kept_export
     fn exported(environment: &Environment) -> EncodedArtifact
     {
         let entries = environment.entries();
-        let marked: Vec<MarkedDeclaration> = entries
+        let marked: Vec<MarkedDeclaration> = environment
             .in_rank_order()
             .filter_map(|position| entries.get(usize::from(position)))
             .map(|entry| {
                 MarkedDeclaration::new(AdmissionMark::Checked, entry.declaration().clone())
             })
             .collect();
-        match entries.places() {
+        match environment.places() {
             Maybe::Present(places) => {
                 gandr_kernel_term::encode_placed(environment.arena(), &marked, &places)
             },
