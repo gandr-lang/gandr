@@ -11,9 +11,16 @@
 # Output: `{seen, events}`: `seen` the greatest id read so far, and `events`,
 # oldest first, each `{number, kind, line}` for a comment newer than `seen`
 # that carries a mark. A first reading pages nothing: it only sets `seen`.
+#
+# Each mark that the watcher's `tell` writes and that its seat must act on is
+# a row of `kinds`. A `pr-green` comment, which the watcher writes in place of
+# a landing (#6915), is one: with no row, its seat hears nothing and a green
+# root stays out of the queue (#6985). The watcher's own `pr-rerun` asks
+# nothing of a seat and is no event (#6164).
 
 def kinds:
   [ {mark: "<!-- landing:pr-dequeued:", kind: "dequeued"},
+    {mark: "<!-- landing:pr-green:", kind: "green"},
     {mark: "<!-- landing:pr-red:", kind: "red"},
     {mark: "<!-- landing:pr-dirty:", kind: "dirty"},
     {mark: "<!-- landing:pr-unrun:", kind: "unrun"},
