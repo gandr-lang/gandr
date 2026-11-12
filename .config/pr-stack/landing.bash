@@ -33,6 +33,8 @@ ci_workflow=CI
 # `hold:owner`, #3253), as `landing.jq` reads them. The head and base of
 # every open pull request, held ones too, go to the file `$used_refs`, one a
 # line: the landed heads the watcher deletes are never one of them (#6185).
+# The first 100 changed files of each say whether it is a workflow change
+# (#6915), and a pull request with more is read as one.
 read_prs() {
   local pr number head base upstream rollup gated
   gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query='
@@ -53,6 +55,7 @@ read_prs() {
             timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } }
             bases: timelineItems(last: 1, itemTypes: [AUTOMATIC_BASE_CHANGE_FAILED_EVENT, AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT, BASE_REF_CHANGED_EVENT]) { nodes { __typename ... on AutomaticBaseChangeFailedEvent { oldBase } } }
             comments(last: 100) { nodes { body } }
+            files(first: 100) { pageInfo { hasNextPage } nodes { path } }
           }
         }
       }
@@ -100,7 +103,8 @@ read_prs() {
             stranded: ((.bases.nodes[0] // {}) as $event | $event.__typename == "AutomaticBaseChangeFailedEvent" and $event.oldBase == .baseRefName),
             upstream: $upstream,
             marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"],
-            unrun: (($ran | not) and (now - (.commits.nodes[0].commit.committedDate // "1970-01-01T00:00:00Z" | fromdate)) > 300)}
+            unrun: (($ran | not) and (now - (.commits.nodes[0].commit.committedDate // "1970-01-01T00:00:00Z" | fromdate)) > 300),
+            workflow: ((.files.pageInfo.hasNextPage // false) or any(.files.nodes[]?; .path | startswith(".github/workflows/")))}
           | .oid as $oid | . + {waiting: ($unstarted and (.marks | index("pr-depth:\($oid)")) != null)}' <<< "$pr"
       done | jq -cs . | jq -c --arg trunk "$trunk" -f "$pr_stack_dir/depths.jq"
 }

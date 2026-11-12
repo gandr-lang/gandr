@@ -3213,6 +3213,108 @@
     "output": "[{\"number\":51,\"act\":\"restack\",\"told\":false},{\"number\":52,\"act\":\"restack\",\"told\":false}]"
   },
   {
+    "name": "#6915: with the token, a green stack that holds a workflow change is told `pr-green` from its lowest member, never landed; a green pull request with no workflow change is landed",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 61,
+          "oid": "1111111111111111111111111111111111111111",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": [],
+          "workflow": false
+        },
+        {
+          "number": 62,
+          "oid": "2222222222222222222222222222222222222222",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": [],
+          "workflow": true
+        },
+        {
+          "number": 63,
+          "oid": "3333333333333333333333333333333333333333",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "UNSTABLE",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": [],
+          "workflow": false
+        }
+      ]
+    },
+    "output": "[{\"number\":61,\"act\":\"green\"},{\"number\":63,\"act\":\"land\",\"told\":false}]"
+  },
+  {
+    "name": "#6915: with the token, a dequeued workflow change is told `pr-dequeued`, never restacked; a dequeued pull request with no workflow change is restacked",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 71,
+          "oid": "4444444444444444444444444444444444444444",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "manual",
+          "marks": [],
+          "workflow": true
+        },
+        {
+          "number": 72,
+          "oid": "5555555555555555555555555555555555555555",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "manual",
+          "marks": [],
+          "workflow": false
+        }
+      ]
+    },
+    "output": "[{\"number\":71,\"act\":\"dequeued\"},{\"number\":72,\"act\":\"restack\",\"told\":false}]"
+  },
+  {
     "name": "#3745: a pull request the queue removed for failed checks is told, never rebased, though its own checks are green; the member above it waits",
     "program": "landing.jq",
     "input": {
