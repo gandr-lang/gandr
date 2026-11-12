@@ -143,11 +143,15 @@ printf '%s: %d of %d claims removed\n' "$mode" "$count" "$(jq length <<< "$claim
 
 [[ $mode == merged ]] || exit 0
 
-# The lane a merged branch names (#3915): the longest key of
-# `.config/issues/lanes.toml` the branch is, or opens with before a `-`.
+# The lane a merged branch names (#3915): the longest lane of the factory's
+# lane table (`lanes.bash`) the branch is, or opens with before a `-`. With
+# no table, as on a hosted runner, it is the letters before the branch's
+# first number.
 head=${CLAIMS_MERGED_HEAD:-}
-lane=$(awk '/^\[lane\]/ { on = 1; next } /^\[/ { on = 0 } on && /^[a-z0-9-]+ *=/ { sub(/ *=.*/, ""); print }' "$here/../issues/lanes.toml" \
-  | awk -v head="$head" 'head == $0 || index(head, $0 "-") == 1 { if (length($0) > length(lane)) lane = $0 } END { print lane }')
+# shellcheck source=/dev/null
+source "$here/lanes.bash"
+lane=$(lanes_keys | jq -r --arg head "$head" '[.[] | select(. as $l | $head == $l or ($head | startswith($l + "-")))] | max_by(length) // ""')
+[[ -n $lane ]] || lane=$(sed -nE 's/^([a-z]+(-[a-z]+)*)-[0-9].*$/\1/p' <<< "$head")
 if [[ -n $lane ]]; then
   at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   while IFS=$'\t' read -r number reason; do

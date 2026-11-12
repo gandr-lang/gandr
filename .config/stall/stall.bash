@@ -30,6 +30,7 @@ stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
 stall_hold="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/hold"
 stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall.json"
 source "$stall_dir/../claims/deps.bash"
+source "$stall_dir/../claims/lanes.bash"
 source "$stall_dir/../service/service.bash"
 
 # The configuration, `{}` when there is none.
@@ -79,14 +80,15 @@ stall_activity() {
 # the memory `$3` (`{seen, paged, activity}`): `detect.jq`'s answer, with
 # `activity`, each seat's activity, for the next memory. The lanes a seat
 # holds are the configuration's `page.seats` that no hold names, each lane's
-# areas `.config/issues/lanes.toml`'s (#3822). Fails, printing nothing on
+# areas the factory's lane table's (`../claims/lanes.bash`, #3822). Fails, printing nothing on
 # stdout, when a read fails.
 stall_reading() {
-  local repo=$1 trunk=$2 memory=$3 required raw areas activity
+  local repo=$1 trunk=$2 memory=$3 required raw areas activity table
   required=$(gh api "repos/$repo/rules/branches/$trunk" \
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique') || return 1
   raw=$(gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -F query=@"$stall_dir/query.graphql") || return 1
-  areas=$(yq -p toml -o json -I 0 '.lane' "$stall_dir/../issues/lanes.toml") || return 1
+  table=$(lanes_file)
+  areas=$(yq -p toml -o json -I 0 '.lane' "$table") || return 1
   activity=$(stall_activity "$memory")
   jq -cs '. as $pages | $pages[0].data.repository | .refactors.nodes = [$pages[] | (.data.repository.refactors.nodes // [])[]]' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \

@@ -12,7 +12,7 @@
 #
 # Input:
 #   areas    the lane's area labels, `area:<name>`, in the lane's order
-#            (`.config/issues/lanes.toml`, #3736)
+#            (the factory's lane table, #3736)
 #   issues   the open issues: [{number, title, labels: [name], parent, body,
 #            blocked}], parent the number of the issue's parent, or null; body
 #            the issue's body, or null; blocked how many open issues it is
@@ -28,11 +28,11 @@
 #   order    each open epic's sub-issues in the epic's order: {"<epic>": [number]}
 #   refusals the refusals `.config/debug/refusals.toml` names; absent reads
 #            as none
-#   lane     the lane claiming, a key of `.config/issues/lanes.toml`; absent,
+#   lane     the lane claiming, a key of the factory's lane table; absent,
 #            the board is read for no lane, and neither rule below applies
 #   now      the reading's time, in seconds since the epoch
 #   prs      the open pull requests: [{body, head}]
-#   lanes    the keys of `.config/issues/lanes.toml`; absent reads as none
+#   lanes    the keys of the factory's lane table; absent reads as none
 #   branches origin's branches working a claimed issue with no claim marker:
 #            [{head, at}], at the head commit's time in seconds since the
 #            epoch; absent reads as none (#3951)

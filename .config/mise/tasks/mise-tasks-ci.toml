@@ -2516,7 +2516,7 @@ fi
 
 # A seat claims its own next item, in the order `tracker.md` § tracker-claims
 # states, without asking (#2533). `claim:next <lane>` reads the lane's areas
-# from `.config/issues/lanes.toml` (#3736), refusing a lane the table does not
+# from the factory's lane table (`.config/claims/lanes.bash`, #3736), refusing a lane the table does not
 # name, and reads the open issues
 # once, with their bodies, and the sub-issue order of each open epic holding a
 # candidate; the pick is `.config/claims/next.jq`, its cases held by
@@ -2575,7 +2575,7 @@ fi
 ["claim:next"]
 description = "Claim the next item in a lane's claim order"
 usage = '''
-arg "<lane>" help="the lane, a key of .config/issues/lanes.toml"
+arg "<lane>" help="the lane, a key of the factory's lane table"
 flag "--dry-run" help="print the pick without claiming it"
 '''
 tools.jq = "1.8.1"
@@ -2585,9 +2585,12 @@ run = '''
 set -euo pipefail
 lane=${usage_lane:?}
 root=$(git rev-parse --show-toplevel)
-areas=$(yq -p toml -o json ".lane[\"$lane\"] // [] | map(\"area:\" + .)" "$root/.config/issues/lanes.toml" | jq -c .)
+source "$root/.config/claims/lanes.bash"
+table=$(lanes_file)
+areas='[]'
+[[ ! -r $table ]] || areas=$(yq -p toml -o json ".lane[\"$lane\"] // [] | map(\"area:\" + .)" "$table" | jq -c .)
 if [[ $areas == '[]' ]]; then
-  echo "claim:next: no lane \`$lane\` in .config/issues/lanes.toml ($(yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml" | jq -r 'join(", ")'))" >&2
+  echo "claim:next: no lane \`$lane\` with an area in $table ($(lanes_keys | jq -r 'join(", ")'))" >&2
   exit 2
 fi
 claims=$root/.config/claims
@@ -2622,7 +2625,7 @@ gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
 # Origin's branches working a claimed issue with no claim marker, each with
 # its head commit's time (#3951): `next.jq` places such a claim in the lane
 # its newest branch names, and with no branch in no lane (#4504).
-yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml" | jq -c . > "$board/lanes.json"
+lanes_keys > "$board/lanes.json"
 unmarked=$(jq -r -L "$claims" 'include "markers";
   .[] | select((.labels | index("status:claimed")) and (.body | claim_lane) == null) | .number' "$board/issues.json" | tr '\n' ' ')
 printf '[]\n' > "$board/branches.json"
@@ -2731,7 +2734,7 @@ printf '#%s %s\n' "$number" "$title"
 ["claim:release"]
 description = "Let a lane's claim go, keeping the continuation for the lane unless it is forgone"
 usage = '''
-arg "<lane>" help="the lane, a key of .config/issues/lanes.toml"
+arg "<lane>" help="the lane, a key of the factory's lane table"
 arg "<issue>" help="the claimed issue's number"
 flag "--forgo" help="give the lane's continuation up, so claim:next walks the order"
 '''
@@ -2743,8 +2746,9 @@ set -euo pipefail
 lane=${usage_lane:?}
 number=${usage_issue:?}
 root=$(git rev-parse --show-toplevel)
-if [[ $(yq -p toml -o json ".lane | has(\"$lane\")" "$root/.config/issues/lanes.toml") != true ]]; then
-  echo "claim:release: no lane \`$lane\` in .config/issues/lanes.toml" >&2
+source "$root/.config/claims/lanes.bash"
+if ! lanes_has "$lane"; then
+  echo "claim:release: no lane \`$lane\` in $(lanes_file)" >&2
   exit 2
 fi
 repo=${GH_REPO:-'{owner}/{repo}'}
@@ -2822,17 +2826,18 @@ number=${usage_issue:?}
 [[ $number =~ ^[0-9]+$ ]] || { echo "claim:take: the issue is a number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
+source "$claims/lanes.bash"
 lane=${usage_lane:-}
 if [[ -z $lane ]]; then
   branch=$(git branch --show-current)
-  lane=$(jq -nc --arg branch "$branch" --argjson lanes "$(yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml")" \
+  lane=$(jq -nc --arg branch "$branch" --argjson lanes "$(lanes_keys)" \
     '{step: "branch", branch: $branch, lanes: $lanes}' | jq -r -L "$claims" -f "$claims/taken.jq" | jq -r '.lane // empty')
   [[ -n $lane ]] || { echo "claim:take: the branch \`$branch\` names no lane; name it with --lane" >&2; exit 2; }
 fi
 [[ $lane =~ ^[a-z][a-z0-9-]*$ ]] || { echo "claim:take: \`$lane\` is no lane" >&2; exit 2; }
 # `claim:release` accepts the same lanes (#6639): a lane the table holds.
-if [[ $(yq -p toml -o json ".lane | has(\"$lane\")" "$root/.config/issues/lanes.toml") != true ]]; then
-  echo "claim:take: no lane \`$lane\` in .config/issues/lanes.toml" >&2
+if ! lanes_has "$lane"; then
+  echo "claim:take: no lane \`$lane\` in $(lanes_file)" >&2
   exit 2
 fi
 repo=${GH_REPO:-'{owner}/{repo}'}

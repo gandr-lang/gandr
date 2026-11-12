@@ -11,7 +11,7 @@
 # seat's new body with each marker the old one carried and the new one lacks.
 #
 # Input:
-#   lane    the lane claiming, a key of `.config/issues/lanes.toml`; under
+#   lane    the lane claiming, a key of the factory's lane table; under
 #           `lapse`, the lane whose claim lapses; under `edit`, unread
 #   step    `write`, before the write; `check`, after it; `lapse`, after the
 #           sweep takes the lapsed label off; `edit`, before a body edit

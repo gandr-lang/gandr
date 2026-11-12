@@ -4,14 +4,14 @@
 # `claim:take` writes the claim of a unit the lane names.
 #
 # A unit branch is `<lane>-<n>-…` or `<lane>-<n>`. The lane is the longest key
-# of `.config/issues/lanes.toml` the branch starts with before `-<n>`, else the
+# of the factory's lane table the branch starts with before `-<n>`, else the
 # letters before the first number, in segments of letters (`sorts-3403-chain`).
 # A branch with a `/` or with no number works no unit.
 #
 # Input:
 #   step    `branch`, `gate`, `take` or `release`
 #   branch  under `branch` and `gate`, the branch the gate runs on, or ""
-#   lanes   under `branch` and `gate`, the keys of `lanes.toml`
+#   lanes   under `branch` and `gate`, the keys of the factory's lane table
 #   lane    under `take` and `release`, the lane that acts on the claim
 #   issue   under `gate`, `take` and `release`, `{number, state, labels, body}` as GitHub
 #           holds it, or null when the read failed

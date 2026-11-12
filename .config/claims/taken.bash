@@ -11,7 +11,8 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 branch=$(git branch --show-current)
-lanes=$(yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml")
+source "$claims/lanes.bash"
+lanes=$(lanes_keys)
 unit=$(jq -nc -L "$claims" --arg branch "$branch" --argjson lanes "$lanes" \
   '{step: "branch", branch: $branch, lanes: $lanes}' | jq -c -L "$claims" -f "$claims/taken.jq")
 [[ $unit != null ]] || exit 0

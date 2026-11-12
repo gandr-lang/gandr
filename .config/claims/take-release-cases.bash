@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # `claim:take` and `claim:release` accept the same lanes (#6639), run by
 # `check:claims`. A stubbed GitHub holds one open issue in a file: a read
-# gives it, and the label and body writes change it. The engine lane, a row
-# of `.config/issues/lanes.toml` since #6639, takes the issue and releases
-# it. A lane the table does not hold is refused by both tasks, and nothing is
-# written to the issue.
+# gives it, and the label and body writes change it. The lane table is the
+# factory's (`lanes.bash`), so the cases read a table of their own. The
+# engine lane, a row of it, takes the issue and releases it. A lane the
+# table does not hold is refused by both tasks, and nothing is written to
+# the issue.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck source=../mise/disabled-tools.bash
@@ -44,6 +45,9 @@ EOF
 chmod +x "$work/bin/gh"
 # The stub reads no token, so a host's wrapper of gh asks it for none (#6632).
 export GH_TOKEN=case
+# The cases' own lane table: one lane with an area, and one with none.
+printf '[lane]\nengine = ["core", "storage"]\ndrift = []\n' > "$work/lanes.toml"
+export GANDR_LANES=$work/lanes.toml
 failed=0
 fail() {
   echo "take-release case FAILED: $1"
@@ -77,11 +81,11 @@ out=$(run claim:release drift 7) || fail "#6639: claim:release refuses the drift
 before=$(jq -c . "$issue")
 status=0
 out=$(run claim:take 7 --lane nowhere) || status=$?
-[[ $status == 2 && $out == *"no lane \`nowhere\` in .config/issues/lanes.toml"* ]] \
+[[ $status == 2 && $out == *"no lane \`nowhere\` in $GANDR_LANES"* ]] \
   || fail "#6639: claim:take accepts a lane the table does not hold" "exit $status: $out"
 status=0
 out=$(run claim:release nowhere 7) || status=$?
-[[ $status == 2 && $out == *"no lane \`nowhere\` in .config/issues/lanes.toml"* ]] \
+[[ $status == 2 && $out == *"no lane \`nowhere\` in $GANDR_LANES"* ]] \
   || fail "#6639: claim:release accepts a lane the table does not hold" "exit $status: $out"
 [[ $(jq -c . "$issue") == "$before" ]] || fail "#6639: a refused lane wrote to the issue" "$(jq -c . "$issue")"
 
