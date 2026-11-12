@@ -1153,6 +1153,10 @@ primitive_copy_wrapper!(
     pub struct MoldAdmissibility(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether a closer reaches an open partner below the innermost form.
+    pub struct CloserReach(bool);
+);
+primitive_copy_wrapper!(
     /// Whether the slope has an open form.
     pub struct OpenFormPresence(bool);
 );
@@ -2102,6 +2106,12 @@ pub struct MeldState<'pbg>
     /// [`Oblig::InconMeld`] when it compares readings. Only a difference
     /// against a [`Mark`] is read, so a restored state starts it at zero.
     ended_applications: usize,
+    /// Whether a closer reaches an open partner below the innermost form
+    /// (#6323). The molder turns it off while it molds a lookahead window,
+    /// and back on for the stream. A window scores eight tokens, and a reach
+    /// that a window takes can make a reading look cheap whose cost comes
+    /// after the window. The flag is transient: no mark or checkpoint holds it.
+    reach: CloserReach,
 }
 
 impl<'pbg> MeldState<'pbg>
@@ -2143,6 +2153,7 @@ impl<'pbg> MeldState<'pbg>
             low_water: usize::MAX,
             left_shortfalls: 0,
             ended_applications: 0,
+            reach: CloserReach::from(true),
         }
     }
 
@@ -4840,14 +4851,25 @@ impl<'pbg> MeldState<'pbg>
         is_end: FormEndTile,
     )
     {
-        if let Some(frontier) = self.nearest_open_form()
-            && let Some(Role::FormTile {
-                mold: head_mold, ..
-            }) = self.stack.get(usize::from(frontier)).map(|c| c.role)
-            && bool::from(self.adjacent(head_mold, mold))
+        let nearest = self.nearest_open_form().filter(|&frontier| {
+            matches!(
+                self.stack.get(usize::from(frontier)).map(|c| c.role),
+                Some(Role::FormTile { mold: head_mold, .. }) if bool::from(self.adjacent(head_mold, mold))
+            )
+        });
+        if let Some(frontier) = nearest.or_else(|| {
+            bool::from(self.reach)
+                .then(|| self.reach_partner(mold))
+                .flatten()
+        }) && let Some(Role::FormTile {
+            mold: head_mold, ..
+        }) = self.stack.get(usize::from(frontier)).map(|c| c.role)
         {
-            // The tile continues this form. Collapse the content region above
-            // the frontier into operand hole-fills, then advance the frontier.
+            // The tile continues this form: the innermost open form, or the
+            // open partner below it that the tile reaches (#6323). Collapse
+            // the content region above the frontier, which force-closes each
+            // form on the way with its own ghost end, then advance the
+            // frontier.
             let Some(content_floor) = StackIndex::from(frontier).floor_after()
             else {
                 return;
@@ -4902,6 +4924,96 @@ impl<'pbg> MeldState<'pbg>
                 ..cell
             });
         }
+    }
+
+    /// Turn the reach of a closer on or off, and return its setting before
+    /// ([`reach`](Self::reach), #6323).
+    ///
+    /// # Specification
+    /// - ensures: the reach is `on`; returns the setting before the call.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a window that reaches reads a reading cheaper than
+    ///   the stream pays for it.
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    #[spec(captures: before = self.reach, ensures: |ret| ret == before && self.reach == on)]
+    pub(crate) fn set_reach(
+        &mut self,
+        on: CloserReach,
+    ) -> CloserReach
+    {
+        core::mem::replace(&mut self.reach, on)
+    }
+
+    /// Return the open frontier directly below the innermost one, when a
+    /// closer `mold` reaches it across the innermost form (#6323).
+    ///
+    /// In `fork (c : Ring.) {` the `)` finds the `type_path` of `Ring.` open
+    /// and continues no tile of it, but the `(` of the fork is open directly
+    /// below. The `)` reaches it: the collapse closes the `type_path`, as
+    /// [`collapse`](Self::collapse) does, and the `)` then continues the
+    /// fork. The reach crosses one form, and that form is free: it has no
+    /// closer of its own. A reach across more forms, or across a bracketed
+    /// form, makes a reading look cheap whose cost comes later, so the
+    /// recovery sweep reads it worse. Only a tile that spells a closing
+    /// delimiter reaches. A form whose start opens a declaration is never
+    /// crossed, since the close of an item is the margin's.
+    ///
+    /// A bracketed form of the closer's family that is open further down,
+    /// and that another closer mold continues, stops the reach. That form
+    /// owns the closer by the menu's collapse at one minted closer: in
+    /// `(forget[sort R = Integer](x at Model C)`, the last `)` belongs to the
+    /// outer group, not to the `(` of `forget`.
+    ///
+    /// # Specification
+    /// - ensures: returns the frontier below the innermost open one when `mold`
+    ///   spells a closing delimiter, the innermost form is neither bracketed
+    ///   nor an item, the frontier below continues with `mold`, and no
+    ///   bracketed form of the closer's family that does not continue with
+    ///   `mold` is open below it before an item; `None` otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the binder of a fork whose type path has no name
+    ///   after its `.` reaches its `(`; a closer whose partner lies across a
+    ///   bracketed form, across two forms, or above an outer group of its
+    ///   family stays stray. The recovery sweep's rows read the change.
+    /// - witness: `tests::acceptance::a_closer_reaches_its_open_partner_6323`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.len().checked_sub(2).and_then(|at| self.frontiers.get(at)) == Some(&index.0)))]
+    fn reach_partner(
+        &self,
+        mold: MoldId,
+    ) -> Option<FrontierIndex>
+    {
+        let role = |index: usize| self.stack.get(index).map(|cell| cell.role);
+        let item = |index: usize| {
+            self.form_start_index(StackIndex::from(FrontierIndex::from(index)))
+                .and_then(|start| self.stack.get(usize::from(start)))
+                .is_some_and(|cell| {
+                    matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold)))
+                })
+        };
+        let family = self
+            .pbg
+            .mold(mold)
+            .ok()
+            .and_then(|def| ClosingClass::closing(DelimSpelling::from(def.label)))?;
+        let [ref outer @ .., partner, innermost] = *self.frontiers.as_slice()
+        else {
+            return None;
+        };
+        let innermost_free = matches!(role(innermost), Some(Role::FormTile { mold: open, .. }) if self.pbg.closing_class(open).is_none());
+        let continues = matches!(role(partner), Some(Role::FormTile { mold: open, .. }) if bool::from(self.adjacent(open, mold)));
+        if item(innermost) || !innermost_free || !continues {
+            return None;
+        }
+        let owned = outer.iter().rev().take_while(|&&low| !item(low)).any(|&low| {
+            matches!(role(low), Some(Role::FormTile { mold: open, .. })
+                if self.pbg.closing_class(open) == Some(family) && !bool::from(self.adjacent(open, mold)))
+        });
+        (!owned).then_some(FrontierIndex::from(partner))
     }
 
     /// Close the open form around a fragment that a missing tile splits off
@@ -8035,6 +8147,7 @@ impl<'pbg> MeldState<'pbg>
             low_water: usize::MAX,
             left_shortfalls: 0,
             ended_applications: 0,
+            reach: CloserReach::from(true),
         };
         state.rebuild_head_caches();
         state

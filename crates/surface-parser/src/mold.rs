@@ -287,6 +287,7 @@ use crate::label::SourceBytes;
 use crate::label::Token;
 use crate::label::bracket;
 use crate::meld::CandidateLabels;
+use crate::meld::CloserReach;
 use crate::meld::DeclarationBound;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
@@ -4819,6 +4820,9 @@ impl<'pbg> Molder<'pbg>
         bound: WindowBound,
     ) -> WindowEnd
     {
+        // A window molds with no reach (#6323): it scores eight tokens, and a
+        // reach can make a reading look cheap whose cost comes after them.
+        let reach = state.set_reach(CloserReach::from(false));
         let mut molded = 0_usize;
         let mut index = usize::from(start);
         while index < tokens.len() && molded < LOOKAHEAD {
@@ -4834,6 +4838,7 @@ impl<'pbg> Molder<'pbg>
                 if let WindowBound::Below(least) = bound
                     && state.delta_since(mark) >= least
                 {
+                    state.set_reach(reach);
                     return WindowEnd::Dominated;
                 }
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
@@ -4873,6 +4878,7 @@ impl<'pbg> Molder<'pbg>
             }
             index = index.saturating_add(1);
         }
+        state.set_reach(reach);
         WindowEnd::Molded
     }
 

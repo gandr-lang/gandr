@@ -3336,6 +3336,7 @@ INSERT INTO purpose VALUES('surface-parser','meld::Checkpoint','struct','A seria
 INSERT INTO purpose VALUES('surface-parser','meld::CheckpointBytes','struct','Owned checkpoint byte stream.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CheckpointBytesRef','struct','Borrowed checkpoint byte stream.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CheckpointError','enum','A failure while decoding a serialized Checkpoint.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::CloserReach','struct','Whether a closer reaches an open partner below the innermost form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::Completion','struct','The completion the melder would insert to close the input at a prefix.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CompletionStatus','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::Continuations','struct','What may follow the slope head, from MeldState::continuations.',NULL,'fits','sound',NULL);
