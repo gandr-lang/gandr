@@ -60,6 +60,7 @@ use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::ReassembledArtifact;
 use gandr_storage_store::ContentPtr;
+use gandr_storage_store::Register;
 use gandr_storage_store::RootName;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
@@ -165,11 +166,12 @@ impl Export
         RootName::new(format!("{EXPORT_ROOTS}{address}"))
     }
 
-    /// Commit the export into `store` and name it by the root of the package
-    /// at `address`.
+    /// Commit the export into `store` and name it through `register`, the
+    /// store's register, by the root of the package at `address`.
     ///
     /// # Specification
-    /// - requires: `address` is the address of the package the export is of.
+    /// - requires: `address` is the address of the package the export is of,
+    ///   and `register` is the register of `store`.
     /// - ensures: on success the pointer [`Store::commit`] returns for the
     ///   export, which [`Export::root`] of `address` then names, whatever it
     ///   named before.
@@ -189,12 +191,13 @@ impl Export
     #[inline]
     pub fn commit(
         &self,
-        store: &mut Store,
+        store: &Store,
+        register: &mut Register,
         address: &PackageAddress,
     ) -> Result<ContentPtr, StoreError>
     {
         let pointer = store.commit(self)?;
-        store.set_root(Self::root(address), pointer)?;
+        register.name(Self::root(address), pointer)?;
         Ok(pointer)
     }
 

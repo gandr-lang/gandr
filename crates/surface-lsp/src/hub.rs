@@ -1973,12 +1973,12 @@ mod tests
         let scratch = Scratch::new(Json("store"));
         let socket = scratch.socket();
         let directory = scratch.0.join("store");
-        let mut store = Store::open(&directory).expect("the store opens");
+        let (store, mut register) = Store::open(&directory).expect("the store opens");
         let pointer = store.commit(&Word(7)).expect("the value commits");
-        store
-            .set_root(RootName::new(String::from("export/one")), pointer)
+        register
+            .name(RootName::new(String::from("export/one")), pointer)
             .expect("the root is named");
-        drop(store);
+        drop((store, register));
         let file = directory.join("chunks").join(pointer.digest().to_string());
         let length = std::fs::metadata(&file)
             .expect("the chunk's file is read")

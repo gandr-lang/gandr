@@ -14,6 +14,8 @@ use gandr_storage_records::RecordTree;
 use gandr_storage_records::StoredRoot;
 use gandr_storage_records::TreeParams;
 use gandr_storage_store::ContentPtr;
+use gandr_storage_store::Namer;
+use gandr_storage_store::Register;
 use gandr_storage_store::RootName;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
@@ -152,7 +154,7 @@ fn a_missing_root_directory_is_made_on_opening()
         .join("data")
         .join("gandr")
         .join("store");
-    let store = Store::open(&root).expect("a missing root is made");
+    let (store, _register) = Store::open(&root).expect("a missing root is made");
     assert_eq!(store.root(), root.as_path());
     for plane in ["chunks", "nodes"] {
         assert!(root.join(plane).is_dir(), "`{plane}` stands after opening");
@@ -173,7 +175,7 @@ fn a_committed_value_derefs_back_after_reopening()
     let root = scratch(Path::new("committed"));
     let value = labels(Count(120));
     let pointer = {
-        let store = Store::open(&root).expect("the store opens");
+        let (store, _register) = Store::open(&root).expect("the store opens");
         let pointer = store.commit(&value).expect("the value commits");
         let back: Labels = store
             .deref(pointer)
@@ -190,7 +192,7 @@ fn a_committed_value_derefs_back_after_reopening()
         written.contains(&root.join("chunks").join(pointer.digest().to_string())),
         "the root chunk is the file its digest names"
     );
-    let reopened = Store::open(&root).expect("the store opens again");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
     let back: Labels = reopened
         .deref(pointer)
         .expect("the value derefs after reopening");
@@ -215,6 +217,7 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
     let root = scratch(Path::new("changed"));
     let pointer = Store::open(&root)
         .expect("the store opens")
+        .0
         .commit(&labels(Count(3)))
         .expect("the value commits");
     let file = root.join("chunks").join(pointer.digest().to_string());
@@ -222,7 +225,7 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
     let last = bytes.last_mut().expect("a chunk has bytes");
     *last ^= 0xFF_u8;
     std::fs::write(&file, &bytes).expect("the chunk's file is changed");
-    let reopened = Store::open(&root).expect("the store opens again");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
     assert!(
         matches!(
             reopened.deref::<Labels>(pointer),
@@ -232,6 +235,7 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
     );
     let other = Store::open(&scratch(Path::new("changed-other")))
         .expect("another store opens")
+        .0
         .commit(&labels(Count(4)))
         .expect("another value commits");
     assert_eq!(
@@ -252,11 +256,13 @@ fn a_committed_value_resides_in_the_chunks_its_commit_wrote_6296()
     let root = scratch(Path::new("resides"));
     let pointer = Store::open(&root)
         .expect("the store opens")
+        .0
         .commit(&labels(Count(120)))
         .expect("the value commits");
     let written = files(&root.join("chunks"));
     let residence = Store::open(&root)
         .expect("the store opens again")
+        .0
         .closure(pointer)
         .expect("the closure reads");
     let named: BTreeSet<PathBuf> = residence
@@ -290,7 +296,7 @@ fn a_committed_value_resides_in_the_chunks_its_commit_wrote_6296()
     std::fs::write(&file, &bytes).expect("the chunk's file is changed");
     assert!(
         matches!(
-            Store::open(&root).expect("the store opens a third time").closure(pointer),
+            Store::open(&root).expect("the store opens a third time").0.closure(pointer),
             Err(StoreError::Value(ValueError::DigestMismatch { expected, .. })) if expected == pointer.digest()
         ),
         "the changed chunk is refused by its digest"
@@ -306,6 +312,7 @@ fn a_refused_chunk_is_written_afresh_by_the_next_commit_4074()
     let value = labels(Count(3));
     let pointer = Store::open(&root)
         .expect("the store opens")
+        .0
         .commit(&value)
         .expect("the value commits");
     let file = root.join("chunks").join(pointer.digest().to_string());
@@ -313,7 +320,7 @@ fn a_refused_chunk_is_written_afresh_by_the_next_commit_4074()
     let last = bytes.last_mut().expect("a chunk has bytes");
     *last ^= 0xFF_u8;
     std::fs::write(&file, &bytes).expect("the chunk's file is changed");
-    let reopened = Store::open(&root).expect("the store opens again");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
     assert!(
         matches!(
             reopened.deref::<Labels>(pointer),
@@ -326,7 +333,7 @@ fn a_refused_chunk_is_written_afresh_by_the_next_commit_4074()
         Ok(pointer),
         "the value commits again"
     );
-    let fresh = Store::open(&root).expect("the store opens a third time");
+    let (fresh, _register) = Store::open(&root).expect("the store opens a third time");
     assert_eq!(
         fresh.deref::<Labels>(pointer),
         Ok(value),
@@ -350,9 +357,10 @@ fn a_written_tree_opens_from_the_record_plane_after_reopening()
     let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
     Store::open(&root)
         .expect("the store opens")
+        .0
         .write_tree(&tree)
         .expect("the tree is written");
-    let reopened = Store::open(&root).expect("the store opens again");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
     let opened = StoredRoot::open(tree.root(), tree.root_node_hash(), &reopened.records())
         .expect("the tree's root opens from the record plane");
     assert_eq!(opened.root(), tree.root());
@@ -373,26 +381,26 @@ fn a_root_set_reads_back_after_reopening()
     let lock = RootName::new(String::from("lock/hello"));
     let verdict = RootName::new(String::from("verdict/one"));
     let (first, second, third): (ContentPtr, ContentPtr, ContentPtr) = {
-        let mut store = Store::open(&root).expect("the store opens");
+        let (store, mut register) = Store::open(&root).expect("the store opens");
         let first = store.commit(&labels(Count(1))).expect("a value commits");
         let second = store.commit(&labels(Count(2))).expect("a value commits");
         let third = store.commit(&labels(Count(5))).expect("a value commits");
-        store
-            .set_root(lock.clone(), first)
+        register
+            .name(lock.clone(), first)
             .expect("the first root is set");
-        store
-            .set_root(verdict.clone(), second)
+        register
+            .name(verdict.clone(), second)
             .expect("the second root is set");
         assert_eq!(store.roots().root(&lock), Maybe::Present(first));
         (first, second, third)
     };
-    let mut reopened = Store::open(&root).expect("the store opens again");
+    let (reopened, mut register) = Store::open(&root).expect("the store opens again");
     assert_eq!(reopened.roots().root(&lock), Maybe::Present(first));
     assert_eq!(reopened.roots().root(&verdict), Maybe::Present(second));
-    reopened
-        .set_root(lock.clone(), third)
+    register
+        .name(lock.clone(), third)
         .expect("the first root is set again");
-    let again = Store::open(&root).expect("the store opens a third time");
+    let (again, _register) = Store::open(&root).expect("the store opens a third time");
     assert_eq!(
         again.roots().root(&lock),
         Maybe::Present(third),
@@ -414,23 +422,24 @@ fn a_root_set_reads_back_after_reopening()
 fn two_stores_over_one_directory_keep_each_other_s_roots()
 {
     let root = scratch(Path::new("shared"));
-    let mut left = Store::open(&root).expect("the first store opens");
-    let mut right = Store::open(&root).expect("the second store opens");
+    let (left, mut left_register) = Store::open(&root).expect("the first store opens");
+    let (right, mut right_register) = Store::open(&root).expect("the second store opens");
     let one = left.commit(&labels(Count(1))).expect("a value commits");
     let two = right.commit(&labels(Count(2))).expect("a value commits");
     let first = RootName::new(String::from("lock/first"));
     let second = RootName::new(String::from("lock/second"));
-    left.set_root(first.clone(), one)
+    left_register
+        .name(first.clone(), one)
         .expect("the first store sets its root");
-    right
-        .set_root(second.clone(), two)
+    right_register
+        .name(second.clone(), two)
         .expect("the second store sets its root");
     assert_eq!(
         right.roots().root(&first),
         Maybe::Present(one),
         "the second store reads the first's root as it changes its own"
     );
-    let after = Store::open(&root).expect("a third store opens");
+    let (after, _register) = Store::open(&root).expect("a third store opens");
     assert_eq!(after.roots().root(&first), Maybe::Present(one));
     assert_eq!(after.roots().root(&second), Maybe::Present(two));
 }
@@ -442,14 +451,14 @@ fn two_stores_over_one_directory_keep_each_other_s_roots()
 fn naming_roots_one_at_a_time_writes_no_tree_per_naming_4081()
 {
     let root = scratch(Path::new("journaled"));
-    let mut store = Store::open(&root).expect("the store opens");
+    let (store, mut register) = Store::open(&root).expect("the store opens");
     let pointer = store.commit(&labels(Count(3))).expect("a value commits");
     let names: Vec<RootName> = (0_u16 .. 256_u16)
         .map(|index| RootName::new(format!("verdict/{index:04}")))
         .collect();
     for name in &names {
-        store
-            .set_root(name.clone(), pointer)
+        register
+            .name(name.clone(), pointer)
             .expect("each root is set");
     }
     let nodes = files(&root.join("nodes")).len();
@@ -457,7 +466,7 @@ fn naming_roots_one_at_a_time_writes_no_tree_per_naming_4081()
         nodes.saturating_mul(4) < names.len(),
         "256 namings leave {nodes} nodes on the record plane"
     );
-    let reopened = Store::open(&root).expect("the store opens again");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
     assert!(
         names
             .iter()
@@ -473,8 +482,8 @@ fn naming_roots_one_at_a_time_writes_no_tree_per_naming_4081()
 fn two_stores_keep_each_other_s_roots_across_a_fold_4081()
 {
     let root = scratch(Path::new("folded"));
-    let mut left = Store::open(&root).expect("the first store opens");
-    let mut right = Store::open(&root).expect("the second store opens");
+    let (left, mut left_register) = Store::open(&root).expect("the first store opens");
+    let (right, mut right_register) = Store::open(&root).expect("the second store opens");
     let pointer = left.commit(&labels(Count(2))).expect("a value commits");
     let named = |range: core::ops::Range<u16>| -> Vec<RootName> {
         range
@@ -483,12 +492,13 @@ fn two_stores_keep_each_other_s_roots_across_a_fold_4081()
     };
     let early = named(0_u16 .. 200_u16);
     for name in &early {
-        left.set_root(name.clone(), pointer)
+        left_register
+            .name(name.clone(), pointer)
             .expect("the first store names a root");
     }
     let own = RootName::new(String::from("verdict/right"));
-    right
-        .set_root(own.clone(), pointer)
+    right_register
+        .name(own.clone(), pointer)
         .expect("the second store names its root");
     assert!(
         early
@@ -498,7 +508,8 @@ fn two_stores_keep_each_other_s_roots_across_a_fold_4081()
     );
     let late = named(200_u16 .. 400_u16);
     for name in &late {
-        left.set_root(name.clone(), pointer)
+        left_register
+            .name(name.clone(), pointer)
             .expect("the first store names a root");
     }
     assert_eq!(
@@ -507,15 +518,15 @@ fn two_stores_keep_each_other_s_roots_across_a_fold_4081()
         "the first store reads the second's journaled root"
     );
     let again = RootName::new(String::from("verdict/right-again"));
-    right
-        .set_root(again, pointer)
+    right_register
+        .name(again, pointer)
         .expect("the second store names a root again");
     assert!(
         late.iter()
             .all(|name| right.roots().root(name) == Maybe::Present(pointer)),
         "the second store reads the roots folded after its own reading"
     );
-    let after = Store::open(&root).expect("a third store opens");
+    let (after, _register) = Store::open(&root).expect("a third store opens");
     assert_eq!(
         after.roots().names().count(),
         early.len().saturating_add(late.len()).saturating_add(2),
@@ -534,13 +545,13 @@ fn a_torn_journal_entry_is_cut_by_the_next_naming_4081()
     let second = RootName::new(String::from("verdict/second"));
     let third = RootName::new(String::from("verdict/third"));
     let pointer = {
-        let mut store = Store::open(&root).expect("the store opens");
+        let (store, mut register) = Store::open(&root).expect("the store opens");
         let pointer = store.commit(&labels(Count(2))).expect("a value commits");
-        store
-            .set_root(first.clone(), pointer)
+        register
+            .name(first.clone(), pointer)
             .expect("the first root is set");
-        store
-            .set_root(second.clone(), pointer)
+        register
+            .name(second.clone(), pointer)
             .expect("the second root is set");
         pointer
     };
@@ -548,16 +559,16 @@ fn a_torn_journal_entry_is_cut_by_the_next_naming_4081()
     let mut bytes = std::fs::read(&journal).expect("the journal reads");
     bytes.extend_from_slice(&[16_u8, 0_u8, 0_u8, 0_u8, b'v', b'e']);
     std::fs::write(&journal, &bytes).expect("a torn entry is appended");
-    let mut reopened = Store::open(&root).expect("a store opens over the torn journal");
+    let (reopened, mut register) = Store::open(&root).expect("a store opens over the torn journal");
     assert_eq!(
         reopened.roots().root(&second),
         Maybe::Present(pointer),
         "the entry before the torn one reads back"
     );
-    reopened
-        .set_root(third.clone(), pointer)
+    register
+        .name(third.clone(), pointer)
         .expect("the third root is set");
-    let again = Store::open(&root).expect("the store opens again");
+    let (again, _register) = Store::open(&root).expect("the store opens again");
     assert_eq!(
         again.roots().names().cloned().collect::<Vec<_>>(),
         vec![first, second, third],
@@ -593,9 +604,9 @@ fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
     let root = scratch(Path::new("unheld"));
     let name = RootName::new(String::from("lock/hello"));
     {
-        let mut store = Store::open(&root).expect("the store opens");
+        let (store, mut register) = Store::open(&root).expect("the store opens");
         let pointer = store.commit(&labels(Count(1))).expect("a value commits");
-        store.set_root(name, pointer).expect("the root is set");
+        register.name(name, pointer).expect("the root is set");
     }
     let roots = root.join("roots");
     let named = std::fs::read_to_string(&roots).expect("the roots file names a tree");
@@ -619,7 +630,7 @@ fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
         "the refusal names its repair: {refused}"
     );
     std::fs::remove_file(&roots).expect("the roots file is removed");
-    let reopened = Store::open(&root).expect("the store opens without its roots file");
+    let (reopened, _register) = Store::open(&root).expect("the store opens without its roots file");
     assert_eq!(
         reopened.roots().names().count(),
         0_usize,
@@ -640,10 +651,11 @@ fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
     let value = labels(Count(120));
     let expected = Store::open(&alone)
         .expect("the store opens")
+        .0
         .commit(&value)
         .expect("one writer commits the value");
     let root = scratch(Path::new("sixteen-writers"));
-    let store = Store::open(&root).expect("the store opens");
+    let (store, _register) = Store::open(&root).expect("the store opens");
     let start = std::sync::Barrier::new(WRITERS);
     let pointers: Vec<Result<ContentPtr, StoreError>> = std::thread::scope(|scope| {
         let writers: Vec<_> = core::iter::repeat_with(|| {
@@ -676,6 +688,7 @@ fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
     );
     let back: Labels = Store::open(&root)
         .expect("the store opens again")
+        .0
         .deref(expected)
         .expect("the value derefs after reopening");
     assert_eq!(back, value);
@@ -703,7 +716,7 @@ fn a_written_tree_opens_from_the_store_that_wrote_it_6899()
     let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
     let leaves = tree.leaf_hashes();
     assert!(leaves.len() >= LEAVES, "{} leaves", leaves.len());
-    let store = Store::open(&root).expect("the store opens");
+    let (store, _register) = Store::open(&root).expect("the store opens");
     store.write_tree(&tree).expect("the tree is written");
     let nodes = store.records();
     let opened = StoredRoot::open(tree.root(), tree.root_node_hash(), &nodes)
@@ -724,4 +737,193 @@ fn a_written_tree_opens_from_the_store_that_wrote_it_6899()
             "a second load finds each name in its table"
         );
     }
+}
+
+/// Sixteen threads that share one store each commit a value of their own and
+/// hand its naming to the register's owner. No reader sees a naming before
+/// the owner drains, and after one drain the store's readers and a store
+/// opened later read every root (#6899).
+#[test]
+fn the_namings_of_sixteen_threads_stand_after_one_drain_6899()
+{
+    let root = scratch(Path::new("sixteen-namers"));
+    let (store, mut register) = Store::open(&root).expect("the store opens");
+    let namer = register.namer();
+    let start = std::sync::Barrier::new(WRITERS);
+    let named: Vec<(RootName, ContentPtr)> = std::thread::scope(|scope| {
+        let namers: Vec<_> = (0_u8 ..)
+            .take(WRITERS)
+            .map(|index| {
+                let (store, namer, start) = (&store, &namer, &start);
+                scope.spawn(move || {
+                    let _leader = start.wait();
+                    let pointer = store
+                        .commit(&labels(Count(index.saturating_add(1))))
+                        .expect("each thread commits its value");
+                    let name = RootName::new(format!("verdict/{index:02}"));
+                    namer
+                        .name(name.clone(), pointer)
+                        .expect("each thread hands its naming over");
+                    (name, pointer)
+                })
+            })
+            .collect();
+        namers
+            .into_iter()
+            .map(|namer| namer.join().expect("a namer runs to its end"))
+            .collect()
+    });
+    assert_eq!(
+        store.roots().names().count(),
+        0_usize,
+        "no reader sees a naming before the owner drains"
+    );
+    register.drain().expect("the owner drains the namings");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
+    for &(ref name, pointer) in &named {
+        assert_eq!(
+            store.roots().root(name),
+            Maybe::Present(pointer),
+            "the store's readers read `{name}` after the drain"
+        );
+        assert_eq!(
+            reopened.roots().root(name),
+            Maybe::Present(pointer),
+            "a store opened later reads `{name}`"
+        );
+    }
+    assert_eq!(reopened.roots().names().count(), WRITERS);
+}
+
+/// A register that serves on a thread of its own names each naming that
+/// namers on other threads hand it, and returns once every namer is gone, so
+/// a store opened after it reads each root (#6899).
+#[test]
+fn a_serving_register_names_each_naming_until_its_namers_go_6899()
+{
+    let root = scratch(Path::new("serving"));
+    let (store, register) = Store::open(&root).expect("the store opens");
+    let namer = register.namer();
+    let owner = std::thread::spawn(move || register.serve());
+    let start = std::sync::Barrier::new(WRITERS);
+    let named: Vec<(RootName, ContentPtr)> = std::thread::scope(|scope| {
+        let namers: Vec<_> = (0_u8 ..)
+            .take(WRITERS)
+            .map(|index| {
+                let (store, namer, start) = (&store, &namer, &start);
+                scope.spawn(move || {
+                    let _leader = start.wait();
+                    let pointer = store
+                        .commit(&labels(Count(index.saturating_add(1))))
+                        .expect("each thread commits its value");
+                    let name = RootName::new(format!("lock/{index:02}"));
+                    namer
+                        .name(name.clone(), pointer)
+                        .expect("each thread hands its naming over");
+                    (name, pointer)
+                })
+            })
+            .collect();
+        namers
+            .into_iter()
+            .map(|namer| namer.join().expect("a namer runs to its end"))
+            .collect()
+    });
+    drop(namer);
+    owner
+        .join()
+        .expect("the owner runs to its end")
+        .expect("the owner names every naming");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
+    for &(ref name, pointer) in &named {
+        assert_eq!(
+            reopened.roots().root(name),
+            Maybe::Present(pointer),
+            "a store opened after the owner reads `{name}`"
+        );
+    }
+}
+
+/// The marker of the impl that every type takes.
+struct Every;
+
+/// The marker of the impl that a type with the trait also takes.
+struct Bound;
+
+/// A function that resolves for a type that is not `Sync` alone: a `Sync`
+/// type takes both impls, so its call is ambiguous and the test does not
+/// compile.
+trait Unsynced<Marker>
+{
+    /// # Specification
+    /// trivial.
+    fn unsynced()
+    {
+    }
+}
+
+impl<Type: ?Sized> Unsynced<Every> for Type
+{
+}
+
+impl<Type: ?Sized + Sync> Unsynced<Bound> for Type
+{
+}
+
+/// A function that resolves for a type that is not `Clone` alone, as
+/// [`Unsynced`] does for `Sync`.
+trait Uncloned<Marker>
+{
+    /// # Specification
+    /// trivial.
+    fn uncloned()
+    {
+    }
+}
+
+impl<Type: ?Sized> Uncloned<Every> for Type
+{
+}
+
+impl<Type: Clone> Uncloned<Bound> for Type
+{
+}
+
+/// Compiles for a type that threads share.
+///
+/// # Specification
+/// trivial.
+const fn shared<Type>()
+where
+    Type: Clone + Send + Sync,
+{
+}
+
+/// Compiles for a type that moves to another thread.
+///
+/// # Specification
+/// trivial.
+const fn sent<Type>()
+where
+    Type: Send,
+{
+}
+
+/// The register is the one writer of the roots by its type: it is neither
+/// `Clone` nor `Sync`, so one owner names the roots, and it moves to the
+/// thread that owns it. Threads share the store and a namer (#6899).
+#[test]
+fn the_register_is_the_one_writer_by_its_type_6899()
+{
+    <Register as Unsynced<_>>::unsynced();
+    <Register as Uncloned<_>>::uncloned();
+    sent::<Register>();
+    shared::<Namer>();
+    let (store, register) =
+        Store::open(&scratch(Path::new("one-writer-type"))).expect("the store opens");
+    std::thread::scope(|scope| {
+        let owner = scope.spawn(move || register);
+        let _reader = scope.spawn(|| store.roots());
+        drop(owner.join().expect("the register moves to its owner"));
+    });
 }

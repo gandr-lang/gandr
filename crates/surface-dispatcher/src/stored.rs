@@ -234,7 +234,7 @@ impl StoreAccount
             *self = Self::default();
             return Ok(());
         }
-        let store = Store::open(directory)?;
+        let (store, _register) = Store::open(directory)?;
         self.refresh(&store, identities);
         Ok(())
     }
@@ -274,7 +274,7 @@ impl StoreAccount
         identities: &BTreeSet<ContentPtr>,
     )
     {
-        let named = named(store.roots(), identities);
+        let named = named(&store.roots(), identities);
         if self.read.keys().any(|pointer| !named.contains_key(pointer)) {
             *self = Self::default();
         }
@@ -644,7 +644,7 @@ mod tests
         if directory.exists() {
             std::fs::remove_dir_all(&directory).expect("a stale scratch directory is removed");
         }
-        let mut store = Store::open(&directory).expect("the store opens");
+        let (store, mut register) = Store::open(&directory).expect("the store opens");
         let a = store.commit(&labels(Count(60))).expect("A commits");
         let b = store.commit(&labels(Count(90))).expect("B commits");
         let c = store.commit(&Nest::Pointer(a)).expect("C commits");
@@ -655,11 +655,11 @@ mod tests
             ("receipt/c", c),
             ("elsewhere/d", d),
         ] {
-            store
-                .set_root(RootName::new(String::from(name)), pointer)
+            register
+                .name(RootName::new(String::from(name)), pointer)
                 .expect("the root is named");
         }
-        drop(store);
+        drop((store, register));
         let identities = BTreeSet::from([d]);
         let before = files(&directory);
         let mut account = StoreAccount::default();
@@ -690,6 +690,7 @@ mod tests
         );
         let shared = Store::open(&directory)
             .expect("the store opens")
+            .0
             .closure(b)
             .expect("B resides")
             .closure()
@@ -697,6 +698,7 @@ mod tests
             .intersection(
                 Store::open(&directory)
                     .expect("the store opens")
+                    .0
                     .closure(a)
                     .expect("A resides")
                     .closure()
@@ -729,7 +731,8 @@ mod tests
 
         Store::open(&directory)
             .expect("the store opens")
-            .set_root(RootName::new(String::from("export/a")), b)
+            .1
+            .name(RootName::new(String::from("export/a")), b)
             .expect("the root names B");
         account
             .read(&directory, &BTreeSet::new())

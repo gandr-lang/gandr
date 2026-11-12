@@ -2920,7 +2920,8 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
         else {
             panic!("a manifest line with an address: {}", stdout(output));
         };
-        let store = Store::open(&data.join("gandr/store")).expect("the run's store opens");
+        let (store, _register) =
+            Store::open(&data.join("gandr/store")).expect("the run's store opens");
         let Maybe::Present(pointer) = store
             .roots()
             .root(&RootName::new(format!("export/{address}")))
@@ -2953,7 +2954,7 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
     );
     let unsettled = check();
     assert_eq!(code(&unsettled), Code(1_i32), "{}", stderr(&unsettled));
-    let store = Store::open(&data.join("gandr/store")).expect("the run's store opens");
+    let (store, _register) = Store::open(&data.join("gandr/store")).expect("the run's store opens");
     assert!(
         store
             .roots()
@@ -3071,7 +3072,8 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
         panic!("hello's manifest line names its address: {}", stdout(&both));
     };
     let root = format!("export/{address}");
-    let store = Store::open(&data.join("gandr/store")).expect("the run's store opens");
+    let (store, mut register) =
+        Store::open(&data.join("gandr/store")).expect("the run's store opens");
     let Maybe::Present(pointer) = store.roots().root(&RootName::new(root.clone()))
     else {
         panic!("hello's address names its export: {}", stdout(&both));
@@ -3124,10 +3126,10 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
     else {
         panic!("sibling's lock locks hello");
     };
-    let mut store = store;
-    store
-        .set_root(RootName::new(root.clone()), identity)
+    register
+        .name(RootName::new(root.clone()), identity)
         .expect("the root is repointed");
+    drop((store, register));
     let faulted = check("user", &data, &["sibling"]);
     assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
     assert!(

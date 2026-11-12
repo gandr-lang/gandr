@@ -506,6 +506,7 @@ mod tests
     use gandr_kernel_core::verdict::NoVerdicts;
     use gandr_kernel_core::verdict::StoredReceipt;
     use gandr_kernel_core::verdict::TrustPolicy;
+    use gandr_storage_store::Register;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::lower_module;
@@ -617,7 +618,8 @@ mod tests
     }
 
     /// A lasting cache over the store at `directory`, as a process opens it,
-    /// believing `trusted` and signing with `signer`.
+    /// believing `trusted` and signing with `signer`, and the store's
+    /// register.
     ///
     /// # Specification
     /// trivial.
@@ -625,12 +627,16 @@ mod tests
         directory: &std::path::Path,
         trusted: &[&KernelSigner],
         signer: &KernelSigner,
-    ) -> VerdictCache
+    ) -> (VerdictCache, Register)
     {
-        VerdictCache::lasting(
-            TrustPolicy::Trusted(trusted.iter().map(|key| key.identity()).collect()),
-            StoredVerdicts::open(directory).expect("the store opens"),
-            signer.clone(),
+        let (store, register) = StoredVerdicts::open(directory).expect("the store opens");
+        (
+            VerdictCache::lasting(
+                TrustPolicy::Trusted(trusted.iter().map(|key| key.identity()).collect()),
+                store,
+                signer.clone(),
+            ),
+            register,
         )
     }
 
@@ -688,13 +694,17 @@ mod tests
         drop(std::fs::remove_dir_all(&directory));
         let signer = KernelSigner::from([3_u8; 32]);
         let cache = || {
-            VerdictCache::new(
-                TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
-                StoredVerdicts::open(&directory).expect("the store opens"),
-                signer.clone(),
+            let (store, register) = StoredVerdicts::open(&directory).expect("the store opens");
+            (
+                VerdictCache::new(
+                    TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+                    store,
+                    signer.clone(),
+                ),
+                register,
             )
         };
-        let cold = cache();
+        let (cold, mut register) = cache();
         let checked = readmitted(&cold);
         let recorded = cold.tally();
         assert_eq!(
@@ -703,8 +713,9 @@ mod tests
             "{recorded}"
         );
         assert!(recorded.recorded > 0_usize, "{recorded}");
+        register.drain().expect("the register names each receipt");
 
-        let warm = cache();
+        let (warm, _register) = cache();
         let recalled = readmitted(&warm);
         let tally = warm.tally();
         assert_eq!(
@@ -805,7 +816,7 @@ mod tests
             std::env::temp_dir().join(format!("gandr-dispatcher-lasting-{}", std::process::id()));
         drop(std::fs::remove_dir_all(&directory));
         let signer = KernelSigner::from([3_u8; 32]);
-        let first = lasting(&directory, &[&signer], &signer);
+        let (first, mut register) = lasting(&directory, &[&signer], &signer);
         let cold = readmission_from(&first, SourceText::from(READMITTED));
         let checked = first.tally();
         assert_eq!(
@@ -828,7 +839,8 @@ mod tests
             "the process recalls what it kept after the open: {held}"
         );
 
-        let second = lasting(&directory, &[&signer], &signer);
+        register.drain().expect("the register names each receipt");
+        let (second, _register) = lasting(&directory, &[&signer], &signer);
         let warm = readmission_from(&second, SourceText::from(READMITTED));
         let tally = second.tally();
         assert_eq!(
@@ -867,11 +879,10 @@ mod tests
             SourceText::from(READMITTED),
         );
         let forged = StoredReceipt::new(signed.receipt(), unsigned.records().to_vec());
-        StoredVerdicts::open(&directory)
-            .expect("the store opens")
-            .keep(&forged)
-            .expect("the receipt is written");
-        let cache = lasting(&directory, &[&signer], &signer);
+        let (store, mut register) = StoredVerdicts::open(&directory).expect("the store opens");
+        store.keep(&forged).expect("the receipt is written");
+        register.drain().expect("the register names the receipt");
+        let (cache, _register) = lasting(&directory, &[&signer], &signer);
         let readmission = readmission_from(&cache, SourceText::from(READMITTED));
         let tally = cache.tally();
         assert_eq!(
@@ -895,13 +906,14 @@ mod tests
             KernelSigner::from([3_u8; 32]),
             KernelSigner::from([5_u8; 32]),
         );
-        let foreign = lasting(&directory, &[&theirs], &theirs);
+        let (foreign, mut register) = lasting(&directory, &[&theirs], &theirs);
         let _checked = readmitted(&foreign);
         let kept = foreign.tally().recorded;
         assert!(kept > 0_usize, "the foreign store keeps its records");
+        register.drain().expect("the register names each receipt");
         // Both caches open the store before either keeps a receipt of ours.
-        let unlisted = lasting(&directory, &[&ours], &ours);
-        let listed = lasting(&directory, &[&ours, &theirs], &ours);
+        let (unlisted, _unlisted_register) = lasting(&directory, &[&ours], &ours);
+        let (listed, _listed_register) = lasting(&directory, &[&ours, &theirs], &ours);
         let _unlisted = readmitted(&unlisted);
         let refused = unlisted.tally();
         assert_eq!(
@@ -929,13 +941,14 @@ mod tests
             std::env::temp_dir().join(format!("gandr-dispatcher-stale-{}", std::process::id()));
         drop(std::fs::remove_dir_all(&directory));
         let signer = KernelSigner::from([3_u8; 32]);
-        let earlier = lasting(&directory, &[&signer], &signer);
+        let (earlier, mut register) = lasting(&directory, &[&signer], &signer);
         let _earlier = readmitted_from(&earlier, SourceText::from(FOREIGN));
         assert!(
             earlier.tally().recorded > 0_usize,
             "the earlier session keeps its records"
         );
-        let later = lasting(&directory, &[&signer], &signer);
+        register.drain().expect("the register names each receipt");
+        let (later, _register) = lasting(&directory, &[&signer], &signer);
         let readmission = readmission_from(&later, SourceText::from(READMITTED));
         let tally = later.tally();
         assert_eq!(

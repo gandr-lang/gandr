@@ -133,6 +133,31 @@ impl core::fmt::Display for RootName
     }
 }
 
+/// A naming: a pointer, and the name of the root that names it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Naming
+{
+    /// The root's name.
+    name: RootName,
+    /// The pointer it names.
+    pointer: ContentPtr,
+}
+
+impl Naming
+{
+    /// `pointer`, named by `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn new(
+        name: RootName,
+        pointer: ContentPtr,
+    ) -> Self
+    {
+        Self { name, pointer }
+    }
+}
+
 quenchant_shape::reason_enum! {
     /// Why a store names no root by a name.
     pub mod unrooted {
@@ -276,7 +301,8 @@ impl Roots
             other @ (StoreError::Io { .. }
             | StoreError::Value(_)
             | StoreError::Record(_)
-            | StoreError::Roots { .. }) => other,
+            | StoreError::Roots { .. }
+            | StoreError::Unowned) => other,
         })?;
         let refs: Vec<RecordRef<'_>> = records.iter().map(Record::as_record_ref).collect();
         let built = RecordTree::build(&refs, TreeParams::current()).map_err(StoreError::Record)?;
@@ -533,27 +559,30 @@ impl Kept
         Ok(kept)
     }
 
-    /// Name `pointer` by `name`: append one entry to the journal, or fold the
-    /// journal into a tree once it holds as many entries as the tree holds
-    /// roots.
+    /// Name each naming's pointer by its name, in order: append one entry to
+    /// the journal for each, or fold the journal into a tree once it holds as
+    /// many entries as the tree holds roots.
     ///
     /// # Specification
     /// - requires: `nodes` is the record plane of the store at `directory`, and
     ///   the caller holds the roots lock alone.
-    /// - ensures: on success the roots [`Kept::catch_up`] reads, with `name`
-    ///   naming `pointer`, are this store's and stand on disk, so a store
-    ///   opened later reads them. The naming appends one entry when the journal
-    ///   stands over the tree and holds fewer entries than the tree holds roots
-    ///   or than [`FOLD_FLOOR`]; it folds otherwise.
+    /// - ensures: on success the roots [`Kept::catch_up`] reads, with each name
+    ///   of `namings` naming its pointer and a later naming of a name replacing
+    ///   an earlier one, are this store's and stand on disk, so a store opened
+    ///   later reads them. A naming takes one entry when the journal stands
+    ///   over the tree and holds fewer entries than the tree holds roots or
+    ///   than [`FOLD_FLOOR`]; it folds otherwise. On failure the reading starts
+    ///   again, so the next naming reads the tree and the journal whole.
     /// - provides: the one way a root changes.
     /// - fails: as [`Kept::catch_up`], [`StoreError::Io`] for a journal that
     ///   cannot be cut or appended to, and as [`Kept::fold`].
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     /// - intension: the work is the entries other stores appended since this
-    ///   reading, and one more. A fold builds a tree of n roots after at least
-    ///   n namings since the last fold, so a naming costs amortised constant
-    ///   time.
+    ///   reading, and one more for each naming, written in one call for each
+    ///   run of namings between two folds. A fold builds a tree of n roots
+    ///   after at least n namings since the last fold, so a naming costs
+    ///   amortised constant time.
     ///
     /// # Errors
     /// As above.
@@ -561,41 +590,85 @@ impl Kept
     /// # Adequacy
     /// - hypothesis: L3 — namings read back after reopening, the record plane
     ///   holds far fewer nodes than namings, two stores keep each other's roots
-    ///   across a fold, and a torn entry is cut by the next naming.
+    ///   across a fold, a torn entry is cut by the next naming, and the namings
+    ///   of many threads read back after one drain.
     /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
     /// - witness: `tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081`
     /// - witness: `tests::store::two_stores_keep_each_other_s_roots_across_a_fold_4081`
     /// - witness: `tests::store::a_torn_journal_entry_is_cut_by_the_next_naming_4081`
-    pub fn name(
+    /// - witness: `tests::store::the_namings_of_sixteen_threads_stand_after_one_drain_6899`
+    pub fn name<Namings>(
         &mut self,
         directory: &Path,
         nodes: &NodeDirectory,
-        name: RootName,
-        pointer: ContentPtr,
+        namings: Namings,
     ) -> Result<(), StoreError>
+    where
+        Namings: Iterator<Item = Naming>,
     {
-        let mut journal = journal(directory)?;
-        let seen = self.catch_up(directory, nodes, &mut journal)?;
-        if let Reading::Current { tree_roots, read } = self.reading
-            && read.entries < tree_roots.max(FOLD_FLOOR)
-            && let Maybe::Present(entry) = Entry::new(&name, pointer)
-        {
-            let path = directory.join(JOURNAL);
-            let io = |error: io::Error| StoreError::io(&path, &error);
-            journal.set_len(read.end).map_err(io)?;
-            let _at = journal.seek(io::SeekFrom::Start(read.end)).map_err(io)?;
-            journal.write_all(&entry.0).map_err(io)?;
-            let appended = u64::try_from(entry.0.len()).unwrap_or(u64::MAX);
-            let read = Read {
-                end: read.end.saturating_add(appended),
-                entries: read.entries.saturating_add(1),
-                ..read
-            };
-            let _named = self.roots.0.insert(name, pointer);
-            self.reading = Reading::Current { tree_roots, read };
-            return Ok(());
+        let named = self.named(directory, nodes, namings);
+        if named.is_err() {
+            *self = Self::default();
         }
-        self.fold(directory, nodes, seen, (name, pointer))
+        named
+    }
+
+    /// As [`Kept::name`], with no fresh start on failure.
+    ///
+    /// # Specification
+    /// - requires: as [`Kept::name`].
+    /// - ensures: as [`Kept::name`] on success; on failure the reading may hold
+    ///   namings that the journal does not, which [`Kept::name`] discards.
+    /// - provides: the body of [`Kept::name`].
+    /// - fails: as [`Kept::name`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Kept::name`].
+    /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
+    /// - witness: `tests::store::the_namings_of_sixteen_threads_stand_after_one_drain_6899`
+    fn named<Namings>(
+        &mut self,
+        directory: &Path,
+        nodes: &NodeDirectory,
+        namings: Namings,
+    ) -> Result<(), StoreError>
+    where
+        Namings: Iterator<Item = Naming>,
+    {
+        let path = directory.join(JOURNAL);
+        let mut file = journal(directory)?;
+        let mut seen = self.catch_up(directory, nodes, &mut file)?;
+        let mut appended = Appended::default();
+        for Naming { name, pointer } in namings {
+            if let Reading::Current { tree_roots, read } = self.reading
+                && read.entries < tree_roots.max(FOLD_FLOOR)
+                && let Maybe::Present(entry) = Entry::new(&name, pointer)
+            {
+                if appended.bytes.is_empty() {
+                    appended.at = read.end;
+                }
+                appended.bytes.extend_from_slice(&entry.0);
+                let length = u64::try_from(entry.0.len()).unwrap_or(u64::MAX);
+                let read = Read {
+                    end: read.end.saturating_add(length),
+                    entries: read.entries.saturating_add(1),
+                    ..read
+                };
+                let _named = self.roots.0.insert(name, pointer);
+                self.reading = Reading::Current { tree_roots, read };
+                continue;
+            }
+            appended.write(&mut file, &path)?;
+            self.fold(directory, nodes, seen, (name, pointer))?;
+            seen = seen.next();
+            file = journal(directory)?;
+        }
+        appended.write(&mut file, &path)
     }
 
     /// Fold the journal: the roots, with the naming's name naming its pointer,
@@ -1076,6 +1149,57 @@ impl Entry
         bytes.extend_from_slice(&recorded.0);
         bytes.extend_from_slice(&digest.0);
         Maybe::Present(Self(bytes))
+    }
+}
+
+/// The entries a run of namings appends to the journal: their bytes, and
+/// where the first one goes.
+#[derive(Debug, Default)]
+struct Appended
+{
+    /// Where the first entry goes: the end of the journal as read.
+    at: u64,
+    /// The entries' bytes, in order.
+    bytes: Vec<u8>,
+}
+
+impl Appended
+{
+    /// Write the entries into `journal` at their place, after the bytes that
+    /// stood from that place on are cut, and hold no entries after.
+    ///
+    /// # Specification
+    /// - requires: `journal` is the journal at `path`.
+    /// - ensures: on success the journal ends with the entries, from `at` on,
+    ///   and no entries are held. With no entries, nothing is written.
+    /// - provides: the one write of a run of namings.
+    /// - fails: [`StoreError::Io`] for a journal that cannot be cut or written.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a journaled root reads back after reopening, and the
+    ///   next naming cuts a torn entry.
+    /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
+    /// - witness: `tests::store::a_torn_journal_entry_is_cut_by_the_next_naming_4081`
+    fn write(
+        &mut self,
+        journal: &mut File,
+        path: &Path,
+    ) -> Result<(), StoreError>
+    {
+        if self.bytes.is_empty() {
+            return Ok(());
+        }
+        let io = |error: io::Error| StoreError::io(path, &error);
+        journal.set_len(self.at).map_err(io)?;
+        let _at = journal.seek(io::SeekFrom::Start(self.at)).map_err(io)?;
+        journal.write_all(&self.bytes).map_err(io)?;
+        self.bytes.clear();
+        Ok(())
     }
 }
 
