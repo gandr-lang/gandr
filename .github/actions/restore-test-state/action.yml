@@ -7,7 +7,8 @@ description: >
   so the key lives here. The caller sets `CI_BUILD_STATE`,
   `CI_BUILD_GENERATION` and `CI_BUILD_FINGERPRINT` first (ci.yml's `identify
   build-state inputs`); ci.yml's `ci:delete-superseded` step names the same
-  prefix.
+  prefix. A caller that checks out another commit than the run's names it in
+  `CI_COMMIT` (nightly.yml, #6863).
 inputs:
   lookup-only:
     description: "Report a match without downloading it"
@@ -30,6 +31,6 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
-        key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
+        key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ env.CI_COMMIT || github.sha }}
         restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
         lookup-only: ${{ inputs.lookup-only }}
