@@ -206,7 +206,7 @@ default-features = false
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
 git = "https://github.com/gandr-lang/quenchant"
-rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
+rev = "666f60b58e1996e116f96cee889aba57cd189160"
 default-features = false
 features = ["anodized"]
 
@@ -1472,7 +1472,7 @@ features = ["html"]
 # - kernel-core
 [workspace.dependencies.quenchant-arith]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
+rev = "666f60b58e1996e116f96cee889aba57cd189160"
 default-features = false
 
 # Named non-failure absence, sealed at each decision site.
@@ -1525,7 +1525,7 @@ default-features = false
 # - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
+rev = "666f60b58e1996e116f96cee889aba57cd189160"
 default-features = false
 
 # The terminal face's renderer: layout, styled text and widgets, the headless
