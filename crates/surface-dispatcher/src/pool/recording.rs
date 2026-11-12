@@ -29,6 +29,7 @@ use core::num::NonZeroUsize;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Spawn;
@@ -49,6 +50,7 @@ use super::ItemIndex;
 use super::Pool;
 use super::Pooled;
 use super::each_indexed;
+use super::schedule_indexed;
 use crate::width::Threads;
 
 /// The process's monotonic clock: the nanoseconds since its first reading.
@@ -238,7 +240,8 @@ impl Marks<'_>
 ///
 /// # Specification
 /// - provides: a [`Fork`] that runs as the pool runs, and marks each item of an
-///   `each`, each half of a `join` and each scope's body.
+///   `each`, each job of a `schedule`, each half of a `join` and each scope's
+///   body.
 /// - panics: none of its own; a job's panic is the job's.
 /// - executable: none — the schedule is the pool's.
 ///
@@ -246,6 +249,7 @@ impl Marks<'_>
 /// - hypothesis: L3 — as [`Pool::recording`].
 /// - witness: `pool::recording::tests::a_recorded_fork_marks_each_item_with_its_declaration`
 /// - witness: `pool::recording::tests::a_recorded_join_marks_each_half`
+/// - witness: `pool::recording::tests::a_recorded_schedule_marks_each_job_with_its_declaration`
 #[derive(Debug)]
 pub struct ActivityFork<'fork, Declares>
 {
@@ -374,6 +378,54 @@ where
             body,
             marks: self.marks,
         })
+    }
+
+    /// Run `job` on every item as the pool's schedule runs it, each between a
+    /// start mark and an end mark that name the item's declaration, and fold
+    /// each item on the calling thread in slice order.
+    ///
+    /// # Specification
+    /// - ensures: as [`Pool`]'s `schedule`; each job is marked once on the ring
+    ///   of the thread that runs it, and no fold is marked.
+    /// - panics: a panic of `start`, `job` or `fold`, on the calling thread.
+    /// - executable: none — the schedule is the pool's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pool::recording`].
+    /// - witness: `pool::recording::tests::a_recorded_schedule_marks_each_job_with_its_declaration`
+    #[inline]
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        after: &Dependences,
+        start: Start,
+        job: Job,
+        fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        let (marks, declared) = (self.marks, &self.declared);
+        let marked = |state: &mut State, index: ItemIndex, item: &mut Item| {
+            marks.around(declared(index), || job(state, item));
+        };
+        let forked = if items.len() <= 1 {
+            Ok(Forked::Serial)
+        }
+        else {
+            self.pool.forked()
+        };
+        match forked {
+            Ok(Forked::Pooled(threads, Pooled(workers))) => {
+                schedule_indexed(Some(threads), workers, items, after, start, marked, fold);
+            },
+            Ok(Forked::Serial) | Err(_) => {
+                schedule_indexed(None, Threads::ONE, items, after, start, marked, fold);
+            },
+        }
     }
 }
 

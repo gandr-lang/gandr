@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
+use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork as _;
 use gandr_core_fork::activity::Activity;
 use gandr_core_fork::activity::Core;
@@ -192,5 +193,55 @@ fn a_marked_task_is_one_start_and_one_end_on_its_thread_s_ring()
             (Edge::End, 4, Task::Replay, World::from(2), declared),
         ],
         "a thread outside the pool writes the last ring, start then end, with the task's kind, world and declaration"
+    );
+}
+
+#[test]
+fn a_recorded_schedule_marks_each_job_with_its_declaration()
+{
+    let pool = four();
+    let activity = pool.activity(slots());
+    let recording = pool.recording(&activity, (Task::Replay, World::from(0)), past_a_hundred);
+    let mut items = [0_u32; 64];
+    let fan = Dependences::new((1_usize .. 64).map(|later| (later.checked_div(2).unwrap(), later)))
+        .unwrap();
+    let mut folded = Vec::new();
+    recording.schedule(
+        &mut items,
+        &fan,
+        || (),
+        |&mut (), item| *item = item.saturating_add(1),
+        |item| folded.push(*item),
+    );
+    assert_eq!(
+        folded, [1; 64],
+        "each job runs once, before its item's fold"
+    );
+    let events = events(&activity);
+    let mut marked: BTreeMap<Declared, Vec<(Edge, Core)>> = BTreeMap::new();
+    for event in &events {
+        marked
+            .entry(event.declaration)
+            .or_default()
+            .push((event.edge, event.core));
+    }
+    assert_eq!(marked.len(), 64, "each job's declaration is marked");
+    for (index, (declared, edges)) in marked.iter().enumerate() {
+        assert_eq!(
+            *declared,
+            past_a_hundred(ItemIndex(index)),
+            "the site names each job's declaration by its place"
+        );
+        let [(Edge::Start, start), (Edge::End, end)] = *edges.as_slice()
+        else {
+            panic!(
+                "job {index} is marked once, start before end, and its fold not at all: {edges:?}"
+            );
+        };
+        assert_eq!(start, end, "a job starts and ends on one thread's ring");
+    }
+    assert!(
+        events.iter().all(|event| event.task == Task::Replay),
+        "each mark names the schedule's task"
     );
 }
