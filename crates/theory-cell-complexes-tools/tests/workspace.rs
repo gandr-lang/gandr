@@ -13,7 +13,7 @@ const PACKAGE: &str = "gandr-theory-cell-complexes-tools";
 #[test]
 fn no_production_crate_links_the_tools_crate()
 {
-    let output = Command::new(env!("CARGO"))
+    let output = Command::new(std::env::var_os("CARGO").expect("cargo names itself to the test"))
         .arg("tree")
         .arg("--manifest-path")
         .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml"))

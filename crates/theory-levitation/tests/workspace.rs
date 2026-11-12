@@ -20,7 +20,7 @@ const PATH_ORDERS: &str = "gandr-theory-path-orders";
 #[test]
 fn the_crate_depends_on_no_workspace_crate_but_the_path_orders()
 {
-    let output = Command::new(env!("CARGO"))
+    let output = Command::new(std::env::var_os("CARGO").expect("cargo names itself to the test"))
         .arg("tree")
         .arg("--manifest-path")
         .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml"))
