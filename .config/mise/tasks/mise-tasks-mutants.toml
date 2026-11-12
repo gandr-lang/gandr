@@ -136,13 +136,15 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # default arm. A check round builds the witnesses' binaries. An error on an
 # arm takes the arm's mutants out of the schema
 # (`.config/mutants/refused.jq`), and the next round builds again. Then each
-# mutant in the schema runs its witnesses over that one build, `--lanes` of
-# them at once, with `GANDR_MUTANT` set to its number. A mutant out of the
-# schema builds alone, as before: each function's group of them is one
-# cargo-mutants invocation, in a lane of its own, which reads unviable when
-# the mutant does not build. Before any mutant, the witnesses run once with
-# no mutant selected, so a witness that fails there stops the run instead of
-# reading every mutant caught.
+# mutant in the schema runs its witnesses over that one build, with
+# `GANDR_MUTANT` set to its number. A mutant out of the schema builds alone,
+# as before: each function's group of them is one cargo-mutants invocation,
+# in a lane's own tree, which reads unviable when the mutant does not build.
+# The `--lanes` lanes share one list of that work, the mutants in the schema
+# first, and a lane claims the next item that no other lane holds. So a slow
+# mutant holds one lane alone, and the other lanes take the rest. Before any
+# mutant, the witnesses run once with no mutant selected, so a witness that
+# fails there stops the run instead of reading every mutant caught.
 #
 # The witnesses run under nextest's `mutants` profile, which ends none of
 # them, so a slow witness on a loaded machine reads timeout, never caught.
@@ -337,107 +339,108 @@ if [[ $(jq length "$output/pending.json") != 0 ]]; then
   union=$(jq -r '[.[].filter | sub("^package\\(=[^)]*\\) & "; "")] | unique | join(" | ")' "$output/pending.json")
   (cd "$schema" && "$scope" cargo nextest run --locked --package "$crate" "${selectors[@]}" --no-tests=fail -E "package(=$crate) & ($union)") > "$output/logs/witnesses.log" 2>&1 \
     || { printf 'the witnesses fail unmutated; see %s\n' "$output/logs/witnesses.log" >&2; exit 1; }
-  # Each mutant in the schema runs its witnesses over the one build, with
-  # `GANDR_MUTANT` set to its number, `--lanes` of them at once. An exit of 0
-  # reads missed, the timeout timeout, and any other failure caught, as
-  # cargo-mutants reads its test phase. A failed build or an empty test list
-  # leaves no outcome. No mutant starts once `--until` has passed, and a
-  # mutant that it stops leaves no outcome.
+  # The lanes share one list of work, in order: each mutant in the schema,
+  # then each group of the mutants out of it. A lane claims the next item
+  # that no other lane holds, so a slow item holds one lane alone and the
+  # other lanes take the rest. No item starts once `--until` has passed.
   jq -c --slurpfile schema "$output/schema.json" '[.[] | select(.name | IN($schema[0].held[]))]' "$output/pending.json" > "$output/held.json"
   held=$(jq length "$output/held.json")
-  run_held() {
-    local lane=$1 index=0 mutant id limit left status
-    while IFS= read -r mutant; do
-      if (( index % lanes == lane )); then
-        limit=$timeout
-        if [[ -n "$until" ]]; then
-          left=$((until - (SECONDS - started)))
-          (( left > 0 )) || break
-          (( left >= limit )) || limit=$left
-        fi
-        id=$(jq -r .id <<< "$mutant")
-        status=0
-        (cd "$schema" && GANDR_MUTANT=$id timeout --kill-after=30 "$limit" "${mutants_scope[@]}" cargo nextest run --locked --package "$crate" \
-          "${selectors[@]}" --no-tests=fail -E "$(jq -r .filter <<< "$mutant")") > "$output/logs/mutant-$id.log" 2>&1 || status=$?
-        case $status in
-          0) record "$(jq -r .key <<< "$mutant")" missed ;;
-          124 | 137) (( limit != timeout )) || record "$(jq -r .key <<< "$mutant")" timeout ;;
-          4 | 101) printf 'mutant %s left no outcome (exit %s); see %s\n' "$id" "$status" "$output/logs/mutant-$id.log" >&2; touch "$scratch/failed" ;;
-          *) record "$(jq -r .key <<< "$mutant")" caught ;;
-        esac
-      fi
-      index=$((index + 1))
-    done < <(jq -c '.[]' "$output/held.json")
-  }
-  for (( lane = 0; lane < lanes; lane++ )); do run_held "$lane" & done
-  wait
-  # A mutant out of the schema builds alone, as cargo-mutants builds it: its
-  # function's mutants out of the schema form one group, and each group is
-  # one cargo-mutants invocation, in a lane of its own, that selects exactly
-  # its mutants with the nextest filterset of the function's witnesses. Such
-  # a mutant reads unviable when it does not build.
   jq -c --slurpfile held "$output/held.json" '[.[] | select(.name | IN($held[0][].name) | not)]' "$output/pending.json" > "$output/alone.json"
   alone=$(jq length "$output/alone.json")
+  mkdir -p "$output/alone/groups" "$scratch/claims"
+  echo '[]' > "$output/alone/groups.json"
   if (( alone > 0 )); then
-    mkdir -p "$output/alone/groups"
     jq --slurpfile alone "$output/alone.json" '[.[] | select(.name | IN($alone[0][].name))]' "$output/list.json" > "$output/alone/list.json"
     cp "$output/items.json" "$output/group-input.json" "$output/alone/"
     mutants_grouped "$output/alone"
-    jq -r '.[] | [.name, .key] | @tsv' "$output/alone.json" > "$output/alone/keys.tsv"
-    for (( lane = 0; lane < lanes; lane++ )); do tree "$scratch/$lane"; done
-    run_lane() {
-      local lane=$1 index=0 group file re filter out status left limit selected test outcome
-      while IFS= read -r group; do
-        if (( index % lanes == lane )); then
-          limit=()
-          if [[ -n "$until" ]]; then
-            left=$((until - (SECONDS - started)))
-            (( left > 0 )) || break
-            limit=(timeout --kill-after=30 "$left")
-          fi
-          out=$output/alone/groups/$index
-          file=$(jq -r .file <<< "$group")
-          re=$(jq -r .re <<< "$group")
-          filter=$(jq -r .filter <<< "$group")
-          # `--cargo-arg` reaches the build of each mutant as well as its
-          # test run; an argument after `--` reaches the test run alone.
-          selected=()
-          while IFS= read -r test; do selected+=("--cargo-arg=--test=$test"); done < <(jq -r '.tests[]' <<< "$group")
-          if [[ $(jq -r .unit <<< "$group") == true ]]; then
-            if [[ $lib == true ]]; then selected+=(--cargo-arg=--lib --cargo-arg=--bins); else selected+=(--cargo-arg=--bins); fi
-          fi
-          mkdir -p "$out"
-          jq -r '.names[]' <<< "$group" > "$out/names.txt"
-          # cargo-mutants exits 0 with every mutant caught, 2 with one missed
-          # and 3 with one timed out; any other exit leaves the group to rerun.
-          # `timeout` exits 124, or 137 once it kills, when `--until` stops it.
-          status=0
-          (cd "$scratch/$lane" && "${limit[@]}" "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
-            --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$file" --re "$re" "${selected[@]}" \
-            --output "$out" -- -E "$filter") > "$output/logs/alone-$index.log" 2>&1 || status=$?
-          # cargo-mutants 27.1.0 skips `--re` for a struct literal's field
-          # deletions, so a group keeps only the outcomes of its own mutants.
-          # A stopped group's outcomes so far count.
-          for outcome in caught missed timeout unviable; do
-            [[ ! -f "$out/mutants.out/$outcome.txt" ]] || awk -F'\t' -v outcome="$outcome" \
-              'FILENAME == ARGV[1] { key[$1] = $2; next } FILENAME == ARGV[2] { mine[$0] = 1; next } ($0 in mine) && ($0 in key) { print key[$0] "\t" outcome }' \
-              "$output/alone/keys.tsv" "$out/names.txt" "$out/mutants.out/$outcome.txt"
-          done | while IFS=$'\t' read -r key outcome; do record "$key" "$outcome"; done
-          if [[ ! -f "$out/mutants.out/outcomes.json" ]] || (( status != 0 && status != 2 && status != 3 )); then
-            if (( ${#limit[@]} > 0 && (status == 124 || status == 137) )); then
-              printf 'group %s (%s) stopped at --until; its other mutants wait for the next run\n' "$index" "$(jq -r .item <<< "$group")" >&2
-            else
-              printf 'group %s (%s) left no outcomes; see %s\n' "$index" "$(jq -r .item <<< "$group")" "$output/logs/alone-$index.log" >&2
-              touch "$scratch/failed"
-            fi
-          fi
-        fi
-        index=$((index + 1))
-      done < <(jq -c '.[] | select(.filter != null)' "$output/alone/groups.json")
-    }
-    for (( lane = 0; lane < lanes; lane++ )); do run_lane "$lane" & done
-    wait
+    # The lanes' trees for the groups, one after another while the mutants
+    # in the schema run. A lane waits for its own tree at its first group.
+    (for (( lane = 0; lane < lanes; lane++ )); do tree "$scratch/$lane" || touch "$scratch/failed"; touch "$scratch/$lane.ready"; done) &
   fi
+  jq -r '.[] | [.name, .key] | @tsv' "$output/alone.json" > "$output/alone/keys.tsv"
+  jq -c --slurpfile groups "$output/alone/groups.json" \
+    '(.[] | {held: .}), ($groups[0] | to_entries[] | select(.value.filter != null) | {index: .key, group: .value})' \
+    "$output/held.json" > "$output/work.jsonl"
+  # A mutant in the schema runs its witnesses over the one build, with
+  # `GANDR_MUTANT` set to its number. An exit of 0 reads missed, the timeout
+  # timeout, and any other failure caught, as cargo-mutants reads its test
+  # phase. A failed build or an empty test list leaves no outcome, and so
+  # does a stop at `--until` (`$2`, the seconds left).
+  held_mutant() {
+    local mutant=$1 limit=$timeout id status
+    [[ -z "$2" ]] || (( $2 >= limit )) || limit=$2
+    id=$(jq -r .id <<< "$mutant")
+    status=0
+    (cd "$schema" && GANDR_MUTANT=$id timeout --kill-after=30 "$limit" "${mutants_scope[@]}" cargo nextest run --locked --package "$crate" \
+      "${selectors[@]}" --no-tests=fail -E "$(jq -r .filter <<< "$mutant")") > "$output/logs/mutant-$id.log" 2>&1 || status=$?
+    case $status in
+      0) record "$(jq -r .key <<< "$mutant")" missed ;;
+      124 | 137) (( limit != timeout )) || record "$(jq -r .key <<< "$mutant")" timeout ;;
+      4 | 101) printf 'mutant %s left no outcome (exit %s); see %s\n' "$id" "$status" "$output/logs/mutant-$id.log" >&2; touch "$scratch/failed" ;;
+      *) record "$(jq -r .key <<< "$mutant")" caught ;;
+    esac
+  }
+  # A mutant out of the schema builds alone, as cargo-mutants builds it: its
+  # function's mutants out of the schema form one group, and each group is
+  # one cargo-mutants invocation in the lane's own tree (`$1`) that selects
+  # exactly its mutants with the nextest filterset of the function's
+  # witnesses. Such a mutant reads unviable when it does not build.
+  alone_group() {
+    local dir=$1 index=$2 group=$3 out=$output/alone/groups/$2 status selected test outcome
+    local -a limit=()
+    [[ -z "$4" ]] || limit=(timeout --kill-after=30 "$4")
+    # `--cargo-arg` reaches the build of each mutant as well as its test
+    # run; an argument after `--` reaches the test run alone.
+    selected=()
+    while IFS= read -r test; do selected+=("--cargo-arg=--test=$test"); done < <(jq -r '.tests[]' <<< "$group")
+    if [[ $(jq -r .unit <<< "$group") == true ]]; then
+      if [[ $lib == true ]]; then selected+=(--cargo-arg=--lib --cargo-arg=--bins); else selected+=(--cargo-arg=--bins); fi
+    fi
+    mkdir -p "$out"
+    jq -r '.names[]' <<< "$group" > "$out/names.txt"
+    # cargo-mutants exits 0 with every mutant caught, 2 with one missed and
+    # 3 with one timed out; any other exit leaves the group to rerun.
+    # `timeout` exits 124, or 137 once it kills, when `--until` stops it.
+    status=0
+    (cd "$dir" && "${limit[@]}" "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
+      --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$(jq -r .file <<< "$group")" --re "$(jq -r .re <<< "$group")" \
+      "${selected[@]}" --output "$out" -- -E "$(jq -r .filter <<< "$group")") > "$output/logs/alone-$index.log" 2>&1 || status=$?
+    # cargo-mutants 27.1.0 skips `--re` for a struct literal's field
+    # deletions, so a group keeps only the outcomes of its own mutants. A
+    # stopped group's outcomes so far count.
+    for outcome in caught missed timeout unviable; do
+      [[ ! -f "$out/mutants.out/$outcome.txt" ]] || awk -F'\t' -v outcome="$outcome" \
+        'FILENAME == ARGV[1] { key[$1] = $2; next } FILENAME == ARGV[2] { mine[$0] = 1; next } ($0 in mine) && ($0 in key) { print key[$0] "\t" outcome }' \
+        "$output/alone/keys.tsv" "$out/names.txt" "$out/mutants.out/$outcome.txt"
+    done | while IFS=$'\t' read -r key outcome; do record "$key" "$outcome"; done
+    if [[ ! -f "$out/mutants.out/outcomes.json" ]] || (( status != 0 && status != 2 && status != 3 )); then
+      if (( ${#limit[@]} > 0 && (status == 124 || status == 137) )); then
+        printf 'group %s (%s) stopped at --until; its other mutants wait for the next run\n' "$index" "$(jq -r .item <<< "$group")" >&2
+      else
+        printf 'group %s (%s) left no outcomes; see %s\n' "$index" "$(jq -r .item <<< "$group")" "$output/logs/alone-$index.log" >&2
+        touch "$scratch/failed"
+      fi
+    fi
+  }
+  run_lane() {
+    local lane=$1 item=0 work left=
+    while IFS= read -r work; do
+      item=$((item + 1))
+      mkdir "$scratch/claims/$item" 2> /dev/null || continue
+      if [[ -n "$until" ]]; then
+        left=$((until - (SECONDS - started)))
+        (( left > 0 )) || break
+      fi
+      if [[ $(jq -r 'has("held")' <<< "$work") == true ]]; then
+        held_mutant "$(jq -c .held <<< "$work")" "$left"
+      else
+        until [[ -e "$scratch/$lane.ready" ]]; do sleep 1; done
+        alone_group "$scratch/$lane" "$(jq -r .index <<< "$work")" "$(jq -c .group <<< "$work")" "$left"
+      fi
+    done < "$output/work.jsonl"
+  }
+  for (( lane = 0; lane < lanes; lane++ )); do run_lane "$lane" & done
+  wait
   [[ ! -e "$scratch/failed" ]] || exit 1
 fi
 for outcome in caught missed timeout unviable waiting; do : > "$output/$outcome.txt"; done
