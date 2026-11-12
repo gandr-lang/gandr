@@ -249,6 +249,18 @@ default-features = false
 version = "1.8.7"
 default-features = false
 
+# The arena of a host's chunk holder: an append-only vector whose push and get
+# take `&self` with no lock, and whose elements never move, so a chunk that the
+# holder lends stays at its address while threads push. The choice, its
+# alternatives and its reversal are in the pull request of #6899 that adds it.
+# features:
+# - none: the crate has no feature to turn on.
+# consumers:
+# - runtime-net
+[workspace.dependencies.boxcar]
+version = "0.2.14"
+default-features = false
+
 # The driver's argument parser, built through `derive`. The `color` and
 # `suggestions` defaults stay off: the first pulls the `anstream` terminal
 # stack, the second edit-distance matching with nothing to match against.
@@ -1394,6 +1406,21 @@ features = ["std"]
 version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
+
+# The index of a host's chunk holder, from a chunk's digest to its slot in the
+# arena, read and written with no lock. A read happens after the write that it
+# reads, so a reader that finds a slot reads the whole image. iroh holds it
+# already, with the same features. The choice, its alternatives and its
+# reversal are in the pull request of #6899 that adds it.
+# features:
+# - none: `fast-barrier` stays off, as iroh has it. It trades a fence on each
+#   read for a system call on each reclamation, and no measurement asks for it
+#   yet. `serde` stays off: nothing serialises the index.
+# consumers:
+# - runtime-net
+[workspace.dependencies.papaya]
+version = "0.2.5"
+default-features = false
 
 # Relative paths between two absolute ones: the address an import writes for
 # a file that moved, relative to the importer's directory.

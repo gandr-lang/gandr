@@ -34,8 +34,8 @@
 //! - **What verified is kept.** A chunk that does not verify refuses the answer
 //!   before any chunk is inserted; a closure left incomplete keeps the chunks
 //!   that arrived, each verified.
-//! - **In memory, never evicted.** The store holds every chunk committed or
-//!   fetched for as long as a clone of it lives.
+//! - **In memory, never evicted.** The holder keeps every chunk committed or
+//!   fetched, and every dead copy, for as long as a clone of it lives.
 //!
 //! # References
 //!
@@ -50,22 +50,21 @@
 //!   substitutes validity, § kernel-verdict-reuse: a chunk verified on receipt
 //!   is integrity only, and no verdict crosses with it.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
-use std::sync::Mutex;
-use std::sync::MutexGuard;
-use std::sync::PoisonError;
 
 use anodized::spec;
 use gandr_storage_values::CHUNK_DIGEST_LEN;
 use gandr_storage_values::ChunkCount;
 use gandr_storage_values::ChunkDigest;
 use gandr_storage_values::ChunkImage;
-use gandr_storage_values::ChunkStore as _;
-use gandr_storage_values::InMemoryChunkStore;
+use gandr_storage_values::ChunkImageBuf;
+use gandr_storage_values::ChunkStore;
 use gandr_storage_values::StoredChunkRef;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::ValueManifest;
+use gandr_storage_values::VerifiedChunk;
 use gandr_storage_values::verify_chunk_image;
 
 use crate::endpoint::Fault;
@@ -81,14 +80,37 @@ use crate::peer::NodeId;
 pub const CHUNKS_ALPN: &[u8] = b"gandr/chunks/0";
 
 /// The chunks a host holds: what its run commits and fetches, and what its
-/// endpoint serves. Clones share one store.
+/// endpoint serves.
+///
+/// Clones share one holder, and threads put into it and load from it through
+/// `&self`, with no lock: `&Chunks` is a [`ChunkStore`].
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
-pub struct Chunks(Arc<Mutex<InMemoryChunkStore>>);
+pub struct Chunks(Arc<Held>);
+
+/// The images of a holder and the index of their slots.
+///
+/// The arena, a `boxcar::Vec`, grows by buckets and never moves an element,
+/// so an image stays at its address for the life of the holder, and a load
+/// lends it from there. The index, a `papaya::HashMap`, maps each digest to
+/// its slot. A put probes the index, pushes the image on a miss, and then
+/// publishes the slot. A read of the index happens after the write that it
+/// reads, so a reader that finds a slot reads the whole image. Two puts of one
+/// chunk that race both push, and the index keeps the first slot: the second
+/// image stays in the arena, dead.
+#[derive(Debug, Default)]
+struct Held
+{
+    /// Each image, at a fixed address for the life of the holder.
+    images: boxcar::Vec<ChunkImageBuf>,
+    /// The slot of each digest's image in `images`, published after the
+    /// image.
+    slots: papaya::HashMap<ChunkDigest, usize>,
+}
 
 impl Chunks
 {
-    /// An empty store.
+    /// An empty holder.
     ///
     /// # Specification
     /// trivial.
@@ -99,26 +121,50 @@ impl Chunks
         Self::default()
     }
 
-    /// The store, held alone until the guard drops.
+    /// The count of distinct chunks the holder keeps.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the guard is the only access to the store while it lives. A
-    ///   holder that panicked while it held the store left every chunk it
-    ///   inserted whole, so the store is handed on as it left it.
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn chunk_count(&self) -> ChunkCount
+    {
+        ChunkCount::from(self.0.slots.len())
+    }
+
+    /// Keep `chunk`, unless the holder keeps its digest already.
+    ///
+    /// # Specification
+    /// - requires: nothing; the argument's type is the verification.
+    /// - ensures: the index maps the chunk's digest to a slot of the arena. A
+    ///   fresh digest maps to a copy of the offered image. A digest the index
+    ///   holds keeps its slot. A put that loses a race for a fresh digest
+    ///   leaves its copy in the arena, dead, and the index keeps the slot of
+    ///   the winner.
     /// - panics: none.
-    /// - executable: none — unwitnessable provenance: exclusivity is the
-    ///   mutex's, and the guard holds nothing to check it against.
+    /// - executable: none — unwitnessable provenance: which of two racing puts
+    ///   wins is the scheduler's.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a holder's endpoint serves from the store its run
-    ///   committed into, and an asker's fetch inserts into the store its run
-    ///   derefs from.
-    /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
-    #[inline]
-    pub fn lock(&self) -> MutexGuard<'_, InMemoryChunkStore>
+    /// - hypothesis: L3 — sixteen threads that put one chunk at once leave one
+    ///   digest in the index, and every thread loads the same image.
+    /// - witness: `tests::chunks::sixteen_puts_of_one_chunk_leave_one_digest_6899`
+    fn put(
+        &self,
+        chunk: VerifiedChunk<'_>,
+    )
     {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        let slots = self.0.slots.pin();
+        let digest = chunk.digest();
+        if slots.contains_key(&digest) {
+            return;
+        }
+        let slot = self.0.images.push(ChunkImageBuf::from(Box::<[u8]>::from(
+            chunk.image().as_ref(),
+        )));
+        // The push returns once the image is in place, so the slot publishes
+        // after it. A lost race leaves the pushed image dead.
+        drop(slots.try_insert(digest, slot));
     }
 
     /// The answer to `request` from this store: every chunk of the wanted
@@ -158,10 +204,9 @@ impl Chunks
         };
         let wanted = wanted?;
         let wanted = ValueManifest::decode(wanted.manifest())?;
-        let store = self.lock();
         // A holder that lacks a chunk of the closure answers nothing; the
         // asker's walk names the chunk.
-        let Ok(closure) = wanted.closure(&*store)
+        let Ok(closure) = wanted.closure(&self)
         else {
             return Ok(Framed::default());
         };
@@ -171,16 +216,15 @@ impl Chunks
             let manifest = ValueManifest::decode(part.manifest())?;
             // A held value whose closure this store lacks is passed over, and
             // the chunks it shares are carried.
-            if let Ok(shared) = manifest.closure(&*store) {
+            if let Ok(shared) = manifest.closure(&self) {
                 held.extend(BTreeSet::from(shared));
             }
         }
         let mut answer = Framed::default();
         for &digest in closure.digests().difference(&held) {
-            let chunk = store.load(digest)?;
+            let chunk = self.load(digest)?;
             answer.push(&[Part(digest.as_ref()), Part(chunk.image().into())])?;
         }
-        drop(store);
         Ok(answer)
     }
 
@@ -229,16 +273,81 @@ impl Chunks
             bytes = bytes.saturating_add(u64::try_from(image.len()).unwrap_or(u64::MAX));
             carried.push(chunk);
         }
-        let mut store = self.lock();
         for &chunk in &carried {
-            store.insert(chunk).map_err(refused)?;
+            self.put(chunk);
         }
-        wanted.closure(&*store).map_err(refused)?;
-        drop(store);
+        wanted.closure(&self).map_err(refused)?;
         Ok(Fetched {
             chunks: ChunkCount::from(carried.len()),
             bytes,
         })
+    }
+}
+
+impl ChunkStore for &Chunks
+{
+    /// Keep a verified chunk through the shared holder.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`ChunkStore::insert`]: a fresh digest maps to the offered
+    ///   image, and a held digest keeps its prior bytes.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — unwitnessable provenance: which of two racing puts
+    ///   wins is the scheduler's.
+    ///
+    /// # Errors
+    /// None in practice; the signature is the trait's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sixteen threads that put one chunk at once leave one
+    ///   digest, and a fetch keeps what it carried.
+    /// - witness: `tests::chunks::sixteen_puts_of_one_chunk_leave_one_digest_6899`
+    /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
+    #[inline]
+    fn insert(
+        &mut self,
+        chunk: VerifiedChunk<'_>,
+    ) -> Result<(), ValueError>
+    {
+        self.put(chunk);
+        Ok(())
+    }
+
+    /// Load and verify again the image that the index publishes under
+    /// `digest`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`ChunkStore::load`]. The lend reads the arena's slot,
+    ///   which never moves, and never a guard of the index.
+    /// - fails: [`ValueError::UnknownChunk`] when the index holds no slot for
+    ///   `digest`, and [`verify_chunk_image`]'s refusals.
+    /// - panics: none.
+    /// - executable: none — unwitnessable provenance: the bytes are the
+    ///   arena's, checked anew on each load.
+    ///
+    /// # Errors
+    /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a load after a put reads the image put, and a holder
+    ///   that lacks a chunk refuses it by its digest.
+    /// - witness: `tests::chunks::sixteen_puts_of_one_chunk_leave_one_digest_6899`
+    /// - witness: `tests::chunks::a_value_the_holder_lacks_is_refused_by_its_first_chunk`
+    #[inline]
+    fn load(
+        &self,
+        digest: ChunkDigest,
+    ) -> Result<VerifiedChunk<'_>, ValueError>
+    {
+        let slot = self.0.slots.pin().get(&digest).copied();
+        let Some(image) = slot.and_then(|slot| self.0.images.get(slot))
+        else {
+            return Err(ValueError::UnknownChunk { digest });
+        };
+        verify_chunk_image(StoredChunkRef::new(digest, image.as_image()))
     }
 }
 
