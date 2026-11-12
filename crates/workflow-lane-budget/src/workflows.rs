@@ -2,12 +2,14 @@
 //! and held to the summed budget and ceiling `nightly.yml` states for a
 //! workflow.
 //!
-//! A run's summed time is its completed jobs' times together: what the
-//! hosted budget counts, since a public repository's minutes are not billed
-//! and GitHub's billable timing reads zero. A budgeted workflow is over when
-//! the lower median of its runs' summed times passes the budget, or when any
-//! run passes the ceiling; each such run is a line naming the job furthest past
-//! its own median over the window, the job that grew.
+//! A run's summed time is the times of its completed jobs on hosted runners
+//! together: what the hosted budget counts, since a public repository's
+//! minutes are not billed and GitHub's billable timing reads zero. A job on a
+//! runner of our own uses no hosted minutes, so it counts in no sum. A
+//! budgeted workflow is over when the lower median of its runs' summed times
+//! passes the budget, or when any run passes the ceiling; each such run is a
+//! line naming the job furthest past its own median over the window, the job
+//! that grew.
 //!
 //! Over is a report, never a refusal. A report never blocks the
 //! pipeline, and a red run past its ceiling gives no sign of which failure

@@ -70,9 +70,11 @@ pub enum Window
 /// The query printing each successful job's seconds and name.
 const JOB_QUERY: &str = r#".jobs[] | select(.conclusion == "success") | "\((.completed_at | fromdate) - (.started_at | fromdate))\t\(.name)""#;
 
-/// The query printing each completed job's seconds and name, whatever its
-/// conclusion: a failed or cancelled job's time counts in its run's sum.
-const COMPLETED_JOB_QUERY: &str = r#".jobs[] | select(.completed_at != null and .started_at != null) | "\((.completed_at | fromdate) - (.started_at | fromdate) | if . < 0 then 0 else . end)\t\(.name)""#;
+/// The query printing each completed job's seconds and name on a hosted
+/// runner, whatever its conclusion: a failed or cancelled job's time counts in
+/// its run's sum. A job whose labels hold `self-hosted` ran on a runner of our
+/// own, which uses no hosted minutes, so the hosted budget does not count it.
+const COMPLETED_JOB_QUERY: &str = r#".jobs[] | select(.completed_at != null and .started_at != null and (.labels | index("self-hosted") | not)) | "\((.completed_at | fromdate) - (.started_at | fromdate) | if . < 0 then 0 else . end)\t\(.name)""#;
 
 /// The `gh api` route listing the repository's workflows.
 const WORKFLOWS: &str = "repos/{owner}/{repo}/actions/workflows";
@@ -99,7 +101,8 @@ pub enum Jobs
 {
     /// The successful jobs: a lane's median is a time its job took to pass.
     Successful,
-    /// Every completed job: a run's summed time counts what it spent.
+    /// Every completed job on a hosted runner: a run's summed time counts what
+    /// it spent of the hosted budget.
     Completed,
 }
 
