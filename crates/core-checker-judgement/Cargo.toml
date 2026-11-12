@@ -38,3 +38,6 @@ default = []
 hotpath = ["dep:hotpath", "gandr-core-checker-base/hotpath", "hotpath/hotpath"]
 instrument = ["gandr-core-checker-base/instrument", "gandr-core-fork/instrument"]
 unfolding-probe = ["gandr-core-checker-base/unfolding-probe", "gandr-core-nbe/unfolding-probe"]
+
+[lints]
+workspace = true
