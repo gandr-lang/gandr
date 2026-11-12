@@ -270,23 +270,31 @@ held=0
 rounds=0
 alone=0
 if [[ $(jq length "$output/pending.json") != 0 ]]; then
-  # Each tree is a detached worktree of this repository at HEAD with the
-  # working tree's files laid over it: some witnesses read the history
-  # (`git merge-base origin/main HEAD`), which a bare copy has not got. A
-  # tracked file the working tree deleted is left out of the overlay here,
-  # since macOS's tar cannot skip an unreadable name.
-  # A seeded tree builds in its own copy, never in a shared target directory.
+  # Each tree is a detached worktree of this repository at HEAD: some
+  # witnesses read the history (`git merge-base origin/main HEAD`), which a
+  # bare copy has not got. Each file that the working tree changes or adds
+  # is cloned over it, so the copy grows with the change and not with the
+  # tree. A tracked file that the working tree deleted stays in the tree.
+  # A seeded tree builds in its own clone of the seed, never in a shared
+  # target directory.
   # The scratch is named for this process, so `wt:sweep` leaves it while the
   # run lives and removes what a killed run left.
   [[ -z "$seed" ]] || unset CARGO_TARGET_DIR
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
   trap 'for lane in "$scratch"/*/; do git worktree remove --force "$lane" 2> /dev/null || true; done; rm -rf "$scratch"; git worktree prune' EXIT
+  case "$(uname -s)" in
+    Darwin) clone=(cp -c) ;;
+    *) clone=(cp --reflink=auto) ;;
+  esac
   tree() {
     git worktree add --quiet --detach "$1" HEAD
-    git ls-files -z --cached --others --exclude-standard \
-      | while IFS= read -r -d '' path; do [[ ! -e "$path" && ! -L "$path" ]] || printf '%s\0' "$path"; done \
-      | tar --null -T - -cf - | tar -xf - -C "$1"
-    [[ -z "$seed" ]] || cp -a "$seed" "$1/target"
+    { git diff -z --name-only --diff-filter=d HEAD; git ls-files -z --others --exclude-standard; } \
+      | while IFS= read -r -d '' path; do
+        [[ -e "$path" || -L "$path" ]] || continue
+        mkdir -p "$1/$(dirname "$path")"
+        "${clone[@]}" -P -p "$path" "$1/$path"
+      done
+    [[ -z "$seed" ]] || "${clone[@]}" -R -p "$seed" "$1/target"
   }
   # The binaries that the pending mutants' witnesses live in (#3210): each
   # integration target that they name, and the crate's own targets when a
