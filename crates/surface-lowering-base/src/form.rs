@@ -2445,7 +2445,7 @@ pub fn written_children<'tree>(
     dylint_lib = "quenchant_dylints",
     expect(
         spec_clause_traversal,
-        reason = "parity: the body clears the pieces and refills them from the node's children; the check reads each piece and child a fixed number of times"
+        reason = "parity: the body clears the pieces and refills them from the node's children; the check reads each piece and child a fixed number of times; #104 owns the cost of the clause"
     )
 )]
 #[spec(
@@ -2656,7 +2656,7 @@ pub fn read_pieces<'source>(
 ///   and an operand otherwise. `None` otherwise, with `read` empty.
 /// - panics: none.
 /// - economy: one walk down the spine, written into `read`'s buffer, with no
-///   allocation beyond the buffer's growth.
+///   allocation beyond the buffer's growth (#6968).
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `f x y`, `f ()` and a type's `Vec A n` read as the calls
@@ -3063,7 +3063,7 @@ fn nested_repair<'source>(
 ) -> Result<Maybe<Repaired, nested::Absent>, LoweringRefusal<'source>>
 {
     // economy: the walk runs only over a form the parser closed for the
-    // source, so a clean tree never pays for it.
+    // source, so a clean tree never pays for it (#6968).
     let mut forms: Vec<(NodeIndex, usize)> = pieces
         .iter()
         .filter_map(|piece| match *piece {
@@ -3316,7 +3316,7 @@ fn diverged(
         | NodeLabel::Doc => None,
     };
     // economy: the walk runs only over a form the parser closed for the
-    // source, so a clean tree never pays for it.
+    // source, so a clean tree never pays for it (#6968).
     let side_by_side = holes(rule.regex.view()).side_by_side;
     let mut own: Maybe<MoldId, nested::Absent> = Maybe::Absent(nested::Absent::Own);
     let mut operand_before = false;
@@ -3497,7 +3497,7 @@ impl Holes
 fn holes(regex: RegexView<'_>) -> Holes
 {
     // economy: read only for a form the parser closed, over one rule's
-    // expression.
+    // expression (#6968).
     let mut parts = alloc::vec![(regex, false)];
     let mut read: Vec<Holes> = Vec::new();
     while let Some((part, children_read)) = parts.pop() {
@@ -3565,8 +3565,8 @@ fn holes(regex: RegexView<'_>) -> Holes
 ///   exactly `head`. `None` when no application starts with that word.
 /// - fails: never.
 /// - panics: none.
-/// - economy: one walk over the tree's positions, taken only for a refused
-///   name.
+/// - economy: one walk over the tree's positions, taken only for a refused name
+///   (#6968).
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `retur x` heads an application and is refused as `return`
@@ -3866,7 +3866,7 @@ pub enum KeywordOpening
 /// - fails: never.
 /// - panics: none.
 /// - economy: one look-up of the label and a scan of its few molds, taken only
-///   for a refused name.
+///   for a refused name (#6968).
 /// - executable: none — a clause would restate the scan of the label's molds.
 ///
 /// # Adequacy
