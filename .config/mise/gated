@@ -13,6 +13,6 @@ if [[ -z ${GANDR_GATE_SLOT:-} ]]; then
   source "${BASH_SOURCE[0]%/*}/gate.bash"
   hold_gate_slot "mise run ${MISE_TASK_NAME:-$1} alone"
   gate_bound
-  echo "${MISE_TASK_NAME:-$1}: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
+  echo "${MISE_TASK_NAME:-$1}: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
 fi
 "$@"

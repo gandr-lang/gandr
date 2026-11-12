@@ -10,7 +10,8 @@
 # stopped by `TERM`, while a daemon one of its steps started keeps the
 # descriptor open (#4421). A lane holds one slot, and a heavy check run alone
 # takes one (#4911). The lane table names the lanes, so two lanes whose names
-# share a first word hold two slots (#6699). The lock directory comes before
+# share a first word hold two slots (#6699). A gate that waits for its lane's
+# lock gives that wait for its record (#6699). The lock directory comes before
 # the runtime directory, so a harness keeps its locks apart without moving the
 # runtime directory (#6182).
 set -euo pipefail
@@ -198,7 +199,7 @@ refusal=$(gate_in surface-4911-scope 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot
 status=0
 gate_in core-1 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot other' _ "$gate_helper" > /dev/null 2>&1 || status=$?
 [[ $status == 0 ]] || fail "#4911: another lane's gate found no free slot beside the first lane's gate"
-gate_in surface-4911-scope 'echo $$ > "$2/lane-waiter.pid"; source "$1"; hold_gate_slot waiter; : > "$2/lane-waiter.held"' _ "$gate_helper" "$scratch" 2> "$scratch/lane-waiter.err" &
+gate_in surface-4911-scope 'echo $$ > "$2/lane-waiter.pid"; source "$1"; hold_gate_slot waiter; gate_wait > "$2/lane-waiter.wait"; : > "$2/lane-waiter.held"' _ "$gate_helper" "$scratch" 2> "$scratch/lane-waiter.err" &
 waiter=$!
 pids+=("$waiter")
 sleep 1
@@ -212,6 +213,10 @@ until [[ -e $scratch/lane-waiter.held ]]; do
   sleep 0.1
 done
 [[ $(< "$scratch/lane-waiter.err") == "gate-lane-surface: waiting on first (pid"* ]] || fail "#4911: the lane's waiting gate named no lane lock: $(< "$scratch/lane-waiter.err")"
+# The waiter's wait stands in its record (#6699): it waited for its lane's
+# lock from before the first gate ended, and a slot was free once it held it.
+jq -e '.lane >= 1 and .slot == 0' "$scratch/lane-waiter.wait" > /dev/null 2>&1 \
+  || fail "#6699: the lane's waiting gate gave no wait for its lane's lock: $(< "$scratch/lane-waiter.wait")"
 wait "$waiter" 2> /dev/null || true
 
 # The lane table names the lanes (#6699). The worktrees `lane-flex-a` and
@@ -304,4 +309,4 @@ GANDR_HOST_LOCK_DIR=$scratch/apart XDG_RUNTIME_DIR=$scratch/runtime bash -c 'sou
 [[ -z $(ls -A "$scratch/runtime") ]] || fail "#6182: a lock wrote under XDG_RUNTIME_DIR while GANDR_HOST_LOCK_DIR was set"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; two lanes of the lane table that share a first word held two slots; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"

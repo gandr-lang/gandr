@@ -911,6 +911,33 @@
     }
   },
   {
+    "name": "#6699: a gate's wait for its lane's lock and for its slot rides beside its wall time, which starts once it holds its slot",
+    "program": "times.jq",
+    "input": {
+      "log": "[check:host-lock] Finished in 0.3s\n",
+      "seconds": 40,
+      "wait": {
+        "lane": 3,
+        "slot": 125
+      }
+    },
+    "output": {
+      "seconds": 40,
+      "wait": {
+        "lane": 3,
+        "slot": 125
+      },
+      "tasks": [
+        {
+          "task": "check:host-lock",
+          "seconds": 0.3
+        }
+      ],
+      "suites": [],
+      "tests": []
+    }
+  },
+  {
     "name": "#5215: a gate past its budget gives its observation and the template's fields, its slowest task and test named",
     "program": "budget.jq",
     "input": {

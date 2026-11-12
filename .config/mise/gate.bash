@@ -71,13 +71,18 @@ gate_niceness() {
 # Takes the lane's lock and then a free slot, waiting for each unless
 # `GATE_NO_WAIT=1`, and records the holder as `$*`; sets `gate_slot` to the
 # slot's number and `gate_lane` to the lane, exports `GANDR_GATE_SLOT`, and
-# releases both from the caller's `EXIT` trap.
+# releases both from the caller's `EXIT` trap. It sets `gate_wait_lane` and
+# `gate_wait_slot` to the seconds that it waited for each (#6699): the gate
+# prints them when it holds its slot, and its record keeps them
+# (`gate_wait`). A background gate waits for no slot.
 hold_gate_slot() {
-  local wait=()
+  local wait=() start=$SECONDS
   [[ $gate_slots =~ ^[1-9][0-9]*$ ]] || { echo "check: GANDR_GATE_SLOTS is \`$gate_slots\`, not a count of slots" >&2; exit 2; }
   if [[ ${GATE_NO_WAIT:-} == 1 ]]; then wait=(--no-wait); fi
   gate_lane=$(gate_lane)
   host_lock ${wait[@]+"${wait[@]}"} --fd 8 "gate-lane-$gate_lane" 1 "$@"
+  gate_wait_lane=$(( SECONDS - start ))
+  gate_wait_slot=0
   if [[ ${GANDR_GATE_BACKGROUND:-} == 1 && $(gate_niceness) == 19 ]]; then
     # The gate's checks are no background gates (#6656): a check that takes
     # a slot of its own, or a case that asks for one, reads no request here.
@@ -90,10 +95,18 @@ hold_gate_slot() {
     return
   fi
   unset GANDR_GATE_BACKGROUND
+  start=$SECONDS
   host_lock ${wait[@]+"${wait[@]}"} gate "$gate_slots" "$@" "(lane $gate_lane)"
+  gate_wait_slot=$(( SECONDS - start ))
   gate_slot=$host_slot
   export GANDR_GATE_SLOT=$gate_slot
   trap 'host_unlock 9; host_unlock 8' EXIT
+}
+
+# The gate's waits as its record keeps them: `{"lane": <s>, "slot": <s>}`. A
+# gate that took no lock waited for none, so both read 0.
+gate_wait() {
+  printf '{"lane": %d, "slot": %d}\n' "${gate_wait_lane:-0}" "${gate_wait_slot:-0}"
 }
 
 # A gate's share of the host: the host's cores divided by the slots, at least
