@@ -16,12 +16,13 @@
 #   passed.bash tree
 #     Prints the tree of the work in this worktree: the index, the working
 #     tree and every untracked path git does not ignore.
-#   passed.bash record <gate> <tree> <log> <seconds> <check>...
+#   passed.bash record <gate> <tree> <log> <seconds> <wait> <check>...
 #     Records that <gate> ran the checks on <tree> and passed in <seconds>,
-#     with the times its log <log> holds (`times.jq`, #5215). When the work
-#     is no longer <tree>, it records nothing: the work changed while the
-#     gate ran. A log that gives no times leaves the record's `time` null,
-#     and the pass is recorded all the same.
+#     with the times its log <log> holds (`times.jq`, #5215) and its wait
+#     <wait> for its lane's lock and its slot, `{"lane": <s>, "slot": <s>}`
+#     (`gate_wait`, #6699). When the work is no longer <tree>, it records
+#     nothing: the work changed while the gate ran. A log that gives no times
+#     leaves the record's `time` null, and the pass is recorded all the same.
 #   passed.bash require <command> <commit>
 #     Exits 0 when a gate passed on the tree of <commit> and ran every check
 #     of the landing's gate that the commit's change selects
@@ -58,17 +59,18 @@ case ${1:-} in
     work_tree
     ;;
   record)
-    (( $# >= 5 )) || { echo 'usage: passed.bash record <gate> <tree> <log> <seconds> <check>...' >&2; exit 2; }
+    (( $# >= 6 )) || { echo 'usage: passed.bash record <gate> <tree> <log> <seconds> <wait> <check>...' >&2; exit 2; }
     gate=$2
     tree=$3
     log=$4
     seconds=$5
-    shift 5
+    wait=$6
+    shift 6
     if [[ $(work_tree) != "$tree" ]]; then
       echo "$gate: the work changed while the gate ran, so no pass is recorded; run \`mise run $gate\` again before \`pr:open\` or \`pr:land\`" >&2
       exit 0
     fi
-    time=$(jq -n --rawfile log "$log" --argjson seconds "$seconds" '{log: $log, seconds: $seconds}' 2> /dev/null | jq -c -f "$here/times.jq" 2> /dev/null) || time=
+    time=$(jq -n --rawfile log "$log" --argjson seconds "$seconds" --argjson wait "$wait" '{log: $log, seconds: $seconds, wait: $wait}' 2> /dev/null | jq -c -f "$here/times.jq" 2> /dev/null) || time=
     [[ -n $time ]] || { echo "$gate: the log $log gave no times, so the record holds none" >&2; time=null; }
     mkdir -p "$records/$tree"
     file=$(mktemp "$records/$tree/.record.XXXXXX")

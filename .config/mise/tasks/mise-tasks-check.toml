@@ -53,8 +53,10 @@
 # checks run and again after them: when the work changed in between, nothing
 # is recorded. The record also holds the gate's time (#5215): its wall time,
 # each task's time and each suite's slowest tests, read from its standard
-# error, which the gate keeps in `target/gate/<gate>.log`. The gate never
-# blocks on its time.
+# error, which the gate keeps in `target/gate/<gate>.log`. Its wall time starts
+# once the gate holds its slot, and the record keeps the gate's wait for its
+# lane's lock and for its slot beside it (#6699). The gate never blocks on its
+# time.
 #
 # It first reads the claim of the unit its branch works
 # (`.config/claims/taken.bash`, #5146): a branch `<lane>-<n>-…` whose issue #n
@@ -80,7 +82,7 @@ heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected |
 if (( heavy > 0 )); then
   hold_gate_slot "mise run check"
   gate_bound
-  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $gate_jobs build jobs" >&2
+  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $gate_jobs build jobs" >&2
 else
   echo "check: the change selects no Clippy or compiler policy check, so it takes no gate slot" >&2
 fi
@@ -103,7 +105,7 @@ for check in "${checks[@]}"; do tasks+=("$check" :::); done
 mkdir -p target/gate
 SECONDS=0
 { MISE_TASK_TIMINGS=1 mise run --output prefix "${tasks[@]:0:${#tasks[@]}-1}" 2>&1 1>&3 3>&- | tee target/gate/check.log >&2; } 3>&1
-.config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "${checks[@]}"
+.config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "$(gate_wait)" "${checks[@]}"
 {% endraw %}'''
 
 # The cases runner rejects a malformed file before it runs a program (#5646).
@@ -158,7 +160,7 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 hold_gate_slot "mise run gate:all"
 gate_bound
-echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
+echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
 unset GATE_SCOPE GATE_BASE
 tree=$(.config/gate-scope/passed.bash tree)
 mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
@@ -167,7 +169,7 @@ SECONDS=0
 keep=()
 if [[ ${usage_keep_going:-false} == true ]]; then keep=(--continue-on-error); fi
 { MISE_TASK_TIMINGS=1 mise run --output prefix "${keep[@]}" 'check:*' 2>&1 1>&3 3>&- | tee target/gate/gate-all.log >&2; } 3>&1
-.config/gate-scope/passed.bash record gate:all "$tree" target/gate/gate-all.log "$SECONDS" "${checks[@]}"
+.config/gate-scope/passed.bash record gate:all "$tree" target/gate/gate-all.log "$SECONDS" "$(gate_wait)" "${checks[@]}"
 if [[ $tree == "$(git rev-parse 'origin/main^{tree}' 2> /dev/null)" ]]; then
   REPORT_FILE=1 mise run report:gate-time || echo "gate:all: the report of main's gate time failed; the pass stays recorded" >&2
 fi

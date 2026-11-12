@@ -13,12 +13,15 @@
 # Input:
 #   log      the gate's standard error: mise's lines, each task's lines
 #            prefixed `[<task>] `
-#   seconds  the gate's wall time
+#   seconds  the gate's wall time, from the moment it holds its slot
+#   wait     the gate's wait for its lane's lock and for its slot, as
+#            `{lane, slot}` in seconds (#6699), or absent
 #
-# Output: {seconds, tasks, suites, tests}. `tasks` gives each task's time,
-# the slowest first. `suites` gives each test task's count of tests and their
-# summed time, the slowest first. `tests` gives the 20 slowest tests and their
-# tasks. Each time is in seconds, to a tenth.
+# Output: {seconds, wait, tasks, suites, tests}. `wait` is the input's, and
+# the output has none when the input has none. `tasks` gives each task's
+# time, the slowest first. `suites` gives each test task's count of tests and
+# their summed time, the slowest first. `tests` gives the 20 slowest tests and
+# their tasks. Each time is in seconds, to a tenth.
 
 # The seconds in a duration as mise prints it: `259.4ms`, `11.82s`, `1m 2.5s`.
 def duration:
@@ -35,8 +38,9 @@ def tenths: . * 10 | round / 10;
     | capture("^\\s*(?:TRY [0-9]+ )?(?:PASS|SLOW) \\[\\s*(?<took>[0-9]+(?:\\.[0-9]+)?)s\\]\\s+(?:\\(\\s*[0-9]+/[0-9]+\\)\\s+)?(?<test>.+?)\\s*$")
     | {task: $task, test, seconds: (.took | tonumber)}]
   | group_by([.task, .test]) | map(max_by(.seconds))) as $tests
-| {
-    seconds,
+| {seconds}
+  + (if has("wait") then {wait} else {} end)
+  + {
     tasks: ($tasks | sort_by(-.seconds, .task)),
     suites: ($tests | group_by(.task) | map({task: .[0].task, tests: length, seconds: (map(.seconds) | add | tenths)}) | sort_by(-.seconds, .task)),
     tests: ($tests | sort_by(-.seconds, .task, .test) | .[:20] | map(.seconds |= tenths))
