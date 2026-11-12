@@ -2387,8 +2387,9 @@ run = ".config/landing/rebase-cases.bash"
 # failed read leaves none. `.config/integration/reload-cases.bash` (#6653):
 # each reading runs the checkout's `watch.bash`, and the service's checkout
 # stands after a sweep of a lane's checkout and takes the new head.
-# `.config/integration/gap-cases.bash` (#6675): the state holds a reading's
-# gap before its gate runs. `.config/integration/repaired-cases.bash`
+# `.config/integration/gap-cases.bash` (#6675, #6944): the state holds a
+# reading's gap before its gate runs, and a new gap and page each interval
+# while it runs. `.config/integration/repaired-cases.bash`
 # (#6679): a red check that a newer head of landing holds green runs no
 # search, and a red there or an unmoved head runs it.
 # `.config/integration/environment-cases.bash` (#6739, #6750):
