@@ -8,7 +8,8 @@
 # to the change's own lines moves the patch. A file that the change starts to
 # touch after the sign-off moves too. The item's half holds the rest: a row
 # below that names the item joins its readers, and an edit below of the
-# item's own lines changes its record at the base.
+# item's own lines changes its record at the base. A head that does not hold
+# the group's base reads its change from their merge base (#6999).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/moved.bash"
@@ -91,6 +92,24 @@ recast=$(commit recast)
 (cd "$repo" && reshaped "$fork" "$base" src/error.rs 3 3) \
   && fail "#6852: a landing below that leaves the file unchanged leaves the record unchanged" "changed"
 
+# A queue entry whose head does not hold the group's base (#6999): the
+# architect signs the change itself, and an entry ahead of it lands a file
+# that the change does not touch. The change runs from the merge base of the
+# base and the head, so that file moves no patch. Read from the base, the
+# diff holds the base's own file, as the queue read it for pull request 6995.
+git -C "$repo" checkout --quiet landing
+printf 'pub fn ahead() {}\n' > "$repo/src/ahead.rs"
+ahead=$(commit ahead)
+from=$(cd "$repo" && change_base "$ahead" "$signed")
+[[ $from == "$(git -C "$repo" merge-base "$ahead" "$signed")" ]] \
+  || fail "#6999: the change of a head that does not hold the base runs from their merge base" "$from"
+got=$(cd "$repo" && moved "$fork" "$signed" "$from" "$signed" | tr '\n' ' ')
+[[ -z $got ]] || fail "#6999: a file that only the group's base changes moves no patch of a head that does not hold it" "$got"
+got=$(cd "$repo" && moved "$fork" "$signed" "$ahead" "$signed" | tr '\n' ' ')
+[[ -n $got ]] || fail "#6999: the diff from the base itself holds the base's own file" "none"
+from=$(cd "$repo" && change_base "$base" "$head")
+[[ $from == "$base" ]] || fail "#6999: the change of a head that holds the base runs from the base" "$from"
+
 # The merge queue's clone is shallow (#6920). The architect signs a commit,
 # and the restack leaves it on no branch. The queue's clone fetches it by its
 # name at depth 1, so the clone holds no fork. `signed_fork` fetches the two
@@ -120,4 +139,4 @@ got=$(cd "$work/clone" && signed_fork "$shallow_signed" "$shallow_base") || got=
 [[ $got == "$shallow_fork" ]] || fail "#6920: in a shallow clone, the fork of a signed commit that no branch holds is read" "$got"
 
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a shallow clone reads the fork of a signed commit on no branch"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch"

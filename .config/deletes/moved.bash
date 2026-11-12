@@ -1,22 +1,38 @@
 # shellcheck shell=bash
 # The files whose own patch moved since a sign-off (#6852). `moved <fork>
-# <sha> <base> <head>` prints each file whose patch differs between the
+# <sha> <from> <head>` prints each file whose patch differs between the
 # change at the sign-off and the change now, one for each line. The change at
-# the sign-off runs from `<fork>`, the merge base of `<sha>` with `<base>`, to
-# `<sha>`. The change now runs from `<base>` to `<head>`. `git patch-id
-# --stable` names each patch of one file, read with no context lines, so the
-# rows that a landing below adds to a shared file move no patch. A restack
-# over such a landing then keeps the sign-off, as the restack of pull request
-# 6848 over the purpose rows of `ledger/purposes.sql` did not. A sign-off
-# with no fork in the clone binds neither half, and `check.bash` reads it as
-# stale.
+# the sign-off runs from `<fork>`, the merge base of `<sha>` with the base, to
+# `<sha>`. The change now runs from `<from>` to `<head>`, where `<from>` is
+# `change_base`'s. `git patch-id --stable` names each patch of one file, read
+# with no context lines, so the rows that a landing below adds to a shared
+# file move no patch. A restack over such a landing then keeps the sign-off,
+# as the restack of pull request 6848 over the purpose rows of
+# `ledger/purposes.sql` did not. A sign-off with no fork in the clone binds
+# neither half, and `check.bash` reads it as stale.
 moved() {
-  local fork=$1 sha=$2 base=$3 head=$4 file
+  local fork=$1 sha=$2 from=$3 head=$4 file
   patch() { git diff --no-renames --unified=0 "$1" "$2" -- "$3" | git patch-id --stable | awk '{ print $1 }'; }
-  { git diff --no-renames --name-only "$fork" "$sha"; git diff --no-renames --name-only "$base" "$head"; } | sort -u \
+  { git diff --no-renames --name-only "$fork" "$sha"; git diff --no-renames --name-only "$from" "$head"; } | sort -u \
     | while IFS= read -r file; do
-      [[ $(patch "$fork" "$sha" "$file") == "$(patch "$base" "$head" "$file")" ]] || printf '%s\n' "$file"
+      [[ $(patch "$fork" "$sha" "$file") == "$(patch "$from" "$head" "$file")" ]] || printf '%s\n' "$file"
     done
+}
+
+# The commit that a change runs from (#6999). `change_base <base> <head>`
+# prints the merge base of `<base>` and `<head>`. A merge queue entry's head
+# need not hold the group's base: the entry ahead of it lands after the
+# entry's last push. The diff from `<base>` then holds the base's own
+# changes as the entry's, and a sign-off turns stale on a file that only the
+# base changes, as pull request 6995 did on `.config/stall/cases.json`. The
+# shallow clone of the queue deepens `<base>` by 500 commits once when it
+# holds no merge base. With none after that, it prints `<base>`, which reads
+# no less of the change.
+change_base() {
+  local base=$1 head=$2
+  git merge-base "$base" "$head" 2> /dev/null && return 0
+  git fetch --quiet --deepen=500 origin "$base" 2> /dev/null || :
+  git merge-base "$base" "$head" 2> /dev/null || git rev-parse "$base"
 }
 
 # The fork of a signed commit with the base (#6920). `signed_fork <sha>
