@@ -28,7 +28,7 @@ path = "tests/lib.rs"
 [dependencies]
 blake3.workspace = true
 clap.workspace = true
-gandr-workflow-ledger.workspace = true
+gandr-workflow-debt-ledger.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,6 +1,6 @@
 //! The prose ledger's key: what `corpus/prose.ledger` records of a finding.
 //! The ledger itself, its reading, its verdict and its writing, is
-//! `gandr-workflow-ledger`'s.
+//! `gandr-workflow-debt-ledger`'s.
 //!
 //! A line is `PATH RULE DIGEST`: the file, the rule and the first sixteen
 //! hexadecimal digits of the sentence's BLAKE3 digest. The digest keys the
@@ -10,7 +10,7 @@
 use core::fmt;
 use core::str::FromStr;
 
-use gandr_workflow_ledger::Header;
+use gandr_workflow_debt_ledger::Header;
 
 use crate::rules::Finding;
 use crate::rules::Rule;
@@ -143,10 +143,10 @@ impl FromStr for Key
 #[cfg(test)]
 mod tests
 {
-    use gandr_workflow_ledger::Ledger;
-    use gandr_workflow_ledger::LedgerError;
-    use gandr_workflow_ledger::Text;
-    use gandr_workflow_ledger::write;
+    use gandr_workflow_debt_ledger::Ledger;
+    use gandr_workflow_debt_ledger::LedgerError;
+    use gandr_workflow_debt_ledger::Text;
+    use gandr_workflow_debt_ledger::write;
 
     use super::HEADER;
     use super::Key;
@@ -194,7 +194,7 @@ mod tests
         let ledger = Ledger::<Key>::read(Text(&text)).expect("the written ledger reads");
         assert_eq!(
             ledger.check(&findings, Key::of).standing(),
-            gandr_workflow_ledger::Standing::Agreed
+            gandr_workflow_debt_ledger::Standing::Agreed
         );
         for line in [
             "corpus/a.gandr Passive 0123",

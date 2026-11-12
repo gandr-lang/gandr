@@ -99,10 +99,10 @@ crates/
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
 ├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
 ├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
+├── workflow-debt-ledger/          the comment and prose gates' debt ledger
 ├── workflow-github/               the workflow binaries' one `gh` runner
 ├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
-├── workflow-ledger/               the comment and prose gates' debt ledger
 ├── workflow-ledger-tasks/         the `gandr-ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read
 ├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests

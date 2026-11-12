@@ -297,7 +297,7 @@
     { "path": ".github/", "groups": [] },
     { "path": "crates/workflow-prose/", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
     {
-      "path": "crates/workflow-ledger/",
+      "path": "crates/workflow-debt-ledger/",
       "groups": ["rust", "doc", "corpus", "extension", "prose"]
     },
     {

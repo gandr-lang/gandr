@@ -2726,6 +2726,7 @@ crates/workflow-build-state/README.md STE-3.5 d4b21f8b53516852
 crates/workflow-coverage-guard/README.md STE-3.2 aa0afe4176f0253c
 crates/workflow-coverage-guard/README.md STE-3.5 11d1dfd8b14408b7
 crates/workflow-coverage-guard/README.md STE-3.5 bb23fcf8838a8abb
+crates/workflow-debt-ledger/README.md STE-3.4 a08e9cc5e7588b68
 crates/workflow-hotpath-guard/README.md STE-3.6 88e8540ac767c557
 crates/workflow-hotpath-guard/README.md STE-3.6 aef6cff165a01c65
 crates/workflow-hotpath-guard/README.md STE-3.2 a20309a440bd61ef
@@ -2733,7 +2734,6 @@ crates/workflow-hotpath-guard/README.md STE-3.5 88e8540ac767c557
 crates/workflow-hotpath-guard/README.md STE-3.5 a20309a440bd61ef
 crates/workflow-lane-budget/README.md STE-3.2 7a14f16829d7205c
 crates/workflow-lane-budget/README.md STE-3.5 1f04b7c4e0606b84
-crates/workflow-ledger/README.md STE-3.4 a08e9cc5e7588b68
 crates/workflow-prose/README.md STE-3.5 5c9c12baf3ca4a6a
 crates/workflow-spec-cost/README.md STE-3.6 28fd447984f5eb44
 crates/workflow-spec-cost/README.md STE-3.6 2c3f6277a14e3e3a
