@@ -1842,7 +1842,7 @@ mod tests
                 position
             );
             let watermark = environment.arena().watermark();
-            let entries = environment.entries().len();
+            let entries = environment.entries().admitted();
             let refused = {
                 let mut staging = environment.stage();
                 let declared = staging
@@ -1855,7 +1855,7 @@ mod tests
                 Err(KernelError::LevelArithmetic)
             );
             assert_eq!(environment.arena().watermark(), watermark);
-            assert_eq!(environment.entries().len(), entries);
+            assert_eq!(environment.entries().admitted(), entries);
             assert_eq!(
                 environment.arena().value_type(unit),
                 Some(&ValueType::unit())

@@ -93,7 +93,6 @@ use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Binders;
 use gandr_kernel_term::CompTypeId;
-use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Reads;
 use gandr_kernel_term::TermArena;
@@ -456,41 +455,6 @@ impl SupportContext
         self.kept.join(kept, |_, _| true);
     }
 
-    /// Forget the names of the constants from `first` on, as
-    /// [`ContentTable::forget_constants_from`] does. Also forget every kept
-    /// outcome.
-    ///
-    /// A refused block's codata member answers under parameters that name the
-    /// members before it by position. A later admission at those positions can
-    /// name the same parameters. The session does not record which kept
-    /// outcomes read a member. So every kept outcome goes. That costs recalls.
-    /// It cannot cause a wrong recall.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the table names no constant from `first` on. The kept memo
-    ///   holds no outcome.
-    /// - provides: a block rollback's retirement of what named its members.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the kept memo's emptiness is its storage's
-    ///   accounting. This crate does not read it.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a block refused after its codata member formed an
-    ///   observation over a family before it, a family one level up admitted at
-    ///   that family's position, and the codata declaration again.
-    /// - witness: `env::tests::a_refused_block_s_outcomes_do_not_answer_at_its_positions`
-    #[inline]
-    pub(crate) fn forget_constants_from(
-        &mut self,
-        first: ConstantIndex,
-    )
-    {
-        self.table.forget_constants_from(first);
-        self.kept = KeptMemo::default();
-    }
-
     /// Name `parameters` in this session's table, as
     /// [`ContentTable::parameters`] does, and read the record's name.
     ///
@@ -643,7 +607,7 @@ impl SupportContext
     #[cfg(test)]
     pub(crate) fn constant_name(
         &self,
-        index: ConstantIndex,
+        index: gandr_kernel_term::ConstantIndex,
     ) -> Option<crate::encoding::ConstantName>
     {
         self.table.constant_name(index)

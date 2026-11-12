@@ -974,7 +974,7 @@ fn equivalence(
 /// # Specification
 /// - requires: the builder returns roots in its supplied arena.
 /// - ensures: success adds exactly one checked declaration at the old boundary;
-///   refusal adds none.
+///   refusal admits none, and its position stays as a vacancy.
 /// - provides: the ordinary admission result, with no unchecked bypass.
 /// - fails: the kernel's formation, typing or replay refusal.
 /// - panics: only as the caller's builder does.
@@ -982,7 +982,7 @@ fn equivalence(
 /// # Adequacy
 /// - hypothesis: L3 — a forged equivalence cannot acquire an admission receipt.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
-#[spec(captures: before = environment.entries().len(), ensures: |ret| ret.as_ref().map_or_else(|_| environment.entries().len() == before, |id| environment.entries().len() == usize::from(before).saturating_add(1) && usize::from(id.position()) == before))]
+#[spec(captures: [before = environment.entries().len(), admitted = environment.entries().admitted()], ensures: |ret| ret.as_ref().map_or_else(|_| environment.entries().admitted() == admitted, |id| environment.entries().len() == usize::from(before).saturating_add(1) && usize::from(id.position()) == before && usize::from(environment.entries().admitted()) == usize::from(admitted).saturating_add(1)))]
 fn offer<Build>(
     environment: &mut Environment,
     build: Build,
@@ -1421,7 +1421,18 @@ fn a_non_equivalence_is_refused()
         (ty, arena.value_path_equiv(ty, identity, identity, evidence))
     })
     .expect("symbolic identity on two independent Base leaves");
-    assert_eq!(usize::from(valid.position()), 0);
+    assert_eq!(
+        (
+            usize::from(valid.position()),
+            usize::from(environment.entries().admitted())
+        ),
+        (
+            usize::from(environment.entries().len()).saturating_sub(1),
+            1
+        ),
+        "each refused offer leaves a vacancy and no entry, so the valid one is \
+         the one entry, at the last position"
+    );
 }
 
 #[test]

@@ -1915,8 +1915,9 @@ mod tests
                 &mut environment,
                 Presentation::words(looped(ConstantIndex::from(0_usize)))
             ),
-            Ok(ConstantIndex::from(1_usize)),
-            "the words the loop at `base` mints admit"
+            Ok(ConstantIndex::from(5_usize)),
+            "the words the loop at `base` mints admit, past a vacancy for each \
+             refused offer before them"
         );
         assert_eq!(
             words(

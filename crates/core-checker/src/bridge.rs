@@ -3264,10 +3264,10 @@ enum Erased
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
 /// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 #[spec(
-    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formations.len()],
+    captures: [entries = environment.entries().admitted(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formations.len()],
     ensures: |ret| {
         let fresh = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms);
-        let grew = usize::from(environment.entries().len()).checked_sub(usize::from(entries));
+        let grew = usize::from(environment.entries().admitted()).checked_sub(usize::from(entries));
         let counted = |own: usize, exact: bool| grew == usize::from(positions.exports.len()).checked_sub(usize::from(exports))
             && match (fresh, positions.formations.len().checked_sub(formations), grew) {
                 | (Some(fresh), Some(0), Some(grew)) if exact => grew == fresh.saturating_add(own),
@@ -3937,9 +3937,9 @@ fn settle(
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-#[spec(captures: [entries = environment.entries().len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
+#[spec(captures: [entries = environment.entries().admitted(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
-        || usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
+        || usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
 fn cross_block<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -4195,9 +4195,9 @@ quenchant_shape::reason_enum! {
 ///
 /// [`Absent`]: assumption::Absent
 #[spec(
-    captures: [entries = environment.entries().len(), assumed = positions.assumed.len()],
+    captures: [entries = environment.entries().admitted(), assumed = positions.assumed.len()],
     ensures: |ret| matches!(ret, Maybe::Present(_)) == (positions.assumed.len() > assumed)
-        && usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().checked_sub(assumed),
+        && usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().checked_sub(assumed),
 )]
 fn assumed_for<Vouch>(
     environment: &mut Environment,
