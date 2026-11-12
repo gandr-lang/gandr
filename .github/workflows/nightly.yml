@@ -155,8 +155,16 @@ jobs:
   # minutes after the move, so the tip can be newer than every saved state,
   # and a lane at the tip rebuilds a cycle of landings. The enforcing state's
   # commit is the night's commit. A dispatch with `tip` runs the tip of its
-  # ref, which a probe of a branch's own sources needs. With no entry of a
-  # state, its lanes run the tip as well.
+  # ref, which a probe of a branch's own sources needs.
+  #
+  # A state of no generation on `main` leaves the night nothing warm to run
+  # (#6947): the hosted sweeps would build the whole graph cold and pass
+  # their limit. So the job names each class with no entry as `waiting`, and
+  # a lane that restores such a class ends as skipped. The step summary and
+  # the lane budget's one issue name the class, so a seat reads the night
+  # that waits. A runner of our own keeps its target directory and restores no
+  # state, so its sweeps never wait. A night that waits records no commit, so
+  # the next night runs once the state stands.
   #
   # The scheduled run measures only when the night's commit moved since the
   # last successful run; a dispatch always runs. Each run records the commit
@@ -183,6 +191,7 @@ jobs:
       plain: ${{ steps.states.outputs.plain }}
       stale: ${{ steps.compare.outputs.stale }}
       runner: ${{ steps.runner.outputs.runner || 'hosted' }}
+      waiting: ${{ steps.waiting.outputs.waiting }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -197,31 +206,12 @@ jobs:
           gh cache list --ref refs/heads/main --key "$PREFIX" --limit 100 --json key,createdAt
           --jq 'def newest($state): map(select(.key | startswith(env.PREFIX + $state + "-")))
           | max_by(.createdAt) | .key // "" | split("-") | last;
-          "enforcing=\(newest("cargo-test-enforcing"))", "plain=\(newest("cargo-test-plain-only"))"'
+          def held($state): any(.[]; .key | startswith(env.PREFIX + $state + "-"));
+          . as $entries
+          | "enforcing=\(newest("cargo-test-enforcing"))", "plain=\(newest("cargo-test-plain-only"))",
+          "missing=\(["cargo-test-enforcing", "cargo-test-plain-only"]
+          | map(select(. as $state | $entries | held($state) | not)) | join(" "))"'
           >> "$GITHUB_OUTPUT"
-      - id: compare
-        name: compare the night's commit against the last successful run
-        shell: bash
-        env:
-          NIGHT: ${{ steps.states.outputs.enforcing || github.sha }}
-        run: |
-          found=$(gh run list --workflow nightly.yml --branch main --status success --limit 1 \
-            --json databaseId,headSha --jq '.[0] // {} | "\(.databaseId // "") \(.headSha // "")"')
-          read -r run last <<< "$found"
-          if [[ -n $run ]] && gh run download "$run" --name night-commit --dir "$RUNNER_TEMP/last"; then
-            last=$(<"$RUNNER_TEMP/last/commit")
-          fi
-          mkdir -p "$RUNNER_TEMP/night"
-          printf '%s\n' "$NIGHT" > "$RUNNER_TEMP/night/commit"
-          printf 'stale=%s\n' "$([[ $NIGHT != "${last:-}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          printf 'The night runs `%s`. The tip of `%s` is `%s`. The last successful night covers `%s`.\n' \
-            "$NIGHT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "${last:-none}" >> "$GITHUB_STEP_SUMMARY"
-      - name: record the night's commit
-        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: night-commit
-          path: ${{ runner.temp }}/night/commit
-          retention-days: 30
       - name: check out the choice of the runner
         if: &own-runners ${{ github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' && env.LANDING_APP_ID != '' }}
         uses: *checkout
@@ -249,6 +239,48 @@ jobs:
         env:
           LINE: ${{ steps.runner.outputs.line || 'The night runs on the hosted runner, since it reads no self-hosted runner.' }}
         run: printf '%s\n' "$LINE" >> "$GITHUB_STEP_SUMMARY"
+      - id: waiting
+        name: name the saved states the night waits for
+        shell: bash
+        env:
+          MISSING: ${{ steps.states.outputs.missing }}
+          RUNNER: ${{ steps.runner.outputs.runner || 'hosted' }}
+        run: |
+          read -ra missing <<< "$MISSING"
+          waiting=()
+          for class in "${missing[@]}"; do
+            if [[ $class == cargo-test-enforcing && $RUNNER == integration ]]; then
+              continue
+            fi
+            waiting+=("$class")
+            printf 'The night waits for a saved state of `%s`: `main` holds no entry of it, so the night skips the lanes that restore it.\n' \
+              "$class" >> "$GITHUB_STEP_SUMMARY"
+          done
+          printf 'waiting=%s\n' "${waiting[*]}" >> "$GITHUB_OUTPUT"
+      - id: compare
+        name: compare the night's commit against the last successful run
+        shell: bash
+        env:
+          NIGHT: ${{ steps.states.outputs.enforcing || github.sha }}
+          WAITING: ${{ steps.waiting.outputs.waiting }}
+        run: |
+          found=$(gh run list --workflow nightly.yml --branch main --status success --limit 1 \
+            --json databaseId,headSha --jq '.[0] // {} | "\(.databaseId // "") \(.headSha // "")"')
+          read -r run last <<< "$found"
+          if [[ -n $run ]] && gh run download "$run" --name night-commit --dir "$RUNNER_TEMP/last"; then
+            last=$(<"$RUNNER_TEMP/last/commit")
+          fi
+          mkdir -p "$RUNNER_TEMP/night"
+          printf '%s\n' "$([[ -z $WAITING ]] && echo "$NIGHT" || echo waiting)" > "$RUNNER_TEMP/night/commit"
+          printf 'stale=%s\n' "$([[ $NIGHT != "${last:-}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          printf 'The night runs `%s`. The tip of `%s` is `%s`. The last successful night covers `%s`.\n' \
+            "$NIGHT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "${last:-none}" >> "$GITHUB_STEP_SUMMARY"
+      - name: record the night's commit
+        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: night-commit
+          path: ${{ runner.temp }}/night/commit
+          retention-days: 30
 
   # The sweeps restore main's enforcing test state, which Cargo's
   # fingerprints bring up to date, and run the nightly task. The plain build
@@ -282,7 +314,7 @@ jobs:
   sweeps:
     name: sweep the night's inputs, specifications enforced
     needs: [ci-image-ref, freshness]
-    if: &main-moved ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && !contains(needs.freshness.outputs.waiting, 'cargo-test-enforcing') }}
     runs-on: ${{ needs.freshness.outputs.runner == 'integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04-arm' }}
     permissions: *image-read-permissions
     container: ${{ needs.freshness.outputs.runner != 'integration' && needs.ci-image-ref.outputs.ref || '' }} # zizmor: ignore[unpinned-images]
@@ -336,7 +368,7 @@ jobs:
   all-features:
     name: test every crate with every feature on
     needs: [ci-image-ref, freshness]
-    if: *main-moved
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && !contains(needs.freshness.outputs.waiting, 'cargo-test-plain-only') }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
@@ -456,10 +488,11 @@ jobs:
   # A job on a runner of our own counts in no hosted sum (#6868). The table
   # times every active workflow and reads the cache's usage. A cache past
   # 9 GiB keeps the issue open: GitHub evicts past 10 GiB, and the night then
-  # finds no saved state (#6951).
+  # finds no saved state (#6951). A class of saved state that the night waits
+  # for is a `--waiting` argument and a line of the same issue (#6947).
   reports:
     name: report and file the night's findings
-    needs: [ci-image-ref, sweeps]
+    needs: [ci-image-ref, freshness, sweeps]
     if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
     runs-on: *linux
     permissions:
@@ -556,22 +589,29 @@ jobs:
         run: mise run --quiet report:threads >> "$GITHUB_STEP_SUMMARY"
       - name: compare each lane with its budget
         if: *not-cancelled
-        run: >-
-          mise run ci:lane-budget --issue "CI lane budgets"
-          --integration "test enforcing targets (linux, dispatcher)=250"
-          --integration "test enforcing targets (linux, engine)=250"
-          --integration "test enforcing targets (linux, faces)=215"
-          --integration "test enforcing targets (linux, checker)=285"
-          --integration "test enforcing targets (linux, lowering)=285"
-          --integration "test enforcing targets (linux, rest)=200"
-          --integration "join the enforcing shards (linux)=120"
-          --integration "test plain-only targets (linux)=160"
-          --budget "sweep the recovery records (linux)=260"
-          --integration "document the workspace (linux)=150"
-          --integration "test the documentation examples (linux)=200"
-          --budget "check quenchant compiler policy=180"
-          --budget "check Clippy wall=150"
-          --budget "re-verify obligated specifications (linux)=180"
-          --nightly "test every crate with every feature on=300"
-          --summed "Nightly=900/1200"
-          >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
+        env:
+          WAITING: ${{ needs.freshness.outputs.waiting }}
+        run: |
+          read -ra classes <<< "$WAITING"
+          waiting=()
+          for class in "${classes[@]}"; do waiting+=(--waiting "$class"); done
+          mise run ci:lane-budget --issue "CI lane budgets" \
+            --integration "test enforcing targets (linux, dispatcher)=250" \
+            --integration "test enforcing targets (linux, engine)=250" \
+            --integration "test enforcing targets (linux, faces)=215" \
+            --integration "test enforcing targets (linux, checker)=285" \
+            --integration "test enforcing targets (linux, lowering)=285" \
+            --integration "test enforcing targets (linux, rest)=200" \
+            --integration "join the enforcing shards (linux)=120" \
+            --integration "test plain-only targets (linux)=160" \
+            --budget "sweep the recovery records (linux)=260" \
+            --integration "document the workspace (linux)=150" \
+            --integration "test the documentation examples (linux)=200" \
+            --budget "check quenchant compiler policy=180" \
+            --budget "check Clippy wall=150" \
+            --budget "re-verify obligated specifications (linux)=180" \
+            --nightly "test every crate with every feature on=300" \
+            --summed "Nightly=900/1200" \
+            "${waiting[@]}" \
+            >> "$GITHUB_STEP_SUMMARY"

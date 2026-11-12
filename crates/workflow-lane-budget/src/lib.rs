@@ -46,8 +46,8 @@
 //! runner of our own counts in no sum. A `--summed NAME=BUDGET/CEILING`
 //! argument holds a workflow to the two and adds a table of every active
 //! workflow's wall and summed times with the cache's usage; a budgeted
-//! workflow over, or a cache past 9 GiB, keeps the issue open as an over lane
-//! does.
+//! workflow over, a cache past 9 GiB, or a `--waiting` class keeps the issue
+//! open as an over lane does.
 //!
 //! # References
 //!
@@ -69,5 +69,6 @@ pub use crate::github::IssueTitle;
 pub use crate::github::Window;
 pub use crate::report::Report;
 pub use crate::report::Standing;
+pub use crate::report::StateClass;
 pub use crate::workflows::Summed;
 pub use crate::workflows::Workflows;

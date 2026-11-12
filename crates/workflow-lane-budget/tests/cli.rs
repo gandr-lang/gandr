@@ -117,6 +117,47 @@ fn an_over_budget_lane_opens_the_issue()
 }
 
 #[test]
+fn a_night_waiting_for_its_state_opens_the_issue_6947()
+{
+    let scratch = scratch!("waiting");
+    let output = run!(
+        scratch,
+        [
+            "--runs",
+            "2",
+            "--budget",
+            "check Clippy wall=250",
+            "--waiting",
+            "cargo-test-enforcing",
+            "--issue",
+            "CI lane budgets",
+        ],
+        "[]",
+        "",
+        "all"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    let report = format!(
+        "{}\nThe night waits for a saved state of `cargo-test-enforcing`: `main` holds no entry \
+         of it, so the night skips the lanes that restore it.\n",
+        REPORT
+            .replace("BUDGET", "4m 10s")
+            .replace("STANDING", "within")
+            .replace("SUMMARY", "1 lane — within: 0 over, 0 unmeasured")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{report}\nOpened https://example.invalid/issues/7.\n")
+    );
+    assert_eq!(
+        std::fs::read_to_string(scratch.join("body")).unwrap(),
+        report
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
 fn an_issue_follows_the_budget_both_ways()
 {
     let scratch = scratch!("follow");

@@ -65,6 +65,51 @@ impl fmt::Display for RunId
     }
 }
 
+/// A class of saved build state, as the nightly workflow keys it: such as
+/// `cargo-test-enforcing`.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateClass(String);
+
+impl From<&str> for StateClass
+{
+    /// Names the class `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report names each class as the workflow spells
+    ///   it, so an emptied name drops the class from its line.
+    /// - witness: `report::tests::a_night_waiting_for_its_state_puts_the_report_over_6947`
+    #[inline]
+    fn from(name: &str) -> Self
+    {
+        Self(name.to_owned())
+    }
+}
+
+impl fmt::Display for StateClass
+{
+    /// Writes the class as the workflow keys it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report's line spells the class, so writing
+    ///   nothing changes the asserted report.
+    /// - witness: `report::tests::a_night_waiting_for_its_state_puts_the_report_over_6947`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
 /// One successful job of a sampled run: its name and how long it ran.
 ///
 /// # Specification
@@ -383,6 +428,9 @@ pub struct Report
     scheduled: Vec<Scheduled>,
     /// The workflow table, when a workflow was given a summed budget.
     workflows: Maybe<Workflows, Unbudgeted>,
+    /// The classes of saved state that `main` holds no entry of, so the night
+    /// skips the lanes that restore them.
+    waiting: Vec<StateClass>,
 }
 
 impl Report
@@ -415,6 +463,7 @@ impl Report
             rows: rows(budgets, samples),
             scheduled: Vec::new(),
             workflows: Maybe::Absent(Unbudgeted::NoSummedBudget),
+            waiting: Vec::new(),
         }
     }
 
@@ -492,15 +541,43 @@ impl Report
         self
     }
 
+    /// The report with the classes of saved state that the night waits for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tables unchanged; one line for each class of `waiting`
+    ///   after them, in order, and the report over while any class waits.
+    /// - provides: the missing state's share of the report.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the construction is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a class waiting beside lanes within puts the report
+    ///   over and names the class; a class dropped or left out of the standing
+    ///   changes the filing.
+    /// - witness: `report::tests::a_night_waiting_for_its_state_puts_the_report_over_6947`
+    /// - witness: `tests::cli::a_night_waiting_for_its_state_opens_the_issue_6947`
+    #[inline]
+    #[must_use]
+    pub fn with_waiting(
+        mut self,
+        waiting: Vec<StateClass>,
+    ) -> Self
+    {
+        self.waiting = waiting;
+        self
+    }
+
     /// How the report stands: over when any budgeted lane or workflow is over,
-    /// otherwise within.
+    /// or the night waits for a saved state; otherwise within.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Standing::Over`] exactly when some row, landing or of a
-    ///   budgeted window, is over, or the workflow table is;
-    ///   [`Standing::Within`] otherwise, unmeasured rows included. A row of
-    ///   [`Window::Main`] is information and never counts.
+    ///   budgeted window, is over, the workflow table is, or a class of saved
+    ///   state waits; [`Standing::Within`] otherwise, unmeasured rows included.
+    ///   A row of [`Window::Main`] is information and never counts.
     /// - provides: whether the issue is opened or closed.
     /// - fails: never.
     /// - panics: none.
@@ -514,6 +591,7 @@ impl Report
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
     /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+    /// - witness: `report::tests::a_night_waiting_for_its_state_puts_the_report_over_6947`
     /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
     #[inline]
     #[must_use]
@@ -524,6 +602,7 @@ impl Report
             Maybe::Absent(Unbudgeted::NoSummedBudget) => Standing::Within,
         };
         if workflows == Standing::Over
+            || !self.waiting.is_empty()
             || self
                 .rows
                 .iter()
@@ -657,23 +736,27 @@ impl fmt::Display for Report
     /// Writes the report as Markdown: a sentence naming the window, then a
     /// table of lane, class, median, budget, sample count and standing with
     /// the runs, collapsed under its summary; then the same for each other
-    /// window given lanes.
+    /// window given lanes; then one line for each class of saved state the
+    /// night waits for.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one table row per budget, in order, the class beside each
     ///   row, and an unmeasured median written as `—`; another window's table
-    ///   only when lanes were given for it.
+    ///   only when lanes were given for it; a line naming each waiting class,
+    ///   in order, after every table.
     /// - provides: the job summary and the issue body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Report::new`] and [`Report::with_scheduled`].
+    /// - hypothesis: L3 — as [`Report::new`], [`Report::with_scheduled`] and
+    ///   [`Report::with_waiting`].
     /// - witness: `report::tests::the_report_lists_every_budget_in_order`
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
+    /// - witness: `report::tests::a_night_waiting_for_its_state_puts_the_report_over_6947`
     /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
     #[inline]
     fn fmt(
@@ -719,9 +802,17 @@ impl fmt::Display for Report
             table(f, &scheduled.rows, scheduled.window, &scheduled.runs)?;
         }
         match self.workflows {
-            Maybe::Present(ref workflows) => write!(f, "{workflows}"),
-            Maybe::Absent(Unbudgeted::NoSummedBudget) => Ok(()),
+            Maybe::Present(ref workflows) => write!(f, "{workflows}")?,
+            Maybe::Absent(Unbudgeted::NoSummedBudget) => {},
         }
+        for class in &self.waiting {
+            writeln!(
+                f,
+                "\nThe night waits for a saved state of `{class}`: `main` holds no entry of it, so \
+                 the night skips the lanes that restore it."
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -735,6 +826,7 @@ mod tests
     use super::RunId;
     use super::Sample;
     use super::Standing;
+    use super::StateClass;
     use super::Unsampled;
     use super::lower_median;
     use crate::budget::Budget;
@@ -933,6 +1025,37 @@ mod tests
             unmeasured
                 .to_string()
                 .contains("| a | surface | — | 1m 40s | 0 | unmeasured |")
+        );
+    }
+
+    #[test]
+    fn a_night_waiting_for_its_state_puts_the_report_over_6947()
+    {
+        let budgets = ["a=100".parse::<Budget>().unwrap()];
+        let within = Report::new(&budgets, Vec::new(), vec![(Cone::Surface, Sample {
+            lane: Lane::from("a"),
+            time: Seconds::from(90),
+        })]);
+        assert_eq!(
+            within.clone().with_waiting(Vec::new()).standing(),
+            Standing::Within
+        );
+        let waiting = within.with_waiting(vec![
+            StateClass::from("cargo-test-enforcing"),
+            StateClass::from("cargo-test-plain-only"),
+        ]);
+        assert_eq!(waiting.standing(), Standing::Over);
+        let text = waiting.to_string();
+        let enforcing = text
+            .find("The night waits for a saved state of `cargo-test-enforcing`")
+            .unwrap_or_else(|| panic!("{text}"));
+        let plain = text
+            .find("The night waits for a saved state of `cargo-test-plain-only`")
+            .unwrap_or_else(|| panic!("{text}"));
+        assert!(enforcing < plain, "{text}");
+        assert!(
+            text.contains("| a | surface | 1m 30s | 1m 40s | 1 | within |"),
+            "{text}"
         );
     }
 
