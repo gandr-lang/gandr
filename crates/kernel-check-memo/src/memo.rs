@@ -621,6 +621,29 @@ where
     {
         self.buckets
     }
+
+    /// The entries, each support beside its outcome, in recording order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each entry once, in the order its support was first recorded,
+    ///   with the outcome it holds last.
+    /// - provides: the entries a fold records into another memo, in the order
+    ///   that a serial run records them.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the result is a lazy iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::OverlaidMemo`]'s join.
+    /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
+    #[inline]
+    pub fn into_entries(self) -> impl Iterator<Item = (Support, Outcome)>
+    {
+        self.entries
+            .into_iter()
+            .map(|entry| (entry.support, entry.outcome))
+    }
 }
 
 impl<Support, Outcome> Default for HashedMemo<Support, Outcome>

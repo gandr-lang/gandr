@@ -591,6 +591,58 @@ impl HashIndex
         }
         self.len = self.len.saturating_sub(1);
     }
+
+    /// Each filed position beside the hash it is filed under, in slot order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each filed position once, with its hash.
+    /// - provides: what a fold files into another index, with no key hashed
+    ///   again.
+    /// - panics: none.
+    /// - executable: none — the result is a lazy iterator borrowing the index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an index filed into another through its entries finds
+    ///   each key again.
+    /// - witness: `table::tests::an_index_filed_through_its_entries_finds_each_key`
+    #[inline]
+    pub fn entries(&self) -> impl Iterator<Item = (TableHash, TablePosition)>
+    {
+        self.slots
+            .iter()
+            .filter(|slot| slot.position != VACANT)
+            .map(|slot| (slot.hash, slot.position))
+    }
+
+    /// File `position` under `hash` with no probe before.
+    ///
+    /// # Specification
+    /// - requires: no filed position's key equals the one `position` holds.
+    /// - ensures: as [`Self::insert`], at the first vacant slot of `hash`'s
+    ///   probe sequence.
+    /// - provides: the file a fold takes for a key it knows is fresh here.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::entries`].
+    /// - witness: `table::tests::an_index_filed_through_its_entries_finds_each_key`
+    #[inline]
+    #[spec(captures: before = self.len,
+        ensures: self.len == before.saturating_add(1) && self.len.saturating_mul(2) <= self.slots.len())]
+    pub fn file(
+        &mut self,
+        hash: TableHash,
+        position: TablePosition,
+    )
+    {
+        let len = self.len.saturating_add(1);
+        if len.saturating_mul(2) > self.slots.len() {
+            self.grow();
+        }
+        self.place(Slot { hash, position });
+        self.len = len;
+    }
 }
 
 #[cfg(test)]
@@ -699,6 +751,46 @@ mod tests
             find(&index, &entries, TableHash::of(&absent), absent),
             Probe::Vacant(_)
         ));
+    }
+
+    #[test]
+    fn an_index_filed_through_its_entries_finds_each_key()
+    {
+        let mut lower = HashIndex::new();
+        let mut lower_entries = Vec::new();
+        let mut upper = HashIndex::new();
+        let mut upper_entries = Vec::new();
+        for key in (0 .. 300).map(Key) {
+            let _held = intern(&mut lower, &mut lower_entries, TableHash::from(7_u32), key);
+        }
+        for key in (300 .. 700).map(Key) {
+            let _held = intern(&mut upper, &mut upper_entries, TableHash::of(&key), key);
+        }
+        let offset = lower_entries.len();
+        for (hash, position) in upper.entries() {
+            let shifted =
+                TablePosition::try_from(usize::from(position).saturating_add(offset)).unwrap();
+            lower.file(hash, shifted);
+        }
+        lower_entries.extend(upper_entries.iter().copied());
+        assert_eq!(lower.len, 700, "each filed position counts once");
+        assert!(
+            lower.len.checked_mul(2).unwrap() <= lower.slots.len(),
+            "the index stays at most half full"
+        );
+        for (position, key) in lower_entries.iter().enumerate() {
+            let hash = if key.0 < 300 {
+                TableHash::from(7_u32)
+            }
+            else {
+                TableHash::of(key)
+            };
+            assert_eq!(
+                find(&lower, &lower_entries, hash, *key),
+                at(position),
+                "{key:?} is found where it was filed"
+            );
+        }
     }
 
     #[test]

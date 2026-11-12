@@ -103,8 +103,8 @@ use gandr_kernel_term::read_indices;
 use quenchant_shape::shape::Maybe;
 
 use crate::element_identity::BinderUse;
-use crate::encoding::ContentId;
 use crate::encoding::ContentTable;
+use crate::encoding::RecordName;
 use crate::encoding::SupportGoal;
 use crate::encoding::Telescope;
 use crate::encoding::support_key;
@@ -124,14 +124,17 @@ use crate::rewrite::RewritePlane;
 /// same session it then hands to the check. There is no way to mint a key that
 /// outlives its call by accident.
 ///
-/// **An environment keeps one session for its life.** It lends the session
-/// to each admission's check. The session's content table keeps the names of
-/// the environment's nodes across admissions. So a later declaration reads an
-/// earlier one's nodes by their existing names. A truncation of the arena
-/// retires the names of the nodes that it drops. The session's kept memo
+/// **An environment keeps one session for its life.** It lends each
+/// admission's check a job's session: an overlay of its own, forked from the
+/// session at the check's release ([`SupportContext::fork`]) and folded back at
+/// its commit ([`SupportContext::join`]). The session's content table keeps the
+/// names of the environment's nodes across admissions. So a later declaration
+/// reads an earlier one's nodes by their existing names. A truncation of the
+/// arena retires the names of the nodes that it drops. The session's kept memo
 /// holds the content outcomes of earlier admissions. Each outcome is kept
-/// under the parameters of its judgement. The declaration's memo, the rewrite
-/// memo and the open accruals belong to each admission.
+/// under the parameters of its judgement, by names that read no content id, so
+/// an outcome folds from a job's overlay unchanged. The declaration's memo,
+/// the rewrite memo and the open accruals belong to each admission.
 /// [`SupportContext::begin_admission`] starts them empty.
 #[derive(Clone, Debug)]
 pub struct SupportContext
@@ -149,7 +152,7 @@ pub struct SupportContext
     kept: KeptMemo,
     /// The names of the keys of the obligations this declaration's check owes.
     /// Its drain checks each of them before the declaration is admitted.
-    owing: BTreeSet<(ContentId, ContentId)>,
+    owing: BTreeSet<(RecordName, RecordName)>,
 }
 
 impl Default for SupportContext
@@ -387,6 +390,72 @@ impl SupportContext
         }
     }
 
+    /// Open a job's session at this fork point: an overlay of this session's
+    /// table and kept memo, read by reference, and the job's own rewrite memo,
+    /// accruals and owed keys, empty.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena this session names nodes of, and the
+    ///   job names nodes of it or of a clone of it.
+    /// - ensures: the job gives each node and record the name this session
+    ///   gives it, and recalls each kept outcome this session recalls.
+    /// - provides: the session a forked job checks in.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the names and recalls are those of the table and
+    ///   the kept memo, whose own specifications check them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::join`].
+    /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
+    #[must_use]
+    pub(crate) fn fork(
+        &mut self,
+        arena: &TermArena,
+    ) -> Self
+    {
+        Self {
+            table: self.table.fork(arena),
+            read: Vec::new(),
+            rewrites: RewriteMemo::new(),
+            open: Vec::new(),
+            kept: self.kept.fork(),
+            owing: BTreeSet::new(),
+        }
+    }
+
+    /// Fold `job`, a session forked from this one, into it: the records it
+    /// named and the outcomes it kept, in the order it named and kept them.
+    /// Its rewrite memo, accruals and owed keys belong to the job and go.
+    ///
+    /// # Specification
+    /// - requires: `job` was forked from this session, or from one it overlays;
+    ///   `arena` is this session's arena. The caller folds the jobs of one fork
+    ///   point in their order.
+    /// - ensures: as [`ContentTable::join`] and the kept memo's join, each of
+    ///   which settles first.
+    /// - provides: the fold of a job's session at its commit.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`ContentTable::join`], the job's records and
+    ///   outcomes leave with the fold.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two jobs forked at one point, each keeping an outcome
+    ///   over a record the other names, folded in either order; the session
+    ///   recalls each outcome under the name a serial session gives it.
+    /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
+    pub(crate) fn join(
+        &mut self,
+        arena: &TermArena,
+        job: Self,
+    )
+    {
+        let Self { table, kept, .. } = job;
+        self.table.join(arena, table);
+        self.kept.join(kept, |_, _| true);
+    }
+
     /// Forget the names of the constants from `first` on, as
     /// [`ContentTable::forget_constants_from`] does. Also forget every kept
     /// outcome.
@@ -423,7 +492,7 @@ impl SupportContext
     }
 
     /// Name `parameters` in this session's table, as
-    /// [`ContentTable::parameters`] does.
+    /// [`ContentTable::parameters`] does, and read the record's name.
     ///
     /// # Specification
     /// trivial.
@@ -432,9 +501,10 @@ impl SupportContext
         &mut self,
         arena: &TermArena,
         parameters: &crate::encoding::Parameters<'_>,
-    ) -> ContentId
+    ) -> RecordName
     {
-        self.table.parameters(arena, parameters)
+        let id = self.table.parameters(arena, parameters);
+        self.table.key_name(id)
     }
 
     /// Recall `question` from the kept memo under `parameters`, asked in
@@ -465,7 +535,7 @@ impl SupportContext
         arena: &TermArena,
         question: Question,
         context: &[ValueTypeId],
-        parameters: ContentId,
+        parameters: RecordName,
     ) -> Option<NodeOutcome>
     {
         let kept = core::mem::take(&mut self.kept);
@@ -509,7 +579,7 @@ impl SupportContext
     pub(crate) fn kept_checked(
         &self,
         key: &NodeSupport,
-        parameters: ContentId,
+        parameters: RecordName,
     ) -> Discharge
     {
         let held = self
@@ -550,7 +620,7 @@ impl SupportContext
     pub(crate) fn keep(
         &mut self,
         support: &NodeSupport,
-        parameters: ContentId,
+        parameters: RecordName,
         outcome: &NodeOutcome,
     )
     {
@@ -1035,13 +1105,14 @@ const fn plane_of(goal: SupportGoal) -> SupportPlane
 /// - requires: `session` is this check's own.
 /// - ensures: two names are equal exactly when the goals ask the same question
 ///   of equal content and find types of equal content at the same read
-///   positions, or under whole contexts of equal content.
+///   positions, or under whole contexts of equal content. The name reads no
+///   content id, so it is the same in each table that holds the record.
 /// - provides: a recorded support's name, and the name a recall compares it
 ///   against.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the name is the session table's interning of the
-///   record, which a predicate could restate only by interning it again.
+/// - executable: none — the name is the session table's naming of the record,
+///   which a predicate could restate only by interning it again.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`support_key`] and [`read_binders`].
@@ -1053,13 +1124,14 @@ fn goal_name(
     goal: SupportGoal,
     context: &[ValueTypeId],
     reads: &Reads,
-) -> ContentId
+) -> RecordName
 {
     let telescope = match read_binders(context, reads, &mut session.read) {
         Maybe::Present(read) => Telescope::Read(read),
         Maybe::Absent(_) => Telescope::Whole(context),
     };
-    support_key(&mut session.table, arena, goal, telescope)
+    let id = support_key(&mut session.table, arena, goal, telescope);
+    session.table.key_name(id)
 }
 
 /// A goal's question: what it asks of which content against which expected
@@ -1075,8 +1147,8 @@ pub(crate) struct Question
     plane: SupportPlane,
     /// The goal: its direction, obligation and expected type.
     goal: SupportGoal,
-    /// The goal's record over no binder, named in the session's table.
-    asked: ContentId,
+    /// The name of the goal's record over no binder.
+    asked: RecordName,
 }
 
 impl Question
@@ -1105,10 +1177,11 @@ impl Question
         goal: SupportGoal,
     ) -> Self
     {
+        let id = support_key(&mut session.table, arena, goal, Telescope::Read(&[]));
         Self {
             plane: plane_of(goal),
             goal,
-            asked: support_key(&mut session.table, arena, goal, Telescope::Read(&[])),
+            asked: session.table.key_name(id),
         }
     }
 
@@ -1208,22 +1281,24 @@ impl Question
 /// The complete support of one goal expansion: its question, the binders its
 /// judgement read, and the name of its goal record over them.
 ///
-/// The support holds no arena id: it carries names the session's content table
-/// gives — the goal's question, and its record with the binders read — so two
-/// supports agree exactly when they name one record, and the table names one
-/// record exactly when the content agrees. The digest is read off the
-/// question, so every entry recorded for one question shares a bucket.
+/// The support holds no arena id and no content id: it carries the names the
+/// session's content table gives — the goal's question, and its record with the
+/// binders read. Two supports agree exactly when they carry one name, and two
+/// records take one name, up to a BLAKE3 collision, exactly when their content
+/// agrees. So a support folds from one table into another unchanged. The digest
+/// is read off the question, so every entry recorded for one question shares a
+/// bucket.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NodeSupport
 {
     /// Which machine asked.
     plane: SupportPlane,
-    /// The goal's record over no binder: its question.
-    asked: ContentId,
+    /// The name of the goal's record over no binder: its question.
+    asked: RecordName,
     /// The binders the goal's judgement read.
     reads: Reads,
-    /// The goal's record over the binders read.
-    goal: ContentId,
+    /// The name of the goal's record over the binders read.
+    goal: RecordName,
 }
 
 impl NodeSupport
@@ -1288,7 +1363,7 @@ impl NodeSupport
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn names(&self) -> (ContentId, ContentId)
+    pub(crate) const fn names(&self) -> (RecordName, RecordName)
     {
         (self.asked, self.goal)
     }
@@ -1377,8 +1452,8 @@ pub(crate) struct KeptSupport
 {
     /// The goal's support.
     support: NodeSupport,
-    /// The judgement's parameters, named in the session's table.
-    parameters: ContentId,
+    /// The name of the judgement's parameters in the session's table.
+    parameters: RecordName,
 }
 
 impl MemoKey for KeptSupport
@@ -1445,16 +1520,17 @@ impl MemoKey for KeptSupport
 /// trivial.
 #[inline]
 fn kept_digest(
-    asked: ContentId,
-    parameters: ContentId,
+    asked: RecordName,
+    parameters: RecordName,
 ) -> ContentDigest
 {
     ContentDigest::new(DigestWord::from(asked), DigestWord::from(parameters))
 }
 
 /// The memo that an environment keeps across its declarations. It holds only
-/// content outcomes. Each is kept under the parameters of its judgement.
-pub(crate) type KeptMemo = gandr_kernel_check_memo::HashedMemo<KeptSupport, NodeOutcome>;
+/// content outcomes. Each is kept under the parameters of its judgement. A
+/// job keeps into an overlay of it, which its commit folds.
+pub(crate) type KeptMemo = gandr_kernel_check_memo::OverlaidMemo<KeptSupport, NodeOutcome>;
 
 impl From<SupportPlane> for DigestWord
 {
@@ -1775,6 +1851,62 @@ mod tests
             bare.plane(),
             "and the type-formation walk accounts to its own plane"
         );
+    }
+
+    #[test]
+    fn two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let left = arena.value_type_product(&[unit, integer]);
+        let right = arena.value_type_product(&[integer, unit]);
+        let goals = [
+            SupportGoal::ValueTypeLevel(left),
+            SupportGoal::ValueTypeLevel(right),
+        ];
+        let mut serial = SupportContext::new();
+        let keys = goals
+            .map(|goal| NodeSupport::recorded(&arena, &mut serial, goal, &[], &Reads::closed()));
+        for swapped in [false, true] {
+            let mut session = SupportContext::new();
+            let _before = NodeSupport::recorded(
+                &arena,
+                &mut session,
+                SupportGoal::ValueTypeLevel(unit),
+                &[],
+                &Reads::closed(),
+            );
+            let mut jobs = [session.fork(&arena), session.fork(&arena)];
+            for (job, goal) in jobs.iter_mut().zip(goals) {
+                let key = NodeSupport::recorded(&arena, job, goal, &[], &Reads::closed());
+                job.keep(&key, key.names().0, &super::NodeOutcome::Checked);
+            }
+            if swapped {
+                jobs.reverse();
+            }
+            for job in jobs {
+                session.join(&arena, job);
+            }
+            for key in &keys {
+                assert_eq!(
+                    session.kept_checked(key, key.names().0),
+                    super::Discharge::Held,
+                    "the session recalls each job's outcome under the serial key, swapped: {swapped}"
+                );
+            }
+            assert_eq!(
+                goals.map(|goal| NodeSupport::recorded(
+                    &arena,
+                    &mut session,
+                    goal,
+                    &[],
+                    &Reads::closed()
+                )),
+                keys,
+                "the folded session names each goal as a serial session names it, swapped: {swapped}"
+            );
+        }
     }
 
     #[test]

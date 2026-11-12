@@ -138,6 +138,7 @@
 //!   storage-conjecture-chunk-descent). `RecordName` takes `Exact`, the
 //!   identity on content.
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
@@ -148,6 +149,7 @@ use gandr_kernel_check_memo::HashIndex;
 use gandr_kernel_check_memo::Probe;
 use gandr_kernel_check_memo::TableHash;
 use gandr_kernel_check_memo::TablePosition;
+use gandr_kernel_check_memo::TableSlot;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelOffset;
 use gandr_kernel_strata::LevelVar;
@@ -191,20 +193,6 @@ struct EncodedWord(u64);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ContentId(u64);
-
-impl From<ContentId> for DigestWord
-{
-    /// A content id as one digest word. Within its table an id names exactly
-    /// one content, so the word is a function of content.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(id: ContentId) -> Self
-    {
-        Self::from(id.0)
-    }
-}
 
 impl From<TablePosition> for ContentId
 {
@@ -642,6 +630,22 @@ impl ContentEncoding
         self.put_word(EncodedWord(u64::try_from(count.0).unwrap_or(u64::MAX)));
     }
 
+    /// Append a record's name: its 32 bytes as eight words, little-endian.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_name(
+        &mut self,
+        name: RecordName,
+    )
+    {
+        let bytes: [u8; 32] = name.into();
+        let (words, _rest) = bytes.as_chunks::<4>();
+        self.0
+            .extend(words.iter().map(|&word| u32::from_le_bytes(word)));
+    }
+
     /// Append length-prefixed text.
     ///
     /// The length prefix is the whole point: without it `"ab"` beside `"c"` and
@@ -877,6 +881,21 @@ impl<I: Identification> From<RecordName<I>> for [u8; 32]
     }
 }
 
+impl<I: Identification> From<RecordName<I>> for DigestWord
+{
+    /// A name's first eight bytes as one digest word, little-endian. A key
+    /// files a record under a word of its name and never under its id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: RecordName<I>) -> Self
+    {
+        let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = name.0;
+        Self::from(u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7]))
+    }
+}
+
 impl<I: Identification> RecordName<I>
 {
     /// The name a member takes that the column does not hold. No member takes
@@ -945,8 +964,60 @@ struct RecordSink<'record, const NAMED: bool>
     words: &'record mut ContentEncoding,
     /// With `NAMED`, each member's name in the record's order.
     members: Option<&'record mut Vec<RecordName>>,
+    /// With `NAMED`, how many words precede each member, in the record's
+    /// order.
+    at: Option<&'record mut Vec<WordOffset>>,
     /// With `NAMED`, the table's names by content id.
-    column: &'record [RecordName],
+    column: NameColumn<'record>,
+}
+
+/// The names a table gives its records, read through its frozen layers.
+#[derive(Clone, Copy, Debug)]
+struct NameColumn<'names>
+{
+    /// The table's own names, from its first own id on.
+    own: &'names [RecordName],
+    /// The id of the table's first own record.
+    base: u64,
+    /// The frozen layers, which name each id under `base`.
+    layers: &'names [LayerView],
+}
+
+impl NameColumn<'_>
+{
+    /// The column of a table that writes whole records and names none.
+    const NONE: Self = Self {
+        own: &[],
+        base: 0,
+        layers: &[],
+    };
+
+    /// The name of the record at `id`, or the name no record takes when the
+    /// column holds none for it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn get(
+        self,
+        id: ContentId,
+    ) -> RecordName
+    {
+        id.0.checked_sub(self.base).map_or_else(
+            || {
+                layer_holding(self.layers, id)
+                    .and_then(|layer| layer.name(id))
+                    .unwrap_or(RecordName::UNNAMED)
+            },
+            |own| {
+                usize::try_from(own)
+                    .ok()
+                    .and_then(|position| self.own.get(position))
+                    .copied()
+                    .unwrap_or(RecordName::UNNAMED)
+            },
+        )
+    }
 }
 
 impl<'record> RecordSink<'record, false>
@@ -961,7 +1032,8 @@ impl<'record> RecordSink<'record, false>
         Self {
             words,
             members: None,
-            column: &[],
+            at: None,
+            column: NameColumn::NONE,
         }
     }
 }
@@ -969,20 +1041,22 @@ impl<'record> RecordSink<'record, false>
 impl<'record> RecordSink<'record, true>
 {
     /// A sink that writes every word of a record but its members into
-    /// `payload`, and the members' names, read from `column`, into `members`.
+    /// `payload`, the members' names, read from `column`, into `members`, and
+    /// how many words precede each member into `at`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     const fn named(
         payload: &'record mut ContentEncoding,
-        members: &'record mut Vec<RecordName>,
-        column: &'record [RecordName],
+        (members, at): (&'record mut Vec<RecordName>, &'record mut Vec<WordOffset>),
+        column: NameColumn<'record>,
     ) -> Self
     {
         Self {
             words: payload,
             members: Some(members),
+            at: Some(at),
             column,
         }
     }
@@ -1000,6 +1074,9 @@ impl<const NAMED: bool> RecordSink<'_, NAMED>
         self.words.0.clear();
         if let Some(members) = self.members.as_deref_mut() {
             members.clear();
+        }
+        if let Some(at) = self.at.as_deref_mut() {
+            at.clear();
         }
     }
 
@@ -1030,7 +1107,7 @@ impl<const NAMED: bool> RecordSink<'_, NAMED>
     }
 
     /// Append a member: its content id in a whole record, its name with
-    /// `NAMED`.
+    /// `NAMED`, beside how many words precede it.
     ///
     /// # Specification
     /// trivial.
@@ -1044,13 +1121,14 @@ impl<const NAMED: bool> RecordSink<'_, NAMED>
             self.words.put_content(id);
             return;
         }
-        let name = usize::try_from(id.0)
-            .ok()
-            .and_then(|position| self.column.get(position))
-            .copied()
-            .unwrap_or(RecordName::UNNAMED);
+        let name = self.column.get(id);
         if let Some(members) = self.members.as_deref_mut() {
             members.push(name);
+        }
+        if let Some(at) = self.at.as_deref_mut() {
+            at.push(WordOffset(
+                u32::try_from(self.words.0.len()).unwrap_or(u32::MAX),
+            ));
         }
     }
 
@@ -1086,25 +1164,53 @@ impl<const NAMED: bool> RecordSink<'_, NAMED>
 #[derive(Clone, Debug)]
 struct Names
 {
-    /// Each record's name, by content id.
+    /// Each own record's name, by content id from the table's first own id.
     column: Vec<RecordName>,
     /// The fresh record's payload.
     payload: ContentEncoding,
     /// The fresh record's members' names.
     members: Vec<RecordName>,
+    /// How many payload words precede each member of the fresh record.
+    at: Vec<WordOffset>,
+    /// Over a frozen layer, the payload words before each member of each own
+    /// record, record after record: what a fold reads to write the members'
+    /// ids again.
+    positions: Vec<WordOffset>,
+    /// Over a frozen layer, where each own record's run of `positions` ends.
+    ends: Vec<RunEnd>,
     /// The key every name hashes under, derived from [`Exact::CONTEXT`].
     key: NameKey,
 }
 
 impl Names
 {
+    /// The names of a table that holds no record of its own, under `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn under(key: NameKey) -> Self
+    {
+        Self {
+            column: Vec::new(),
+            payload: ContentEncoding::new(),
+            members: Vec::new(),
+            at: Vec::new(),
+            positions: Vec::new(),
+            ends: Vec::new(),
+            key,
+        }
+    }
+
     /// Name the fresh record that `write` writes, and keep its name at the
-    /// next id.
+    /// next id. Over a frozen layer, keep where its members sit too.
     ///
     /// # Specification
     /// - requires: `write` writes the record the table admitted last, and the
-    ///   column holds a name for each record before it.
-    /// - ensures: the column holds one more name: the record's.
+    ///   column holds a name for each record before it, read through `layers`
+    ///   under `base`.
+    /// - ensures: the column holds one more name: the record's. Over a frozen
+    ///   layer, one more run of member positions.
     /// - provides: the one step that names a record, run once per fresh record.
     /// - fails: never.
     /// - panics: none.
@@ -1116,15 +1222,29 @@ impl Names
         ensures: named_before.checked_add(1) == Some(self.column.len()))]
     fn name(
         &mut self,
+        (base, layers): (ContentId, &[LayerView]),
         write: impl FnOnce(&mut RecordSink<'_, true>),
     )
     {
-        let mut record =
-            RecordSink::named(&mut self.payload, &mut self.members, self.column.as_slice());
+        let mut record = RecordSink::named(
+            &mut self.payload,
+            (&mut self.members, &mut self.at),
+            NameColumn {
+                own: self.column.as_slice(),
+                base: base.0,
+                layers,
+            },
+        );
         record.clear();
         write(&mut record);
         let name = RecordName::of(&self.key, &self.payload, &self.members);
         self.column.push(name);
+        if !layers.is_empty() {
+            self.positions.extend_from_slice(&self.at);
+            self.ends.push(RunEnd(
+                u32::try_from(self.positions.len()).unwrap_or(u32::MAX),
+            ));
+        }
     }
 
     /// The digest of the names `first` and `second`, in order: the words of
@@ -1159,6 +1279,41 @@ impl Names
         }
         self.payload.digest()
     }
+
+    /// Take the names of the own records, with their member positions, and
+    /// leave none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take_records(&mut self) -> RecordNames
+    {
+        RecordNames {
+            column: core::mem::take(&mut self.column),
+            positions: core::mem::take(&mut self.positions),
+            ends: core::mem::take(&mut self.ends),
+        }
+    }
+
+    /// Hold `records` as the names of the own records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put_records(
+        &mut self,
+        records: RecordNames,
+    )
+    {
+        let RecordNames {
+            column,
+            positions,
+            ends,
+        } = records;
+        self.column = column;
+        self.positions = positions;
+        self.ends = ends;
+    }
 }
 
 /// Whether a table names its records.
@@ -1171,6 +1326,30 @@ enum Naming
     /// The table names each record it admits fresh.
     On(Names),
 }
+
+/// The names of a run of records, in id order, and the member positions of
+/// each when a table over a frozen layer wrote them.
+#[derive(Clone, Debug, Default)]
+struct RecordNames
+{
+    /// Each record's name.
+    column: Vec<RecordName>,
+    /// The payload words before each member of each record, record after
+    /// record; empty when the run keeps none.
+    positions: Vec<WordOffset>,
+    /// Where each record's run of `positions` ends.
+    ends: Vec<RunEnd>,
+}
+
+/// How many payload words precede a member in a named record.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WordOffset(u32);
+
+/// Where one record's run of member positions ends.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RunEnd(u32);
 
 /// A length that frames a payload: a [`ContentEncoding`]'s words, or a
 /// text's bytes.
@@ -1252,22 +1431,46 @@ enum EncodeTask
 /// Each arena node's id sits in a dense column for its family. Records are
 /// built in one reused buffer and walks run on one reused stack, so asking
 /// about content the table already holds allocates nothing.
+///
+/// **A table can overlay a frozen layer at a fork point.** [`Self::fork`]
+/// freezes the table's own records and placements into a layer, and opens an
+/// overlay over the table's layers, in which a forked job names its records.
+/// The overlay reads the layers by reference and holds the records past them,
+/// each at the next id. [`Self::join`] folds an overlay back, record after
+/// record, and maps each id of the overlay to the id the table gives that
+/// content. So an id is a function of content within one table, and the order
+/// of the ids depends on the order of the folds. No key reads an id: a key
+/// reads a record's [`RecordName`]. The layers are a flat stack, oldest first,
+/// and no layer points at another.
 #[derive(Clone, Debug, Default)]
 pub struct ContentTable
 {
-    /// The framed record stream, in id order: every record's words, once.
+    /// How many records the frozen layers hold: the id of this table's first
+    /// own record.
+    base: u64,
+    /// The framed record stream of the own records, in id order: each
+    /// record's words, once.
     stream: ContentEncoding,
-    /// Where each record's words sit in the stream, by id.
+    /// Where each own record's words sit in the stream, in id order.
     spans: Vec<RecordSpan>,
-    /// Each record's id, filed under its digest's hash.
+    /// Each own record's offset from [`Self::base`], filed under its digest's
+    /// hash.
     interned: HashIndex,
-    /// The id already assigned to each arena node.
+    /// The id already assigned to each arena node, read through the frozen
+    /// layers, which this table reads its records through too.
     placed: Placements,
     /// The arena's truncation stamp the placements were last synced to: a
     /// placement at or above the floor of a later truncation is forgotten
     /// before any placement is read, so a name never outlives its node.
     seen: TruncationStamp,
-    /// How many records the stream holds.
+    /// The arena's truncation stamp at the fork point that opened this table:
+    /// a fold drops each placement that a truncation of the arena since then
+    /// reached.
+    forked: TruncationStamp,
+    /// The arena's length at the fork point that opened this table: a fold
+    /// keeps each own placement under it, and a node past it is the job's.
+    forked_at: ArenaWatermark,
+    /// How many records the table holds, the ones below included.
     records: u64,
     /// The record being built.
     scratch: ContentEncoding,
@@ -1277,8 +1480,14 @@ pub struct ContentTable
     /// The placement walk's task stack.
     tasks: Vec<EncodeTask>,
     /// How each admitted constant is named, by admission position; a position
-    /// past the end is named by itself.
-    constants: Vec<ConstantName>,
+    /// past the end is named by itself. An overlay shares it with the table
+    /// below until one of them names one more.
+    #[expect(
+        clippy::rc_buffer,
+        reason = "an overlay shares the names with the table below, and `Arc::make_mut` grows them \
+                  in place while no overlay reads them"
+    )]
+    constants: Arc<Vec<ConstantName>>,
     /// Whether the table names its records, and the names when it does.
     naming: Naming,
 }
@@ -1326,8 +1535,192 @@ struct Placements
     value_types: PlacementColumn,
     /// Ids placed for computation-type nodes.
     comp_types: PlacementColumn,
-    /// How many nodes hold an id.
+    /// How many nodes hold an id of their own here.
     count: PlacementCount,
+    /// The frozen layers below the table these placements belong to, oldest
+    /// first: their records, and their placements, each read under its reach.
+    layers: Vec<LayerView>,
+}
+
+/// One frozen layer of a [`ContentTable`]: the records and the placements
+/// that the table held at a fork point. Each overlay above it reads it by
+/// reference.
+#[derive(Clone, Debug, Default)]
+struct TableLayer
+{
+    /// The id of the layer's first record.
+    base: u64,
+    /// The layer's records, framed, in id order.
+    stream: ContentEncoding,
+    /// Where each record's words sit in the stream, in id order.
+    spans: Vec<RecordSpan>,
+    /// Each record's offset from `base`, filed under its digest's hash.
+    interned: HashIndex,
+    /// The records' names; empty for a table that names nothing.
+    names: RecordNames,
+    /// The layer's placements, one column for each family, in the order of
+    /// [`Family::ALL`].
+    columns: [PlacementColumn; 4],
+    /// How many nodes the columns place.
+    count: PlacementCount,
+}
+
+/// A frozen layer as one table reads it.
+#[derive(Clone, Debug)]
+struct LayerView
+{
+    /// The layer, shared by reference.
+    layer: Arc<TableLayer>,
+    /// The length, family by family, under which the layer's placements hold
+    /// for this table: the arena at the freeze, lowered by each truncation
+    /// since.
+    reach: ArenaWatermark,
+}
+
+impl TableLayer
+{
+    /// The layer's column of placements for `family`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn column(
+        &self,
+        family: Family,
+    ) -> &PlacementColumn
+    {
+        let [
+            ref values,
+            ref computations,
+            ref value_types,
+            ref comp_types,
+        ] = self.columns;
+        match family {
+            Family::Value => values,
+            Family::Computation => computations,
+            Family::ValueType => value_types,
+            Family::CompType => comp_types,
+        }
+    }
+
+    /// The id of the record word-equal to `record`, whose digest hashes to
+    /// `hash`, when the layer holds one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn find(
+        &self,
+        record: &ContentEncoding,
+        hash: TableHash,
+    ) -> Option<ContentId>
+    {
+        let probe = self.interned.probe(hash, |position| {
+            self.spans
+                .get(usize::from(position))
+                .and_then(|span| self.stream.0.get(span.start .. span.end))
+                == Some(record.0.as_slice())
+        });
+        match probe {
+            Probe::Found(position) => Some(ContentId(
+                self.base
+                    .saturating_add(u64::try_from(usize::from(position)).unwrap_or(u64::MAX)),
+            )),
+            Probe::Vacant(_) => None,
+        }
+    }
+
+    /// The name of the layer's record at `id`, when the layer holds it and
+    /// names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn name(
+        &self,
+        id: ContentId,
+    ) -> Option<RecordName>
+    {
+        id.0.checked_sub(self.base)
+            .and_then(|own| usize::try_from(own).ok())
+            .and_then(|own| self.names.column.get(own))
+            .copied()
+    }
+}
+
+/// The layer of `layers`, oldest first, that holds the record at `id`.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn layer_holding(
+    layers: &[LayerView],
+    id: ContentId,
+) -> Option<&TableLayer>
+{
+    layers
+        .partition_point(|view| view.layer.base <= id.0)
+        .checked_sub(1)
+        .and_then(|index| layers.get(index))
+        .map(|view| &*view.layer)
+}
+
+/// The family of an arena node, which picks its column.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Family
+{
+    /// A value.
+    Value,
+    /// A computation.
+    Computation,
+    /// A value type.
+    ValueType,
+    /// A computation type.
+    CompType,
+}
+
+impl Family
+{
+    /// The four families, in the order of [`ArenaWatermark`]'s lengths.
+    const ALL: [Self; 4] = [
+        Self::Value,
+        Self::Computation,
+        Self::ValueType,
+        Self::CompType,
+    ];
+
+    /// The family of `node`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn of(node: AnyNode) -> Self
+    {
+        match node {
+            AnyNode::Value(_) => Self::Value,
+            AnyNode::Computation(_) => Self::Computation,
+            AnyNode::ValueType(_) => Self::ValueType,
+            AnyNode::CompType(_) => Self::CompType,
+        }
+    }
+
+    /// This family's length in `watermark`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn length(
+        self,
+        watermark: ArenaWatermark,
+    ) -> ArenaLength
+    {
+        match self {
+            Self::Value => watermark.values(),
+            Self::Computation => watermark.computations(),
+            Self::ValueType => watermark.value_types(),
+            Self::CompType => watermark.comp_types(),
+        }
+    }
 }
 
 /// One family's column of placements, in pages allocated on first write.
@@ -1514,6 +1907,30 @@ impl PlacementColumn
         }
         PlacementCount(forgotten)
     }
+
+    /// Each offset that holds an id, beside it, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn placed(&self) -> impl Iterator<Item = (ArenaLength, ContentId)>
+    {
+        self.pages.iter().enumerate().flat_map(|(number, page)| {
+            page.iter()
+                .enumerate()
+                .filter_map(move |(slot, held)| match held.placement() {
+                    Placement::Placed(id) => Some((
+                        ArenaLength::from(
+                            number
+                                .saturating_mul(PLACEMENT_PAGE_SLOTS)
+                                .saturating_add(slot),
+                        ),
+                        id,
+                    )),
+                    Placement::Unplaced => None,
+                })
+        })
+    }
 }
 
 impl Placements
@@ -1528,11 +1945,42 @@ impl Placements
         node: AnyNode,
     ) -> &PlacementColumn
     {
-        match node {
-            AnyNode::Value(_) => &self.values,
-            AnyNode::Computation(_) => &self.computations,
-            AnyNode::ValueType(_) => &self.value_types,
-            AnyNode::CompType(_) => &self.comp_types,
+        self.column_of(Family::of(node))
+    }
+
+    /// The column `family` is placed in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn column_of(
+        &self,
+        family: Family,
+    ) -> &PlacementColumn
+    {
+        match family {
+            Family::Value => &self.values,
+            Family::Computation => &self.computations,
+            Family::ValueType => &self.value_types,
+            Family::CompType => &self.comp_types,
+        }
+    }
+
+    /// The column `family` is placed in, to write.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn column_of_mut(
+        &mut self,
+        family: Family,
+    ) -> &mut PlacementColumn
+    {
+        match family {
+            Family::Value => &mut self.values,
+            Family::Computation => &mut self.computations,
+            Family::ValueType => &mut self.value_types,
+            Family::CompType => &mut self.comp_types,
         }
     }
 
@@ -1540,29 +1988,63 @@ impl Placements
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the id last placed for `node`, or
-    ///   [`placement::Absent::Unplaced`] when none was.
+    /// - ensures: the id last placed for `node` here, or else the one the
+    ///   newest frozen layer places for it under that layer's reach, or
+    ///   [`placement::Absent::Unplaced`] when none does.
     /// - provides: the placement read every record's children go through.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Placements`].
+    /// - hypothesis: L3 — as [`Placements`], and an overlay that reads a node
+    ///   its frozen layer placed.
     /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    ///
+    /// # Clause cost
+    /// - bound: as [`Self::get_at`].
     #[inline]
-    #[spec(ensures: |ret| match ret {
-        Maybe::Present(id) => self.column(node).get(node.offset()) == Placement::Placed(id),
-        Maybe::Absent(placement::Absent::Unplaced) => self.column(node).get(node.offset()) == Placement::Unplaced,
+    #[spec(ensures: |ret| match self.column(node).get(node.offset()) {
+        Placement::Placed(id) => ret == Maybe::Present(id),
+        Placement::Unplaced => true,
     })]
     fn get(
         &self,
         node: AnyNode,
     ) -> Maybe<ContentId, placement::Absent>
     {
-        match self.column(node).get(node.offset()) {
-            Placement::Placed(id) => Maybe::Present(id),
-            Placement::Unplaced => Maybe::Absent(placement::Absent::Unplaced),
+        self.get_at(Family::of(node), node.offset())
+    }
+
+    /// The id placed for the node of `family` at `offset`, as [`Self::get`]
+    /// reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one column read, then one for each frozen layer, newest first:
+    ///   the layers are the fork points still open above the table, so the read
+    ///   grows with the depth of the open forks and never with the arena or the
+    ///   table.
+    #[inline]
+    fn get_at(
+        &self,
+        family: Family,
+        offset: ArenaLength,
+    ) -> Maybe<ContentId, placement::Absent>
+    {
+        if let Placement::Placed(id) = self.column_of(family).get(offset) {
+            return Maybe::Present(id);
         }
+        for view in self.layers.iter().rev() {
+            if offset < family.length(view.reach)
+                && let Placement::Placed(id) = view.layer.column(family).get(offset)
+            {
+                return Maybe::Present(id);
+            }
+        }
+        Maybe::Absent(placement::Absent::Unplaced)
     }
 
     /// Place `node` with `id`.
@@ -1580,10 +2062,10 @@ impl Placements
     /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
     #[inline]
     #[spec(
-        captures: [held = self.get(node), count_before = self.count],
+        captures: [held = self.column(node).get(node.offset()), count_before = self.count],
         ensures: self.get(node) == Maybe::Present(id) && match held {
-            Maybe::Present(_) => self.count == count_before,
-            Maybe::Absent(_) => self.count.0 == count_before.0.saturating_add(1),
+            Placement::Placed(_) => self.count == count_before,
+            Placement::Unplaced => self.count.0 == count_before.0.saturating_add(1),
         }
     )]
     fn insert(
@@ -1592,13 +2074,7 @@ impl Placements
         id: ContentId,
     )
     {
-        let column = match node {
-            AnyNode::Value(_) => &mut self.values,
-            AnyNode::Computation(_) => &mut self.computations,
-            AnyNode::ValueType(_) => &mut self.value_types,
-            AnyNode::CompType(_) => &mut self.comp_types,
-        };
-        if column.set(node.offset(), id) == Placement::Unplaced {
+        if self.column_of_mut(Family::of(node)).set(node.offset(), id) == Placement::Unplaced {
             self.count = PlacementCount(self.count.0.saturating_add(1));
         }
     }
@@ -1613,7 +2089,8 @@ impl Placements
         self.count
     }
 
-    /// Forget every placement at or above `floor`'s length for its family.
+    /// Forget every placement at or above `floor`'s length for its family,
+    /// here and, through each layer's reach, in the frozen layers.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1635,6 +2112,22 @@ impl Placements
         floor: ArenaWatermark,
     )
     {
+        self.forget_own_from(floor);
+        for view in &mut self.layers {
+            view.reach = floor.clamped_into(ArenaWatermark::default(), view.reach);
+        }
+    }
+
+    /// Forget every own placement at or above `floor`'s length for its family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn forget_own_from(
+        &mut self,
+        floor: ArenaWatermark,
+    )
+    {
         let forgotten = [
             self.values.forget_from(floor.values()),
             self.computations.forget_from(floor.computations()),
@@ -1647,11 +2140,120 @@ impl Placements
         });
         self.count = PlacementCount(self.count.0.saturating_sub(forgotten));
     }
+
+    /// Place the node of `family` at `offset` with `id`, as [`Self::insert`]
+    /// places a node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn set_at(
+        &mut self,
+        (family, offset): (Family, ArenaLength),
+        id: ContentId,
+    )
+    {
+        if self.column_of_mut(family).set(offset, id) == Placement::Unplaced {
+            self.count = PlacementCount(self.count.0.saturating_add(1));
+        }
+    }
+
+    /// Place each node that `child` placed under `reach` and these placements
+    /// do not place, with the id that `map` gives for the child's.
+    ///
+    /// # Specification
+    /// - requires: `child` placed nodes of the arena these placements read,
+    ///   `reach` is at most the child's reach, and `map` reads a child's id as
+    ///   this table's.
+    /// - ensures: each such node reads the mapped id; every other node reads as
+    ///   before. A node at or past `reach` is left out.
+    /// - provides: the placements a fold of an overlay keeps.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the child's placements leave with the fold, so no
+    ///   predicate reads them after it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentTable::join`].
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    fn fold(
+        &mut self,
+        (child, reach): (&Self, ArenaWatermark),
+        map: impl Fn(ContentId) -> Option<ContentId>,
+    )
+    {
+        for family in Family::ALL {
+            let length = family.length(reach);
+            for (offset, id) in child.column_of(family).placed() {
+                if offset >= length {
+                    break;
+                }
+                if let (Maybe::Absent(_), Some(mapped)) = (self.get_at(family, offset), map(id)) {
+                    self.set_at((family, offset), mapped);
+                }
+            }
+        }
+    }
+
+    /// Take the own columns and leave none: what a freeze moves into a layer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take_columns(&mut self) -> ([PlacementColumn; 4], PlacementCount)
+    {
+        let columns = [
+            core::mem::take(&mut self.values),
+            core::mem::take(&mut self.computations),
+            core::mem::take(&mut self.value_types),
+            core::mem::take(&mut self.comp_types),
+        ];
+        (
+            columns,
+            core::mem::replace(&mut self.count, PlacementCount(0)),
+        )
+    }
+
+    /// Take `columns`, the newest frozen layer's placements, back as the own
+    /// ones, each under `reach`, with the own placements over them.
+    ///
+    /// # Specification
+    /// - requires: `columns` and `count` are the newest layer's, and `reach` is
+    ///   that layer's reach for this table.
+    /// - ensures: each node reads as it read before the call.
+    /// - provides: the placements of a settle.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — a predicate reads the layer's placements through
+    ///   the layer, which the call consumes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentTable::settle`].
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    fn lay_under(
+        &mut self,
+        (columns, count, reach): ([PlacementColumn; 4], PlacementCount, ArenaWatermark),
+    )
+    {
+        let (own, _own_count) = self.take_columns();
+        let [values, computations, value_types, comp_types] = columns;
+        self.values = values;
+        self.computations = computations;
+        self.value_types = value_types;
+        self.comp_types = comp_types;
+        self.count = count;
+        self.forget_own_from(reach);
+        for (family, column) in Family::ALL.into_iter().zip(&own) {
+            for (offset, id) in column.placed() {
+                self.set_at((family, offset), id);
+            }
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {
     /// Why a table gives no name for a record.
-    mod record_name {
+    pub(crate) mod record_name {
         /// The table holds no name for the record.
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         pub enum Absent {
@@ -1709,12 +2311,10 @@ impl ContentTable
     pub fn named() -> Self
     {
         Self {
-            naming: Naming::On(Names {
-                column: Vec::new(),
-                payload: ContentEncoding::new(),
-                members: Vec::new(),
-                key: NameKey(blake3::derive_key(Exact::CONTEXT, &[])),
-            }),
+            naming: Naming::On(Names::under(NameKey(blake3::derive_key(
+                Exact::CONTEXT,
+                &[],
+            )))),
             ..Self::default()
         }
     }
@@ -1723,9 +2323,10 @@ impl ContentTable
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name the table gave the record when it admitted it;
-    ///   absent as [`record_name::Absent::Off`] for a table that names nothing,
-    ///   and as [`record_name::Absent::Unrecorded`] past its records.
+    /// - ensures: the name the table gave the record when it admitted it, or
+    ///   the one the table below gave it under [`Self::base`]; absent as
+    ///   [`record_name::Absent::Off`] for a table that names nothing, and as
+    ///   [`record_name::Absent::Unrecorded`] past its records.
     /// - provides: the name a key takes across sessions.
     /// - fails: never.
     /// - panics: none.
@@ -1737,8 +2338,8 @@ impl ContentTable
     #[inline]
     #[spec(ensures: |ret| match self.naming {
         Naming::Off => ret == Maybe::Absent(record_name::Absent::Off),
-        Naming::On(ref names) => matches!(ret, Maybe::Present(_)) == (id.0 < self.records)
-            && u64::try_from(names.column.len()) == Ok(self.records),
+        Naming::On(ref names) => (id.0 < self.base || matches!(ret, Maybe::Present(_)) == (id.0 < self.records))
+            && u64::try_from(names.column.len()).ok().and_then(|own| own.checked_add(self.base)) == Some(self.records),
     })]
     pub fn name(
         &self,
@@ -1749,14 +2350,58 @@ impl ContentTable
         else {
             return Maybe::Absent(record_name::Absent::Off);
         };
-        usize::try_from(id.0)
-            .ok()
-            .and_then(|position| names.column.get(position))
-            .copied()
-            .map_or(
-                Maybe::Absent(record_name::Absent::Unrecorded),
-                Maybe::Present,
-            )
+        id.0.checked_sub(self.base).map_or_else(
+            || {
+                layer_holding(&self.placed.layers, id)
+                    .and_then(|layer| layer.name(id))
+                    .map_or(
+                        Maybe::Absent(record_name::Absent::Unrecorded),
+                        Maybe::Present,
+                    )
+            },
+            |own| {
+                usize::try_from(own)
+                    .ok()
+                    .and_then(|position| names.column.get(position))
+                    .copied()
+                    .map_or(
+                        Maybe::Absent(record_name::Absent::Unrecorded),
+                        Maybe::Present,
+                    )
+            },
+        )
+    }
+
+    /// The name of the record at `id`, as a key reads it.
+    ///
+    /// # Specification
+    /// - requires: the table names its records, and it gave `id`.
+    /// - ensures: the name [`Self::name`] gives. A table that names nothing, or
+    ///   an id past its records, reads the name no record takes, as a member
+    ///   that the column does not hold reads.
+    /// - provides: the name that each key of a session reads in place of an id,
+    ///   so no key reads the order in which a table met its content.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::name`].
+    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match self.name(id) {
+        Maybe::Present(name) => ret == name,
+        Maybe::Absent(_) => ret == RecordName::UNNAMED,
+    })]
+    pub(crate) fn key_name(
+        &self,
+        id: ContentId,
+    ) -> RecordName
+    {
+        match self.name(id) {
+            Maybe::Present(name) => name,
+            Maybe::Absent(_) => RecordName::UNNAMED,
+        }
     }
 
     /// The digest of a definition whose declared type and body this table
@@ -1815,7 +2460,8 @@ impl ContentTable
     #[inline]
     #[spec(ensures: match self.naming {
         Naming::Off => true,
-        Naming::On(ref names) => u64::try_from(names.column.len()) == Ok(self.records),
+        Naming::On(ref names) => u64::try_from(names.column.len()).ok()
+            .and_then(|own| own.checked_add(self.base)) == Some(self.records),
     })]
     fn name_fresh(
         &mut self,
@@ -1826,11 +2472,17 @@ impl ContentTable
         else {
             return;
         };
-        if u64::try_from(names.column.len()).is_ok_and(|named| named >= self.records) {
+        if u64::try_from(names.column.len())
+            .ok()
+            .and_then(|own| own.checked_add(self.base))
+            .is_some_and(|named| named >= self.records)
+        {
             return;
         }
         if let Naming::On(mut names) = core::mem::take(&mut self.naming) {
-            names.name(|record| write(self, record));
+            names.name((ContentId(self.base), &self.placed.layers), |record| {
+                write(self, record);
+            });
             self.naming = Naming::On(names);
         }
     }
@@ -1903,7 +2555,13 @@ impl ContentTable
     )
     {
         let named = self.constants.len();
-        self.constants.extend(
+        if named >= usize::from(entries.len()).min(usize::from(end)) {
+            return;
+        }
+        // An overlay that names one more constant copies the names it shares
+        // with the table below: a fork names the constants first, so its jobs
+        // name none.
+        Arc::make_mut(&mut self.constants).extend(
             entries
                 .iter()
                 .take(usize::from(end))
@@ -1939,7 +2597,9 @@ impl ContentTable
         first: ConstantIndex,
     )
     {
-        self.constants.truncate(usize::from(first));
+        if self.constants.len() > usize::from(first) {
+            Arc::make_mut(&mut self.constants).truncate(usize::from(first));
+        }
     }
 
     /// How the table names the constant at `index`, when it has named it.
@@ -2144,7 +2804,7 @@ impl ContentTable
     }
 
     /// The id this table holds for `record`, found by its digest `digest` and
-    /// decided by its words.
+    /// decided by its words, here or in a frozen layer.
     ///
     /// # Specification
     /// - requires: `digest` is `record`'s digest.
@@ -2162,6 +2822,9 @@ impl ContentTable
     ///   are each found again; a record asked twice is found by its first id.
     /// - witness: `encoding::tests::records_sharing_a_digest_keep_their_own_ids`
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    ///
+    /// # Clause cost
+    /// - bound: as [`Self::find`].
     #[spec(ensures: |ret| match ret {
         Maybe::Present(id) => id.0 < self.records,
         Maybe::Absent(record_held::Absent::Fresh) => true,
@@ -2172,10 +2835,66 @@ impl ContentTable
         digest: ContentDigest,
     ) -> Maybe<ContentId, record_held::Absent>
     {
-        match self.probe_record(record, TableHash::of(&digest)) {
-            Probe::Found(position) => Maybe::Present(ContentId::from(position)),
-            Probe::Vacant(_) => Maybe::Absent(record_held::Absent::Fresh),
+        self.find(record, TableHash::of(&digest))
+            .map_or(Maybe::Absent(record_held::Absent::Fresh), Maybe::Present)
+    }
+
+    /// The id of the record word-equal to `record`, whose digest hashes to
+    /// `hash`, in a frozen layer first, newest first, and then in this table;
+    /// else the slot of this table's own index that a fresh record is filed
+    /// at.
+    ///
+    /// # Specification
+    /// - requires: `hash` is the table hash of `record`'s digest.
+    /// - ensures: the id of the word-equal record, or the vacant slot of the
+    ///   own index. A frozen layer never holds a record that a layer or an
+    ///   overlay above it holds, so the order of the search decides nothing.
+    /// - provides: the probe each admission decides over.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::held`], and an overlay that finds a record
+    ///   its frozen layer holds.
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    ///
+    /// # Clause cost
+    /// - bound: one index probe for each frozen layer and one of the own index,
+    ///   each from the hash's home slot to the first vacant one, with one word
+    ///   comparison of the record for each position filed on the way.
+    #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |id| id.0 < self.records))]
+    fn find(
+        &self,
+        record: &ContentEncoding,
+        hash: TableHash,
+    ) -> Result<ContentId, TableSlot>
+    {
+        for view in self.placed.layers.iter().rev() {
+            if let Some(id) = view.layer.find(record, hash) {
+                return Ok(id);
+            }
         }
+        match self.probe_record(record, hash) {
+            Probe::Found(position) => Ok(self.own_id(position)),
+            Probe::Vacant(slot) => Err(slot),
+        }
+    }
+
+    /// The id of the own record at `position` past [`Self::base`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn own_id(
+        &self,
+        position: TablePosition,
+    ) -> ContentId
+    {
+        ContentId(
+            self.base
+                .saturating_add(u64::try_from(usize::from(position)).unwrap_or(u64::MAX)),
+        )
     }
 
     /// The probe for `record`, whose digest hashes to `hash`: the position of
@@ -2273,10 +2992,11 @@ impl ContentTable
         captures: [held = self.held(&self.scratch, digest), records_before = self.records,
             stream_before = self.stream.0.len()],
         ensures: |ret| u128::try_from(self.stream.0.len())
-            .is_ok_and(|words| u128::from(self.records) <= words)
-            && u64::try_from(self.spans.len()) == Ok(self.records) && ret.0 < self.records
+            .is_ok_and(|words| u128::from(self.records.saturating_sub(self.base)) <= words)
+            && u64::try_from(self.spans.len()).ok().and_then(|own| own.checked_add(self.base)) == Some(self.records)
+            && ret.0 < self.records
             && (self.held(&self.scratch, digest) == Maybe::Present(ret)
-                || ret.0 >= u64::from(u32::MAX))
+                || ret.0.saturating_sub(self.base) >= u64::from(u32::MAX))
             && match held {
                 Maybe::Present(prior) => ret == prior && self.records == records_before
                     && self.stream.0.len() == stream_before,
@@ -2290,9 +3010,9 @@ impl ContentTable
     ) -> ContentId
     {
         let hash = TableHash::of(&digest);
-        let slot = match self.probe_record(&self.scratch, hash) {
-            Probe::Found(position) => return ContentId::from(position),
-            Probe::Vacant(slot) => slot,
+        let slot = match self.find(&self.scratch, hash) {
+            Ok(id) => return id,
+            Err(slot) => slot,
         };
         let id = ContentId(self.records);
         let filed = TablePosition::try_from(self.spans.len());
@@ -3478,6 +4198,486 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             },
         }
     }
+}
+
+impl ContentTable
+{
+    /// Freeze this table's own records and placements into a new layer, so
+    /// an overlay reads them by reference; the table then holds none of its
+    /// own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn freeze(
+        &mut self,
+        arena: &TermArena,
+    )
+    {
+        let names = match self.naming {
+            Naming::On(ref mut names) => names.take_records(),
+            Naming::Off => RecordNames::default(),
+        };
+        let (columns, count) = self.placed.take_columns();
+        let layer = TableLayer {
+            base: self.base,
+            stream: core::mem::take(&mut self.stream),
+            spans: core::mem::take(&mut self.spans),
+            interned: core::mem::take(&mut self.interned),
+            names,
+            columns,
+            count,
+        };
+        self.placed.layers.push(LayerView {
+            layer: Arc::new(layer),
+            reach: arena.watermark(),
+        });
+        self.base = self.records;
+    }
+
+    /// Open an overlay at this fork point: a table that reads this one as it
+    /// stands, by reference, and names its records apart.
+    ///
+    /// This table freezes its own records and placements into a new layer,
+    /// when it holds any, and the overlay reads the table's layers. So each
+    /// sibling of one fork point reads the same layers. The overlay takes the
+    /// table's buffers, and its fold gives them back.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena this table names nodes of, and the
+    ///   overlay names nodes of it or of a clone of it.
+    /// - ensures: this table and the overlay give each node and each record the
+    ///   id and the name this table gave them before the call, and neither
+    ///   holds a record of its own.
+    /// - provides: the table a forked job names its records in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::join`].
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    #[must_use]
+    #[spec(ensures: |ret| ret.records == self.records && self.base == self.records
+        && ret.base == self.base)]
+    pub(crate) fn fork(
+        &mut self,
+        arena: &TermArena,
+    ) -> Self
+    {
+        self.forget_truncated(arena);
+        if self.records > self.base
+            || self.placed.count() != PlacementCount(0)
+            || self.placed.layers.is_empty()
+        {
+            self.freeze(arena);
+        }
+        Self {
+            base: self.records,
+            records: self.records,
+            placed: Placements {
+                layers: self.placed.layers.clone(),
+                ..Placements::default()
+            },
+            seen: self.seen,
+            forked: self.seen,
+            forked_at: arena.watermark(),
+            constants: Arc::clone(&self.constants),
+            naming: match self.naming {
+                Naming::On(ref names) => Naming::On(Names::under(names.key.clone())),
+                Naming::Off => Naming::Off,
+            },
+            scratch: core::mem::take(&mut self.scratch),
+            members: core::mem::take(&mut self.members),
+            tasks: core::mem::take(&mut self.tasks),
+            ..Self::default()
+        }
+    }
+
+    /// Fold `child` into this table: each record of the child's own, in the
+    /// child's order, and each placement it made of a node under its reach.
+    ///
+    /// The fold first settles this table, so a serial fold copies each record
+    /// once. When no record reached this table since the child's fork point,
+    /// each own id of the child is the id this table gives that content next,
+    /// and the fold appends the child's records as they stand. Otherwise the
+    /// fold interns each record again, its members read through the ids that
+    /// the fold gave the records before it, and the record keeps the child's
+    /// name. The caller folds the children of one fork point in their order.
+    ///
+    /// # Specification
+    /// - requires: `child` was forked from this table, or from a table whose
+    ///   layers this table reads, and it named nodes of `arena` under its
+    ///   reach. `arena` is this table's arena.
+    /// - ensures: this table holds a record of each content the child held,
+    ///   under the child's name, and places each node the child placed under
+    ///   its reach and this table did not place. A node of the child's own,
+    ///   past its reach, is left out, and so is a node that a truncation of
+    ///   `arena` since the fork point reached. The child's hold on the frozen
+    ///   layers ends, and this table is settled as [`Self::settle`] settles it.
+    /// - provides: the fold of a job's table at its join or its commit.
+    /// - fails: never. A child that names nothing keeps no member positions, so
+    ///   its records fold only when the ids stand; else they are left out,
+    ///   which costs sharing alone.
+    /// - panics: none.
+    /// - executable: none — the child's records leave with the fold, so no
+    ///   predicate reads them after it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two overlays of one fork point name records that
+    ///   overlap, and are folded in either order. Each node's record carries
+    ///   the name a serial table gives it.
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    pub(crate) fn join(
+        &mut self,
+        arena: &TermArena,
+        child: Self,
+    )
+    {
+        self.forget_truncated(arena);
+        let Self {
+            base,
+            stream,
+            spans,
+            interned,
+            mut placed,
+            forked,
+            forked_at,
+            records,
+            scratch,
+            members,
+            tasks,
+            constants,
+            naming,
+            ..
+        } = child;
+        // The child holds the layers no more, so a serial fold settles first
+        // and folds into the layer it read: each record is copied once.
+        placed.layers.clear();
+        self.settle();
+        if self.scratch.0.capacity() < scratch.0.capacity() {
+            self.scratch = scratch;
+            self.members = members;
+            self.tasks = tasks;
+        }
+        if constants.len() > self.constants.len() {
+            self.constants = constants;
+        }
+        let names = match naming {
+            Naming::On(mut names) => Some(names.take_records()),
+            Naming::Off => None,
+        };
+        let reach = arena
+            .truncated_since(forked)
+            .map_or(forked_at, |truncated| {
+                truncated
+                    .floor()
+                    .clamped_into(ArenaWatermark::default(), forked_at)
+            });
+        if self.records == base {
+            self.append((stream, spans, interned), names);
+            self.records = records;
+            self.placed.fold((&placed, reach), Some);
+            return;
+        }
+        let Some(names) = names
+        else {
+            return;
+        };
+        let base = ContentId(base);
+        let mut map: Vec<ContentId> = Vec::with_capacity(spans.len());
+        let mut start = 0_usize;
+        for (index, &span) in spans.iter().enumerate() {
+            let end = names.ends.get(index).map_or(start, |&RunEnd(end)| {
+                usize::try_from(end).unwrap_or(usize::MAX)
+            });
+            let positions = names.positions.get(start .. end).unwrap_or(&[]);
+            start = end;
+            let mut record = core::mem::take(&mut self.scratch);
+            let written = rewrite_members(&mut record, (&stream, span, positions), |id| {
+                mapped(id, base, &map)
+            });
+            self.scratch = record;
+            if written == Maybe::Absent(rewritten::Absent::Unmapped) {
+                // A member the fold has not mapped: the records from here on
+                // are left out, which costs sharing alone.
+                break;
+            }
+            let before = self.records;
+            let id = self.intern_scratch();
+            let keeps_positions = !self.placed.layers.is_empty();
+            if self.records > before
+                && let Naming::On(ref mut mine) = self.naming
+            {
+                mine.column.push(
+                    names
+                        .column
+                        .get(index)
+                        .copied()
+                        .unwrap_or(RecordName::UNNAMED),
+                );
+                if keeps_positions {
+                    mine.positions.extend_from_slice(positions);
+                    mine.ends.push(RunEnd(
+                        u32::try_from(mine.positions.len()).unwrap_or(u32::MAX),
+                    ));
+                }
+            }
+            map.push(id);
+        }
+        self.placed
+            .fold((&placed, reach), |id| mapped(id, base, &map));
+    }
+
+    /// Merge each frozen layer that no overlay reads any more into this
+    /// table, newest first, so the layers of a table are the ones an overlay
+    /// still reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table gives each node and each record the id and the name
+    ///   it gave before; the newest layer, if any, is one that another table
+    ///   still reads.
+    /// - provides: the step after a join that keeps the stack of layers as deep
+    ///   as the forks still open.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — which layer another table reads is a count of its
+    ///   holders, which no predicate over this table reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::join`].
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    pub(crate) fn settle(&mut self)
+    {
+        while let Some(view) = self.placed.layers.pop() {
+            match Arc::try_unwrap(view.layer) {
+                Ok(layer) => self.merge((layer, view.reach)),
+                Err(layer) => {
+                    self.placed.layers.push(LayerView {
+                        layer,
+                        reach: view.reach,
+                    });
+                    return;
+                },
+            }
+        }
+    }
+
+    /// Take `layer`, the newest frozen layer, back as the start of this
+    /// table's own part, its placements read under `reach`: its records come
+    /// before this table's own, and its placements lie under this table's own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn merge(
+        &mut self,
+        (layer, reach): (TableLayer, ArenaWatermark),
+    )
+    {
+        let TableLayer {
+            base,
+            stream,
+            spans,
+            interned,
+            names,
+            columns,
+            count,
+        } = layer;
+        let own = (
+            core::mem::replace(&mut self.stream, stream),
+            core::mem::replace(&mut self.spans, spans),
+            core::mem::replace(&mut self.interned, interned),
+        );
+        self.base = base;
+        let own_names = match self.naming {
+            Naming::On(ref mut mine) => {
+                let own_names = mine.take_records();
+                mine.put_records(names);
+                Some(own_names)
+            },
+            Naming::Off => None,
+        };
+        self.append(own, own_names);
+        self.placed.lay_under((columns, count, reach));
+        // A table over no layer is never folded, so it keeps no positions.
+        if self.placed.layers.is_empty()
+            && let Naming::On(ref mut mine) = self.naming
+        {
+            mine.positions.clear();
+            mine.ends.clear();
+        }
+    }
+
+    /// Append the own records of a table whose first own id is this table's
+    /// next id, with their names, as they stand.
+    ///
+    /// # Specification
+    /// trivial.
+    fn append(
+        &mut self,
+        (stream, spans, interned): (ContentEncoding, Vec<RecordSpan>, HashIndex),
+        names: Option<RecordNames>,
+    )
+    {
+        if self.spans.is_empty() {
+            self.stream = stream;
+            self.spans = spans;
+            self.interned = interned;
+        }
+        else {
+            let words = self.stream.0.len();
+            let held = self.spans.len();
+            self.stream.0.extend_from_slice(&stream.0);
+            self.spans.extend(spans.iter().map(|span| RecordSpan {
+                start: span.start.saturating_add(words),
+                end: span.end.saturating_add(words),
+            }));
+            for (hash, position) in interned.entries() {
+                // Past the index's position ceiling a record is held but not
+                // filed, as at an admission.
+                if let Ok(shifted) =
+                    TablePosition::try_from(usize::from(position).saturating_add(held))
+                {
+                    self.interned.file(hash, shifted);
+                }
+            }
+        }
+        let keeps_positions = !self.placed.layers.is_empty();
+        if let (&mut Naming::On(ref mut mine), Some(theirs)) = (&mut self.naming, names) {
+            if mine.column.is_empty() {
+                mine.column = theirs.column;
+            }
+            else {
+                mine.column.extend_from_slice(&theirs.column);
+            }
+            if keeps_positions {
+                let offset = u32::try_from(mine.positions.len()).unwrap_or(u32::MAX);
+                mine.positions.extend_from_slice(&theirs.positions);
+                mine.ends.extend(
+                    theirs
+                        .ends
+                        .iter()
+                        .map(|&RunEnd(end)| RunEnd(end.saturating_add(offset))),
+                );
+            }
+        }
+    }
+}
+
+/// The id a fold gives the child's id `id`: an id under `base` names a record
+/// of a frozen layer, which both tables share; an own id reads `map`, which
+/// holds an id for each own record the fold has interned so far.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn mapped(
+    id: ContentId,
+    base: ContentId,
+    map: &[ContentId],
+) -> Option<ContentId>
+{
+    id.0.checked_sub(base.0).map_or(Some(id), |own| {
+        usize::try_from(own)
+            .ok()
+            .and_then(|own| map.get(own))
+            .copied()
+    })
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a fold writes no record again.
+    mod rewritten {
+        /// The fold writes the record no more.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// A member is unreadable, or the fold gives it no id.
+            Unmapped,
+        }
+    }
+}
+
+/// Write into `record` the whole record of `source` at `span` again, with
+/// each member's id read through `map`. `positions` holds how many words
+/// other than members precede each member, as the named write of the record
+/// found them.
+///
+/// # Specification
+/// - requires: `span` frames a whole record of `source`, and `positions` holds
+///   one count for each of its members, in order.
+/// - ensures: `record` holds the record with each member's image replaced by
+///   the minimal image of its mapped id; absent as
+///   [`rewritten::Absent::Unmapped`] when a member is unreadable or `map` gives
+///   it no id.
+/// - provides: the record a fold interns in the table it folds into.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the intern that follows checks the record it writes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ContentTable::join`], whose second fold maps members
+///   of records the first fold interned.
+/// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+fn rewrite_members(
+    record: &mut ContentEncoding,
+    (source, span, positions): (&ContentEncoding, RecordSpan, &[WordOffset]),
+    map: impl Fn(ContentId) -> Option<ContentId>,
+) -> Maybe<(), rewritten::Absent>
+{
+    let unmapped = Maybe::Absent(rewritten::Absent::Unmapped);
+    let Some(words) = source.0.get(span.start .. span.end)
+    else {
+        return unmapped;
+    };
+    record.0.clear();
+    let mut cursor = 0_usize;
+    let mut payload = 0_usize;
+    for &WordOffset(at) in positions {
+        let at = usize::try_from(at).unwrap_or(usize::MAX);
+        let run = at.saturating_sub(payload);
+        let Some(copied) = words.get(cursor .. cursor.saturating_add(run))
+        else {
+            return unmapped;
+        };
+        record.0.extend_from_slice(copied);
+        cursor = cursor.saturating_add(run);
+        payload = at;
+        let Some((value, EncodingLength(length))) =
+            read_id(source, EncodingLength(span.start.saturating_add(cursor)))
+        else {
+            return unmapped;
+        };
+        cursor = cursor.saturating_add(length);
+        let Some(id) = map(value)
+        else {
+            return unmapped;
+        };
+        record.put_content(id);
+    }
+    record
+        .0
+        .extend_from_slice(words.get(cursor ..).unwrap_or(&[]));
+    Maybe::Present(())
+}
+
+/// The id whose minimal word image `source` holds at `at`, beside how many
+/// words the image takes, as [`ContentEncoding::put_content`] writes it.
+///
+/// # Specification
+/// trivial.
+fn read_id(
+    source: &ContentEncoding,
+    EncodingLength(at): EncodingLength,
+) -> Option<(ContentId, EncodingLength)>
+{
+    let mut value = 0_u64;
+    for (group, &word) in source.0.get(at ..)?.iter().enumerate() {
+        let shift = u32::try_from(group).ok()?.checked_mul(31)?;
+        value |= u64::from(word & 0x7fff_ffff).checked_shl(shift)?;
+        if word & 0x8000_0000 == 0 {
+            return Some((ContentId(value), EncodingLength(group.checked_add(1)?)));
+        }
+    }
+    None
 }
 
 /// How `constants` names the constant at `index`: its name there, or its
@@ -4831,16 +6031,17 @@ impl RewriteGoal
     }
 }
 
-/// Encode one rewrite obligation's whole key: the direction, the subject's
-/// content, the binder depth, and the rewrite's own parameter.
+/// Encode one rewrite obligation's whole key: the direction, the name of the
+/// subject's content, the binder depth, and the rewrite's own parameter.
 ///
 /// # Specification
 /// - requires: `table` is this session's, and `arena` is the one it has been
 ///   used with.
-/// - ensures: a byte string that is a function of content and binder depth
-///   alone. Two rewrite goals encode alike exactly when they rewrite the same
-///   content the same way, so an entry can only answer for a goal that would
-///   have produced it.
+/// - ensures: a word string that is a function of content and binder depth
+///   alone, and reads no content id. Two rewrite goals encode alike exactly
+///   when they rewrite the same content the same way, so an entry can only
+///   answer for a goal that would have produced it. Absent when the table names
+///   nothing: such a table keys no rewrite.
 /// - provides: the rewrite memo's key. Direction and required placements are
 ///   executable; session provenance and equality across rewrite content and
 ///   binder parameters are exercised by the bounded witness below.
@@ -4854,8 +6055,10 @@ impl RewriteGoal
 ///   components without exhausting rewrite semantics.
 /// - witness: `encoding::tests::a_rewrite_key_separates_on_each_component`
 #[inline]
-#[must_use]
-#[spec(ensures: |ret| ret.0.first() == Some(&u32::from(u8::from(goal.direction())))
+#[spec(ensures: |ret| match ret {
+        Maybe::Present(ref encoding) => encoding.0.first() == Some(&u32::from(u8::from(goal.direction()))),
+        Maybe::Absent(record_name::Absent::Off | record_name::Absent::Unrecorded) => true,
+    }
     && matches!(table.placed.get(goal.subject()), Maybe::Present(_))
     && match goal {
         RewriteGoal::Shift { .. } | RewriteGoal::Abstract { .. } => true,
@@ -4865,12 +6068,22 @@ pub fn encode_rewrite(
     table: &mut ContentTable,
     arena: &TermArena,
     goal: RewriteGoal,
-) -> ContentEncoding
+) -> Maybe<ContentEncoding, record_name::Absent>
 {
     let subject = table.place(arena, goal.subject());
+    let replacement = match goal {
+        RewriteGoal::Substitute { replacement, .. } => {
+            Some(table.place(arena, AnyNode::Value(replacement)))
+        },
+        RewriteGoal::Shift { .. } | RewriteGoal::Abstract { .. } => None,
+    };
+    let subject = match table.name(subject) {
+        Maybe::Present(name) => name,
+        Maybe::Absent(absent) => return Maybe::Absent(absent),
+    };
     let mut encoding = ContentEncoding::new();
     encoding.put_tag(goal.direction());
-    encoding.put_content(subject);
+    encoding.put_name(subject);
     match goal {
         RewriteGoal::Shift {
             depth,
@@ -4882,12 +6095,14 @@ pub fn encode_rewrite(
             encoding.put_count(ComponentCount(usize::from(cutoff)));
             encoding.put_count(ComponentCount(usize::from(amount)));
         },
-        RewriteGoal::Substitute {
-            depth, replacement, ..
-        } => {
-            let replacement = table.place(arena, AnyNode::Value(replacement));
+        RewriteGoal::Substitute { depth, .. } => {
             encoding.put_count(ComponentCount(usize::from(depth)));
-            encoding.put_content(replacement);
+            if let Some(replacement) = replacement {
+                match table.name(replacement) {
+                    Maybe::Present(name) => encoding.put_name(name),
+                    Maybe::Absent(absent) => return Maybe::Absent(absent),
+                }
+            }
         },
         RewriteGoal::Abstract {
             depth,
@@ -4900,7 +6115,7 @@ pub fn encode_rewrite(
             encoding.put_word(EncodedWord(u64::from(u32::from(index))));
         },
     }
-    encoding
+    Maybe::Present(encoding)
 }
 
 /// The absolute content digest of one node: the digest of the canonical record
@@ -5649,7 +6864,7 @@ mod tests
         let subject = arena.value_variable(DeBruijnIndex::from(0_u32));
         let other_spelling = arena.value_variable(DeBruijnIndex::from(0_u32));
         let replacement = arena.value_unit();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::named();
         let base = |depth, cutoff, amount| RewriteGoal::Shift {
             subject: AnyNode::Value(subject),
             depth,
@@ -6209,6 +7424,74 @@ mod tests
         assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(34));
         assert_eq!(usize::from(table.stream().length()), before);
+    }
+
+    #[test]
+    fn two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let shared = arena.value_type_product(&[unit, integer]);
+        let left = [shared, arena.value_type_product(&[shared, unit])];
+        let right = [arena.value_type_product(&[integer, shared]), shared];
+        let late_content = arena.value_type_product(&[integer, integer]);
+        let nodes =
+            [unit, integer, shared, left[1], right[0], late_content].map(AnyNode::ValueType);
+        let mut serial = ContentTable::named();
+        let names = nodes.map(|node| {
+            let id = serial.place(&arena, node);
+            serial.name(id)
+        });
+        for swapped in [false, true] {
+            let mut table = ContentTable::named();
+            let _base = table.place(&arena, AnyNode::ValueType(unit));
+            let forked = arena.watermark();
+            let mut overlays = [table.fork(&arena), table.fork(&arena)];
+            for (overlay, placed) in overlays.iter_mut().zip([&left[..], &right[..]]) {
+                for &node in placed {
+                    let _id = overlay.place(&arena, AnyNode::ValueType(node));
+                }
+            }
+            assert!(
+                overlays.iter().all(|overlay| overlay.forked_at == forked),
+                "each overlay reads the frozen layers up to the arena at the fork"
+            );
+            // A node minted after the fork, as a job mints into its clone.
+            let late = arena.value_type_product(&[integer, integer]);
+            let _late = overlays[0].place(&arena, AnyNode::ValueType(late));
+            if swapped {
+                overlays.reverse();
+            }
+            for overlay in overlays {
+                table.join(&arena, overlay);
+            }
+            table.settle();
+            assert!(
+                table.placed.layers.is_empty(),
+                "the settle merges each layer no overlay reads"
+            );
+            assert!(
+                matches!(table.placed.get(AnyNode::ValueType(late)), Maybe::Absent(_)),
+                "a node minted past an overlay's reach is left out of the fold"
+            );
+            assert_eq!(
+                table.records, serial.records,
+                "each content takes one record, swapped: {swapped}"
+            );
+            let found = nodes.map(|node| {
+                let id = table.place(&arena, node);
+                table.name(id)
+            });
+            assert_eq!(
+                found, names,
+                "each node takes the serial table's name, swapped: {swapped}"
+            );
+            assert_eq!(
+                table.records, serial.records,
+                "and the late node's record was folded, swapped: {swapped}"
+            );
+        }
     }
 
     #[test]

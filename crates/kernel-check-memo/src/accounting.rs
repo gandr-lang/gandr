@@ -99,6 +99,20 @@ impl MemoEntryCount
             .checked_add(1)
             .map_or(Err(MemoError::EntryCountOverflow), |next| Ok(Self(next)))
     }
+
+    /// The sum of two counts, at most the largest representable count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn saturating_add(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_add(other.0))
+    }
 }
 
 impl From<usize> for MemoEntryCount

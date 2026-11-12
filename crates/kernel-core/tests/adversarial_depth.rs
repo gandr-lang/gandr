@@ -261,7 +261,7 @@ fn shift_a_deep_code_carrying_chain() -> MemoEntryCount
         let returner = arena.comp_type_returner(node);
         node = arena.value_type_thunk(returner);
     }
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::named();
     let mut memo = RewriteMemo::new();
     let shifted = shift_value_type(
         &mut arena,
