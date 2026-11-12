@@ -62,5 +62,74 @@
       }
     },
     "output": "[]"
+  },
+  {
+    "name": "#6774: a job on an edit of a pull request whose condition reads no change is refused",
+    "input": {
+      "workflow": ".github/workflows/pr-title.yml",
+      "on": {
+        "pull_request": {
+          "types": ["opened", "edited", "reopened", "synchronize", "ready_for_review"]
+        },
+        "merge_group": {}
+      },
+      "jobs": {
+        "template": {
+          "if": false
+        },
+        "title": {
+          "if": "${{ github.actor != 'renovate[bot]' && github.event.action != 'synchronize' }}"
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/pr-title.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
+  },
+  {
+    "name": "#6774: a job on an edit of a pull request with no condition is refused",
+    "input": {
+      "workflow": ".github/workflows/pr-title.yml",
+      "on": {
+        "pull_request": {
+          "types": ["edited"]
+        }
+      },
+      "jobs": {
+        "title": {}
+      }
+    },
+    "output": "[\"`.github/workflows/pr-title.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
+  },
+  {
+    "name": "#6774: a job on an edit of a pull request that reads the change of the title holds",
+    "input": {
+      "workflow": ".github/workflows/pr-title.yml",
+      "on": {
+        "pull_request": {
+          "types": ["opened", "edited"]
+        }
+      },
+      "jobs": {
+        "title": {
+          "if": "${{ github.event.action != 'edited' || github.event.changes.title }}"
+        }
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a job of a workflow that does not run on an edit of a pull request holds",
+    "input": {
+      "workflow": ".github/workflows/issues.yml",
+      "on": {
+        "issues": {
+          "types": ["opened", "edited"]
+        },
+        "pull_request": null
+      },
+      "jobs": {
+        "sort": {}
+      }
+    },
+    "output": "[]"
   }
 ]

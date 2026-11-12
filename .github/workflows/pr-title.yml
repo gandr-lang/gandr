@@ -66,8 +66,11 @@ jobs:
     # a maintainer's pull request, so it runs no CI. A push changes no title:
     # the check skips, so it holds at once on the new head, GitHub's own
     # rebase of a stack member among them (#2070); the queue lints the
-    # header that lands.
-    if: ${{ github.actor != 'renovate[bot]' && github.event.action != 'synchronize' }}
+    # header that lands. An edit that changes no title, an edit of the body
+    # alone, skips for the same reason (#6774). `check:workflow-hashing`
+    # refuses a job on `edited` whose condition reads no field of
+    # `github.event.changes`.
+    if: ${{ github.actor != 'renovate[bot]' && github.event.action != 'synchronize' && (github.event.action != 'edited' || github.event.changes.title) }}
     runs-on: *linux
     timeout-minutes: 5
     # The title as it stands is read from the API: a re-run repeats its
@@ -79,13 +82,15 @@ jobs:
     steps:
       - *git-checkout
       - *install-commitlint
+      # The read of the title runs apart from commitlint, so a failed read
+      # names itself and commitlint never lints an empty input (#6774).
       - name: lint the title
         if: ${{ github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
-        run: gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .title | mise exec -- commitlint
+        run: .config/pr-title/lint.bash "$PR_NUMBER"
       # The queue of `landing` groups by HEADGREEN: a green group lands every
       # entry below it. So each step below reads every entry of the group,
       # never `HEAD` alone (#6839): the green group of pull request 6836
