@@ -96,7 +96,7 @@ The profiles admit different cut positions and commit only the fields they use.
 
 The typed scanner cuts only at reported events; a multi-token event can take the pending count past the cap. The cap takes precedence over the hash predicate, and a cut resets the count. One token per record with a power-of-two kappa gives the record-boundary rule used by `gandr-storage-records`.
 
-The Gear table is generated at compile time from the first 256 outputs of `SplitMix64`, seeded by the first sixty-four fractional bits of the square root of two. A seed policy selects either the unsalted state or a public salt.
+The Gear state shifts left by one for each byte, as the Gear hash of FastCDC does, so a cut far from an edit stays where it was. The build makes the unsalted Gear table at compile time from the first 256 outputs of `SplitMix64`. The seed of `SplitMix64` is the first sixty-four fractional bits of the square root of two. A public salt seeds the table from that value xored with the salt's fold, so a salted profile cuts at other places. Version 2 of the Gear names this step and this table, and a profile under version 1 is refused.
 
 ## Parameter commitments
 

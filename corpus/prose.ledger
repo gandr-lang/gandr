@@ -2541,7 +2541,6 @@ crates/runtime-stencils/README.md STE-3.6 cd729b6735dc73f2
 crates/runtime-stencils/README.md STE-3.2 dc52fe438a7b83d2
 crates/storage-artifact/README.md STE-3.6 a8aa6973b86d8037
 crates/storage-artifact/README.md STE-3.5 70825cb2d23dd42f
-crates/storage-chunker/README.md STE-3.6 10fa51ce55ac80c6
 crates/storage-chunker/README.md STE-3.6 1b3b801dd6ad718b
 crates/storage-chunker/README.md STE-3.6 ce521e1cc9f234e3
 crates/storage-chunker/README.md STE-3.5 2a320b027bcb6598

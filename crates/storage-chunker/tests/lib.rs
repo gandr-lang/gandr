@@ -3,6 +3,8 @@
 //! One target rather than one per area, so a contract's witness path names the
 //! area it belongs to (`tests::gear::…`) instead of a file.
 
+extern crate alloc;
+
 #[cfg(test)]
 mod common;
 
