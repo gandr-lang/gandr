@@ -613,7 +613,7 @@ impl Tiers
     /// - hypothesis: L3 — an attached view of the trace layer hears the card of
     ///   the declaration at the editor's cursor under the key of its account
     ///   card.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
     #[cfg(feature = "instrument")]
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|at|
         at.range.start <= position && position <= at.range.end))]
