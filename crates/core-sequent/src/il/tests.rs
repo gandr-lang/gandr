@@ -386,11 +386,7 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         (producer, consumer, command)
     };
     let shares = |left: &CommandArena, right: &CommandArena| {
-        !left.producers.frozen().is_empty()
-            && core::ptr::eq(
-                &raw const *left.producers.frozen(),
-                &raw const *right.producers.frozen(),
-            )
+        left.producers.shared_frozen(&right.producers) != 0_usize
     };
     let constant = |index: usize| ProducerNode::Constant(index.into());
     let mut plain = CommandArena::new();
