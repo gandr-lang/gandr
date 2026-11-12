@@ -5340,6 +5340,71 @@ mod tests
         );
     }
 
+    /// #3476, #2802: a fork at a grain smaller than a declaration takes a
+    /// clone of a check's clone. Two clones of a check and a clone of one of
+    /// them each mint and drop into their parent, and one of them truncates
+    /// too. The check then holds its own nodes alone. A reader from before
+    /// the forks, and a reader at the stamp of the innermost clone, each
+    /// forget every name past the check's nodes.
+    #[test]
+    fn clones_of_a_clone_drop_into_their_parents_as_truncations_3476()
+    {
+        let intermediates = |arena: &mut TermArena| {
+            let value = arena.value_unit();
+            let _type = arena.value_type_unit();
+            let _returned = arena.computation_return(value);
+        };
+        let since = super::TruncationStamp::default();
+        let mut environment = TermArena::new();
+        let value = environment.value_constant(super::ConstantIndex::from(0_usize));
+        let _returned = environment.computation_return(value);
+        environment.freeze();
+        let mut check = environment.clone();
+        intermediates(&mut check);
+        let before = check.clone();
+        let mark = check.watermark();
+        // Each fork freezes its parent first, so each child shares the
+        // parent's nodes and copies none.
+        check.freeze();
+        let mut left = check.clone();
+        let mut right = check.clone();
+        intermediates(&mut left);
+        left.freeze();
+        let mut inner = left.clone();
+        let start = inner.watermark();
+        intermediates(&mut inner);
+        inner.truncate_to(start);
+        intermediates(&mut inner);
+        let read = inner
+            .truncated_since(since)
+            .map(|truncated| truncated.now())
+            .expect("the innermost clone's truncation takes a stamp");
+        left.dropped(&inner);
+        intermediates(&mut right);
+        check.dropped(&left);
+        check.dropped(&right);
+        assert_eq!(
+            check.watermark(),
+            mark,
+            "the check keeps its own nodes alone"
+        );
+        assert_eq!(check, before, "and every node of them");
+        assert_eq!(
+            check
+                .truncated_since(since)
+                .map(|truncated| truncated.floor()),
+            Some(mark),
+            "a reader from before the forks forgets each name past the check's nodes"
+        );
+        assert_eq!(
+            check
+                .truncated_since(read)
+                .map(|truncated| truncated.floor()),
+            Some(mark),
+            "and so does a reader at the innermost clone's stamp"
+        );
+    }
+
     /// An arena frozen part way answers every read, mint, truncation and
     /// comparison as one built alike and never frozen does; a clone of it
     /// shares the frozen nodes and owns only those minted after, and a
