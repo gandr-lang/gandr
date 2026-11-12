@@ -103,12 +103,21 @@ signoffs=$(for issue in "${issues[@]}"; do
     --jq '.[] | select(.body | test("\\bsigned\\b")) | {author: .user.login, body}' \
     || { echo "check:deletes: the comments of #$issue cannot be read" >&2; exit 2; }
 done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
+  # A word names the signed commit only when `origin` serves it, as the queue
+  # reads it (#7012). For a commit that the clone holds, the check asks
+  # `origin` from a scratch repository. A commit that the clone lacks, the
+  # check fetches, and the fetch is the answer.
   sha=
   for word in $(jq -r '.body' <<< "$comment" | digests); do
-    if git cat-file -e "$word^{commit}" 2> /dev/null || { git fetch --quiet --depth=1 origin "$word" 2> /dev/null && git cat-file -e "$word^{commit}" 2> /dev/null; }; then
-      sha=$(git rev-parse "$word^{commit}")
-      break
+    if full=$(git rev-parse --verify --quiet "$word^{commit}"); then
+      served "$scratch/origin" "$full" || continue
+    elif git fetch --quiet --depth=1 origin "$word" 2> /dev/null; then
+      full=$(git rev-parse --verify --quiet "$word^{commit}") || continue
+    else
+      continue
     fi
+    sha=$full
+    break
   done
   # The fork of the signed commit with the base (`signed_fork`, #6920). The
   # merge queue's clone is shallow, so the check fetches the signed line and
