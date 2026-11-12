@@ -10,11 +10,15 @@
 //! test code rather than as shipping code.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::convert::Infallible;
 use core::fmt::Write as _;
 use core::ops::ControlFlow;
+use core::time::Duration;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Condvar;
+use std::sync::Mutex;
 
 use anodized::spec;
 use gandr_surface_diagnostics::AnnotationKind;
@@ -706,16 +710,112 @@ fn a_hosted_workload_answers_what_it_read()
     );
 }
 
-/// A client's stream that, once its frames are read, stays open for a
-/// while before it closes, as an editor sits idle.
+/// A session's output, which the test's client reads while the session
+/// writes it.
+#[derive(Clone, Default)]
+struct Shared(Arc<(Mutex<Vec<u8>>, Condvar)>);
+
+impl Shared
+{
+    /// Wait until the session wrote `count` frames, or until `ceiling`
+    /// passes, whichever comes first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn await_frames(
+        &self,
+        count: usize,
+        ceiling: Duration,
+    )
+    {
+        let (bytes, wrote) = &*self.0;
+        let held = bytes
+            .lock()
+            .expect("no write panics while it holds the output");
+        drop(
+            wrote
+                .wait_timeout_while(held, ceiling, |bytes| header_ends(bytes) < count)
+                .expect("no write panics while it holds the output"),
+        );
+    }
+
+    /// Every byte the session wrote.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bytes(&self) -> Vec<u8>
+    {
+        self.0
+            .0
+            .lock()
+            .expect("no write panics while it holds the output")
+            .clone()
+    }
+}
+
+impl std::io::Write for Shared
+{
+    /// Append `buf`, and wake the client that waits for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn write(
+        &mut self,
+        buf: &[u8],
+    ) -> std::io::Result<usize>
+    {
+        let (bytes, wrote) = &*self.0;
+        bytes
+            .lock()
+            .expect("no write panics while it holds the output")
+            .extend_from_slice(buf);
+        wrote.notify_all();
+        Ok(buf.len())
+    }
+
+    /// Nothing to flush: each write lands whole.
+    ///
+    /// # Specification
+    /// trivial.
+    fn flush(&mut self) -> std::io::Result<()>
+    {
+        Ok(())
+    }
+}
+
+/// How many frames `bytes` begins: one header end for each.
+///
+/// # Specification
+/// trivial.
+fn header_ends(bytes: &[u8]) -> usize
+{
+    bytes
+        .windows(4)
+        .filter(|window| *window == b"\r\n\r\n")
+        .count()
+}
+
+/// How long a client waits for the session to answer its frames before it
+/// lingers anyway: past it the assertion names what did not come.
+const ANSWER: Duration = Duration::from_secs(120);
+
+/// A client's stream that, once its frames are read and the session answers
+/// them, stays open for a while before it closes, as an editor sits idle.
+/// The linger starts at the answer, not at the last frame, so the time the
+/// session takes to judge a change never eats into it (#6945).
 struct Lingering
 {
     /// The frames, back to back.
     frames: Vec<u8>,
     /// How many bytes were read.
     read: usize,
-    /// How long the stream stays open after its last frame.
-    linger: core::time::Duration,
+    /// What the session writes.
+    written: Shared,
+    /// How many frames the session writes in answer before the linger
+    /// starts.
+    answered: usize,
+    /// How long the stream stays open after the answer.
+    linger: Duration,
 }
 
 impl std::io::Read for Lingering
@@ -744,16 +844,17 @@ impl std::io::Read for Lingering
 
 impl std::io::BufRead for Lingering
 {
-    /// What is left of the frames; once none is, wait out the linger
-    /// once, then close.
+    /// What is left of the frames; once none is, wait for the session's
+    /// answer, wait out the linger once, then close.
     ///
     /// # Specification
     /// trivial.
     fn fill_buf(&mut self) -> std::io::Result<&[u8]>
     {
         if self.read == self.frames.len() && !self.linger.is_zero() {
+            self.written.await_frames(self.answered, ANSWER);
             std::thread::sleep(self.linger);
-            self.linger = core::time::Duration::ZERO;
+            self.linger = Duration::ZERO;
         }
         Ok(self.frames.get(self.read ..).unwrap_or_default())
     }
@@ -785,8 +886,8 @@ impl gandr_surface_lsp::Unread for Lingering
 
 /// What a session writes when the client, its quiet interval the setting
 /// `quiet`, opens a document, types an unfinished declaration into it and
-/// then sits idle for a second: each message's `id`, and each
-/// publication's version and codes.
+/// then sits idle for a second once the session answers the change: each
+/// message's `id`, and each publication's version and codes.
 ///
 /// # Specification
 /// trivial.
@@ -812,21 +913,24 @@ fn idled(quiet: &Value) -> Vec<Value>
             }],
         }}),
     ];
+    let output = Shared::default();
     let mut input = Lingering {
         frames: frames(&messages).as_ref().to_vec(),
         read: 0_usize,
-        linger: core::time::Duration::from_secs(1),
+        written: output.clone(),
+        // The answer to `initialize`, and a publication for each version.
+        answered: 3_usize,
+        linger: Duration::from_secs(1),
     };
-    let mut output = Vec::new();
     let served = serve(
         &mut input,
-        &mut output,
+        &mut output.clone(),
         &mut Vec::new(),
         Workspace::spelled(Spelling::Unicode),
     )
     .expect("the streams carry the session");
     assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
-    written(&Body::from(output))
+    written(&Body::from(output.bytes()))
         .iter()
         .map(|message| {
             message.get("method").map_or_else(
