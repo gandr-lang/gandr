@@ -7,7 +7,9 @@
 # fails, GitHub names the pull request of that commit, and `owner.jq`
 # writes the defect, the lane and the `FIX` page. Each interval also reads
 # how long `main` stands behind `landing` (`gap.jq`), and a gap past
-# `watch_limit` minutes pages the fixer once for each head of `main`.
+# `watch_limit` minutes pages the fixer once for each head of `main`. The
+# gate and the search run in the background, so that reading goes on each
+# interval while they run (#6944).
 #
 # The gate runs in a clone of its own, `watch-landing` under the state
 # directory, whose objects link those of this checkout's repository. So
@@ -43,7 +45,6 @@ watch_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.json"
 watch_tree="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-landing"
 watch_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-service"
 watch_limit=45
-# shellcheck disable=SC2034 # `landing:watch` reads the interval
 watch_interval=60
 source "$watch_dir/../stall/stall.bash"
 
@@ -96,13 +97,15 @@ watch_token() {
 }
 
 # Makes the clone when it is absent, then reads `landing`, `main` and
-# `integration` into its `refs/watch/`. A local clone links the objects of
-# this checkout's repository, so it copies no object. A clone of a shallow
-# repository is shallow too, and a check that clones the clone again then
-# reads it through a pack of its refs alone: a commit that the check wrote
-# is not in that pack (#6587). So the first fetch deepens the clone to the
-# whole history, and each later one keeps it whole.
+# `integration` into its `refs/$1/`, `refs/watch/` by default. A local
+# clone links the objects of this checkout's repository, so it copies no
+# object. A clone of a shallow repository is shallow too, and a check that
+# clones the clone again then reads it through a pack of its refs alone: a
+# commit that the check wrote is not in that pack (#6587). So the first
+# fetch deepens the clone to the whole history, and each later one keeps it
+# whole.
 watch_fetch() {
+  local space=${1:-watch}
   local -a deepen=()
   if [[ ! -d "$watch_tree/.git" ]]; then
     mkdir -p "$(dirname "$watch_tree")"
@@ -110,8 +113,8 @@ watch_fetch() {
     git -C "$watch_tree" remote set-url origin "$(git remote get-url origin)"
   fi
   if [[ $(git -C "$watch_tree" rev-parse --is-shallow-repository) == true ]]; then deepen=(--unshallow); fi
-  git -C "$watch_tree" fetch --quiet "${deepen[@]}" origin '+refs/heads/landing:refs/watch/landing' \
-    '+refs/heads/main:refs/watch/main' '+refs/heads/integration:refs/watch/integration'
+  git -C "$watch_tree" fetch --quiet "${deepen[@]}" origin "+refs/heads/landing:refs/$space/landing" \
+    "+refs/heads/main:refs/$space/main" "+refs/heads/integration:refs/$space/integration"
 }
 
 # Pages the seat of lane `$1` with the line `$2`, the triage seat for a
@@ -130,13 +133,14 @@ watch_page() {
   if [[ ${3:-} == coordinator && "${seat[*]}" != "${coordinator[*]}" ]]; then "${command[@]}" "${coordinator[@]}" "$2" || :; fi
 }
 
-# Reads the gap and pages the fixer when `gap.jq` says so, and the
-# coordinator too when no cycle runs; prints the reading.
+# Reads the gap from the refs of namespace `$2` and pages the fixer when
+# `gap.jq` says so, and the coordinator too when no cycle runs; prints the
+# reading.
 watch_gap() {
-  local memory=$1 oldest main integration reading
-  oldest=$(git -C "$watch_tree" log --first-parent --format=%ct refs/watch/main..refs/watch/landing | tail -n 1)
-  main=$(git -C "$watch_tree" rev-parse refs/watch/main)
-  integration=$(git -C "$watch_tree" rev-parse refs/watch/integration)
+  local memory=$1 space=$2 oldest main integration reading
+  oldest=$(git -C "$watch_tree" log --first-parent --format=%ct "refs/$space/main..refs/$space/landing" | tail -n 1)
+  main=$(git -C "$watch_tree" rev-parse "refs/$space/main")
+  integration=$(git -C "$watch_tree" rev-parse "refs/$space/integration")
   reading=$(jq -n -c --argjson now "$(date +%s)" --argjson oldest "${oldest:-null}" --arg main "$main" \
     --arg integration "$integration" --argjson limit "$watch_limit" --argjson paged "$(jq -c '.paged // null' <<< "$memory")" \
     '{now: $now, oldest: $oldest, main: $main, integration: $integration, limit: $limit, paged: $paged}' | jq -c -f "$watch_dir/gap.jq")
@@ -310,22 +314,33 @@ watch_file() {
   watch_page "$(jq -r .lane <<< "$owner")" "$(jq -r --arg n "$number" '.page | gsub("\\{n\\}"; $n)' <<< "$owner")"
 }
 
-# One reading: the gap, then the gate on the newest head when it moved.
-# Prints the new state.
-watch_once() {
-  local repo=$1 memory gap head green log status check newest culprit
+# Reads the heads into the refs of namespace `$2` and the gap from them, and
+# prints the state `$1` with that gap. A failed fetch prints `$1` as it is,
+# and fails.
+watch_heads() {
+  local memory=$1 gap
+  watch_fetch "$2" || { printf '%s\n' "$memory"; return 1; }
+  gap=$(watch_gap "$memory" "$2")
+  jq -c --argjson gap "$gap" '.gap = ($gap | del(.paged)) | if $gap.page then .paged = $gap.paged else . end' <<< "$memory"
+}
+
+# Waits at most `watch_interval` seconds for the process `$1`, and succeeds
+# when it ends.
+watch_hold() {
+  local second
+  for (( second = 0; second < watch_interval; second++ )); do
+    kill -0 "$1" 2> /dev/null || return 0
+    sleep 1
+  done
+  ! kill -0 "$1" 2> /dev/null
+}
+
+# The gate on the head `$2`, and the search and the defect of each red line,
+# from the state `$3`. Prints the new state.
+watch_gate() {
+  local repo=$1 head=$2 memory=$3 green log status check newest culprit
   local -a failed
   local -A caused=()
-  memory=$(watch_memory)
-  watch_fetch || { echo "landing:watch: the fetch failed; reading again" >&2; printf '%s\n' "$memory"; return 0; }
-  gap=$(watch_gap "$memory")
-  memory=$(jq -c --argjson gap "$gap" '.gap = ($gap | del(.paged)) | if $gap.page then .paged = $gap.paged else . end' <<< "$memory")
-  head=$(git -C "$watch_tree" rev-parse refs/watch/landing)
-  if [[ $(jq -r '.checked // empty' <<< "$memory") == "$head" ]]; then printf '%s\n' "$memory"; return 0; fi
-  # The state holds the gap before the gate runs (#6675): a gate and the
-  # search of a red head can run an hour, and the report reads the gap
-  # meanwhile. The loop writes the state again when the reading returns.
-  watch_remember "$(jq -c --argjson read "$(date +%s)" '.read = $read' <<< "$memory")"
   # The first green head is `main`'s: the integration cycle passed on it.
   green=$(jq -r '.green // empty' <<< "$memory")
   if [[ -z $green ]] || ! git -C "$watch_tree" merge-base --is-ancestor "$green" "$head" 2> /dev/null; then
@@ -365,6 +380,40 @@ watch_once() {
     watch_file "$repo" "$head" "$green" "$culprit" "$log" "${failed[@]}" || :
   done
   jq -c --arg head "$head" '.checked = $head' <<< "$memory"
+}
+
+# One reading: the gap, then the gate on the newest head when it moved.
+# Prints the new state.
+watch_once() {
+  local repo=$1 memory head gate state
+  memory=$(watch_memory)
+  if ! memory=$(watch_heads "$memory" watch); then
+    echo "landing:watch: the fetch failed; reading again" >&2
+    printf '%s\n' "$memory"
+    return 0
+  fi
+  head=$(git -C "$watch_tree" rev-parse refs/watch/landing)
+  if [[ $(jq -r '.checked // empty' <<< "$memory") == "$head" ]]; then printf '%s\n' "$memory"; return 0; fi
+  # A gate and the search of a red head can run an hour (#6944). So they run
+  # in the background, and each interval meanwhile reads the gap again, pages
+  # on it, and writes it to the state (#6675). These readings fetch into
+  # `refs/gap/`, so they never move a ref that the gate or the search reads.
+  watch_remember "$(jq -c --argjson read "$(date +%s)" '.read = $read' <<< "$memory")"
+  state=$(mktemp)
+  watch_gate "$repo" "$head" "$memory" > "$state" &
+  gate=$!
+  until watch_hold "$gate"; do
+    memory=$(watch_heads "$memory" gap) || echo "landing:watch: the fetch failed while the gate runs; reading again" >&2
+    watch_remember "$(jq -c --argjson read "$(date +%s)" '.read = $read' <<< "$memory")"
+  done
+  wait "$gate" || :
+  # The gate's state keeps its heads, and takes the newest gap and page.
+  if [[ -s $state ]]; then
+    jq -c --argjson now "$memory" '.gap = $now.gap | if $now.paged then .paged = $now.paged else . end' "$state"
+  else
+    printf '%s\n' "$memory"
+  fi
+  rm -f "$state"
 }
 
 # Install (`$1` = install) or remove (`$1` = remove) the service that keeps
