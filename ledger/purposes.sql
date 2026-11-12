@@ -4982,6 +4982,7 @@ INSERT INTO purpose VALUES('workflow-lane-budget','report::RunId','struct','A wo
 INSERT INTO purpose VALUES('workflow-lane-budget','report::Sample','struct','One successful job of a sampled run: its name and how long it ran.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::SampleCount','struct','How many samples a row''s median comes from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::Standing','enum','How a lane, or the whole report, stands against its budget.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-lane-budget','report::StateClass','struct','A class of saved build state, as the nightly workflow keys it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::Unsampled','enum','Why a lane has no median.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::lower_median','function','The lower median of `samples`: the sample at position ⌊(n − 1) / 2⌋ in ascending order, a time some job actually took.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::CacheUsage','struct','What the cache usage route reports: the active caches'' bytes and count.',NULL,'fits','sound',NULL);

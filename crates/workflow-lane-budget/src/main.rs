@@ -3,14 +3,15 @@
 //!
 //! `lane-budget --budget NAME=SECONDS... [--integration NAME=SECONDS...]
 //! [--daily NAME=SECONDS...] [--nightly NAME=SECONDS...] [--summed
-//! NAME=BUDGET/CEILING...] [--runs N] [--issue TITLE]` samples the newest `N`
-//! merge-queue and pull-request runs through `gh` and classifies each by the
-//! cone its landing touched. With `--integration`, it samples the CI
-//! workflow's newest `N` dispatches on `integration` for the test lanes only
-//! they hold, and its newest `N` pushes to `main` for the same lanes as
-//! information; with `--daily`, its newest `N` scheduled runs; with
+//! NAME=BUDGET/CEILING...] [--waiting CLASS...] [--runs N] [--issue TITLE]`
+//! samples the newest `N` merge-queue and pull-request runs through `gh` and
+//! classifies each by the cone its landing touched. With `--integration`, it
+//! samples the CI workflow's newest `N` dispatches on `integration` for the
+//! test lanes only they hold, and its newest `N` pushes to `main` for the same
+//! lanes as information; with `--daily`, its newest `N` scheduled runs; with
 //! `--nightly`, the nightly workflow's; with `--summed`, every active
 //! workflow's newest `N` completed runs, timed whole, and the cache's usage.
+//! With `--waiting`, it names each class of saved state the night waits for.
 //! It prints the Markdown report and with `--issue` opens, updates, reopens or
 //! closes the one issue of that title.
 //!
@@ -33,6 +34,7 @@ use gandr_workflow_lane_budget::Cone;
 use gandr_workflow_lane_budget::IssueTitle;
 use gandr_workflow_lane_budget::Report;
 use gandr_workflow_lane_budget::RunCount;
+use gandr_workflow_lane_budget::StateClass;
 use gandr_workflow_lane_budget::Summed;
 use gandr_workflow_lane_budget::Workflows;
 use gandr_workflow_lane_budget::cone;
@@ -78,6 +80,11 @@ struct Cli
     /// runs timed whole and the cache's usage.
     #[arg(long = "summed")]
     summed: Vec<Summed>,
+    /// A class of saved build state that `main` holds no entry of, such as
+    /// `cargo-test-enforcing`, so the night skips the lanes that restore it;
+    /// repeat for each class. Any keeps the issue open as an over lane does.
+    #[arg(long = "waiting")]
+    waiting: Vec<StateClass>,
     /// The title of the one issue to open while a lane is over budget and to
     /// close once every lane is within.
     #[arg(long)]
@@ -245,6 +252,7 @@ fn run(cli: Cli) -> Result<(), BudgetError>
         past = workflows.past_ceiling();
         report = report.with_workflows(workflows);
     }
+    let report = report.with_waiting(cli.waiting);
     let output = |error: std::io::Error| BudgetError::Output {
         message: error.to_string(),
     };
