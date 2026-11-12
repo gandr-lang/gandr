@@ -968,7 +968,6 @@ impl Judge for Checker
     /// trivial.
     #[inline]
     fn form(
-        &self,
         context: &mut CheckingContext<'_>,
         node: TypeNode,
     ) -> Result<(), Failure>
@@ -982,7 +981,6 @@ impl Judge for Checker
     /// trivial.
     #[inline]
     fn check_value(
-        &self,
         context: &mut CheckingContext<'_>,
         value: ValueId,
         expected: FormedValueType,

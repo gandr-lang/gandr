@@ -238,9 +238,7 @@ pub fn form_value_type(
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, CheckRefusal>
 {
-    context
-        .judge()
-        .form(context, TypeNode::Value(value_type))
+    (context.judge().form)(context, TypeNode::Value(value_type))
         .map_err(|failure| failure.refusal())?;
     Ok(FormedValueType(value_type))
 }
@@ -270,7 +268,7 @@ pub fn form_value_type_with_failure(
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, Failure>
 {
-    context.judge().form(context, TypeNode::Value(value_type))?;
+    (context.judge().form)(context, TypeNode::Value(value_type))?;
     Ok(FormedValueType(value_type))
 }
 
@@ -304,9 +302,7 @@ pub fn form_comp_type(
     comp_type: CompTypeId,
 ) -> Result<FormedCompType, CheckRefusal>
 {
-    context
-        .judge()
-        .form(context, TypeNode::Computation(comp_type))
+    (context.judge().form)(context, TypeNode::Computation(comp_type))
         .map_err(|failure| failure.refusal())?;
     Ok(FormedCompType(comp_type))
 }

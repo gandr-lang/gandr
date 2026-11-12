@@ -338,7 +338,7 @@ pub struct CheckingContext<'arena>
     arena: &'arena mut CoreArena,
     /// The judgement the formers and formation ask to form a type or check a
     /// value.
-    judge: &'static dyn Judge,
+    judge: Asks,
     /// The binders the judgement is under; empty between judgements.
     binders: Context,
     /// The types declarations supplied, ascending by admission position.
@@ -637,7 +637,7 @@ enum Closure
 pub struct Checkpoint
 {
     /// [`CheckingContext::judge`].
-    judge: &'static dyn Judge,
+    judge: Asks,
     /// [`CheckingContext::binders`].
     binders: Context,
     /// [`CheckingContext::signatures`].
@@ -766,6 +766,27 @@ pub struct Checkpoint
 
 impl<'arena> CheckingContext<'arena>
 {
+    /// A context over `arena`, judging under `budget`, that asks the judge `J`
+    /// through two function pointers: the one generic shell of the context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<J>(
+        arena: &'arena mut CoreArena,
+        budget: CheckBudget,
+        _judge: &'static J,
+    ) -> Self
+    where
+        J: Judge,
+    {
+        Self::with_asks(arena, budget, Asks {
+            form: J::form,
+            check_value: J::check_value,
+        })
+    }
+
     /// A context over `arena` with no declaration admitted, judging under
     /// `budget`, that asks `judge` to form a type or check a value.
     ///
@@ -805,10 +826,10 @@ impl<'arena> CheckingContext<'arena>
         && ret.depth(Zone::Linear) == BinderDepth::default())]
     #[inline]
     #[must_use]
-    pub fn new(
+    pub fn with_asks(
         arena: &'arena mut CoreArena,
         budget: CheckBudget,
-        judge: &'static dyn Judge,
+        judge: Asks,
     ) -> Self
     {
         let atoms = Atoms {
@@ -3236,7 +3257,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn judge(&self) -> &'static dyn Judge
+    pub const fn judge(&self) -> Asks
     {
         self.judge
     }
@@ -6528,3 +6549,17 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 
 #[cfg(test)]
 mod tests;
+
+/// The judge's two asks, as the context keeps them: one function pointer each.
+#[derive(Clone, Copy, Debug)]
+pub struct Asks
+{
+    /// [`Judge::form`] of the context's judge.
+    pub form: fn(&mut CheckingContext<'_>, TypeNode) -> Result<(), crate::failure::Failure>,
+    /// [`Judge::check_value`] of the context's judge.
+    pub check_value: fn(
+        &mut CheckingContext<'_>,
+        gandr_core_term::ValueId,
+        crate::formation::FormedValueType,
+    ) -> Result<crate::judge::Checked, crate::failure::Failure>,
+}

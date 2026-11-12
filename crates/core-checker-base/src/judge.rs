@@ -180,7 +180,6 @@ pub trait Judge: fmt::Debug + Sync
     /// - declaration-only: the obligation is the implementation's run; the
     ///   trait has no body to witness.
     fn form(
-        &self,
         context: &mut CheckingContext<'_>,
         node: TypeNode,
     ) -> Result<(), Failure>;
@@ -206,7 +205,6 @@ pub trait Judge: fmt::Debug + Sync
     /// - declaration-only: the obligation is the implementation's run; the
     ///   trait has no body to witness.
     fn check_value(
-        &self,
         context: &mut CheckingContext<'_>,
         value: ValueId,
         expected: FormedValueType,
