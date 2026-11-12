@@ -33,7 +33,7 @@
       ],
       "held": ["v::hom::DirectedHom"],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": {},
       "signoffs": [],
@@ -81,7 +81,7 @@
       ],
       "held": ["v::refl::Refl"],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": {},
       "signoffs": [],
@@ -106,7 +106,7 @@
       ],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [],
@@ -131,7 +131,7 @@
       ],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
@@ -144,6 +144,44 @@
         }
       ],
       "architects": { "agent-shade": "(architect", "silvanshade": "" }
+    },
+    "output": ""
+  },
+  {
+    "name": "#7006: a method leaves and its owner stays, so the feature line that names the owner does not name the method",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700 (#640)|deleted|builds a hom from its fields|#640 reads the hom by its fields; README: none; none found|no test, exemplar or crate takes a constructor that the fields give; consumers: gandr-kernel-core|none|none|the comment of 2026-11-11|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": ["v::hom::DirectedHom"],
+      "tests": [],
+      "features": {
+        "vd": {
+          "base": ["- **The directed hom.** `DirectedHom`: a hom of a directed type.", ""],
+          "head": ["- **The directed hom.** `DirectedHom`: a hom of a directed type.", ""]
+        }
+      },
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
+          "changed": []
+        }
+      ],
+      "architects": { "agent-shade": "(architect" }
     },
     "output": ""
   },
@@ -164,7 +202,7 @@
       ],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
@@ -197,7 +235,7 @@
       ],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
@@ -230,7 +268,7 @@
       ],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
@@ -257,7 +295,7 @@
       "left": [],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": {
         "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"],
@@ -296,7 +334,7 @@
       "left": [],
       "held": [],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
@@ -329,7 +367,12 @@
       ],
       "held": [],
       "tests": [],
-      "readme": ["gandr_vd::hom::DirectedHom"],
+      "features": {
+        "vd": {
+          "base": ["- **The directed hom.** `DirectedHom`: a hom of a directed type.", ""],
+          "head": ["- **The directed hom.** `DirectedHom`: a hom of a directed type.", ""]
+        }
+      },
       "lonely": [{ "library": "gandr_vd", "dir": "vd" }],
       "files": { "gandr_vd::hom::DirectedHom": ["crates/vd/src/hom.rs"] },
       "signoffs": [
@@ -354,7 +397,7 @@
       "left": [],
       "held": ["v::kept::Item", "v::back::Item"],
       "tests": [],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": {},
       "signoffs": [],
@@ -380,7 +423,7 @@
           "name": "directed_j_on_the_reflexive_hom_is_the_reflexive_hom"
         }
       ],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": {},
       "signoffs": [],
@@ -397,7 +440,7 @@
       "left": [{ "id": "ignored", "kind": "item", "names": ["ignored"], "origin": null }],
       "held": [],
       "tests": [{ "id": "ignored", "name": "ignored" }],
-      "readme": [],
+      "features": {},
       "lonely": [],
       "files": {},
       "signoffs": [],

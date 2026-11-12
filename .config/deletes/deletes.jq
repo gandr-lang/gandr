@@ -18,8 +18,8 @@
 #   held        each id of the head, of the same kinds
 #   tests       each test whose text differs between the base and the head:
 #               {id, name}
-#   readme      each left id that the crate's `## Provided features` names on
-#               a line that the head keeps
+#   features    for each crate directory that a left item lives in, the lines
+#               of its README's `## Provided features`: {base, head}
 #   lonely      the crates that no other crate names, each as its library
 #               name and its directory
 #   files       for each `deleted` row's item, the files of the change that
@@ -38,11 +38,35 @@
 include "sections";
 include "account";
 
+# Each left item that its crate's `## Provided features` names on a line that
+# the head keeps: by its own segment, in backquotes or as the words of its
+# name. The owner's segment names it too when the owner leaves in the same
+# change (#7006); a line that names a type that stays names none of its
+# methods. `$held` is the head's ids as an object, each mapped to true.
+def featured($in; $held):
+  [$in.left[] | select(.kind == "item" and ((.file // "") | test("^crates/[^/]+/")))
+     | . as $it
+     | ($in.features[$it.file | split("/")[1]] // {base: [], head: []}) as $lines
+     | ($it.id | split("::")) as $path
+     | ($path | map(gsub("<.*$"; ""))) as $segments
+     | [$segments[-1]]
+       + (if ($path | length) > 1 and ($held[$path[:-1] | join("::")] | not) then [$segments[-2]] else [] end)
+     | select(any(.[] | select(test("^[A-Za-z_][A-Za-z0-9_]*$"));
+         . as $name
+         | ($name | gsub("(?<a>[a-z0-9])(?<b>[A-Z])"; "\(.a) \(.b)") | ascii_downcase) as $words
+         | any($lines.base[];
+             . as $line
+             | (($line | contains("`\($name)`")) or (($words | contains(" ")) and ($line | ascii_downcase | contains($words))))
+               and IN($lines.head[]; $line))))
+     | $it.id]
+  | unique;
+
 . as $in
 | ($in.mode == "full") as $full
 | ($in.body | deletes_rows) as $rows
 | ($rows // []) as $rs
 | ([($in.held // [])[] | {key: ., value: true}] | from_entries) as $held
+| featured($in; $held) as $featured
 | (
     # A change that takes things out needs the section.
     (if $full and $rows == null and ($in.left | length) > 0 then
@@ -85,7 +109,7 @@ include "account";
                  | "the `deleted` row of `\($item)` gives `Origin` \(($row.origin // "") | @json), and the commit that adds it comes from pull request #\($pr)"
                else empty end),
               # The README is the crate's first design record.
-              (if $full and any($in.left[] | select(covers($item; .)) | .id; IN(($in.readme // [])[])) then
+              (if $full and any($in.left[] | select(covers($item; .)) | .id; IN($featured[])) then
                  "the crate's `## Provided features` names `\($item)`: no sign-off admits its deletion until the README line leaves in the same change, with its own row"
                else empty end),
               # A crate with no consumer: the answer is to find one.
