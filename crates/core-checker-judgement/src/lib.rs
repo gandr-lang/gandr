@@ -1,14 +1,5 @@
 #![no_std]
-#![allow(
-    unused_imports,
-    missing_docs,
-    unreachable_pub,
-    dead_code,
-    unexpected_cfgs,
-    private_interfaces,
-    private_bounds,
-    unused_crate_dependencies
-)]
+#![allow(unused_imports)]
 
 extern crate alloc;
 #[cfg(feature = "hotpath")]
