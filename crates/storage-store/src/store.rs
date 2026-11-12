@@ -2,18 +2,20 @@
 //! plane and the named roots.
 //!
 //! [`Store::open`] makes the directory and its two plane directories when
-//! they are missing and lists what each holds. [`Store::commit`] commits a
-//! [`Stored`] value through the value plane under [`Store::PROFILE_KAPPA`]
-//! and [`Store::PROFILE_CAP`], with the value's own codec identity, and
-//! writes the chunks it cut before it returns the root pointer;
-//! [`Store::deref`] reads it back, and [`Store::closure`] reads where it
-//! resides: the chunks it reaches and the bytes of their images.
-//! [`Store::write_tree`] admits a record tree to the record plane and writes
-//! its nodes, and [`Store::records`] is that plane, for opening a stored root.
-//! [`Store::set_root`] names a pointer under the roots lock: it reads what
-//! another store over the same directory named since, then appends its own
-//! naming to the roots journal, so a naming costs amortised constant time and
-//! loses no other store's root.
+//! they are missing and lists what each holds. Each operation holds a batch
+//! over a plane, the section of the plane that the call owns, so the puts take
+//! `&self` and a store is shared between threads with no lock.
+//! [`Store::commit`] commits a [`Stored`] value through the value plane under
+//! [`Store::PROFILE_KAPPA`] and [`Store::PROFILE_CAP`], with the value's own
+//! codec identity, and publishes the chunks it cut before it returns the root
+//! pointer; [`Store::deref`] reads it back, and [`Store::closure`] reads where
+//! it resides: the chunks it reaches and the bytes of their images.
+//! [`Store::write_tree`] admits a record tree to the record plane and
+//! publishes its nodes, and [`Store::records`] is a batch over that plane, for
+//! opening a stored root. [`Store::set_root`] names a pointer under the roots
+//! lock: it reads what another store over the same directory named since,
+//! then appends its own naming to the roots journal, so a naming costs
+//! amortised constant time and loses no other store's root.
 
 use core::num::NonZeroU64;
 use std::io;
@@ -40,8 +42,10 @@ use gandr_storage_values::cam_commit;
 use gandr_storage_values::cam_deref;
 use quenchant_shape::shape::Maybe;
 
+use crate::plane::ChunkBatch;
 use crate::plane::ChunkDirectory;
 use crate::plane::Image;
+use crate::plane::NodeBatch;
 use crate::plane::NodeDirectory;
 use crate::roots::Kept;
 use crate::roots::RootName;
@@ -364,7 +368,7 @@ impl core::error::Error for StoreError
 }
 
 /// One store: the value plane, the record plane and the named roots under one
-/// directory.
+/// directory. Its puts take `&self`, so threads share one store with no lock.
 #[derive(Debug)]
 pub struct Store
 {
@@ -421,9 +425,9 @@ impl Store
     pub fn open(root: &Path) -> Result<Self, StoreError>
     {
         let chunks = ChunkDirectory::open(root.join(CHUNKS))?;
-        let mut nodes = NodeDirectory::open(root.join(NODES))?;
+        let nodes = NodeDirectory::open(root.join(NODES))?;
         let lock = locked(root, Hold::Shared)?;
-        let roots = Kept::read(root, &mut nodes)?;
+        let roots = Kept::read(root, &nodes)?;
         drop(lock);
         Ok(Self {
             root: root.to_path_buf(),
@@ -461,16 +465,17 @@ impl Store
         .classified(Self::CLASSIFICATION)
     }
 
-    /// Commit `value` and write the chunks it was cut into.
+    /// Commit `value` and publish the chunks it was cut into.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the root pointer [`cam_commit`] returns for
     ///   `value` under the store's profile and the value's codec, every chunk
-    ///   it names written to the value plane's directory, so a store opened
+    ///   it names a file of the value plane's directory, so a store opened
     ///   later derefs it to a value equal to `value`. The pointer depends on
     ///   the value and the profile alone, never on what the store held.
-    /// - provides: the value plane's write path for every consumer.
+    /// - provides: the value plane's write path for every consumer, on any
+    ///   thread.
     /// - fails: [`StoreError::Value`] for a value the plane cannot commit,
     ///   [`StoreError::Io`] for a chunk that cannot be written.
     /// - panics: none.
@@ -482,19 +487,22 @@ impl Store
     /// # Adequacy
     /// - hypothesis: L3 — a committed value derefs back equal after reopening,
     ///   and committing it again into a store that holds it returns the same
-    ///   pointer.
+    ///   pointer; sixteen threads that commit one value at once each return its
+    ///   pointer, and leave one file per chunk.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
+    /// - witness: `tests::store::sixteen_writers_of_one_value_leave_one_object_per_digest_6899`
     #[inline]
     pub fn commit<Value>(
-        &mut self,
+        &self,
         value: &Value,
     ) -> Result<ContentPtr, StoreError>
     where
         Value: Stored,
     {
-        let manifest = cam_commit(&mut self.chunks, &Self::profile(Value::codec()), value)
+        let mut batch = ChunkBatch::over(&self.chunks);
+        let manifest = cam_commit(&mut batch, &Self::profile(Value::codec()), value)
             .map_err(StoreError::Value)?;
-        self.chunks.write()?;
+        batch.publish()?;
         Ok(manifest.root())
     }
 
@@ -525,7 +533,7 @@ impl Store
     where
         Value: Stored,
     {
-        cam_deref(&self.chunks, pointer).map_err(StoreError::Value)
+        cam_deref(&ChunkBatch::over(&self.chunks), pointer).map_err(StoreError::Value)
     }
 
     /// Where the value at `pointer` resides: the chunks a dereference of it
@@ -558,11 +566,12 @@ impl Store
         pointer: ContentPtr,
     ) -> Result<Residence, StoreError>
     {
+        let batch = ChunkBatch::over(&self.chunks);
         let closure =
-            cam_closure(&self.chunks, pointer, Self::CLASSIFICATION).map_err(StoreError::Value)?;
+            cam_closure(&batch, pointer, Self::CLASSIFICATION).map_err(StoreError::Value)?;
         let mut bytes = ImageBytes::default();
         for &digest in closure.digests() {
-            let Maybe::Present(size) = self.chunks.size(digest)
+            let Maybe::Present(size) = batch.size(digest)
             else {
                 return Err(StoreError::Value(ValueError::UnknownChunk { digest }));
             };
@@ -571,24 +580,26 @@ impl Store
         Ok(Residence { closure, bytes })
     }
 
-    /// The record plane, for opening and proving against a stored tree.
+    /// A batch over the record plane, for opening and proving against a
+    /// stored tree.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn records(&self) -> &NodeDirectory
+    pub const fn records(&self) -> NodeBatch<'_>
     {
-        &self.nodes
+        NodeBatch::over(&self.nodes)
     }
 
-    /// Admit `tree` to the record plane and write its nodes.
+    /// Admit `tree` to the record plane and publish its nodes.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success every node of `tree` is written to the record
+    /// - ensures: on success every node of `tree` is a file of the record
     ///   plane's directory, so a store opened later opens the tree's root.
-    /// - provides: the record plane's write path for every consumer.
+    /// - provides: the record plane's write path for every consumer, on any
+    ///   thread.
     /// - fails: [`StoreError::Record`] for a node the plane refuses,
     ///   [`StoreError::Io`] for a node that cannot be written.
     /// - panics: none.
@@ -599,16 +610,18 @@ impl Store
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a written tree's root opens from the record plane
-    ///   after reopening.
+    ///   after reopening, and from the store that wrote it.
     /// - witness: `tests::store::a_written_tree_opens_from_the_record_plane_after_reopening`
+    /// - witness: `tests::store::a_written_tree_opens_from_the_store_that_wrote_it_6899`
     #[inline]
     pub fn write_tree(
-        &mut self,
+        &self,
         tree: &RecordTree,
     ) -> Result<(), StoreError>
     {
-        tree.write_to(&mut self.nodes).map_err(StoreError::Record)?;
-        self.nodes.write()
+        let mut batch = NodeBatch::over(&self.nodes);
+        tree.write_to(&mut batch).map_err(StoreError::Record)?;
+        batch.publish()
     }
 
     /// The named roots, as the store last read or wrote them.
@@ -658,8 +671,7 @@ impl Store
     ) -> Result<(), StoreError>
     {
         let lock = locked(&self.root, Hold::Alone)?;
-        self.roots
-            .name(&self.root, &mut self.nodes, name, pointer)?;
+        self.roots.name(&self.root, &self.nodes, name, pointer)?;
         drop(lock);
         Ok(())
     }

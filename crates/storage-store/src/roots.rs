@@ -51,6 +51,7 @@ use gandr_storage_values::TokenOffset;
 use quenchant_shape::shape::Maybe;
 
 use crate::plane::FileName;
+use crate::plane::NodeBatch;
 use crate::plane::NodeDirectory;
 use crate::plane::hexadecimal;
 use crate::store::RootsFault;
@@ -231,15 +232,15 @@ impl Roots
         self.0.keys()
     }
 
-    /// The roots the tree whose root node is `tree` holds, its nodes learned
-    /// from `nodes` by name.
+    /// The roots the tree whose root node is `tree` holds, its nodes read from
+    /// `nodes` by name.
     ///
     /// # Specification
     /// - requires: `nodes` is the record plane of the store at `directory`.
     /// - ensures: on success the records of the tree whose root node is `tree`,
     ///   each a name and a pointer, when that node and its leaves load verified
     ///   from `nodes` and build again to `tree`. Only the tree's own nodes are
-    ///   learned and read.
+    ///   read.
     /// - provides: the tree every full reading starts from.
     /// - fails: [`StoreError::Roots`] with [`RootsFault::Unheld`] for a node of
     ///   the tree the plane does not hold, [`StoreError::Record`] for one it
@@ -259,7 +260,7 @@ impl Roots
     /// - witness: `tests::store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397`
     fn tree(
         directory: &Path,
-        nodes: &mut NodeDirectory,
+        nodes: &NodeDirectory,
         tree: NodeHash,
     ) -> Result<Self, StoreError>
     {
@@ -318,7 +319,7 @@ impl Roots
     fn write(
         &self,
         directory: &Path,
-        nodes: &mut NodeDirectory,
+        nodes: &NodeDirectory,
     ) -> Result<NodeHash, StoreError>
     {
         let values: Vec<(&RootName, Recorded)> = self
@@ -331,8 +332,9 @@ impl Roots
             .map(|&(name, ref value)| RecordRef::new(name.0.as_bytes(), value.0.as_slice()))
             .collect();
         let tree = RecordTree::build(&refs, TreeParams::current()).map_err(StoreError::Record)?;
-        tree.write_to(nodes).map_err(StoreError::Record)?;
-        nodes.write()?;
+        let mut batch = NodeBatch::over(nodes);
+        tree.write_to(&mut batch).map_err(StoreError::Record)?;
+        batch.publish()?;
         publish(
             directory,
             ROOTS,
@@ -522,7 +524,7 @@ impl Kept
     /// - witness: `tests::store::a_torn_journal_entry_is_cut_by_the_next_naming_4081`
     pub fn read(
         directory: &Path,
-        nodes: &mut NodeDirectory,
+        nodes: &NodeDirectory,
     ) -> Result<Self, StoreError>
     {
         let mut kept = Self::default();
@@ -567,7 +569,7 @@ impl Kept
     pub fn name(
         &mut self,
         directory: &Path,
-        nodes: &mut NodeDirectory,
+        nodes: &NodeDirectory,
         name: RootName,
         pointer: ContentPtr,
     ) -> Result<(), StoreError>
@@ -625,7 +627,7 @@ impl Kept
     fn fold(
         &mut self,
         directory: &Path,
-        nodes: &mut NodeDirectory,
+        nodes: &NodeDirectory,
         seen: Generation,
         (name, pointer): (RootName, ContentPtr),
     ) -> Result<(), StoreError>
@@ -687,7 +689,7 @@ impl Kept
     fn catch_up(
         &mut self,
         directory: &Path,
-        nodes: &mut NodeDirectory,
+        nodes: &NodeDirectory,
         journal: &mut File,
     ) -> Result<Generation, StoreError>
     {
@@ -897,12 +899,13 @@ fn header(
 }
 
 /// The records of the tree whose root node is `hash`: its own when it is a
-/// leaf, else each child leaf's in order, each node learned by name first.
+/// leaf, else each child leaf's in order, each node read by name through one
+/// batch.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: on success the records of the root node, or of each leaf it
-///   names, each node learned by `nodes` and verified on its load.
+///   names, each node verified on its load from `nodes`.
 /// - provides: the walk [`Roots::tree`] builds the tree again from.
 /// - fails: [`StoreError::Record`] for a node that does not load or decode, or
 ///   an internal node naming a child that is not a leaf.
@@ -918,12 +921,12 @@ fn header(
 /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
 /// - witness: `tests::store::two_stores_keep_each_other_s_roots_across_a_fold_4081`
 fn leaves(
-    nodes: &mut NodeDirectory,
+    nodes: &NodeDirectory,
     hash: NodeHash,
 ) -> Result<Vec<Record>, StoreError>
 {
+    let nodes = NodeBatch::over(nodes);
     let mut work = DecodeWork::new();
-    nodes.learn(hash);
     let children: Vec<NodeHash> = {
         let root = nodes.load(hash).map_err(StoreError::Record)?;
         let decoded = decode_node(root.bytes(), &mut work).map_err(StoreError::Record)?;
@@ -938,7 +941,6 @@ fn leaves(
     };
     let mut records = Vec::new();
     for child in children {
-        nodes.learn(child);
         let node = nodes.load(child).map_err(StoreError::Record)?;
         let decoded = decode_node(node.bytes(), &mut work).map_err(StoreError::Record)?;
         let leaf = decoded.as_leaf().map_err(StoreError::Record)?;
