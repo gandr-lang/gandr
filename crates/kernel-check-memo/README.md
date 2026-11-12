@@ -34,7 +34,7 @@ The check-memo seam: a statically dispatched interface through which a checker s
 - `CheckMemo`: the seam. One trait, an associated `MemoActivity` constant read at compile time, and five operations: `filed`, `recall`, `remember`, `entry_count`, `plane_entry_count`.
 - `NullMemo`: the memo that never answers. Zero-sized, every method a constant.
 - `HashedMemo`: the storage half. Dense entries filed by digest hash, plus the per-plane census and `bucket_count`.
-- `HashIndex`, `TableHash`, `TablePosition` and `WordHasher`: the open-addressing index and its fixed-seed hash, which the kernel's interning, reach caches and rewrite memo file on too.
+- `HashIndex`, `TableHash`, `TablePosition` and `WordHasher`: the open-addressing index and its fixed-seed hash, which the kernel's interning, reach caches and rewrite memo file on too. The index files, finds and removes one position at a time.
 - `MemoKey`: what a support supplies — an accounting plane, a content digest and the deciding content comparison.
 - `ContentDigest`, `DigestWord` and `ContentAgreement`: the digest and the relation beneath it.
 - `MemoHit`: a served entry, the outcome together with the support it was recorded under.

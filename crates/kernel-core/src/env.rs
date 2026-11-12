@@ -830,6 +830,9 @@ pub struct Staging<'env>
     builder: DeclarationBuilder<'env>,
     /// The final registration, dropped after the builder rolls back the arena.
     claim: StagingClaim<'env>,
+    /// The session's table, which a fold that mints the content borrows to
+    /// name each image at mint ([`Self::minting`]).
+    table: &'env mut crate::encoding::ContentTable,
 }
 
 impl<'env> Staging<'env>
@@ -929,11 +932,13 @@ impl<'env> Staging<'env>
         }
     }
 
-    /// Begin staging into `arena`, registering the content-start mark.
+    /// Begin staging into `arena`, registering the content-start mark, with
+    /// the session's `table` to lend a fold that names each image at mint.
     ///
     /// # Specification
-    /// - requires: `arena` is the environment's own, and `outstanding` its own
-    ///   mark multiset.
+    /// - requires: `arena` is the environment's own, `outstanding` its own mark
+    ///   multiset, and `table` its session's table, which names the constants
+    ///   `arena` holds content for.
     /// - ensures: a session whose builder owns the rollback to the arena's
     ///   current watermark, with that watermark registered as outstanding.
     /// - provides: the only way a staging session comes into existence, so no
@@ -956,6 +961,7 @@ impl<'env> Staging<'env>
     fn new(
         arena: &'env mut TermArena,
         outstanding: &'env mut StagedMarks,
+        table: &'env mut crate::encoding::ContentTable,
     ) -> Self
     {
         let builder = DeclarationBuilder::new(arena);
@@ -963,6 +969,7 @@ impl<'env> Staging<'env>
         Self {
             builder,
             claim: StagingClaim { outstanding },
+            table,
         }
     }
 
@@ -974,6 +981,20 @@ impl<'env> Staging<'env>
     pub fn arena(&mut self) -> &mut TermArena
     {
         self.builder.arena()
+    }
+
+    /// The borrowed arena, and the session's table lent as the names a fold
+    /// gives each image it mints there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn minting(&mut self) -> (&mut TermArena, crate::encoding::MintNames<'_>)
+    {
+        (
+            self.builder.arena(),
+            crate::encoding::MintNames::new(self.table),
+        )
     }
 
     /// Discard the staged content, restoring the arena and resolving the mark.
@@ -2684,9 +2705,9 @@ impl EntryLog
 }
 
 /// What an environment names content through: the session it lends each
-/// admission's check, whose content table names the environment's nodes once
-/// for the environment's life, and the scratch table admission names each
-/// plain definition through.
+/// admission's check and each staging fold, whose content table names the
+/// environment's nodes once for the environment's life, and names each plain
+/// definition from the names of its two roots.
 ///
 /// A clone starts empty and names the nodes it reads afresh;
 /// [`Self::carried`] keeps the names and the kept outcomes.
@@ -2700,8 +2721,6 @@ struct Names
     /// [`Environment::handed_on`] made after a freeze, until a check of this
     /// environment takes it ([`Self::session_mut`]).
     shared: Option<alloc::sync::Arc<crate::support::SupportContext>>,
-    /// The table [`crate::encoding::name_definition`] clears and reuses.
-    definitions: crate::encoding::ContentTable,
 }
 
 impl Clone for Names
@@ -3013,7 +3032,8 @@ impl Environment
     /// - requires: the returned session builds at most one declaration's
     ///   content and is then finalized or abandoned, with no other allocation
     ///   into the arena interleaved.
-    /// - ensures: a [`Staging`] borrowing the arena, with its content-start
+    /// - ensures: a [`Staging`] borrowing the arena and the session's table,
+    ///   which names every constant admitted so far, with its content-start
     ///   watermark registered as outstanding. Abandoning the session truncates
     ///   each family to the lesser of its current and entry lengths and
     ///   resolves the mark, so no partially minted content survives and no
@@ -3048,9 +3068,13 @@ impl Environment
         let Self {
             ref mut arena,
             ref mut outstanding,
+            ref mut names,
+            ref entries,
             ..
         } = *self;
-        Staging::new(arena, outstanding)
+        let session = names.session_mut();
+        session.name_constants(entries);
+        Staging::new(arena, outstanding, session.table_mut())
     }
 
     /// Release a staged declaration without admitting it.
@@ -4138,9 +4162,9 @@ impl Environment
             let key_name = match (unit.shape, held) {
                 (UnitShape::Lone, ConstantName::Definition { declared, body, .. }) => {
                     crate::encoding::name_definition(
-                        &mut self.names.definitions,
+                        self.names.session_mut().table_mut(),
                         &self.arena,
-                        (&self.entries, rank),
+                        (&self.entries, position, rank),
                         declared,
                         body,
                     )
@@ -4921,9 +4945,13 @@ impl Environment
             && declaration.presentation().cells().is_none();
         if plain {
             crate::encoding::name_definition(
-                &mut self.names.definitions,
+                self.names.session_mut().table_mut(),
                 &self.arena,
-                (&self.entries, rank),
+                (
+                    &self.entries,
+                    ConstantIndex::from(usize::from(self.entries.len())),
+                    rank,
+                ),
                 declared,
                 body,
             )
