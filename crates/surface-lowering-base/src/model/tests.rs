@@ -666,3 +666,65 @@ fn a_presentation_reads_its_members_off_its_value()
         "and derives no model"
     );
 }
+
+/// `comp`'s sort binders are named by a later binder's sort or by its result,
+/// and its morphisms by nothing; every binder of `unitL` is named by the path
+/// it states.
+#[test]
+fn each_binder_a_later_sort_or_the_tail_names_is_dependent()
+{
+    use super::Dependent;
+    use super::FreeTerm;
+    use super::Name;
+    use super::Tail;
+    use super::dependence;
+
+    let var = FreeTerm::var;
+    let ob = SortTerm {
+        sort: Name::from("Ob"),
+        indices: Vec::new(),
+    };
+    let hom = |from: &'static str, to: &'static str| SortTerm {
+        sort: Name::from("Hom"),
+        indices: vec![var(from), var(to)],
+    };
+    let binder = |name: &str, sort: SortTerm| Binder {
+        name: Name::from(name),
+        over: Vec::new(),
+        sort,
+    };
+    let flags = |read: Vec<Dependent>| -> Vec<bool> {
+        read.into_iter()
+            .map(|Dependent(dependent)| dependent)
+            .collect()
+    };
+    let comp = [
+        binder("a", ob.clone()),
+        binder("b", ob.clone()),
+        binder("c", ob.clone()),
+        binder("f", hom("a", "b")),
+        binder("g", hom("b", "c")),
+    ];
+    assert_eq!(flags(dependence(&comp, Tail::Results(&[hom("a", "c")]))), [
+        true, true, true, false, false
+    ]);
+    let unit_left = [
+        binder("a", ob.clone()),
+        binder("b", ob),
+        binder("f", hom("a", "b")),
+    ];
+    let left = FreeTerm::op("comp", [
+        var("a"),
+        var("a"),
+        var("b"),
+        FreeTerm::op("id", [var("a")]),
+        var("f"),
+    ]);
+    assert_eq!(
+        flags(dependence(
+            &unit_left,
+            Tail::Path(&[], &hom("a", "b"), &left, &var("f"))
+        )),
+        [true, true, true]
+    );
+}

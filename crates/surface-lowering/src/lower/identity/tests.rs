@@ -37,6 +37,7 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::ShapeSize;
 use quenchant_shape::shape::Maybe;
 
+use crate::budget::LoweringBudget;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
@@ -44,7 +45,6 @@ use crate::fixture::listed;
 use crate::fixture::listing;
 use crate::fixture::parsed;
 use crate::fixture::span;
-use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;

@@ -150,126 +150,6 @@ fn operations_and_rules_preserve_their_boundaries()
     );
 }
 
-#[test]
-fn native_data_keeps_telescope_and_nominal_heads()
-{
-    use gandr_core_checker::CheckBudget;
-    use gandr_core_checker::CheckingContext;
-    use gandr_core_checker::Declaration;
-    use gandr_core_checker::OriginToken;
-    use gandr_core_checker::Verdict;
-    use gandr_core_checker::check_module;
-    use gandr_core_term::CoreArena;
-    use gandr_core_term::Value;
-    use gandr_core_term::ValueType;
-    use gandr_core_term::Zone;
-    use gandr_kernel_term::ConstantIndex;
-    use gandr_kernel_term::DeBruijnIndex;
-
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-
-    let grammar = grammar();
-    let source = "data Box(a : Type) : Type where { | Vacant : Box(a) | Packed : (x : a) --> Box(a) } def xs : Box(Integer);";
-    let tree = parsed(&grammar, source.into());
-    let mut arena = CoreArena::new();
-    let preexisting = arena.value_unit();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    assert_eq!(module.description_diagnostics(), []);
-    let [family, xs] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("family and its consumer")
-    };
-    let DeclarationOutcome::Data(index) = family.outcome()
-    else {
-        panic!("native declaration")
-    };
-    let Maybe::Present(signature) = module.data(index)
-    else {
-        panic!("the module holds the family's signature")
-    };
-    let [ref vacant, ref packed] = *signature.constructors()
-    else {
-        panic!("two native tags")
-    };
-    assert_eq!(vacant, &Vec::new());
-    let &[head] = packed.as_slice()
-    else {
-        panic!("one constructor field")
-    };
-    let Some(&ValueType::Element { code, .. }) = arena.value_type(head)
-    else {
-        panic!("parameter code")
-    };
-    assert_eq!(
-        arena.value(code),
-        Some(&Value::Variable {
-            zone: Zone::Intuitionistic,
-            index: DeBruijnIndex::from(0_u32)
-        })
-    );
-    let DeclarationOutcome::Uncompleted { declared_type } = xs.outcome()
-    else {
-        panic!("declared consumer")
-    };
-    let Some(&ValueType::Data {
-        declaration,
-        ref arguments,
-    }) = arena.value_type(declared_type)
-    else {
-        panic!("nominal application")
-    };
-    assert_eq!(declaration, ConstantIndex::from(0_usize));
-    let &[argument] = arguments.as_slice()
-    else {
-        panic!("one explicit type argument")
-    };
-    let Some(&Value::Quote(integer)) = arena.value(argument)
-    else {
-        panic!("quoted type argument")
-    };
-    assert_eq!(
-        arena.value_type(integer),
-        Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer))
-    );
-    assert!(matches!(
-        module.origins().value(preexisting),
-        Maybe::Absent(_)
-    ));
-    let declarations = [
-        Declaration::data(
-            family.constant(),
-            alloc::sync::Arc::clone(signature),
-            OriginToken::from(0_usize),
-        ),
-        Declaration::new(
-            xs.constant(),
-            Maybe::Present(declared_type),
-            Maybe::Absent(gandr_core_checker::body::Absent::Hole),
-            OriginToken::from(1_usize),
-        ),
-    ];
-    let report = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-        &declarations,
-    );
-    let [ref first, ref second] = *report.judged()
-    else {
-        panic!("two judgments")
-    };
-    assert_eq!(first.verdict(), Verdict::Data);
-    assert!(matches!(second.verdict(), Verdict::Owed(_)));
-}
-
 /// Read a declaration through the public parser and description route.
 ///
 /// # Specification
@@ -1092,603 +972,6 @@ fn a_field_reads_each_primitive_and_each_applied_argument()
 }
 
 #[test]
-fn member_refusals_keep_their_spans_and_other_declarations()
-{
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    let source =
-        "data Flag : Type where { | Off : Flag rule : bad x ~> x; | On : Flag } def later = 7;";
-    let tree = parsed(&grammar, source.into());
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let [family, refused, later] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("family, held member refusal and later declaration")
-    };
-    let DeclarationOutcome::Data(index) = family.outcome()
-    else {
-        panic!("readable generators remain native")
-    };
-    let Maybe::Present(signature) = module.data(index)
-    else {
-        panic!("the module holds the family's signature")
-    };
-    assert_eq!(signature.constructors(), [vec![], vec![]]);
-    let DeclarationOutcome::Refused(refusal) = refused.outcome()
-    else {
-        panic!("the member refusal reaches consumers")
-    };
-    let Maybe::Present(span) = refusal.span()
-    else {
-        panic!("located member")
-    };
-    assert_eq!(
-        source.get(usize::from(span.start()) .. usize::from(span.end())),
-        Some("~>")
-    );
-    assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
-    assert_eq!(later.name().as_ref(), "later");
-}
-
-/// #1462: a member held apart reads the attribute block written before it,
-/// a member held apart without one reads none — the family's own attributes
-/// state the family alone — and a block before a member that is not held
-/// apart refuses the family at the block.
-#[test]
-fn a_held_member_states_its_own_expectation_1462()
-{
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    let source = "@[ checks ] data Sub : Type where { | Zero : Sub oper minus : (m : Sub, n : Sub) --> Sub; \
-                  @[ refuses(\"RulesNonLinear\") ] rule : minus x x ==> Zero; oper same : (m : Sub, \
-                  n : Sub) --> Sub; rule : same y y ==> Zero; }";
-    let tree = parsed(&grammar, source.into());
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let stated = |declaration: &crate::LoweredDeclaration<'_>| -> Vec<alloc::string::String> {
-        module
-            .attributes()
-            .entries(declaration.introduced())
-            .iter()
-            .map(|entry| alloc::string::String::from(entry.name().as_ref()))
-            .collect()
-    };
-    let [family, attributed, bare] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!(
-            "the family and its two held rules: {:?}",
-            module.declarations()
-        )
-    };
-    assert!(matches!(family.outcome(), DeclarationOutcome::Data(_)));
-    assert_eq!(
-        stated(family),
-        ["checks"],
-        "the family's attribute states the family"
-    );
-    assert!(
-        matches!(
-            attributed.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::RulesNonLinear { .. })
-        ),
-        "the first rule is held apart"
-    );
-    assert_eq!(
-        stated(attributed),
-        ["refuses"],
-        "and reads the block written before it"
-    );
-    assert!(
-        matches!(
-            bare.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::RulesNonLinear { .. })
-        ),
-        "the second rule is held apart"
-    );
-    assert!(
-        stated(bare).is_empty(),
-        "and, written without a block, reads none of the family's"
-    );
-
-    let stray =
-        include_str!("tests/unformatted/a-held-member-states-its-own-expectation-1462-stray.gandr");
-    let tree = parsed(&grammar, stray.into());
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let start = stray.find("@[").unwrap_or_default();
-    assert!(
-        module.declarations().iter().any(|declaration| matches!(
-            declaration.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm { span, .. })
-                if usize::from(span.start()) == start
-        )),
-        "a block before a member that is not held apart refuses the family at the block: {:?}",
-        module.declarations()
-    );
-}
-
-#[test]
-fn an_unended_family_is_refused_once_at_its_close()
-{
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::fixture::repaired;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    for (source, why) in [
-        (
-            include_str!(
-                "tests/unformatted/an-unended-family-is-refused-once-at-its-close-1.gandr"
-            ),
-            "a data family whose last member the cell gate refuses",
-        ),
-        (
-            include_str!(
-                "tests/unformatted/an-unended-family-is-refused-once-at-its-close-2.gandr"
-            ),
-            "a codata family the decoder would refuse",
-        ),
-    ] {
-        let tree = repaired(&grammar, source.into());
-        let mut arena = gandr_core_term::CoreArena::new();
-        let module = lower_module(
-            &grammar,
-            &tree,
-            &mut arena,
-            LoweringBudget::DEFAULT,
-            Recognition::default(),
-        )
-        .unwrap();
-        let refusals: Vec<_> = module
-            .declarations()
-            .iter()
-            .filter_map(|declaration| match declaration.outcome() {
-                DeclarationOutcome::Refused(refusal) => Some(refusal),
-                DeclarationOutcome::Completed { .. }
-                | DeclarationOutcome::Uncompleted { .. }
-                | DeclarationOutcome::Bodied { .. }
-                | DeclarationOutcome::Data(_)
-                | DeclarationOutcome::Codata(_)
-                | DeclarationOutcome::Abstract(_)
-                | DeclarationOutcome::World => None,
-            })
-            .collect();
-        let end = gandr_surface_syntax::ByteOffset::from(source.trim_end().len());
-        let [
-            LoweringRefusal::MalformedForm {
-                span,
-                fault: crate::FormFault::Repaired(repair),
-                ..
-            },
-        ] = refusals[..]
-        else {
-            panic!("{why}: one refusal, its parse error: {refusals:?}");
-        };
-        assert_eq!(
-            (span, repair),
-            (
-                ByteSpan::new(end, end).unwrap(),
-                crate::Repair::GhostClose(gandr_surface_syntax::ClosingClass::Brace)
-            ),
-            "{why}: the refusal is the missing close, where it belongs"
-        );
-    }
-}
-
-/// A field that is no type is refused once, by the lowering where it reads
-/// the field's type, though an operation makes the description read the
-/// family. A type in parentheses reads as the type it groups, and a codata
-/// observation that is no type is malformed (#2664).
-#[test]
-fn a_field_that_is_no_type_is_refused_once_by_the_lowering_2664()
-{
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::fixture::parsed;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    let data = |ty: &str| {
-        alloc::format!(
-            "data G : Type where {{ | Mk : (p : {ty}) --> G oper keep : (g : G) --> G; }}"
-        )
-    };
-    let mut rows: Vec<(String, &str)> =
-        ["0", "\"a\"", "'a'", "?", "()", "(Integer, Integer)", "(0)"]
-            .into_iter()
-            .map(|ty| (data(ty), ty))
-            .collect();
-    rows.push((
-        String::from("codata G : Type[-] where { held : 0; next : G; }"),
-        "0",
-    ));
-    for &(ref source, ty) in &rows {
-        let tree = parsed(&grammar, source.as_str().into());
-        let mut arena = gandr_core_term::CoreArena::new();
-        let module = lower_module(
-            &grammar,
-            &tree,
-            &mut arena,
-            LoweringBudget::DEFAULT,
-            Recognition::default(),
-        )
-        .unwrap();
-        let mut refusals = module
-            .declarations()
-            .iter()
-            .filter_map(|declaration| match declaration.outcome() {
-                DeclarationOutcome::Refused(refusal) => Some(refusal),
-                DeclarationOutcome::Completed { .. }
-                | DeclarationOutcome::Uncompleted { .. }
-                | DeclarationOutcome::Bodied { .. }
-                | DeclarationOutcome::Data(_)
-                | DeclarationOutcome::Codata(_)
-                | DeclarationOutcome::Abstract(_)
-                | DeclarationOutcome::World => None,
-            });
-        let (Some(refusal), None) = (refusals.next(), refusals.next())
-        else {
-            panic!("`{source}`: one refusal")
-        };
-        assert!(
-            !matches!(refusal, LoweringRefusal::UndescribedMember { .. }),
-            "`{source}`: the refusal is no undescribed member: {refusal:?}"
-        );
-        let start = source.rfind(ty).unwrap();
-        let Maybe::Present(span) = refusal.span()
-        else {
-            panic!("`{source}`: the refusal is located: {refusal:?}")
-        };
-        assert!(
-            usize::from(span.start()) >= start
-                && usize::from(span.end()) <= start.saturating_add(ty.len()),
-            "`{source}`: the refusal is inside `{ty}`: {refusal:?}"
-        );
-    }
-    let fields = |ty: &str| {
-        let report = elaborated(SourceText::from(data(ty).as_str()));
-        assert_eq!(report.diagnostics, [], "`{ty}` reads");
-        let [ref family] = *report.declarations.as_slice()
-        else {
-            panic!("`{ty}`: one description")
-        };
-        family.description.ctors.clone()
-    };
-    assert_eq!(
-        fields("(Integer)"),
-        fields("Integer"),
-        "a type in parentheses reads as the type it groups"
-    );
-    assert_eq!(
-        fields("((Integer))"),
-        fields("Integer"),
-        "each pair of parentheses is read through"
-    );
-}
-
-#[test]
-fn a_codata_declaration_lowers_to_its_signature()
-{
-    use gandr_core_term::CompType;
-
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    let source = include_str!("tests/fixtures/a-codata-declaration-lowers-to-its-signature.gandr");
-    let tree = parsed(&grammar, source.into());
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let [flag, stream, ones, later] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("data, codata, a stream and a later declaration")
-    };
-    let DeclarationOutcome::Data(index) = flag.outcome()
-    else {
-        panic!("the data family is read natively")
-    };
-    let Maybe::Present(signature) = module.data(index)
-    else {
-        panic!("the module holds the data family's signature")
-    };
-    assert_eq!(signature.constructors(), [vec![], vec![]]);
-    assert_eq!(stream.name().as_ref(), "Stream");
-    let DeclarationOutcome::Codata(index) = stream.outcome()
-    else {
-        panic!("the codata family lowers: {:?}", stream.outcome())
-    };
-    let Maybe::Present(codata) = module.codata(index)
-    else {
-        panic!("the module holds the codata family's signature")
-    };
-    assert_eq!(codata.parameters().len(), 1, "one parameter");
-    let [head, tail] = *codata.observations()
-    else {
-        panic!("two observations")
-    };
-    assert!(
-        matches!(arena.comp_type(head), Some(&CompType::Returner { .. })),
-        "the head returns its value"
-    );
-    assert!(
-        matches!(arena.comp_type(tail), Some(&CompType::Codata { declaration, .. }) if declaration == stream.constant()),
-        "the tail is the family itself"
-    );
-    assert!(module.description_diagnostics().is_empty());
-    let DeclarationOutcome::Uncompleted { declared_type } = ones.outcome()
-    else {
-        panic!("the stream is declared: {:?}", ones.outcome())
-    };
-    let Some(&gandr_core_term::ValueType::Thunk(answer)) = arena.value_type(declared_type)
-    else {
-        panic!("the stream is a thunk")
-    };
-    assert!(
-        matches!(arena.comp_type(answer), Some(&CompType::Codata { declaration, .. }) if declaration == stream.constant()),
-        "the stream's answer is the codata type at its argument: {:?}",
-        arena.comp_type(answer)
-    );
-    assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
-}
-
-/// #2188: a codata family's self reference reaches the checker at the
-/// arguments its source writes, so the occurrence guard sees a non-uniform
-/// one: `Swap`'s tail at its parameters swapped, `Twisted`'s at the family
-/// applied again, and `Stream`'s at its parameter, as the code alone said.
-#[test]
-fn a_codata_self_reference_keeps_its_written_arguments_2188()
-{
-    use gandr_core_term::CompType;
-    use gandr_core_term::Value;
-    use gandr_core_term::Zone;
-    use gandr_kernel_term::DeBruijnIndex;
-
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    let source = include_str!(
-        "tests/fixtures/a-codata-self-reference-keeps-its-written-arguments-2188.gandr"
-    );
-    let tree = parsed(&grammar, source.into());
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let tail = |declaration: &crate::LoweredDeclaration<'_>| {
-        let DeclarationOutcome::Codata(index) = declaration.outcome()
-        else {
-            panic!("the codata family lowers: {:?}", declaration.outcome())
-        };
-        let Maybe::Present(codata) = module.codata(index)
-        else {
-            panic!("the module holds the codata family's signature")
-        };
-        let [_, tail] = *codata.observations()
-        else {
-            panic!("two observations")
-        };
-        let Some(&CompType::Codata {
-            declaration: applied,
-            ref arguments,
-        }) = arena.comp_type(tail)
-        else {
-            panic!(
-                "the tail is a codata application: {:?}",
-                arena.comp_type(tail)
-            )
-        };
-        assert_eq!(
-            applied,
-            declaration.constant(),
-            "the tail applies its own family"
-        );
-        arguments
-            .iter()
-            .map(|&argument| arena.value(argument).cloned())
-            .collect::<Vec<_>>()
-    };
-    let variable = |index: u32| {
-        Some(Value::Variable {
-            zone: Zone::Intuitionistic,
-            index: DeBruijnIndex::from(index),
-        })
-    };
-    let [swap, twisted, stream] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("three codata families")
-    };
-    assert_eq!(
-        tail(swap),
-        [variable(0), variable(1)],
-        "`Swap(b, a)` keeps its parameters swapped: `b` is the inner variable"
-    );
-    assert!(
-        matches!(tail(twisted).as_slice(), [Some(Value::QuoteComputation(_))]),
-        "`Twisted(Twisted(a))` applies the family to the family applied again"
-    );
-    assert_eq!(tail(stream), [variable(0)], "`Stream(a)` stays uniform");
-}
-
-/// #2665: a codata family reads each data family it names as the lowering
-/// reads one. `Holder`'s observation returns `Small`, and `Stream`'s tail
-/// applies the family to the code of `Small`, which the occurrence guard then
-/// refuses as a non-uniform occurrence.
-#[test]
-fn a_codata_family_reads_a_data_family_as_the_lowering_does_2665()
-{
-    use gandr_core_term::CompType;
-    use gandr_core_term::Value;
-    use gandr_core_term::ValueType;
-
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    let grammar = grammar();
-    let source = include_str!(
-        "tests/fixtures/a-codata-family-reads-a-data-family-as-the-lowering-does-2665.gandr"
-    );
-    let tree = parsed(&grammar, source.into());
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let [small, holder, stream] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("a data family and two codata families")
-    };
-    let observations = |declaration: &crate::LoweredDeclaration<'_>| {
-        let DeclarationOutcome::Codata(index) = declaration.outcome()
-        else {
-            panic!("the codata family lowers: {:?}", declaration.outcome())
-        };
-        let Maybe::Present(codata) = module.codata(index)
-        else {
-            panic!("the module holds the codata family's signature")
-        };
-        codata.observations().to_vec()
-    };
-    let is_small = |ty| {
-        matches!(arena.value_type(ty), Some(&ValueType::Data { declaration, ref arguments })
-            if declaration == small.constant() && arguments.is_empty())
-    };
-    let [held] = *observations(holder)
-    else {
-        panic!("one observation")
-    };
-    let Some(&CompType::Returner { result, .. }) = arena.comp_type(held)
-    else {
-        panic!(
-            "the observation returns its value: {:?}",
-            arena.comp_type(held)
-        )
-    };
-    assert!(
-        is_small(result),
-        "`held` returns `Small`: {:?}",
-        arena.value_type(result)
-    );
-    let [_, tail] = *observations(stream)
-    else {
-        panic!("two observations")
-    };
-    let Some(&CompType::Codata {
-        declaration,
-        ref arguments,
-    }) = arena.comp_type(tail)
-    else {
-        panic!(
-            "the tail is a codata application: {:?}",
-            arena.comp_type(tail)
-        )
-    };
-    assert_eq!(
-        declaration,
-        stream.constant(),
-        "the tail applies its own family"
-    );
-    let [argument] = *arguments.as_slice()
-    else {
-        panic!("the tail applies the family to one argument: {arguments:?}")
-    };
-    let Some(&Value::Quote(code)) = arena.value(argument)
-    else {
-        panic!("the argument is a code: {:?}", arena.value(argument))
-    };
-    assert!(is_small(code), "the tail is at the code of `Small`");
-    assert!(module.description_diagnostics().is_empty());
-}
-
-#[test]
-fn an_attribute_block_decorates_the_codata_declaration_after_it()
-{
-    use quenchant_shape::shape::Maybe;
-
-    use crate::DeclarationOutcome;
-    use crate::LoweringBudget;
-    use crate::fixture::registered;
-    use crate::lower_module;
-    use crate::namespace::Recognition;
-    use crate::resolve::SurfaceName;
-    let grammar = grammar();
-    let source = include_str!(
-        "tests/fixtures/an-attribute-block-decorates-the-codata-declaration-after-it.gandr"
-    );
-    let tree = parsed(&grammar, source.into());
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let [stream, later] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("the codata family and the later declaration are declared")
-    };
-    assert!(matches!(stream.outcome(), DeclarationOutcome::Codata(_)));
-    let Maybe::Present(written) = stream.signature()
-    else {
-        panic!("the codata family keeps its digest")
-    };
-    let [ref entry] = *module.attributes().entries(written)
-    else {
-        panic!("one attribute is filed under the codata family")
-    };
-    assert_eq!(entry.name(), registered(SurfaceName::from("checks")));
-    assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
-}
-
-#[test]
 fn parameterized_observations_retain_both_port_boundaries()
 {
     use gandr_theory_levitation::SortRef;
@@ -1883,4 +1166,181 @@ fn a_mutual_block_with_one_data_family_reads_no_group_5018()
     assert_eq!(report.diagnostics, Vec::new());
     assert_eq!(report.mutuals, Vec::new());
     assert_eq!(report.declarations.len(), 3);
+}
+
+/// #2664: a field written as no type is refused at the bytes of that type,
+/// a data field as no type and a codata observation as malformed; a type in
+/// parentheses reads as the type it groups, however many pairs surround it.
+#[test]
+fn a_field_that_is_no_type_is_refused_where_it_is_written_2664()
+{
+    let data = |ty: &str| {
+        alloc::format!(
+            "data G : Type where {{ | Mk : (p : {ty}) --> G oper keep : (g : G) --> G; }}"
+        )
+    };
+    let mut rows: Vec<(String, &str, DescriptionFault)> =
+        ["0", "\"a\"", "'a'", "?", "()", "(Integer, Integer)", "(0)"]
+            .into_iter()
+            .map(|ty| (data(ty), ty, DescriptionFault::NoType))
+            .collect();
+    rows.push((
+        String::from("codata G : Type[-] where { held : 0; next : G; }"),
+        "0",
+        DescriptionFault::Malformed,
+    ));
+    for &(ref source, ty, ref fault) in &rows {
+        let report = elaborated(SourceText::from(source.as_str()));
+        let [ref diagnostic] = *report.diagnostics.as_slice()
+        else {
+            panic!("`{source}`: one refusal: {:?}", report.diagnostics)
+        };
+        let start = source.rfind(ty).unwrap();
+        assert_eq!(&diagnostic.fault, fault, "`{source}`");
+        assert!(
+            usize::from(diagnostic.span.start()) >= start
+                && usize::from(diagnostic.span.end()) <= start.saturating_add(ty.len()),
+            "`{source}`: the refusal is inside `{ty}`: {diagnostic:?}"
+        );
+    }
+    let fields = |ty: &str| {
+        let report = elaborated(SourceText::from(data(ty).as_str()));
+        assert_eq!(report.diagnostics, [], "`{ty}` reads");
+        let [ref family] = *report.declarations.as_slice()
+        else {
+            panic!("`{ty}`: one description")
+        };
+        family.description.ctors.clone()
+    };
+    assert_eq!(
+        fields("(Integer)"),
+        fields("Integer"),
+        "a type in parentheses reads as the type it groups"
+    );
+    assert_eq!(
+        fields("((Integer))"),
+        fields("Integer"),
+        "each pair of parentheses is read through"
+    );
+}
+
+/// #2188, #2665: a codata family applied as its tail writes it reads in
+/// post-order, each argument the family does not head at its own node, the
+/// family over the arguments before it: the parameters swapped, the family
+/// applied again, and a data family as an argument.
+#[test]
+fn a_codata_self_reference_reads_its_written_steps_2188()
+{
+    use crate::description::written::Applied;
+
+    let grammar = grammar();
+    let source = "codata Swap(a : Type, b : Type) : Type[-] where { head : a; tail : Swap(b, a); \
+                  }\ncodata Twisted(a : Type) : Type[-] where { head : a; tail : \
+                  Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] where { head : a; \
+                  tail : Stream Small; }\ndata Small : Type where { | Mk : Small }\n";
+    let tree = parsed(&grammar, source.into());
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
+    let read: Vec<(&str, Vec<Result<&str, usize>>)> = report
+        .declarations
+        .iter()
+        .filter_map(|family| {
+            let tail = family.written.observations.get(1)?;
+            let Maybe::Present(ref itself) = tail.itself
+            else {
+                panic!("the tail is the family applied: {tail:?}")
+            };
+            let steps = itself
+                .steps
+                .iter()
+                .map(|&step| match step {
+                    Applied::Argument(node) => Ok(<&str>::from(tree.fragment(node).unwrap())),
+                    Applied::Family(over) => Err(over),
+                })
+                .collect();
+            Some((
+                source
+                    .get(
+                        usize::from(family.named.span.start())
+                            .. usize::from(family.named.span.end()),
+                    )
+                    .unwrap(),
+                steps,
+            ))
+        })
+        .collect();
+    assert_eq!(read, [
+        ("Swap", vec![Ok("b"), Ok("a"), Err(2)]),
+        ("Twisted", vec![Ok("a"), Err(1), Err(1)]),
+        ("Stream", vec![Ok("Small"), Err(1)]),
+    ]);
+}
+
+/// A declaration sees those of its own source and those its imported sources
+/// export, in reading order; one of a source it does not import, and a private
+/// one of a source it imports, it reads past, and keeps as read.
+#[test]
+fn a_declaration_sees_its_own_source_and_what_its_imports_export()
+{
+    use alloc::collections::BTreeSet;
+
+    use gandr_surface_syntax::ByteOffset;
+
+    use crate::unit::ImportTarget;
+    use crate::unit::SourceIndex;
+    use crate::unit::UnitSource;
+
+    let source = "pub theory A where { sort S : Type; }\ntheory B where { sort S : Type; }\ntheory \
+                  C where { sort S : Type; }\npub theory D where { sort S : Type; }\ntheory E \
+                  where { sort S : Type; }\n";
+    let report = elaborated(SourceText::from(source));
+    let at = |name: &str| ByteOffset::from(source.find(name).unwrap());
+    let unit = Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(at("theory C"), Vec::new()),
+        UnitSource::new(
+            at("theory E"),
+            Vec::from([ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ),
+    ]))
+    .unwrap();
+    let named = |declarations: &[&DescribedDeclaration]| -> Vec<&str> {
+        declarations
+            .iter()
+            .map(|declaration| {
+                source
+                    .get(
+                        usize::from(declaration.named.span.start())
+                            .. usize::from(declaration.named.span.end()),
+                    )
+                    .unwrap()
+            })
+            .collect()
+    };
+    let importer = Visible::of(
+        &unit,
+        SourceIndex::from(2_usize),
+        &BTreeSet::from([SourceIndex::from(0_usize)]),
+        report.declarations.iter(),
+    );
+    assert_eq!(named(&importer.own), ["E"]);
+    assert_eq!(
+        importer
+            .imported
+            .iter()
+            .map(|&(from, declaration)| (from, named(&[declaration])))
+            .collect::<Vec<_>>(),
+        [(SourceIndex::from(0_usize), vec!["A"])],
+        "`B` is private to its source, and `D`'s source is not imported"
+    );
+    assert_eq!(named(&importer.read), ["A", "B", "C", "D", "E"]);
+    let alone = Visible::of(
+        &unit,
+        SourceIndex::from(1_usize),
+        &BTreeSet::new(),
+        report.declarations.iter(),
+    );
+    assert_eq!(
+        (named(&alone.own), alone.imported.len()),
+        (vec!["C", "D"], 0_usize)
+    );
 }

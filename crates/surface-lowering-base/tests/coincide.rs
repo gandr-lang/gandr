@@ -1,27 +1,38 @@
 //! A block's rules decided as one rewriting system, through the production
-//! lowering route.
+//! lowering route of `gandr-surface-lowering`.
 
+use alloc::borrow::Cow;
+use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering_base::coincide::*;
+use gandr_surface_lowering_base::desc_cells::CellFault;
+use gandr_surface_lowering_base::desc_cells::CircuitCell;
+use gandr_surface_lowering_base::description::written::RuleDirection;
+use gandr_surface_lowering_base::description::written::RuleOrientation;
+use gandr_surface_lowering_base::fixture::grammar;
+use gandr_surface_lowering_base::namespace::Recognition;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_cell_complexes::CellId;
 use gandr_theory_computads::ElaborateError;
-
-use super::*;
-use crate::DeclarationOutcome;
-use crate::LoweredModule;
-use crate::LoweringBudget;
-use crate::desc_cells::CellFault;
-use crate::fixture::grammar;
-use crate::lower_module;
-use crate::namespace::Recognition;
+use gandr_theory_computads::Unsorted;
+use gandr_theory_levitation::RuleIndex;
+use quenchant_shape::shape::Maybe;
 
 /// Addition with both unit laws: the two unit rules overlap at `add(Zero,
 /// Zero)`, the right unit and the successor rule at `add(Succ(m), Zero)`, and
 /// both pairs join.
-const BOTH_UNITS: &str = include_str!("tests/unformatted/both-units.gandr");
+const BOTH_UNITS: &str = include_str!("coincide/unformatted/both-units.gandr");
 
 /// Lower `source` and hand the module to `inspect`.
 ///
@@ -117,7 +128,7 @@ fn an_overlap_that_joins_is_certified_and_runs_either_way()
 }
 
 /// The circle presented by its two cancellations.
-const CIRCLE: &str = include_str!("tests/unformatted/circle.gandr");
+const CIRCLE: &str = include_str!("coincide/unformatted/circle.gandr");
 
 #[test]
 fn the_circles_cancellations_join_below_the_root()
@@ -192,7 +203,7 @@ fn the_circles_cancellations_join_below_the_root()
 fn a_third_cancellation_parts_the_circles_readings()
 {
     let source = SourceText::from(include_str!(
-        "tests/unformatted/a-third-cancellation-parts-the-circles-readings.gandr"
+        "coincide/unformatted/a-third-cancellation-parts-the-circles-readings.gandr"
     ));
     lowered(source, |module| {
         let [ref diagnostic] = *module.cells().diagnostics.as_slice()
@@ -240,7 +251,7 @@ fn a_third_cancellation_parts_the_circles_readings()
 
 /// The circle's shape: the presentation the circle's constructors present,
 /// read as a signature whose models interpret it.
-const CIRCLE_SHAPE: &str = include_str!("tests/fixtures/circle-shape.gandr");
+const CIRCLE_SHAPE: &str = include_str!("coincide/fixtures/circle-shape.gandr");
 
 /// The peaks of a block's term certificates, spelled, or the block's cell
 /// diagnostics.
@@ -309,7 +320,9 @@ fn the_circles_shape_joins_where_the_circle_does()
     );
     let tampered = CIRCLE_SHAPE.replace(
         '}',
-        include_str!("tests/fixtures/the-circles-shape-joins-where-the-circle-does-tampered.gandr"),
+        include_str!(
+            "coincide/fixtures/the-circles-shape-joins-where-the-circle-does-tampered.gandr"
+        ),
     );
     let derived = lowered(SourceText::from(tampered.as_str()), |module| {
         let _peaks = term_peaks(module).expect("a third law completes");
@@ -344,64 +357,10 @@ fn the_circles_shape_joins_where_the_circle_does()
     );
 }
 
-#[test]
-fn two_rules_rewriting_one_term_apart_refuse_the_block()
-{
-    let source = SourceText::from(include_str!(
-        "tests/unformatted/two-rules-rewriting-one-term-apart-refuse-the-block.gandr"
-    ));
-    lowered(source, |module| {
-        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
-        else {
-            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
-        };
-        let CellFault::Coherence(ref fault @ CoherenceFault::Diverges { first, .. }) =
-            diagnostic.fault
-        else {
-            panic!("the pair diverges: {:?}", diagnostic.fault)
-        };
-        assert_eq!(
-            text(source, diagnostic.span).as_ref(),
-            "rule : add m Zero ==> Succ m",
-            "the refusal stands at the later rule"
-        );
-        assert_eq!(
-            text(source, first).as_ref(),
-            "rule : add Zero n ==> n",
-            "and names the earlier one"
-        );
-        assert_eq!(
-            fault.to_string(),
-            "both rules rewrite `add(Zero, Zero)`, one to `Zero` and the other to `Succ(Zero)`"
-        );
-        assert!(matches!(
-            module.cells().declarations[0].coincidence,
-            Coincidence::Refused(CellDiagnosticIndex(0))
-        ));
-        let [family, later] = *module.declarations().iter().collect::<Vec<_>>()
-        else {
-            panic!("the refused family and the later declaration, and no operation")
-        };
-        assert_eq!(
-            family.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::RulesDiverge {
-                span: diagnostic.span,
-                first
-            }),
-            "the family is refused under its own name"
-        );
-        assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
-        assert_eq!(
-            module.normal_form(family, CallText::from("add(Zero, Zero)")),
-            Err(NormalFormFault::Incoherent)
-        );
-    });
-}
-
 /// A group's laws with the left inverse: associativity and the inverse law
 /// meet at `mul(mul(inv(x), x), z)`, which they leave at `z` and at
 /// `mul(inv(x), mul(x, z))`.
-const GROUP: &str = include_str!("tests/fixtures/group.gandr");
+const GROUP: &str = include_str!("coincide/fixtures/group.gandr");
 
 #[test]
 fn a_groups_inverse_law_completes_to_the_rules_it_derives()
@@ -483,7 +442,7 @@ fn a_groups_inverse_law_completes_to_the_rules_it_derives()
 /// `nu(par(nil, q)) ==> par(nil, q)`, that rule and `scope` by the same rule
 /// with `nil` wrapped in `par(□, q')`, and so on, one wrapping deeper every
 /// round (#1604).
-const SCOPE_EXTRUSION: &str = include_str!("tests/fixtures/scope-extrusion.gandr");
+const SCOPE_EXTRUSION: &str = include_str!("coincide/fixtures/scope-extrusion.gandr");
 
 #[test]
 fn a_scope_extrusion_family_never_completes()
@@ -534,7 +493,9 @@ fn a_scope_extrusion_family_never_completes()
         "rule flat : par (par (par (par (nil ()) p) q) r) s ==> par (par (par (nil ()) q) r) s;",
     ] {
         let block = alloc::format!(
-            include_str!("tests/unformatted/a-scope-extrusion-family-never-completes-block.gandr"),
+            include_str!(
+                "coincide/unformatted/a-scope-extrusion-family-never-completes-block.gandr"
+            ),
             SCOPE_EXTRUSION = SCOPE_EXTRUSION,
             flat = flat
         );
@@ -560,7 +521,7 @@ fn a_scope_extrusion_family_never_completes()
 fn a_permuted_call_no_order_orients_is_uncompleted()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-permuted-call-no-order-orients-is-uncompleted.gandr"
+        "coincide/fixtures/a-permuted-call-no-order-orients-is-uncompleted.gandr"
     ));
     lowered(source, |module| {
         let [ref diagnostic] = *module.cells().diagnostics.as_slice()
@@ -607,7 +568,7 @@ fn a_permuted_call_no_order_orients_is_uncompleted()
 fn a_data_blocks_derived_rule_is_a_pattern_rule()
 {
     let completed = SourceText::from(include_str!(
-        "tests/fixtures/a-data-blocks-derived-rule-is-a-pattern-rule-completed.gandr"
+        "coincide/fixtures/a-data-blocks-derived-rule-is-a-pattern-rule-completed.gandr"
     ));
     lowered(completed, |module| {
         let [ref cells] = *module.cells().declarations.as_slice()
@@ -637,7 +598,7 @@ fn a_data_blocks_derived_rule_is_a_pattern_rule()
         assert_eq!(reached.spelling(), "Succ(Zero)");
     });
     let repeated = SourceText::from(include_str!(
-        "tests/fixtures/a-data-blocks-derived-rule-is-a-pattern-rule-repeated.gandr"
+        "coincide/fixtures/a-data-blocks-derived-rule-is-a-pattern-rule-repeated.gandr"
     ));
     lowered(repeated, |module| {
         let [ref diagnostic] = *module.cells().diagnostics.as_slice()
@@ -659,7 +620,7 @@ fn a_data_blocks_derived_rule_is_a_pattern_rule()
 fn two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/two-rules-written-the-other-way-round-are-refused-at-the-later-one-all-the-same.gandr"
+        "coincide/fixtures/two-rules-written-the-other-way-round-are-refused-at-the-later-one-all-the-same.gandr"
     ));
     lowered(source, |module| {
         let [ref diagnostic] = *module.cells().diagnostics.as_slice()
@@ -691,13 +652,13 @@ fn two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_sa
 #[test]
 fn a_pinned_rule_orients_only_the_way_it_is_pinned()
 {
-    use crate::description::written::RuleDirection::LeftToRight;
-    use crate::description::written::RuleDirection::RightToLeft;
-    use crate::description::written::RuleOrientation::Pinned;
-    use crate::description::written::RuleOrientation::Unpinned;
+    use RuleDirection::LeftToRight;
+    use RuleDirection::RightToLeft;
+    use RuleOrientation::Pinned;
+    use RuleOrientation::Unpinned;
 
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned.gandr"
+        "coincide/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned.gandr"
     ));
     lowered(source, |module| {
         let description = &module
@@ -725,7 +686,7 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
         );
     });
     let commuting = SourceText::from(include_str!(
-        "tests/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned-commuting.gandr"
+        "coincide/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned-commuting.gandr"
     ));
     lowered(commuting, |module| {
         let description = &module
@@ -742,19 +703,10 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
 }
 
 #[test]
-fn a_call_lends_the_text_it_was_written_as()
-{
-    assert_eq!(
-        CallText::from("add(Succ(Zero), Zero)").as_ref(),
-        "add(Succ(Zero), Zero)"
-    );
-}
-
-#[test]
 fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-rule-that-rebuilds-its-own-call-refuses-the-block.gandr"
+        "coincide/fixtures/a-rule-that-rebuilds-its-own-call-refuses-the-block.gandr"
     ));
     lowered(source, |module| {
         let [ref diagnostic] = *module.cells().diagnostics.as_slice()
@@ -913,7 +865,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
             channel,
             &format!(
                 include_str!(
-                    "tests/unformatted/conditioned-rules-join-under-the-condition-their-overlap-composes-2448-collecting.gandr"
+                    "coincide/unformatted/conditioned-rules-join-under-the-condition-their-overlap-composes-2448-collecting.gandr"
                 ),
                 gc = gc,
                 scope = scope
@@ -932,7 +884,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
         "Name",
         &format!(
             include_str!(
-                "tests/unformatted/conditioned-rules-join-under-the-condition-their-overlap-composes-2448-quiet.gandr"
+                "coincide/unformatted/conditioned-rules-join-under-the-condition-their-overlap-composes-2448-quiet.gandr"
             ),
             gc = gc
         ),
@@ -949,7 +901,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
         "Name",
         &format!(
             include_str!(
-                "tests/unformatted/conditioned-rules-join-under-the-condition-their-overlap-composes-2448-vacant.gandr"
+                "coincide/unformatted/conditioned-rules-join-under-the-condition-their-overlap-composes-2448-vacant.gandr"
             ),
             scope = scope
         ),
@@ -990,7 +942,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 fn an_equation_written_backwards_orients_forwards()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned.gandr"
+        "coincide/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned.gandr"
     ));
     lowered(source, |module| {
         let described = module.described().next().expect("one described block");
@@ -1006,8 +958,8 @@ fn an_equation_written_backwards_orients_forwards()
         );
         let cells = &module.cells().declarations[0];
         assert_eq!(cells.directions, [
-            crate::description::written::RuleDirection::RightToLeft,
-            crate::description::written::RuleDirection::LeftToRight,
+            RuleDirection::RightToLeft,
+            RuleDirection::LeftToRight,
         ]);
         assert!(
             matches!(
@@ -1030,7 +982,7 @@ fn an_equation_written_backwards_orients_forwards()
 fn a_congruence_is_no_rewrite_of_its_own()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-congruence-is-no-rewrite-of-its-own.gandr"
+        "coincide/fixtures/a-congruence-is-no-rewrite-of-its-own.gandr"
     ));
     lowered(source, |module| {
         let [ref cells] = *module.cells().declarations.as_slice()
@@ -1056,7 +1008,7 @@ fn a_congruence_is_no_rewrite_of_its_own()
         );
     });
     let with_a_rule = SourceText::from(include_str!(
-        "tests/fixtures/a-congruence-is-no-rewrite-of-its-own-with-a-rule.gandr"
+        "coincide/fixtures/a-congruence-is-no-rewrite-of-its-own-with-a-rule.gandr"
     ));
     lowered(with_a_rule, |module| {
         let [ref cells] = *module.cells().declarations.as_slice()
@@ -1075,99 +1027,6 @@ fn a_congruence_is_no_rewrite_of_its_own()
     });
 }
 
-#[test]
-fn a_call_reads_its_normal_form_or_says_why_not()
-{
-    let source = SourceText::from(include_str!(
-        "tests/unformatted/a-call-reads-its-normal-form-or-says-why-not.gandr"
-    ));
-    lowered(source, |module| {
-        assert_eq!(
-            module.cells().declarations[0].coincidence,
-            Coincidence::Orthogonal
-        );
-        let [family, walk, .., later] = *module.declarations().iter().collect::<Vec<_>>()
-        else {
-            panic!("the family, its operations and the later declaration")
-        };
-        let five_by_two =
-            CallText::from("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)))");
-        let reached = module.normal_form(family, five_by_two).unwrap();
-        assert_eq!(reached.spelling(), "(Succ(Succ(Zero)), Succ(Zero))");
-        assert_eq!(
-            module.normal_form(walk, five_by_two),
-            Ok(reached),
-            "an operation of the block reads a call under the block's rules"
-        );
-        assert_eq!(
-            module
-                .normal_form(family, CallText::from(" divmod ( Zero , Zero ) "))
-                .map(|reached| reached.spelling()),
-            Ok(String::from("(Zero, Zero)")),
-            "space between the tokens is read past"
-        );
-        for (call, fault) in [
-            ("divmod(Zero", NormalFormFault::Unread),
-            ("divmod(Zero, Zero) Zero", NormalFormFault::Unread),
-            ("divmod(Zero,)", NormalFormFault::Unread),
-            ("plus(Zero, Zero)", NormalFormFault::UnknownSymbol),
-            (
-                "Succ(Zero)",
-                NormalFormFault::NotACall(ElaborateError::LhsNotOperation),
-            ),
-        ] {
-            assert_eq!(
-                module
-                    .normal_form(family, CallText::from(call))
-                    .map(|reached| reached.spelling()),
-                Err(fault),
-                "{call}"
-            );
-        }
-        assert_eq!(
-            module.normal_form(later, CallText::from("divmod(Zero, Zero)")),
-            Err(NormalFormFault::Undescribed)
-        );
-        assert_ne!(
-            NormalFormFault::Unread.to_string(),
-            NormalFormFault::Incoherent.to_string()
-        );
-    });
-    let restriction = SourceText::from(include_str!(
-        "tests/unformatted/a-call-reads-its-normal-form-or-says-why-not-restriction.gandr"
-    ));
-    lowered(restriction, |module| {
-        let [theory, ..] = *module.declarations().iter().collect::<Vec<_>>()
-        else {
-            panic!("the theory")
-        };
-        for (call, reached) in [
-            ("nu(bind b . out(b, nil))", Ok("nil")),
-            (
-                "nu(bind a . nu(bind b . out(a, nil)))",
-                Ok("nu(bind a0 . nu(bind a1 . out(a0, nil)))"),
-            ),
-            (
-                "nu(bind b . out(c, nil))",
-                Err(NormalFormFault::UnknownSymbol),
-            ),
-            (
-                "out(b, nu(bind b . nil))",
-                Err(NormalFormFault::UnknownSymbol),
-            ),
-            ("nu(bind b . out(b, nil)", Err(NormalFormFault::Unread)),
-        ] {
-            assert_eq!(
-                module
-                    .normal_form(theory, CallText::from(call))
-                    .map(|reached| reached.spelling()),
-                reached.map(String::from),
-                "{call}: a name is the atom an enclosing abstraction binds, and only there"
-            );
-        }
-    });
-}
-
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite
@@ -1177,13 +1036,13 @@ fn a_call_reads_its_normal_form_or_says_why_not()
 fn a_call_nesting_operations_reads_over_terms_1510()
 {
     let choices = SourceText::from(include_str!(
-        "tests/unformatted/a-call-nesting-operations-reads-over-terms-1510-choices.gandr"
+        "coincide/unformatted/a-call-nesting-operations-reads-over-terms-1510-choices.gandr"
     ));
     let plain = SourceText::from(include_str!(
-        "tests/unformatted/a-call-nesting-operations-reads-over-terms-1510-plain.gandr"
+        "coincide/unformatted/a-call-nesting-operations-reads-over-terms-1510-plain.gandr"
     ));
     let two_cells = SourceText::from(include_str!(
-        "tests/unformatted/a-call-nesting-operations-reads-over-terms-1510-two-cells.gandr"
+        "coincide/unformatted/a-call-nesting-operations-reads-over-terms-1510-two-cells.gandr"
     ));
     for (source, calls) in [
         (
@@ -1249,10 +1108,10 @@ fn a_call_nesting_operations_reads_over_terms_1510()
 fn an_instantiating_rule_fires_at_an_inspected_call_2966()
 {
     let beta = SourceText::from(include_str!(
-        "tests/fixtures/an-instantiating-rule-fires-at-an-inspected-call-2966-beta.gandr"
+        "coincide/fixtures/an-instantiating-rule-fires-at-an-inspected-call-2966-beta.gandr"
     ));
     let continued = SourceText::from(include_str!(
-        "tests/fixtures/an-instantiating-rule-fires-at-an-inspected-call-2966-continued.gandr"
+        "coincide/fixtures/an-instantiating-rule-fires-at-an-inspected-call-2966-continued.gandr"
     ));
     for (source, calls) in [
         (

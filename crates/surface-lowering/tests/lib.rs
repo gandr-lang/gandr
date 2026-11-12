@@ -4,7 +4,13 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod coincide;
+#[cfg(test)]
 mod collapse;
+#[cfg(test)]
+mod described;
+#[cfg(test)]
+mod description;
 #[cfg(test)]
 mod e_graphs;
 #[cfg(test)]
@@ -21,3 +27,5 @@ mod scopes;
 mod squier;
 #[cfg(test)]
 mod static_operators;
+#[cfg(test)]
+mod theory;

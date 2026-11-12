@@ -1,4 +1,5 @@
-//! Each described node at the role and the type its member states.
+//! Each described node at the role and the type its member states, read off
+//! a source that `gandr-surface-lowering` lowers.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -8,18 +9,17 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueType;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering_base::described::DescribedRole;
+use gandr_surface_lowering_base::described::DescribedType;
+use gandr_surface_lowering_base::described::DescribedTypes;
+use gandr_surface_lowering_base::fixture::grammar;
+use gandr_surface_lowering_base::fixture::parsed;
+use gandr_surface_lowering_base::namespace::Recognition;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
-
-use super::DescribedRole;
-use super::DescribedType;
-use super::DescribedTypes;
-use crate::LoweringBudget;
-use crate::fixture::grammar;
-use crate::fixture::parsed;
-use crate::lower_module;
-use crate::namespace::Recognition;
 
 /// The described types of `source`, with the arena they were minted into.
 ///
@@ -140,7 +140,7 @@ fn returned(
 fn a_theory_answers_at_every_member()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-theory-answers-at-every-member.gandr"
+        "described/fixtures/a-theory-answers-at-every-member.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -240,7 +240,7 @@ fn a_theory_answers_at_every_member()
 fn a_stated_law_answers_at_its_statement_2356()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-stated-law-answers-at-its-statement-2356.gandr"
+        "described/fixtures/a-stated-law-answers-at-its-statement-2356.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -297,7 +297,7 @@ fn a_stated_law_answers_at_its_statement_2356()
 fn a_binding_port_answers_at_the_function_from_its_variables_765()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-binding-port-answers-at-the-function-from-its-variables-765.gandr"
+        "described/fixtures/a-binding-port-answers-at-the-function-from-its-variables-765.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -374,7 +374,7 @@ fn a_binding_port_answers_at_the_function_from_its_variables_765()
 fn an_unelaborated_operation_s_ports_answer_as_written_2969()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/an-unelaborated-operation-s-ports-answer-as-written-2969.gandr"
+        "described/fixtures/an-unelaborated-operation-s-ports-answer-as-written-2969.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -463,7 +463,7 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
 fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-nullary-operation-in-a-law-answers-at-its-sort-668.gandr"
+        "described/fixtures/a-nullary-operation-in-a-law-answers-at-its-sort-668.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -496,7 +496,7 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 fn a_derived_rule_answers_each_side_node_at_its_sort()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-derived-rule-answers-each-side-node-at-its-sort.gandr"
+        "described/fixtures/a-derived-rule-answers-each-side-node-at-its-sort.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -534,7 +534,7 @@ fn a_derived_rule_answers_each_side_node_at_its_sort()
 fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-circuit-wire-takes-its-sort-from-whichever-reading-reaches-it.gandr"
+        "described/fixtures/a-circuit-wire-takes-its-sort-from-whichever-reading-reaches-it.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -567,7 +567,7 @@ fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 fn an_indexed_family_s_operation_answers_at_its_index_2940()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/an-indexed-family-s-operation-answers-at-its-index-2940.gandr"
+        "described/fixtures/an-indexed-family-s-operation-answers-at-its-index-2940.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -669,7 +669,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
 fn a_data_rule_answers_each_node_at_its_sort()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-data-rule-answers-each-node-at-its-sort.gandr"
+        "described/fixtures/a-data-rule-answers-each-node-at-its-sort.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -748,7 +748,7 @@ fn a_data_rule_answers_each_node_at_its_sort()
 fn a_parameterised_constructor_answers_under_its_parameters()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-parameterised-constructor-answers-under-its-parameters.gandr"
+        "described/fixtures/a-parameterised-constructor-answers-under-its-parameters.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -783,7 +783,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
         &types,
         span(
             include_str!(
-                "tests/fixtures/a-parameterised-constructor-answers-under-its-parameters-argument.gandr"
+                "described/fixtures/a-parameterised-constructor-answers-under-its-parameters-argument.gandr"
             ),
             "a",
         ),
@@ -804,7 +804,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
 fn a_family_the_native_reading_owns_answers_at_its_signature()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-family-the-native-reading-owns-answers-at-its-signature.gandr"
+        "described/fixtures/a-family-the-native-reading-owns-answers-at-its-signature.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -838,7 +838,7 @@ fn a_family_the_native_reading_owns_answers_at_its_signature()
 fn a_codata_observation_s_type_answers_at_its_universe()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-codata-observation-s-type-answers-at-its-universe.gandr"
+        "described/fixtures/a-codata-observation-s-type-answers-at-its-universe.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -893,7 +893,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
 fn a_second_order_law_answers_at_its_written_sorts()
 {
     let source = SourceText::from(include_str!(
-        "tests/fixtures/a-second-order-law-answers-at-its-written-sorts.gandr"
+        "described/fixtures/a-second-order-law-answers-at-its-written-sorts.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -936,7 +936,7 @@ fn a_second_order_law_answers_at_its_written_sorts()
 fn a_variable_under_an_abstraction_answers_at_its_port()
 {
     let source = SourceText::from(include_str!(
-        "tests/unformatted/a-variable-under-an-abstraction-answers-at-its-port.gandr"
+        "described/unformatted/a-variable-under-an-abstraction-answers-at-its-port.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -991,7 +991,7 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
 fn an_occurrence_answers_at_its_port()
 {
     let source = SourceText::from(include_str!(
-        "tests/unformatted/an-occurrence-answers-at-its-port.gandr"
+        "described/unformatted/an-occurrence-answers-at-its-port.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -1025,7 +1025,7 @@ fn an_occurrence_answers_at_its_port()
 fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
 {
     let source = SourceText::from(include_str!(
-        "tests/unformatted/a-field-s-variable-and-an-instantiation-under-it-answer-2360.gandr"
+        "described/unformatted/a-field-s-variable-and-an-instantiation-under-it-answer-2360.gandr"
     ));
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -1082,39 +1082,6 @@ fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
     }
 }
 
-/// Substitution rebuilds every node kind a rule term holds and replaces
-/// only the variables the map names, keeping the rest and every atom.
-#[test]
-fn substitution_rebuilds_every_node_and_replaces_only_mapped_variables()
-{
-    use alloc::collections::BTreeMap;
-
-    use gandr_theory_levitation::FreeTerm;
-    use gandr_theory_levitation::Name;
-
-    let written = |x: &str| {
-        FreeTerm::op("f", [
-            FreeTerm::ctor("C", [FreeTerm::var(x), FreeTerm::var("y")]),
-            FreeTerm::results([FreeTerm::var(x)]),
-            FreeTerm::inst("t", [FreeTerm::var(x)]),
-            FreeTerm::abs(
-                "a",
-                FreeTerm::op("g", [FreeTerm::var(x), FreeTerm::var("a")]),
-            ),
-        ])
-    };
-    let x = Name::from("x");
-    let by = BTreeMap::from([(&x, FreeTerm::var("z"))]);
-    assert!(
-        super::substitute(&written("x"), &by) == written("z"),
-        "every `x` under every node kind reads `z`; `y` and the atom stay"
-    );
-    assert!(
-        super::substitute(&written("x"), &BTreeMap::new()) == written("x"),
-        "an empty map leaves the term as written"
-    );
-}
-
 /// Each constructor of an indexed family answers at the index it states
 /// (#3528): `FZ` at `Fin(S(n))`, binding the field its index names; the
 /// constant `AtZ` at `At(Z)`; and the parameterised `V`'s at `V(a, Z)` and
@@ -1153,7 +1120,7 @@ fn an_indexed_constructor_answers_at_the_index_it_states_3528()
             Some(_) | None => leaf(value),
         }
     }
-    let source = SourceText::from(include_str!("tests/fixtures/argument.gandr"));
+    let source = SourceText::from(include_str!("described/fixtures/argument.gandr"));
     let (types, arena) = described(source);
     let name = |around: &'static str, inner: &'static str| {
         entry(

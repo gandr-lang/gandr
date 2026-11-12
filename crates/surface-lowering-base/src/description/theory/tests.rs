@@ -636,7 +636,7 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
     ] {
         assert_eq!(
             refusal(DescriptionFault::Signature(fault)),
-            crate::LoweringRefusal::UndescribedMember {
+            crate::error::LoweringRefusal::UndescribedMember {
                 span,
                 fault: member
             },
@@ -648,7 +648,7 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
         refusal(DescriptionFault::Signature(SignatureFault::BareFeedback {
             rule
         })),
-        crate::LoweringRefusal::BareFeedback { span, rule },
+        crate::error::LoweringRefusal::BareFeedback { span, rule },
         "an unguarded feed is its own refusal, at its occurrence, naming its rule"
     );
     for fault in [
@@ -658,368 +658,9 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
     ] {
         assert!(matches!(
             refusal(DescriptionFault::Signature(fault)),
-            crate::LoweringRefusal::MalformedForm { .. }
+            crate::error::LoweringRefusal::MalformedForm { .. }
         ));
     }
-}
-
-#[test]
-fn a_refused_theory_block_states_its_refusal()
-{
-    let source = include_str!("tests/fixtures/a-refused-theory-block-states-its-refusal.gandr");
-    let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let [wheel] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!(
-            "the refused block is one declaration, and mints no `Theory`: {:?}",
-            module.declarations()
-        )
-    };
-    assert_eq!(wheel.name().as_ref(), "Wheel");
-    assert_eq!(
-        wheel.role(),
-        crate::module::Role::Declared,
-        "its name is a declaration"
-    );
-    let text = |at: ByteSpan| source.get(usize::from(at.start()) .. usize::from(at.end()));
-    assert!(
-        matches!(
-            wheel.outcome(),
-            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::BareFeedback { span, rule })
-                if text(span) == Some("state")
-                    && source.find("state)") == Some(usize::from(span.start()))
-                    && text(rule) == Some("spin")
-        ),
-        "refused at the bare occurrence in `zip`, naming the rule: {:?}",
-        wheel.outcome()
-    );
-    assert!(
-        source
-            .get(usize::from(wheel.span().start()) .. usize::from(wheel.span().end()))
-            .is_some_and(|block| block.starts_with("theory Wheel")),
-        "the declaration is the block, refused at its member"
-    );
-    let Maybe::Present(key) = wheel.definition()
-    else {
-        panic!("the block is the declaration's definition")
-    };
-    assert_eq!(
-        module.attributes().entries(key).len(),
-        1_usize,
-        "the decoration states the block's refusal"
-    );
-}
-
-/// An inner block leading a theory's body, `@![ refuses("…") ]`, decorates
-/// the theory as an outer block before it does: the refused block
-/// states its refusal. One after a member decorates nothing and is refused
-/// at itself under the theory's name, the theory lowering clean. One
-/// writing an attribute an outer block writes is refused as doubled.
-#[test]
-fn an_inner_attribute_decorates_its_theory_3586()
-{
-    let source =
-        include_str!("tests/unformatted/an-inner-attribute-decorates-its-theory-3586.gandr");
-    let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let text = |at: ByteSpan| source.get(usize::from(at.start()) .. usize::from(at.end()));
-    let named = |name: &str| {
-        module
-            .declarations()
-            .iter()
-            .filter(|declaration| declaration.name().as_ref() == name)
-            .collect::<Vec<_>>()
-    };
-    let [wheel] = *named("Wheel")
-    else {
-        panic!("`Wheel` is one declaration: {:?}", module.declarations())
-    };
-    assert!(
-        matches!(
-            wheel.outcome(),
-            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::BareFeedback { .. })
-        ),
-        "the block is refused at its member: {:?}",
-        wheel.outcome()
-    );
-    let Maybe::Present(key) = wheel.definition()
-    else {
-        panic!("the block is the declaration's definition")
-    };
-    assert_eq!(
-        module.attributes().entries(key).len(),
-        1_usize,
-        "the inner block states the block's refusal"
-    );
-    let late = named("Late");
-    let declared = late
-        .iter()
-        .filter(|declaration| declaration.role() == crate::module::Role::Declared)
-        .collect::<Vec<_>>();
-    let held = late
-        .iter()
-        .filter(|declaration| declaration.role() == crate::module::Role::Held)
-        .collect::<Vec<_>>();
-    assert!(
-        matches!(declared.as_slice(), [theory] if !matches!(theory.outcome(), crate::DeclarationOutcome::Refused(_))),
-        "`Late` lowers clean beside its late block: {late:?}"
-    );
-    assert!(
-        matches!(
-            held.as_slice(),
-            [block] if matches!(
-                block.outcome(),
-                crate::DeclarationOutcome::Refused(crate::LoweringRefusal::MalformedForm { span, .. })
-                    if text(span) == Some("@![ explicit_exits ]")
-            )
-        ),
-        "the late block is refused at itself under `Late`: {late:?}"
-    );
-    let doubled = named("Doubled");
-    assert!(
-        doubled.iter().any(|declaration| matches!(
-            declaration.outcome(),
-            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::DuplicateAttribute { name, .. })
-                if name.as_ref() == "explicit_exits"
-        )),
-        "an attribute the outer and the inner block both write is refused as doubled: {doubled:?}"
-    );
-}
-
-#[test]
-fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
-{
-    let source = include_str!(
-        "tests/fixtures/an-ill-formed-theory-is-refused-with-the-checks-reason-1553.gandr"
-    );
-    let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let [unbindable] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!("the block is one declaration: {:?}", module.declarations())
-    };
-    let crate::DeclarationOutcome::Refused(
-        refusal @ crate::LoweringRefusal::IllFormedDescription {
-            kind,
-            subjects: [Maybe::Present(sort), Maybe::Present(port)],
-            ..
-        },
-    ) = unbindable.outcome()
-    else {
-        panic!(
-            "an unrepresentable binder is the description check's refusal, not a misplaced \
-             tile: {:?}",
-            unbindable.outcome()
-        )
-    };
-    assert_eq!(kind, crate::WfKind::NonRepresentableBinder);
-    assert_eq!(
-        (sort.as_ref(), port.as_ref()),
-        ("Tm", "t"),
-        "the refusal names the sort and the port as the block spells them"
-    );
-    assert_eq!(
-        alloc::string::ToString::to_string(&refusal),
-        "the port `t` binds a variable of the sort `Tm`, which is not representable",
-        "the refusal states the check's reason"
-    );
-}
-
-#[test]
-fn a_refused_top_level_operation_states_its_refusal()
-{
-    let source =
-        include_str!("tests/fixtures/a-refused-top-level-operation-states-its-refusal.gandr");
-    let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let [split] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!(
-            "the refused operation is one declaration: {:?}",
-            module.declarations()
-        )
-    };
-    assert_eq!(split.name().as_ref(), "split");
-    assert_eq!(
-        split.role(),
-        crate::module::Role::Held,
-        "its name enters no namespace"
-    );
-    assert!(matches!(
-        split.outcome(),
-        crate::DeclarationOutcome::Refused(crate::LoweringRefusal::UndescribedMember {
-            fault: MemberFault::OperationFiller,
-            ..
-        })
-    ));
-    let Maybe::Present(key) = split.signature()
-    else {
-        panic!("the operation is the declaration's half")
-    };
-    assert_eq!(
-        module.attributes().entries(key).len(),
-        1_usize,
-        "the decoration states the operation's refusal"
-    );
-}
-
-/// A decoration out of shape before a refused top-level operation refuses it
-/// at the decoration's stray tile, ahead of the operation's own refusal, so
-/// the stray tile is where its first error stands (#4113, #4114).
-#[test]
-fn an_unreadable_decoration_refuses_a_refused_operation_first_4113()
-{
-    let operation =
-        include_str!("tests/unformatted/a-top-level-operation-declines-its-filler-by-name.gandr");
-    // The `(` deleted leaves the payload an operand after the name; the `)`
-    // doubled leaves the second one an operand after the attribute.
-    for (decoration, stray) in [
-        ("@[ refuses\"OperationFiller\") ]\n", 10_usize .. 27_usize),
-        ("@[ refuses(\"OperationFiller\")) ]\n", 29_usize .. 30_usize),
-    ] {
-        let source = alloc::format!("{decoration}{operation}");
-        let grammar = grammar();
-        let tree = parse(&grammar, SourceText::from(source.as_str()))
-            .unwrap()
-            .into_tree();
-        let mut arena = gandr_core_term::CoreArena::new();
-        let module = crate::lower_module(
-            &grammar,
-            &tree,
-            &mut arena,
-            crate::LoweringBudget::DEFAULT,
-            crate::namespace::Recognition::default(),
-        )
-        .unwrap();
-        let [split] = *module.declarations().iter().collect::<Vec<_>>()
-        else {
-            panic!(
-                "{decoration:?}: one declaration: {:?}",
-                module.declarations()
-            )
-        };
-        let crate::DeclarationOutcome::Refused(crate::LoweringRefusal::MalformedForm {
-            span, ..
-        }) = split.outcome()
-        else {
-            panic!(
-                "{decoration:?}: the decoration refuses it: {:?}",
-                split.outcome()
-            )
-        };
-        assert_eq!(
-            usize::from(span.start()) .. usize::from(span.end()),
-            stray,
-            "{decoration:?}: the refusal stands at the stray material"
-        );
-    }
-}
-
-/// A top-level operation with no filler is refused at itself by its own name,
-/// and the block before it decorates it rather than standing where a
-/// declaration is expected (#3073).
-#[test]
-fn a_decorated_top_level_operation_is_refused_at_itself_3073()
-{
-    let source = include_str!(
-        "tests/fixtures/a-decorated-top-level-operation-is-refused-at-itself-3073.gandr"
-    );
-    let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let [split, one] = *module.declarations().iter().collect::<Vec<_>>()
-    else {
-        panic!(
-            "the operation and the definition are the two declarations: {:?}",
-            module.declarations()
-        )
-    };
-    assert_eq!(split.name().as_ref(), "split");
-    assert_eq!(one.name().as_ref(), "one");
-    let crate::DeclarationOutcome::Refused(crate::LoweringRefusal::UndescribedMember {
-        span,
-        fault: MemberFault::TopLevelOperation,
-    }) = split.outcome()
-    else {
-        panic!(
-            "the operation is refused by its own name: {:?}",
-            split.outcome()
-        )
-    };
-    assert_eq!(
-        source.get(usize::from(span.start()) .. usize::from(span.end())),
-        Some("oper split : (b : Bit) --> (_ : Bit, _ : Bit)"),
-        "the refusal stands at the operation"
-    );
-    let Maybe::Present(key) = split.signature()
-    else {
-        panic!("the operation is the declaration's half")
-    };
-    assert_eq!(
-        module.attributes().entries(key).len(),
-        1_usize,
-        "the block decorates the operation"
-    );
-    assert!(
-        !matches!(one.outcome(), crate::DeclarationOutcome::Refused(_)),
-        "the definition after it is not refused: {:?}",
-        one.outcome()
-    );
 }
 
 #[test]
@@ -1300,291 +941,6 @@ fn a_doubling_body_declines_on_the_derivation_node_budget()
         })
     )));
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
-}
-
-/// The constructor tree `value` holds, each constructor by its name in `Theory`
-/// and each name quoted.
-///
-/// # Specification
-/// trivial.
-fn spelled(
-    arena: &gandr_core_term::CoreArena,
-    value: gandr_core_term::ValueId,
-) -> alloc::string::String
-{
-    /// One piece of the rendering.
-    enum Piece
-    {
-        /// A value to render.
-        Term(gandr_core_term::ValueId),
-        /// Fixed text.
-        Text(&'static str),
-    }
-    let mut out = alloc::string::String::new();
-    let mut pending = alloc::vec![Piece::Term(value)];
-    while let Some(piece) = pending.pop() {
-        match piece {
-            Piece::Text(text) => out.push_str(text),
-            Piece::Term(id) => match arena.value(id) {
-                Some(&gandr_core_term::Value::Constructor {
-                    tag, ref fields, ..
-                }) => {
-                    out.push_str(
-                        gandr_theory_levitation::THEORY_CONSTRUCTORS
-                            .get(usize::from(tag))
-                            .copied()
-                            .unwrap_or("?"),
-                    );
-                    if fields.is_empty() {
-                        continue;
-                    }
-                    pending.push(Piece::Text(")"));
-                    for (at, &field) in fields.iter().enumerate().rev() {
-                        pending.push(Piece::Term(field));
-                        if at > 0 {
-                            pending.push(Piece::Text(", "));
-                        }
-                    }
-                    pending.push(Piece::Text("("));
-                },
-                Some(&gandr_core_term::Value::Literal(gandr_kernel_term::Literal::Text(
-                    ref text,
-                ))) => {
-                    write!(out, "\"{}\"", AsRef::<str>::as_ref(text)).unwrap();
-                },
-                other => panic!("not a presentation node: {other:?}"),
-            },
-        }
-    }
-    out
-}
-
-#[test]
-fn a_theory_block_defines_its_presentation()
-{
-    let grammar = grammar();
-    let tree = parse(
-        &grammar,
-        SourceText::from(include_str!(
-            "tests/fixtures/a-theory-block-defines-its-presentation-tree.gandr"
-        )),
-    )
-    .unwrap()
-    .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    assert_eq!(module.description_diagnostics(), []);
-    // Each theory's forgetting map is derived from its block beside it.
-    let declared: alloc::vec::Vec<_> = module
-        .declarations()
-        .iter()
-        .filter(|declaration| declaration.role() == crate::Role::Declared)
-        .collect();
-    let [code, nat, pointed] = *declared.as_slice()
-    else {
-        panic!(
-            "`Theory` once, then each theory: {:?}",
-            module.declarations()
-        )
-    };
-    assert_eq!(
-        [code, nat, pointed]
-            .map(|declaration| alloc::string::String::from(declaration.name().as_ref())),
-        ["Theory", "Nat", "Pointed"]
-    );
-    let crate::DeclarationOutcome::Data(index) = code.outcome()
-    else {
-        panic!("`Theory` is a data family: {:?}", code.outcome())
-    };
-    let Maybe::Present(signature) = module.data(index)
-    else {
-        panic!("its signature is minted")
-    };
-    assert_eq!(
-        signature
-            .constructors()
-            .iter()
-            .map(alloc::vec::Vec::len)
-            .collect::<alloc::vec::Vec<_>>(),
-        [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3, 1, 2, 1,
-            2, 1, 3
-        ],
-        "each constructor's names, then its recursions"
-    );
-    let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(
-        code.constant(),
-        alloc::sync::Arc::clone(signature),
-        gandr_core_checker::OriginToken::from(0_usize),
-    )];
-    let mut bodies = alloc::vec::Vec::new();
-    for (origin, theory) in [nat, pointed].into_iter().enumerate() {
-        let crate::DeclarationOutcome::Completed {
-            declared_type,
-            body,
-        } = theory.outcome()
-        else {
-            panic!("a theory defines a value: {:?}", theory.outcome())
-        };
-        assert_eq!(
-            arena.value_type(declared_type),
-            Some(&gandr_core_term::ValueType::Data {
-                declaration: code.constant(),
-                arguments: alloc::vec::Vec::new(),
-            }),
-            "of type `Theory`"
-        );
-        bodies.push(spelled(&arena, body));
-        declarations.push(gandr_core_checker::Declaration::new(
-            theory.constant(),
-            Maybe::Present(declared_type),
-            Maybe::Present(body),
-            gandr_core_checker::OriginToken::from(origin.saturating_add(1)),
-        ));
-    }
-    assert_eq!(
-        bodies,
-        [
-            r#"Presents(Sort("Nat", End, End), Oper("add", Port("", "Nat", End, Port("", "Nat", End, End)), Port("", "Nat", End, End), End), End)"#,
-            r#"Presents(Sort("One", End, End), Oper("pt", End, Port("p", "One", End, End), End), End)"#,
-        ],
-        "each value read node for node, an unnamed port at the empty name"
-    );
-    let report = gandr_core_checker::check_module(
-        &mut gandr_core_checker::CheckingContext::new(
-            &mut arena,
-            gandr_core_checker::CheckBudget::DEFAULT,
-        ),
-        &declarations,
-    );
-    let verdicts: alloc::vec::Vec<_> = report
-        .judged()
-        .iter()
-        .map(gandr_core_checker::Judged::verdict)
-        .collect();
-    assert!(
-        matches!(verdicts.as_slice(), [
-            gandr_core_checker::Verdict::Data,
-            gandr_core_checker::Verdict::Checked { .. },
-            gandr_core_checker::Verdict::Checked { .. }
-        ]),
-        "the checker forms `Theory` and checks each value at it: {verdicts:?}"
-    );
-}
-
-#[test]
-fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
-{
-    let grammar = grammar();
-    let tree = parse(
-        &grammar,
-        SourceText::from(include_str!(
-            "tests/fixtures/a-rule-bearing-theory-defines-its-presentation-with-its-laws-tree.gandr"
-        )),
-    )
-    .unwrap()
-    .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let declared: alloc::vec::Vec<_> = module
-        .declarations()
-        .iter()
-        .filter(|declaration| declaration.role() == crate::Role::Declared)
-        .collect();
-    let [code, circle, cat] = *declared.as_slice()
-    else {
-        panic!(
-            "`Theory` once, then each theory: {:?}",
-            module.declarations()
-        )
-    };
-    let crate::DeclarationOutcome::Data(index) = code.outcome()
-    else {
-        panic!("`Theory` is a data family: {:?}", code.outcome())
-    };
-    let Maybe::Present(signature) = module.data(index)
-    else {
-        panic!("its signature is minted")
-    };
-    let crate::DeclarationOutcome::Completed {
-        declared_type,
-        body,
-    } = circle.outcome()
-    else {
-        panic!(
-            "laws over an unindexed sort are read over terms, so the block is clean: {:?}",
-            circle.outcome()
-        )
-    };
-    assert_eq!(
-        spelled(&arena, body),
-        r#"Presents(Sort("Pt", End, End), Const("base", End, Port("", "Pt", End, End), Oper("turn", Port("x", "Pt", End, End), Port("", "Pt", End, End), Oper("unturn", Port("x", "Pt", End, End), Port("", "Pt", End, End), End))), Rule("turnUnturn", App("turn", Arg(App("unturn", Arg(Var("x"), End)), End)), Var("x"), Rule("unturnTurn", App("unturn", Arg(App("turn", Arg(Var("x"), End)), End)), Var("x"), Rank("turn", "1", Rank("unturn", "1", End)))))"#,
-        "the value carries the constant `base` as a `Const`, each law as a `Rule`, read node for node, then the rank of each operation a law applies"
-    );
-    let crate::DeclarationOutcome::Completed {
-        declared_type: cat_type,
-        body: cat_body,
-    } = cat.outcome()
-    else {
-        panic!(
-            "a law over an indexed sort is read with the indices its sorting fixes, so its \
-             block defines a value too: {:?}",
-            cat.outcome()
-        )
-    };
-    let declarations = [
-        gandr_core_checker::Declaration::data(
-            code.constant(),
-            alloc::sync::Arc::clone(signature),
-            gandr_core_checker::OriginToken::from(0_usize),
-        ),
-        gandr_core_checker::Declaration::new(
-            circle.constant(),
-            Maybe::Present(declared_type),
-            Maybe::Present(body),
-            gandr_core_checker::OriginToken::from(1_usize),
-        ),
-        gandr_core_checker::Declaration::new(
-            cat.constant(),
-            Maybe::Present(cat_type),
-            Maybe::Present(cat_body),
-            gandr_core_checker::OriginToken::from(2_usize),
-        ),
-    ];
-    let report = gandr_core_checker::check_module(
-        &mut gandr_core_checker::CheckingContext::new(
-            &mut arena,
-            gandr_core_checker::CheckBudget::DEFAULT,
-        ),
-        &declarations,
-    );
-    let verdicts: alloc::vec::Vec<_> = report
-        .judged()
-        .iter()
-        .map(gandr_core_checker::Judged::verdict)
-        .collect();
-    assert!(
-        matches!(verdicts.as_slice(), [
-            gandr_core_checker::Verdict::Data,
-            gandr_core_checker::Verdict::Checked { .. },
-            gandr_core_checker::Verdict::Checked { .. }
-        ]),
-        "the checker checks each rule-bearing value at `Theory`: {verdicts:?}"
-    );
 }
 
 #[test]
@@ -2579,65 +1935,6 @@ fn an_include_is_refused_at_its_member()
     );
 }
 
-/// #2752: a member the including block refuses, and the included one reads,
-/// is refused at the `include` that brings it, in the including block; the
-/// included block stays clean.
-#[test]
-fn an_included_member_is_refused_at_its_include_2752()
-{
-    let source =
-        include_str!("tests/fixtures/an-included-member-is-refused-at-its-include-2752.gandr");
-    let grammar = grammar();
-    let tree = parse(&grammar, SourceText::from(source))
-        .unwrap()
-        .into_tree();
-    let mut arena = gandr_core_term::CoreArena::new();
-    let module = crate::lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        crate::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-    )
-    .unwrap();
-    let text = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
-    let refused: alloc::vec::Vec<_> = module
-        .declarations()
-        .iter()
-        .filter_map(|declaration| {
-            let crate::DeclarationOutcome::Refused(refusal) = declaration.outcome()
-            else {
-                return None;
-            };
-            Some((
-                text(declaration.span()).and_then(|block| block.split_whitespace().nth(1)),
-                refusal,
-            ))
-        })
-        .collect();
-    let [(block, ref refusal)] = *refused.as_slice()
-    else {
-        panic!("one refusal: {refused:?}")
-    };
-    assert_eq!(
-        block,
-        Some("Ordered"),
-        "the including block is refused, the included one reads"
-    );
-    let crate::LoweringRefusal::UndescribedMember {
-        span,
-        fault: MemberFault::NestedOperation,
-    } = *refusal
-    else {
-        panic!("the included rule is refused for its nesting: {refusal:?}")
-    };
-    assert_eq!(
-        text(span),
-        Some("include Monad"),
-        "the refusal stands at the include"
-    );
-}
-
 /// #2356: a `law` member is kept beside the value — its binders, its
 /// hypotheses and its path — an included theory's laws first; a statement
 /// that is no path, a sort binder after a hypothesis and a law named as an
@@ -3521,7 +2818,7 @@ fn a_seam_refusal_stands_at_its_rule_5763()
         );
         assert_eq!(
             diagnostic.lowering_refusal(gandr_surface_syntax::SourceFragment::from(source)),
-            crate::LoweringRefusal::UndescribedMember {
+            crate::error::LoweringRefusal::UndescribedMember {
                 span: diagnostic.span,
                 fault: member
             },
@@ -3591,4 +2888,52 @@ fn a_moded_type_at_a_sort_index_is_the_application_it_spells_6459()
             "`{output}`: `Sub` over its two indices"
         );
     }
+}
+
+/// The inner blocks before a theory's first member decorate the theory, each
+/// up to the bracket that closes it outside its payload's own; one after a
+/// member is late; and one inside a theory an outer block decorates too is
+/// the theory's own (#3586).
+#[test]
+fn each_inner_block_reaches_the_reading_at_its_span_3586()
+{
+    let source = include_str!(
+        "tests/unformatted/each-inner-block-reaches-the-reading-at-its-span-3586.gandr"
+    );
+    let report = described(source);
+    let text = |at: ByteSpan| {
+        source
+            .get(usize::from(at.start()) .. usize::from(at.end()))
+            .unwrap()
+    };
+    let read: Vec<(&str, Vec<&str>, Vec<&str>)> = report
+        .declarations
+        .iter()
+        .map(|declaration| {
+            (
+                text(declaration.named.span),
+                declaration
+                    .written
+                    .inner
+                    .iter()
+                    .map(|&at| text(at))
+                    .collect(),
+                declaration
+                    .written
+                    .late_inner
+                    .iter()
+                    .map(|&at| text(at))
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(read, [
+        (
+            "Early",
+            vec!["@![ refuses(\"BareFeedback\") ]", "@![ explicit_exits ]"],
+            vec![]
+        ),
+        ("Late", vec![], vec!["@![ explicit_exits ]"]),
+        ("Doubled", vec!["@![ explicit_exits ]"], vec![]),
+    ]);
 }

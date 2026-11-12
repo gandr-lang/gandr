@@ -1,6 +1,6 @@
-//! Source-to-cell contracts, including the production module route.
+//! Source-to-cell contracts. The production module route is in the
+//! integration target, `tests::desc_cells`.
 
-use gandr_core_term::CoreArena;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_cell_complexes::Cell;
@@ -11,13 +11,10 @@ use gandr_theory_levitation::CircuitElaborationError;
 use quenchant_shape::shape::Maybe;
 
 use super::*;
-use crate::LoweringBudget;
 use crate::description::DescriptionReport;
 use crate::description::MemberFault;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
-use crate::lower_module;
-use crate::namespace::Recognition;
 use crate::unit::Unit;
 
 /// Two frame-defining constructors and two operation laws.
@@ -189,7 +186,7 @@ fn a_rule_over_a_declined_operation_owes_no_refusal_of_its_own_2666()
     };
     assert_eq!(
         diagnostic.lowering_refusal(),
-        crate::LoweringRefusal::UndescribedMember {
+        crate::error::LoweringRefusal::UndescribedMember {
             span: diagnostic.span,
             fault: MemberFault::NoOutput,
         },
@@ -273,7 +270,7 @@ fn a_copied_variable_is_refused_at_its_second_occurrence()
         assert!(
             matches!(
                 refusal.lowering_refusal(),
-                crate::LoweringRefusal::RulesNonLinear { span, copy: named }
+                crate::error::LoweringRefusal::RulesNonLinear { span, copy: named }
                     if span == refusal.span && named == copy
             ),
             "{source}"
@@ -438,7 +435,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
         let refusal = diagnostic.lowering_refusal();
         assert_eq!(
             refusal,
-            crate::LoweringRefusal::UndescribedMember {
+            crate::error::LoweringRefusal::UndescribedMember {
                 span: diagnostic.span,
                 fault: expected,
             },
@@ -451,50 +448,4 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
             "{member} is refused at its own span"
         );
     }
-}
-
-#[test]
-fn ordinary_lowering_executes_the_cell_gate_and_preserves_later_values()
-{
-    let source = "data Flag : Type where { | Off : Flag | On : Flag oper split : (x : Flag) --> (a : Flag, b : Flag); rule : split Off ==> On; } def later = 7;";
-    let grammar = grammar();
-    let tree = parse(&grammar, source.into()).unwrap().into_tree();
-    let mut arena = CoreArena::new();
-    let module = lower_module(
-        &grammar,
-        &tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .unwrap();
-    let [ref rule] = *module.cells().diagnostics.as_slice()
-    else {
-        panic!("the cell refusal reached ordinary lowering")
-    };
-    assert_eq!(
-        rule.fault,
-        CellFault::Rule(ElaborateError::ResultArity {
-            outputs: ContinuationCount::from(2_usize),
-            results: ContinuationCount::ONE,
-        })
-    );
-    assert_eq!(
-        module.cells().declarations[0].store.len(),
-        CellCount::from(2_usize)
-    );
-    let declarations: Vec<_> = module.declarations().iter().collect();
-    assert_eq!(declarations.len(), 3);
-    for (declaration, expected) in declarations.iter().zip(["Flag", "Flag", "later"]) {
-        assert_eq!(declaration.name().as_ref(), expected);
-    }
-    assert!(matches!(
-        declarations[0].outcome(),
-        crate::DeclarationOutcome::Data(_)
-    ));
-    assert_eq!(declarations[1].span(), rule.span);
-    assert!(matches!(
-        declarations[1].outcome(),
-        crate::DeclarationOutcome::Refused(_)
-    ));
 }
