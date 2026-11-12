@@ -1637,7 +1637,12 @@ echo "census check OK: $(jq length .config/census/cases.json) cases give their r
 # its entries as `purposes:items` reads them: every public item has a row,
 # every row names an entry, a crate row lands with a row for every module, and
 # a module row with the crate row. A crate with no row is not read: it waits
-# for its first pass. Each case in `.config/purposes/cases.json` holds the
+# for its first pass. A gate documents only the rowed crates that its change
+# reaches (#6895): `GATE_SCOPE` excludes each package that the change does
+# not reach. A change of the ledgers, of this check's programs or of the
+# ledger tasks documents every rowed crate, and so does a run with no
+# `GATE_BASE`. A rowed crate with no package stays in, since its rows are a
+# finding in any scope. Each case in `.config/purposes/cases.json` holds the
 # entry program's arguments, an input, and the output it must give or that it
 # fails; each in `.config/purposes/coverage.json` the tags and sites the
 # coverage program reads and the findings it gives. Every finding is printed
@@ -1663,9 +1668,23 @@ if ! cmp -s "$fresh/purposes.sql" ledger/purposes.sql; then
 fi
 sqlite3 -bail "$db" < ledger/concerns.sql
 mapfile -t rowed < <(sqlite3 "$db" 'SELECT DISTINCT crate FROM purpose ORDER BY crate;')
+checked=("${rowed[@]}")
+if (( ${#rowed[@]} )) && [[ ${GATE_SCOPE:-} == *--exclude* && -n ${GATE_BASE:-} ]] \
+  && git diff --quiet "$GATE_BASE" -- ledger/purposes.sql ledger/concerns.sql .config/purposes/ .config/mise/tasks/mise-tasks-ledger.toml \
+  && [[ -z $(git ls-files --others --exclude-standard -- ledger/ .config/purposes/) ]]; then
+  mapfile -t checked < <(cargo metadata --locked --no-deps --format-version 1 | jq -r --arg scope "$GATE_SCOPE" '
+    ([$scope | scan("--exclude ([^ ]+)")[0]]) as $out
+    | (.workspace_root + "/crates/") as $crates
+    | [.packages[] | select(.manifest_path | startswith($crates))
+       | {crate: (.manifest_path | ltrimstr($crates) | split("/")[0]), reached: (.name | IN($out[]) | not)}] as $packages
+    | $ARGS.positional[] | . as $crate
+    | select(all($packages[]; .crate != $crate) or any($packages[]; .crate == $crate and .reached))' --args "${rowed[@]}")
+fi
 touch "$fresh/entries.tsv"
-if (( ${#rowed[@]} )); then mise run --quiet purposes:items "${rowed[@]}" > "$fresh/entries.tsv"; fi
-sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry"
+if (( ${#checked[@]} )); then mise run --quiet purposes:items "${checked[@]}" > "$fresh/entries.tsv"; fi
+printf '%s\n' "${checked[@]}" > "$fresh/checked.txt"
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry" \
+  'CREATE TABLE checked(crate TEXT);' ".import $fresh/checked.txt checked"
 findings=$(sqlite3 -bail "$db" <<'SQL'
 WITH named(crate, path, kind, shown) AS (
   SELECT crate, path, kind, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM purpose
@@ -1679,7 +1698,7 @@ tags(crate, path, kind, shown, tag) AS (
   WHERE p.concerns IS NOT NULL
 )
 SELECT crate || ': rows for no crate with a library under crates/; correct the crate or delete its rows'
-FROM (SELECT DISTINCT crate FROM purpose WHERE crate NOT IN (SELECT crate FROM entry))
+FROM (SELECT DISTINCT crate FROM purpose WHERE crate IN (SELECT crate FROM checked) AND crate NOT IN (SELECT crate FROM entry))
 UNION ALL
 SELECT l.shown || ' (' || l.kind || ', ' || l.location || '): a public item with no row; add'
   || ' INSERT INTO purpose VALUES(' || quote(l.crate) || ',' || quote(l.path) || ',' || quote(l.kind)
@@ -1732,7 +1751,7 @@ if (( failed )); then
   echo 'purposes check FAILED' >&2
   exit 1
 fi
-echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}; every public item of a rowed crate has its row, every row names an entry, every concern tag is a key a site of its concern covers"
+echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}, documented: ${#checked[@]}; every public item of a documented crate has its row, every row names an entry, every concern tag is a key a site of its concern covers"
 {% endraw %}'''
 
 # The references ledger (`ledger/references.sql`) is what `ledger:references`
@@ -2166,26 +2185,36 @@ run = ".config/mise/host-lock-cases.bash"
 # toolchain outside every group of the table, or a group or the `landing`
 # list naming no check, fails it. So does a check that builds `GATE_SCOPE`
 # under `--cfg anodized_panic` without the workspace feature unification.
+# Last, `reads.bash` walks each light check that the table's `reads` scopes
+# (#6895), and `reads.jq` holds its row to the paths that it reads. A read
+# outside the row, a check that lists the whole tree, or a row of a grouped
+# check fails it.
 ["check:gate-scope"]
-description = "The table scoping `mise run check` maps a change to its checks, and every check that builds the toolchain sits in one of its groups"
+description = "The table scoping `mise run check` maps a change to its checks, every check that builds the toolchain sits in one of its groups, and each scoped light check reads only its row"
 tools.jq = "1.8.1"
 run = '''
-#!/usr/bin/env bash
+{% raw %}#!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq
+.config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq --raw reads.jq
 .config/gate-scope/carry-cases.bash
 .config/gate-scope/select-cases.bash
 .config/gate-scope/tests-cases.bash
 .config/gate-scope/comments-cases.bash
-findings=$(mise tasks ls --json \
-  | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' \
-  | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq)
+tasks=$(mise tasks ls --json)
+mapfile -t scoped < <(jq -r '.reads.checks // {} | keys[]' .config/gate-scope/table.json)
+findings=$(
+  jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' <<< "$tasks" \
+    | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq
+  .config/gate-scope/reads.bash "${scoped[@]}" \
+    | jq -n --argjson tasks "$(jq '[.[].name | select(startswith("check:"))]' <<< "$tasks")" '{reads: [inputs], tasks: $tasks}' \
+    | jq -r -L .config/gate-scope -f .config/gate-scope/reads.jq
+)
 if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   exit 1
 fi
-echo "gate-scope check OK: $(jq length .config/gate-scope/cases.json) cases read as recorded; every check that builds the toolchain sits in a group of the table"
-'''
+echo "gate-scope check OK: $(jq length .config/gate-scope/cases.json) cases read as recorded; every check that builds the toolchain sits in a group of the table; ${#scoped[@]} scoped light checks read only their rows"
+{% endraw %}'''
 
 # The pinned rust-clippy the Dylint driver's build reads, in the CI image and
 # in `check:dylint` (#3531): `.config/rust-clippy/cases.bash` runs

@@ -157,13 +157,162 @@
     "output": ["check:claims", "check:extension", "check:typos"]
   },
   {
-    "name": "#4911: no change selects the light checks alone",
+    "name": "#4911, #6895: no change selects the unscoped light checks alone",
     "program": "select.jq",
     "input": {
       "tasks": ["check:claims", "check:corpus", "check:doc", "check:typos"],
       "changed": []
     },
-    "output": ["check:claims", "check:typos"]
+    "output": ["check:typos"]
+  },
+  {
+    "name": "#6895: a workflow change runs each scoped light check whose row it touches, and every unscoped one",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:clippy", "check:pr-stack", "check:purposes", "check:typos"],
+      "changed": [".config/pr-stack/cut.bash"],
+      "table": {
+        "groups": { "rust": ["check:clippy"] },
+        "paths": [
+          { "path": ".config/", "groups": [] },
+          { "path": "crates/", "groups": ["rust"] },
+          { "path": "ledger/", "groups": [] },
+          { "path": "mise.toml", "groups": [] }
+        ],
+        "reads": {
+          "every": ["mise.toml"],
+          "checks": {
+            "check:pr-stack": [".config/pr-stack/"],
+            "check:purposes": ["crates/", "ledger/purposes.sql"]
+          }
+        }
+      }
+    },
+    "output": ["check:pr-stack", "check:typos"]
+  },
+  {
+    "name": "#6895: a crate's change runs the scoped check that reads the crates, and skips the one that reads the workflow alone",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:clippy", "check:pr-stack", "check:purposes", "check:typos"],
+      "changed": ["crates/a/src/lib.rs"],
+      "table": {
+        "groups": { "rust": ["check:clippy"] },
+        "paths": [
+          { "path": ".config/", "groups": [] },
+          { "path": "crates/", "groups": ["rust"] },
+          { "path": "ledger/", "groups": [] },
+          { "path": "mise.toml", "groups": [] }
+        ],
+        "reads": {
+          "every": ["mise.toml"],
+          "checks": {
+            "check:pr-stack": [".config/pr-stack/"],
+            "check:purposes": ["crates/", "ledger/purposes.sql"]
+          }
+        }
+      }
+    },
+    "output": ["check:clippy", "check:purposes", "check:typos"]
+  },
+  {
+    "name": "#6895: a path of reads.every runs every scoped light check",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:clippy", "check:pr-stack", "check:purposes", "check:typos"],
+      "changed": ["mise.toml"],
+      "table": {
+        "groups": { "rust": ["check:clippy"] },
+        "paths": [
+          { "path": ".config/", "groups": [] },
+          { "path": "crates/", "groups": ["rust"] },
+          { "path": "ledger/", "groups": [] },
+          { "path": "mise.toml", "groups": [] }
+        ],
+        "reads": {
+          "every": ["mise.toml"],
+          "checks": {
+            "check:pr-stack": [".config/pr-stack/"],
+            "check:purposes": ["crates/", "ledger/purposes.sql"]
+          }
+        }
+      }
+    },
+    "output": ["check:pr-stack", "check:purposes", "check:typos"]
+  },
+  {
+    "name": "#6895: a path that no row of paths maps runs every check",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:clippy", "check:pr-stack", "check:purposes", "check:typos"],
+      "changed": ["wide/x"],
+      "table": {
+        "groups": { "rust": ["check:clippy"] },
+        "paths": [
+          { "path": ".config/", "groups": [] },
+          { "path": "crates/", "groups": ["rust"] },
+          { "path": "ledger/", "groups": [] },
+          { "path": "mise.toml", "groups": [] }
+        ],
+        "reads": {
+          "every": ["mise.toml"],
+          "checks": {
+            "check:pr-stack": [".config/pr-stack/"],
+            "check:purposes": ["crates/", "ledger/purposes.sql"]
+          }
+        }
+      }
+    },
+    "output": ["check:clippy", "check:pr-stack", "check:purposes", "check:typos"]
+  },
+  {
+    "name": "#6895: a scoped check that reads only its row and the paths of reads.every is no finding",
+    "program": "reads.jq",
+    "input": {
+      "tasks": ["check:pr-stack"],
+      "reads": [
+        { "check": "check:pr-stack", "path": ".config/pr-stack/cut.bash" },
+        { "check": "check:pr-stack", "path": ".config/cases/run.bash" },
+        { "check": "check:pr-stack", "path": "mise.toml" }
+      ],
+      "table": {
+        "groups": {},
+        "reads": {
+          "every": ["mise.toml"],
+          "checks": { "check:pr-stack": [".config/pr-stack/", ".config/cases/run.bash"] }
+        }
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#6895: a read outside its row, and a check that lists the whole tree, are findings",
+    "program": "reads.jq",
+    "input": {
+      "tasks": ["check:pr-stack"],
+      "reads": [
+        { "check": "check:pr-stack", "path": ".config/gh/repo.bash" },
+        { "check": "check:pr-stack", "path": "." }
+      ],
+      "table": {
+        "groups": {},
+        "reads": { "every": ["mise.toml"], "checks": { "check:pr-stack": [".config/pr-stack/"] } }
+      }
+    },
+    "output": "check:pr-stack: it reads .config/gh/repo.bash, which its row in the reads of .config/gate-scope/table.json does not name\ncheck:pr-stack: it lists or searches the whole tree, so no row of the reads of .config/gate-scope/table.json can scope it"
+  },
+  {
+    "name": "#6895: a row of no check task, or of a grouped check, is a finding",
+    "program": "reads.jq",
+    "input": {
+      "tasks": ["check:clippy"],
+      "reads": [],
+      "table": {
+        "groups": { "rust": ["check:clippy"] },
+        "reads": { "every": [], "checks": { "check:clippy": ["crates/"], "check:gone": [] } }
+      }
+    },
+    "output": "reads: it scopes check:gone, which is no check task\nreads: it scopes check:clippy, which a group of .config/gate-scope/table.json runs; a row scopes a light check alone"
   },
   {
     "name": "#5458: the landing's gate keeps, of a crate's whole wall, the light checks, Clippy with the compiler policy, the rustdoc (#6433) and the corpus check (#6489)",
