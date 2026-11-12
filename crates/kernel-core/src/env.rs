@@ -8685,4 +8685,117 @@ mod tests
         assert_eq!(few, reads(1_000));
         assert_eq!(few, reads(10_000));
     }
+
+    /// #6961: a reflexivity at a held point presents as the empty word of a
+    /// type of words only when the support of the check names that type. The
+    /// guard that asks for such a type reads the types through the support,
+    /// so a type outside it answers nothing, and the reflexivity stays.
+    #[test]
+    fn a_reflexivity_reads_no_type_of_words_outside_its_support_6961()
+    {
+        use gandr_kernel_conversion_trace::ConversionDecision;
+        use gandr_kernel_term::ConstructorTag;
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::RuleNode;
+
+        use crate::replay::EngineClaim;
+        use crate::replay::KernelVerdict;
+        use crate::replay::ReplayBudget;
+        use crate::replay::ReplayNode;
+        use crate::replay::ReplaySides;
+        use crate::replay::Unfoldable;
+        use crate::replay::Unfoldings;
+
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            vec![vec![]],
+            kind,
+        );
+        let sort = environment
+            .add_decl(staged)
+            .expect("the one-point sort admits")
+            .position();
+        let point = || -> alloc::boxed::Box<[RuleNode]> {
+            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        };
+        let cells = FreeCells::new(sort, vec![FreeCell::new(point(), point())]);
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                vec![vec![], vec![own], vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(cells));
+        let words = environment
+            .add_decl(staged)
+            .expect("the loop's words admit")
+            .position();
+        // `here(⟨ident(Base)⟩)` against the empty word, with `ident` the
+        // identity on the sort at the position past the entries, read under
+        // the support that `roots` start.
+        let presents = |environment: &mut Environment, roots: &[ConstantIndex]| {
+            let mut arena = environment.arena.clone();
+            let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let returned = arena.computation_return(occurrence);
+            let lambda = arena.computation_lambda(returned);
+            let ident = arena.value_thunk(lambda);
+            let carrier = arena.value_type_data(sort, Vec::new());
+            let base =
+                arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), Vec::new());
+            let head = arena.value_constant(ConstantIndex::from(2_usize));
+            let forced = arena.computation_force(head);
+            let applied = arena.computation_application(forced, base);
+            let held = arena.value_returned(applied);
+            let reflexivity = arena.value_here(held);
+            let own = arena.value_type_data(words, Vec::new());
+            let empty =
+                arena.value_constructor(words, own, ConstructorTag::from(0_usize), Vec::new());
+            let mut view = environment.entries.view();
+            view.open(roots.iter().copied(), SourceRank::ABOVE);
+            let unfoldings = Unfoldings::admitted(&view)
+                .extended(vec![Unfoldable::Body(ident)])
+                .presenting(view.presentations().clone());
+            let verdict = crate::replay::replay(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(reflexivity, empty),
+                EngineClaim::Convertible,
+                core::iter::once(ConversionDecision::ComparedShared {
+                    left: ReplayNode::Other,
+                    right: ReplayNode::Other,
+                }),
+                ReplayBudget::default(),
+            );
+            drop(unfoldings);
+            let outside = view.close();
+            environment.entries.restore(view);
+            super::supported(Ok(verdict), outside)
+        };
+        assert_eq!(
+            presents(&mut environment, &[sort, words]),
+            Ok(KernelVerdict::Convertible),
+            "a type of words that the support names presents the reflexivity"
+        );
+        assert_ne!(
+            presents(&mut environment, &[]),
+            Ok(KernelVerdict::Convertible),
+            "a type of words outside the support answers no guard"
+        );
+    }
 }

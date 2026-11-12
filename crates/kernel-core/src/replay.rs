@@ -685,6 +685,42 @@ impl Unfoldings
         &self.presentations
     }
 
+    /// A type of words that the running check may read and that wraps at least
+    /// `wraps` times: a type below the horizon of the presentations that the
+    /// support of the check names, or any such type when no check runs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position of a type of words that [`Self::presentations`]
+    ///   holds below its horizon, wrapped at least `wraps` times, at a position
+    ///   that the admitted entries read through their support; `None` when it
+    ///   holds none. Unfoldings with no admitted entries read every such type.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the support is the check's, and no predicate reads
+    ///   it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type of words outside the support answers no guard,
+    ///   and the same type inside it answers.
+    /// - witness: `env::tests::a_reflexivity_reads_no_type_of_words_outside_its_support_6961`
+    #[inline]
+    #[must_use]
+    pub(crate) fn worded(
+        &self,
+        wraps: gandr_kernel_term::Reflexivities,
+    ) -> Option<ConstantIndex>
+    {
+        self.presentations.worded().find_map(|(words, cells)| {
+            (cells.reflexivities() >= wraps
+                && self
+                    .admitted
+                    .as_ref()
+                    .is_none_or(|entries| entries.peek(usize::from(words)).is_some()))
+            .then_some(words)
+        })
+    }
+
     /// These unfoldings, the replay reading the identity of every lawful atom
     /// among `entries` through the atom's relation.
     ///
@@ -4183,12 +4219,13 @@ where
             if !matches!(self.arena.value(base), Some(&Value::Returned(_))) {
                 break;
             }
-            let worded = self
+            // The guard reads the types of words through the support, so a
+            // type that the check does not read answers nothing.
+            if self
                 .unfoldings
-                .presentations()
-                .worded()
-                .any(|(_, cells)| usize::from(cells.reflexivities()) >= wraps);
-            if !worded {
+                .worded(gandr_kernel_term::Reflexivities::from(wraps))
+                .is_none()
+            {
                 return Ok(value);
             }
             let read = self.normalize_returned(base, Reduction::Endpoint, DefinedHead::Unfold)?;
