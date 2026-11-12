@@ -796,10 +796,10 @@
         {
           "name": "check:clippy-enforcing",
           "run": [
-            ".config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets"
+            ".config/mise/enforcing .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets"
           ],
           "depends": [],
-          "env": ["RUSTFLAGS=--cfg anodized_panic"]
+          "env": []
         }
       ]
     },
@@ -820,10 +820,10 @@
         {
           "name": "check:clippy-enforcing",
           "run": [
-            ".config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --config 'resolver.feature-unification=\"workspace\"'"
+            ".config/mise/enforcing .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --config 'resolver.feature-unification=\"workspace\"'"
           ],
           "depends": [],
-          "env": ["RUSTFLAGS=--cfg anodized_panic", "CARGO_UNSTABLE_FEATURE_UNIFICATION=true"]
+          "env": ["CARGO_UNSTABLE_FEATURE_UNIFICATION=true"]
         },
         {
           "name": "check:clippy",
