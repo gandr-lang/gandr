@@ -3016,16 +3016,26 @@ if [[ -n ${usage_title:-} ]]; then flags+=(--title "$usage_title"); fi
 # `.config/bench/timed.json` runs a command under `timed.py`, the timer
 # `bench:stress` reads its wall time and peak resident set from on Linux and
 # macOS alike (#4191), and holds the status and the least peak it must give.
+# The scaling account (#6879): `curve.jq` and `run.jq` read the wide host's
+# measure, and `account.jq` writes the account's body, its moved rows and a
+# fall. Each case in `.config/bench/scaling.json` holds a recorded measure or
+# an account, and what it must give: a fall only for an idle row, a held row
+# never compared, and a full body moving its oldest rows.
+# `.config/bench/scaling-cases.bash` runs the pass over a stand-in measure: a
+# measure that reads its stdin as ssh does still gives each hotpath width, and
+# a failed measure pages once for its head.
 ["check:bench"]
-description = "The bench harness writes each recorded run's row or outcome, past bound where a bound was met, and names each recorded example's built-ins past n = 3, and the stress timer reports each recorded command's status and peak"
+description = "The bench harness writes each recorded run's row or outcome, past bound where a bound was met, and names each recorded example's built-ins past n = 3, the stress timer reports each recorded command's status and peak, the scaling account reads each recorded measure and writes each recorded account, and its pass measures each width and pages a failed measure once"
 tools.jq = "1.8.1"
 tools.python = "3.15.2"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq --raw stress.jq
+.config/cases/run.bash bench .config/bench/scaling.json --programs .config/bench --mode c
+.config/bench/scaling-cases.bash
 python .config/bench/timed.py --cases .config/bench/timed.json
-echo "bench check OK: $(jq length .config/bench/cases.json) cases read as recorded, and $(jq length .config/bench/timed.json) commands timed as recorded"
+echo "bench check OK: $(jq length .config/bench/cases.json) cases read as recorded, $(jq length .config/bench/scaling.json) scaling cases read as recorded, and $(jq length .config/bench/timed.json) commands timed as recorded"
 '''
 
 # The stall detector's readings (#2785): `facts.jq` reads the open pull

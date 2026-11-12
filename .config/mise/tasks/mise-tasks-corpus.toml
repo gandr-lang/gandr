@@ -238,6 +238,62 @@ fi
 printf '| example | wall |\n| --- | --: |\n%s\n' "$row"
 {% endraw %}'''
 
+# The scaling account of `gandr check` (#6879): the thread curve of each head
+# of `main` on the wide host, one row for each head on one `collector` issue,
+# and a defect for each fall (`.config/bench/scaling.bash`). A pass reads the
+# head of `main` and skips it when the account holds it. Otherwise the wide
+# host builds the head and measures it through the measure command that the
+# host's configuration names: the curve of `gandr check --recheck` over the
+# roots of `check:corpus`, three runs at each width, three runs at the
+# placement's width over more nodes, and one run of the `gandr` hotpath series
+# at each width. `curve.jq` and `run.jq` read the measure, and `account.jq`
+# writes the row, the fall and the rows that leave a full body. A measure that
+# fails writes no row and is paged once per head; the next pass measures the
+# head again.
+#
+# `--head <rev>` measures one head in place of the head of `main`. `--print`
+# prints the body, the moved rows and the fall, and writes nothing. `--once`
+# runs one pass and exits. `--install` runs the account as a host service at
+# the lowest priority from this checkout (`.config/service/`), and `--remove`
+# stops and deletes it.
+["bench:scaling"]
+description = "Measure the thread curve of each head of main on the wide host into the scaling account, and open a defect for each fall; --install runs it as a service"
+quiet = true
+tools.jq = "1.8.1"
+usage = '''
+flag "--head <rev>" help="measure this head in place of the head of main"
+flag "--print" help="print the body, the moved rows and the fall, and write nothing"
+flag "--once" help="run one pass and exit"
+flag "--install" help="install and start the service that keeps bench:scaling running from this checkout"
+flag "--remove" help="stop and delete that service"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/service/service.bash
+source .config/issues/keep.bash
+source .config/bench/scaling.bash
+description='gandr scaling account (bench:scaling)'
+if [[ ${usage_remove:-false} == true ]]; then service_unit remove scaling bench:scaling "$description"; exit; fi
+config=$(scaling_configuration) || exit 2
+# The service starts only on a configuration the loop reads.
+if [[ ${usage_install:-false} == true ]]; then service_unit install scaling bench:scaling "$description" background; exit; fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+print=
+if [[ ${usage_print:-false} == true ]]; then print=1; fi
+if [[ -n ${usage_head:-} || -n $print ]]; then
+  scaling_once "${usage_head:-}" "$print"
+  exit
+fi
+while :; do
+  (scaling_once "" "") || echo "bench:scaling: the pass failed; reading again next interval" >&2
+  if [[ ${usage_once:-false} == true ]]; then exit; fi
+  config=$(scaling_configuration) || exit 2
+  sleep "$(jq .interval <<< "$config")"
+done
+{% endraw %}'''
+
 # The parser's report (#4550): today's grammar read on each axis a syntax
 # candidate is measured against, one Markdown row per measure, from the
 # driver's `parser_report` example under the release profile, its molder
