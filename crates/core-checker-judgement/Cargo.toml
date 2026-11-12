@@ -1,0 +1,40 @@
+[package]
+name = "gandr-core-checker-judgement"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The checker's judgement (#6891, a measure's scratch crate)"
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+anodized.workspace = true
+gandr-core-checker-base.workspace = true
+gandr-core-fork.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-session.workspace = true
+gandr-core-term.workspace = true
+gandr-core-unify.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-core.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-deep-inference.workspace = true
+gandr-theory-ordered-algebras.workspace = true
+gandr-theory-sites.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+serde.workspace = true
+
+[features]
+default = []
+hotpath = ["dep:hotpath", "gandr-core-checker-base/hotpath", "hotpath/hotpath"]
+instrument = ["gandr-core-checker-base/instrument", "gandr-core-fork/instrument"]
+unfolding-probe = ["gandr-core-checker-base/unfolding-probe", "gandr-core-nbe/unfolding-probe"]

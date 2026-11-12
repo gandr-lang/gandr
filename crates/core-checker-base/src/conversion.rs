@@ -1,0 +1,3879 @@
+//! The conversion module boundary: the three places a synthesised type meets
+//! the type it is checked against, and the decision behind them.
+//!
+//! # Three bridges, one decision, nothing else calls it
+//!
+//! The judgement compares types in exactly three rules: a synthesising value in
+//! checking position crosses [`value_bridge`], a synthesising computation in
+//! checking position crosses [`comp_bridge`], and the code of a decode crosses
+//! [`decode_bridge`] when formation checks it. The first two lower to the one
+//! private decision [`convert`]; no rule compares ids or nodes itself.
+//!
+//! # Structural agreement, read at the weak head
+//!
+//! Two formed types convert when they are the same tree once every decode of a
+//! code constant with a body is read as the type its body denotes. The walk
+//! reads each side at its weak head — [`CheckingContext`] unfolds such a
+//! decode through the normaliser's conversion machine, which certifies each
+//! unfolding, and reads a sealed atom as its representation inside its seal —
+//! and then compares former by former: a universe and a lift by their sort and
+//! level exactly, a decode left rigid by its code, a variable or a constant
+//! without a body, compared as a leaf, and a sealed atom outside its seal by
+//! its admission position alone, so it relates to no representation and to no
+//! other atom however it was implemented. Two equal ids are one node, so the
+//! pair is accepted without reading it; and a pair met once is not compared
+//! again, so shared subtrees cost their distinct pairs, not their expansion.
+//!
+//! # The unknown type is consistent with every type
+//!
+//! Where either side is the unknown type — a hole's, a mark's, or the decode
+//! of a code that is a hole or a mark — the walk accepts the pair and goes no
+//! deeper: the relation is consistency in the sense of Hazelnut (Omar et al.,
+//! POPL 2017, doi:10.1145/3009837.3009900), which is conversion with the
+//! unknown as a wildcard, and it coincides with conversion on types that hold
+//! no unknown. Codes read the same way: a hole or a mark at a code's head
+//! agrees with any code, and a data index whose root is a hole or a mark
+//! agrees with any index. A hole nested beneath an index's root is compared
+//! as syntax with the rest of the index, so such an index can be refused
+//! where a finer walk would accept it; the kernel admits no index that holds
+//! a hole either way.
+//!
+//! # A dependent arrow whose codomain ignores its binder is the plain arrow
+//!
+//! `(x : A) -> B` with `x` absent from `B` is `A -> B` (#577). The walk kept
+//! the two arrows apart by head, on the producer's promise to emit the
+//! dependent former only where the codomain names its binder; a family applied
+//! at its binder (`always(x)`) breaks that promise, since only reading the
+//! family's code shows that the codomain ignores `x`. A dependent arrow against
+//! a plain one now compares their domains, contravariantly as two arrows do,
+//! and the dependent codomain against the plain one weakened past the binder:
+//! the weakened codomain cannot name the binder, so the pair agrees exactly
+//! when the dependent codomain does not use it. The kernel and the
+//! normaliser's comparison of codes read the same rule. Alternatives:
+//! strengthening the dependent codomain, which needs an occurrence test the
+//! weakening does without, and rewriting a vacuous dependent arrow to the
+//! plain one where it is minted, which no producer can do before the family
+//! is read. Reversal: a core with one arrow former.
+//!
+//! # A relocated side is read through its relocation
+//!
+//! A variable's slot type reaches the value bridge moved to the depth it is
+//! read at as a root update, a [`Relocated`] id, and the walk reads it
+//! without minting the moved tree. Where both sides stand at a former whose
+//! comparison is types beneath and a leaf — a product, a sum, a record, a
+//! list, a thunk, a stack, a static or dependent pair, a lift, a universe, a
+//! base type, a lazy product, a returner over the empty row, an arrow of either
+//! kind — each child pair is pushed carrying its parent's relocation, under
+//! one more binder at a dependent pair's second factor and a dependent
+//! arrow's codomain; the plain codomain an arrow meets a dependent one with
+//! is weakened by a root update too. Everything else is settled first and
+//! compared as before: a decode or a sealed atom, whose unfolding is
+//! certified beneath the context's binders; a data type, a path, a flow, a
+//! run, a session, a capability, a staged type and a world, whose comparisons
+//! read terms, protocols, grants or the stage order; a returner over a row.
+//! An owed flex–rigid equation always has a decode on one side, so deferral
+//! sees only settled pairs, and a refusal names the synthesised type settled.
+//! The alternatives were settling at the variable rule, which mints the moved
+//! tree on every read, and composing the relocation into every reader, which
+//! the views, goals and refusals would all carry. Reversal: when the
+//! judgement's goals read relocated types themselves, the settled formers
+//! here move to reading through one by one.
+//!
+//! # A stage is decided by the order
+//!
+//! A type refined at a stage of a structural fixpoint (`A^s`) is subsumed,
+//! not converted: where a found type meets a wanted one, `A^r` stands for
+//! `A^s` when the stage order puts `r` at or below `s` and the two bases
+//! relate, and for `A` itself, its stage forgotten; `A` never stands for
+//! `A^s`, since a value at no stage may be any size. Invariantly — a code, a
+//! data index, an equivalence — a stage equals only itself. The walk answers
+//! [`Agreement::NotBelow`] at the first pair the order refuses, which the
+//! value bridge names [`CheckRefusal::StageNotBelow`].
+//!
+//! # Smallness lives at the value bridge alone
+//!
+//! A code that synthesised the value universe at level `k` checks at the
+//! value universe at any level `l` at or above `k`: the bridge records a
+//! [`Lift`] at the code, which the kernel bridge writes as the kernel's
+//! explicit lift. A computation universe admits no such crossing — the core
+//! has no lift of a computation type — and no universe crosses to another
+//! sort. The rule fires only at the head of the two types; beneath a former,
+//! universes compare exactly, so cumulativity never hides inside a thunk type
+//! or an arrow. Formation never asks it: a decode's code synthesises exactly
+//! the universe the decode names.
+//!
+//! # The declared projection
+//!
+//! Each crossing of a bridge adds one to the run's [`ConversionCount`], which
+//! the faces return beside their result. The count is how a test observes that
+//! a check converted where it should and nowhere else, without reaching into
+//! the walk.
+//!
+//! # Why three bridges
+//!
+//! Nothing else in the crate can reach [`convert`], so the three sites are a
+//! visibility fact rather than a count someone asserts. The count saturates at
+//! its maximum. The fixture `def f : U (Integer → F Integer) = thunk { λx.
+//! (force g) x }`, with `g` of the same type, crosses the value and computation
+//! bridges once each and reports two.
+//!
+//! The alternatives were rebuilding and comparing a synthesised type at every
+//! rule, which spreads type comparison over dozens of sites, and a counting
+//! lint, which needs a whole-crate pass and a declared expected number where a
+//! visibility rule needs neither. The decode bridge is the third site because a
+//! decode's code is a term whose type is a universe, and formation, which runs
+//! in the judgement's machine, is where that term is checked. The choice
+//! reverses when a former brings a cover merge — a sum elimination whose
+//! branches synthesise — at which point the merge joins the module and the
+//! projection's expected values change with it.
+//!
+//! # Why smallness is a lift
+//!
+//! A computation code checked one level up is `LevelMismatch`, and a universe
+//! offered at the other sort is `SortMismatch`. A lift the author writes is
+//! accepted only when it raises; one that does not is the unadmitted
+//! `TypeLift`. The alternatives were full cumulativity as subtyping, which the
+//! kernel would have to rediscover at every comparison instead of checking one
+//! lift at a recorded site, and no cumulativity, which makes every small type
+//! unusable at a larger universe without an annotation the author cannot write
+//! in the surface. The choice reverses if the kernel gains cumulativity of its
+//! own, at which point the recorded lift is redundant and the bridge stops
+//! writing it.
+//!
+//! # Variance
+//!
+//! A returner's row is covariant: `F A` stands where `F^ε A` is expected, never
+//! the reverse. Operation payload and reply types are invariant. A stack
+//! `Stack(B, C)` is contravariant in what it consumes and covariant in what it
+//! delivers: it stands where `Stack(B′, C′)` is expected when `B′ ⊑ B` and `C ⊑
+//! C′`. A capability is contravariant in its authority and covariant in its
+//! region: `Cap E` stands where `Cap E′` is expected when every grant atom of
+//! `E′` is one of `E` (Attenuate) and its region lives wherever the expected
+//! one does; its grade is invariant. Two atoms are one when they name the same
+//! operation and their payloads and replies are equal as syntax or, where a
+//! side decodes a metavariable a call nominated, agree by the solver: a row
+//! fixing a sort to an omitted implicit is read at the implicit's solution,
+//! and may be what solves it. The first failure is
+//! [`CheckRefusal::CapabilityAmplified`], the second
+//! [`CheckRefusal::CapabilityEscaped`], and a type of another former where a
+//! capability is expected is [`CheckRefusal::CapabilityForged`]: no term but a
+//! capability hypothesis stands at a capability type. Witnesses:
+//! `conversion::tests::returner_rows_are_covariant_but_signature_types_are_invariant`,
+//! `conversion::tests::stack_is_contravariant_in_b_covariant_in_c_positive`,
+//! `conversion::tests::stack_variance_negative`,
+//! `capability::tests::attenuation_narrows_and_never_widens` and
+//! `conversion::tests::a_capability_at_an_implicit_sort_is_read_at_its_solution_2944`.
+
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_term::Binders;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Relocated;
+use gandr_core_term::Relocation;
+use gandr_core_term::Sort;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::capability::RegionOrder;
+use gandr_core_term::effect::capability::grant;
+use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::hole::Knowledge;
+use gandr_core_term::row::RowInclusion;
+use gandr_core_term::shift_comp_type;
+use gandr_core_term::world::WorldType;
+use gandr_kernel_core::stage_order::Fit;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Standing;
+use quenchant_shape::shape::Maybe;
+
+use crate::code::Lift;
+use crate::context::CheckingContext;
+use crate::refusal::CheckRefusal;
+use crate::refusal::CoreNode;
+use crate::refusal::Mismatch;
+use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
+use crate::view::CompTypeView;
+use crate::view::ValueTypeView;
+use crate::view::comp_type_view;
+use crate::view::value_type_view;
+
+/// How many times a judgement crossed the conversion boundary.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ConversionCount(usize);
+
+impl ConversionCount
+{
+    /// The count after one more crossing, saturating at the ceiling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more crossing below the ceiling; the ceiling otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary two-bridge checking and a tally one below
+    ///   the ceiling followed by success and refusal separate lost increments,
+    ///   wrapping and refusal paths that stop counting.
+    /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
+    /// - witness: `conversion::tests::crossing_counts_saturate_on_success_and_refusal`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
+    const fn crossed(self) -> Self
+    {
+        Self(self.0.saturating_add(1_usize))
+    }
+}
+
+impl From<usize> for ConversionCount
+{
+    /// The count of `crossings` crossings.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(crossings: usize) -> Self
+    {
+        Self(crossings)
+    }
+}
+
+impl From<ConversionCount> for usize
+{
+    /// The number of crossings `count` records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ConversionCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl fmt::Display for ConversionCount
+{
+    /// Writes the number of crossings.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// A pair of nodes of one family, to be compared. A type is read through the
+/// relocation it carries, a code or a term as it stands.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Pairing
+{
+    /// Two value types.
+    Values(Relocated<ValueTypeId>, Relocated<ValueTypeId>),
+    /// Directional structural record inclusion; other types remain invariant.
+    Assignable(Relocated<ValueTypeId>, Relocated<ValueTypeId>),
+    /// Two computation types.
+    Comps(Relocated<CompTypeId>, Relocated<CompTypeId>),
+    /// Two codes, each read at its head.
+    Codes(ValueId, ValueId),
+    /// Invariant term-valued indices, with the kernel's equality. They agree as
+    /// syntax. A side written as a call also agrees with the value that the
+    /// call returns.
+    Terms(ValueId, ValueId),
+    /// Two path endpoints: the same term up to the normaliser's conversion,
+    /// every admitted definition unfolding.
+    Endpoints(ValueId, ValueId),
+    /// A value type used where the second type is permitted.
+    SubValues(Relocated<ValueTypeId>, Relocated<ValueTypeId>),
+    /// A computation type used where the second row is permitted.
+    SubComps(Relocated<CompTypeId>, Relocated<CompTypeId>),
+}
+
+/// How a walk relates the type pairs beneath the pair it is at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Variance
+{
+    /// Each pair is the same type on both sides.
+    Invariant,
+    /// Each pair is a found type against a wanted one.
+    Subtyping,
+}
+
+impl Variance
+{
+    /// The pairing of two value types at this variance.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn values(
+        self,
+        found: Relocated<ValueTypeId>,
+        wanted: Relocated<ValueTypeId>,
+    ) -> Pairing
+    {
+        match self {
+            Self::Invariant => Pairing::Values(found, wanted),
+            Self::Subtyping => Pairing::SubValues(found, wanted),
+        }
+    }
+
+    /// The pairing of two computation types at this variance.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn comps(
+        self,
+        found: Relocated<CompTypeId>,
+        wanted: Relocated<CompTypeId>,
+    ) -> Pairing
+    {
+        match self {
+            Self::Invariant => Pairing::Comps(found, wanted),
+            Self::Subtyping => Pairing::SubComps(found, wanted),
+        }
+    }
+}
+
+/// Why a pair of types was not read through their relocations.
+mod through
+{
+    /// The reason the walk reads the pair as plain types.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum Absent
+    {
+        /// Neither side carries a relocation.
+        Plain,
+        /// The formers met are not read through a relocation: a decode, whose
+        /// code is compared as a term, or a former whose comparison reads
+        /// terms, sessions, capabilities or stages.
+        Unread,
+    }
+}
+
+/// Why a pair poses no equation to the solver.
+mod open
+{
+    /// The reason the pair is compared as written.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum Absent
+    {
+        /// Neither side is a hole or a mark: the pair is compared as written.
+        Closed,
+    }
+}
+
+/// What reading a pair through its relocations found.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Read
+{
+    /// The pair agrees once the pairs pushed beneath it do.
+    Pushed,
+    /// The pair disagrees at its root.
+    Apart,
+}
+
+/// The decision's verdict on a pair.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Agreement
+{
+    /// The two types are the same tree at their weak heads.
+    Convertible,
+    /// The two types differ at some node.
+    Apart,
+    /// Two capabilities whose expected authority grants an atom the found
+    /// one does not.
+    Amplified,
+    /// Two capabilities whose found region ends before the expected one.
+    Escaped,
+    /// A value type at a stage, or at none, where a stage it does not stand
+    /// at or below is wanted.
+    NotBelow
+    {
+        /// Where the found type stands.
+        found: gandr_kernel_term::Standing,
+        /// The stage wanted.
+        bound: gandr_kernel_term::Stage,
+    },
+}
+
+/// Cross the value bridge: the type `at` synthesised against the type it is
+/// checked against.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena; the synthesised
+///   one plain or read through the relocation it carries, as a variable's slot
+///   type arrives.
+/// - ensures: when both types are universes at their weak heads, success
+///   exactly when they share a sort and the synthesised level lies at or below
+///   the expected one, below only in the value sort, which records a [`Lift`]
+///   at `at` from the synthesised level to the expected one — in the side table
+///   under ordinary checking, as one more occurrence of `at` under a
+///   term-producing run, which records an equal level as an identity occurrence
+///   too; otherwise success exactly when [`convert`] answers convertible, or
+///   when it answers apart and a kept reduct carries the synthesised type to
+///   the expected one, which records the crossing at `at` by the first such
+///   reduct, or `at` is a natural literal one kept reader carries there, which
+///   records the crossing at `at` by that reader. `tally` advances once on
+///   every outcome, saturating at its ceiling.
+/// - provides: the only comparison of value types the judgement makes, and the
+///   only place a code moves up a universe.
+/// - fails: [`CheckRefusal::SortMismatch`] for two universes of different
+///   sorts; [`CheckRefusal::LevelMismatch`] for a level above the expected one,
+///   or below it in the computation sort; [`CheckRefusal::TypeMismatch`] with
+///   [`Mismatch::Value`] naming `at` and both types, the synthesised one
+///   settled, when they differ otherwise; [`CheckRefusal::CapabilityForged`]
+///   when a capability is expected and the synthesised type is of another known
+///   former; [`CheckRefusal::StageNotBelow`] naming `at` when a stage the order
+///   refuses is wanted; [`CheckRefusal::CapabilityAmplified`] and
+///   [`CheckRefusal::CapabilityEscaped`] when [`convert`] finds a capability
+///   granting less or living shorter than the one expected;
+///   [`CheckRefusal::LiteralAmbiguous`] when two kept readers carry a natural
+///   literal there; the unfolding's refusal when a decode does not unfold.
+/// - panics: none.
+/// - intension: one crossing per call, counted in `tally`.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Judgement
+/// - expected: `expected`
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision is [`convert`]'s; this bridge's own surface
+///   is the smallness rule, the refusal it builds and the count, separated by
+///   an agreeing and a differing pair, a value code checked at its own level,
+///   one level up and one level down, a computation code one level up, and a
+///   code of the other sort, each answer and count asserted; a relocated
+///   synthesised type answers as its settled reading does; a pair nesting more
+///   components than the one asked crosses by the reduct kept, and is refused
+///   with none kept; a natural literal crosses by the one reader of the type
+///   asked.
+/// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+/// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
+/// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
+/// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+#[spec(
+    captures: before = tally.0,
+    ensures: |ret| tally.0 == before.saturating_add(1)
+        && match ret {
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Value { at: named, synthesised: found, expected: wanted })) => named == at && wanted == expected
+                && (Relocated::from(found) == Into::<Relocated<ValueTypeId>>::into(synthesised)
+                    || Into::<Relocated<ValueTypeId>>::into(synthesised).relocation() != Relocation::IDENTITY),
+            | Err(CheckRefusal::SortMismatch { at: named, .. } | CheckRefusal::LevelMismatch { at: named, .. }) => named == at,
+            | _ => true,
+        }
+        && if let (Ok(ValueTypeView::Universe { sort: found_sort, level: found }), Ok(ValueTypeView::Universe { sort: wanted_sort, level: wanted })) =
+            (value_type_view(context.arena(), Into::<Relocated<ValueTypeId>>::into(synthesised).node()), value_type_view(context.arena(), expected)) {
+            let lifts = found_sort == GroundSort::Value && bool::from(found.lt(wanted));
+            ret.is_ok() == (found_sort == wanted_sort && (found == wanted || lifts))
+                && (ret.is_err() || !lifts || !matches!(context.deferrals().emission, crate::elaboration::Emission::Off)
+                    || context.lifts().get(&at).is_some_and(|lift| lift.natural() == found && lift.target() == wanted))
+        } else {
+            true
+        },
+)]
+pub fn value_bridge<Synthesised>(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    synthesised: Synthesised,
+    expected: ValueTypeId,
+    tally: &mut ConversionCount,
+) -> Result<(), CheckRefusal>
+where
+    Synthesised: Into<Relocated<ValueTypeId>> + Copy,
+{
+    *tally = tally.crossed();
+    let synthesised = synthesised.into();
+    let found = value_head(context, synthesised)?;
+    let wanted = context.whnf_value_type(expected)?;
+    if let (
+        ValueTypeView::Universe {
+            sort: found_sort,
+            level: found_level,
+        },
+        ValueTypeView::Universe {
+            sort: wanted_sort,
+            level: wanted_level,
+        },
+    ) = (
+        value_type_view(context.arena(), found.node())?,
+        value_type_view(context.arena(), wanted)?,
+    ) {
+        let (found_level, wanted_level) = (found_level.clone(), wanted_level.clone());
+        if found_sort != wanted_sort {
+            return Err(CheckRefusal::SortMismatch {
+                at,
+                synthesised: found.settle(context.arena_mut()),
+                expected: wanted,
+            });
+        }
+        if found_level == wanted_level {
+            context.record_unlifted(at);
+            return Ok(());
+        }
+        if found_sort == GroundSort::Value && bool::from(found_level.lt(&wanted_level)) {
+            context.record_lift(at, Lift::new(found_level, wanted_level));
+            return Ok(());
+        }
+        return Err(CheckRefusal::LevelMismatch {
+            at,
+            synthesised: found.settle(context.arena_mut()),
+            expected: wanted,
+        });
+    }
+    let agreement = convert(context, Pairing::Assignable(found, Relocated::from(wanted)))?;
+    if agreement == Agreement::Convertible {
+        return Ok(());
+    }
+    // A model of a theory stands at a model of one it includes by the reduct
+    // between them, and a model whose sorts are manifest at its theory's
+    // models by the theory's forgetting map at the carriers its sorts are
+    // fixed to; the elaboration applies the map where the bridge crossed.
+    if agreement == Agreement::Apart
+        && let Maybe::Present(crossing) = crossing(context, found, wanted)?
+    {
+        context.record_crossing(at, crossing);
+        return Ok(());
+    }
+    // A natural literal stands at a type apart from `Integer` by the one
+    // literal reader whose carrier is that type: the elaboration applies the
+    // reader there, as it applies a reduct.
+    if agreement == Agreement::Apart
+        && let Maybe::Present(crossing) = literal_reader(context, at, found, (wanted, expected))?
+    {
+        context.record_crossing(at, crossing);
+        return Ok(());
+    }
+    // A value of a patched type's base stands at the patched type by the
+    // coercion in: each field the type fixes converts with its fixed value.
+    // The bridge crosses the value as its restriction to the free fields, and
+    // the kernel replays each conversion.
+    if agreement == Agreement::Apart
+        && let Maybe::Present(fixed) = coerced_in(context, at, found, wanted)?
+    {
+        context.record_coercion(at, fixed);
+        return Ok(());
+    }
+    // An element of a patched type stands at its base by the coercion out:
+    // the elaboration updates it with the values that the type fixes, and
+    // the update stands as the record of the base's fields.
+    if agreement == Agreement::Apart
+        && let Maybe::Present((overlay, kept)) = coerced_out(context, found, wanted)?
+    {
+        context.record_overlay(at, overlay, kept);
+        return Ok(());
+    }
+    let forged = agreement == Agreement::Apart
+        && matches!(
+            value_type_view(context.arena(), wanted)?,
+            ValueTypeView::Capability { .. }
+        )
+        && !matches!(
+            value_type_view(context.arena(), found.node())?,
+            ValueTypeView::Capability { .. }
+        );
+    // A refusal names the types as they print: the synthesised one settled.
+    let synthesised = synthesised.settle(context.arena_mut());
+    let mismatch = Mismatch::Value {
+        at,
+        synthesised,
+        expected,
+    };
+    match agreement {
+        Agreement::Convertible => Ok(()),
+        Agreement::Apart if forged => Err(CheckRefusal::CapabilityForged { at, expected }),
+        Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
+        Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
+        Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
+            at: TermNode::Value(at),
+            found: crate::refusal::TypeNode::Value(synthesised),
+        }),
+        Agreement::NotBelow { found, bound } => {
+            Err(CheckRefusal::StageNotBelow { at, found, bound })
+        },
+    }
+}
+
+/// The fixed fields a coercion in compares: each label that a patched type
+/// fixes, with the value it fixes there.
+pub type Coercion = alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueId>;
+
+/// The fixed fields of `wanted` that the value `at` of type `found` converts
+/// with, when `wanted` is a patched type and `found` is a record type of its
+/// base's labels that converts with the base.
+///
+/// # Specification
+/// - requires: `found` is the type `at` synthesised, and both types are formed
+///   in the context's arena.
+/// - ensures: [`Maybe::Present`] of the patched type's fixed fields when
+///   `wanted` is a patched type whose base `found` converts with, `found` is a
+///   record type of exactly the base's labels, and each projection of `at` at a
+///   fixed label converts with the fixed value; [`Maybe::Absent`] when `wanted`
+///   is no patched type, or `found` does not convert with its base, or holds
+///   another set of labels.
+/// - fails: [`CheckRefusal::FixedFieldDiffers`] naming `at` and the fixed value
+///   at the least label whose projection does not convert; the refusal of a
+///   comparison that does not finish.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a configuration at a patched type that fixes its own port
+///   checks, and one whose port is another value is refused by the port.
+/// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), wanted), Ok(ValueTypeView::Patched { .. })))]
+fn coerced_in(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<Coercion, ()>, CheckRefusal>
+{
+    let ValueTypeView::Patched { base, fixed, .. } = value_type_view(context.arena(), wanted)?
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let fixed = fixed.clone();
+    if convert(context, Pairing::Assignable(found, Relocated::from(base)))?
+        != Agreement::Convertible
+    {
+        return Ok(Maybe::Absent(()));
+    }
+    // The kernel keeps each field that the restriction does not fix, so the
+    // value of a wider record keeps a field that the patched type lacks.
+    let base = context.whnf_value_type(base)?;
+    if !matches!(
+        (value_type_view(context.arena(), found.node())?, value_type_view(context.arena(), base)?),
+        (ValueTypeView::Record(found_fields), ValueTypeView::Record(base_fields))
+            if found_fields.keys().eq(base_fields.keys())
+    ) {
+        return Ok(Maybe::Absent(()));
+    }
+    for (label, &held) in &fixed {
+        let projection = context
+            .arena_mut()
+            .computation_record_projection(at, label.clone());
+        let field = context.arena_mut().value_returned(projection);
+        if fixed_field_agrees(context, field, held)? != Agreement::Convertible {
+            return Err(CheckRefusal::FixedFieldDiffers { at, fixed: held });
+        }
+    }
+    Ok(Maybe::Present(fixed))
+}
+
+/// The record of the values that the patched type `found` fixes, beside the
+/// labels of its free fields, when `wanted` converts with its base: what the
+/// coercion out updates an element of `found` with at `wanted`.
+///
+/// # Specification
+/// - requires: `found` is the type a value synthesised, and both types are
+///   formed in the context's arena.
+/// - ensures: [`Maybe::Present`] of a fresh record of the fixed values, read
+///   where the value stands, and the free labels, when `found` is a patched
+///   type over a record whose base converts with `wanted`; [`Maybe::Absent`]
+///   when `found` is no patched type or `wanted` is apart from its base.
+/// - fails: the refusal of a comparison that does not finish.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a configuration on the secure port at the configuration
+///   stands as the record of its host, its port and its transport.
+/// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), found.node()), Ok(ValueTypeView::Patched { .. })))]
+fn coerced_out(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<(ValueId, Vec<gandr_core_term::FieldLabel>), ()>, CheckRefusal>
+{
+    if !matches!(
+        value_type_view(context.arena(), found.node())?,
+        ValueTypeView::Patched { .. }
+    ) {
+        return Ok(Maybe::Absent(()));
+    }
+    // The fixed values are read where the element stands.
+    let settled = found.settle(context.arena_mut());
+    let ValueTypeView::Patched { base, fixed, .. } = value_type_view(context.arena(), settled)?
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let fixed = fixed.clone();
+    if convert(
+        context,
+        Pairing::Assignable(Relocated::from(base), Relocated::from(wanted)),
+    )? != Agreement::Convertible
+    {
+        return Ok(Maybe::Absent(()));
+    }
+    let arena = context.arena();
+    let Some(free) = arena
+        .value_type(settled)
+        .and_then(|patched| arena.element_fields(patched))
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let kept = free.iter().map(|(label, _)| label.clone()).collect();
+    let overlay = context.arena_mut().value_record(fixed);
+    Ok(Maybe::Present((overlay, kept)))
+}
+
+/// The first kept map between models that carries the type `found` to the
+/// type `wanted`, decided rigidly: no comparison it makes waits on an owed
+/// hole.
+///
+/// # Specification
+/// - requires: as [`kept_crossing`].
+/// - ensures: [`kept_crossing`]'s answer with the collector off for its
+///   comparisons, so the decode of an owed code converts with a model's type
+///   only where it is that type, never by a residual; the collector is in the
+///   state it was before, whatever the answer.
+/// - fails: as [`kept_crossing`].
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — beside a theory that includes another, a value at one
+///   owed code's decode where another's is wanted is still apart, and a model
+///   still crosses to the included theory's by its reduct.
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `module::tests::an_owed_decode_crosses_by_no_reduct`
+#[spec(
+    captures: before = context.deferrals().collecting,
+    ensures: context.deferrals().collecting == before,
+)]
+fn crossing(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
+{
+    // A crossing applies a map the elaboration runs; one taken on a residual
+    // runs where no computation may, so the owed decode is compared rigidly.
+    let collecting = core::mem::replace(
+        &mut context.deferrals_mut().collecting,
+        crate::elaboration::Collecting::Off,
+    );
+    let crossed = kept_crossing(context, found, wanted);
+    context.deferrals_mut().collecting = collecting;
+    crossed
+}
+
+/// The first kept map between models whose signature carries the type `found`
+/// to the type `wanted`, with the carriers it takes before the value.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena.
+/// - ensures: the first map the context keeps whose signature is a thunk of
+///   `Π(x₁ : U₁) … Π(xₙ : Uₙ). A → F B`, `n` possibly none, with carriers `c₁ …
+///   cₙ` at which `found` converts to `A[c/x]` and `B[c/x]` to `wanted`; the
+///   carriers are those [`carriers`] solves from `found` against `A`, none for
+///   a map that quantifies over none; nothing when no kept map's does.
+/// - fails: the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+/// - executable: none — the kept maps and their signatures are the context's,
+///   which a predicate would search and convert again.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a monoid's model at a semigroup's crosses by the monoid's
+///   reduct, and at an unrelated theory's by none; a counter whose carrier is
+///   manifest crosses at the counters by the forgetting map at that carrier.
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
+fn kept_crossing(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
+{
+    let mut next = 0_usize;
+    while let Some(&map) = context.reducts().get(next) {
+        next = next.saturating_add(1);
+        let Maybe::Present(signature) = context.signature(map)
+        else {
+            continue;
+        };
+        let ValueTypeView::Thunk(chain) = value_type_view(context.arena(), signature.id())?
+        else {
+            continue;
+        };
+        let carriers = match carriers(context, found, chain)? {
+            Maybe::Present(carriers) => carriers,
+            Maybe::Absent(()) => continue,
+        };
+        let mut arrow = chain;
+        for &carrier in &carriers {
+            let CompTypeView::Pi { codomain, .. } = comp_type_view(context.arena(), arrow)?
+            else {
+                break;
+            };
+            arrow = gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, carrier);
+        }
+        let CompTypeView::Arrow { domain, codomain } = comp_type_view(context.arena(), arrow)?
+        else {
+            continue;
+        };
+        let CompTypeView::Returner { result, .. } = comp_type_view(context.arena(), codomain)?
+        else {
+            continue;
+        };
+        if convert(context, Pairing::Assignable(found, Relocated::from(domain)))?
+            == Agreement::Convertible
+            && convert(
+                context,
+                Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
+            )? == Agreement::Convertible
+        {
+            return Ok(Maybe::Present(gandr_core_term::Crossing {
+                by: Maybe::Present(map),
+                carriers,
+                operand: gandr_core_term::CrossedOperand::Itself,
+            }));
+        }
+    }
+
+    Ok(Maybe::Absent(()))
+}
+
+/// The one kept literal reader that carries the integer literal `at`, of the
+/// type `found`, to the type `wanted`, decided rigidly as [`crossing`] decides
+/// a reduct.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena; `wanted` is the
+///   head `expected` reduces to.
+/// - ensures: nothing when `at` is no integer literal or no kept reader of its
+///   kind — natural for a non-negative literal, negative for a negative one —
+///   has a signature that is a thunk of `A → F B` or `Π(n : A). F B` at which
+///   `found` converts to `A` and `B`, `n` read as the reader's operand, to
+///   `wanted`. Otherwise the one reader that is, with no carriers, applied to
+///   the literal itself when it is natural and to its magnitude, minted in the
+///   arena, when it is negative. The collector is in the state it was before,
+///   whatever the answer.
+/// - fails: [`CheckRefusal::LiteralAmbiguous`] naming `at` and `expected` when
+///   two readers are; the refusals [`convert`] yields, and a view's of a
+///   signature.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal at a parity crosses by the parity's reader and
+///   not the flag's, a literal at a type two readers answer is refused naming
+///   it, and a variable at the parity crosses by none; a negative literal
+///   crosses by the negative reader at its magnitude, never by the natural one.
+/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
+/// - witness: `module::tests::an_integer_variable_crosses_by_no_reader_4528`
+/// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+#[spec(
+    captures: before = context.deferrals().collecting,
+    ensures: context.deferrals().collecting == before,
+)]
+fn literal_reader(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    found: Relocated<ValueTypeId>,
+    (wanted, expected): (ValueTypeId, ValueTypeId),
+) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
+{
+    let Some(&Value::Literal(gandr_kernel_term::Literal::Integer(ref integer))) =
+        context.arena().value(at)
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let mut operand = match integer.sign() {
+        gandr_kernel_term::Sign::NonNegative => ReaderOperand::Literal(at),
+        gandr_kernel_term::Sign::Negative => ReaderOperand::Magnitude(integer.magnitude().clone()),
+    };
+    let reads = operand.reads();
+    if !context.readers().iter().any(|reader| reader.reads == reads) {
+        return Ok(Maybe::Absent(()));
+    }
+    // A reader applies a map the elaboration runs, so the owed decode is
+    // compared rigidly, as a reduct's is.
+    let collecting = core::mem::replace(
+        &mut context.deferrals_mut().collecting,
+        crate::elaboration::Collecting::Off,
+    );
+    let read = kept_reader(context, &mut operand, found, wanted);
+    context.deferrals_mut().collecting = collecting;
+    match read? {
+        Readers::None => Ok(Maybe::Absent(())),
+        Readers::One(by) => {
+            let operand = match operand {
+                ReaderOperand::Literal(_) => gandr_core_term::CrossedOperand::Itself,
+                ReaderOperand::Magnitude(_) | ReaderOperand::Minted(_) => {
+                    gandr_core_term::CrossedOperand::Standing(operand.value(context))
+                },
+            };
+            Ok(Maybe::Present(gandr_core_term::Crossing {
+                by: Maybe::Present(by),
+                carriers: Vec::new(),
+                operand,
+            }))
+        },
+        Readers::Several => Err(CheckRefusal::LiteralAmbiguous { at, expected }),
+    }
+}
+
+/// Check the decimal literal `at` at `expected`: as the float it rounds to
+/// where `expected` reduces to `f64`, and otherwise through the one kept
+/// decimal reader whose carrier is the type `expected` reduces to, applied to
+/// the literal's digits and its exponent (#4807).
+///
+/// # Specification
+/// - requires: `at` is a decimal literal; `expected` is formed in the context's
+///   arena.
+/// - ensures: `tally` counts one more crossing. On success a crossing is
+///   recorded at `at`: at `f64` one with no map whose operand is the float the
+///   literal's exact value rounds to, minted in the arena; at any other type
+///   one by the only kept decimal reader whose signature is a thunk of `Integer
+///   → Integer → F B`, either arrow perhaps a `Π`, at which `B` converts to the
+///   head `expected` reduces to, its carrier the literal's digits `m` and its
+///   operand its exponent `e`, minted in the arena, for the value `m × 10^e`.
+///   The collector is in the state it was before, whatever the answer.
+/// - fails: [`CheckRefusal::LiteralAmbiguous`] naming `at` and `expected` when
+///   two readers carry the literal; [`CheckRefusal::TypeMismatch`] naming `at`,
+///   `f64` and `expected` when none does, the literal read as the float it is
+///   with no reader; [`CheckRefusal::MachineInvariant`] when `at` is no decimal
+///   literal; the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decimal at `f64` crosses by no map to its float, a
+///   decimal at a type one decimal reader carries crosses by it at its digits
+///   and exponent, a decimal two readers carry is refused naming the type, and
+///   a decimal at a type no reader carries is refused as a float.
+/// - witness: `module::tests::a_decimal_at_f64_stands_as_its_float_4807`
+/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+#[spec(
+    captures: [before = context.deferrals().collecting, counted = tally.0],
+    ensures: context.deferrals().collecting == before && tally.0 == counted.saturating_add(1),
+)]
+pub fn decimal_bridge(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    expected: ValueTypeId,
+    tally: &mut ConversionCount,
+) -> Result<(), CheckRefusal>
+{
+    *tally = tally.crossed();
+    let Some(&Value::Literal(gandr_kernel_term::Literal::Numeric(ref decimal))) =
+        context.arena().value(at)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let decimal = decimal.clone();
+    let wanted = context.whnf_value_type(expected)?;
+    if matches!(
+        value_type_view(context.arena(), wanted)?,
+        ValueTypeView::Float64
+    ) {
+        let float = rounded(&decimal);
+        let standing = context
+            .arena_mut()
+            .value_literal(gandr_kernel_term::Literal::Float64(float));
+        context.record_crossing(at, gandr_core_term::Crossing {
+            by: Maybe::Absent(()),
+            carriers: Vec::new(),
+            operand: gandr_core_term::CrossedOperand::Standing(standing),
+        });
+        return Ok(());
+    }
+    // With no reader the literal is the float it reads as at `f64`, so a
+    // refusal names that type beside the one asked.
+    let unread = CheckRefusal::TypeMismatch(Mismatch::Value {
+        at,
+        synthesised: context.atom(crate::context::Atom::Float64).id(),
+        expected,
+    });
+    if !context
+        .readers()
+        .iter()
+        .any(|reader| reader.reads == gandr_core_term::LiteralKind::Decimal)
+    {
+        return Err(unread);
+    }
+    let (digits, exponent) = exact(&decimal);
+    let digits = context
+        .arena_mut()
+        .value_literal(gandr_kernel_term::Literal::Integer(digits));
+    let exponent = context
+        .arena_mut()
+        .value_literal(gandr_kernel_term::Literal::Integer(exponent));
+    // A reader applies a map the elaboration runs, so the owed decode is
+    // compared rigidly, as a reduct's is.
+    let collecting = core::mem::replace(
+        &mut context.deferrals_mut().collecting,
+        crate::elaboration::Collecting::Off,
+    );
+    let read = decimal_reader(context, [digits, exponent], wanted);
+    context.deferrals_mut().collecting = collecting;
+    match read? {
+        Readers::None => Err(unread),
+        Readers::One(by) => {
+            context.record_crossing(at, gandr_core_term::Crossing {
+                by: Maybe::Present(by),
+                carriers: Vec::from([digits]),
+                operand: gandr_core_term::CrossedOperand::Standing(exponent),
+            });
+            Ok(())
+        },
+        Readers::Several => Err(CheckRefusal::LiteralAmbiguous { at, expected }),
+    }
+}
+
+/// The float the decimal `decimal` rounds to, to nearest with ties to even.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the binary64 value nearest the decimal's exact value, its sign
+///   the decimal's.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the rounding is the platform's correctly rounded parse,
+///   which a predicate would perform again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decimal_bridge`].
+/// - witness: `module::tests::a_decimal_at_f64_stands_as_its_float_4807`
+fn rounded(decimal: &gandr_kernel_term::NumericLiteral) -> gandr_kernel_term::Float64Literal
+{
+    let whole: &str = decimal.integer_part().as_ref();
+    let fraction: &str = decimal.fraction().as_ref();
+    let spelled = if fraction.is_empty() {
+        alloc::string::String::from(whole)
+    }
+    else {
+        alloc::format!("{whole}.{fraction}")
+    };
+    // A canonical decimal's digits always parse, and the parse reads no sign,
+    // so the magnitude is rounded and the sign applied after. A failure would
+    // be an engine fault, and NaN stands for no decimal, so it is never
+    // mistaken for one.
+    let magnitude = spelled
+        .parse::<gandr_kernel_term::Float64Literal>()
+        .map_or(f64::NAN, f64::from);
+    gandr_kernel_term::Float64Literal::from(match decimal.sign() {
+        gandr_kernel_term::Sign::NonNegative => magnitude,
+        gandr_kernel_term::Sign::Negative => -magnitude,
+    })
+}
+
+/// The exact digits and exponent of the decimal `decimal`: the integer `m`
+/// and the integer `e` with `m × 10^e` its value, `e` the negated count of its
+/// fraction's digits.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `m` carries the decimal's sign and its integral digits followed
+///   by its fraction's, canonical; `e` is zero for a decimal with no fraction
+///   and the negated count of its fraction's digits otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the digits are the literal's own, which a predicate
+///   would join again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decimal_bridge`].
+/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+fn exact(
+    decimal: &gandr_kernel_term::NumericLiteral
+) -> (
+    gandr_kernel_term::IntegerLiteral,
+    gandr_kernel_term::IntegerLiteral,
+)
+{
+    let whole: &str = decimal.integer_part().as_ref();
+    let fraction: &str = decimal.fraction().as_ref();
+    let digits =
+        gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{whole}{fraction}"))
+            .unwrap_or_else(gandr_kernel_term::Magnitude::zero);
+    let places =
+        gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{}", fraction.len()))
+            .unwrap_or_else(gandr_kernel_term::Magnitude::zero);
+    let exponent_sign = if fraction.is_empty() {
+        gandr_kernel_term::Sign::NonNegative
+    }
+    else {
+        gandr_kernel_term::Sign::Negative
+    };
+    (
+        gandr_kernel_term::IntegerLiteral::new(decimal.sign(), digits),
+        gandr_kernel_term::IntegerLiteral::new(exponent_sign, places),
+    )
+}
+
+/// The kept decimal readers that carry a decimal, at the digits and the
+/// exponent `[digits, exponent]`, to the type `wanted`, counted to two.
+///
+/// # Specification
+/// - requires: as [`decimal_bridge`]; both values are integer literals in the
+///   context's arena.
+/// - ensures: [`Readers::One`] for the only decimal reader whose signature
+///   carries the two integers to `wanted` as [`decimal_bridge`] states it,
+///   [`Readers::None`] for none and [`Readers::Several`] for two or more.
+/// - fails: the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+/// - executable: none — as [`kept_reader`].
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decimal_bridge`].
+/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+fn decimal_reader(
+    context: &mut CheckingContext<'_>,
+    arguments: [ValueId; 2],
+    wanted: ValueTypeId,
+) -> Result<Readers, CheckRefusal>
+{
+    let integer = Relocated::from(context.atom(crate::context::Atom::Integer).id());
+    let mut read = Readers::None;
+    let mut next = 0_usize;
+    while let Some(&reader) = context.readers().get(next) {
+        next = next.saturating_add(1);
+        if reader.reads != gandr_core_term::LiteralKind::Decimal {
+            continue;
+        }
+        let reader = reader.by;
+        let Maybe::Present(signature) = context.signature(reader)
+        else {
+            continue;
+        };
+        let ValueTypeView::Thunk(mut chain) = value_type_view(context.arena(), signature.id())?
+        else {
+            continue;
+        };
+        let mut carries = true;
+        for argument in arguments {
+            let (domain, codomain) = match comp_type_view(context.arena(), chain)? {
+                CompTypeView::Arrow { domain, codomain } => (domain, codomain),
+                CompTypeView::Pi { domain, codomain } => (
+                    domain,
+                    gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, argument),
+                ),
+                CompTypeView::Returner { .. }
+                | CompTypeView::LinearArrow { .. }
+                | CompTypeView::Returns { .. }
+                | CompTypeView::Element { .. }
+                | CompTypeView::With(..)
+                | CompTypeView::Codata { .. }
+                | CompTypeView::Unknown => {
+                    carries = false;
+                    break;
+                },
+            };
+            if convert(
+                context,
+                Pairing::Assignable(integer, Relocated::from(domain)),
+            )? != Agreement::Convertible
+            {
+                carries = false;
+                break;
+            }
+            chain = codomain;
+        }
+        if !carries {
+            continue;
+        }
+        let CompTypeView::Returner { result, .. } = comp_type_view(context.arena(), chain)?
+        else {
+            continue;
+        };
+        if convert(
+            context,
+            Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
+        )? == Agreement::Convertible
+        {
+            read = match read {
+                Readers::None => Readers::One(reader),
+                Readers::One(_) | Readers::Several => return Ok(Readers::Several),
+            };
+        }
+    }
+
+    Ok(read)
+}
+
+/// What a literal reader is applied to: a natural literal itself, or a
+/// negative literal's magnitude, minted the first time a reader reads it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ReaderOperand
+{
+    /// The natural literal, read as written.
+    Literal(ValueId),
+    /// A negative literal's magnitude, not yet in the arena.
+    Magnitude(gandr_kernel_term::Magnitude),
+    /// A negative literal's magnitude, in the arena.
+    Minted(ValueId),
+}
+
+impl ReaderOperand
+{
+    /// The kind of literal a reader of this operand reads.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reads(&self) -> gandr_core_term::LiteralKind
+    {
+        match *self {
+            Self::Literal(_) => gandr_core_term::LiteralKind::Natural,
+            Self::Magnitude(_) | Self::Minted(_) => gandr_core_term::LiteralKind::Negative,
+        }
+    }
+
+    /// The operand's value, a magnitude minted into the context's arena once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the literal for [`Self::Literal`]; for a magnitude, the
+    ///   non-negative literal of it, minted on the first call and the same
+    ///   value after.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the minted value is the arena's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`literal_reader`].
+    /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+    fn value(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+    ) -> ValueId
+    {
+        match *self {
+            Self::Literal(value) | Self::Minted(value) => value,
+            Self::Magnitude(ref magnitude) => {
+                let minted =
+                    context
+                        .arena_mut()
+                        .value_literal(gandr_kernel_term::Literal::Integer(
+                            gandr_kernel_term::IntegerLiteral::new(
+                                gandr_kernel_term::Sign::NonNegative,
+                                magnitude.clone(),
+                            ),
+                        ));
+                *self = Self::Minted(minted);
+                minted
+            },
+        }
+    }
+}
+
+/// How many kept literal readers carry a literal to a type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Readers
+{
+    /// None does.
+    None,
+    /// This one alone does.
+    One(gandr_kernel_term::ConstantIndex),
+    /// Two or more do.
+    Several,
+}
+
+/// The kept literal readers of `operand`'s kind that carry it, of the type
+/// `found`, to the type `wanted`, counted to two.
+///
+/// # Specification
+/// - requires: as [`literal_reader`].
+/// - ensures: [`Readers::One`] for the only reader of the operand's kind whose
+///   signature carries `found` to `wanted` as [`literal_reader`] states it,
+///   [`Readers::None`] for none and [`Readers::Several`] for two or more; a
+///   magnitude is minted only where a dependent signature reads it.
+/// - fails: the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+/// - executable: none — as [`literal_reader`].
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`literal_reader`].
+/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
+/// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+fn kept_reader(
+    context: &mut CheckingContext<'_>,
+    operand: &mut ReaderOperand,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Readers, CheckRefusal>
+{
+    let reads = operand.reads();
+    let mut read = Readers::None;
+    let mut next = 0_usize;
+    while let Some(&reader) = context.readers().get(next) {
+        next = next.saturating_add(1);
+        if reader.reads != reads {
+            continue;
+        }
+        let reader = reader.by;
+        let Maybe::Present(signature) = context.signature(reader)
+        else {
+            continue;
+        };
+        let ValueTypeView::Thunk(chain) = value_type_view(context.arena(), signature.id())?
+        else {
+            continue;
+        };
+        let (domain, codomain) = match comp_type_view(context.arena(), chain)? {
+            CompTypeView::Arrow { domain, codomain } => (domain, codomain),
+            CompTypeView::Pi { domain, codomain } => {
+                let at = operand.value(context);
+                (
+                    domain,
+                    gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, at),
+                )
+            },
+            CompTypeView::Returner { .. }
+            | CompTypeView::LinearArrow { .. }
+            | CompTypeView::Returns { .. }
+            | CompTypeView::Element { .. }
+            | CompTypeView::With(..)
+            | CompTypeView::Codata { .. }
+            | CompTypeView::Unknown => continue,
+        };
+        let CompTypeView::Returner { result, .. } = comp_type_view(context.arena(), codomain)?
+        else {
+            continue;
+        };
+        if convert(context, Pairing::Assignable(found, Relocated::from(domain)))?
+            == Agreement::Convertible
+            && convert(
+                context,
+                Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
+            )? == Agreement::Convertible
+        {
+            read = match read {
+                Readers::None => Readers::One(reader),
+                Readers::One(_) | Readers::Several => return Ok(Readers::Several),
+            };
+        }
+    }
+
+    Ok(read)
+}
+
+/// The carriers a map's signature `chain` takes before the value it crosses
+/// `found` by: one per leading `Π`, each the solution the solver binds a
+/// metavariable standing for it to, from `found` against the arrow's domain.
+///
+/// # Specification
+/// - requires: `chain` is the computation type a kept map's signature thunks,
+///   closed; `found` is formed in the context's arena.
+/// - ensures: no carriers when `chain` opens with no `Π`; otherwise one
+///   metavariable per leading `Π`, declared over the context's intuitionistic
+///   binders and named by [`gandr_core_term::hole::HoleId::crossing`] in order,
+///   `chain` instantiated at them, and the domain of the arrow below posed
+///   against `found` settled: the solutions, outermost first, when the solver
+///   refutes nothing and binds every one, what it postpones left to the
+///   conversion [`kept_crossing`] confirms by; nothing otherwise. The
+///   metavariables are the call's own and stand in no body.
+/// - fails: a view's refusal of `chain`; the context's refusal of a depth no
+///   binder count holds.
+/// - panics: none.
+/// - executable: none — the solutions are the solver's, which a predicate would
+///   pose again; [`kept_crossing`] confirms them by conversion.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`kept_crossing`].
+/// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
+fn carriers(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    chain: CompTypeId,
+) -> Result<Maybe<Vec<ValueId>, ()>, CheckRefusal>
+{
+    if !matches!(
+        comp_type_view(context.arena(), chain)?,
+        CompTypeView::Pi { .. }
+    ) {
+        return Ok(Maybe::Present(Vec::new()));
+    }
+    let scope = context.intuitionistic_scope()?;
+    let mut metas = gandr_core_unify::Metas::new();
+    let mut declared = Vec::new();
+    let mut arrow = chain;
+    let mut place = 0_u32;
+    while let CompTypeView::Pi { codomain, .. } = comp_type_view(context.arena(), arrow)? {
+        let Some(hole) = gandr_core_term::hole::HoleId::crossing(
+            gandr_core_term::hole::NominationIndex::from(place),
+        )
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        let Maybe::Present(meta) = metas.declare(hole, scope)
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        declared.push(meta);
+        let standing = context.arena_mut().value_hole(hole);
+        arrow = gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, standing);
+        place = place.saturating_add(1);
+    }
+    let CompTypeView::Arrow { domain, .. } = comp_type_view(context.arena(), arrow)?
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let found = found.settle(context.arena_mut());
+    let equation = gandr_core_unify::Equation::new(
+        scope,
+        gandr_core_unify::Side::ValueType(domain),
+        gandr_core_unify::Side::ValueType(found),
+    );
+    // A former the fragment does not decompose, a law's `Path` among them,
+    // waits rather than binds; what waits is the confirming conversion's to
+    // decide, so only a refutation stops the carriers here.
+    if matches!(
+        gandr_core_unify::solve(context.arena_mut(), &mut metas, &[equation]),
+        gandr_core_unify::Verdict::Refuted(_)
+    ) {
+        return Ok(Maybe::Absent(()));
+    }
+    let mut solved = Vec::with_capacity(declared.len());
+    for meta in declared {
+        let Maybe::Present(solution) = metas.solution(meta)
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        solved.push(solution);
+    }
+
+    Ok(Maybe::Present(solved))
+}
+
+/// Cross the computation bridge: the type `at` synthesised against the type it
+/// is checked against.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena.
+/// - ensures: success exactly when [`convert`] answers convertible; `tally`
+///   advances once on every outcome, saturating at its ceiling.
+/// - provides: the only comparison of computation types the judgement makes.
+/// - fails: [`CheckRefusal::TypeMismatch`] with [`Mismatch::Computation`]
+///   naming `at` and both types when they differ;
+///   [`CheckRefusal::CapabilityAmplified`] and
+///   [`CheckRefusal::CapabilityEscaped`] when a capability inside grants less
+///   or lives shorter than the one expected; the unfolding's refusal when a
+///   decode does not unfold.
+/// - panics: none.
+/// - intension: one crossing per call, counted in `tally`.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Judgement
+/// - expected: `expected`
+///
+/// # Adequacy
+/// - hypothesis: L3 — as for [`value_bridge`], over computation types, which
+///   have no smallness rule.
+/// - witness: `judgement::tests::a_mismatched_application_is_refused_at_the_computation_bridge`
+/// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
+#[spec(
+    captures: before = tally.0,
+    ensures: |ret| tally.0 == before.saturating_add(1)
+        && (synthesised != expected || ret == Ok(()))
+        && match ret {
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Computation { at: named, synthesised: found, expected: wanted })) => named == at && found == synthesised && wanted == expected,
+            | _ => true,
+        },
+)]
+pub fn comp_bridge(
+    context: &mut CheckingContext<'_>,
+    at: ComputationId,
+    synthesised: CompTypeId,
+    expected: CompTypeId,
+    tally: &mut ConversionCount,
+) -> Result<(), CheckRefusal>
+{
+    *tally = tally.crossed();
+    let mismatch = Mismatch::Computation {
+        at,
+        synthesised,
+        expected,
+    };
+    match convert(
+        context,
+        Pairing::SubComps(Relocated::from(synthesised), Relocated::from(expected)),
+    )? {
+        Agreement::Convertible => Ok(()),
+        Agreement::Apart | Agreement::NotBelow { .. } => Err(CheckRefusal::TypeMismatch(mismatch)),
+        Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
+        Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
+            at: TermNode::Computation(at),
+            found: crate::refusal::TypeNode::Computation(synthesised),
+        }),
+    }
+}
+
+/// Cross the decode bridge: the type the code of a decode synthesised against
+/// the universe of `sort` at `target` the decode names.
+///
+/// # Specification
+/// - requires: `synthesised` is formed, in the context's arena.
+/// - ensures: success exactly when `synthesised` is, at its weak head, the
+///   universe of `sort` at exactly `target`, or the unknown type, which is
+///   consistent with every universe; `tally` advances once on every outcome,
+///   saturating at its ceiling.
+/// - provides: formation's one comparison: a decode is formed at its own level,
+///   with no smallness, so a classifier is read off its type.
+/// - fails: [`CheckRefusal::SortMismatch`] for a universe of the other sort;
+///   [`CheckRefusal::LevelMismatch`] for one at another level;
+///   [`CheckRefusal::TypeMismatch`] with [`Mismatch::Value`] when `code`
+///   synthesised no universe; each names the universe the decode expected,
+///   minted.
+/// - panics: none.
+/// - intension: one crossing per call, counted in `tally`.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separated by a code of the decode's universe, one of the
+///   other sort, one a level up, and a value that is no code.
+/// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+/// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
+/// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
+/// - witness: `context::tests::a_value_typed_hypothesis_does_not_become_a_type_variable`
+#[spec(
+    captures: before = tally.0,
+    ensures: |ret| tally.0 == before.saturating_add(1)
+        && match value_type_view(context.arena(), synthesised) {
+            | Ok(ValueTypeView::Universe { sort: found, level }) => ret.is_ok() == (found == sort && level == target),
+            | _ => true,
+        }
+        && match ret {
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Value { at, expected, .. })
+                | CheckRefusal::SortMismatch { at, expected, .. }
+                | CheckRefusal::LevelMismatch { at, expected, .. }) => at == code
+                    && matches!(value_type_view(context.arena(), expected), Ok(ValueTypeView::Universe { sort: found, level }) if found == sort && level == target),
+            | _ => true,
+        },
+)]
+pub fn decode_bridge(
+    context: &mut CheckingContext<'_>,
+    code: ValueId,
+    synthesised: ValueTypeId,
+    sort: GroundSort,
+    target: &Level,
+    tally: &mut ConversionCount,
+) -> Result<(), CheckRefusal>
+{
+    *tally = tally.crossed();
+    let found = context.whnf_value_type(synthesised)?;
+    let expected = context
+        .arena_mut()
+        .value_type_universe(Sort::Ground(sort), target.clone());
+    match value_type_view(context.arena(), found)? {
+        ValueTypeView::Universe {
+            sort: found_sort,
+            level,
+        } => {
+            if found_sort != sort {
+                Err(CheckRefusal::SortMismatch {
+                    at: code,
+                    synthesised: found,
+                    expected,
+                })
+            }
+            else if level != target {
+                Err(CheckRefusal::LevelMismatch {
+                    at: code,
+                    synthesised: found,
+                    expected,
+                })
+            }
+            else {
+                Ok(())
+            }
+        },
+        ValueTypeView::Unknown => Ok(()),
+        ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
+        | ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
+        | ValueTypeView::Sum(..)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Character
+        | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(..)
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
+        | ValueTypeView::World(_)
+        | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
+            at: code,
+            synthesised: found,
+            expected,
+        })),
+    }
+}
+
+/// Whether the formed value types `left` and `right` are equivalent: the
+/// decision [`convert`] makes, invariantly.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena.
+/// - ensures: [`Agreement::Convertible`] exactly when [`convert`] answers it
+///   for the pair compared invariantly; one id against itself is convertible.
+/// - provides: the comparison an offer's arms agree on an endpoint's state by.
+/// - fails: as [`convert`].
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two arms leaving one endpoint at the same state minted
+///   twice agree, and an arm leaving it at another state is refused.
+/// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+#[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
+pub fn equivalent(
+    context: &mut CheckingContext<'_>,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> Result<Agreement, CheckRefusal>
+{
+    convert(
+        context,
+        Pairing::Values(Relocated::from(left), Relocated::from(right)),
+    )
+}
+
+/// Whether a constructor's stated index and its annotation's index are the
+/// same term. The kernel compares them as syntax and reads no call by
+/// reduction, so the checker does the same, and restates a constructor whose
+/// indices convert without agreeing.
+///
+/// # Specification
+/// - requires: both terms stand under the binders open now, at one type.
+/// - ensures: the solver's verdict where a side is a hole or a mark; otherwise
+///   [`Agreement::Convertible`] exactly when the two terms are equal as syntax,
+///   path evidence aside.
+/// - fails: as the solver.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor annotated at a call that returns its stated
+///   index does not agree as syntax and crosses restated, which the kernel
+///   admits; one annotated at a call that returns another index is refused.
+/// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+#[spec(ensures: |ret| left != right || ret.is_err() || ret == Ok(Agreement::Convertible))]
+pub fn indices_agree(
+    context: &mut CheckingContext<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Agreement, CheckRefusal>
+{
+    let agrees = left == right
+        || match pose_open(context, left, right)? {
+            Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
+            Maybe::Absent(open::Absent::Closed) => {
+                gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                    == gandr_core_term::CertificateEquality::Equal
+            },
+        };
+    Ok(if agrees {
+        Agreement::Convertible
+    }
+    else {
+        Agreement::Apart
+    })
+}
+
+/// Whether a field that a record literal holds is the value that a patched
+/// type fixes at its label. The two terms compare as two patched types compare
+/// their fixed values.
+///
+/// # Specification
+/// - requires: both terms stand under the binders open now.
+/// - ensures: the verdict of the term pairing that converts two patched types:
+///   the solver's where a side is a hole or a mark, and otherwise equality as
+///   syntax, or the reading of a side written as a call.
+/// - fails: as the solver and the reading of a call.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal stating the fixed value checks, and one stating
+///   another literal is refused by the field.
+/// - witness: `tests::native_formers::a_literal_s_fixed_field_converts_with_the_fixed_value_5612`
+#[spec(ensures: |ret| field != fixed || ret.is_err() || ret == Ok(Agreement::Convertible))]
+pub fn fixed_field_agrees(
+    context: &mut CheckingContext<'_>,
+    field: ValueId,
+    fixed: ValueId,
+) -> Result<Agreement, CheckRefusal>
+{
+    convert(context, Pairing::Terms(field, fixed))
+}
+
+/// Whether two terms that a type conversion met are the same term. The terms
+/// are path endpoints, or family arguments with a call on one side. The
+/// derivation is kept where the machine's traced reading relates them.
+///
+/// # Specification
+/// - requires: both terms stand under the binders the conversion is under.
+/// - ensures: [`Agreement::Convertible`] when the written pair agrees
+///   ([`agree`]); otherwise, when reading each hole that the running judgement
+///   bound through its solution ([`CheckingContext::read_solved`]) changes a
+///   side, [`Agreement::Convertible`] when the pair so read agrees; otherwise
+///   the written pair's verdict or refusal.
+/// - provides: the dialogue a definition carries for the kernel, whose forced
+///   reading does not unfold a definition under a binder. The pair so read is
+///   the pair the run over the filled body meets. A hole that the signature's
+///   formation solves stands in a body node that reads a binder's type, and the
+///   machine reads no solution. The read only ever adds an acceptance: every
+///   verdict and refusal short of one is the written pair's.
+/// - fails: as [`agree`] on the written pair, and
+///   [`crate::divergence::returning`]'s refusal, where a binder's type does not
+///   read.
+/// - panics: none.
+/// - executable: none — both verdicts are the machine's own readings; a
+///   predicate restating them would run the two readings again.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ascription relating compound endpoints through a
+///   definition's body keeps the pair and its derivation, which the kernel
+///   replays; an ascription whose endpoints are the same syntax keeps none; one
+///   whose endpoints call a definition over an omitted model converts once the
+///   model is resolved; a composite whose first path omits its carrier converts
+///   at the carrier its signature solves; one whose endpoint maps an implicit
+///   its call omits converts once the argument binds the implicit.
+/// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+/// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+/// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+/// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
+/// - witness: `bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
+fn endpoints_agree(
+    context: &mut CheckingContext<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Agreement, CheckRefusal>
+{
+    let returning = crate::divergence::returning(context)?;
+    let written = agree(context, (left, right), &returning);
+    if matches!(written, Ok(Agreement::Convertible)) {
+        return written;
+    }
+    // A hole the running judgement bound is read through its solution, as the
+    // run over the filled body reads it: the machine reads none.
+    let solved = (context.read_solved(left), context.read_solved(right));
+    if solved == (left, right) {
+        return written;
+    }
+    match agree(context, solved, &returning) {
+        Ok(Agreement::Convertible) => Ok(Agreement::Convertible),
+        Ok(
+            Agreement::Apart
+            | Agreement::Amplified
+            | Agreement::Escaped
+            | Agreement::NotBelow { .. },
+        )
+        | Err(_) => written,
+    }
+}
+
+/// Whether the machine relates two terms that a type conversion met. The
+/// derivation is kept where the machine's traced reading relates them.
+///
+/// # Specification
+/// - requires: both terms stand under the binders the conversion is under.
+/// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
+///   on `context` when the machine relates `left` to `right` with returned
+///   endpoints held at the definitions they call and the binders in `returning`
+///   read as returning; [`Agreement::Convertible`], recording nothing, when its
+///   traced reading waits for a fill ([`CheckingContext::awaits_fill`]);
+///   otherwise [`Agreement::Convertible`] exactly when its untraced conversion
+///   relates them, and [`Agreement::Apart`] when it does not.
+/// - provides: the traced reading is tried first and only ever adds a
+///   derivation: where it does not relate, the verdict and every refusal are
+///   the untraced conversion's, so nothing the conversion accepted is refused.
+/// - fails: the untraced conversion's refusal, where the traced reading does
+///   not relate.
+/// - panics: none.
+/// - executable: none — both verdicts are the machine's own readings.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`endpoints_agree`].
+/// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+/// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+fn agree(
+    context: &mut CheckingContext<'_>,
+    (left, right): (ValueId, ValueId),
+    returning: &[gandr_kernel_term::DeBruijnIndex],
+) -> Result<Agreement, CheckRefusal>
+{
+    match context
+        .definitions()
+        .relation(context.arena(), left, right, returning)
+    {
+        Ok((gandr_core_nbe::MachineVerdict::Convertible, decisions)) => {
+            context.record_relation(left, right, decisions);
+            return Ok(Agreement::Convertible);
+        },
+        Ok((verdict, _)) if context.awaits_fill(verdict) == crate::elaboration::Deferred::Yes => {
+            return Ok(Agreement::Convertible);
+        },
+        Ok(_) | Err(_) => {},
+    }
+    let verdict = context
+        .definitions()
+        .convert_terms(context.arena(), left, right)?;
+    if verdict == gandr_core_nbe::MachineVerdict::Convertible {
+        Ok(Agreement::Convertible)
+    }
+    else {
+        Ok(Agreement::Apart)
+    }
+}
+
+/// Decide whether the two types of `root` are the same tree at their weak
+/// heads.
+///
+/// # Specification
+/// - requires: nothing — the bridges pass formed types, and anything else is
+///   refused where the walk meets it.
+/// - ensures: [`Agreement::Convertible`] exactly when, reading each side at its
+///   weak head at every position the walk reaches, either side is the unknown
+///   type, or both sides have the same former, or one is a dependent arrow and
+///   the other a plain arrow whose codomain, weakened past the dependent
+///   binder, agrees with the dependent codomain, universes and lifts the same
+///   sort and level, and rigid decodes the same level and the same code: two
+///   codes agree when, each reduced at its head, either is a hole or a mark, or
+///   they are the same variable or constant, quotes of agreeing types, static
+///   applications of agreeing heads to agreeing arguments, static lambdas over
+///   agreeing bodies, or returned codes equal as syntax or that convert as
+///   endpoints; two data indices agree when either root is a hole or a mark the
+///   solver does not refute against the other side, or they are equal as
+///   syntax, or either root is a call and they convert as endpoints, and two
+///   endpoints by the same rule or when they convert as endpoints;
+///   [`Agreement::Apart`] at the first rigid disagreement. Inside the
+///   elaboration run a bare owed flex–rigid equation is accumulated instead:
+///   agreement is then conditional on those residuals, and a later rigid
+///   disagreement still answers `Apart`. A pair not deferred whose side is the
+///   decode of a metavariable a call nominated is posed to the solver: a solved
+///   or postponed equation agrees, and a refuted one answers `Apart`. Two
+///   returners' rows, either open through a tail over a metavariable, are posed
+///   to the solver as one row equation by the same rule; rigid rows are
+///   compared interface by interface, a closed row included in an open one
+///   under subtyping and an open row only in one open through the same tail.
+///   Two staged types agree invariantly at one stage and agreeing bases; under
+///   subtyping a found staged type agrees with a wanted one whose stage its own
+///   fits within, and with an unstaged type as its base, while an unstaged type
+///   against a staged one, or a stage the order refuses, is
+///   [`Agreement::NotBelow`].
+/// - fails: the refusal a view gives for a node outside the fragment or a
+///   dangling id, the unfolding's refusal when a decode or a code does not
+///   reduce, and [`CheckRefusal::MachineInvariant`] when the binders open pass
+///   any binder count a metavariable's equation can be posed under.
+/// - panics: none.
+/// - intension: a pair of equal ids is accepted without reading the node, and a
+///   pair already met is not compared again; a worklist, so no depth overflows
+///   a stack.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surfaces are the id fast path, the weak
+///   head, the per-former comparison and the child pairing, separated by one id
+///   against itself, two structurally equal trees at distinct ids, trees
+///   differing at the root and beneath a thunk in either order, universes and
+///   lifts differing only in level, two rigid decodes of different variables, a
+///   decode of a defined code against its body beneath a former, static
+///   instances rigid and defined, static lambdas alike and unlike, two rigid
+///   returned codes of one call at distinct ids, a dependent arrow against a
+///   plain one whose codomain ignores the binder, names it, or reads the
+///   ambient context past it, a family argument written as a call against the
+///   value it returns and against another value, a family argument that reduces
+///   but is no call against its value, a code a family literal returns at a
+///   variable against the call its body makes and against another call, and a
+///   dangling id; the fast path is pinned against the structural decision by
+///   property.
+/// - witness: `conversion::tests::one_id_converts_without_being_read`
+/// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
+/// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
+/// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
+/// - witness: `conversion::tests::static_codes_compare_by_head_argument_and_body`
+/// - witness: `conversion::tests::a_dangling_type_is_refused`
+/// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+/// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+/// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+/// - witness: `conversion::tests::codes_agree_exactly_where_their_parts_do`
+/// - witness: `conversion::tests::invariant_types_agree_exactly_where_their_parts_do`
+/// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
+/// - witness: `conversion::tests::invariant_capabilities_agree_on_authority_grade_and_region`
+/// - witness: `conversion::tests::kept_and_located_types_agree_on_their_region_and_world`
+/// - witness: `conversion::tests::a_path_type_is_apart_from_data_it_does_not_read_as`
+/// - witness: `conversion::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
+/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+/// - witness: `tests::native_formers::a_family_argument_written_as_a_call_converts_with_its_value_3579`
+/// - witness: `tests::native_formers::term_indices_are_structural_in_both_checkers`
+/// - witness: `tests::native_formers::a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733`
+#[spec(ensures: |ret| match root {
+    | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Codes(left, right) | Pairing::Terms(left,right) | Pairing::Endpoints(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Values(..) | Pairing::Assignable(..) | Pairing::SubValues(..) | Pairing::Comps(..) | Pairing::SubComps(..) | Pairing::Codes(..) | Pairing::Terms(..) | Pairing::Endpoints(..) => true,
+})]
+fn convert(
+    context: &mut CheckingContext<'_>,
+    root: Pairing,
+) -> Result<Agreement, CheckRefusal>
+{
+    let mut pending = Vec::from([root]);
+    let mut met = BTreeSet::new();
+    while let Some(pairing) = pending.pop() {
+        let reflexive = match pairing {
+            Pairing::Values(left, right)
+            | Pairing::Assignable(left, right)
+            | Pairing::SubValues(left, right) => left == right,
+            Pairing::Comps(left, right) | Pairing::SubComps(left, right) => left == right,
+            Pairing::Codes(left, right)
+            | Pairing::Terms(left, right)
+            | Pairing::Endpoints(left, right) => left == right,
+        };
+        if reflexive || !met.insert(pairing) {
+            continue;
+        }
+        let subtyping = matches!(pairing, Pairing::SubValues(..) | Pairing::SubComps(..));
+        let variance = if subtyping {
+            Variance::Subtyping
+        }
+        else {
+            Variance::Invariant
+        };
+        let values = |a: ValueTypeId, b: ValueTypeId| {
+            variance.values(Relocated::from(a), Relocated::from(b))
+        };
+        let comps =
+            |a: CompTypeId, b: CompTypeId| variance.comps(Relocated::from(a), Relocated::from(b));
+        let agrees = match pairing {
+            Pairing::Terms(left, right) => match pose_open(context, left, right)? {
+                Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
+                Maybe::Absent(open::Absent::Closed) => {
+                    // The kernel reads a side written as a call by reduction.
+                    // Two codes convert as the types they quote, so a call in
+                    // a quoted type reads by reduction too (#5381). It
+                    // compares every other side as syntax.
+                    let arena = context.arena();
+                    let code = |side: ValueId| {
+                        matches!(
+                            arena.value(side),
+                            Some(&(Value::Quote(_) | Value::QuoteComputation(_)))
+                        )
+                    };
+                    let codes = code(left) && code(right);
+                    let called = [left, right]
+                        .into_iter()
+                        .any(|side| matches!(arena.value(side), Some(&Value::Returned(_))));
+                    if gandr_core_term::equal_certificate_syntax(arena, left, right)
+                        == gandr_core_term::CertificateEquality::Equal
+                    {
+                        true
+                    }
+                    else if codes {
+                        pending.push(Pairing::Codes(left, right));
+                        true
+                    }
+                    else {
+                        called && endpoints_agree(context, left, right)? == Agreement::Convertible
+                    }
+                },
+            },
+            Pairing::Endpoints(left, right) => match pose_open(context, left, right)? {
+                Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
+                Maybe::Absent(open::Absent::Closed) => {
+                    gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                        == gandr_core_term::CertificateEquality::Equal
+                        || endpoints_agree(context, left, right)? == Agreement::Convertible
+                },
+            },
+            Pairing::Assignable(left, right) => {
+                let left = value_head(context, left)?;
+                let right = value_head(context, right)?;
+                let arena = context.arena();
+                match (
+                    value_type_view(arena, left.node())?,
+                    value_type_view(arena, right.node())?,
+                ) {
+                    (ValueTypeView::Record(found), ValueTypeView::Record(wanted)) => {
+                        for (label, &expected) in wanted {
+                            let Some(&synthesised) = found.get(label)
+                            else {
+                                return Ok(Agreement::Apart);
+                            };
+                            pending.push(Pairing::Assignable(
+                                arena.place_value_type(synthesised, left.relocation()),
+                                arena.place_value_type(expected, right.relocation()),
+                            ));
+                        }
+                    },
+                    _ => pending.push(Pairing::SubValues(left, right)),
+                }
+                true
+            },
+            Pairing::Values(left, right) | Pairing::SubValues(left, right) => {
+                let left = value_head(context, left)?;
+                let right = value_head(context, right)?;
+                match relocated_values(context.arena(), (left, right), variance, &mut pending)? {
+                    Maybe::Present(Read::Pushed) => continue,
+                    Maybe::Present(Read::Apart) => return Ok(Agreement::Apart),
+                    Maybe::Absent(through::Absent::Plain | through::Absent::Unread) => {},
+                }
+                let left = left.settle(context.arena_mut());
+                let right = right.settle(context.arena_mut());
+                if context.defer(TypeNode::Value(left), TypeNode::Value(right))
+                    == crate::elaboration::Deferred::Yes
+                {
+                    continue;
+                }
+                match context.unify(TypeNode::Value(left), TypeNode::Value(right))? {
+                    crate::elaboration::Unified::Agreed => continue,
+                    crate::elaboration::Unified::Refuted => return Ok(Agreement::Apart),
+                    crate::elaboration::Unified::Rigid => {},
+                }
+                match (
+                    value_type_view(context.arena(), left)?,
+                    value_type_view(context.arena(), right)?,
+                ) {
+                    (
+                        ValueTypeView::Data {
+                            declaration: a,
+                            arguments: aa,
+                        },
+                        ValueTypeView::Data {
+                            declaration: b,
+                            arguments: right_arguments,
+                        },
+                    ) => {
+                        if a != b || aa.len() != right_arguments.len() {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(
+                            aa.iter()
+                                .zip(right_arguments)
+                                .map(|(&a, &b)| Pairing::Terms(a, b)),
+                        );
+                        true
+                    },
+                    // A path at the point a type of words' cells loop at is
+                    // those words, as the kernel reads them: both endpoints
+                    // spell the point, or one does and the other converts
+                    // with it, or each computes it (`mul(Base, Base)` at
+                    // the circle's `Base`) and converts with it (#485).
+                    (
+                        ValueTypeView::Data {
+                            declaration,
+                            arguments,
+                        },
+                        ValueTypeView::Path {
+                            carrier,
+                            left: from,
+                            right: to,
+                        },
+                    )
+                    | (
+                        ValueTypeView::Path {
+                            carrier,
+                            left: from,
+                            right: to,
+                        },
+                        ValueTypeView::Data {
+                            declaration,
+                            arguments,
+                        },
+                    ) => {
+                        if !arguments.is_empty() {
+                            false
+                        }
+                        else if context.words(carrier, (from, to))? == Some(declaration) {
+                            true
+                        }
+                        else if context.words(carrier, (to, to))? == Some(declaration) {
+                            pending.push(Pairing::Endpoints(from, to));
+                            true
+                        }
+                        else if context.words(carrier, (from, from))? == Some(declaration) {
+                            pending.push(Pairing::Endpoints(to, from));
+                            true
+                        }
+                        else if let Some(point) =
+                            crate::loops::point_of(context, carrier, declaration)?
+                        {
+                            pending.push(Pairing::Endpoints(from, point));
+                            pending.push(Pairing::Endpoints(to, point));
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    (ValueTypeView::Record(a), ValueTypeView::Record(b)) => {
+                        if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(a.values().zip(b.values()).map(|(&a, &b)| values(a, b)));
+                        true
+                    },
+                    // Two patched types convert when their bases convert and
+                    // they fix the same labels at values that convert. A
+                    // system's meets are evidence its formation checks, and
+                    // the glued type does not hold them.
+                    (
+                        ValueTypeView::Patched {
+                            base: left_base,
+                            fixed: left_fixed,
+                            ..
+                        },
+                        ValueTypeView::Patched {
+                            base: right_base,
+                            fixed: right_fixed,
+                            ..
+                        },
+                    ) => {
+                        if left_fixed.len() != right_fixed.len()
+                            || !left_fixed.keys().eq(right_fixed.keys())
+                        {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(left_fixed.values().zip(right_fixed.values()).map(
+                            |(&left_value, &right_value)| Pairing::Terms(left_value, right_value),
+                        ));
+                        pending.push(values(left_base, right_base));
+                        true
+                    },
+                    (
+                        ValueTypeView::Stack {
+                            input: a,
+                            output: b,
+                        },
+                        ValueTypeView::Stack {
+                            input: c,
+                            output: d,
+                        },
+                    ) => {
+                        pending.extend([comps(c, a), comps(b, d)]);
+                        true
+                    },
+                    (ValueTypeView::PathUniverse(a, b), ValueTypeView::PathUniverse(c, d)) => {
+                        pending.push(Pairing::Codes(a, c));
+                        pending.push(Pairing::Codes(b, d));
+                        true
+                    },
+                    (
+                        ValueTypeView::Path {
+                            carrier: a,
+                            left: first,
+                            right: second,
+                        },
+                        ValueTypeView::Path {
+                            carrier: b,
+                            left: third,
+                            right: fourth,
+                        },
+                    )
+                    | (
+                        ValueTypeView::Flow {
+                            carrier: a,
+                            source: first,
+                            target: second,
+                        },
+                        ValueTypeView::Flow {
+                            carrier: b,
+                            source: third,
+                            target: fourth,
+                        },
+                    )
+                    | (
+                        ValueTypeView::Bridge {
+                            carrier: a,
+                            left: first,
+                            right: second,
+                        },
+                        ValueTypeView::Bridge {
+                            carrier: b,
+                            left: third,
+                            right: fourth,
+                        },
+                    ) => {
+                        pending.push(Pairing::Endpoints(second, fourth));
+                        pending.push(Pairing::Endpoints(first, third));
+                        pending.push(values(a, b));
+                        true
+                    },
+                    // A run, prefix or dialogue type is invariant in its
+                    // protocol: a subtype's run may take an offer its
+                    // supertype lacks, so moving a run along a subtyping is
+                    // the checked `ride`, never a silent subsumption. A run is
+                    // no prefix: the formers do not convert.
+                    (ValueTypeView::Run(left), ValueTypeView::Run(right))
+                    | (ValueTypeView::Prefix(left), ValueTypeView::Prefix(right))
+                    | (ValueTypeView::Dialogue(left), ValueTypeView::Dialogue(right))
+                    | (ValueTypeView::RowTail(left), ValueTypeView::RowTail(right)) => {
+                        pending.push(Pairing::Codes(left, right));
+                        true
+                    },
+                    (ValueTypeView::List(left), ValueTypeView::List(right)) => {
+                        pending.push(values(left, right));
+                        true
+                    },
+                    (ValueTypeView::Unknown, _)
+                    | (_, ValueTypeView::Unknown)
+                    | (ValueTypeView::Integer, ValueTypeView::Integer)
+                    | (ValueTypeView::String, ValueTypeView::String)
+                    | (ValueTypeView::Character, ValueTypeView::Character)
+                    | (ValueTypeView::Float64, ValueTypeView::Float64)
+                    | (ValueTypeView::Unit, ValueTypeView::Unit)
+                    | (ValueTypeView::Buffer, ValueTypeView::Buffer)
+                    | (ValueTypeView::Qubit, ValueTypeView::Qubit)
+                    | (ValueTypeView::Web, ValueTypeView::Web)
+                    | (ValueTypeView::Row, ValueTypeView::Row) => true,
+                    (ValueTypeView::Fixed(left_width), ValueTypeView::Fixed(right_width)) => {
+                        left_width == right_width
+                    },
+                    // Where a found type meets a wanted one a stage is
+                    // subsumed by the order; invariantly it equals only
+                    // itself.
+                    (
+                        ValueTypeView::Staged {
+                            base: found_base,
+                            stage: found,
+                        },
+                        ValueTypeView::Staged {
+                            base: wanted_base,
+                            stage: wanted,
+                        },
+                    ) => {
+                        if subtyping {
+                            if context.stages().fit(found, wanted) == Fit::NotBelow {
+                                return Ok(Agreement::NotBelow {
+                                    found: Standing::Staged(found),
+                                    bound: wanted,
+                                });
+                            }
+                            pending.push(values(found_base, wanted_base));
+                            true
+                        }
+                        else {
+                            pending.push(values(found_base, wanted_base));
+                            found == wanted
+                        }
+                    },
+                    (ValueTypeView::Staged { base, .. }, _) if subtyping => {
+                        pending.push(values(base, right));
+                        true
+                    },
+                    (_, ValueTypeView::Staged { stage, .. }) if subtyping => {
+                        return Ok(Agreement::NotBelow {
+                            found: Standing::Top,
+                            bound: stage,
+                        });
+                    },
+                    // A value kept in a region that outlives the one wanted
+                    // lives long enough; invariantly a region equals only
+                    // itself. Any value enters a region, and none leaves one.
+                    (
+                        ValueTypeView::Kept {
+                            value: found_value,
+                            region: found,
+                        },
+                        ValueTypeView::Kept {
+                            value: wanted_value,
+                            region: wanted,
+                        },
+                    ) => {
+                        pending.push(values(found_value, wanted_value));
+                        if subtyping {
+                            found.outlives(wanted) == RegionOrder::Outlives
+                        }
+                        else {
+                            found == wanted
+                        }
+                    },
+                    (_, ValueTypeView::Kept { value, .. }) if subtyping => {
+                        pending.push(values(left, value));
+                        true
+                    },
+                    (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
+                        left == right
+                    },
+                    (
+                        ValueTypeView::Capability {
+                            authority: found,
+                            grade: found_grade,
+                            region: found_region,
+                        },
+                        ValueTypeView::Capability {
+                            authority: wanted,
+                            grade: wanted_grade,
+                            region: wanted_region,
+                        },
+                    ) => {
+                        // An atom both grant agrees on its payload and reply
+                        // as syntax, or by the solver where a side decodes a
+                        // metavariable a call nominated: a row fixing a sort
+                        // to an omitted implicit reads it at its solution.
+                        if subtyping {
+                            let asked = wanted.atoms_apart(found, context.arena()).collect();
+                            if atoms_agree(context, asked)? == RowInclusion::Excluded {
+                                return Ok(Agreement::Amplified);
+                            }
+                            if found_region.outlives(wanted_region) == RegionOrder::EndsFirst {
+                                return Ok(Agreement::Escaped);
+                            }
+                            found_grade == wanted_grade
+                        }
+                        else {
+                            let arena = context.arena();
+                            let asked = wanted.atoms_apart(found, arena).collect();
+                            let given = found.atoms_apart(wanted, arena).collect();
+                            atoms_agree(context, asked)? == RowInclusion::Included
+                                && atoms_agree(context, given)? == RowInclusion::Included
+                                && (found_grade, found_region) == (wanted_grade, wanted_region)
+                        }
+                    },
+                    (ValueTypeView::Thunk(left), ValueTypeView::Thunk(right)) => {
+                        pending.push(comps(left, right));
+                        true
+                    },
+                    (
+                        ValueTypeView::Universe {
+                            sort: left_sort,
+                            level: left_level,
+                        },
+                        ValueTypeView::Universe {
+                            sort: right_sort,
+                            level: right_level,
+                        },
+                    ) => left_sort == right_sort && left_level == right_level,
+                    (
+                        ValueTypeView::Lift {
+                            inner: left_inner,
+                            target: left_target,
+                        },
+                        ValueTypeView::Lift {
+                            inner: right_inner,
+                            target: right_target,
+                        },
+                    ) => {
+                        pending.push(values(left_inner, right_inner));
+                        left_target == right_target
+                    },
+                    (
+                        ValueTypeView::Element {
+                            code: left_code,
+                            target: left_target,
+                        },
+                        ValueTypeView::Element {
+                            code: right_code,
+                            target: right_target,
+                        },
+                    ) => {
+                        pending.push(Pairing::Codes(left_code, right_code));
+                        left_target == right_target
+                    },
+                    (ValueTypeView::Sum(left), ValueTypeView::Sum(right))
+                    | (ValueTypeView::Product(left), ValueTypeView::Product(right)) => {
+                        let same = left.len() == right.len();
+                        if same {
+                            pending.extend(
+                                left.iter()
+                                    .zip(right)
+                                    .rev()
+                                    .map(|(&left, &right)| values(left, right)),
+                            );
+                        }
+                        same
+                    },
+                    (ValueTypeView::Session(_), ValueTypeView::Session(_)) => {
+                        let relation = if subtyping {
+                            gandr_core_session::Relation::Subtype
+                        }
+                        else {
+                            gandr_core_session::Relation::Equivalent
+                        };
+                        match crate::session::relate(context, left, right, relation)? {
+                            Maybe::Present(payloads) => {
+                                pending.extend(payloads.into_iter().map(|pair| {
+                                    let (left, right) = pair.types;
+                                    Pairing::Values(Relocated::from(left), Relocated::from(right))
+                                }));
+                                true
+                            },
+                            Maybe::Absent(_) => false,
+                        }
+                    },
+                    (
+                        ValueTypeView::StaticPi {
+                            domain: left_first,
+                            codomain: left_second,
+                        },
+                        ValueTypeView::StaticPi {
+                            domain: right_first,
+                            codomain: right_second,
+                        },
+                    ) => {
+                        pending.push(values(left_second, right_second));
+                        pending.push(values(right_first, left_first));
+                        true
+                    },
+                    // The second factors stand under one binder each, at the
+                    // same index, so they compare as they stand.
+                    (
+                        ValueTypeView::Sigma {
+                            first: left_first,
+                            second: left_second,
+                        },
+                        ValueTypeView::Sigma {
+                            first: right_first,
+                            second: right_second,
+                        },
+                    ) => {
+                        pending.push(values(left_second, right_second));
+                        pending.push(values(left_first, right_first));
+                        true
+                    },
+                    // A handle is covariant in what it holds and names one
+                    // world; a capability names one world.
+                    (
+                        ValueTypeView::World(WorldType::At {
+                            inner: left_inner,
+                            world: left_world,
+                        }),
+                        ValueTypeView::World(WorldType::At {
+                            inner: right_inner,
+                            world: right_world,
+                        }),
+                    ) => {
+                        pending.push(values(left_inner, right_inner));
+                        left_world == right_world
+                    },
+                    (
+                        ValueTypeView::World(WorldType::Capability(left_world)),
+                        ValueTypeView::World(WorldType::Capability(right_world)),
+                    ) => left_world == right_world,
+                    (
+                        ValueTypeView::PathUniverse(..)
+                        | ValueTypeView::Path { .. }
+                        | ValueTypeView::Bridge { .. }
+                        | ValueTypeView::Flow { .. }
+                        | ValueTypeView::Run(_)
+                        | ValueTypeView::Prefix(_)
+                        | ValueTypeView::Dialogue(_)
+                        | ValueTypeView::Web
+                        | ValueTypeView::Data { .. }
+                        | ValueTypeView::Record(_)
+                        | ValueTypeView::Patched { .. }
+                        | ValueTypeView::Sum(..)
+                        | ValueTypeView::List(_)
+                        | ValueTypeView::Stack { .. }
+                        | ValueTypeView::Integer
+                        | ValueTypeView::String
+                        | ValueTypeView::Character
+                        | ValueTypeView::Float64
+                        | ValueTypeView::Fixed(_)
+                        | ValueTypeView::Unit
+                        | ValueTypeView::Thunk(_)
+                        | ValueTypeView::Universe { .. }
+                        | ValueTypeView::Lift { .. }
+                        | ValueTypeView::Element { .. }
+                        | ValueTypeView::Product(..)
+                        | ValueTypeView::Sigma { .. }
+                        | ValueTypeView::Abstract(_)
+                        | ValueTypeView::Session(_)
+                        | ValueTypeView::StaticPi { .. }
+                        | ValueTypeView::Capability { .. }
+                        | ValueTypeView::Buffer
+                        | ValueTypeView::Qubit
+                        | ValueTypeView::Staged { .. }
+                        | ValueTypeView::Kept { .. }
+                        | ValueTypeView::World(_)
+                        | ValueTypeView::Row
+                        | ValueTypeView::RowTail(_),
+                        _,
+                    ) => false,
+                }
+            },
+            Pairing::Comps(left, right) | Pairing::SubComps(left, right) => {
+                let left = comp_head(context, left)?;
+                let right = comp_head(context, right)?;
+                match relocated_comps(context.arena_mut(), (left, right), variance, &mut pending)? {
+                    Maybe::Present(Read::Pushed) => continue,
+                    Maybe::Present(Read::Apart) => return Ok(Agreement::Apart),
+                    Maybe::Absent(through::Absent::Plain | through::Absent::Unread) => {},
+                }
+                let left = left.settle(context.arena_mut());
+                let right = right.settle(context.arena_mut());
+                if context.defer(TypeNode::Computation(left), TypeNode::Computation(right))
+                    == crate::elaboration::Deferred::Yes
+                {
+                    continue;
+                }
+                match context.unify(TypeNode::Computation(left), TypeNode::Computation(right))? {
+                    crate::elaboration::Unified::Agreed => continue,
+                    crate::elaboration::Unified::Refuted => return Ok(Agreement::Apart),
+                    crate::elaboration::Unified::Rigid => {},
+                }
+                match (
+                    comp_type_view(context.arena(), left)?,
+                    comp_type_view(context.arena(), right)?,
+                ) {
+                    (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => true,
+                    (CompTypeView::With(a), CompTypeView::With(b)) => {
+                        if a.len() == b.len() {
+                            pending.extend(a.iter().zip(b).map(|(&a, &b)| comps(a, b)));
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    (
+                        CompTypeView::Returner {
+                            result: left,
+                            effects: first,
+                        },
+                        CompTypeView::Returner {
+                            result: right,
+                            effects: second,
+                        },
+                    ) => {
+                        let (first, second) = (first.clone(), second.clone());
+                        match compared_rows(context, (&first, &second), variance, &mut pending)? {
+                            Rows::Unified => {
+                                pending.push(values(left, right));
+                                continue;
+                            },
+                            Rows::Refuted => return Ok(Agreement::Apart),
+                            Rows::Compared(same_shape) => {
+                                if same_shape {
+                                    pending.push(values(left, right));
+                                }
+                                same_shape
+                            },
+                        }
+                    },
+                    (
+                        CompTypeView::Returns {
+                            results: left,
+                            effects: first,
+                        },
+                        CompTypeView::Returns {
+                            results: right,
+                            effects: second,
+                        },
+                    ) => {
+                        if left.len() != right.len() {
+                            return Ok(Agreement::Apart);
+                        }
+                        // Each pair stands under the same binders on both
+                        // sides, those of the results before it.
+                        let results: Vec<Pairing> = left
+                            .iter()
+                            .zip(right)
+                            .map(|(&found, &wanted)| values(found, wanted))
+                            .collect();
+                        let (first, second) = (first.clone(), second.clone());
+                        match compared_rows(context, (&first, &second), variance, &mut pending)? {
+                            Rows::Unified => {
+                                pending.extend(results);
+                                continue;
+                            },
+                            Rows::Refuted => return Ok(Agreement::Apart),
+                            Rows::Compared(same_shape) => {
+                                if same_shape {
+                                    pending.extend(results);
+                                }
+                                same_shape
+                            },
+                        }
+                    },
+                    (
+                        CompTypeView::Arrow {
+                            domain: left_domain,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::Arrow {
+                            domain: right_domain,
+                            codomain: right_codomain,
+                        },
+                    )
+                    | (
+                        CompTypeView::Pi {
+                            domain: left_domain,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::Pi {
+                            domain: right_domain,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
+                    (
+                        CompTypeView::LinearArrow {
+                            domain: left_domain,
+                            multiplicity: left_multiplicity,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::LinearArrow {
+                            domain: right_domain,
+                            multiplicity: right_multiplicity,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(Pairing::Terms(left_multiplicity, right_multiplicity));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
+                    // A dependent arrow whose codomain ignores its binder is
+                    // the plain arrow over the same children (#577): the
+                    // arrow's codomain, read under the dependent arrow's
+                    // binder, cannot name it, so the two codomains agree
+                    // exactly when the dependent one does not use its binder.
+                    (
+                        CompTypeView::Pi {
+                            domain: left_domain,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::Arrow {
+                            domain: right_domain,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        let weakened =
+                            shift_comp_type(context.arena_mut(), right_codomain, Binders::ONE);
+                        pending.push(variance.comps(Relocated::from(left_codomain), weakened));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
+                    (
+                        CompTypeView::Arrow {
+                            domain: left_domain,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::Pi {
+                            domain: right_domain,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        let weakened =
+                            shift_comp_type(context.arena_mut(), left_codomain, Binders::ONE);
+                        pending.push(variance.comps(weakened, Relocated::from(right_codomain)));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
+                    (
+                        CompTypeView::Element {
+                            code: left_code,
+                            target: left_target,
+                        },
+                        CompTypeView::Element {
+                            code: right_code,
+                            target: right_target,
+                        },
+                    ) => {
+                        pending.push(Pairing::Codes(left_code, right_code));
+                        left_target == right_target
+                    },
+                    (
+                        CompTypeView::Codata {
+                            declaration: a,
+                            arguments: left_arguments,
+                        },
+                        CompTypeView::Codata {
+                            declaration: b,
+                            arguments: right_arguments,
+                        },
+                    ) => {
+                        if a != b || left_arguments.len() != right_arguments.len() {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(
+                            left_arguments
+                                .iter()
+                                .zip(right_arguments)
+                                .map(|(&a, &b)| Pairing::Terms(a, b)),
+                        );
+                        true
+                    },
+                    (
+                        CompTypeView::Returner { .. }
+                        | CompTypeView::Returns { .. }
+                        | CompTypeView::With(..)
+                        | CompTypeView::Arrow { .. }
+                        | CompTypeView::Pi { .. }
+                        | CompTypeView::LinearArrow { .. }
+                        | CompTypeView::Element { .. }
+                        | CompTypeView::Codata { .. },
+                        _,
+                    ) => false,
+                }
+            },
+            Pairing::Codes(left, right) => {
+                let left = context.whnf_code(left)?;
+                let right = context.whnf_code(right)?;
+                left == right
+                    || root_knowledge(context, left)? == Knowledge::Unknown
+                    || root_knowledge(context, right)? == Knowledge::Unknown
+                    || {
+                        let read = |code: ValueId| {
+                            context
+                                .arena()
+                                .value(code)
+                                .ok_or(CheckRefusal::DanglingNode {
+                                    node: CoreNode::Term(TermNode::Value(code)),
+                                })
+                        };
+                        {
+                            let (matched_left_value, matched_right_value) =
+                                (read(left)?, read(right)?);
+                            if let Value::Literal(ref a) = *matched_left_value
+                                && let Value::Literal(ref b) = *matched_right_value
+                            {
+                                a == b
+                            }
+                            else if let Value::Tuple(ref a) = *matched_left_value
+                                && let Value::Tuple(ref b) = *matched_right_value
+                            {
+                                a.len() == b.len() && {
+                                    pending.extend(
+                                        a.iter()
+                                            .zip(b.iter())
+                                            .map(|(&left, &right)| Pairing::Codes(left, right)),
+                                    );
+                                    true
+                                }
+                            }
+                            else if let Value::Injection(ref a, ref av) = *matched_left_value
+                                && let Value::Injection(ref b, ref bv) = *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Codes(*av, *bv));
+                                    a == b
+                                }
+                            }
+                            else if let Value::Constructor {
+                                datatype: ref a,
+                                tag: ref at,
+                                fields: ref af,
+                                ..
+                            } = *matched_left_value
+                                && let Value::Constructor {
+                                    datatype: ref b,
+                                    tag: ref bt,
+                                    fields: ref bf,
+                                    ..
+                                } = *matched_right_value
+                            {
+                                {
+                                    if at != bt || af.len() != bf.len() {
+                                        return Ok(Agreement::Apart);
+                                    }
+                                    pending.push(Pairing::Values(
+                                        Relocated::from(*a),
+                                        Relocated::from(*b),
+                                    ));
+                                    pending.extend(
+                                        af.iter().zip(bf).map(|(&a, &b)| Pairing::Codes(a, b)),
+                                    );
+                                    true
+                                }
+                            }
+                            else if let Value::Record(ref a) = *matched_left_value
+                                && let Value::Record(ref b) = *matched_right_value
+                            {
+                                {
+                                    if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                                        return Ok(Agreement::Apart);
+                                    }
+                                    pending.extend(
+                                        a.values()
+                                            .zip(b.values())
+                                            .map(|(&a, &b)| Pairing::Codes(a, b)),
+                                    );
+                                    true
+                                }
+                            }
+                            else if let Value::Variable {
+                                zone: ref left_zone,
+                                index: ref left_index,
+                            } = *matched_left_value
+                                && let Value::Variable {
+                                    zone: ref right_zone,
+                                    index: ref right_index,
+                                } = *matched_right_value
+                            {
+                                left_zone == right_zone && left_index == right_index
+                            }
+                            else if let Value::Constant(ref left_constant) = *matched_left_value
+                                && let Value::Constant(ref right_constant) = *matched_right_value
+                            {
+                                left_constant == right_constant
+                            }
+                            else if let Value::Quote(ref left_quoted) = *matched_left_value
+                                && let Value::Quote(ref right_quoted) = *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Values(
+                                        Relocated::from(*left_quoted),
+                                        Relocated::from(*right_quoted),
+                                    ));
+                                    true
+                                }
+                            }
+                            else if let Value::QuoteComputation(ref left_quoted) =
+                                *matched_left_value
+                                && let Value::QuoteComputation(ref right_quoted) =
+                                    *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Comps(
+                                        Relocated::from(*left_quoted),
+                                        Relocated::from(*right_quoted),
+                                    ));
+                                    true
+                                }
+                            }
+                            else if let Value::StaticApplication(ref left_head, ref left_argument) =
+                                *matched_left_value
+                                && let Value::StaticApplication(ref right_head, ref right_argument) =
+                                    *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Codes(*left_argument, *right_argument));
+                                    pending.push(Pairing::Codes(*left_head, *right_head));
+                                    true
+                                }
+                            }
+                            else if let Value::StaticLambda(ref left_body) = *matched_left_value
+                                && let Value::StaticLambda(ref right_body) = *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Codes(*left_body, *right_body));
+                                    true
+                                }
+                            }
+                            // Two returned codes agree as syntax, or as
+                            // endpoints when their syntax differs. The kernel
+                            // reads them by reduction, so a code a family
+                            // literal returns meets the call its body makes.
+                            else if let Value::Returned(_) = *matched_left_value
+                                && let Value::Returned(_) = *matched_right_value
+                            {
+                                equal_certificate_syntax(context.arena(), left, right)
+                                    == CertificateEquality::Equal
+                                    || endpoints_agree(context, left, right)?
+                                        == Agreement::Convertible
+                            }
+                            else if let Value::Recorded(ref left_moves) = *matched_left_value
+                                && let Value::Recorded(ref right_moves) = *matched_right_value
+                            {
+                                let same = left_moves.len() == right_moves.len()
+                                    && left_moves.iter().zip(right_moves.iter()).all(
+                                        |(left, right)| left.carrying(()) == right.carrying(()),
+                                    );
+                                if same {
+                                    pending.extend(
+                                        left_moves.iter().zip(right_moves.iter()).rev().filter_map(
+                                            |(left, right)| match (left.payload(), right.payload())
+                                            {
+                                                (Maybe::Present(left), Maybe::Present(right)) => {
+                                                    Some(Pairing::Codes(left, right))
+                                                },
+                                                _ => None,
+                                            },
+                                        ),
+                                    );
+                                }
+                                same
+                            }
+                            // A dialogue is its endpoints' moves: two logs that
+                            // interleave the same moves differently convert.
+                            else if let Value::Dialogue(ref left_moves) = *matched_left_value
+                                && let Value::Dialogue(ref right_moves) = *matched_right_value
+                            {
+                                let mut pairs = Vec::new();
+                                let same = gandr_core_term::session::pair_dialogues(
+                                    left_moves,
+                                    right_moves,
+                                    |left, right| pairs.push(Pairing::Codes(left, right)),
+                                ) == CertificateEquality::Equal;
+                                if same {
+                                    pending.extend(pairs.into_iter().rev());
+                                }
+                                same
+                            }
+                            // Two rows are one row when they hold the same
+                            // instances over the same operations, both open
+                            // or both closed, and their types convert.
+                            else if let Value::Row(ref left_row) = *matched_left_value
+                                && let Value::Row(ref right_row) = *matched_right_value
+                            {
+                                let same = left_row.tail().is_some() == right_row.tail().is_some()
+                                    && left_row.instances().len() == right_row.instances().len()
+                                    && left_row.instances().zip(right_row.instances()).all(
+                                        |((left_label, left), (right_label, right))| {
+                                            left_label == right_label
+                                                && left.name() == right.name()
+                                                && left
+                                                    .operations()
+                                                    .map(|operation| &operation.name)
+                                                    .eq(right
+                                                        .operations()
+                                                        .map(|operation| &operation.name))
+                                        },
+                                    );
+                                if same {
+                                    pending.extend(left_row.types().zip(right_row.types()).map(
+                                        |(left, right)| {
+                                            Pairing::Values(
+                                                Relocated::from(left),
+                                                Relocated::from(right),
+                                            )
+                                        },
+                                    ));
+                                }
+                                same
+                            }
+                            else if let Value::Web(ref left_pieces) = *matched_left_value
+                                && let Value::Web(ref right_pieces) = *matched_right_value
+                            {
+                                left_pieces == right_pieces
+                            }
+                            else {
+                                {
+                                    match *matched_left_value {
+                                        Value::PathRefl(_)
+                                        | Value::Here(_)
+                                        | Value::Stay(_)
+                                        | Value::Then(..)
+                                        | Value::FlowProduct(..)
+                                        | Value::Forward(_)
+                                        | Value::FunctionFlow(..)
+                                        | Value::SessionRelated { .. }
+                                        | Value::Recorded(_)
+                                        | Value::Dialogue(_)
+                                        | Value::Web(_)
+                                        | Value::Funext(..)
+                                        | Value::Equiv(..)
+                                        | Value::Univalence(..)
+                                        | Value::Ua { .. }
+                                        | Value::Compose { .. }
+                                        | Value::Fill { .. }
+                                        | Value::Returned(_)
+                                        | Value::Nested(_)
+                                        | Value::Run(_)
+                                        | Value::RecordUpdate { .. }
+                                        | Value::Constructor { .. }
+                                        | Value::Record(_)
+                                        | Value::Primitive { .. }
+                                        | Value::PathProduct(..)
+                                        | Value::PathEquiv { .. }
+                                        | Value::Variable { .. }
+                                        | Value::Constant(_)
+                                        | Value::Tuple(_)
+                                        | Value::Literal(_)
+                                        | Value::Injection(..)
+                                        | Value::Thunk(_)
+                                        | Value::Ascribe { .. }
+                                        | Value::Lift { .. }
+                                        | Value::Quote(_)
+                                        | Value::QuoteComputation(_)
+                                        | Value::StaticApplication(..)
+                                        | Value::StaticLambda(_)
+                                        | Value::Reify(_)
+                                        | Value::ListNil
+                                        | Value::ListCons(..)
+                                        | Value::Hole(_)
+                                        | Value::Mark { .. }
+                                        | Value::Row(_) => false,
+                                    }
+                                }
+                            }
+                        }
+                    }
+            },
+        };
+        if !agrees {
+            return Ok(Agreement::Apart);
+        }
+    }
+    Ok(Agreement::Convertible)
+}
+
+/// What comparing two returners' effect rows decides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rows
+{
+    /// The row equation holds, through a metavariable on either side.
+    Unified,
+    /// The row equation fails.
+    Refuted,
+    /// Both rows are rigid; `true` when they have one shape, their
+    /// operations' payloads and replies and their tails then queued.
+    Compared(bool),
+}
+
+/// Compare the effect rows of two returners, of one value or of several.
+///
+/// A row open through a metavariable meets the other by the row equation,
+/// whichever way the conversion runs. Rigid rows are compared instance by
+/// instance, a closed row included in an open one and an open row only in
+/// one open through the same tail.
+///
+/// # Specification
+/// - requires: `first` is the found row and `second` the wanted one.
+/// - ensures: [`Rows::Unified`] or [`Rows::Refuted`] when the row equation
+///   decides, queueing nothing; otherwise [`Rows::Compared`] holding whether
+///   the rows match instance by instance under `variance`, every operation's
+///   payload and reply pair and the tails' pair queued on `pending` as met.
+/// - provides: the one row comparison every returner shares.
+/// - fails: the row equation's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// The row equation's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a row meets its signatures in a wider row by name, and
+///   two returners of several values convert exactly when their rows and their
+///   results do.
+/// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
+/// - witness: `conversion::tests::returners_of_several_values_agree_on_rows_and_results`
+#[spec(captures: before = pending.len(), ensures: |ret| !matches!(ret, Ok(Rows::Unified | Rows::Refuted)) || pending.len() == before)]
+fn compared_rows(
+    context: &mut CheckingContext<'_>,
+    (first, second): (
+        &gandr_core_term::effect::EffectRow,
+        &gandr_core_term::effect::EffectRow,
+    ),
+    variance: Variance,
+    pending: &mut Vec<Pairing>,
+) -> Result<Rows, CheckRefusal>
+{
+    let subtyping = variance == Variance::Subtyping;
+    match context.unify_rows((first, second))? {
+        crate::elaboration::Unified::Agreed => return Ok(Rows::Unified),
+        crate::elaboration::Unified::Refuted => return Ok(Rows::Refuted),
+        crate::elaboration::Unified::Rigid => {},
+    }
+    let mut same_shape = (subtyping || first.signatures().len() == second.signatures().len())
+        && match (first.tail(), second.tail()) {
+            (None, None) => true,
+            (None, Some(_)) => subtyping,
+            (Some(_), None) => false,
+            (Some(found), Some(wanted)) => {
+                pending.push(Pairing::Values(
+                    Relocated::from(found),
+                    Relocated::from(wanted),
+                ));
+                true
+            },
+        };
+    for (label, signature) in first.instances() {
+        let Some(candidate) = second.get(label).filter(|candidate| {
+            candidate.name() == signature.name()
+                && candidate.operations().len() == signature.operations().len()
+        })
+        else {
+            same_shape = false;
+            break;
+        };
+        for (a, b) in signature.operations().zip(candidate.operations()) {
+            if a.name != b.name {
+                same_shape = false;
+                break;
+            }
+            pending.push(Pairing::Values(
+                Relocated::from(a.payload),
+                Relocated::from(b.payload),
+            ));
+            pending.push(Pairing::Values(
+                Relocated::from(a.reply),
+                Relocated::from(b.reply),
+            ));
+        }
+        if !same_shape {
+            break;
+        }
+    }
+    Ok(Rows::Compared(same_shape))
+}
+
+/// Whether the atoms [`gandr_core_term::effect::EffectRow::atoms_apart`] found
+/// apart agree: each pair it found apart as syntax posed to the solver at its
+/// weak heads.
+///
+/// # Specification
+/// - ensures: [`RowInclusion::Excluded`] for an atom the authority does not
+///   grant, before any pair is posed; otherwise [`RowInclusion::Included`]
+///   exactly when the solver solves or postpones every pair, so a pair neither
+///   side of which decodes a metavariable a call nominated is excluded.
+/// - fails: the weak head's refusal, and [`CheckRefusal::MachineInvariant`] for
+///   a depth past any binder count.
+/// - panics: none.
+/// - executable: none — each verdict is the solver's, which
+///   [`crate::elaboration::Deferrals::unify`] specifies.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a row fixing a sort to an omitted implicit against a
+///   scope at the integers, before and after the scope solves it, and against a
+///   scope at the unit type once it is solved; an operation the authority
+///   withholds is refused before any pair is read.
+/// - witness: `conversion::tests::a_capability_at_an_implicit_sort_is_read_at_its_solution_2944`
+/// - witness: `capability::tests::attenuation_narrows_and_never_widens`
+fn atoms_agree(
+    context: &mut CheckingContext<'_>,
+    atoms: Vec<Maybe<(ValueTypeId, ValueTypeId), grant::Absent>>,
+) -> Result<RowInclusion, CheckRefusal>
+{
+    if atoms.iter().any(|atom| matches!(*atom, Maybe::Absent(_))) {
+        return Ok(RowInclusion::Excluded);
+    }
+    for atom in atoms {
+        let Maybe::Present((had, asked)) = atom
+        else {
+            continue;
+        };
+        let had = context.whnf_value_type(had)?;
+        let asked = context.whnf_value_type(asked)?;
+        match context.unify(TypeNode::Value(had), TypeNode::Value(asked))? {
+            crate::elaboration::Unified::Agreed => {},
+            crate::elaboration::Unified::Refuted | crate::elaboration::Unified::Rigid => {
+                return Ok(RowInclusion::Excluded);
+            },
+        }
+    }
+    Ok(RowInclusion::Included)
+}
+
+/// `side` at its weak head, as [`CheckingContext::whnf_value_type`] reads a
+/// plain type: a relocated side whose former is already a weak head stays
+/// relocated, and one at a decode or a sealed atom is settled first, since an
+/// unfolding is certified beneath the context's binders.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a plain side's weak head, plain; a relocated side itself when its
+///   node is neither a decode nor an atom; otherwise the weak head of the side
+///   settled.
+/// - fails: as [`CheckingContext::whnf_value_type`], and the view's refusal for
+///   a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relocated decode, a relocated former and a plain type
+///   each converted against their settled readings.
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| ret.is_err() || side.relocation() != Relocation::IDENTITY
+    || ret.as_ref().is_ok_and(|head| head.relocation() == Relocation::IDENTITY))]
+fn value_head(
+    context: &mut CheckingContext<'_>,
+    side: Relocated<ValueTypeId>,
+) -> Result<Relocated<ValueTypeId>, CheckRefusal>
+{
+    if side.relocation() == Relocation::IDENTITY {
+        return Ok(Relocated::from(context.whnf_value_type(side.node())?));
+    }
+    match value_type_view(context.arena(), side.node())? {
+        ValueTypeView::Element { .. } | ValueTypeView::Abstract(_) => {
+            let settled = side.settle(context.arena_mut());
+            Ok(Relocated::from(context.whnf_value_type(settled)?))
+        },
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Character
+        | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
+        | ValueTypeView::World(_)
+        | ValueTypeView::Unknown => Ok(side),
+    }
+}
+
+/// `side` at its weak head, as [`value_head`] reads a value type: a relocated
+/// decode is settled before it unfolds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`value_head`], over computation types, a decode the one
+///   former settled.
+/// - fails: as [`CheckingContext::whnf_comp_type`], and the view's refusal for
+///   a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`value_head`].
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| ret.is_err() || side.relocation() != Relocation::IDENTITY
+    || ret.as_ref().is_ok_and(|head| head.relocation() == Relocation::IDENTITY))]
+fn comp_head(
+    context: &mut CheckingContext<'_>,
+    side: Relocated<CompTypeId>,
+) -> Result<Relocated<CompTypeId>, CheckRefusal>
+{
+    if side.relocation() == Relocation::IDENTITY {
+        return Ok(Relocated::from(context.whnf_comp_type(side.node())?));
+    }
+    match comp_type_view(context.arena(), side.node())? {
+        CompTypeView::Element { .. } => {
+            let settled = side.settle(context.arena_mut());
+            Ok(Relocated::from(context.whnf_comp_type(settled)?))
+        },
+        CompTypeView::With(..)
+        | CompTypeView::Returner { .. }
+        | CompTypeView::Returns { .. }
+        | CompTypeView::Arrow { .. }
+        | CompTypeView::Pi { .. }
+        | CompTypeView::LinearArrow { .. }
+        | CompTypeView::Codata { .. }
+        | CompTypeView::Unknown => Ok(side),
+    }
+}
+
+/// Read two value types at their weak heads through the relocations they
+/// carry, pushing the pairs beneath them each under its parent's relocation
+/// and the binders its position crosses.
+///
+/// The formers read through are those whose comparison is a pair of types
+/// beneath and a leaf: a decode is not, since its code is compared as a term,
+/// nor a data type, a path, a session, a capability, a stage or a world, whose
+/// comparisons read terms, protocols, grants or the stage order — the caller
+/// settles those and compares them plain.
+///
+/// # Specification
+/// - requires: both sides at their weak heads.
+/// - ensures: [`through::Absent::Plain`] when neither side is relocated;
+///   [`through::Absent::Unread`], pushing nothing, when a side is a decode or
+///   the pair is not two of the formers read through; otherwise what the plain
+///   walk answers for the settled pair, the pairs it would push carried
+///   relocated in its order: the second factor of a dependent pair under one
+///   more binder, every other child under its parent's relocation.
+/// - fails: the view's refusal for a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — relocated products, records, sums, lists, thunks, stacks,
+///   static and dependent pairs, universes and leaves, agreeing and differing,
+///   each against its settled reading.
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(through::Absent::Plain)))
+    || (left.relocation() == Relocation::IDENTITY && right.relocation() == Relocation::IDENTITY))]
+fn relocated_values(
+    arena: &CoreArena,
+    (left, right): (Relocated<ValueTypeId>, Relocated<ValueTypeId>),
+    variance: Variance,
+    pending: &mut Vec<Pairing>,
+) -> Result<Maybe<Read, through::Absent>, CheckRefusal>
+{
+    let (at_left, at_right) = (left.relocation(), right.relocation());
+    if at_left == Relocation::IDENTITY && at_right == Relocation::IDENTITY {
+        return Ok(Maybe::Absent(through::Absent::Plain));
+    }
+    let child = |id: ValueTypeId, at: Relocation| arena.place_value_type(id, at);
+    let body = |id: CompTypeId, at: Relocation| arena.place_comp_type(id, at);
+    let read = match (
+        value_type_view(arena, left.node())?,
+        value_type_view(arena, right.node())?,
+    ) {
+        (ValueTypeView::Element { .. }, _) | (_, ValueTypeView::Element { .. }) => {
+            return Ok(Maybe::Absent(through::Absent::Unread));
+        },
+        (ValueTypeView::Unknown, _)
+        | (_, ValueTypeView::Unknown)
+        | (ValueTypeView::Integer, ValueTypeView::Integer)
+        | (ValueTypeView::String, ValueTypeView::String)
+        | (ValueTypeView::Character, ValueTypeView::Character)
+        | (ValueTypeView::Float64, ValueTypeView::Float64)
+        | (ValueTypeView::Unit, ValueTypeView::Unit) => Read::Pushed,
+        (ValueTypeView::Fixed(left_width), ValueTypeView::Fixed(right_width))
+            if left_width == right_width =>
+        {
+            Read::Pushed
+        },
+        (
+            ValueTypeView::Universe {
+                sort: left_sort,
+                level: left_level,
+            },
+            ValueTypeView::Universe {
+                sort: right_sort,
+                level: right_level,
+            },
+        ) => {
+            if left_sort == right_sort && left_level == right_level {
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (ValueTypeView::Thunk(left_body), ValueTypeView::Thunk(right_body)) => {
+            pending.push(variance.comps(body(left_body, at_left), body(right_body, at_right)));
+            Read::Pushed
+        },
+        (ValueTypeView::List(left_item), ValueTypeView::List(right_item)) => {
+            pending.push(variance.values(child(left_item, at_left), child(right_item, at_right)));
+            Read::Pushed
+        },
+        (
+            ValueTypeView::Lift {
+                inner: left_inner,
+                target: left_target,
+            },
+            ValueTypeView::Lift {
+                inner: right_inner,
+                target: right_target,
+            },
+        ) => {
+            pending.push(variance.values(child(left_inner, at_left), child(right_inner, at_right)));
+            if left_target == right_target {
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (ValueTypeView::Sum(left_parts), ValueTypeView::Sum(right_parts))
+        | (ValueTypeView::Product(left_parts), ValueTypeView::Product(right_parts)) => {
+            if left_parts.len() == right_parts.len() {
+                pending.extend(left_parts.iter().zip(right_parts).rev().map(
+                    |(&found, &wanted)| {
+                        variance.values(child(found, at_left), child(wanted, at_right))
+                    },
+                ));
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (ValueTypeView::Record(left_fields), ValueTypeView::Record(right_fields)) => {
+            if left_fields.len() == right_fields.len() && left_fields.keys().eq(right_fields.keys())
+            {
+                pending.extend(left_fields.values().zip(right_fields.values()).map(
+                    |(&found, &wanted)| {
+                        variance.values(child(found, at_left), child(wanted, at_right))
+                    },
+                ));
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (
+            ValueTypeView::Stack {
+                input: left_input,
+                output: left_output,
+            },
+            ValueTypeView::Stack {
+                input: right_input,
+                output: right_output,
+            },
+        ) => {
+            pending.extend([
+                variance.comps(body(right_input, at_right), body(left_input, at_left)),
+                variance.comps(body(left_output, at_left), body(right_output, at_right)),
+            ]);
+            Read::Pushed
+        },
+        (
+            ValueTypeView::StaticPi {
+                domain: left_domain,
+                codomain: left_codomain,
+            },
+            ValueTypeView::StaticPi {
+                domain: right_domain,
+                codomain: right_codomain,
+            },
+        ) => {
+            pending.push(variance.values(
+                child(left_codomain, at_left),
+                child(right_codomain, at_right),
+            ));
+            pending
+                .push(variance.values(child(right_domain, at_right), child(left_domain, at_left)));
+            Read::Pushed
+        },
+        // The second factors stand under one binder each, which a relocation
+        // read beneath it passes over.
+        (
+            ValueTypeView::Sigma {
+                first: left_first,
+                second: left_second,
+            },
+            ValueTypeView::Sigma {
+                first: right_first,
+                second: right_second,
+            },
+        ) => {
+            pending.push(variance.values(
+                child(left_second, at_left.under(Binders::ONE)),
+                child(right_second, at_right.under(Binders::ONE)),
+            ));
+            pending.push(variance.values(child(left_first, at_left), child(right_first, at_right)));
+            Read::Pushed
+        },
+        (
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Character
+            | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_)
+            | ValueTypeView::Unit
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
+            | ValueTypeView::Session(_)
+            | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
+            | ValueTypeView::World(_)
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_),
+            _,
+        ) => return Ok(Maybe::Absent(through::Absent::Unread)),
+    };
+    Ok(Maybe::Present(read))
+}
+
+/// Read two computation types at their weak heads through the relocations
+/// they carry, as [`relocated_values`] reads value types: the codomain of a
+/// dependent arrow under one more binder, and a plain arrow's codomain against
+/// a dependent one weakened past its binder by a root update.
+///
+/// # Specification
+/// - requires: both sides at their weak heads.
+/// - ensures: as [`relocated_values`], for lazy products, returners over the
+///   empty row, and arrows of either kind; a returner over a row, a decode and
+///   a codata type are [`through::Absent::Unread`].
+/// - fails: the view's refusal for a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — relocated returners, arrows, dependent arrows and their
+///   mixtures, agreeing and differing, each against its settled reading.
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(through::Absent::Plain)))
+    || (left.relocation() == Relocation::IDENTITY && right.relocation() == Relocation::IDENTITY))]
+fn relocated_comps(
+    arena: &mut CoreArena,
+    (left, right): (Relocated<CompTypeId>, Relocated<CompTypeId>),
+    variance: Variance,
+    pending: &mut Vec<Pairing>,
+) -> Result<Maybe<Read, through::Absent>, CheckRefusal>
+{
+    let (at_left, at_right) = (left.relocation(), right.relocation());
+    if at_left == Relocation::IDENTITY && at_right == Relocation::IDENTITY {
+        return Ok(Maybe::Absent(through::Absent::Plain));
+    }
+    let read =
+        match (
+            comp_type_view(arena, left.node())?,
+            comp_type_view(arena, right.node())?,
+        ) {
+            (
+                CompTypeView::Element { .. }
+                | CompTypeView::Codata { .. }
+                | CompTypeView::LinearArrow { .. },
+                _,
+            )
+            | (
+                _,
+                CompTypeView::Element { .. }
+                | CompTypeView::Codata { .. }
+                | CompTypeView::LinearArrow { .. },
+            ) => {
+                return Ok(Maybe::Absent(through::Absent::Unread));
+            },
+            (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => Read::Pushed,
+            (CompTypeView::With(left_components), CompTypeView::With(right_components))
+                if left_components.len() == right_components.len() =>
+            {
+                pending.extend(left_components.iter().zip(right_components).map(
+                    |(&left, &right)| {
+                        variance.comps(
+                            arena.place_comp_type(left, at_left),
+                            arena.place_comp_type(right, at_right),
+                        )
+                    },
+                ));
+                Read::Pushed
+            },
+            (
+                CompTypeView::Returner {
+                    result: left_result,
+                    effects: left_effects,
+                },
+                CompTypeView::Returner {
+                    result: right_result,
+                    effects: right_effects,
+                },
+            ) if left_effects.purity() == gandr_core_term::effect::Purity::Pure => {
+                if variance == Variance::Subtyping
+                    || right_effects.purity() == gandr_core_term::effect::Purity::Pure
+                {
+                    pending.push(variance.values(
+                        arena.place_value_type(left_result, at_left),
+                        arena.place_value_type(right_result, at_right),
+                    ));
+                    Read::Pushed
+                }
+                else {
+                    Read::Apart
+                }
+            },
+            (
+                CompTypeView::Returns {
+                    results: left_results,
+                    effects: left_effects,
+                },
+                CompTypeView::Returns {
+                    results: right_results,
+                    effects: right_effects,
+                },
+            ) if left_effects.purity() == gandr_core_term::effect::Purity::Pure
+                && left_results.len() == right_results.len() =>
+            {
+                if variance == Variance::Subtyping
+                    || right_effects.purity() == gandr_core_term::effect::Purity::Pure
+                {
+                    let pairs: Vec<(ValueTypeId, ValueTypeId)> = left_results
+                        .iter()
+                        .copied()
+                        .zip(right_results.iter().copied())
+                        .collect();
+                    // Each result stands under the binders of the results before it.
+                    for (before, (left_result, right_result)) in pairs.into_iter().enumerate() {
+                        let under = Binders::from(
+                            u32::try_from(before)
+                                .map_err(|_overflow| CheckRefusal::MachineInvariant)?,
+                        );
+                        pending.push(variance.values(
+                            arena.place_value_type(left_result, at_left.under(under)),
+                            arena.place_value_type(right_result, at_right.under(under)),
+                        ));
+                    }
+                    Read::Pushed
+                }
+                else {
+                    Read::Apart
+                }
+            },
+            (
+                CompTypeView::Arrow {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Arrow {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                pending.push(variance.comps(
+                    arena.place_comp_type(left_codomain, at_left),
+                    arena.place_comp_type(right_codomain, at_right),
+                ));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
+            },
+            (
+                CompTypeView::Pi {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Pi {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                pending.push(variance.comps(
+                    arena.place_comp_type(left_codomain, at_left.under(Binders::ONE)),
+                    arena.place_comp_type(right_codomain, at_right.under(Binders::ONE)),
+                ));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
+            },
+            (
+                CompTypeView::Pi {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Arrow {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                let dependent = arena.place_comp_type(left_codomain, at_left.under(Binders::ONE));
+                let plain = arena.place_comp_type(right_codomain, at_right);
+                let weakened = shift_comp_type(arena, plain, Binders::ONE);
+                pending.push(variance.comps(dependent, weakened));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
+            },
+            (
+                CompTypeView::Arrow {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Pi {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                let plain = arena.place_comp_type(left_codomain, at_left);
+                let weakened = shift_comp_type(arena, plain, Binders::ONE);
+                let dependent = arena.place_comp_type(right_codomain, at_right.under(Binders::ONE));
+                pending.push(variance.comps(weakened, dependent));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
+            },
+            (
+                CompTypeView::Returner { .. }
+                | CompTypeView::Returns { .. }
+                | CompTypeView::With(..)
+                | CompTypeView::Arrow { .. }
+                | CompTypeView::Pi { .. },
+                _,
+            ) => return Ok(Maybe::Absent(through::Absent::Unread)),
+        };
+    Ok(Maybe::Present(read))
+}
+
+/// What the code or index `node` reads as at its root: unknown when it is a
+/// hole or a mark.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Knowledge::Unknown`] exactly when `node` is a hole or a mark,
+///   [`Knowledge::Known`] for every other node.
+/// - fails: [`CheckRefusal::DanglingNode`] for an id the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separated by a hole, a mark and a variable as a code.
+/// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+#[spec(ensures: |ret| match ret {
+    | Ok(found) => (found == Knowledge::Unknown) == matches!(context.arena().value(node), Some(Value::Hole(_) | Value::Mark { .. })),
+    | Err(_) => context.arena().value(node).is_none(),
+})]
+fn root_knowledge(
+    context: &CheckingContext<'_>,
+    node: ValueId,
+) -> Result<Knowledge, CheckRefusal>
+{
+    let held = context
+        .arena()
+        .value(node)
+        .ok_or(CheckRefusal::DanglingNode {
+            node: CoreNode::Term(TermNode::Value(node)),
+        })?;
+    if matches!(*held, Value::Hole(_) | Value::Mark { .. }) {
+        Ok(Knowledge::Unknown)
+    }
+    else {
+        Ok(Knowledge::Known)
+    }
+}
+
+/// The verdict on `left` and `right` when one of them is a hole or a mark: a
+/// metavariable among them is posed to the solver against the other side.
+///
+/// # Specification
+/// - requires: both values are read at one type in the context's open binders.
+/// - ensures: [`open::Absent::Closed`] when neither side is a hole or a mark;
+///   otherwise the solver's verdict on the equation, which is
+///   [`crate::elaboration::Unified::Refuted`] only when a side is a
+///   metavariable the other refutes, the solution or the postponed equation
+///   left in the context's store.
+/// - fails: [`CheckRefusal::DanglingNode`] for an id the arena does not hold; a
+///   machine invariant as [`CheckingContext::unify_values`] raises it.
+/// - panics: none.
+/// - executable: none — the verdict is the solver's, which
+///   [`crate::elaboration::Deferrals::unify_values`] specifies.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type's open end met at the value bridge against a
+///   known end is solved to it; a hole no judgement nominated stays unknown.
+/// - witness: `bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
+/// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+fn pose_open(
+    context: &mut CheckingContext<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Maybe<crate::elaboration::Unified, open::Absent>, CheckRefusal>
+{
+    if root_knowledge(context, left)? == Knowledge::Known
+        && root_knowledge(context, right)? == Knowledge::Known
+    {
+        return Ok(Maybe::Absent(open::Absent::Closed));
+    }
+    Ok(Maybe::Present(context.unify_values(left, right)?))
+}
+
+#[cfg(test)]
+mod tests;

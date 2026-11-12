@@ -47,6 +47,9 @@ path = "tests/lib.rs"
 # the benchmark report.
 [dependencies]
 anodized.workspace = true
+gandr-core-checker-base.workspace = true
+gandr-core-checker-bridge.workspace = true
+gandr-core-checker-judgement.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-session.workspace = true
@@ -81,14 +84,14 @@ default = []
 # Per-declaration checking, the trial of each model slot's candidates, and
 # kernel readmission timed and their allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
+hotpath = ["dep:hotpath", "gandr-core-checker-base/hotpath", "gandr-core-checker-bridge/hotpath", "gandr-core-checker-judgement/hotpath", "hotpath/hotpath"]
 # The goal memo's tally in each checking context: a hit or a miss counted at
 # each consult, which the counts layer of the hub's instrument reads. The
 # buffer of steps a tracer lends the context, which the trace layer folds; its
 # records read the clock type of the fork crate's activity ring. Off, the
 # context holds no tally and no buffer, and a consult counts nothing.
-instrument = ["gandr-core-fork/instrument"]
-unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
+instrument = ["gandr-core-checker-base/instrument", "gandr-core-checker-bridge/instrument", "gandr-core-checker-judgement/instrument", "gandr-core-fork/instrument"]
+unfolding-probe = ["gandr-core-checker-base/unfolding-probe", "gandr-core-checker-bridge/unfolding-probe", "gandr-core-checker-judgement/unfolding-probe", "gandr-core-nbe/unfolding-probe"]
 
 [lints]
 workspace = true

@@ -2,6 +2,9 @@
 resolver = "3"
 members = [
   "crates/core-checker",
+  "crates/core-checker-base",
+  "crates/core-checker-bridge",
+  "crates/core-checker-judgement",
   "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
@@ -352,6 +355,15 @@ default-features = false
 # - surface-session
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
+
+[workspace.dependencies.gandr-core-checker-base]
+path = "crates/core-checker-base"
+
+[workspace.dependencies.gandr-core-checker-bridge]
+path = "crates/core-checker-bridge"
+
+[workspace.dependencies.gandr-core-checker-judgement]
+path = "crates/core-checker-judgement"
 
 # The fork a check hands its independent jobs to, and its serial reference.
 # consumers:
