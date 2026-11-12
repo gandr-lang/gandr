@@ -42,7 +42,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
 - `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit each tail written without `return` or `become` takes.
 - `InferredRun`, `LoweredModule::inferred_runs` and the types [`lower::runs`](src/lower/runs.rs) names: each run inferred where a value is read.
-- `namespace`: the trie, the scope, the events, their handlers and `Recognition` ([`namespace`](src/namespace.rs)).
+- `namespace` and `circuit`, re-exported from `gandr-surface-lowering-base`: the namespace engine with `Recognition`, and the circuit readings of a rule's body.
 - `lower_unit` and the types [`unit`](src/unit.rs) names: sources lowered into one arena; `ClosureLowering` and the calls [`lower::closure`](src/lower/closure.rs) names: a closure lowered once.
 - `LoweredStructure` and `LoweredModule::structures`: modules flattened to named members, their stratum items and their structured names, read through the types [`module`](src/module.rs) names.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
@@ -100,7 +100,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Type members, abstract components and opaque ascription | [`module::sealing`](src/module/sealing.rs), [`lower::sealing`](src/lower/sealing.rs) |
 | `Model(S)`: the derivation, sort inference over index terms, type families, and the instance check | [`model`](src/model.rs), [`module::model`](src/module/model.rs), [`lower::model`](src/lower/model.rs) |
 | Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](src/description.rs), [`description::theory`](src/description/theory.rs), [`desc_cells`](src/desc_cells.rs) |
-| The namespace engine, its trie and the outermost scope | [`namespace`](src/namespace.rs), [`namespace::trie`](src/namespace/trie.rs), [`namespace::recognition`](src/namespace/recognition.rs) |
+| The namespace engine, the per-node table, the form stretches and the circuit readings | `gandr-surface-lowering-base` |
 | Imports | [`import`](src/import.rs) |
 | Sorts, function tails, blocks, insertions, universes, type operators, products, literals, the two sweeps | [`lower`](src/lower.rs) |
 | Native data, the match and recursive functions | [`lower::native`](src/lower/native.rs) |

@@ -60,6 +60,7 @@ crates/
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
 ├── surface-lowering/              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
+├── surface-lowering-base/         the lowering's base: the namespace engine, node tables, circuits
 ├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the model, semantic tokens from highlight roles, and the hub serving a workspace's clients on a Unix socket
 ├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
@@ -122,7 +123,7 @@ _Projection_ is the compiler: it takes a _choreography_, one program over named 
 
 ## Storage and distribution
 
-The storage crates form the content-addressable CAM. Runtime stores form location-addressable LAMs. Each world has its own LAMs and reaches one logical CAM by canonical-byte digest. A `mobile`, `Open` value crosses by `crossing::commit` and `crossing::deref`. A digest proves integrity. The checker and kernel decide validity. The v1 storage vectors define the external contract (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Their local and global sharing points are the `sharing` concern of `ledger/concerns.sql`.
+The storage crates form the content-addressable CAM. Runtime stores form location-addressable LAMs. Each world has its own LAMs and reaches one logical CAM by canonical-byte digest. A digest proves integrity. The checker and kernel decide validity. The v1 storage vectors define the external contract (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Their sharing points are the `sharing` concern of `ledger/concerns.sql`.
 
 ```mermaid
 flowchart LR

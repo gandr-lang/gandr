@@ -1653,6 +1653,7 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-grammar",
+ "gandr-surface-lowering-base",
  "gandr-surface-parser",
  "gandr-surface-syntax",
  "gandr-theory-cell-complexes",
@@ -1671,6 +1672,21 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "self_cell",
+]
+
+[[package]]
+name = "gandr-surface-lowering-base"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "gandr-theory-circuit-algebras",
+ "gandr-theory-levitation",
+ "quenchant-anodized",
+ "quenchant-shape",
 ]
 
 [[package]]

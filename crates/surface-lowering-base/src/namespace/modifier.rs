@@ -730,7 +730,7 @@ impl<Label> Modifier<Label>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body runs the modifier's constructors from its root over the namespace; the check reads each constructor's references once"
+            reason = "parity: the body runs the modifier's constructors from its root over the namespace; the check reads each constructor's references once; #104 owns the cost of the clause"
         )
     )]
     #[spec(

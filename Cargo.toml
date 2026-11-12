@@ -32,6 +32,7 @@ members = [
   "crates/surface-grammar",
   "crates/surface-layout",
   "crates/surface-lowering",
+  "crates/surface-lowering-base",
   "crates/surface-lsp",
   "crates/surface-mcp",
   "crates/surface-parser",
@@ -160,6 +161,7 @@ default-features = false
 # - surface-grammar
 # - surface-layout
 # - surface-lowering
+# - surface-lowering-base
 # - surface-lsp
 # - surface-mcp
 # - surface-parser
@@ -429,6 +431,7 @@ path = "crates/core-session"
 # - surface-dispatcher
 # - surface-format
 # - surface-lowering
+# - surface-lowering-base
 # - surface-pretty
 # - surface-repl
 # - surface-session
@@ -673,6 +676,7 @@ path = "crates/surface-format"
 # - surface-driver
 # - surface-format
 # - surface-lowering
+# - surface-lowering-base (dev)
 # - surface-lsp
 # - surface-parser
 # - surface-pretty
@@ -698,11 +702,19 @@ path = "crates/surface-layout"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-format
+# - surface-lowering-base (dev)
 # - surface-lsp
 # - surface-render-terminal (dev)
 # - surface-session
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
+
+# The base of the lowering: the namespace engine, the per-node table, the
+# form stretches and the circuit readings that the lowering's families share.
+# consumers:
+# - surface-lowering
+[workspace.dependencies.gandr-surface-lowering-base]
+path = "crates/surface-lowering-base"
 
 # The language server: diagnostics and semantic tokens over the Language
 # Server Protocol, each request rechecking the whole document; the engine
@@ -729,6 +741,7 @@ path = "crates/surface-mcp"
 # - surface-format
 # - surface-grammar (dev)
 # - surface-lowering (dev)
+# - surface-lowering-base (dev)
 # - surface-lsp
 # - surface-repl
 # - surface-session
@@ -796,6 +809,7 @@ path = "crates/surface-session"
 # - surface-format
 # - surface-grammar
 # - surface-lowering
+# - surface-lowering-base
 # - surface-lsp
 # - surface-parser
 # - surface-render-terminal
@@ -864,6 +878,7 @@ default-features = false
 # consumers:
 # - surface-dispatcher (dev)
 # - surface-lowering
+# - surface-lowering-base
 # - theory-sites
 [workspace.dependencies.gandr-theory-circuit-algebras]
 path = "crates/theory-circuit-algebras"
@@ -997,6 +1012,7 @@ default-features = false
 # - core-term
 # - surface-dispatcher (dev)
 # - surface-lowering
+# - surface-lowering-base
 # - surface-pretty (dev)
 # - theory-computads
 # - theory-decomposition-spaces (dev)
@@ -1478,6 +1494,7 @@ default-features = false
 # - surface-format
 # - surface-layout
 # - surface-lowering
+# - surface-lowering-base
 # - surface-lsp
 # - surface-mcp (dev)
 # - surface-pretty

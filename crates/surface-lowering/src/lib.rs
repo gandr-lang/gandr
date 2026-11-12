@@ -371,8 +371,8 @@
 //!   prohibition, so the lookup at a binder keeps the binding the binder hides
 //!   and refuses nothing.
 
-// Module documentation that predates the shape lint: 166 headings outside the
-// vocabulary, 93 decision records, 40 issue references and 33 budgets exceeded.
+// Module documentation that predates the shape lint: 150 headings outside the
+// vocabulary, 91 decision records, 38 issue references and 32 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -393,9 +393,7 @@ extern crate alloc;
 extern crate std;
 
 mod attribute;
-mod by_form;
 mod certify;
-pub mod circuit;
 mod classify;
 pub mod coincide;
 pub mod derive;
@@ -412,15 +410,19 @@ mod layout;
 mod lower;
 pub mod model;
 mod module;
-pub mod namespace;
 mod operation;
 mod origin;
 pub mod prelude;
 mod resolve;
-mod table;
 pub mod unbuilt;
 mod unit;
 
+// The leaves of the module graph live in the base crate. The two public ones
+// keep their paths here, and the two private ones keep their `crate::` paths.
+use gandr_surface_lowering_base::by_form;
+pub use gandr_surface_lowering_base::circuit;
+pub use gandr_surface_lowering_base::namespace;
+use gandr_surface_lowering_base::table;
 pub use gandr_theory_levitation::WfKind;
 
 pub use crate::attribute::AttributeEntry;

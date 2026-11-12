@@ -464,14 +464,15 @@ INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theor
 INSERT INTO reference VALUES('vault:01a178aa-4f9c-7221-a972-619f184e507e','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','core-term','primitive','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','kernel-term','literal_identity','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-base','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7','surface-grammar','mold','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5f59-7323-a77d-6f8114cedbba','core-checker','fill','lineage','f5c6fcb3d6e11921354cb06ce23eed12219e5134','2026-10-30','8fab72057caf7d961aa5f6b3ba9ab565e2f15c97');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','budget','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','regions','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
-INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering','circuit::embed','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering','description::theory','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering-base','circuit::embed','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-core','encoding','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);

@@ -178,6 +178,7 @@ impl<Entry, Key> Default for ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn default() -> Self
     {
         Self {
@@ -271,6 +272,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
         captures: before = (self.entries.len(), self.form, self.forms.get(usize::from(self.form)).map_or(0_u32, |segment| segment.count)),
         ensures: |ret| self.entries.len() == before.0.saturating_add(1) && Into::<FormPlace>::into(ret) == (FormPlace { form: before.1, place: before.2 }),
     )]
+    #[inline]
     pub fn push(
         &mut self,
         entry: Entry,
@@ -335,6 +337,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as the type.
     /// - witness: `by_form::tests::an_entry_keeps_its_coordinate_whatever_another_form_pushes`
     #[spec(ensures: |ret| ret.is_none_or(|at| usize::from(at) < self.entries.len()))]
+    #[inline]
     pub fn position(
         &self,
         id: Key,
@@ -381,6 +384,8 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as [`FormStretch`].
     /// - witness: `by_form::tests::a_stretch_reads_its_entries_whatever_another_form_pushes`
     #[spec(ensures: |ret| ret.is_none_or(|id| self.find(id) == Some(at)))]
+    #[inline]
+    #[must_use]
     pub fn locate(
         &self,
         at: At,
@@ -411,6 +416,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn next_key(&self) -> Key
     {
@@ -439,6 +445,8 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as [`FormStretch`].
     /// - witness: `by_form::tests::a_stretch_reads_its_entries_whatever_another_form_pushes`
     #[spec(ensures: |ret| self.read(ret).len() == self.entries.len().saturating_sub(usize::from(start)))]
+    #[inline]
+    #[must_use]
     pub fn since(
         &self,
         start: At,
@@ -466,6 +474,8 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as [`FormStretch`].
     /// - witness: `by_form::tests::a_stretch_reads_its_entries_whatever_another_form_pushes`
     #[spec(ensures: |ret| ret.is_empty() || ret.len() == usize::try_from(stretch.length).unwrap_or(usize::MAX))]
+    #[inline]
+    #[must_use]
     pub fn read(
         &self,
         stretch: FormStretch,
@@ -491,6 +501,8 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as [`FormStretch`].
     /// - witness: `by_form::tests::a_stretch_reads_its_entries_whatever_another_form_pushes`
     #[spec(ensures: |ret| ret.is_none_or(|entries| entries.len() == usize::try_from(stretch.length).unwrap_or(usize::MAX)))]
+    #[inline]
+    #[must_use]
     pub fn whole(
         &self,
         stretch: FormStretch,
@@ -509,6 +521,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn first(
         &self,
@@ -535,6 +548,8 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as [`FormStretch`].
     /// - witness: `by_form::tests::a_stretch_reads_its_entries_whatever_another_form_pushes`
     #[spec(ensures: |ret| ret.is_none_or(|joined| self.read(joined).len() == self.read(before).len().saturating_add(self.read(after).len())))]
+    #[inline]
+    #[must_use]
     pub fn join(
         &self,
         before: FormStretch,
@@ -569,6 +584,8 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     /// - hypothesis: L3 — as [`FormStretch`].
     /// - witness: `by_form::tests::a_stretch_reads_its_entries_whatever_another_form_pushes`
     #[spec(ensures: |ret| self.read(ret).len() <= self.read(stretch).len())]
+    #[inline]
+    #[must_use]
     pub fn after(
         &self,
         stretch: FormStretch,
@@ -592,6 +609,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn since_until(
         &self,
@@ -611,6 +629,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn get(
         &self,
@@ -625,6 +644,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn get_mut(
         &mut self,
         id: Key,
@@ -638,6 +658,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn at(
         &self,
@@ -651,6 +672,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn at_mut(
         &mut self,
         at: At,
@@ -663,6 +685,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn last(&self) -> Option<&Entry>
     {
@@ -673,6 +696,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
     pub fn entries(&self) -> &[Entry]
     {
@@ -683,6 +707,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn truncate(
         &mut self,
         mark: At,
@@ -716,6 +741,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
         captures: before = self.entries.len(),
         ensures: |ret| self.entries.len() == before.min(usize::from(mark)) && ret.len() == before.saturating_sub(usize::from(mark)),
     )]
+    #[inline]
     pub fn split_off(
         &mut self,
         mark: At,
@@ -775,6 +801,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn map<Other, Read>(
         &self,
         read: Read,
@@ -798,6 +825,7 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> Extend<Entry> for ByF
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn extend<Entries>(
         &mut self,
         iter: Entries,
@@ -816,6 +844,7 @@ impl<Entry, Key> AsRef<[Entry]> for ByForm<Entry, Key>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn as_ref(&self) -> &[Entry]
     {
         &self.entries

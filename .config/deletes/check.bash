@@ -118,19 +118,22 @@ done | jq -s -c .)
 
 left='[]' held='[]' tests='[]' readme='[]'
 if [[ $mode == full ]]; then
-  # The packages whose files the change touches.
+  # The packages whose files the change touches, each with its directory.
   touched=$(jq -R . "$scratch/changed" | jq -s -c --argjson packages "$packages" \
-    '[.[] | select(startswith("crates/")) | split("/")[1]] | unique as $dirs | [$packages[] | select(.dir | IN($dirs[])) | .name]')
+    '[.[] | select(startswith("crates/")) | split("/")[1]] | unique as $dirs | [$packages[] | select(.dir | IN($dirs[])) | {name, dir}]')
   # The evidence records of the touched packages at a tree: `$1` the tree,
   # `$2` the directory the records go to. The run takes the policy's
   # configuration and denials from the tree's own `check:dylint`
-  # (`policy.bash`), so it builds as the gate's run does (#6838).
+  # (`policy.bash`), so it builds as the gate's run does (#6838). A package
+  # that the change adds has no manifest at the base, so the base's run
+  # leaves it out and each of its items reads as added.
   records() {
-    local tree=$1 out=$2 args=() config flags
+    local tree=$1 out=$2 args=() config flags name dir
     mkdir -p "$out"
-    mapfile -t names < <(jq -r '.[]' <<< "$touched")
-    (( ${#names[@]} )) || return 0
-    for name in "${names[@]}"; do args+=(-p "$name"); done
+    while IFS=$'\t' read -r name dir; do
+      if [[ -f $tree/crates/$dir/Cargo.toml ]]; then args+=(-p "$name"); fi
+    done < <(jq -r '.[] | [.name, .dir] | @tsv' <<< "$touched")
+    (( ${#args[@]} )) || return 0
     config=$("$here/policy.bash" "$tree" "$out")
     flags=$("$here/policy.bash" --flags "$tree" "$out")
     (cd "$tree" \
