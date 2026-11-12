@@ -140,6 +140,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::UnadmittedFormer;
@@ -780,7 +781,7 @@ fn check<'source>(
     };
     let adapted = declarations(&module, &arena);
     let verdicts = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &adapted,
     );
     Some(Checked {

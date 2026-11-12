@@ -112,6 +112,7 @@ use crate::code::unfolding;
 use crate::declaration::AbstractType;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -335,6 +336,9 @@ pub struct CheckingContext<'arena>
     /// The arena every id the judgement reads resolves in, and the types it
     /// rewrites are minted into.
     arena: &'arena mut CoreArena,
+    /// The judgement the formers and formation ask to form a type or check a
+    /// value.
+    judge: &'static dyn Judge,
     /// The binders the judgement is under; empty between judgements.
     binders: Context,
     /// The types declarations supplied, ascending by admission position.
@@ -478,7 +482,7 @@ pub struct CheckingContext<'arena>
     grants: crate::capability::Grants,
     /// The term judgements and type formations a typed run finished, in the
     /// order finished, when one is recording.
-    typings: Option<crate::judgement::Kept>,
+    typings: Option<crate::record::Kept>,
     /// The types whose formations a recording keeps, and which of them it
     /// has kept.
     formations: Wanted,
@@ -632,6 +636,8 @@ enum Closure
 #[derive(Clone, Debug)]
 pub struct Checkpoint
 {
+    /// [`CheckingContext::judge`].
+    judge: &'static dyn Judge,
     /// [`CheckingContext::binders`].
     binders: Context,
     /// [`CheckingContext::signatures`].
@@ -732,7 +738,7 @@ pub struct Checkpoint
     /// [`CheckingContext::grants`].
     grants: crate::capability::Grants,
     /// [`CheckingContext::typings`].
-    typings: Option<crate::judgement::Kept>,
+    typings: Option<crate::record::Kept>,
     /// [`CheckingContext::formations`].
     formations: Wanted,
     /// [`CheckingContext::stages`].
@@ -761,7 +767,7 @@ pub struct Checkpoint
 impl<'arena> CheckingContext<'arena>
 {
     /// A context over `arena` with no declaration admitted, judging under
-    /// `budget`.
+    /// `budget`, that asks `judge` to form a type or check a value.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -802,6 +808,7 @@ impl<'arena> CheckingContext<'arena>
     pub fn new(
         arena: &'arena mut CoreArena,
         budget: CheckBudget,
+        judge: &'static dyn Judge,
     ) -> Self
     {
         let atoms = Atoms {
@@ -825,6 +832,7 @@ impl<'arena> CheckingContext<'arena>
         };
         Self {
             arena,
+            judge,
             binders: Context::new(),
             signatures: Vec::new(),
             data_signatures: BTreeMap::new(),
@@ -919,6 +927,7 @@ impl<'arena> CheckingContext<'arena>
     {
         let Self {
             arena: _,
+            judge,
             ref binders,
             ref signatures,
             ref data_signatures,
@@ -988,6 +997,7 @@ impl<'arena> CheckingContext<'arena>
                 trace: _,
         } = *self;
         Checkpoint {
+            judge,
             binders: binders.clone(),
             signatures: signatures.clone(),
             data_signatures: data_signatures.clone(),
@@ -1071,6 +1081,7 @@ impl<'arena> CheckingContext<'arena>
     ) -> Self
     {
         let Checkpoint {
+            judge,
             binders,
             signatures,
             data_signatures,
@@ -1131,6 +1142,7 @@ impl<'arena> CheckingContext<'arena>
         } = checkpoint;
         Self {
             arena,
+            judge,
             binders,
             signatures,
             data_signatures,
@@ -1600,7 +1612,7 @@ impl<'arena> CheckingContext<'arena>
     )]
     pub(crate) fn keep_typing(
         &mut self,
-        typing: crate::judgement::Typing,
+        typing: crate::record::Typing,
     )
     {
         if let Some(ref mut log) = self.typings {
@@ -1629,7 +1641,7 @@ impl<'arena> CheckingContext<'arena>
     )]
     pub(crate) fn keep_endpoint(
         &mut self,
-        standing: crate::judgement::Typing,
+        standing: crate::record::Typing,
     )
     {
         if let Some(ref mut log) = self.typings {
@@ -1868,7 +1880,7 @@ impl<'arena> CheckingContext<'arena>
             *first = First::Kept;
         }
         if let Some(ref mut log) = self.typings {
-            log.formed.push(crate::judgement::Formed { ty, level });
+            log.formed.push(crate::record::Formed { ty, level });
         }
     }
 
@@ -1967,9 +1979,9 @@ impl<'arena> CheckingContext<'arena>
     ///   recorded keeps the two logs apart and joins them in order.
     /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
     #[spec(ensures: self.typings.as_ref().is_some_and(|log| log.typings.is_empty() && log.formed.is_empty()))]
-    pub(crate) fn start_typings(&mut self) -> Option<crate::judgement::Kept>
+    pub(crate) fn start_typings(&mut self) -> Option<crate::record::Kept>
     {
-        self.typings.replace(crate::judgement::Kept::default())
+        self.typings.replace(crate::record::Kept::default())
     }
 
     /// Stop recording: the log kept since [`Self::start_typings`], the
@@ -1991,8 +2003,8 @@ impl<'arena> CheckingContext<'arena>
     )]
     pub(crate) fn finish_typings(
         &mut self,
-        outer: Option<crate::judgement::Kept>,
-    ) -> crate::judgement::Kept
+        outer: Option<crate::record::Kept>,
+    ) -> crate::record::Kept
     {
         core::mem::replace(&mut self.typings, outer).unwrap_or_default()
     }
@@ -3216,6 +3228,18 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub const fn budget(&self) -> CheckBudget
     {
         self.budget
+    }
+
+    /// The judgement the formers and formation ask to form a type or check a
+    /// value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn judge(&self) -> &'static dyn Judge
+    {
+        self.judge
     }
 
     /// The type the declaration at `constant` supplied.

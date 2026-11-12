@@ -18,6 +18,7 @@ use super::ConversionCount;
 use super::Pairing;
 use super::convert;
 use super::value_bridge;
+use crate::Checker;
 use crate::code::Lift;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
@@ -36,7 +37,7 @@ fn one_id_converts_without_being_read()
     let mut arena = CoreArena::new();
     let unit = arena.value_type_unit();
     let dangling = dangling_value_type();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(
             &mut context,
@@ -68,7 +69,7 @@ fn equal_trees_at_distinct_ids_convert()
     let left = build(&mut arena);
     let right = build(&mut arena);
     assert_ne!(left, right, "the two trees sit at distinct ids");
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(&mut context, Pairing::Values(left.into(), right.into())),
         Ok(Agreement::Convertible),
@@ -104,7 +105,7 @@ fn returner_rows_are_covariant_but_signature_types_are_invariant()
     let second = arena.comp_type_returner_with_effects(unit, signature("State", effectful_thunk));
     let accepts_effectful = arena.comp_type_arrow(effectful_thunk, pure);
     let accepts_pure = arena.comp_type_arrow(pure_thunk, pure);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(
             &mut context,
@@ -191,7 +192,7 @@ fn stack_is_contravariant_in_b_covariant_in_c_positive()
     let (mut arena, pure, effectful) = pure_below_effectful();
     let narrow = arena.value_type_stack(effectful, pure);
     let wide = arena.value_type_stack(pure, effectful);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(&mut context, Pairing::SubValues(narrow.into(), wide.into())),
         Ok(Agreement::Convertible)
@@ -207,7 +208,7 @@ fn stack_variance_negative()
     let narrow = arena.value_type_stack(effectful, pure);
     let wide = arena.value_type_stack(pure, effectful);
     let pure_to_pure = arena.value_type_stack(pure, pure);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (sub, sup) in [(wide, narrow), (pure_to_pure, narrow), (wide, pure_to_pure)] {
         assert_eq!(
             convert(&mut context, Pairing::SubValues(sub.into(), sup.into())),
@@ -253,7 +254,7 @@ fn differing_trees_are_apart_in_either_order()
         Pairing::Values(loop_path.into(), open_path.into()),
         Pairing::Endpoints(inner, outer),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for pairing in pairs {
         let swapped = match pairing {
             Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
@@ -318,7 +319,7 @@ fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
             Agreement::Apart,
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (dependent, plain, expected) in cases {
         for pairing in [
             Pairing::Comps(dependent.into(), plain.into()),
@@ -360,7 +361,7 @@ fn the_unknown_type_is_consistent_beside_a_differing_former()
         Pairing::Terms(hole, variable),
         Pairing::Endpoints(hole, variable),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for pairing in consistent {
         let swapped = match pairing {
             Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
@@ -416,7 +417,7 @@ fn a_decode_of_a_defined_code_converts_with_its_body()
     let returns_integer = arena.comp_type_returner(integer);
     let under_arrow = arena.comp_type_arrow(decoded, returns_decoded);
     let plain_arrow = arena.comp_type_arrow(integer, returns_integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small, small]);
     context.define(
         ConstantIndex::from(0_usize),
@@ -471,7 +472,7 @@ fn code_arguments_convert_as_the_types_they_quote_5381()
     let at_decoded = arena.value_type_data(family, alloc::vec![quoted_decoded]);
     let at_integer = arena.value_type_data(family, alloc::vec![quoted_integer]);
     let at_string = arena.value_type_data(family, alloc::vec![quoted_string]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small, small]);
     context.define(
         ConstantIndex::from(0_usize),
@@ -533,7 +534,7 @@ fn static_codes_compare_by_head_argument_and_body()
     let at_identity = rigid(&mut arena, 0, identity);
     let at_other_identity = rigid(&mut arena, 0, other_identity);
     let at_constant = rigid(&mut arena, 0, constant_body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[operator_type]);
     context.define(
         ConstantIndex::from(0_usize),
@@ -591,7 +592,7 @@ fn the_value_bridge_lifts_a_small_value_code_and_nothing_else()
         arena.value_type_universe(Sort::Ground(GroundSort::Computation), one.clone());
     let code = arena.value_quote(integer);
     let negative_code = arena.value_quote_computation(returns_integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let mut tally = ConversionCount::default();
     assert_eq!(
         value_bridge(&mut context, code, small, small, &mut tally),
@@ -655,7 +656,7 @@ fn a_dangling_type_is_refused()
     let mut arena = CoreArena::new();
     let unit = arena.value_type_unit();
     let dangling = dangling_value_type();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(&mut context, Pairing::Values(unit.into(), dangling.into())),
         Err(CheckRefusal::DanglingNode {
@@ -672,7 +673,7 @@ fn crossing_counts_saturate_on_success_and_refusal()
     let integer = arena.value_type_base(BaseType::Integer);
     let string = arena.value_type_base(BaseType::String);
     let literal = arena.value_literal(crate::fixture::integer_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let mut tally = ConversionCount::from(usize::MAX - 1);
     assert_eq!(
         value_bridge(&mut context, literal, integer, integer, &mut tally),
@@ -706,7 +707,7 @@ proptest! {
         let first_copy = TypeRecipe::build(&first, &mut arena);
         let second_tree = TypeRecipe::build(&second, &mut arena);
         let second_copy = TypeRecipe::build(&second, &mut arena);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         prop_assert_eq!(
             convert(&mut context, Pairing::Values(first_tree.into(), first_copy.into())),
             Ok(Agreement::Convertible),
@@ -794,7 +795,7 @@ fn sealed_pair(context: &mut CheckingContext<'_>) -> [gandr_core_term::ValueType
 fn a_sealed_atom_relates_to_no_representation()
 {
     let mut arena = CoreArena::new();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let [atom, _, integer, unit] = sealed_pair(&mut context);
     for other in [integer, unit] {
         for pairing in [
@@ -816,7 +817,7 @@ fn a_sealed_atom_relates_to_no_representation()
 fn sealed_atoms_relate_by_identity_alone()
 {
     let mut arena = CoreArena::new();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let [first, second, ..] = sealed_pair(&mut context);
     let again = context
         .arena_mut()
@@ -1002,7 +1003,7 @@ fn codes_agree_exactly_where_their_parts_do()
             "quoted computation types that differ",
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (left, right, what) in twins {
         assert_ne!(left, right, "{what}'s twin sits at a fresh id");
         assert_eq!(
@@ -1094,7 +1095,7 @@ fn invariant_types_agree_exactly_where_their_parts_do()
     let element = arena.comp_type_element(code, Level::zero());
     let twin = arena.comp_type_element(code, Level::zero());
     let higher = arena.comp_type_element(code, one);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (left, right, agreement, what) in values {
         assert_eq!(
             convert(&mut context, Pairing::Values(left.into(), right.into())),
@@ -1140,7 +1141,7 @@ fn a_row_meets_its_signatures_in_a_wider_row_by_name()
     let wide = EffectRow::from_signatures([signature("A"), signature("B")]).unwrap();
     let narrow = arena.comp_type_returner_with_effects(unit, narrow);
     let wide = arena.comp_type_returner_with_effects(unit, wide);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(&mut context, Pairing::SubComps(narrow.into(), wide.into())),
         Ok(Agreement::Convertible),
@@ -1186,7 +1187,7 @@ fn returners_of_several_values_agree_on_rows_and_results()
     let one = arena.comp_type_returner(unit);
     let narrower = arena.comp_type_returns_with_effects(&[unit, integer], narrow);
     let wider = arena.comp_type_returns_with_effects(&[unit, integer], wide);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (pairing, agreement, what) in [
         (
             Pairing::Comps(found.into(), twin.into()),
@@ -1264,7 +1265,7 @@ fn invariant_capabilities_agree_on_authority_grade_and_region()
     let consumable = arena.value_type_capability(both.clone(), CapabilityGrade::Consumable, held);
     let scoped =
         arena.value_type_capability(both, durable, Region::Scoped(RegionDepth::from(1_u32)));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (left, right, agreement, what) in [
         (
             found,
@@ -1334,7 +1335,7 @@ fn a_capability_at_an_implicit_sort_is_read_at_its_solution_2944()
         let row = EffectRow::from_signatures([state]).unwrap();
         arena.value_type_capability(row, CapabilityGrade::Durable, Region::Held)
     });
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context
         .deferrals_mut()
         .open(crate::elaboration::Collecting::On);
@@ -1400,7 +1401,7 @@ fn kept_and_located_types_agree_on_their_region_and_world()
     let held_host = arena.value_type_world(WorldType::Capability(World::Host));
     let held_host_twin = arena.value_type_world(WorldType::Capability(World::Host));
     let held_elsewhere = arena.value_type_world(WorldType::Capability(elsewhere));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let invariant =
         |left: ValueTypeId, right: ValueTypeId| Pairing::Values(left.into(), right.into());
     let sub = |left: ValueTypeId, right: ValueTypeId| Pairing::SubValues(left.into(), right.into());
@@ -1471,7 +1472,7 @@ fn a_path_type_is_apart_from_data_it_does_not_read_as()
         alloc::vec![],
     );
     let path = arena.value_type_path(carrier, point, point);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         convert(&mut context, Pairing::Values(path.into(), unrelated.into())),
         Ok(Agreement::Apart),
@@ -1564,7 +1565,7 @@ fn a_relocated_type_converts_as_its_settled_reading()
         .into_iter()
         .flat_map(|index| family(&mut arena, index))
         .collect::<Vec<ValueTypeId>>();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small]);
     context.define(
         ConstantIndex::from(0_usize),

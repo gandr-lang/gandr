@@ -20,6 +20,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
@@ -28,11 +29,11 @@ use crate::equiv::Vocabulary;
 use crate::fixture::integer_literal;
 use crate::fixture::text_literal;
 use crate::forward::Directed;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A declaration position in a fixture module.
 #[repr(transparent)]
@@ -66,7 +67,7 @@ fn judged(
     module: &[Declaration],
 ) -> ModuleReport
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     check_module(&mut context, module)
 }
 
@@ -727,7 +728,7 @@ fn the_rule_reads_canonical_shapes_at_their_own_arity()
     let strings = arena.value_type_list(string);
     let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let cell = arena.value_list_cons(head, leaf);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let unsupported = Err(CheckRefusal::ForwardUnsupported { at });
     assert_eq!(
         super::first_order(&mut context, at, empty, Vocabulary::Data),
@@ -836,7 +837,7 @@ fn data_shapes_are_read_constructor_by_constructor()
         ConstructorTag::from(0_usize),
         Vec::from([far]),
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (position, signature) in [shapes, naturals].into_iter().enumerate() {
         context
             .adopt_data(ConstantIndex::from(position), signature)

@@ -4,6 +4,7 @@ use core::fmt::Write as _;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Exhaustiveness;
 use gandr_core_checker::Redundancy;
@@ -174,7 +175,7 @@ fn a_hole_scrutinee_leaves_every_branch_possible()
     let any = patterns.mint(Pattern::Wildcard);
     let left = patterns.mint(Pattern::Injection(Side::Left, any));
     let right = patterns.mint(Pattern::Injection(Side::Right, any));
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let sum = form_value_type(&mut context, sum).expect("sum forms");
     let analysis = checkpoint
         .analyze(&mut context, sum, &patterns, &[left, right])
@@ -221,7 +222,7 @@ fn a_constructor_scrutinee_refutes_the_head_and_suspends_the_payload()
     let right = patterns.mint(Pattern::Injection(Side::Right, any));
     let left_unit = patterns.mint(Pattern::Injection(Side::Left, unit_pattern));
     let left_any = patterns.mint(Pattern::Injection(Side::Left, any));
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let sum = form_value_type(&mut context, sum).unwrap();
     let analysis = checkpoint
         .analyze(&mut context, sum, &patterns, &[right, left_unit, left_any])
@@ -249,7 +250,7 @@ fn a_pattern_hole_downgrades_the_residue()
     let any = patterns.mint(Pattern::Wildcard);
     let left = patterns.mint(Pattern::Injection(Side::Left, any));
     let hole = patterns.mint(Pattern::Hole(HoleId::from(1_u32)));
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let sum = form_value_type(&mut context, sum).unwrap();
     let before = checkpoint
         .analyze(&mut context, sum, &patterns, &[left])
@@ -283,7 +284,7 @@ fn completing_the_match_clears_the_obligation()
     let any = patterns.mint(Pattern::Wildcard);
     let left = patterns.mint(Pattern::Injection(Side::Left, any));
     let right = patterns.mint(Pattern::Injection(Side::Right, any));
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let sum = form_value_type(&mut context, sum).unwrap();
     let before = checkpoint
         .analyze(&mut context, sum, &patterns, &[left])
@@ -311,7 +312,7 @@ fn a_hole_in_the_prefix_leaves_redundancy_unproved()
     let mut patterns = Patterns::new();
     let hole = patterns.mint(Pattern::Hole(HoleId::from(0_u32)));
     let any = patterns.mint(Pattern::Wildcard);
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let unit = form_value_type(&mut context, unit).unwrap();
     let analysis = checkpoint
         .analyze(&mut context, unit, &patterns, &[hole, any])
@@ -338,7 +339,7 @@ fn a_live_branch_raises_no_redundancy_obligation()
     let checkpoint = checkpoint(&core, value);
     let mut patterns = Patterns::new();
     let any = patterns.mint(Pattern::Wildcard);
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let unit = form_value_type(&mut context, unit).unwrap();
     let analysis = checkpoint
         .analyze(&mut context, unit, &patterns, &[any])
@@ -366,7 +367,7 @@ fn filling_a_hole_refines_a_possible_verdict()
     let left = patterns.mint(Pattern::Injection(Side::Left, any));
     let right = patterns.mint(Pattern::Injection(Side::Right, any));
     {
-        let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
         let sum = form_value_type(&mut context, sum).unwrap();
         assert_eq!(
             checkpoint
@@ -390,7 +391,7 @@ fn filling_a_hole_refines_a_possible_verdict()
             TermId::Value(filled),
         )
         .unwrap();
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let sum = form_value_type(&mut context, sum).unwrap();
     let after = checkpoint
         .analyze(&mut context, sum, &patterns, &[left, right])
@@ -418,7 +419,7 @@ fn filling_preserves_the_captured_scrutinee_environment()
     let mut checkpoint = checkpoint(&core, applied);
     let mut patterns = Patterns::new();
     let expected = patterns.mint(Pattern::Unit);
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let formed = form_value_type(&mut context, unit).unwrap();
     assert_eq!(
         checkpoint
@@ -443,7 +444,7 @@ fn filling_preserves_the_captured_scrutinee_environment()
             TermId::Value(filling),
         )
         .unwrap();
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         checkpoint
             .analyze(&mut context, formed, &patterns, &[expected])
@@ -466,7 +467,7 @@ fn the_eliminator_still_fires_on_a_hole_payload()
     let binder = patterns.mint(Pattern::Binder);
     let left = patterns.mint(Pattern::Injection(Side::Left, binder));
     let right = patterns.mint(Pattern::Injection(Side::Right, binder));
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let formed = form_value_type(&mut context, sum).unwrap();
     let analysis = checkpoint
         .analyze(&mut context, formed, &patterns, &[left, right])

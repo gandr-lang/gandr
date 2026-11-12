@@ -97,8 +97,6 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::failure::Failure;
-use crate::judgement::form;
-use crate::judgement::form_with_failure;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TypeNode;
@@ -240,7 +238,10 @@ pub fn form_value_type(
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, CheckRefusal>
 {
-    form(context, TypeNode::Value(value_type))?;
+    context
+        .judge()
+        .form(context, TypeNode::Value(value_type))
+        .map_err(|failure| failure.refusal())?;
     Ok(FormedValueType(value_type))
 }
 
@@ -269,7 +270,7 @@ pub fn form_value_type_with_failure(
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, Failure>
 {
-    form_with_failure(context, TypeNode::Value(value_type))?;
+    context.judge().form(context, TypeNode::Value(value_type))?;
     Ok(FormedValueType(value_type))
 }
 
@@ -303,7 +304,10 @@ pub fn form_comp_type(
     comp_type: CompTypeId,
 ) -> Result<FormedCompType, CheckRefusal>
 {
-    form(context, TypeNode::Computation(comp_type))?;
+    context
+        .judge()
+        .form(context, TypeNode::Computation(comp_type))
+        .map_err(|failure| failure.refusal())?;
     Ok(FormedCompType(comp_type))
 }
 

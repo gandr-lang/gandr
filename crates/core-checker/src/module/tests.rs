@@ -20,6 +20,7 @@ use super::Verdict;
 use super::check_declaration;
 use super::check_module;
 use super::type_module;
+use crate::Checker;
 use crate::context::Atom;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
@@ -101,7 +102,7 @@ fn each_combination_of_halves_gets_its_verdict()
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let zero = arena.value_literal(integer_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let Verdict::Checked {
         declared,
         body,
@@ -169,7 +170,7 @@ fn an_admission_out_of_order_is_refused()
 {
     let mut arena = CoreArena::new();
     let zero = arena.value_literal(integer_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(
         matches!(
             check_declaration(
@@ -233,7 +234,7 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
         )
     };
     let value = |at: usize| declaration(At(at), UNSIGNED, Maybe::Present(zero));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let signature = Declaration::data(
         ConstantIndex::from(0_usize),
         canonical,
@@ -336,7 +337,7 @@ fn a_pair_type_in_another_shape_holds_no_role_5255()
         kind,
     );
     let canonical = crate::fixture::canonical_pair(&mut arena);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let swapped = Declaration::data(
         ConstantIndex::from(0_usize),
         alloc::sync::Arc::new(swapped),
@@ -384,7 +385,7 @@ fn a_signature_type_in_another_shape_holds_no_role_5254()
     let swapped =
         gandr_core_term::DataSignature::new(parameters, Vec::from([iota, delta, sigma]), kind);
     let canonical = crate::fixture::canonical_signature(&mut arena, ConstantIndex::from(1_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let swapped = Declaration::data(
         ConstantIndex::from(0_usize),
         alloc::sync::Arc::new(swapped),
@@ -425,7 +426,7 @@ fn a_declaration_cannot_read_its_own_type()
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let itself = arena.value_constant(ConstantIndex::from(0_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let verdict = check_declaration(
         &mut context,
         &declaration(At(0), Maybe::Present(integer), Maybe::Present(itself)),
@@ -456,7 +457,7 @@ fn a_refused_signed_body_still_supplies_its_type()
     let integer = arena.value_type_base(BaseType::Integer);
     let text = arena.value_literal(text_literal());
     let earlier = arena.value_constant(ConstantIndex::from(0_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(
         matches!(
             check_declaration(
@@ -489,7 +490,7 @@ fn a_body_that_synthesised_nothing_supplies_no_type()
     let returned = arena.computation_return(zero);
     let thunk = arena.value_thunk(returned);
     let earlier = arena.value_constant(ConstantIndex::from(0_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         check_declaration(
             &mut context,
@@ -530,7 +531,7 @@ fn a_later_declaration_reads_an_earlier_type()
     let thunk = arena.value_thunk(returned);
     let suspended = arena.value_constant(ConstantIndex::from(0_usize));
     let owed = arena.value_constant(ConstantIndex::from(1_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(thunk_type), Maybe::Present(thunk)),
         declaration(At(1), Maybe::Present(integer), HOLE),
@@ -584,7 +585,7 @@ fn an_ascription_keeps_the_endpoints_it_related()
     let stated = arena.value_type_path(function, delayed, k);
     let diagonal = arena.value_type_path(function, k, k);
     let here = arena.value_here(k);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
         declaration(At(1), Maybe::Present(function), Maybe::Present(k)),
@@ -635,7 +636,7 @@ fn a_refusal_does_not_stop_the_run()
     let integer = arena.value_type_base(BaseType::Integer);
     let zero = arena.value_literal(integer_literal());
     let text = arena.value_literal(text_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(integer), Maybe::Present(text)),
         declaration(At(1), Maybe::Present(integer), Maybe::Present(zero)),
@@ -699,7 +700,7 @@ fn a_refusal_taken_from_a_checkpoint_replaces_the_verdict_and_the_failure()
     let integer = arena.value_type_base(BaseType::Integer);
     let zero = arena.value_literal(integer_literal());
     let text = arena.value_literal(text_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(integer), Maybe::Present(text)),
         declaration(At(1), Maybe::Present(integer), Maybe::Present(zero)),
@@ -748,14 +749,14 @@ fn a_retired_run_judges_nothing_after_its_poll_1663()
     ];
     let mut whole_arena = arena.clone();
     let whole = {
-        let mut context = CheckingContext::new(&mut whole_arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut whole_arena, CheckBudget::DEFAULT, &Checker);
         let mut run = ModuleRun::new();
         run.judge(&mut context, &module, |_, _, _| {});
         run.finish(&mut context)
     };
 
     let mut retired_arena = arena.clone();
-    let mut context = CheckingContext::new(&mut retired_arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut retired_arena, CheckBudget::DEFAULT, &Checker);
     let mut run = ModuleRun::new();
     let mut settled = Vec::new();
     let at_second = RetireAt {
@@ -791,7 +792,7 @@ fn a_retired_run_judges_nothing_after_its_poll_1663()
         readings: core::cell::Cell::new(0),
     };
     let (answer, polled) = {
-        let mut context = CheckingContext::new(&mut polled_arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut polled_arena, CheckBudget::DEFAULT, &Checker);
         let mut run = ModuleRun::new();
         let answer = run.judge_retiring(&mut context, &module, |_, _, _| {}, &never);
         (answer, run.finish(&mut context))
@@ -817,7 +818,7 @@ fn every_owed_hole_enters_the_ledger_in_order()
     let integer = arena.value_type_base(BaseType::Integer);
     let string = arena.value_type_base(BaseType::String);
     let zero = arena.value_literal(integer_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
         declaration(At(1), Maybe::Present(string), HOLE),
@@ -869,7 +870,7 @@ fn a_refusal_never_enters_the_ledger()
     let unformed = arena.value_type_base(BaseType::Numeric);
     let text = arena.value_literal(text_literal());
     let unknown = arena.value_constant(ConstantIndex::from(9_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(integer), Maybe::Present(text)),
         declaration(At(1), UNSIGNED, HOLE),
@@ -912,7 +913,7 @@ fn a_refused_body_keeps_the_rules_it_was_refused_inside()
     let forced = arena.computation_force(zero);
     let thunk = arena.value_thunk(forced);
     let pair = arena.value_tuple(&[zero, thunk]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), Maybe::Present(integer), Maybe::Present(itself)),
         declaration(At(1), UNSIGNED, Maybe::Present(text)),
@@ -1002,7 +1003,7 @@ fn a_typed_module_keeps_each_judged_body_s_term_types()
     let zero = arena.value_literal(integer_literal());
     let text = arena.value_literal(text_literal());
     let pair = arena.value_tuple(&[zero, text]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), UNSIGNED, Maybe::Present(zero)),
         declaration(At(1), Maybe::Present(product), Maybe::Present(pair)),
@@ -1090,7 +1091,7 @@ fn a_variable_s_type_keeps_the_copies_its_reading_mints()
     let inner_lambda = arena.computation_lambda(projected);
     let outer_lambda = arena.computation_lambda(inner_lambda);
     let defined = arena.value_thunk(outer_lambda);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [declaration(
         At(0),
         Maybe::Present(declared),
@@ -1136,7 +1137,7 @@ fn a_typed_module_keys_what_each_run_formed()
     let zero = arena.value_literal(integer_literal());
     let [formed, refused] = [Vec::new(), Vec::from([dangling])]
         .map(|fields| gandr_core_term::DataSignature::new(Vec::new(), Vec::from([fields]), kind));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         Declaration::data(
             ConstantIndex::from(0_usize),
@@ -1188,7 +1189,7 @@ fn a_refused_first_run_leaves_its_nesting_unaccepted()
     let applied = call(&mut arena, ConstantIndex::from(0_usize), zero);
     let nested = arena.value_nested(applied);
     let refused = arena.value_tuple(&[nested, text]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let plain = super::decide(
         &mut context,
         &declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
@@ -1225,7 +1226,7 @@ fn a_typed_module_keeps_the_terms_its_signature_judges()
     let zero = arena.value_literal(integer_literal());
     let one = arena.value_literal(integer_literal());
     let path = arena.value_type_path(integer, zero, one);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [declaration(At(0), Maybe::Present(path), HOLE)];
     let run = type_module(&mut context, &module);
     let judged = run.typings();
@@ -1254,7 +1255,7 @@ fn a_typed_module_keeps_the_terms_its_signature_judges()
     let zero = arena.value_literal(integer_literal());
     let one = arena.value_literal(integer_literal());
     let path = arena.value_type_path(integer, zero, one);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.keep_formations(Formations::Firsts(Vec::from([TypeNode::Value(path)])));
     let module = [
         declaration(At(0), Maybe::Present(path), HOLE),
@@ -1337,7 +1338,7 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
         arena.value_thunk(lambda)
     };
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
             declaration(At(1), Maybe::Present(function), Maybe::Present(twice)),
@@ -1489,7 +1490,7 @@ fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
         arena.value_thunk(lambda)
     };
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(pair_type), Maybe::Present(pair)),
             declaration(At(1), Maybe::Present(updated_type), Maybe::Present(updated)),
@@ -1575,7 +1576,7 @@ fn a_base_value_at_a_patched_type_crosses_as_a_restriction_5578()
     let named = arena.value_constant(ConstantIndex::from(0_usize));
     let named_other = arena.value_constant(ConstantIndex::from(2_usize));
     let mut report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(record_type), Maybe::Present(base)),
             declaration(At(1), Maybe::Present(patched), Maybe::Present(named)),
@@ -1631,7 +1632,7 @@ fn a_base_value_at_a_patched_type_crosses_as_a_restriction_5578()
         environment.arena().value(body)
     );
     report
-        .coercions
+        .coercions_mut()
         .get_mut(&named)
         .expect("the coercion is recorded")
         .remove(&label("tls"));
@@ -1685,7 +1686,7 @@ fn a_system_of_faces_is_formed_where_its_faces_agree_on_their_meet_5106()
         arena.value_type_system(record_type, fixed, alloc::vec![(label("port"), one)]);
     let free = arena.value_record(alloc::collections::BTreeMap::from([(label("mode"), zero)]));
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(agreeing), Maybe::Present(free)),
             declaration(At(1), Maybe::Present(disagreeing), Maybe::Present(free)),
@@ -1747,7 +1748,7 @@ fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
     )]);
     let free = arena.value_record(alloc::collections::BTreeMap::from([(label("mode"), zero)]));
     let mut report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[declaration(
             At(0),
             Maybe::Present(agreeing),
@@ -1792,11 +1793,12 @@ fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
         label("port"),
         eighty
     )]);
-    report.judged[0].verdict = Verdict::Checked {
+    let entry = &mut report.judged_mut()[0];
+    *entry = crate::report::Judged::new(entry.constant(), entry.origin(), Verdict::Checked {
         declared: crate::formation::FormedValueType::derived(differing),
         body,
         evidence,
-    };
+    });
     assert_eq!(
         crate::bridge::readmit(&mut arena, &report).readmitted()[0].outcome(),
         &crate::bridge::Outcome::Rejected(gandr_kernel_core::KernelError::FixedFieldDiffers {
@@ -1812,11 +1814,12 @@ fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
         label("port"),
         also_zero
     )]);
-    report.judged[0].verdict = Verdict::Checked {
+    let entry = &mut report.judged_mut()[0];
+    *entry = crate::report::Judged::new(entry.constant(), entry.origin(), Verdict::Checked {
         declared: crate::formation::FormedValueType::derived(mistyped),
         body,
         evidence,
-    };
+    });
     let readmission = crate::bridge::readmit(&mut arena, &report);
     assert!(
         matches!(
@@ -1878,7 +1881,7 @@ fn equal_patched_types_share_one_formation_5748()
             )
         });
         let report = {
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             check_module(&mut context, &module)
         };
         let readmission = crate::bridge::readmit(&mut arena, &report);
@@ -1942,7 +1945,7 @@ fn equal_meets_over_other_glued_values_share_no_formation_5748()
         declaration(At(at), Maybe::Present(agreeing[at]), Maybe::Present(free))
     });
     let mut report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     let Verdict::Checked { body, evidence, .. } = report.judged()[1].verdict()
@@ -1953,11 +1956,12 @@ fn equal_meets_over_other_glued_values_share_no_formation_5748()
         );
     };
     let differing = system(&mut arena, integer_literal());
-    report.judged[1].verdict = Verdict::Checked {
+    let entry = &mut report.judged_mut()[1];
+    *entry = crate::report::Judged::new(entry.constant(), entry.origin(), Verdict::Checked {
         declared: crate::formation::FormedValueType::derived(differing),
         body,
         evidence,
-    };
+    });
     let readmission = crate::bridge::readmit(&mut arena, &report);
     assert!(
         matches!(
@@ -2007,7 +2011,7 @@ fn an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579()
     let returning = arena.computation_return(returned);
     let ran = arena.value_nested(returning);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(patched), Maybe::Present(free)),
             declaration(At(1), Maybe::Present(record_type), Maybe::Present(whole)),
@@ -2144,7 +2148,7 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
     };
     let unchanged = arena.value_here(point);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(pair_type), Maybe::Present(pair)),
             declaration(At(1), Maybe::Present(commuted), Maybe::Present(commute)),
@@ -2238,7 +2242,7 @@ fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
             arena.value_thunk(lambda)
         };
         let report = {
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             context.keep_reducts(kept);
             check_module(&mut context, &[
                 declaration(At(0), Maybe::Present(reduct_type), Maybe::Present(reduct)),
@@ -2322,7 +2326,7 @@ fn an_owed_decode_crosses_by_no_reduct()
     let other = decode(&mut arena, 2);
     let held = arena.value_constant(ConstantIndex::from(3_usize));
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.keep_reducts(&[ConstantIndex::from(0_usize)]);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(reduct_type), Maybe::Present(reduct)),
@@ -2386,7 +2390,7 @@ fn read_literal(
         arena.value_thunk(called)
     };
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.keep_readers(kept);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(word_type), Maybe::Present(word)),
@@ -2464,7 +2468,7 @@ fn a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812()
     };
     let literal = arena.value_literal(integer_literal());
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.keep_readers(&naturals(&[ConstantIndex::from(0_usize)]));
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(word_type), Maybe::Present(word)),
@@ -2682,7 +2686,7 @@ fn a_decimal_at_f64_stands_as_its_float_4807()
         arena.value_thunk(called)
     };
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(taker_type), HOLE),
             declaration(At(1), Maybe::Present(user_type), Maybe::Present(user)),
@@ -2717,7 +2721,7 @@ fn a_decimal_at_f64_stands_as_its_float_4807()
     );
     assert_readmitted(&mut arena, &report);
     let unsigned = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[declaration(
             At(0),
             UNSIGNED,
@@ -2774,7 +2778,7 @@ fn a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807()
             arena.value_thunk(called)
         };
         let report = {
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             let readers: Vec<gandr_core_term::LiteralReader> = kept
                 .iter()
                 .map(|&by| gandr_core_term::LiteralReader {
@@ -2880,7 +2884,7 @@ fn an_integer_variable_crosses_by_no_reader_4528()
         arena.value_thunk(lambda)
     };
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.keep_readers(&naturals(&[ConstantIndex::from(0_usize)]));
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(word_type), HOLE),
@@ -2968,7 +2972,7 @@ fn a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier()
             arena.value_thunk(lambda)
         };
         let report = {
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             context.keep_reducts(kept);
             check_module(&mut context, &[
                 declaration(At(0), Maybe::Present(forget_type), Maybe::Present(forget)),
@@ -3071,7 +3075,7 @@ fn a_nested_call_runs_with_the_effects_its_returner_performs()
         returned_of(&mut arena, ConstantIndex::from(1_usize), effectful_x);
     let (pure, identity_twice) = returned_of(&mut arena, ConstantIndex::from(0_usize), pure_x);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
             declaration(At(1), Maybe::Present(asking_type), Maybe::Present(asking)),
@@ -3140,7 +3144,7 @@ fn a_pure_run_a_type_reads_stands_as_what_it_returns_444()
     let lambda = arena.computation_lambda(returned);
     let pairing = arena.value_thunk(lambda);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
             declaration(At(1), Maybe::Present(pairing_type), Maybe::Present(pairing)),
@@ -3273,7 +3277,7 @@ fn a_call_beneath_a_type_read_argument_stands_as_written_762()
     let paired_lambda = arena.computation_lambda(paired_call);
     let paired_body = arena.value_thunk(paired_lambda);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
             declaration(
@@ -3350,7 +3354,7 @@ fn a_nested_computation_is_decided_by_its_expected_type()
     let unsigned_produce = arena.computation_return(unsigned_zero);
     let unsigned = arena.value_nested(unsigned_produce);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(
                 At(0),
@@ -3448,7 +3452,7 @@ fn a_call_returning_a_function_runs_where_one_is_read_2327()
     let held_call = call(&mut arena, ConstantIndex::from(0_usize), held_at);
     let held = arena.value_nested(held_call);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
             declaration(At(1), Maybe::Present(maker_type), Maybe::Present(maker)),
@@ -3543,7 +3547,7 @@ fn a_computation_written_as_a_scrutinee_runs_1141()
         declaration(At(1), Maybe::Present(cased_type), Maybe::Present(cased)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     assert!(
@@ -3559,7 +3563,7 @@ fn a_computation_written_as_a_scrutinee_runs_1141()
         Some(&Nesting::Ran(Purity::Pure)),
         "the call runs, purely"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let run = type_module(&mut context, &module);
     let kept: Vec<_> = run.typings()[&ConstantIndex::from(1_usize)]
         .typings()
@@ -3612,7 +3616,7 @@ fn a_computation_written_as_a_projected_record_runs_1106()
         declaration(At(1), Maybe::Present(picked_type), Maybe::Present(picked)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     assert!(
@@ -3664,7 +3668,7 @@ fn a_run_in_a_definition_s_own_value_is_unenclosed_only_when_effectful_4812()
         arena.value_nested(computation)
     });
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
             declaration(At(1), Maybe::Present(asking_type), Maybe::Present(asking)),
@@ -3768,7 +3772,7 @@ fn the_support_holds_each_consulted_answer_once_in_position_order()
     let once = arena.computation_application(forced, x);
     let twice = arena.computation_application(once, x);
     let suspended = arena.value_thunk(twice);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let _x = check_declaration(
         &mut context,
         &declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
@@ -3844,7 +3848,7 @@ fn a_refusal_cuts_the_support_where_the_run_stopped()
     let once = arena.computation_application(forced, s);
     let twice = arena.computation_application(once, x);
     let suspended = arena.value_thunk(twice);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(At(0), UNSIGNED, Maybe::Present(text)),
         declaration(At(1), Maybe::Present(function_type), HOLE),
@@ -3911,7 +3915,7 @@ fn a_kept_support_is_the_support_of_the_judgement_alone_6573()
         ),
     ];
     let mut alone = arena.clone();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let mut run = ModuleRun::new();
     run.keep_typings();
     run.keep_supports();
@@ -3928,7 +3932,7 @@ fn a_kept_support_is_the_support_of_the_judgement_alone_6573()
                 .any(|typing| typing.term == TermNode::Value(x))),
         "the typed run reads x after the refusal"
     );
-    let mut single = CheckingContext::new(&mut alone, CheckBudget::DEFAULT);
+    let mut single = CheckingContext::new(&mut alone, CheckBudget::DEFAULT, &Checker);
     let each: alloc::collections::BTreeMap<ConstantIndex, super::Supported> = module
         .iter()
         .map(|offered| {
@@ -3966,7 +3970,7 @@ fn an_adopted_answer_is_read_as_if_judged()
     let untyped = arena.value_constant(ConstantIndex::from(1_usize));
     let decoded = arena.value_type_element(adopted, gandr_kernel_strata::Level::zero());
     let zero = arena.value_literal(integer_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         context.adopt_formed(ConstantIndex::from(0_usize), small, Maybe::Present(code)),
         Ok(()),
@@ -4082,7 +4086,7 @@ fn an_abstract_type_forms_at_a_value_universe_and_mints_its_site()
         sealed(At(1), integer, integer, 0_usize.into(), 1_usize.into()),
         sealed(At(2), small, small, 0_usize.into(), 2_usize.into()),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &module);
     let verdicts: Vec<_> = report.judged().iter().map(super::Judged::verdict).collect();
     assert_eq!(
@@ -4127,7 +4131,7 @@ fn a_repeated_sealing_site_is_refused_and_mints_nothing()
         sealed(At(0), small, integer, 0_usize.into(), 0_usize.into()),
         sealed(At(1), small, integer, 0_usize.into(), 0_usize.into()),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &module);
     let site = SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize));
     assert_eq!(
@@ -4176,7 +4180,7 @@ fn an_unmarked_atom_is_met_wherever_a_type_holds_it_3375()
             OriginToken::from(101_usize),
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let checked = check_module(&mut context, &module);
     for (ty, held, what) in [
         (secret, Maybe::Present(unmarked), "the atom alone"),
@@ -4194,12 +4198,12 @@ fn an_unmarked_atom_is_met_wherever_a_type_holds_it_3375()
         ),
         (
             reported,
-            Maybe::Absent(super::unmarked::Absent::Unheld),
+            Maybe::Absent(crate::report::unmarked::Absent::Unheld),
             "a marked atom",
         ),
         (
             integer,
-            Maybe::Absent(super::unmarked::Absent::Unheld),
+            Maybe::Absent(crate::report::unmarked::Absent::Unheld),
             "a type naming no atom",
         ),
     ] {
@@ -4230,7 +4234,7 @@ fn an_unmarked_atom_beside_a_shared_pair_thirty_deep_is_met_5796()
         0_usize.into(),
         0_usize.into(),
     )];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let checked = check_module(&mut context, &module);
     assert_eq!(
         checked.unmarked_atom(&arena, beside),
@@ -4249,7 +4253,7 @@ fn an_atom_naming_no_abstract_type_is_refused()
         declaration(At(0), UNSIGNED, Maybe::Present(zero)),
         declaration(At(1), Maybe::Present(named), HOLE),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &module);
     assert_eq!(
         report.judged()[1].verdict(),
@@ -4281,7 +4285,7 @@ fn a_sealed_member_checks_at_the_representation_inside()
         declaration(At(4), Maybe::Present(integer), Maybe::Present(export)),
         declaration(At(5), Maybe::Present(atom), Maybe::Present(seven)),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &module);
     let verdicts: Vec<_> = report.judged().iter().map(super::Judged::verdict).collect();
     assert!(
@@ -4412,7 +4416,7 @@ fn an_omitted_implicit_is_typed_at_its_solution_1216()
     let head = arena.computation_application(forced, hole);
     let applied = arena.computation_application(head, zero);
     let call = arena.value_thunk(applied);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let module = [
         declaration(
             At(0),
@@ -4484,7 +4488,7 @@ fn a_scope_is_checked_as_a_model_of_its_theory_2272()
         left: returned(&mut arena, 0),
         right: returned(&mut arena, 1),
     };
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &[
         declaration(At(0), Maybe::Present(integer), Maybe::Present(zero))
             .obliged(Vec::from([same])),
@@ -4548,7 +4552,7 @@ fn a_nested_argument_binds_the_implicit_it_is_read_at()
     let applied = arena.computation_application(head, argument);
     let call = arena.value_thunk(applied);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(forget_type), Maybe::Present(forget)),
             declaration(At(1), Maybe::Present(suspended), Maybe::Present(call)),
@@ -4593,7 +4597,7 @@ fn a_decoded_hole_in_a_signature_is_solved_where_it_forms_5026()
     let mixed = arena.value_type_path(mixed_carrier, zero, nothing);
     let free = carrier(&mut arena, third);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(agreed), Maybe::Present(here)),
             declaration(At(1), Maybe::Present(mixed), HOLE),
@@ -4704,7 +4708,7 @@ fn a_hosted_law_is_admitted_only_where_the_host_asserts_it_2302()
     let below_refl = refl(&mut arena, 2, integer);
     let hosted = Maybe::Absent(body::Absent::Hosted);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(
                 At(0),
@@ -4782,7 +4786,7 @@ fn a_refusal_names_the_implicit_its_call_solved_5033()
     let head = arena.computation_application(forced, hole);
     let applied = arena.computation_application(head, unit);
     let call = arena.value_thunk(applied);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &[
         declaration(At(0), Maybe::Present(same_type), Maybe::Present(same)),
         declaration(At(1), Maybe::Present(suspended), Maybe::Present(call)),

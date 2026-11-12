@@ -12,6 +12,7 @@ use quenchant_shape::shape::Maybe;
 use super::Atom;
 use super::CheckBudget;
 use super::CheckingContext;
+use crate::Checker;
 use crate::formation::classify_value_type;
 use crate::formation::form_value_type;
 use crate::refusal::CheckRefusal;
@@ -33,7 +34,7 @@ fn small() -> Classifier
 fn the_producer_declares_the_rigid_base_atoms()
 {
     let mut arena = CoreArena::new();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let atoms = [
         (Atom::Unit, None),
         (Atom::Integer, Some(BaseType::Integer)),
@@ -65,7 +66,7 @@ fn an_undeclared_type_name_is_refused_by_name()
     let mut arena = CoreArena::new();
     let name = arena.value_constant(ConstantIndex::from(5_usize));
     let decoded = arena.value_type_element(name, Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         form_value_type(&mut context, decoded),
         Err(CheckRefusal::UnknownConstant {
@@ -83,7 +84,7 @@ fn a_universe_typed_hypothesis_becomes_a_type_variable()
     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let decoded = arena.value_type_element(bound, Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, universe);
     let formed = form_value_type(&mut context, decoded).unwrap();
     assert_eq!(
@@ -100,7 +101,7 @@ fn a_value_typed_hypothesis_does_not_become_a_type_variable()
     let integer = arena.value_type_base(BaseType::Integer);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let decoded = arena.value_type_element(bound, Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, integer);
     let refused = form_value_type(&mut context, decoded);
     assert!(
@@ -120,7 +121,7 @@ fn an_adopted_untyped_body_does_not_become_a_definition()
     let code = arena.value_quote(unit);
     let constant = ConstantIndex::from(0_usize);
     let reference = arena.value_constant(constant);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         context.adopt(
             constant,
@@ -162,7 +163,7 @@ fn an_adopted_abstract_type_mints_its_site_again()
         gandr_kernel_term::SealExtent::from(1_usize),
         site,
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         context.adopt_abstract(ConstantIndex::from(0_usize), declared),
         Ok(()),
@@ -208,7 +209,7 @@ fn a_second_unfold_of_a_code_takes_its_held_step()
     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let constant = ConstantIndex::from(0_usize);
     let name = arena.value_constant(constant);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let declared = form_value_type(&mut context, universe).unwrap();
     assert_eq!(
         context.adopt(constant, Maybe::Present(declared), Maybe::Present(body)),

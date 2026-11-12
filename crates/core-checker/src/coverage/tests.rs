@@ -20,6 +20,7 @@ use super::CoverageFault;
 use super::Exhaustiveness;
 use super::Redundancy;
 use super::cover;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::fixture::integer_literal;
@@ -53,7 +54,7 @@ fn usefulness_decides_exhaustiveness_and_redundancy()
     let left = patterns.mint(Pattern::Injection(Side::Left, wildcard));
     let right = patterns.mint(Pattern::Injection(Side::Right, wildcard));
     let binder = patterns.mint(Pattern::Binder);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 
     assert_eq!(
         answer(&mut context, sum, &patterns, &[left, right, binder]),
@@ -86,7 +87,7 @@ fn usefulness_decides_exhaustiveness_and_redundancy()
     let mut short = CoreArena::new();
     let unit = short.value_type_unit();
     let sum = short.value_type_sum(&[unit, unit]);
-    let mut context = CheckingContext::new(&mut short, CheckBudget::from(1_usize));
+    let mut context = CheckingContext::new(&mut short, CheckBudget::from(1_usize), &Checker);
     let sum = crate::formation::FormedValueType::derived(sum);
     assert_eq!(
         cover(&mut context, sum, &patterns, &[left, right]),
@@ -125,7 +126,7 @@ fn literals_never_complete_and_nested_columns_specialise()
     let any_right = patterns.mint(Pattern::Pair(wildcard, right));
     let any_left = patterns.mint(Pattern::Pair(wildcard, left));
     let any = patterns.mint(Pattern::Pair(wildcard, wildcard));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 
     assert_eq!(
         answer(&mut context, product, &patterns, &[zero_left, any_right]),
@@ -189,7 +190,7 @@ fn a_nominal_type_is_complete_when_every_constructor_stands()
         fields: vec![wildcard],
     });
     let pair = patterns.mint(Pattern::Pair(wildcard, wildcard));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.record_data(
         ConstantIndex::from(0_usize),
         Arc::new(DataSignature::new(
@@ -255,7 +256,7 @@ fn a_pattern_hole_is_answered_possibly()
     let right = patterns.mint(Pattern::Injection(Side::Right, wildcard));
     let hole = patterns.mint(Pattern::Hole(HoleId::from(0_u32)));
     let left_hole = patterns.mint(Pattern::Injection(Side::Left, hole));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 
     assert_eq!(
         answer(&mut context, sum, &patterns, &[left, hole]),
@@ -305,7 +306,7 @@ fn an_unknown_scrutinee_reads_the_least_and_the_widest_signature()
         tag: ConstructorTag::from(0_usize),
         fields: Vec::new(),
     });
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 
     assert_eq!(
         answer(&mut context, unknown, &patterns, &[wildcard]),

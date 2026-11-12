@@ -21,10 +21,9 @@ use quenchant_shape::shape::Maybe;
 
 use super::Outcome;
 use super::Output;
-use super::ResumeError;
-use super::Session;
 use crate::CheckBudget;
 use crate::CheckRefusal;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::Declaration;
 use crate::DeclarationContent;
@@ -35,6 +34,8 @@ use crate::Verdict;
 use crate::body;
 use crate::bridge;
 use crate::check_module;
+use crate::elaborating::ResumeError;
+use crate::elaborating::Session;
 use crate::fixture::Mode;
 use crate::fixture::integer_literal;
 use crate::fixture::term_recipe;
@@ -254,7 +255,7 @@ fn owed_conversion_suspends()
     let mut arena = CoreArena::new();
     let fixture = route(&mut arena);
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &fixture.declarations)
     };
     let Verdict::Suspended(declared) = report.judged()[1].verdict()
@@ -630,11 +631,11 @@ fn a_supported_judgement_keeps_the_suspension_that_the_module_run_reports()
         Maybe::Present(reference),
     ));
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &fixture.declarations)
     };
     let supported = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         let mut prior = BTreeMap::new();
         for declaration in &fixture.declarations {
             let judged = crate::check_declaration_supported(&mut context, declaration);

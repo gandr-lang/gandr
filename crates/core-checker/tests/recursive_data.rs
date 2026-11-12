@@ -7,6 +7,7 @@ use alloc::sync::Arc;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ExpectedShape;
@@ -759,7 +760,7 @@ fn run(
 ) -> (ModuleReport, bridge::Readmission)
 {
     let report = check_module(
-        &mut CheckingContext::new(arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker),
         declarations,
     );
     let crossed = bridge::readmit(arena, &report);
@@ -1479,7 +1480,7 @@ fn a_field_naming_its_own_or_a_later_position_is_refused_by_name()
             origin(position),
         );
         let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &[declaration],
         );
         report.judged()[0].verdict()
@@ -2199,13 +2200,14 @@ fn a_run_resumed_from_a_checkpoint_judges_as_one_run_776()
         let declarations = build(&mut whole_arena);
         let mut split_arena = whole_arena.clone();
         let whole = check_module(
-            &mut CheckingContext::new(&mut whole_arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut whole_arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         let (first, second) = declarations.split_at(leading);
         let mut run = ModuleRun::new();
         let checkpoint = {
-            let mut context = CheckingContext::new(&mut split_arena, CheckBudget::DEFAULT);
+            let mut context =
+                CheckingContext::new(&mut split_arena, CheckBudget::DEFAULT, &Checker);
             run.judge(&mut context, first, |_, _, _| {});
             context.checkpoint()
         };

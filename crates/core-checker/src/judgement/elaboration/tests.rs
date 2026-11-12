@@ -28,11 +28,11 @@ use proptest::prelude::*;
 use quenchant_shape::shape::Maybe;
 
 use super::MarkEntry;
-use super::Typing;
 use super::elaborate_comp;
 use super::elaborate_value;
 use super::type_value;
 use crate::CheckBudget;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::Declaration;
 use crate::OriginToken;
@@ -45,11 +45,12 @@ use crate::fixture::term_recipe;
 use crate::fixture::type_recipe;
 use crate::formation::form_comp_type;
 use crate::formation::form_value_type;
-use crate::judgement::Direction;
+use crate::judge::Direction;
 use crate::judgement::check_comp;
 use crate::judgement::check_value;
 use crate::judgement::synthesise_comp;
 use crate::judgement::synthesise_value;
+use crate::record::Typing;
 use crate::refusal::CheckRefusal;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
@@ -64,7 +65,7 @@ fn a_total_run_marks_where_a_strict_run_refuses()
     let zero = arena.value_literal(integer_literal());
     let unit = arena.value_unit();
     let pair = arena.value_tuple(&[zero, unit]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, product).unwrap();
 
     let strict = check_value(&mut context, pair, expected).unwrap_err();
@@ -120,7 +121,7 @@ fn a_typed_run_keeps_the_type_of_every_term_it_judged()
     let returns_integer = arena.comp_type_returner(integer);
     let arrow = arena.comp_type_arrow(integer, returns_integer);
     let thunk_arrow = arena.value_type_thunk(arrow);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, product).unwrap();
     let formed_arrow = form_value_type(&mut context, thunk_arrow).unwrap();
     let depth = context.depth(Zone::Intuitionistic);
@@ -220,7 +221,7 @@ fn a_marked_bound_leaves_its_continuation_judged()
     let thunk = arena.value_thunk(bind);
     let returns_integer = arena.comp_type_returner(integer);
     let suspended = arena.value_type_thunk(returns_integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, suspended).unwrap();
     let depth = context.depth(Zone::Intuitionistic);
 
@@ -251,7 +252,7 @@ fn a_term_that_cannot_synthesise_is_checked_against_the_unknown_type()
     let zero = arena.value_literal(integer_literal());
     let forced = arena.computation_force(zero);
     let lambda = arena.computation_lambda(forced);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 
     let strict = synthesise_comp(&mut context, lambda).unwrap_err();
     let elaboration = elaborate_comp(&mut context, lambda, Direction::Synthesise).unwrap();
@@ -318,7 +319,7 @@ fn an_unfilled_hole_elaborates_to_a_type_and_evaluates_indeterminate()
         Maybe::Present(program),
         OriginToken::from(0_usize),
     )];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 
     let report = check_module(&mut context, &declarations);
     let [ref judged] = *report.judged()
@@ -402,7 +403,7 @@ proptest! {
         let terms = recipe.build(&mut arena);
         let constant_types: Vec<_> = constants.iter().map(|constant| constant.build(&mut arena)).collect();
         let (expected_value, expected_comp) = expected.build_both(&mut arena);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         seed(&mut context, &constant_types);
         let expected_value = form_value_type(&mut context, expected_value).unwrap();
         let expected_comp = form_comp_type(&mut context, expected_comp).unwrap();

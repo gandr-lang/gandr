@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Exhaustiveness;
 use gandr_core_checker::form_value_type;
@@ -228,7 +229,7 @@ impl Fixture
         checkpoint: &MatchCheckpoint,
     ) -> MatchAnalysis
     {
-        let mut context = CheckingContext::new(&mut self.core, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut self.core, CheckBudget::DEFAULT, &Checker);
         context
             .adopt_data(ConstantIndex::from(0_usize), Arc::clone(&self.signature))
             .unwrap();

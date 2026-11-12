@@ -359,6 +359,7 @@ fn a_theory_block_defines_its_presentation()
         &mut gandr_core_checker::CheckingContext::new(
             &mut arena,
             gandr_core_checker::CheckBudget::DEFAULT,
+            &gandr_core_checker::Checker,
         ),
         &declarations,
     );

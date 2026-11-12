@@ -18,6 +18,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
@@ -25,11 +26,11 @@ use crate::declaration::OriginToken;
 use crate::declaration::body;
 use crate::fixture::Booleans;
 use crate::fixture::booleans;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A declaration position in a fixture module.
 #[repr(transparent)]
@@ -70,7 +71,7 @@ fn judged(
         declaration(At(2), functions.function, Maybe::Present(functions.same)),
     ]);
     module.extend_from_slice(extra);
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     check_module(&mut context, &module)
 }
 
@@ -313,7 +314,7 @@ fn the_empty_sum_has_no_coverage()
     let unit = arena.value_type_unit();
     let void = arena.value_type_sum(&[]);
     let hollow = arena.value_type_product(&[unit, void]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for code in [void, hollow] {
         let covered = super::coverage(&mut context, code, super::Vocabulary::Containers);
         assert!(
@@ -360,7 +361,7 @@ fn a_data_type_covers_as_its_constructors_fields()
     let natural = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
     let code = arena.value_quote(integer);
     let boxed = arena.value_type_data(ConstantIndex::from(2_usize), Vec::from([code]));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (position, signature) in [shapes, naturals, boxes].into_iter().enumerate() {
         context
             .adopt_data(ConstantIndex::from(position), signature)

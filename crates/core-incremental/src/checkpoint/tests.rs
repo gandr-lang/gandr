@@ -131,6 +131,7 @@ fn recorded_answer_references_participate_in_value_invalidation()
     let context = gandr_core_checker::CheckingContext::new(
         &mut arena,
         gandr_core_checker::CheckBudget::DEFAULT,
+        &gandr_core_checker::Checker,
     );
     for (answer, expected) in [
         (Answer::Untyped, Standing::Stands),
@@ -194,6 +195,7 @@ fn a_take_past_another_answer_than_the_judgement_read_panics_6727()
         let mut context = gandr_core_checker::CheckingContext::new(
             &mut judged,
             gandr_core_checker::CheckBudget::DEFAULT,
+            &gandr_core_checker::Checker,
         );
         run.judge(&mut context, &program.declarations(), |_, _, _| {});
         run.finish(&mut context)
@@ -208,6 +210,7 @@ fn a_take_past_another_answer_than_the_judgement_read_panics_6727()
     let mut context = gandr_core_checker::CheckingContext::new(
         &mut arena,
         gandr_core_checker::CheckBudget::DEFAULT,
+        &gandr_core_checker::Checker,
     );
     let ordinal = ItemOrdinal::from(1_usize);
     let item = encode_item(program.arena(), program.layout(), ordinal);

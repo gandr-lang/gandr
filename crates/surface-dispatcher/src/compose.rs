@@ -193,6 +193,7 @@ use gandr_core_checker::AbstractType;
 use gandr_core_checker::AtomInterface;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
@@ -4864,7 +4865,7 @@ pub fn checking_context<'arena>(
 {
     let mut context = match opening {
         Opening::Fresh(grants, entry, budget) => {
-            let mut context = CheckingContext::new(arena, budget);
+            let mut context = CheckingContext::new(arena, budget, &Checker);
             context.grant(grants);
             context.enter_at(entry);
             context
@@ -5602,6 +5603,7 @@ mod tests
 {
     use anodized::spec;
     use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::Checker;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Demand;
     use gandr_core_checker::HostGrant;
@@ -6577,7 +6579,7 @@ mod tests
         .expect("the module lowers");
         let declarations = adapt(&module, &arena);
         let verdicts = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         let admission = readmitted(
@@ -6891,7 +6893,7 @@ mod tests
         .expect("the module lowers");
         let declarations = adapt(&module, &arena);
         let verdicts = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         assert!(
@@ -6957,7 +6959,7 @@ mod tests
             let (mut module, mut arena) = lower(&mut lowerings);
             let declarations = adapt(&module, &arena);
             let verdicts = check_module(
-                &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+                &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
                 &declarations,
             );
             let readmission = readmitted(
@@ -7818,7 +7820,7 @@ mod tests
         };
         let declarations = adapt(&module, &arena);
         let verdicts = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         let spelled = constant_names(&module, module.unit().last());
@@ -7902,7 +7904,7 @@ mod tests
         };
         let declarations = adapt(&module, &arena);
         let verdicts = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         let constant = |wanted: &str| {
@@ -8994,7 +8996,7 @@ mod tests
         .expect("the module lowers");
         let declarations = adapt(&module, &arena);
         let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         let readmission = bridge::readmit(&mut arena, &report);

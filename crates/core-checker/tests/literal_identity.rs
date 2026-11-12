@@ -5,6 +5,7 @@ use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -129,7 +130,7 @@ proptest! {
         let mut arena = CoreArena::new();
         let declaration = answered(&mut arena, row, operands.clone(), summand);
         let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &[declaration],
         );
         prop_assert!(
@@ -153,7 +154,7 @@ proptest! {
         let mut arena = CoreArena::new();
         let declaration = answered(&mut arena, row, operands, other);
         let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &[declaration],
         );
         prop_assert!(

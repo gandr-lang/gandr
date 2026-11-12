@@ -220,6 +220,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
         &mut gandr_core_checker::CheckingContext::new(
             &mut arena,
             gandr_core_checker::CheckBudget::DEFAULT,
+            &gandr_core_checker::Checker,
         ),
         &declarations,
     );

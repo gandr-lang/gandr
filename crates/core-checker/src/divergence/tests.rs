@@ -28,15 +28,16 @@ use super::calls;
 use super::follows;
 use super::returning;
 use super::stated;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
-use crate::module::Judged;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::Mismatch;
+use crate::report::Judged;
+use crate::report::Verdict;
 
 /// `F^⟨Partial⟩ A`.
 ///
@@ -98,7 +99,7 @@ fn verdicts(
     declarations: &[Declaration],
 ) -> alloc::vec::Vec<Verdict>
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     check_module(&mut context, declarations)
         .judged()
         .iter()
@@ -142,7 +143,7 @@ fn a_partial_fixpoint_states_partial_in_every_row_it_ends_in()
 
     // Through a lazy product, only the component that lacks the entry gains it.
     let with = arena.comp_type_with(&[pure, stated_row]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let answer = stated(&mut context, fixpoint, with);
     let both = arena.comp_type_with(&[stated_row, stated_row]);
     let Ok(Divergence::Unstated(rebuilt)) = answer
@@ -154,7 +155,7 @@ fn a_partial_fixpoint_states_partial_in_every_row_it_ends_in()
         CertificateEquality::Equal,
         "each component ends in a row holding `Partial`"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         stated(&mut context, fixpoint, both),
         Ok(Divergence::Stated),
@@ -182,7 +183,7 @@ fn a_dependent_arrow_states_partial_in_its_codomain_and_a_stuck_decode_is_refuse
     let stated_pi = arena.comp_type_pi(unit, stated_row);
     let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let stuck = arena.comp_type_element(code, Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let answer = stated(&mut context, at, pi);
     let Ok(Divergence::Unstated(rebuilt)) = answer
     else {
@@ -322,7 +323,7 @@ fn a_call_returns_only_where_every_row_is_empty()
         (arena.value_type_thunk(one_partial), Calls::Unknown),
         (unit, Calls::Unknown),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (bound, answer) in rows {
         assert_eq!(
             calls(&mut context, bound),
@@ -362,7 +363,7 @@ fn an_unread_call_converts_only_where_its_row_is_empty()
     let point = arena.value_thunk(lambda);
     let endpoint = variable(&mut arena, 1);
     for (called, discarded) in [(function, true), (partial, false)] {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.binders().open(Zone::Intuitionistic, function);
         context.binders().open(Zone::Intuitionistic, called);
         let returning = returning(&mut context).expect("both binders are formed");

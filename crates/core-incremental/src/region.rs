@@ -503,7 +503,11 @@ impl Opened<'_>
     ) -> gandr_core_checker::CheckingContext<'_>
     {
         match self {
-            Self::Fresh(budget) => gandr_core_checker::CheckingContext::new(arena, budget),
+            Self::Fresh(budget) => gandr_core_checker::CheckingContext::new(
+                arena,
+                budget,
+                &gandr_core_checker::Checker,
+            ),
             Self::Resumed(checkpoint) => {
                 gandr_core_checker::CheckingContext::resume(arena, checkpoint.clone())
             },

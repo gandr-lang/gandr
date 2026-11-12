@@ -13,6 +13,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::AbstractType;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
@@ -149,7 +150,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
     .expect("the lowering reads the module");
     let declarations = declarations(&module, &arena);
     let verdicts = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &declarations,
     );
 

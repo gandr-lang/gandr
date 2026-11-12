@@ -8,6 +8,7 @@ use gandr_kernel_term::BaseType;
 
 use super::*;
 use crate::CheckBudget;
+use crate::Checker;
 
 #[test]
 fn a_branch_binds_a_field_only_where_its_result_names_it()
@@ -22,7 +23,7 @@ fn a_branch_binds_a_field_only_where_its_result_names_it()
     let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let named = arena.value_type_path(datatype, scrutinee, scrutinee);
     let dependent = arena.comp_type_returner(named);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.adopt_data(boxed, signature).expect("the box forms");
     let unnamed = branch_type(
         &mut context,
@@ -75,7 +76,7 @@ fn an_indexed_branch_binds_its_equations_after_its_fields()
     let unit = arena.value_unit();
     let datatype = arena.value_type_data(marked, vec![unit]);
     let closed = arena.comp_type_returner(integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context
         .adopt_data(marked, signature)
         .expect("the marked family forms");
@@ -134,7 +135,7 @@ fn a_field_above_its_declaration_s_universe_is_refused()
     let one = Level::zero().succ().expect("the successor of zero");
     let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
     let boxed = ConstantIndex::from(0_usize);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let refused = context.adopt_data(
         boxed,
         Arc::new(DataSignature::new(vec![], vec![vec![small]], small)),
@@ -179,7 +180,7 @@ fn a_later_field_reads_its_parameters_past_the_earlier_fields()
     let boxes = Arc::new(DataSignature::new(vec![], vec![vec![kind, first]], large));
     let at_integer = arena.value_type_data(pair, vec![code]);
     let boxed_type = arena.value_type_data(boxed, vec![]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.adopt_data(pair, pairs).expect("the pair forms");
     context.adopt_data(boxed, boxes).expect("the box forms");
     for (field, position) in [(first, 0_usize), (second, 1_usize)] {
@@ -227,7 +228,7 @@ fn a_dependent_field_checks_at_the_value_of_the_field_it_names()
     let put = arena.value_constructor(boxed, datatype, ConstructorTag::from(0_usize), vec![
         code, code,
     ]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.adopt_data(boxed, boxes).expect("the box forms");
     assert_eq!(
         field_at(
@@ -288,7 +289,7 @@ fn a_field_that_reads_a_lambda_field_reads_its_thunk_5374()
     let put = arena.value_constructor(boxed, datatype, ConstructorTag::from(0_usize), vec![
         written, quoted,
     ]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.adopt_data(boxed, boxes).expect("the box forms");
     let field = field_at(
         &mut context,
@@ -352,7 +353,7 @@ fn a_refused_field_keeps_the_binders_it_was_formed_under_4028()
         DataSignature::new(vec![], vec![vec![unit_type, unit_type]], kind)
             .indexed(vec![integer], vec![vec![unit]]),
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (signature, position, opened, written) in [
         (&fields, bad, [integer, integer], "the field"),
         (&stated, marked, [unit_type, unit_type], "the stated index"),

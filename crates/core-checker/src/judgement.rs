@@ -519,7 +519,12 @@ use crate::failure::judged;
 use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
+use crate::judge::Checked;
+use crate::judge::Direction;
+use crate::judge::Judge;
+use crate::judge::Synthesised;
 use crate::nested::Nesting;
+use crate::record::Typing;
 use crate::refusal::ArgumentPosition;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
@@ -542,8 +547,7 @@ mod elaboration;
 
 mod memo;
 
-#[cfg(feature = "instrument")]
-pub use memo::unanswered;
+use crate::judge::unanswered;
 
 mod native;
 
@@ -580,89 +584,13 @@ mod handed
 
 use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
-pub use self::elaboration::Formed;
-pub use self::elaboration::Kept;
 pub use self::elaboration::MarkEntry;
 use self::elaboration::Marking;
-pub use self::elaboration::Typing;
 pub use self::elaboration::Typings;
 pub use self::elaboration::elaborate_comp;
 pub use self::elaboration::elaborate_value;
 pub use self::elaboration::type_value;
 use self::session::Sessions;
-
-/// The direction a judgement runs in.
-///
-/// # Judgement
-/// - direction: synthesis hands the term's type out; checking takes the
-///   expected type in. A dispatch on it names both, so a rule added in one mode
-///   is a compile error in every dispatch that forgot the other.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Direction<Expected>
-{
-    /// The term's type is read off the term.
-    Synthesise,
-    /// The term is checked against the type held.
-    Check(Expected),
-}
-
-/// A type a judgement synthesised, beside the evidence of how it got there.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Synthesised<Type>
-{
-    /// The type.
-    produced: Type,
-    /// The conversions the run made.
-    conversions: ConversionCount,
-}
-
-impl<Type: Copy> Synthesised<Type>
-{
-    /// The type synthesised.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn produced(&self) -> Type
-    {
-        self.produced
-    }
-
-    /// How many times the run crossed the conversion boundary.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn conversions(&self) -> ConversionCount
-    {
-        self.conversions
-    }
-}
-
-/// The evidence a check succeeded with.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Checked
-{
-    /// The conversions the run made.
-    conversions: ConversionCount,
-}
-
-impl Checked
-{
-    /// How many times the run crossed the conversion boundary.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn conversions(&self) -> ConversionCount
-    {
-        self.conversions
-    }
-}
 
 /// Synthesise the type of `value`.
 ///
@@ -735,10 +663,10 @@ pub fn synthesise_value_with_failure(
     };
     let (produced, conversions) = Machine::run(context, goal)?;
     match produced {
-        Produced::ValueType(produced) => Ok(Synthesised {
-            produced: FormedValueType::derived(context.settle_value_type(produced)),
+        Produced::ValueType(produced) => Ok(Synthesised::new(
+            FormedValueType::derived(context.settle_value_type(produced)),
             conversions,
-        }),
+        )),
         Produced::CompType(_) | Produced::Checked => {
             Err(Failure::bare(CheckRefusal::MachineInvariant, pursued(goal)))
         },
@@ -887,10 +815,10 @@ pub fn synthesise_comp(
     })
     .map_err(|failure| failure.refusal())?;
     match produced {
-        Produced::CompType(produced) => Ok(Synthesised {
-            produced: FormedCompType::derived(produced),
+        Produced::CompType(produced) => Ok(Synthesised::new(
+            FormedCompType::derived(produced),
             conversions,
-        }),
+        )),
         Produced::ValueType(_) | Produced::Checked => Err(CheckRefusal::MachineInvariant),
     }
 }
@@ -980,56 +908,34 @@ const fn checked(
 ) -> Result<Checked, CheckRefusal>
 {
     match produced {
-        Produced::Checked => Ok(Checked { conversions }),
+        Produced::Checked => Ok(Checked::new(conversions)),
         Produced::ValueType(_) | Produced::CompType(_) => Err(CheckRefusal::MachineInvariant),
     }
 }
 
-/// Form `node` in the context's binders: the goal [`crate::formation`]'s faces
-/// run.
+/// Form `node` in the context's binders, keeping the failure of a refused
+/// run: the goal [`crate::formation`]'s faces run.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: success exactly when every node `node` reaches has a formation
 ///   rule that accepts it, as [`crate::formation::form_value_type`] states.
-/// - fails: the first refusal a formation rule or a code's judgement gives.
+/// - fails: the first refusal a formation rule or a code's judgement gives,
+///   with the rules pending and the binders the run had opened when it came.
 /// - panics: none.
 ///
 /// # Errors
-/// - [`CheckRefusal`] — the type is not formed.
+/// - [`Failure`] — the type is not formed.
 ///
 /// # Adequacy
 /// - hypothesis: L1 over bounded generated type programs compares the exact
 ///   classifier, with L3 every admitted or refused former and a dangling node;
-///   wrong formation decisions and scope leakage change those observations.
+///   wrong formation decisions and scope leakage change those observations. A
+///   refusal inside a data declaration's field type keeps the binders the
+///   declaration had opened around it.
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
-#[spec(
-    captures: depth = context.depth(Zone::Intuitionistic),
-    ensures: context.depth(Zone::Intuitionistic) == depth,
-)]
-pub fn form(
-    context: &mut CheckingContext<'_>,
-    node: TypeNode,
-) -> Result<(), CheckRefusal>
-{
-    form_with_failure(context, node).map_err(|failure| failure.refusal())
-}
-
-/// Form `node` in the context's binders, keeping the failure of a refused
-/// run.
-///
-/// # Specification
-/// - requires: as for [`form`].
-/// - ensures: as for [`form`].
-/// - fails: the failure whose refusal [`form`] gives, with the rules pending
-///   and the binders the run had opened when it came.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as for [`form`]; a refusal inside a data declaration's
-///   field type keeps the binders the declaration had opened around it.
 /// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
@@ -1045,6 +951,45 @@ pub fn form_with_failure(
     checked(produced, conversions)
         .map(|_| ())
         .map_err(|refusal| Failure::bare(refusal, pursued(goal)))
+}
+
+/// The judgement as the formers and formation ask it through a context:
+/// [`form_with_failure`] and [`check_value_with_failure`].
+///
+/// Every context a caller makes names it ([`CheckingContext::new`]).
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Checker;
+
+impl Judge for Checker
+{
+    /// [`form_with_failure`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn form(
+        &self,
+        context: &mut CheckingContext<'_>,
+        node: TypeNode,
+    ) -> Result<(), Failure>
+    {
+        form_with_failure(context, node)
+    }
+
+    /// [`check_value_with_failure`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn check_value(
+        &self,
+        context: &mut CheckingContext<'_>,
+        value: ValueId,
+        expected: FormedValueType,
+    ) -> Result<Checked, Failure>
+    {
+        check_value_with_failure(context, value, expected)
+    }
 }
 
 /// The fixed endpoints of a forward stack-typing judgment.
@@ -4565,7 +4510,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         #[cfg(feature = "instrument")]
                         self.trace_started(goal, memo);
                         #[cfg(not(feature = "instrument"))]
-                        let _: memo::unanswered::Absent = memo;
+                        let _: unanswered::Absent = memo;
                         self.owner = goal;
                         self.anchor(goal);
                         (Control::Starting(goal), self.descend(goal))
@@ -4605,13 +4550,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     fn trace_started(
         &mut self,
         goal: Goal,
-        memo: memo::unanswered::Absent,
+        memo: unanswered::Absent,
     )
     {
         let (node, against) = judged(goal);
         let cover = match memo {
-            memo::unanswered::Absent::Missed => self.cover(),
-            memo::unanswered::Absent::Closed | memo::unanswered::Absent::Unkeyed => {
+            unanswered::Absent::Missed => self.cover(),
+            unanswered::Absent::Closed | unanswered::Absent::Unkeyed => {
                 crate::trace::Cover::default()
             },
         };

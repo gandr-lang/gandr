@@ -26,6 +26,7 @@ use super::classify_value_type;
 use super::form_comp_type;
 use super::form_value_type;
 use super::path_code;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::fixture::dangling_value_type;
@@ -127,7 +128,7 @@ fn universe_families_form_one_level_up_in_the_value_sort()
         value, computation,
         "the two families are two nodes at one level"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let one = LevelConstant::from(1_u64);
     assert_eq!(classified(&mut context, value), Ok(value_at(one)));
     assert_eq!(
@@ -179,7 +180,7 @@ fn every_value_type_constructor_has_a_formation_rule()
         (arena.value_type_static_pi(small, small), Ok(value_at(one))),
     ];
 
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small]);
     for (value_type, answer) in rows {
         let expected = answer.map_err(|former| CheckRefusal::OutOfFragment {
@@ -223,7 +224,7 @@ fn every_comp_type_constructor_has_a_formation_rule()
         ),
         (arena.comp_type_element(code, Level::zero()), comp_at(zero)),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small, negative]);
     for (comp_type, classifier) in rows {
         assert_eq!(
@@ -260,7 +261,7 @@ fn unsupported_forms_have_nominal_kinds()
             UnadmittedFormer::TypeLift,
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (value_type, former) in rows {
         assert_eq!(
             form_value_type(&mut context, value_type),
@@ -286,7 +287,7 @@ fn arrow_forms_at_the_join_of_its_premise_levels()
     let returns_one = arena.comp_type_returner(one);
     let higher_codomain = arena.comp_type_arrow(one, returns_two);
     let higher_domain = arena.comp_type_arrow(two, returns_one);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = Ok(comp_at(LevelConstant::from(2_u64)));
     assert_eq!(classified_comp(&mut context, higher_codomain), expected);
     assert_eq!(
@@ -330,7 +331,7 @@ fn effect_operation_types_participate_in_formation_levels_and_scope()
     let scoped_returner =
         arena.comp_type_returner_with_effects(unit, EffectRow::singleton(scoped_signature));
     let pi = arena.comp_type_pi(small, scoped_returner);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         classified_comp(&mut context, high_returner),
         Ok(comp_at(LevelConstant::from(3_u64))),
@@ -358,7 +359,7 @@ fn abstract_sort_raises_the_exact_variant()
     let mut arena = CoreArena::new();
     let universe =
         arena.value_type_universe(Sort::Parameter(SortParameter::from(0_u32)), Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         form_value_type(&mut context, universe),
         Err(CheckRefusal::OutOfFragment {
@@ -383,7 +384,7 @@ fn the_dependent_pair_forms_at_the_join_of_its_levels()
     let decoded = arena.value_type_element(bound, Level::zero());
     let sigma = arena.value_type_sigma(small, decoded);
     let product = arena.value_type_product(&[small, decoded]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         classified(&mut context, sigma),
         Ok(value_at(LevelConstant::from(1_u64))),
@@ -419,7 +420,7 @@ fn the_dependent_arrow_forms_at_the_join_of_its_levels()
     let pi = arena.comp_type_pi(small, returner);
     let thunked = arena.value_type_thunk(pi);
     let arrow = arena.comp_type_arrow(small, returner);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         classified_comp(&mut context, pi),
         Ok(comp_at(LevelConstant::from(1_u64))),
@@ -450,7 +451,7 @@ fn an_unadmitted_former_beneath_an_arrow_is_found()
     let numeric = arena.value_type_base(BaseType::Numeric);
     let result = arena.comp_type_returner(numeric);
     let arrow = arena.comp_type_arrow(unit, result);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         form_comp_type(&mut context, arrow),
         Err(CheckRefusal::OutOfFragment {
@@ -466,7 +467,7 @@ fn a_dangling_type_is_refused_as_a_fault()
 {
     let mut arena = CoreArena::new();
     let dangling = dangling_value_type();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let refused = form_value_type(&mut context, dangling);
     assert_eq!(
         refused,
@@ -710,7 +711,7 @@ proptest! {
     {
         let mut arena = CoreArena::new();
         let generated = build(&mut arena, &levels, &steps);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         open_universes(&mut context, &levels);
         let expected = Classifier { sort: GroundSort::Value, level: generated.level };
         let first = classified(&mut context, generated.root);
@@ -730,7 +731,7 @@ proptest! {
         let generated = build(&mut arena, &levels, &steps);
         let amount = Binders::from(u32::try_from(fresh.len()).expect("small"));
         let weakened = shift_value_type(&mut arena, generated.root, amount).settle(&mut arena);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         open_universes(&mut context, &levels);
         let before = classified(&mut context, generated.root);
         open_universes(&mut context, &fresh);
@@ -851,7 +852,7 @@ fn each_carrying_former_stands_at_the_level_of_what_it_carries()
     ];
     let family = arena.value_type_data(ConstantIndex::from(4_usize), Vec::new());
     let codata = arena.comp_type_codata(ConstantIndex::from(5_usize), Vec::new());
-    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (ty, level, former) in rows {
         assert_eq!(
             level_of(&context, TypeNode::Value(ty)),

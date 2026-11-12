@@ -143,6 +143,7 @@ use super::readmit_resuming;
 use super::readmit_retiring;
 use super::readmit_with;
 use super::timed;
+use crate::Checker;
 use crate::code::Lift;
 use crate::code::Unfolded;
 use crate::context::CheckBudget;
@@ -164,9 +165,6 @@ use crate::fixture::term_recipe;
 use crate::fixture::text_literal;
 use crate::fixture::typed_recipe;
 use crate::judgement::synthesise_comp;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
@@ -176,6 +174,9 @@ use crate::refusal::StaticArity;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 use crate::retire::Polled;
 use crate::retire::Unretired;
 use crate::template::Clock;
@@ -262,7 +263,7 @@ fn judge_and_readmit(
 ) -> (ModuleReport, Readmission)
 {
     let report = {
-        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, module)
     };
     let readmission = readmit(arena, &report);
@@ -883,7 +884,7 @@ fn numerals(
         declaration(At(3), Maybe::Present(decoded_alias), Maybe::Present(zero)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, module.get(.. end.0).unwrap())
     };
     (arena, report)
@@ -1068,7 +1069,7 @@ fn native_readers(second: Second) -> (CoreArena, ModuleReport)
         declaration(At(1), Maybe::Present(result_type), Maybe::Present(result)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     (arena, report)
@@ -1817,7 +1818,7 @@ fn an_unquoted_function_call_crosses_with_its_run_certified()
         declaration(At(3), Maybe::Present(keeping), Maybe::Present(kept)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     let [ref function, ref selected, ref other, ref keep] = *report.judged()
@@ -1937,7 +1938,7 @@ fn an_open_decode_crosses_read_and_a_forged_one_is_refused()
         declaration(At(2), Maybe::Present(at_integer), Maybe::Present(same)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     for judged in report.judged() {
@@ -2052,7 +2053,7 @@ fn a_closed_decode_holding_a_call_under_its_quote_crosses_read()
         declaration(At(2), Maybe::Present(at_arrows), Maybe::Present(same)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     for judged in report.judged() {
@@ -2170,7 +2171,7 @@ fn a_call_in_a_stuck_arm_of_a_returned_code_replays_2831()
         declaration(At(3), Maybe::Present(at_repr), Maybe::Present(packed)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     for judged in report.judged() {
@@ -2288,7 +2289,7 @@ fn a_declining_certificate_faults_the_declaration()
         declaration(At(1), Maybe::Present(small), Maybe::Present(instance)),
     ];
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &module)
     };
     let foreign = [ConversionDecision::Force {
@@ -3109,7 +3110,7 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
     let resumed_body = arena.value_thunk(resumed);
     let quoted = arena.value_quote_computation(effectful);
     let quote_type = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         crate::synthesise_value(&mut context, quoted)
             .expect("a well-formed runtime computation code")
             .produced()
@@ -6202,7 +6203,7 @@ fn a_declaration_whose_implicit_is_filled_enters_elaborated_6549()
         declaration(At(1), Maybe::Present(suspended), Maybe::Present(omitting)),
         declaration(At(2), Maybe::Present(suspended), Maybe::Present(supplied)),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let entered: Vec<_> = module
         .iter()
         .map(|declaration| {
@@ -7882,7 +7883,7 @@ proptest! {
         let unit_function = arena.value_type_thunk(unit_arrow);
         let constants = [integer, string, unit_type, suspended, function, unit_function];
         let synthesised: Vec<_> = {
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             seed(&mut context, &constants);
             terms
                 .comps
@@ -8594,7 +8595,7 @@ fn a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195()
         }])
     };
     let report = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(picking), Maybe::Present(unit_of)),
             declaration(At(1), Maybe::Present(picking), Maybe::Present(integer_of)),

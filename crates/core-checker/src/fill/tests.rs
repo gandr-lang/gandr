@@ -17,6 +17,7 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::ShapeSize;
 
 use super::UnsupportedFamily;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
@@ -227,7 +228,7 @@ fn a_free_cell_fills_its_square_by_induction()
     );
     let high = arena.value_returned(high);
     let ends = arena.value_type_path(integers.cell, low, high);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, integers.cell);
     context.binders().open(Zone::Intuitionistic, lifted);
     let square = synthesise_value(&mut context, fill)
@@ -272,7 +273,7 @@ fn a_cell_of_dimension_one_fills_its_square_by_induction()
     );
     // `t⁻ then here(1)` to `here(1) then t⁺`, by `then`'s unit laws.
     let expected = arena.value_type_path(integers.cell, integers.reflexive, p);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, integers.cell);
     context.binders().open(Zone::Intuitionistic, lifted);
     let square = synthesise_value(&mut context, fill)
@@ -321,7 +322,7 @@ fn a_realised_fill_converts_with_here_in_a_type()
     let solid = arena.value_type_path(square, generated, generated);
     let at_fill = arena.value_type_path(solid, fill, fill);
     let at_here = arena.value_type_path(solid, induced, induced);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         equivalent(&mut context, at_fill, at_here),
         Ok(Agreement::Apart),
@@ -388,7 +389,7 @@ fn vertex_paths_fill_their_square_by_induction()
     let target = identity::then(&mut arena, integers.carrier, integers.one, x_path, c);
     let target = arena.value_returned(target);
     let expected = arena.value_type_path(outer, source, target);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for ty in [
         integers.carrier,
         vertex,
@@ -459,7 +460,7 @@ fn a_set_that_is_no_pasting_context_is_refused()
         generator,
         Box::from([x_path, integers.one, integers.reflexive]),
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for ty in [integers.carrier, vertex, other, ends, square_cell] {
         context.binders().open(Zone::Intuitionistic, ty);
     }
@@ -513,7 +514,7 @@ fn a_fill_refuses_each_defect_by_name()
         composite,
         Box::from([alpha, integers.reflexive]),
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, integers.cell);
     context.binders().open(Zone::Intuitionistic, lifted);
     assert_eq!(
@@ -588,7 +589,7 @@ fn a_level_two_fill_names_x_by_its_columns()
     let whiskered = arena.value_fill(columns(Head(4, 9), [one, none]), generator, cells());
     let crossed = arena.value_fill(columns(Head(4, 9), [none, one]), generator, cells());
     let tall = arena.value_fill(columns(Head(6, 11), [two, none]), generator, cells());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, integers.cell);
     context.binders().open(Zone::Intuitionistic, lifted);
     assert!(
@@ -807,7 +808,7 @@ fn two_columns_fill_their_cylinders_by_induction()
     let source = composed(&mut arena, (composites, u_lo), (t_lo, v_up));
     let target = composed(&mut arena, (composites, u_lo), (u_up, t_hi));
     let expected = arena.value_type_path(sides, source, target);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for ty in context_types {
         context.binders().open(Zone::Intuitionistic, ty);
     }

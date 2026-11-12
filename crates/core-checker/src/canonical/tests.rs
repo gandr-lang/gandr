@@ -14,6 +14,7 @@ use gandr_kernel_term::GroundSort;
 use super::answers;
 use super::pair;
 use super::signature;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::fixture::pair_parts;
@@ -229,7 +230,7 @@ fn a_holder_of_e_is_refused_at_its_first_departing_answer_5255()
     let curried = (0_u32 .. 4_u32).fold(constant, |body, _| arena.computation_lambda(body));
     let defined = arena.value_thunk(curried);
     let holder = ConstantIndex::from(2_usize);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         context.claim_builtin(
             ConstantIndex::from(0_usize),

@@ -49,6 +49,7 @@ use super::WorldMove;
 use super::crosses;
 use crate::CheckBudget;
 use crate::CheckRefusal;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::CoreNode;
 use crate::Declaration;
@@ -279,7 +280,7 @@ fn verdicts(
     module: &[Declaration],
 ) -> Vec<Verdict>
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     context.enter_at(host);
     check_module(&mut context, module)
         .judged()
@@ -415,7 +416,7 @@ fn mobility_is_decided_on_every_former()
         .marked(Mobility::Mobile);
     let unmarked_atom = arena.value_type_abstract(ConstantIndex::from(4_usize));
     let marked_atom = arena.value_type_abstract(ConstantIndex::from(5_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (position, signature) in [boxes, nats, laters, dependents].into_iter().enumerate() {
         context
             .adopt_data(ConstantIndex::from(position), signature)
@@ -559,7 +560,7 @@ fn a_migration_consumes_its_capability_visibly()
         ]),
         "a migration holding its capability checks"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let typed = type_module(&mut context, &module);
     let moves = typed
         .typings()
@@ -1073,7 +1074,7 @@ fn a_report_crosses_and_an_endpoint_does_not()
         matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
         "a migration returning a report checks"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         crosses(&mut context, session),
         Ok(Crossing::Stays {
@@ -1381,7 +1382,7 @@ fn readmission_refuses_a_located_declaration_by_name()
             OriginToken::from(3_usize),
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &module);
     let readmission = bridge::readmit(&mut arena, &report);
     let outcomes: Vec<_> = readmission
@@ -1477,7 +1478,7 @@ fn an_adopted_located_program_judges_as_a_fresh_pass_3381()
         matches!(fresh[2 ..], [Verdict::Checked { .. }, ref read] if *read == refused),
         "a fresh pass checks the entry and refuses its reader: {fresh:?}"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     adopt_worlds(&mut context);
     let judged = crate::check_declaration(&mut context, &entry);
     let settled = context.located(At(2).constant());
@@ -1508,7 +1509,7 @@ fn an_adopted_located_program_judges_as_a_fresh_pass_3381()
         "within the host's entry, a stated entry stays and an unstated one takes the host's"
     );
     let mut read_after = |located: super::Located| {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         adopt_worlds(&mut context);
         context
             .adopt_formed(

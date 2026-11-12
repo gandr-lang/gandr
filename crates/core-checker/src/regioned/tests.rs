@@ -136,13 +136,14 @@ fn a_call_of_a_definition_over_a_region_checks_where_it_stands()
 {
     use gandr_kernel_term::ConstantIndex;
 
+    use crate::Checker;
     use crate::context::CheckBudget;
     use crate::context::CheckingContext;
     use crate::declaration::Declaration;
     use crate::declaration::OriginToken;
-    use crate::module::Judged;
-    use crate::module::Verdict;
     use crate::module::check_module;
+    use crate::report::Judged;
+    use crate::report::Verdict;
 
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
@@ -174,7 +175,7 @@ fn a_call_of_a_definition_over_a_region_checks_where_it_stands()
                 OriginToken::from(at),
             )
         });
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let verdicts: Vec<Verdict> = check_module(&mut context, &declarations)
         .judged()
         .iter()

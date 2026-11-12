@@ -27,6 +27,7 @@ use super::admit;
 use super::cell;
 use super::fill;
 use super::fill_columns;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
@@ -146,7 +147,7 @@ fn filled(
     let drawn = diagram(&mut arena, cells);
     let shape = admit(&mut Strata::default(), at, chain(Head(5, 7), vertices))
         .expect("the chain is a shape at 5 over 7");
-    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     (fill(&context, (at, Seam::Outer), &shape, &drawn), drawn)
 }
 
@@ -235,7 +236,7 @@ fn composable_cells_fill_their_chain()
         &cells,
     );
     let declared = arena.value_type_path(integer_type, one, one);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let declared = form_value_type(&mut context, declared)
         .expect("the path forms")
         .id();
@@ -345,7 +346,7 @@ fn a_composite_refuses_each_defect_by_name()
         (integer_type, one),
         &[written, reflexive, reflexive],
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(
         matches!(
             synthesise_value(&mut context, composite),
@@ -426,7 +427,7 @@ fn a_level_two_shape_is_read_at_level_two()
         .expect("the vertical composite is a shape at 4 over 9");
     let across = columns(Head(5, 11), Written(&[1, 1])).pasting.tree();
     let down = columns(Head(4, 9), Written(&[2])).pasting.tree();
-    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         fill_columns(&context, at, (across, &horizontal), &[
             known(first, low, high),
@@ -494,7 +495,7 @@ fn a_one_cell_in_a_column_of_two_cells_is_refused_at_its_column_4476()
         inputs: PortCount::from(0_usize),
         outputs: PortCount::from(0_usize),
     };
-    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (shape, cells, (seam, cell), name) in [
         (
             (across, &horizontal),
@@ -650,7 +651,7 @@ fn a_level_two_composite_has_the_path_between_its_folds()
         let (composite, ends) = compose_columns(&mut arena, columns(head, heights), &cells)
             .expect("the cells realise their shape");
         let declared = arena.value_type_path(ends.carrier, ends.left, ends.right);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         let declared = form_value_type(&mut context, declared)
             .expect("the path between the folds forms")
             .id();

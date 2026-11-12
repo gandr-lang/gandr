@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::check_module;
 use gandr_core_incremental::BackendArtifact;
@@ -303,7 +304,7 @@ pub fn batch(program: &Program) -> Vec<Typing>
     let mut arena = program.arena().clone();
     let declarations = program.declarations();
     let report = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &declarations,
     );
     report

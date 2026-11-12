@@ -15,6 +15,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::Checker;
 use crate::bridge::Outcome;
 use crate::bridge::Readmission;
 use crate::bridge::readmit;
@@ -23,11 +24,11 @@ use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::declaration::signature;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::ExpectedShape;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A declaration position in a fixture module.
 #[repr(transparent)]
@@ -83,7 +84,7 @@ fn judged(
 ) -> (ModuleReport, Readmission)
 {
     let report = {
-        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, module)
     };
     let readmission = readmit(arena, &report);

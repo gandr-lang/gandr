@@ -52,6 +52,7 @@ use super::checked;
 use super::synthesise_comp;
 use super::synthesise_value;
 use super::unadmitted_value;
+use crate::Checker;
 use crate::context::Atom;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
@@ -118,7 +119,7 @@ fn every_value_former_is_answered_in_both_modes()
     let thunk = arena.value_thunk(returned);
     let injection = arena.value_injection(Side::Left.into(), unit);
     let lift = arena.value_lift(Level::zero(), unit);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[thunk_arrow]);
     let unbound = CheckRefusal::UnboundIndex {
         at: variable,
@@ -215,7 +216,7 @@ fn a_pair_synthesises_its_eager_product_and_checks_against_one()
     let thunk = arena.value_thunk(returned);
     let pair = arena.value_tuple(&[unit, zero]);
     let with_thunk = arena.value_tuple(&[thunk, zero]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let synthesised = synthesise_value(&mut context, pair)
         .map(|found| found.produced().id())
         .unwrap();
@@ -304,7 +305,7 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
     let three_way = arena.computation_case(scrutinee, &[payload, constant, constant]);
     let two_way = arena.computation_case(scrutinee, &[payload, constant]);
     let absurd = arena.computation_case(scrutinee, &[]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let synthesised = synthesise_value(&mut context, triple)
         .map(|found| found.produced().id())
         .unwrap();
@@ -417,7 +418,7 @@ fn a_split_binds_every_component_of_its_product()
     let zero = arena.value_literal(integer_literal());
     let returns_zero = arena.computation_return(zero);
     let empty = arena.computation_split(scrutinee, ComponentCount::default(), returns_zero);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let triple_type = form_value_type(&mut context, triple_type).unwrap();
     let unit_type = form_value_type(&mut context, unit_type).unwrap();
     let integer = form_value_type(&mut context, integer).unwrap();
@@ -483,7 +484,7 @@ fn a_split_synthesises_its_body_type_outside_its_binders()
     let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let picked = arena.computation_application(head, code);
     let dependent = arena.computation_split(scrutinee, ComponentCount::from(1_usize), picked);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[produces, picks]);
     let pair_type = form_value_type(&mut context, pair_type).unwrap();
     let unit_type = form_value_type(&mut context, unit_type).unwrap();
@@ -519,7 +520,7 @@ fn a_static_lambda_checks_only_against_a_static_pi()
     let operator_type = arena.value_type_static_pi(small, small);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let identity = arena.value_static_lambda(bound);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let operator_type = form_value_type(&mut context, operator_type).unwrap();
     let integer = form_value_type(&mut context, integer).unwrap();
     assert_eq!(
@@ -571,7 +572,7 @@ fn every_comp_former_is_answered_in_both_modes()
     let returned = arena.computation_return(integer_value);
     let bind = arena.computation_bind(application, force);
     let case = arena.computation_case(unit, &[returned, returned]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[thunk_arrow]);
     let crossed = |crossings: usize| Ok(ConversionCount::from(crossings));
     let rows: [Row<ComputationId, CompTypeId>; 4] = [
@@ -667,7 +668,7 @@ fn a_bind_synthesises_its_continuations_type()
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let body = arena.computation_application(head, variable);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_integer, suspended_arrow]);
 
     assert_eq!(
@@ -708,7 +709,7 @@ fn host_operations_check_payloads_and_retain_effects()
             let wrong =
                 arena.computation_perform(signature.clone(), operation.name.clone(), wrong_payload);
             let unknown = arena.computation_perform(signature.clone(), "missing".into(), variable);
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             context
                 .binders()
                 .open(Zone::Intuitionistic, operation.payload);
@@ -751,7 +752,7 @@ fn host_operations_check_payloads_and_retain_effects()
     let mode = arena.value_tuple(&[integers, string]);
     let command = arena.value_tuple(&[string, mode]);
     let bad = arena.computation_perform(host.exec, "exec".into(), command);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let inferred = synthesise_comp(&mut context, good)
         .expect("native string arguments")
         .produced();
@@ -898,7 +899,7 @@ fn handlers_discharge_only_their_own_interface()
         }]
         .into(),
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let answer = form_comp_type(&mut context, answer).unwrap();
     let allowed = form_comp_type(&mut context, allowed).unwrap();
     check_comp(&mut context, good, answer).expect("a deep resumption may be used twice");
@@ -1011,7 +1012,7 @@ fn control_rules_preserve_rows_scopes_and_shapes()
     let negative_pair_type = arena.comp_type_with(&[returned_integer, returned_string]);
     let nested = arena.computation_reset(negative_pair);
     let past = arena.computation_project(Component::from(2_usize), forced);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_pair]);
     context.binders().open(Zone::Intuitionistic, ambient_type);
     let classifier = form_value_type(&mut context, classifier).unwrap();
@@ -1115,7 +1116,7 @@ fn reset_answers_are_weakened_through_intervening_binders()
     let shifted = arena.computation_shift(body);
     let body = arena.computation_lambda(shifted);
     let reset = arena.computation_reset(body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, universe);
     context.binders().open(Zone::Intuitionistic, element);
     let answer = form_comp_type(&mut context, answer).unwrap();
@@ -1150,7 +1151,7 @@ fn pure_bind_into_lambda_is_unchanged()
     let returned = arena.computation_return(outer);
     let lambda = arena.computation_lambda(returned);
     let program = arena.computation_bind(bound, lambda);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_comp_type(&mut context, expected).unwrap();
     check_comp(&mut context, program, expected)
         .expect("a pure bind may continue with a negative computation");
@@ -1179,7 +1180,7 @@ fn effectful_bind_into_lambda_is_shape_mismatch()
     let returned = arena.computation_return(outer);
     let lambda = arena.computation_lambda(returned);
     let program = arena.computation_bind(bound, lambda);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let formed = form_comp_type(&mut context, expected).unwrap();
     assert_eq!(
         check_comp(&mut context, program, formed).unwrap_err(),
@@ -1215,7 +1216,7 @@ fn a_stack_bind_cannot_export_its_local_type_code()
     let unit = arena.value_type_unit();
     let output = arena.comp_type_returner(unit);
     let expected = arena.value_type_stack(input, output);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended]);
     let expected = form_value_type(&mut context, expected).unwrap();
     assert!(
@@ -1245,7 +1246,7 @@ fn stack_bind_accumulates_input_and_body_rows()
     let stack = arena.value_reify([StackFrame::Bind(body)].into());
     let expected = arena.value_type_stack(input, output);
     let dropped_input = arena.value_type_stack(input, missing);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, expected).unwrap();
     check_value(&mut context, stack, expected).expect("the output retains both rows");
     let missing = form_value_type(&mut context, dropped_input).unwrap();
@@ -1302,7 +1303,7 @@ fn handle_against_a_non_returner_is_stuck()
     let unit = arena.value_unit();
     let returned = arena.computation_return(unit);
     let handler = arena.computation_handle(empty_interface(), returned, returned, [].into());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let arrow = form_comp_type(&mut context, arrow).unwrap();
     assert!(matches!(
         check_comp(&mut context, handler, arrow),
@@ -1331,7 +1332,7 @@ fn handle_of_a_non_returner_scrutinee_is_a_shape_mismatch()
     let unit = arena.value_unit();
     let returned = arena.computation_return(unit);
     let handler = arena.computation_handle(empty_interface(), subject, returned, [].into());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended]);
     let answer = form_comp_type(&mut context, returns_unit).unwrap();
     assert!(matches!(
@@ -1357,7 +1358,7 @@ fn empty_signature_handler_finishes_after_the_return_clause()
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let on_return = arena.computation_return(bound);
     let handler = arena.computation_handle(empty_interface(), subject, on_return, [].into());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended]);
     let answer = form_comp_type(&mut context, answer).unwrap();
     check_comp(&mut context, handler, answer)
@@ -1406,7 +1407,7 @@ fn handle_against_unknown_answer()
     };
     let resuming = handler(&mut arena, resumed);
     let holed = handler(&mut arena, held);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let unknown = form_comp_type(&mut context, unknown).unwrap();
     for term in [resuming, holed] {
         check_comp(&mut context, term, unknown)
@@ -1448,7 +1449,7 @@ fn reify_empty_stack_is_identity()
     let stack = arena.value_reify([].into());
     let identity = arena.value_type_stack(pure, pure);
     let changed = arena.value_type_stack(pure, other);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let identity = form_value_type(&mut context, identity).unwrap();
     check_value(&mut context, stack, identity).expect("the empty stack delivers what it consumes");
     let changed = form_value_type(&mut context, changed).unwrap();
@@ -1464,7 +1465,7 @@ fn reify_delivered_answer_subsumes_up()
     let (mut arena, pure, stateful) = pure_and_stateful();
     let stack = arena.value_reify([].into());
     let widened = arena.value_type_stack(pure, stateful);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let widened = form_value_type(&mut context, widened).unwrap();
     check_value(&mut context, stack, widened)
         .expect("the delivered pure answer subsumes to the effectful one");
@@ -1476,7 +1477,7 @@ fn reify_delivered_answer_cannot_drop_a_row()
     let (mut arena, pure, stateful) = pure_and_stateful();
     let stack = arena.value_reify([].into());
     let dropped = arena.value_type_stack(stateful, pure);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let dropped = form_value_type(&mut context, dropped).unwrap();
     assert!(matches!(
         check_value(&mut context, stack, dropped),
@@ -1490,7 +1491,7 @@ fn reify_against_non_stack_type_is_stuck()
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let stack = arena.value_reify([].into());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let integer = form_value_type(&mut context, integer).unwrap();
     assert!(matches!(
         check_value(&mut context, stack, integer),
@@ -1522,7 +1523,7 @@ fn reify_interior_bind_frame_threads_the_accumulated_row()
         arena.value_reify([StackFrame::Bind(performed), StackFrame::Bind(passed_on)].into());
     let threaded = arena.value_type_stack(input, output);
     let laundered = arena.value_type_stack(input, laundered);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let threaded = form_value_type(&mut context, threaded).unwrap();
     check_value(&mut context, stack, threaded)
         .expect("the later frame receives the interior frame's row");
@@ -1544,7 +1545,7 @@ fn resume_of_a_non_stack_is_a_shape_mismatch()
     let zero = arena.value_literal(integer_literal());
     let fed = arena.computation_return(zero);
     let resume = arena.computation_resume(zero, fed);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(matches!(
         synthesise_comp(&mut context, resume),
         Err(CheckRefusal::ShapeMismatch {
@@ -1563,7 +1564,7 @@ fn resume_delivering_a_row_cannot_drop_it()
     let zero = arena.value_literal(integer_literal());
     let fed = arena.computation_return(zero);
     let resume = arena.computation_resume(continuation, fed);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, stack_type);
     let pure = form_comp_type(&mut context, pure).unwrap();
     assert!(matches!(
@@ -1581,7 +1582,7 @@ fn resume_delivered_answer_subsumes_up()
     let zero = arena.value_literal(integer_literal());
     let fed = arena.computation_return(zero);
     let resume = arena.computation_resume(continuation, fed);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, stack_type);
     let stateful = form_comp_type(&mut context, stateful).unwrap();
     check_comp(&mut context, resume, stateful)
@@ -1596,7 +1597,7 @@ fn resume_of_a_hole_infers_unknown()
     let zero = arena.value_literal(integer_literal());
     let fed = arena.computation_return(zero);
     let resume = arena.computation_resume(hole, fed);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let inferred = synthesise_comp(&mut context, resume)
         .expect("a hole in stack position localizes rather than cascading")
         .produced()
@@ -1616,7 +1617,7 @@ fn reset_is_transparent_on_the_type()
     let zero = arena.value_literal(integer_literal());
     let returned = arena.computation_return(zero);
     let reset = arena.computation_reset(returned);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let pure = form_comp_type(&mut context, pure).unwrap();
     check_comp(&mut context, reset, pure).expect("a reset checks at its body's answer");
     let other = form_comp_type(&mut context, other).unwrap();
@@ -1636,7 +1637,7 @@ fn shift_binds_the_continuation_at_the_captured_type()
     let resumed = arena.computation_resume(continuation, fed);
     let shift = arena.computation_shift(resumed);
     let reset = arena.computation_reset(shift);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let pure = form_comp_type(&mut context, pure).unwrap();
     assert!(matches!(
         check_comp(&mut context, reset, pure),
@@ -1666,7 +1667,7 @@ fn bind_unions_effect_rows()
     let bound = arena.computation_force(first_value);
     let body = arena.computation_force(second_value);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &types);
     let produced = synthesise_comp(&mut context, bind)
         .expect("compatible interfaces")
@@ -1706,7 +1707,7 @@ fn check_mode_bind_subsumes_the_accumulated_row()
     let returned = arena.value_unit();
     let body = arena.computation_return(returned);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended]);
     let expected = form_comp_type(&mut context, pure).expect("pure returner");
     let Err(CheckRefusal::TypeMismatch(Mismatch::Computation {
@@ -1744,7 +1745,7 @@ fn check_mode_bind_accepts_a_contained_row()
     let value = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let body = arena.computation_return(value);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended]);
     let expected = form_comp_type(&mut context, answer).expect("rowful returner");
     assert!(check_comp(&mut context, bind, expected).is_ok());
@@ -1771,7 +1772,7 @@ fn bind_refuses_conflicting_operation_types_without_replacing_a_signature()
     let bound = arena.computation_force(first_value);
     let body = arena.computation_force(second_value);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &types);
     assert_eq!(
         synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
@@ -1801,7 +1802,7 @@ fn a_bind_checks_against_the_expected_computation()
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let body = arena.computation_return(variable);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_integer]);
     let expected = form_comp_type(&mut context, returns_integer).unwrap();
     let wrong = form_comp_type(&mut context, returns_string).unwrap();
@@ -1864,7 +1865,7 @@ fn a_discarded_case_checks_at_the_expected_row()
     let kept = arena.computation_bind(case, returned);
     let effectful_integer = arena.comp_type_returner_with_effects(integer, row);
     let pure_integer = arena.comp_type_returner(integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[choice, suspended]);
     let expected = form_comp_type(&mut context, effectful_integer).unwrap();
     let pure = form_comp_type(&mut context, pure_integer).unwrap();
@@ -1904,7 +1905,7 @@ fn a_bind_of_a_non_returner_is_a_shape_mismatch()
     let unit = arena.value_unit();
     let body = arena.computation_return(unit);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_arrow]);
     let expected = form_comp_type(&mut context, returns_integer).unwrap();
     let refusal = CheckRefusal::ShapeMismatch {
@@ -1945,7 +1946,7 @@ fn a_return_of_several_values_synthesises_their_telescope()
     let returned = arena.computation_return_all(&[zero, text]);
     let expected = arena.comp_type_returns_with_effects(&[integer, string], EffectRow::EMPTY);
     let swapped = arena.comp_type_returns_with_effects(&[string, integer], EffectRow::EMPTY);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let found = synthesise_comp(&mut context, returned)
         .map(|found| found.produced().id())
         .unwrap();
@@ -1985,7 +1986,7 @@ fn a_return_of_several_values_checks_each_at_its_instantiated_result()
     let zero = arena.value_literal(integer_literal());
     let admitted = arena.computation_return_all(&[integer_code, zero]);
     let misread = arena.computation_return_all(&[string_code, zero]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let telescope = form_comp_type(&mut context, telescope).unwrap();
     let three = form_comp_type(&mut context, three).unwrap();
     let one = form_comp_type(&mut context, one).unwrap();
@@ -2038,7 +2039,7 @@ fn a_bind_of_several_values_binds_them_in_order()
     let returns_inner = arena.computation_return(inner);
     let first = arena.computation_bind_all(bound, two, returns_outer);
     let second = arena.computation_bind_all(bound, two, returns_inner);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[produces]);
     let mut tally = ConversionCount::default();
     for (bind, returned) in [(first, returns_integer), (second, returns_string)] {
@@ -2099,7 +2100,7 @@ fn a_bind_of_several_values_refuses_another_arity()
     let body = arena.computation_return(zero);
     let three = arena.computation_bind_all(forced_two, ComponentCount::from(3_usize), body);
     let two = arena.computation_bind_all(forced_one, ComponentCount::from(2_usize), body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[produces_two, produces_one]);
     let expected = form_comp_type(&mut context, returns_integer).unwrap();
     for (bind, bound, synthesised) in [
@@ -2160,7 +2161,7 @@ fn a_let_suspends_a_nested_computation_that_is_no_returner()
     let suspends = let_bound(&mut arena, nested_partial);
     let runs = let_bound(&mut arena, nested_produced);
     let elaborated = let_bound(&mut arena, thunked_partial);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_arrow, suspended_integer]);
     let function_type = form_comp_type(&mut context, returns_function).unwrap();
     let integer_type = form_comp_type(&mut context, returns_integer).unwrap();
@@ -2220,7 +2221,7 @@ fn a_let_s_thunk_is_forced_through_its_name()
     let two = arena.value_literal(integer_literal());
     let applied = arena.computation_application(forced, two);
     let bind = arena.computation_bind(bound, applied);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_arrow]);
     let expected = form_comp_type(&mut context, returns_integer).unwrap();
 
@@ -2246,7 +2247,7 @@ fn an_ascription_checks_its_body_and_synthesises_its_type()
     let ascribed = arena.computation_ascribe(forced, returns_integer);
     let mistyped = arena.computation_ascribe(forced, returns_string);
     let checked_only = arena.computation_ascribe(returned, returns_suspended);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_integer]);
 
     assert_eq!(
@@ -2291,7 +2292,7 @@ fn a_mismatched_literal_is_refused_with_both_types()
     let mut arena = CoreArena::new();
     let string = arena.value_type_base(BaseType::String);
     let integer_value = arena.value_literal(integer_literal());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, string).unwrap();
     let refusal = check_value(&mut context, integer_value, expected).unwrap_err();
     assert_eq!(
@@ -2324,7 +2325,7 @@ fn a_mismatched_application_is_refused_at_the_computation_bridge()
     let force = arena.computation_force(function);
     let argument = arena.value_literal(integer_literal());
     let application = arena.computation_application(force, argument);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[thunk_arrow]);
     let expected = form_comp_type(&mut context, returns_string).unwrap();
     let refusal = check_comp(&mut context, application, expected).unwrap_err();
@@ -2355,7 +2356,7 @@ fn an_introduction_against_the_wrong_former_is_a_shape_mismatch()
     let returned = arena.computation_return(integer_value);
     let thunk = arena.value_thunk(returned);
     let lambda = arena.computation_lambda(returned);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let formed_integer = form_value_type(&mut context, integer).unwrap();
     let formed_returner = form_comp_type(&mut context, returns_integer).unwrap();
     let formed_arrow = form_comp_type(&mut context, arrow).unwrap();
@@ -2411,7 +2412,7 @@ fn an_elimination_of_the_wrong_former_is_a_shape_mismatch()
     let suspended = arena.value_constant(ConstantIndex::from(0_usize));
     let head = arena.computation_force(suspended);
     let application = arena.computation_application(head, integer_value);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[thunk_returner]);
     assert_eq!(
         synthesise_comp(&mut context, forced_literal),
@@ -2451,7 +2452,7 @@ fn a_two_bridge_check_crosses_the_boundary_twice()
     let application = arena.computation_application(head, bound);
     let lambda = arena.computation_lambda(application);
     let body = arena.value_thunk(lambda);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[thunk_arrow]);
     let expected = form_value_type(&mut context, thunk_arrow).unwrap();
     assert_eq!(
@@ -2475,11 +2476,11 @@ fn an_exhausted_allowance_is_refused_with_the_budget()
     let lambda = arena.computation_lambda(returned);
     let identity = arena.value_thunk(lambda);
     let expected = {
-        let mut forming = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut forming = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         form_value_type(&mut forming, thunk_arrow).unwrap()
     };
     let budget = CheckBudget::from(3_usize);
-    let mut context = CheckingContext::new(&mut arena, budget);
+    let mut context = CheckingContext::new(&mut arena, budget, &Checker);
     assert_eq!(
         form_value_type(&mut context, thunk_arrow),
         Err(CheckRefusal::BudgetExceeded { budget }),
@@ -2513,7 +2514,7 @@ fn a_refusal_keeps_the_rules_it_stood_inside()
     let zero = arena.value_literal(integer_literal());
     let forced = arena.computation_force(zero);
     let thunk = arena.value_thunk(forced);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, suspended).unwrap();
     let failure = check_value_with_failure(&mut context, thunk, expected).unwrap_err();
     assert_eq!(
@@ -2581,7 +2582,7 @@ fn a_refusal_under_a_bind_keeps_its_hypothesis()
     let body = arena.computation_return(variable);
     let bind = arena.computation_bind(bound, body);
     let thunk = arena.value_thunk(bind);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[suspended_integer]);
     let expected = form_value_type(&mut context, suspended_string).unwrap();
     let failure = check_value_with_failure(&mut context, thunk, expected).unwrap_err();
@@ -2655,7 +2656,7 @@ fn a_refusal_under_binders_leaves_the_context_as_found()
     let returns_escaping = arena.computation_return(escaping);
     let inner_lambda = arena.computation_lambda(returns_escaping);
     let outer_lambda = arena.computation_lambda(inner_lambda);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_comp_type(&mut context, outer).unwrap();
     let refusal = check_comp(&mut context, outer_lambda, expected).unwrap_err();
     assert_eq!(
@@ -2690,7 +2691,7 @@ fn a_dangling_term_is_refused_as_a_fault()
 {
     let mut arena = CoreArena::new();
     let dangling = dangling_value();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let refusal = synthesise_value(&mut context, dangling).unwrap_err();
     assert_eq!(
         refusal,
@@ -2711,7 +2712,7 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
 {
     let mut arena = CoreArena::new();
     let unit_type = arena.value_type_unit();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         checked(
             Produced::ValueType(unit_type.into()),
@@ -2761,7 +2762,7 @@ fn machine_bookkeeping_preserves_zero_and_one_boundaries()
     let absent_comp = foreign.computation_return(foreign_unit);
     let absent_value = dangling_value();
     let budget = CheckBudget::from(1_usize);
-    let mut context = CheckingContext::new(&mut arena, budget);
+    let mut context = CheckingContext::new(&mut arena, budget, &Checker);
     let mut machine = Machine {
         context: &mut context,
         frames: Vec::new(),
@@ -2830,7 +2831,7 @@ fn lift_formation_distinguishes_below_equal_and_above()
     let below = arena.value_type_lift(natural, Level::zero());
     let equal = arena.value_type_lift(natural, Level::constant(LevelConstant::from(1_u64)));
     let above = arena.value_type_lift(natural, Level::constant(LevelConstant::from(2_u64)));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for at in [below, equal] {
         assert_eq!(
             form_value_type(&mut context, at),
@@ -2885,7 +2886,7 @@ fn a_universe_classifies_one_level_up_in_the_positive_sort()
     let quoted_negative = arena.value_quote(negative);
     let quoted_integer = arena.value_quote(integer);
     let quoted_returner = arena.value_quote_computation(returns_integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let one = Level::constant(LevelConstant::from(1_u64));
     let positive_one = (Sort::Ground(GroundSort::Value), one);
     let rows = [
@@ -2920,7 +2921,7 @@ fn a_value_type_in_a_computation_universe_is_a_sort_mismatch()
     let quoted = arena.value_quote(integer);
     let code = arena.value_constant(ConstantIndex::from(0_usize));
     let decoded = arena.comp_type_element(code, Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small]);
     let expected = form_value_type(&mut context, negative).unwrap();
     let refusal = check_value(&mut context, quoted, expected).unwrap_err();
@@ -2968,7 +2969,7 @@ fn a_bind_whose_type_mentions_its_binder_is_refused()
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let body = arena.computation_application(head, variable);
     let bind = arena.computation_bind(bound, body);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[make, pick]);
     let refusal = synthesise_comp(&mut context, bind).unwrap_err();
     assert!(
@@ -3021,7 +3022,7 @@ fn a_dependent_application_instantiates_its_codomain_at_the_argument()
     let lambda = arena.computation_lambda(returned);
     let returns_small = arena.comp_type_returner(small);
     let small_identity = arena.comp_type_pi(small, returns_small);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[identity, lifting]);
     let expected = form_comp_type(&mut context, returns_integer).unwrap();
     assert!(
@@ -3099,7 +3100,7 @@ fn a_family_at_a_call_argument_converts_with_the_type_written_with_it_720()
     let pointed = arena.value_nested(pointed);
     let first = at(&mut arena, 3, extended);
     let applied = arena.computation_application(first, pointed);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[extending, family, point, consumer]);
     let expected = form_comp_type(&mut context, returns_unit).unwrap();
     let verdict = check_comp(&mut context, applied, expected);
@@ -3146,7 +3147,7 @@ fn a_lambda_argument_a_later_type_reads_stands_as_its_thunk_5321()
     let first = arena.computation_application(head, lambda);
     let five = arena.value_literal(integer_literal());
     let applied = arena.computation_application(first, five);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[taking]);
     let expected = form_comp_type(&mut context, returns_integer).unwrap();
     let verdict = check_comp(&mut context, applied, expected);
@@ -3201,7 +3202,7 @@ fn a_decoded_type_parameter_at_a_call_converts_with_the_type_written_with_it_393
     let pointed = arena.value_nested(pointed);
     let first = at(&mut arena, 2, typed);
     let applied = arena.computation_application(first, pointed);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[family, point, consumer]);
     let expected = form_comp_type(&mut context, returns_unit).unwrap();
     let verdict = check_comp(&mut context, applied, expected);
@@ -3274,7 +3275,7 @@ fn a_composite_started_at_a_call_argument_converts_with_the_type_written_with_it
     let second = arena.computation_application(first, looped);
     let squared = arena.value_constant(ConstantIndex::from(2_usize));
     let applied = arena.computation_application(second, squared);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[extending, around, square, consumer]);
     let expected = form_comp_type(&mut context, returns_unit).unwrap();
     let verdict = check_comp(&mut context, applied, expected);
@@ -3295,7 +3296,7 @@ fn a_hole_synthesises_the_unknown_type_and_checks_against_any()
     let comp_hole = arena.computation_hole(HoleId::from(1_u32));
     let unit = arena.value_unit();
     let marked = arena.value_mark(MarkIndex::from(0_u32), unit);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let integer = form_value_type(&mut context, integer).unwrap();
     let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
 
@@ -3345,7 +3346,7 @@ fn a_pattern_hole_at_a_leaf_leaves_the_match_undecided()
     let returns_integer = arena.comp_type_returner(integer);
     let pattern = arena.computation_hole(HoleId::from(4_u32));
     let written = arena.computation_hole(HoleId::from(5_u32));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
     assert_eq!(
         check_comp(&mut context, pattern, returns_integer).map(|evidence| evidence.conversions()),
@@ -3401,7 +3402,7 @@ fn an_introduction_against_the_unknown_type_checks_its_parts()
         .into(),
     );
     let lazy = arena.computation_with(&[returned, returned]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let unknown_value = form_value_type(&mut context, unknown_value).unwrap();
     let unknown_comp = form_comp_type(&mut context, unknown_comp).unwrap();
 
@@ -3537,7 +3538,7 @@ fn reflexivity_checks_by_endpoint_conversion()
         let returns_path = arena.comp_type_returner(path);
         arena.comp_type_pi(integer_type, returns_path)
     });
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[thunk_arrow]);
     let declared = form_value_type(&mut context, thunk_arrow).unwrap();
     context.define(ConstantIndex::from(0_usize), declared, identity_body);
@@ -3667,7 +3668,7 @@ fn tier_dialogues(
     let open_path = arena.value_type_path(integer_type, bound, open_endpoint);
     let returns_path = arena.comp_type_returner(open_path);
     let pi = arena.comp_type_pi(integer_type, returns_path);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     if let Handed::Tier(policy) = handed {
         context.decide_endpoints_on(alloc::boxed::Box::new(Agreeing), policy);
     }
@@ -3759,7 +3760,7 @@ fn reflexivity_at_a_stuck_native_point_meets_it_by_syntax()
             let returns = arena.comp_type_returner(path);
             (lambda, arena.comp_type_pi(integer_type, returns))
         });
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (body, pi, sides) in [
         (shared, shared_type, "one node"),
         (copied, copied_type, "three nodes of one syntax"),
@@ -3845,7 +3846,7 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     let echo = arena.computation_lambda(echo);
     let echo = arena.computation_lambda(echo);
     let echo = arena.computation_lambda(echo);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &[small]);
     let synthesised = synthesise_comp(&mut context, closed).unwrap();
     assert!(
@@ -3977,7 +3978,7 @@ fn a_telescope_transport_replays_its_substitution_law()
     let scene = telescope_scene(&mut arena);
     let [_, _, p, start, _, over, operand] = scene.constants;
     let transport = arena.computation_telescope_transport(scene.motive, p, start, over, operand);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let synthesised = synthesise_comp(&mut context, transport);
     assert!(
@@ -4022,7 +4023,7 @@ fn a_one_entry_telescope_motive_is_a_shape_mismatch()
     let returns_integer = arena.comp_type_returner(integer_type);
     let one_entry = arena.comp_type_pi(integer_type, returns_integer);
     let transport = arena.computation_telescope_transport(one_entry, p, start, over, operand);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     assert!(
         matches!(
@@ -4053,7 +4054,7 @@ fn an_identity_not_over_the_path_is_refused_6574()
     let transport = arena.computation_telescope_transport(scene.motive, p, start, stray, operand);
     let mut types = scene.types.to_vec();
     types.push(stray_type);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &types);
     let refused = synthesise_comp(&mut context, transport);
     // The check compares the identity's left end `z₁` with `⟨tr(y. Path[.A =
@@ -4133,7 +4134,7 @@ fn a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre()
     let [_, b, r, ..] = scene.constants;
     let skewed = arena.value_tuple(&[b, r]);
     let triple = arena.value_tuple(&[b, r, r]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let sigma = form_value_type(&mut context, scene.sigma).unwrap();
     let checked = check_value(&mut context, scene.pair, sigma);
@@ -4189,7 +4190,7 @@ fn a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first_6574()
     let elsewhere = arena.value_type_path(integer, a, a);
     let elsewhere = arena.comp_type_returner(elsewhere);
     let returns_integer = arena.comp_type_returner(integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
     assert!(
@@ -4248,7 +4249,7 @@ fn a_dependent_split_synthesises_its_motive_at_the_scrutinee()
     let returns_first = arena.computation_return(first_bound);
     let at_product =
         arena.computation_dependent_split(product, arity, returns_integer, returns_first);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let answered = form_comp_type(&mut context, answered).unwrap();
     let checked = check_comp(&mut context, split, answered);
@@ -4288,7 +4289,7 @@ fn a_tuple_of_paths_checks_at_the_identity_of_a_product()
     let paths = arena.value_tuple(&[here_a, here_b]);
     let strayed = arena.value_tuple(&[here_b, here_b]);
     let short = arena.value_tuple(&[here_a]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let identity = form_value_type(&mut context, identity).unwrap();
     let checked = check_value(&mut context, paths, identity);
@@ -4343,7 +4344,7 @@ fn a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair()
     let here_point = arena.value_here(point);
     let here_here_point = arena.value_here(here_point);
     let unfolded = arena.value_tuple(&[here_point, here_here_point]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let identity = form_value_type(&mut context, identity).unwrap();
     let checked = check_value(&mut context, paths, identity);
@@ -4408,7 +4409,7 @@ fn a_transport_along_a_path_at_a_dependent_pair_reads_its_motive_at_the_target()
     let reading = arena.computation_path_transport(family, q, r);
     let at_target = arena.comp_type_returner(loop_a);
     let misplaced = arena.computation_path_transport(family, q, b);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     seed(&mut context, &scene.types);
     let constant = form_comp_type(&mut context, constant).unwrap();
     let checked = check_comp(&mut context, carried, constant);
@@ -4465,7 +4466,7 @@ fn a_session_payload_reads_a_binder_only_in_a_run_protocol_1728()
     let closed = receiving(integer);
     let protocol = arena.value_quote(open);
     let run = arena.value_type_run(protocol);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, universe);
     assert_eq!(
         form_value_type(&mut context, open).map(FormedValueType::id),
@@ -4498,7 +4499,7 @@ proptest! {
         let terms = recipe.build(&mut arena);
         let constant_types: Vec<_> = constants.iter().map(|constant| constant.build(&mut arena)).collect();
         let (expected_value, expected_comp) = expected.build_both(&mut arena);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         seed(&mut context, &constant_types);
         let expected_value = form_value_type(&mut context, expected_value).unwrap();
         let expected_comp = form_comp_type(&mut context, expected_comp).unwrap();
@@ -4644,7 +4645,7 @@ proptest! {
     {
         let mut arena = CoreArena::new();
         let terms = recipe.build(&mut arena);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         seed(&mut context, &terms.constants);
         for &(term, built, mode) in &terms.values {
             let expected = form_value_type(&mut context, built).unwrap();
@@ -4933,7 +4934,7 @@ fn each_rule_a_refusal_stood_inside_is_named_by_its_own_role()
             FrameRole::ThenSecond,
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (value, ty, role) in thunks.into_iter().chain(values) {
         let expected = form_value_type(&mut context, ty).expect("every expected type forms");
         let failure = check_value_with_failure(&mut context, value, expected)
@@ -4987,7 +4988,7 @@ fn checking_only_forms_and_unwritable_types_are_refused_by_name()
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::Partial);
     let lazy = arena.computation_with(&[returned]);
     let capability = arena.value_type_world(WorldType::Capability(World::Host));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (value, form) in [
         (nil, CheckingForm::List(nil)),
         (cons, CheckingForm::List(cons)),
@@ -5045,7 +5046,7 @@ fn a_transported_tuple_reads_its_components_transports()
     let transported = arena.computation_path_transport(product, path, written);
     let transported = arena.value_returned(transported);
     let other = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let two = ComponentCount::from(2_usize);
     assert_eq!(
         tuple_components(&mut context, written, two),
@@ -5113,7 +5114,7 @@ fn a_transport_along_an_unknown_path_and_a_run_of_a_function_are_refused_by_shap
     let lambda = arena.computation_lambda(returned);
     let function = arena.computation_ascribe(lambda, pi);
     let ran = arena.value_run(function);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for at in [transport, telescoped] {
         assert!(
             matches!(
@@ -5193,7 +5194,7 @@ fn each_former_refuses_a_classifier_of_another_shape_by_name()
     let pair = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let third =
         arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(2_usize));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let refused_shape = |result: Result<(), CheckRefusal>| match result {
         Err(CheckRefusal::ShapeMismatch { at, wanted, .. }) => Some((at, wanted)),
         _ => None,
@@ -5283,7 +5284,7 @@ fn a_record_update_extends_retypes_and_refuses_a_non_record_base()
     ]));
     let update = arena.value_record_update(base, overlay);
     let of_integer = arena.value_record_update(zero, overlay);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let synthesised = synthesise_value(&mut context, update)
         .map(|found| found.produced().id())
         .expect("an update of a record synthesises");
@@ -5335,7 +5336,7 @@ fn a_forged_answer_is_refused_naming_its_tactic_2762()
     use gandr_core_term::hole::NominationIndex;
     use gandr_core_term::tactic::Tactic;
 
-    use super::Direction;
+    use crate::judge::Direction;
     use crate::refusal::TacticFault;
 
     let mut arena = CoreArena::new();
@@ -5346,7 +5347,7 @@ fn a_forged_answer_is_refused_naming_its_tactic_2762()
     let at = arena.value_hole(hole);
     let [u, x, past] = [0_u32, 1, 2]
         .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, integer);
     context.binders().open(Zone::Intuitionistic, unit);
     let answered = [x, u, past].map(|answer| {

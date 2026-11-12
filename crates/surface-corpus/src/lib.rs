@@ -45,6 +45,7 @@
 //! ```
 //! use gandr_core_checker::AbstractType;
 //! use gandr_core_checker::CheckBudget;
+//! use gandr_core_checker::Checker;
 //! use gandr_core_checker::CheckingContext;
 //! use gandr_core_checker::ComponentOrdinal;
 //! use gandr_core_checker::Declaration;
@@ -164,7 +165,7 @@
 //!     })
 //!     .collect();
 //! let verdicts = check_module(
-//!     &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+//!     &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
 //!     &declarations,
 //! );
 //!

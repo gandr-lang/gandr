@@ -17,6 +17,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::Checker;
 use crate::Verdict;
 use crate::bridge::Outcome;
 use crate::bridge::readmit;
@@ -83,7 +84,7 @@ fn judged(
 ) -> Vec<(Verdict, Readmitted)>
 {
     let report = {
-        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, module)
     };
     let readmission = readmit(arena, &report);

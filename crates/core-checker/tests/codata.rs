@@ -6,6 +6,7 @@ use alloc::sync::Arc;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::Declaration;
@@ -89,7 +90,7 @@ fn run(
 ) -> (ModuleReport, bridge::Readmission)
 {
     let report = check_module(
-        &mut CheckingContext::new(arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker),
         declarations,
     );
     let crossed = bridge::readmit(arena, &report);
@@ -190,7 +191,7 @@ fn a_stream_is_admitted_observed_and_adopted()
     assert!(crossed.audit().axioms().is_empty());
 
     let fresh = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         assert_eq!(check_declaration(&mut context, &declaration), Verdict::Data);
         check_declaration_supported(&mut context, &use_site)
     };
@@ -199,7 +200,7 @@ fn a_stream_is_admitted_observed_and_adopted()
         panic!("a codata signature");
     };
     let adopted = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.adopt_codata(family, Arc::clone(signature)).unwrap();
         check_declaration_supported(&mut context, &use_site)
     };

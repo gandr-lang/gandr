@@ -3,6 +3,7 @@ use alloc::vec;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -95,7 +96,7 @@ fn judged(
         ItemOrdinal::from(0_usize),
     );
     let (arena, layout) = program.parts_mut();
-    let mut context = CheckingContext::new(arena, budget);
+    let mut context = CheckingContext::new(arena, budget, &Checker);
     let Some(declaration) = declarations.first()
     else {
         panic!("one declaration");
@@ -761,7 +762,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
         })
         .collect();
     let (arena, layout) = program.parts_mut();
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let typings: alloc::vec::Vec<Typing> = declarations
         .iter()
         .zip(&encoded)

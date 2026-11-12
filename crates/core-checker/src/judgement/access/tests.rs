@@ -21,6 +21,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 
 use crate::CheckBudget;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::access::AccessDefect;
 use crate::check_comp;
@@ -285,7 +286,7 @@ fn both(
     expected: CompTypeId,
 ) -> [Result<(), CheckRefusal>; 2]
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let synthesised = synthesise_comp(&mut context, term).map(|_| ());
     assert_eq!(
         context.depth(Zone::Linear),
@@ -600,7 +601,7 @@ fn a_held_value_lent_or_misnamed_is_refused()
     let performing = hold(&mut arena, then);
     let integer = arena.value_type_base(BaseType::Integer);
     let effectful = arena.comp_type_returner_with_effects(integer, EffectRow::singleton(probe));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_comp_type(&mut context, effectful).expect("an effectful returner");
     assert_eq!(
         check_comp(&mut context, performing, expected).map(|_| ()),
@@ -612,7 +613,7 @@ fn a_held_value_lent_or_misnamed_is_refused()
     // hold c = 0; (c,).0, checked under the row `Probe`
     let (_held, read) = copied(&mut arena, l0());
     let read_hold = hold(&mut arena, read);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_comp_type(&mut context, effectful).expect("an effectful returner");
     assert_eq!(
         check_comp(&mut context, read_hold, expected).map(|_| ()),
@@ -877,7 +878,7 @@ fn checked(
     expected: CompTypeId,
 ) -> Result<(), CheckRefusal>
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let checked = form_comp_type(&mut context, expected)
         .and_then(|expected| check_comp(&mut context, term, expected).map(|_| ()));
     assert_eq!(

@@ -14,6 +14,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Step;
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
@@ -21,11 +22,11 @@ use crate::declaration::OriginToken;
 use crate::declaration::body;
 use crate::fixture::Booleans;
 use crate::fixture::booleans;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A declaration position in a fixture module.
 #[repr(transparent)]
@@ -76,7 +77,7 @@ fn judged(
         declaration(At(2), functions.function, Maybe::Present(functions.same)),
     ]);
     module.extend_from_slice(extra);
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     check_module(&mut context, &module)
 }
 
@@ -233,7 +234,7 @@ fn a_function_coordinate_keeps_distinct_sides_inside_sums_and_pairs()
         arena.value_type_product(&[function, unit]),
         arena.value_type_product(&[unit, function]),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for domain in domains {
         let Ok(Maybe::Present(patterns)) = super::coverage(&mut context, domain)
         else {
@@ -275,7 +276,7 @@ fn an_atom_covers_as_one_variable_and_a_dependent_or_bare_thunk_as_nothing()
     let dependent = arena.comp_type_pi(integer, returns);
     let dependent = arena.value_type_thunk(dependent);
     let bare = arena.value_type_thunk(returns);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for atom in [integer, string] {
         let Ok(Maybe::Present(patterns)) = super::coverage(&mut context, atom)
         else {
@@ -343,7 +344,7 @@ fn a_data_domain_covers_as_its_constructors()
     ));
     let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let natural = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for (position, signature) in [shapes, naturals].into_iter().enumerate() {
         context
             .adopt_data(ConstantIndex::from(position), signature)

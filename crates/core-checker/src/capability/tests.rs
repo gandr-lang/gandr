@@ -24,6 +24,7 @@ use super::Grants;
 use super::HostGrant;
 use crate::CheckBudget;
 use crate::CheckRefusal;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::CheckingForm;
 use crate::Declaration;
@@ -69,7 +70,7 @@ fn passed(
 ) -> Result<(), CheckRefusal>
 {
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, hypothesis);
     let expected = form_value_type(&mut context, expected)?;
     check_value(&mut context, variable, expected).map(|_checked| ())
@@ -157,7 +158,7 @@ fn a_consumable_capability_is_refused_by_name()
     );
     let returns = arena.comp_type_returner(consumable);
     let suspended = arena.value_type_thunk(returns);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     for ty in [consumable, suspended] {
         assert_eq!(
             form_value_type(&mut context, ty),
@@ -185,7 +186,7 @@ fn no_term_forges_a_capability()
     let pair = arena.value_tuple(&[zero, zero]);
     let hole = arena.value_hole(HoleId::from(0_u32));
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, string);
     let formed = form_value_type(&mut context, cap).unwrap();
     for term in [zero, thunk, pair, variable] {
@@ -235,7 +236,7 @@ fn an_operation_is_exercised_only_within_the_authority()
     let write = arena.computation_exercise(variable, host.fs.clone(), "write".into(), contents);
     let missing = arena.computation_exercise(variable, host.fs.clone(), "missing".into(), path);
     let wrong = arena.computation_exercise(variable, host.fs.clone(), "read".into(), unit);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, cap);
     let inferred = synthesise_comp(&mut context, read).unwrap().produced().id();
     let Maybe::Present(&gandr_core_term::effect::EffectOp { reply, .. }) =
@@ -269,7 +270,7 @@ fn an_operation_is_exercised_only_within_the_authority()
         ),
         "the payload checks against the operation's payload type"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, string);
     assert!(
         matches!(
@@ -327,7 +328,7 @@ fn a_scope_handles_the_capability_it_introduces()
         .unwrap();
     let conflicting =
         arena.comp_type_returner_with_effects(unit_type, EffectRow::singleton(other_process));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let answer = form_comp_type(&mut context, answer).unwrap();
     let conflicting = form_comp_type(&mut context, conflicting).unwrap();
     check_comp(&mut context, scope, answer)
@@ -399,7 +400,7 @@ fn a_scoped_capability_never_leaves_its_scope()
     };
     let outer_passed = consume(&mut arena, first);
     let inner_passed = consume(&mut arena, zeroth);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let returns_held = form_comp_type(&mut context, returns_held).unwrap();
     assert!(
         matches!(
@@ -462,7 +463,7 @@ fn a_held_capability_enters_only_within_the_grant()
         })
         .collect();
     let verdicts = |arena: &mut CoreArena, grants: Grants| {
-        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
         context.grant(grants);
         let report = check_module(&mut context, &module);
         report
@@ -480,7 +481,7 @@ fn a_held_capability_enters_only_within_the_grant()
     assert_eq!(verdicts(&mut arena, Grants::Within(all)), [
         true, true, true
     ]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.grant(Grants::Within(files(&host, &["read".into()])));
     let report = check_module(&mut context, &module);
     assert_eq!(

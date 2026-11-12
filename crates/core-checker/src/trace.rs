@@ -46,7 +46,7 @@ use gandr_core_term::ValueTypeId;
 use quenchant_shape::shape::Maybe;
 
 use crate::failure::judged;
-pub use crate::judgement::unanswered;
+pub use crate::judge::unanswered;
 use crate::refusal::CoreNode;
 use crate::refusal::TypeNode;
 

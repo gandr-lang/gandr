@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
@@ -144,7 +145,7 @@ fn judged(
         .collect();
 
     check_module(
-        &mut CheckingContext::new(arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker),
         &declarations,
     )
 }

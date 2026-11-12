@@ -23,17 +23,18 @@ use gandr_kernel_term::StageDepth;
 use gandr_kernel_term::StageId;
 use quenchant_shape::shape::Maybe;
 
+use crate::Checker;
 use crate::bridge;
 use crate::bridge::Outcome;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
-use crate::module::Judged;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::UnadmittedFormer;
+use crate::report::Judged;
+use crate::report::Verdict;
 
 /// The variable at `index`.
 ///
@@ -202,7 +203,7 @@ fn judge(
     declarations: &[Declaration],
 ) -> (Vec<Verdict>, Vec<Outcome>)
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, declarations);
     let readmission = bridge::readmit(arena, &report);
     (

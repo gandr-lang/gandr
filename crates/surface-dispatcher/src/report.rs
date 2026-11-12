@@ -921,6 +921,7 @@ impl fmt::Display for RunReport
 mod tests
 {
     use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::Checker;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
@@ -1066,7 +1067,7 @@ mod tests
         .expect("the module lowers");
         let declarations = adapt(&module, &arena);
         let verdicts = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
+            &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize), &Checker),
             &declarations,
         );
         let kernel = bridge::readmit(&mut arena, &verdicts).export(module.structured_names());

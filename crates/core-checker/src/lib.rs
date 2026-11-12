@@ -105,8 +105,14 @@
 //! but not defined, and [`ModuleReport::suspensions`] names the holes it
 //! waits on. A refusal wins over a wait, and a reader of a waiting
 //! declaration waits with it. The [`elaboration`] module states the fragment,
-//! the term-producing run that fills a hole and resumes what waited, and the
-//! alternatives.
+//! the term-producing run and the alternatives. The [`elaborating`] module
+//! holds the session that fills a hole and resumes what waited.
+//!
+//! **Formation asks the judgement through a judge.** Formation and the formers
+//! form a type or check a value through the [`Judge`] that the context holds.
+//! The judgement implements it as [`Checker`]. Each ask costs one indirect
+//! call. Thus the context, formation and the formers do not name the
+//! judgement.
 //!
 //! **One machine, no recursion.** Every face and formation run one explicit
 //! machine of goals and frames, charged one step per transition against an
@@ -360,6 +366,7 @@
 //!
 //! ```
 //! use gandr_core_checker::CheckBudget;
+//! use gandr_core_checker::Checker;
 //! use gandr_core_checker::CheckingContext;
 //! use gandr_core_checker::Declaration;
 //! use gandr_core_checker::OriginToken;
@@ -406,7 +413,7 @@
 //!     ),
 //! ];
 //!
-//! let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+//! let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
 //! let report = check_module(&mut context, &declarations);
 //!
 //! let [checked, owed, copied] = report.judged()
@@ -585,6 +592,7 @@ mod coverage;
 mod declaration;
 mod discharge;
 mod divergence;
+pub mod elaborating;
 pub mod elaboration;
 pub mod eliminator;
 mod equiv;
@@ -598,6 +606,7 @@ mod former;
 mod forward;
 mod funext;
 mod handler;
+mod judge;
 mod judgement;
 mod ledger;
 mod loops;
@@ -607,10 +616,12 @@ mod occurrence;
 mod product;
 pub mod program;
 mod quantified;
+mod record;
 mod recursion;
 mod refusal;
 mod regioned;
 mod relatedness;
+mod report;
 mod respect;
 mod retire;
 mod seal;
@@ -689,13 +700,13 @@ pub use crate::forward::Forward;
 pub use crate::funext::Funext;
 pub use crate::funext::Step as FunextStep;
 pub use crate::handler::Handled;
-pub use crate::judgement::Checked;
-pub use crate::judgement::Direction;
+pub use crate::judge::Checked;
+pub use crate::judge::Direction;
+pub use crate::judge::Judge;
+pub use crate::judge::Synthesised;
+pub use crate::judgement::Checker;
 pub use crate::judgement::Elaboration;
-pub use crate::judgement::Formed;
 pub use crate::judgement::MarkEntry;
-pub use crate::judgement::Synthesised;
-pub use crate::judgement::Typing;
 pub use crate::judgement::Typings;
 pub use crate::judgement::check_comp;
 pub use crate::judgement::check_value;
@@ -708,24 +719,18 @@ pub use crate::ledger::Absence;
 pub use crate::ledger::ObligationCount;
 pub use crate::ledger::ObligationEntry;
 pub use crate::ledger::ObligationLedger;
-pub use crate::module::Judged;
 pub use crate::module::Membership;
-pub use crate::module::ModuleReport;
 pub use crate::module::ModuleRun;
 pub use crate::module::Schedule;
 pub use crate::module::TypedModule;
-pub use crate::module::Verdict;
 pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
-pub use crate::module::elaborated;
-pub use crate::module::elaborated_report;
-pub use crate::module::kept;
 pub use crate::module::type_module;
-pub use crate::module::unmarked;
-pub use crate::module::waits;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;
+pub use crate::record::Formed;
+pub use crate::record::Typing;
 pub use crate::refusal::ArgumentPosition;
 pub use crate::refusal::CheckRefusal;
 pub use crate::refusal::CheckingForm;
@@ -745,6 +750,11 @@ pub use crate::refusal::TypeNode;
 pub use crate::refusal::UnadmittedFormer;
 pub use crate::refusal::Unsolved;
 pub use crate::refusal::compared;
+pub use crate::report::Judged;
+pub use crate::report::ModuleReport;
+pub use crate::report::Verdict;
+pub use crate::report::elaborated_report;
+pub use crate::report::unmarked;
 pub use crate::retire::Demand;
 pub use crate::retire::Polled;
 pub use crate::retire::Retirement;
@@ -763,3 +773,6 @@ pub use crate::support::DataConsulted;
 pub use crate::support::Entered;
 pub use crate::support::Support;
 pub use crate::support::Supported;
+pub use crate::support::elaborated;
+pub use crate::support::kept;
+pub use crate::support::waits;

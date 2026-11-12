@@ -1,6 +1,7 @@
 //! Live matching observed through the public transcript writer.
 
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::form_value_type;
 use gandr_core_nbe::Definitions;
@@ -35,7 +36,7 @@ fn a_fill_updates_the_external_match_transcript()
     let any = patterns.mint(Pattern::Wildcard);
     let left = patterns.mint(Pattern::Injection(Side::Left, any));
     let right = patterns.mint(Pattern::Injection(Side::Right, any));
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let formed = form_value_type(&mut context, sum).unwrap();
     let before = checkpoint
         .analyze(&mut context, formed, &patterns, &[left, right])
@@ -63,7 +64,7 @@ fn a_fill_updates_the_external_match_transcript()
             TermId::Value(value),
         )
         .unwrap();
-    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT, &Checker);
     let after = checkpoint
         .analyze(&mut context, formed, &patterns, &[left, right])
         .unwrap();

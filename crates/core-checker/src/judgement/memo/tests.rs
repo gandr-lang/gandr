@@ -15,6 +15,7 @@ use gandr_kernel_term::FieldLabel;
 
 use crate::CheckBudget;
 use crate::CheckRefusal;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::check_value;
 use crate::form_value_type;
@@ -54,7 +55,7 @@ fn a_shared_pair_spends_a_step_for_each_distinct_goal()
     let shared = CheckBudget::from(STEPS_PER_LEVEL * (DEPTH + 1));
     let mut arena = CoreArena::new();
     let (pair, ty) = iterated_pair(&mut arena);
-    let mut context = CheckingContext::new(&mut arena, shared);
+    let mut context = CheckingContext::new(&mut arena, shared, &Checker);
     let formed = form_value_type(&mut context, ty)
         .expect("the pair's type forms within a budget linear in its depth");
     assert!(
@@ -64,7 +65,7 @@ fn a_shared_pair_spends_a_step_for_each_distinct_goal()
 
     let mut arena = CoreArena::new();
     let (pair, ty) = iterated_pair(&mut arena);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     context.memoise_goals(MemoActivity::Inactive);
     let exceeded = Err(CheckRefusal::BudgetExceeded {
         budget: CheckBudget::DEFAULT,
@@ -97,7 +98,7 @@ fn the_tally_counts_a_hit_for_each_goal_met_again()
 {
     let mut arena = CoreArena::new();
     let (pair, ty) = iterated_pair(&mut arena);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let formed = form_value_type(&mut context, ty).expect("the type forms");
     let formation = context.tally();
     assert!(
@@ -151,7 +152,7 @@ fn the_trace_writes_a_step_for_each_consult_the_tally_counts()
 
     let mut arena = CoreArena::new();
     let (pair, ty) = iterated_pair(&mut arena);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let formed = form_value_type(&mut context, ty).expect("the type forms");
     let slots = core::num::NonZeroUsize::new(1_usize << 12_u32).expect("a nonzero count");
     context.trace_into(crate::trace::StepBuffer::new(
@@ -216,7 +217,7 @@ fn a_full_buffer_answers_no_steps_until_it_is_cleared()
 
     let mut arena = CoreArena::new();
     let (pair, ty) = iterated_pair(&mut arena);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let formed = form_value_type(&mut context, ty).expect("the type forms");
     let slots = core::num::NonZeroUsize::new(2).expect("a nonzero count");
     context.trace_into(crate::trace::StepBuffer::new(
@@ -262,7 +263,7 @@ fn a_node_read_under_two_binder_types_is_judged_under_each()
     });
     let alike = arena.value_type_product(&[from_integer, from_integer]);
     let apart = arena.value_type_product(&[from_integer, from_string]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let alike = form_value_type(&mut context, alike).expect("the product forms");
     assert!(
         check_value(&mut context, pair, alike).is_ok(),

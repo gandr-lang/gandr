@@ -12,6 +12,7 @@ use Adoption::Adopted;
 use Adoption::Judged;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleRun;
@@ -1668,7 +1669,7 @@ proptest! {
             let mut run = ModuleRun::new();
             run.keep_supports();
             let report = {
-                let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+                let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
                 run.judge(&mut context, &program.declarations(), |_, _, _| {});
                 run.finish(&mut context)
             };

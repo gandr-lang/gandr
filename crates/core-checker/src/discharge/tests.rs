@@ -12,14 +12,15 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
+use crate::Checker;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::declaration::body;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
+use crate::report::Verdict;
 
 /// A law's body the module omits.
 const DISCHARGED: Maybe<ValueId, body::Absent> = Maybe::Absent(body::Absent::Discharged);
@@ -157,11 +158,11 @@ fn verdicts(
     declarations: &[Declaration],
 ) -> Vec<Verdict>
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     check_module(&mut context, declarations)
         .judged()
         .iter()
-        .map(crate::module::Judged::verdict)
+        .map(crate::report::Judged::verdict)
         .collect()
 }
 

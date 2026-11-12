@@ -31,6 +31,7 @@ use quenchant_shape::shape::Maybe;
 fn native_data_keeps_telescope_and_nominal_heads()
 {
     use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::Checker;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Declaration;
     use gandr_core_checker::OriginToken;
@@ -130,7 +131,7 @@ fn native_data_keeps_telescope_and_nominal_heads()
         ),
     ];
     let report = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &declarations,
     );
     let [ref first, ref second] = *report.judged()

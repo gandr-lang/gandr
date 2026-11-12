@@ -497,6 +497,7 @@ mod tests
     use alloc::sync::Arc;
 
     use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::Checker;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Unretired;
     use gandr_core_checker::bridge;
@@ -549,7 +550,7 @@ mod tests
         .expect("the module lowers");
         let declarations = adapt(&module, &arena);
         let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
             &declarations,
         );
         (arena, report)

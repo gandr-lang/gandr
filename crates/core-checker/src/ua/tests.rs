@@ -59,6 +59,7 @@ use super::code;
 use super::derive;
 use super::recalled;
 use super::tabulate;
+use crate::Checker;
 use crate::bridge::Outcome;
 use crate::bridge::Readmission;
 use crate::bridge::readmit;
@@ -66,11 +67,11 @@ use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A profile's legs: its inputs, then its outputs.
 #[derive(Clone, Copy, Debug)]
@@ -295,7 +296,7 @@ fn judged(
 ) -> (ModuleReport, Readmission)
 {
     let report = {
-        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
         check_module(&mut context, module)
     };
     let readmission = readmit(arena, &report);
@@ -326,7 +327,7 @@ fn prepared<'arena>(
     prelude: &[Declaration],
 ) -> CheckingContext<'arena>
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, prelude);
     assert!(
         report
@@ -866,7 +867,7 @@ fn what_the_stratum_does_not_admit_it_refuses_by_name()
     );
     let four = code(&mut arena, &two, profile(Legs(2, 1)));
     let decided = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         crate::equiv::decide(&mut context, crossed, (crossed, crossed), (four, four))
     };
     assert!(
@@ -1463,7 +1464,7 @@ fn a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034()
         });
         let report = {
             let shared: Arc<dyn StratumStore> = Arc::<Answering>::clone(&store);
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
             context.keep_strata_in(shared);
             check_module(&mut context, &module)
         };
@@ -1538,7 +1539,7 @@ fn level_two_is_kept_recalled_and_refused_by_the_store_4123()
     ];
     for (store, counts, case) in stores {
         let mut arena = CoreArena::new();
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.keep_strata_in(Arc::<Answering>::clone(&store));
         for _asked in 0_usize .. 2_usize {
             let stratum = context.level_two(at).expect("level two is answered");
@@ -1550,7 +1551,7 @@ fn level_two_is_kept_recalled_and_refused_by_the_store_4123()
     let mut arena = CoreArena::new();
     assert!(
         matches!(
-            CheckingContext::new(&mut arena, CheckBudget::DEFAULT)
+            CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker)
                 .level_two(StratumAt { degree: past, ..at }),
             Err(StratumDefect::Degree { degree }) if degree == past
         ),
@@ -1694,7 +1695,7 @@ fn level_three_is_kept_recalled_and_refused_by_the_store_4437()
     ];
     for (store, counts, case) in stores {
         let mut arena = CoreArena::new();
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.keep_strata_in(Arc::new(AtLevel {
             level: StratumLevel::Three,
             inner: Arc::clone(&store),
@@ -1715,7 +1716,7 @@ fn level_three_is_kept_recalled_and_refused_by_the_store_4437()
     let mut arena = CoreArena::new();
     assert!(
         matches!(
-            CheckingContext::new(&mut arena, CheckBudget::DEFAULT)
+            CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker)
                 .strata_mut()
                 .level_three(past),
             Err(StratumDefect::Allowance { bound }) if bound == past.bound

@@ -88,8 +88,8 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
-use crate::judgement::Direction;
-use crate::judgement::Typing;
+use crate::judge::Direction;
+use crate::record::Typing;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;

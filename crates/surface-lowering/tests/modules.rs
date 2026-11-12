@@ -21,6 +21,7 @@ use anodized::spec;
 use gandr_core_checker::AbstractType;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
@@ -1064,7 +1065,7 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
             ))
         })
         .collect();
-    let mut context = CheckingContext::new(&mut lowered.arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut lowered.arena, CheckBudget::DEFAULT, &Checker);
     context.keep_reducts(lowered.module.reducts());
     context.keep_reducts(lowered.module.forgets());
     check_module(&mut context, &declarations)

@@ -40,20 +40,21 @@ use super::covariant;
 use super::ride;
 use super::session_code;
 use super::universe;
+use crate::Checker;
 use crate::bridge;
 use crate::bridge::Outcome;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::RunFault;
 use crate::refusal::RunStep;
 use crate::refusal::UnadmittedFormer;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// The seat protocols the witnesses relate.
 #[derive(Clone, Copy, Debug)]
@@ -330,7 +331,7 @@ fn judged(
     module: &[Declaration],
 ) -> ModuleReport
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     check_module(&mut context, module)
 }
 
@@ -1361,7 +1362,7 @@ fn a_session_is_a_code_only_at_its_root()
     let later = session.at(ProtocolState::from(2_usize)).unwrap();
     let later = arena.value_type_session(later);
     let later = arena.value_quote(later);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(matches!(
         session_code(&mut context, root),
         Ok(Maybe::Present(ref read)) if *read == session
@@ -1390,7 +1391,7 @@ fn a_ride_between_session_codes_is_fixed_only_for_a_constant_motive()
     let value = arena.value_unit();
     let [fixed, moving] =
         [constant, decoded].map(|motive| arena.computation_ride(motive, along, value));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(
         matches!(ride(&mut context, fixed, flow), Ok(ref ridden) if ridden.moving == Moving::Fixed),
         "a motive ignoring its code rides fixed"

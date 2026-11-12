@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::form_value_type;
 use gandr_core_nbe::Definitions;
@@ -393,7 +394,7 @@ impl Written
             .iter()
             .map(|row| row.pattern)
             .collect();
-        let mut context = CheckingContext::new(&mut self.core, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut self.core, CheckBudget::DEFAULT, &Checker);
         for &(_, constant, ref signature) in &self.families {
             context
                 .adopt_data(constant, Arc::clone(signature))

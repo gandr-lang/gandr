@@ -42,6 +42,7 @@ use super::Sessions;
 use super::captured;
 use crate::CheckBudget;
 use crate::CheckRefusal;
+use crate::Checker;
 use crate::CheckingContext;
 use crate::CoreNode;
 use crate::Declaration;
@@ -56,7 +57,7 @@ use crate::check_comp;
 use crate::check_module;
 use crate::form_comp_type;
 use crate::form_value_type;
-use crate::judgement::Direction;
+use crate::judge::Direction;
 use crate::judgement::check_value_with_failure;
 use crate::judgement::type_value;
 use crate::session::Capture;
@@ -396,7 +397,7 @@ fn check_at(
     expected: CompTypeId,
 ) -> Result<(), CheckRefusal>
 {
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_comp_type(&mut context, expected)?;
     let checked = check_comp(&mut context, term, expected).map(|_| ());
     assert_eq!(
@@ -473,7 +474,7 @@ fn a_typed_run_keeps_each_endpoint_s_state()
     let unit = arena.value_type_unit();
     let returner = arena.comp_type_returner(unit);
     let thunk = arena.value_type_thunk(returner);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let expected = form_value_type(&mut context, thunk).unwrap();
     let typed = type_value(&mut context, suspended, Direction::Check(expected));
     assert!(typed.marks().is_empty(), "the exchange checks: {typed:?}");
@@ -552,7 +553,7 @@ fn a_leftover_endpoint_is_reported_by_name()
     let unit_type = arena.value_type_unit();
     let returner = arena.comp_type_returner(unit_type);
     let suspended = arena.value_type_thunk(returner);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let suspended = form_value_type(&mut context, suspended).unwrap();
     let failure = check_value_with_failure(&mut context, thunk, suspended).unwrap_err();
     assert_eq!(
@@ -818,7 +819,7 @@ fn check_held_exit(
         unit,
         gandr_core_term::effect::EffectRow::singleton(host.proc.clone()),
     );
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, cap);
     let returner = form_comp_type(&mut context, returner)?;
     check_comp(&mut context, term, returner).map(|_| ())
@@ -1285,7 +1286,7 @@ fn check_holding_files(
         unit,
         gandr_core_term::effect::EffectRow::singleton(host.fs.clone()),
     );
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     context.binders().open(Zone::Intuitionistic, reader);
     context.binders().open(Zone::Intuitionistic, writer);
     let returner = form_comp_type(&mut context, returner)?;
@@ -1722,7 +1723,7 @@ fn an_endpoint_at_a_top_level_declaration_is_refused()
             OriginToken::from(1_usize),
         ),
     ];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert_eq!(
@@ -1932,7 +1933,7 @@ fn a_linear_read_of_nothing_or_of_a_buffer_is_refused()
 {
     let mut arena = CoreArena::new();
     let stray = arena.value_variable(Zone::Linear, DeBruijnIndex::from(3_u32));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         crate::judgement::synthesise_value(&mut context, stray).map(|_| ()),
         Err(CheckRefusal::UnboundIndex {
@@ -2104,7 +2105,7 @@ fn a_session_code_crosses_re_rooted_at_its_state_1319()
             )
         })
         .collect();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     assert!(
         report
@@ -2158,7 +2159,7 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
         Maybe::Present(defined),
         OriginToken::from(0_usize),
     )];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     assert!(
         report
@@ -2227,7 +2228,7 @@ fn a_fork_at_a_row_is_refused_as_a_session_6736()
         Maybe::Present(defined),
         OriginToken::from(0_usize),
     )];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     assert!(
         report
@@ -2310,7 +2311,7 @@ fn a_placed_endpoint_is_spent_by_its_body_1862()
             )
         })
         .collect();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert!(
@@ -2419,7 +2420,7 @@ fn an_endpoint_moved_into_a_call_leaves_its_caller_4501()
         )
     })
     .collect();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert!(
@@ -2483,7 +2484,7 @@ fn a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704()
         Maybe::Present(defined),
         OriginToken::from(0_usize),
     )];
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert!(
@@ -2590,7 +2591,7 @@ fn a_loop_takes_the_endpoint_it_is_applied_to_4502()
         )
     })
     .collect();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert!(
@@ -2725,7 +2726,7 @@ fn a_received_value_crosses_as_an_assumption_1319()
         )
     })
     .collect();
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let report = check_module(&mut context, &declarations);
     let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert!(
@@ -2908,7 +2909,7 @@ fn a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed()
     let unit_type = arena.value_type_unit();
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open = arena.value_type_element(variable, Level::zero());
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let mut machine = Machine {
         context: &mut context,
         frames: Vec::new(),
@@ -3083,7 +3084,7 @@ fn check_ring(
     let unit = arena.value_type_unit();
     let returner = arena
         .comp_type_returner_with_effects(unit, gandr_core_term::effect::EffectRow::singleton(ring));
-    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker);
     let returner = form_comp_type(&mut context, returner)?;
     let checked = check_comp(&mut context, term, returner).map(|_| ());
     assert_eq!(
@@ -3335,7 +3336,7 @@ fn a_linear_arrow_admits_the_multiplicity_one_alone_5853()
         else {
             panic!("the arrow is linear");
         };
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         assert_eq!(
             form_comp_type(&mut context, arrow).map(|_| ()),
             Err(CheckRefusal::MultiplicityUnsupported {
@@ -3346,7 +3347,7 @@ fn a_linear_arrow_admits_the_multiplicity_one_alone_5853()
         );
     }
     let arrow = linear_arrow(&mut arena, Spelled("1"), returns_integer);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert!(
         form_comp_type(&mut context, arrow).is_ok(),
         "the multiplicity one forms"
@@ -3429,7 +3430,7 @@ fn each_binder_over_a_qubit_is_refused_5739()
         "a gate takes its qubit once"
     );
     let copying = arena.comp_type_arrow(qubit, returns_qubit);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         form_comp_type(&mut context, copying).map(|_| ()),
         Err(CheckRefusal::Linearity {
@@ -3459,7 +3460,7 @@ fn each_binder_over_a_qubit_is_refused_5739()
         ),
         "a bind's binder holds its value at grade ω, so it cannot hold a qubit: {refused:?}"
     );
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         crate::session::unrestricted(&mut context, qubit),
         Err(CheckRefusal::Linearity {

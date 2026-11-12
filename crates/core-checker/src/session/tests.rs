@@ -19,6 +19,7 @@ use quenchant_shape::shape::Maybe;
 use super::PayloadPair;
 use super::relate;
 use crate::CheckBudget;
+use crate::Checker;
 use crate::CheckingContext;
 
 /// The session type over `syntax` rooted at its first node, its payloads
@@ -88,7 +89,7 @@ fn equivalence_sees_through_unfolding_and_payloads()
         &[string, integer],
         ProtocolState::from(1_usize),
     );
-    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     let slot = gandr_kernel_term::session::PayloadSlot;
     assert_eq!(
         relate(&context, left, unfolded, Relation::Equivalent),
@@ -130,7 +131,7 @@ fn subtyping_follows_gay_and_hole_at_endpoints()
     };
     let narrow = choice(&mut arena, &["a"]);
     let wide = choice(&mut arena, &["a", "b"]);
-    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
     assert_eq!(
         relate(&context, narrow, wide, Relation::Subtype),
         Ok(Maybe::Present(Vec::new())),

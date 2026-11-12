@@ -5,6 +5,7 @@ use alloc::collections::BTreeMap;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Checker;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::Declaration;
@@ -69,7 +70,7 @@ fn run(
 ) -> (ModuleReport, bridge::Readmission)
 {
     let report = check_module(
-        &mut CheckingContext::new(arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(arena, CheckBudget::DEFAULT, &Checker),
         declarations,
     );
     let crossed = bridge::readmit(arena, &report);
@@ -3851,7 +3852,7 @@ fn a_refined_arm_types_its_written_terms_in_their_own_context_3483()
     let same = arena.value_thunk(same);
     let constant = ConstantIndex::from(2_usize);
     let typed = gandr_core_checker::type_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &[codes, boxes, definition(constant, same_type, same)],
     );
     assert!(
@@ -4015,7 +4016,7 @@ fn a_bound_pair_forty_deep_whose_levels_share_their_halves_checks_6579()
     let body = arena.value_thunk(bind);
     let declaration = definition(ConstantIndex::from(0_usize), declared, body);
     let report = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &[declaration],
     );
     assert!(
@@ -4233,7 +4234,7 @@ fn a_refined_arm_reads_its_written_terms_past_the_reversal_5392()
     let dropped_type = arena.value_type_thunk(dropped_type);
     let constant = ConstantIndex::from(3_usize);
     let typed = gandr_core_checker::type_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &[
             codes,
             boxes,
@@ -4485,7 +4486,7 @@ fn native_signature_support_and_adoption()
         ]);
     let use_site = definition(ConstantIndex::from(1_usize), datatype, constructor);
     let fresh = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         assert_eq!(check_declaration(&mut context, &declaration), Verdict::Data);
         check_declaration_supported(&mut context, &use_site)
     };
@@ -4494,7 +4495,7 @@ fn native_signature_support_and_adoption()
         panic!("native signature");
     };
     let adopted = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         context.adopt_data(constant, Arc::clone(signature)).unwrap();
         check_declaration_supported(&mut context, &use_site)
     };
@@ -4514,7 +4515,7 @@ fn native_signature_support_and_adoption()
         OriginToken::from(0_usize),
     );
     let changed = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker);
         assert_eq!(
             check_declaration(&mut context, &changed_declaration),
             Verdict::Data
@@ -4531,7 +4532,7 @@ fn native_signature_support_and_adoption()
         "an unchanged kind does not hide a changed constructor table"
     );
     let missing = check_declaration_supported(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT, &Checker),
         &use_site,
     );
     assert_eq!(
