@@ -461,6 +461,11 @@ fn gaps<'text>(
     // attribute's `]` ends its line or comes before a keyword, and a `]` before
     // an operator or an operand closes an expression.
     let mut attribute: Option<u32> = None;
+    // Whether a keyword at the top level starts the head the scan reads, and
+    // where the `)` before the current token ends when it closes a group at
+    // the top level.
+    let mut keyword_head = false;
+    let mut closed_head: Option<u32> = None;
     let opener = |start: u32| Gap {
         at: ByteOffset::from(usize::try_from(start).unwrap_or(usize::MAX)),
         act: Act::Writes {
@@ -551,6 +556,19 @@ fn gaps<'text>(
         }
         if leads || core::mem::replace(&mut member, false) {
             head = Some((token.start, class.word));
+        }
+        // A keyword at the top level starts a head, and its `=`, a `;` or a
+        // block ends it.
+        if stack.is_empty() && opaque == 0 {
+            let spelled = <&str>::from(spelling(text, token));
+            if token.lexeme == Lexeme::LowerWord && RESERVED_WORDS.contains(&spelled) {
+                keyword_head = true;
+            }
+            else if matches!(spelled, "=" | ";")
+                || class.bracketing == Bracketing::Opens(Kind::Block)
+            {
+                keyword_head = false;
+            }
         }
         // A line before which the layout pass closes blocks, and which stands
         // at no column of a block left open, may stay in each block it closes.
@@ -655,6 +673,27 @@ fn gaps<'text>(
                 cleared: true,
             });
         }
+        // A declaration's head writes its result type after the `)` of its
+        // parameter list, with a `->` between them. Without the `->`, the
+        // type reads as a second parameter list or an argument of the head.
+        // A `->` after the `)` reads the type as the head's result again.
+        if !leads
+            && opaque == 0
+            && keyword_head
+            && stack.is_empty()
+            && let Some(end) = closed_head
+            && end < token.start
+            && matches!(class.edge, Edge::Begins | Edge::Both)
+        {
+            places.arrows.push(Gap {
+                at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                act: Act::Writes {
+                    tiles: alloc::vec!["->"],
+                    over: 0,
+                },
+                cleared: true,
+            });
+        }
         // An attribute whose `@[` the source leaves out leaves its words and a
         // `]` that closes no `[` in its block. The words read as a type or a
         // call, and the `]` takes down the block around them. A `@[` before
@@ -737,6 +776,10 @@ fn gaps<'text>(
         }
         member = class.separates && <&str>::from(spelling(text, token)) == ";"
             || class.bracketing == Bracketing::Opens(Kind::Block);
+        closed_head = (class.bracketing == Bracketing::Closes
+            && stack.is_empty()
+            && <&str>::from(spelling(text, token)) == ")")
+            .then_some(token.end);
         previous = Some((
             token.end,
             matches!(class.bracketing, Bracketing::Opens(_)),
@@ -1717,6 +1760,43 @@ mod tests
                         && usize::from(node.span().end()) == at
                 }),
             "the `->` stands as a repair between its two operands"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_arrow_left_out_after_a_parameter_list_is_minted_6323() -> Result<(), Box<dyn Error>>
+    {
+        // Row 217 of `model/sessions/type-quote.gandr`'s recovery record: a
+        // declaration's head with the `->` before its result type dropped,
+        // after a doc comment, so that `def` begins no line of the scan.
+        let source = include_str!(
+            "gap/unformatted/an-arrow-left-out-after-a-parameter-list-is-minted-6323.gandr"
+        );
+        let at = source
+            .find("end))")
+            .map(|start| start.saturating_add("end))".len()))
+            .unwrap_or_default();
+        let pbg = built_in()?;
+        let parsed = parse(&pbg, SourceText::from(source))?;
+        let tree = parsed.tree();
+        assert_eq!(
+            crate::testing::reconstruct(tree),
+            source,
+            "the tree spells the source"
+        );
+        assert_eq!(
+            parsed
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(Oblig::MissingTile, at, at)],
+            "a result type after the parameter list owes the `->` between them alone"
         );
         Ok(())
     }
