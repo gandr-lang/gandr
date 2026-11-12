@@ -158,7 +158,7 @@ impl Checked
 /// - panics: none of its own.
 /// - executable: none — the trait states obligations its implementation
 ///   carries.
-pub trait Judge: fmt::Debug + Sync
+pub trait Judge: fmt::Debug + Sync + Sized + 'static
 {
     /// Form `node` in the context's binders, and keep the failure of a
     /// refused run.
@@ -181,7 +181,7 @@ pub trait Judge: fmt::Debug + Sync
     ///   trait has no body to witness.
     fn form(
         &self,
-        context: &mut CheckingContext<'_>,
+        context: &mut CheckingContext<'_, Self>,
         node: TypeNode,
     ) -> Result<(), Failure>;
 
@@ -207,7 +207,7 @@ pub trait Judge: fmt::Debug + Sync
     ///   trait has no body to witness.
     fn check_value(
         &self,
-        context: &mut CheckingContext<'_>,
+        context: &mut CheckingContext<'_, Self>,
         value: ValueId,
         expected: FormedValueType,
     ) -> Result<Checked, Failure>;

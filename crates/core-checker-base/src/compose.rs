@@ -124,6 +124,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::ua::Strata;
 use crate::ua::StratumAt;
@@ -409,8 +410,8 @@ pub fn chain_budget() -> ShapeBudget
     | Err(CheckRefusal::ComposeDoesNotFill { at: site, seam: held, .. }) => site == at && held == seam,
     | Ok(_) | Err(_) => true,
 })]
-pub fn fill(
-    context: &CheckingContext<'_>,
+pub fn fill<J: Judge>(
+    context: &CheckingContext<'_, J>,
     (at, seam): (ValueId, Seam),
     shape: &Shape,
     cells: &[Boundary<Endpoint>],
@@ -489,8 +490,8 @@ pub enum CellReading
     | Err(CheckRefusal::ComposeDoesNotFill { at: site, .. }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
-pub fn fill_columns(
-    context: &CheckingContext<'_>,
+pub fn fill_columns<J: Judge>(
+    context: &CheckingContext<'_, J>,
     at: ValueId,
     (tree, outer): (Tree, &Shape),
     cells: &[CellReading],

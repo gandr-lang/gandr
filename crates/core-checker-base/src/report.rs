@@ -35,6 +35,7 @@ use crate::failure::Failure;
 use crate::formation::FormedValueType;
 use crate::funext::Funext;
 use crate::judge::Checked;
+use crate::judge::Judge;
 use crate::judge::Synthesised;
 use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
@@ -267,8 +268,8 @@ impl ModuleReport
     )]
     #[must_use]
     #[inline]
-    pub fn read(
-        context: &CheckingContext<'_>,
+    pub fn read<J: Judge>(
+        context: &CheckingContext<'_, J>,
         (judged, ledger): (Vec<Judged>, ObligationLedger),
         failures: BTreeMap<ConstantIndex, Failure>,
         nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
@@ -1053,9 +1054,9 @@ quenchant_shape::reason_enum! {
     && context.motives().keys().all(|at| report.motives.contains_key(at))
     && context.payloads().keys().all(|at| report.payloads.contains_key(at))
     && context.handled().keys().all(|at| report.handled.contains_key(at)))]
-pub fn absorb(
+pub fn absorb<J: Judge>(
     report: &mut ModuleReport,
-    context: &CheckingContext<'_>,
+    context: &CheckingContext<'_, J>,
 )
 {
     report.funexts.extend(

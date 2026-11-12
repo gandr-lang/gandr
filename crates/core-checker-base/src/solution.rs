@@ -89,6 +89,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::judge::Direction;
+use crate::judge::Judge;
 use crate::record::Typing;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
@@ -575,8 +576,8 @@ enum Taken
     | Maybe::Present(ref refined) => refined.term != arm && matches!(context.arena().computation(refined.term), Some(&Computation::Lambda(_))),
     | Maybe::Absent(_) => true,
 }))]
-pub fn refined_arm(
-    context: &mut CheckingContext<'_>,
+pub fn refined_arm<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     arm: ComputationId,
     expected: CompTypeId,
     (fields, equations): (BinderDepth, BinderDepth),
@@ -772,8 +773,8 @@ struct Arm
     | Maybe::Present(ref refined) => refined.term != case,
     | Maybe::Absent(_) => true,
 }))]
-pub fn refined_case(
-    context: &mut CheckingContext<'_>,
+pub fn refined_case<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     case: ComputationId,
     direction: Direction<CompTypeId>,
 ) -> Result<Maybe<Refined, unrefined::Absent>, CheckRefusal>
@@ -1092,8 +1093,8 @@ pub fn refined_case(
     | Maybe::Present((family, ty)) => matches!(context.arena().value_type(ty), Some(&ValueType::Data { declaration, .. }) if declaration == family),
     | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
 }))]
-fn kept(
-    context: &mut CheckingContext<'_>,
+fn kept<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     binders: &[ValueTypeId],
     (variable, depth): (BinderDepth, BinderDepth),
     (motive, equations): (CompTypeId, gandr_kernel_term::EquationCount),
@@ -1157,8 +1158,8 @@ fn kept(
     | Maybe::Present(place) => place < context.depth(Zone::Intuitionistic),
     | Maybe::Absent(_) => true,
 }))]
-fn scrutinised_place(
-    context: &CheckingContext<'_>,
+fn scrutinised_place<J: Judge>(
+    context: &CheckingContext<'_, J>,
     scrutinee: ValueId,
     goal: CompTypeId,
 ) -> Result<Maybe<BinderDepth, unrefined::Absent>, CheckRefusal>
@@ -1213,8 +1214,8 @@ fn scrutinised_place(
 /// - witness: `tests::native_formers::a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036`
 /// - witness: `tests::native_formers::a_case_on_an_outer_binder_reads_its_goal_at_each_form_in_both_checkers_6110`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&goal| goal == shifted || context.arena().comp_type(goal).is_some()))]
-pub fn sum_arm_goal(
-    context: &mut CheckingContext<'_>,
+pub fn sum_arm_goal<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     scrutinee: ValueId,
     summand: gandr_core_term::Summand,
     (outside, shifted): (CompTypeId, CompTypeId),
@@ -1256,8 +1257,8 @@ pub fn sum_arm_goal(
 ///   its body at the unit, and one whose goal does not checks it as written.
 /// - witness: `tests::native_formers::a_case_on_an_outer_binder_reads_its_goal_at_each_form_in_both_checkers_6110`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&goal| goal == expected || context.arena().comp_type(goal).is_some()))]
-pub fn unit_split_goal(
-    context: &mut CheckingContext<'_>,
+pub fn unit_split_goal<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     scrutinee: ValueId,
     expected: CompTypeId,
 ) -> Result<CompTypeId, CheckRefusal>
@@ -1311,8 +1312,8 @@ pub fn unit_split_goal(
     | Maybe::Present(ref refined) => refined.minted.is_empty() && refined.generalising.is_empty(),
     | Maybe::Absent(_) => true,
 }))]
-pub fn defined_body(
-    context: &mut CheckingContext<'_>,
+pub fn defined_body<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (bound, body): (ComputationId, ComputationId),
     migrating: Migrating,
 ) -> Result<Maybe<Refined, unrefined::Absent>, CheckRefusal>
@@ -1643,7 +1644,9 @@ fn copies(
 ///   the binders open now.
 /// - witness: `tests::native_formers::a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.len() == usize::from(context.depth(Zone::Intuitionistic))))]
-fn open_binders(context: &CheckingContext<'_>) -> Result<Vec<ValueTypeId>, CheckRefusal>
+fn open_binders<J: Judge>(
+    context: &CheckingContext<'_, J>
+) -> Result<Vec<ValueTypeId>, CheckRefusal>
 {
     let depth = context.depth(Zone::Intuitionistic);
     let mut binders = Vec::with_capacity(usize::from(depth));
@@ -1682,8 +1685,8 @@ fn open_binders(context: &CheckingContext<'_>) -> Result<Vec<ValueTypeId>, Check
     | Maybe::Present((ref solved, _)) => problem.equations.contains(&solved.equation) && solved.variable < solved.equation,
     | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
 }))]
-fn step(
-    context: &mut CheckingContext<'_>,
+fn step<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     problem: &Problem,
     carried: &mut Vec<Carried>,
 ) -> Result<Maybe<(Solved, Problem), unrefined::Absent>, CheckRefusal>
@@ -1817,8 +1820,8 @@ fn step(
         && next.binders.len() == problem.binders.len().saturating_add(split.fields.len()),
     | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
 }))]
-fn split_step(
-    context: &mut CheckingContext<'_>,
+fn split_step<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     problem: &Problem,
     carried: &mut Vec<Carried>,
 ) -> Result<Maybe<(Split, Problem), unrefined::Absent>, CheckRefusal>
@@ -2060,8 +2063,8 @@ enum Moving
 /// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
 /// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
 #[spec(ensures: |ret| !staged.is_empty() || ret == Ok(Moving::Moves))]
-fn moving(
-    context: &mut CheckingContext<'_>,
+fn moving<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     problem: &Problem,
     carrier: ValueTypeId,
     (generalised, staged): (&[BinderDepth], &[BinderDepth]),

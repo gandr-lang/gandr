@@ -33,6 +33,7 @@ use crate::failure::Failure;
 use crate::failure::Pursuit;
 use crate::failure::Stage;
 use crate::failure::judged;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -81,8 +82,8 @@ pub struct Handled
 ///   admitted, and one over put-get whose clauses tell them apart is refused at
 ///   the law.
 /// - witness: `module::tests::a_scope_is_checked_as_a_model_of_its_theory_2272`
-pub fn lawful(
-    context: &CheckingContext<'_>,
+pub fn lawful<J: Judge>(
+    context: &CheckingContext<'_, J>,
     laws: &[gandr_core_term::handler::HandlerLaw],
 ) -> Result<(), Failure>
 {

@@ -158,6 +158,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::formation::FormedValueType;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
@@ -1057,8 +1058,8 @@ impl Footprint
     | Err(CheckRefusal::CapabilityUngranted { constant: named, declared: ty }) => named == constant && ty == declared.id(),
     | Ok(()) | Err(_) => true,
 })]
-pub fn held(
-    context: &mut CheckingContext<'_>,
+pub fn held<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     constant: ConstantIndex,
     declared: FormedValueType,
 ) -> Result<(), CheckRefusal>

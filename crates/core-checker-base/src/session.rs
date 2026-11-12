@@ -131,6 +131,7 @@ use gandr_core_term::session::SessionType;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
@@ -387,8 +388,8 @@ quenchant_shape::reason_enum! {
 ///   this, so the seat exchange observes it at each action.
 /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
 #[spec(ensures: |ret| ret.is_err() || matches!(value_type_view(context.arena(), ty), Ok(ValueTypeView::Session(_))))]
-pub fn session_at(
-    context: &CheckingContext<'_>,
+pub fn session_at<J: Judge>(
+    context: &CheckingContext<'_, J>,
     ty: ValueTypeId,
 ) -> Result<SessionType, CheckRefusal>
 {
@@ -463,8 +464,8 @@ pub fn session_at(
     },
     | _ => true,
 })]
-pub fn unrestricted(
-    context: &mut CheckingContext<'_>,
+pub fn unrestricted<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     declared: ValueTypeId,
 ) -> Result<(), CheckRefusal>
 {
@@ -662,8 +663,8 @@ pub struct Related
     }),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-pub fn relate(
-    context: &CheckingContext<'_>,
+pub fn relate<J: Judge>(
+    context: &CheckingContext<'_, J>,
     left: ValueTypeId,
     right: ValueTypeId,
     relation: Relation,

@@ -34,6 +34,7 @@ use gandr_core_term::ValueId;
 
 use crate::context::CheckingContext;
 use crate::formation::FormedValueType;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::view::CompTypeView;
 use crate::view::ValueTypeView;
@@ -67,8 +68,8 @@ use crate::view::value_type_view;
 /// - witness: `discharge::tests::an_omitted_law_whose_sides_part_is_undischarged`
 /// - witness: `discharge::tests::a_law_over_no_binder_is_here_alone`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&body| context.arena().value(body).is_some()))]
-pub fn here(
-    context: &mut CheckingContext<'_>,
+pub fn here<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     declared: FormedValueType,
 ) -> Result<ValueId, CheckRefusal>
 {

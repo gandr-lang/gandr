@@ -59,6 +59,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::ExpectedShape;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
@@ -148,8 +149,8 @@ pub struct Owed
 /// - hypothesis: L3 — a rose tree's node and its list of children, one block,
 ///   recurse through each other at one stage.
 /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
-pub fn families(
-    context: &mut CheckingContext<'_>,
+pub fn families<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
 ) -> Result<crate::occurrence::Block, CheckRefusal>
 {
@@ -202,8 +203,8 @@ pub fn families(
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Unknown,
     Err(_) => true,
 })]
-pub fn open_fixpoint(
-    context: &mut CheckingContext<'_>,
+pub fn open_fixpoint<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     expected: CompTypeId,
     position: StagedPosition,
@@ -311,8 +312,8 @@ pub fn open_fixpoint(
 ///   at its first argument's stage.
 /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
-fn result_at(
-    context: &mut CheckingContext<'_>,
+fn result_at<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     codomain: CompTypeId,
     (base, stage): (ValueTypeId, Stage),
 ) -> Result<CompTypeId, CheckRefusal>
@@ -372,8 +373,8 @@ fn result_at(
 ///   which the second judgement then refuses.
 /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if found != position))]
-pub fn returns_recursed_on(
-    context: &mut CheckingContext<'_>,
+pub fn returns_recursed_on<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     expected: CompTypeId,
     position: StagedPosition,
 ) -> Result<Maybe<StagedPosition, Unstaged>, CheckRefusal>
@@ -454,8 +455,8 @@ pub fn returns_recursed_on(
     Maybe::Present(read) => context.arena().comp_type(read).is_some(),
     Maybe::Absent(reason) => reason == Unstaged::Plain,
 }))]
-pub fn motive_at(
-    context: &mut CheckingContext<'_>,
+pub fn motive_at<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     motive: CompTypeId,
     expected: CompTypeId,
 ) -> Result<Maybe<CompTypeId, Unstaged>, CheckRefusal>
@@ -559,8 +560,8 @@ impl Dependence
     Ok((read, Maybe::Absent(_))) => read == scrutinee,
     Err(_) => true,
 })]
-pub fn open_case(
-    context: &mut CheckingContext<'_>,
+pub fn open_case<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     scrutinee: ValueTypeId,
 ) -> Result<(ValueTypeId, Maybe<StageId, Unstaged>), CheckRefusal>
 {
@@ -638,8 +639,8 @@ enum Visit
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
     || context.arena().value_type(staged).is_some()))]
-pub fn stage_field(
-    context: &mut CheckingContext<'_>,
+pub fn stage_field<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     field: ValueTypeId,
     block: &crate::occurrence::Block,
     stage: Stage,
@@ -744,8 +745,8 @@ pub fn stage_field(
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(staged, _)| context.arena().comp_type(staged).is_some()))]
-pub fn stage_branch(
-    context: &mut CheckingContext<'_>,
+pub fn stage_branch<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
     branch: CompTypeId,
     (fields, child): (&[ValueTypeId], StageId),
@@ -834,8 +835,8 @@ pub enum Identified
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Plain,
     Err(_) => true,
 })]
-pub fn constructor_owes(
-    context: &mut CheckingContext<'_>,
+pub fn constructor_owes<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     expected: ValueTypeId,
 ) -> Result<Maybe<Owed, Unstaged>, CheckRefusal>
 {
@@ -913,8 +914,8 @@ pub fn constructor_owes(
 ///   minted its stage but bound nothing at it, is not.
 /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
 #[spec(ensures: |ret| !matches!(ret, Ok(Room::Witnessed)) || usize::from(context.depth(Zone::Intuitionistic)) > 0)]
-pub fn room(
-    context: &CheckingContext<'_>,
+pub fn room<J: Judge>(
+    context: &CheckingContext<'_, J>,
     wanted: Stage,
 ) -> Result<Room, CheckRefusal>
 {
@@ -978,8 +979,8 @@ pub fn room(
     Ok(Maybe::Absent(Unstaged::Plain)) | Err(_) => true,
     Ok(Maybe::Absent(Unstaged::Unknown)) => false,
 })]
-pub fn instantiation<Spine>(
-    context: &mut CheckingContext<'_>,
+pub fn instantiation<Spine, J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (code, codomain): (ValueId, CompTypeId),
     spine: Spine,
 ) -> Result<Maybe<ValueId, Unstaged>, CheckRefusal>
@@ -1062,8 +1063,8 @@ where
 ///   the result at none.
 /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
-pub fn followed(
-    context: &mut CheckingContext<'_>,
+pub fn followed<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (head, last): (ComputationId, ValueId),
     applied: CompTypeId,
 ) -> Result<CompTypeId, CheckRefusal>
@@ -1252,8 +1253,8 @@ fn held_at(
 /// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
 /// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| ty == target || matches!(context.arena().value_type(ty), Some(&ValueType::Staged { .. }))))]
-pub fn carried_stage(
-    context: &mut CheckingContext<'_>,
+pub fn carried_stage<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     value: ValueId,
     (carrier, target): (ValueTypeId, ValueTypeId),

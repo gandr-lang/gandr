@@ -124,6 +124,7 @@ use quenchant_shape::shape::Maybe;
 use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::conversion::Agreement;
+use crate::judge::Judge;
 
 quenchant_shape::reason_enum! {
     /// Why a case carries no obligation against its type's rules.
@@ -226,8 +227,8 @@ pub enum Reading
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
-pub fn respected(
-    context: &mut CheckingContext<'_>,
+pub fn respected<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     signature: &DataSignature,
     reading: Reading,
@@ -396,8 +397,8 @@ pub fn respected(
     captures: arrowed = matches!(context.arena().comp_type(arrow), Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))),
     ensures: |ret| ret == Related::Apart || arrowed,
 )]
-fn parallel_in_a_set(
-    context: &mut CheckingContext<'_>,
+fn parallel_in_a_set<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (arrow, amount): (CompTypeId, Binders),
     (left, right): (ValueId, ValueId),
 ) -> Related
@@ -500,8 +501,8 @@ pub enum Sethood
 ///   into the integers' paths is admitted and one into the circle's refused.
 /// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(context.arena().value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
-pub fn sethood(
-    context: &mut CheckingContext<'_>,
+pub fn sethood<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     carrier: ValueTypeId,
 ) -> Sethood
 {
@@ -633,8 +634,8 @@ fn pattern_binder(
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 /// - witness: `tests::native_formers::a_law_is_stated_bare_only_over_no_variable`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
-fn lawful(
-    context: &mut CheckingContext<'_>,
+fn lawful<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (obliged, arrow): (Obliged, CompTypeId),
     (rule, signature): (&PresentedRule, &DataSignature),
     law: ConstantIndex,

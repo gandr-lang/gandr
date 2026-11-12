@@ -277,6 +277,7 @@ use gandr_theory_sites::Table;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 
 mod strata;
@@ -520,8 +521,8 @@ pub fn tabulate(
     | Err(UaRefusal::Code { corolla: found, .. }) => found == corolla,
     | Err(UaRefusal::Species(_)) => false,
 })]
-fn tabulated(
-    context: &mut CheckingContext<'_>,
+fn tabulated<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     corolla: ShapeIndex,
     translator: ValueId,
     (from, to): (&[Element], &[Element]),
@@ -613,8 +614,8 @@ struct Stage
         && universal.equivalence.components().keys().copied().eq(universal.corollas.iter().map(|&(index, _)| index)),
     | Err(_) => true,
 })]
-pub fn derive(
-    context: &mut CheckingContext<'_>,
+pub fn derive<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     stratum: &SegalStratum,
     sides: (&Species, &Species),
     translators: &BTreeMap<ShapeIndex, Translators>,
@@ -1016,8 +1017,8 @@ fn labelled(
 ///   a mismatch.
 /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |premises| premises.len() == 2_usize))]
-pub fn premises(
-    context: &mut CheckingContext<'_>,
+pub fn premises<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
 ) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
 {
@@ -1119,8 +1120,8 @@ pub fn premises(
     | Err(CheckRefusal::UaUncertified { at: site, .. } | CheckRefusal::UaInequivalent { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn decide(
-    context: &mut CheckingContext<'_>,
+pub fn decide<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
 ) -> Result<Universal, CheckRefusal>
 {

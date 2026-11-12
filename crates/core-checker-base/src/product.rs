@@ -101,6 +101,7 @@ use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::ExpectedShape;
 use crate::refusal::TermNode;
@@ -160,8 +161,8 @@ pub struct Component
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
-pub fn component(
-    context: &mut CheckingContext<'_>,
+pub fn component<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifier: ValueTypeId,
 ) -> Result<Component, CheckRefusal>
@@ -332,8 +333,8 @@ pub fn classifier(
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
-pub fn flow_component(
-    context: &mut CheckingContext<'_>,
+pub fn flow_component<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifier: ValueTypeId,
 ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
@@ -458,8 +459,8 @@ pub fn flow_classifier(
 /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
 /// - witness: `product::tests::what_the_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&native| matches!(context.arena().value(native), Some(Value::PathProduct(..)))))]
-pub fn native(
-    context: &mut CheckingContext<'_>,
+pub fn native<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifiers: (ValueTypeId, ValueTypeId),
 ) -> Result<ValueId, CheckRefusal>
@@ -508,8 +509,8 @@ pub fn native(
     | Err(CheckRefusal::ShapeMismatch { found, .. }) => found == TypeNode::Value(classifier),
     | Err(_) => true,
 })]
-pub fn certificate(
-    context: &mut CheckingContext<'_>,
+pub fn certificate<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifier: ValueTypeId,
 ) -> Result<ValueId, CheckRefusal>

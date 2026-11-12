@@ -213,6 +213,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::session::Capture;
 use crate::view::ValueTypeView;
@@ -1090,8 +1091,8 @@ enum Decoded
     | Ok(Crossing::Stays { former, .. }) => context.arena().value_type(former).is_some(),
     | Ok(Crossing::Crosses) | Err(_) => true,
 })]
-pub fn crosses(
-    context: &mut CheckingContext<'_>,
+pub fn crosses<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     ty: ValueTypeId,
 ) -> Result<Crossing, CheckRefusal>
 {

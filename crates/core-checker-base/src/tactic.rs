@@ -41,6 +41,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::TacticFault;
 
@@ -75,8 +76,8 @@ use crate::refusal::TacticFault;
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
 )]
-pub fn answer(
-    context: &mut CheckingContext<'_>,
+pub fn answer<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     hole: HoleId,
     expected: ValueTypeId,
@@ -139,8 +140,8 @@ pub fn answer(
     ensures: |ret| usize::from(context.depth(Zone::Intuitionistic))
         == usize::from(depth).saturating_add(usize::from(*opened)),
 )]
-fn introduce(
-    context: &mut CheckingContext<'_>,
+fn introduce<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     tactic: Tactic,
     expected: CompTypeId,
     opened: &mut BinderDepth,
@@ -196,8 +197,8 @@ fn introduce(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
 )]
-fn assumption(
-    context: &mut CheckingContext<'_>,
+fn assumption<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     expected: ValueTypeId,
 ) -> Result<Result<ValueId, TacticFault>, CheckRefusal>
 {

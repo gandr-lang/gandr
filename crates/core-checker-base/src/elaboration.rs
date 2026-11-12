@@ -106,6 +106,7 @@ use crate::Lift;
 use crate::ObligationEntry;
 use crate::OriginToken;
 use crate::Verdict;
+use crate::judge::Judge;
 use crate::signature_table;
 use crate::unfolding;
 
@@ -475,8 +476,8 @@ impl Entry
     /// - witness: `elaboration::tests::incremental_equals_from_scratch`
     /// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
     #[spec(ensures: |ret| ret.judgements == Judgements(1))]
-    pub fn judged(
-        context: &CheckingContext<'_>,
+    pub fn judged<J: Judge>(
+        context: &CheckingContext<'_, J>,
         source: Declaration,
         (outcome, lifts): (Outcome, BTreeMap<ValueId, Lift>),
     ) -> Self
@@ -561,8 +562,8 @@ impl Entry
     Outcome::Checked(_) | Outcome::Formed | Outcome::Refused(_) => ret != Maybe::Absent(unfolding::Absent::Owed)
         && ret != Maybe::Absent(unfolding::Absent::Waiting),
 })]
-fn unfolds(
-    context: &CheckingContext<'_>,
+fn unfolds<J: Judge>(
+    context: &CheckingContext<'_, J>,
     constant: ConstantIndex,
     outcome: &Outcome,
 ) -> Maybe<ValueId, unfolding::Absent>
@@ -600,8 +601,8 @@ fn unfolds(
 /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
 /// - witness: `elaboration::tests::a_refused_declaration_leaves_no_transport_behind`
 #[spec(ensures: |ret| matches!(context.deferrals().emission, Emission::Recording(_)) || ret.is_err())]
-pub fn emit_recorded(
-    context: &mut CheckingContext<'_>,
+pub fn emit_recorded<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     body: ValueId,
     budget: CheckBudget,
 ) -> Result<output::Emitted, CheckRefusal>
@@ -623,7 +624,7 @@ pub fn emit_recorded(
 ///
 /// # Specification
 /// trivial.
-pub fn record_transports(context: &mut CheckingContext<'_>)
+pub fn record_transports<J: Judge>(context: &mut CheckingContext<'_, J>)
 {
     context.deferrals_mut().emission = Emission::Recording(Transports::default());
 }

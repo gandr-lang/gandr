@@ -20,7 +20,15 @@ use gandr_core_checker_base::codata;
 use gandr_core_checker_base::code;
 use gandr_core_checker_base::comonoid;
 use gandr_core_checker_base::compose;
-use gandr_core_checker_base::context;
+pub mod context
+{
+    pub use gandr_core_checker_base::context::*;
+    /// The context at the one judge, the judgement's.
+    pub type CheckingContext<'arena> =
+        gandr_core_checker_base::context::CheckingContext<'arena, crate::judgement::Checker>;
+    /// The checkpoint at the one judge, the judgement's.
+    pub type Checkpoint = gandr_core_checker_base::context::Checkpoint<crate::judgement::Checker>;
+}
 use gandr_core_checker_base::conversion;
 use gandr_core_checker_base::coverage;
 use gandr_core_checker_base::declaration;

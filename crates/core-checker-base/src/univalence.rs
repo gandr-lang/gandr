@@ -64,6 +64,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
 
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::ExpectedShape;
 use crate::refusal::TermNode;
@@ -128,8 +129,8 @@ pub enum Reading
 ///   a decoded code, or decoding a quote, changes the path type.
 /// - witness: `univalence::tests::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&code| context.arena().value(code).is_some()))]
-fn code_of(
-    context: &mut CheckingContext<'_>,
+fn code_of<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     carrier: ValueTypeId,
 ) -> Result<ValueId, CheckRefusal>
 {
@@ -160,8 +161,8 @@ fn code_of(
 ///   changes the record type the literal checks against.
 /// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&denoted| context.arena().value_type(denoted).is_some()))]
-fn denoted(
-    context: &mut CheckingContext<'_>,
+fn denoted<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueId,
 ) -> Result<ValueTypeId, CheckRefusal>
 {
@@ -192,8 +193,8 @@ fn denoted(
     Ok(()) | Err(CheckRefusal::MachineInvariant) => true,
     Err(_) => false,
 })]
-fn derived(
-    context: &mut CheckingContext<'_>,
+fn derived<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (record, forward): (ValueId, ValueId),
 ) -> Result<(), CheckRefusal>
 {
@@ -237,8 +238,8 @@ enum Carrier
 /// - hypothesis: L3 — as [`checked`].
 /// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
 #[spec(ensures: |ret| !matches!(ret, Ok(Carrier::Universe)) || context.arena().value_type(carrier).is_some())]
-fn at_type(
-    context: &mut CheckingContext<'_>,
+fn at_type<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     carrier: ValueTypeId,
 ) -> Result<Carrier, CheckRefusal>
 {
@@ -291,8 +292,8 @@ fn at_type(
     | Ok(Reading::Cell { cell, path }) => context.arena().value_type(cell).is_some() && context.arena().value_type(path).is_some(),
     | Ok(Reading::Synthesised) | Err(_) => true,
 })]
-pub fn checked(
-    context: &mut CheckingContext<'_>,
+pub fn checked<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (record, forward): (ValueId, ValueId),
     expected: ValueTypeId,
 ) -> Result<Reading, CheckRefusal>
@@ -378,8 +379,8 @@ pub fn checked(
     | Ok(premises) => premises.checks[0].0 == record,
     | Err(_) => true,
 })]
-pub fn premises(
-    context: &mut CheckingContext<'_>,
+pub fn premises<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     (record, forward): (ValueId, ValueId),
     classifier: ValueTypeId,

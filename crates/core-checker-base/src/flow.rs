@@ -199,6 +199,7 @@ use crate::code::loose_reach;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
 use crate::conversion::equivalent;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
@@ -408,8 +409,8 @@ pub fn universe(arena: &mut CoreArena) -> ValueTypeId
     | Ok(Maybe::Present(ref session)) => session.state() == session.protocol().root(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-pub fn session_code(
-    context: &mut CheckingContext<'_>,
+pub fn session_code<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueId,
 ) -> Result<Maybe<SessionType, session_code::Absent>, CheckRefusal>
 {
@@ -481,8 +482,8 @@ pub fn session_code(
 ///   the kernel decodes as a session graph.
 /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&quote| matches!(context.arena().value(quote), Some(&Value::Quote(_)))) == ret.is_ok())]
-fn quoted(
-    context: &mut CheckingContext<'_>,
+fn quoted<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueId,
 ) -> Result<ValueId, CheckRefusal>
 {
@@ -516,8 +517,8 @@ fn quoted(
     | Err(CheckRefusal::SessionCodeExpected { at }) => at == source || at == target,
     | Ok(_) | Err(_) => true,
 })]
-fn sessions(
-    context: &mut CheckingContext<'_>,
+fn sessions<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (source, target): (ValueId, ValueId),
 ) -> Result<(SessionType, SessionType), CheckRefusal>
 {
@@ -564,8 +565,8 @@ struct Owing
     | Ok(Maybe::Present(ref related)) => !related.evidence.pairs.is_empty(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-fn relation_evidence(
-    context: &mut CheckingContext<'_>,
+fn relation_evidence<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (left, right): (&SessionType, &SessionType),
     relation: Relation,
 ) -> Result<Maybe<Owing, crate::session::related::Absent>, CheckRefusal>
@@ -611,8 +612,8 @@ fn relation_evidence(
     | Ok(Maybe::Present(ref evidence)) => !evidence.pairs.is_empty(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-fn converting_evidence(
-    context: &mut CheckingContext<'_>,
+fn converting_evidence<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     sessions: (&SessionType, &SessionType),
     relation: Relation,
 ) -> Result<Maybe<Evidence, crate::session::related::Absent>, CheckRefusal>
@@ -661,8 +662,8 @@ fn converting_evidence(
         && (relation == SessionRelation::Equivalence || statement.owed.is_empty()),
     | Err(_) => true,
 })]
-pub fn decide(
-    context: &mut CheckingContext<'_>,
+pub fn decide<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     relation: SessionRelation,
     (source, target): (ValueId, ValueId),
@@ -819,8 +820,8 @@ pub fn payload_paths(
         ),
     | _ => false,
 })]
-pub fn elaborate(
-    context: &mut CheckingContext<'_>,
+pub fn elaborate<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
 ) -> Result<(), CheckRefusal>
 {
@@ -896,8 +897,8 @@ pub fn elaborate(
     | Ok(native) => matches!(context.arena().value(native), Some(Value::Univalence(..) | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::PathProduct(..))),
     | Err(_) => true,
 })]
-fn payload_certificate(
-    context: &mut CheckingContext<'_>,
+fn payload_certificate<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifier: ValueTypeId,
 ) -> Result<ValueId, CheckRefusal>
@@ -957,8 +958,8 @@ fn payload_certificate(
     | Err(CheckRefusal::SessionNotSubtype { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
-pub fn record_simulation(
-    context: &mut CheckingContext<'_>,
+pub fn record_simulation<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     carrier: ValueTypeId,
     (source, target): (ValueId, ValueId),
@@ -1005,8 +1006,8 @@ pub fn record_simulation(
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
-pub fn endpoints(
-    context: &mut CheckingContext<'_>,
+pub fn endpoints<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: TermNode,
     classifier: ValueTypeId,
 ) -> Result<(ValueTypeId, ValueId, ValueId), CheckRefusal>
@@ -1081,8 +1082,8 @@ pub fn endpoints(
 /// - hypothesis: L3 — a stay rides as the identity at any motive.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
-pub fn convertible(
-    context: &CheckingContext<'_>,
+pub fn convertible<J: Judge>(
+    context: &CheckingContext<'_, J>,
     left: ValueId,
     right: ValueId,
 ) -> Result<Agreement, CheckRefusal>
@@ -1349,8 +1350,8 @@ pub fn covariant(
 ///   level zero records nothing.
 /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&family| family == written || context.motives().get(&at) == Some(&family)))]
-pub fn levelled(
-    context: &mut CheckingContext<'_>,
+pub fn levelled<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     written: ValueTypeId,
     carrier: ValueTypeId,
@@ -1410,8 +1411,8 @@ pub fn levelled(
     | Err(CheckRefusal::NonCovariantMotive { at: site } | CheckRefusal::RideUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn ride(
-    context: &mut CheckingContext<'_>,
+pub fn ride<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     flow: ValueTypeId,
 ) -> Result<Ride, CheckRefusal>
@@ -1630,8 +1631,8 @@ fn computed(
     | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == value && moving != Moving::Fixed,
     | Ok(()) | Err(_) => true,
 })]
-pub fn admit(
-    context: &mut CheckingContext<'_>,
+pub fn admit<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     value: ValueId,
     flow: ValueTypeId,
@@ -1720,8 +1721,8 @@ pub fn admit(
     | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn run_premises(
-    context: &mut CheckingContext<'_>,
+pub fn run_premises<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     expected: ValueTypeId,
 ) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
@@ -1843,8 +1844,8 @@ pub fn run_premises(
     ) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn dialogue_premises(
-    context: &mut CheckingContext<'_>,
+pub fn dialogue_premises<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     expected: ValueTypeId,
 ) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>

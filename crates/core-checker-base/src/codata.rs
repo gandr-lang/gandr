@@ -51,6 +51,7 @@ use crate::comonoid::Grade;
 use crate::formation::form_comp_type;
 use crate::formation::form_value_type;
 use crate::formation::level_of;
+use crate::judge::Judge;
 use crate::view::CompTypeView;
 use crate::view::comp_type_view;
 
@@ -119,8 +120,8 @@ struct SpineBinders(usize);
 /// - witness: `tests::codata::a_value_universe_is_no_codata_kind`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|level| matches!(context.arena().value_type(kind), Some(ValueType::Universe { sort: Sort::Ground(GroundSort::Computation), level: held }) if held == level)) == ret.is_ok())]
 #[inline]
-pub fn kind_level(
-    context: &CheckingContext<'_>,
+pub fn kind_level<J: Judge>(
+    context: &CheckingContext<'_, J>,
     kind: ValueTypeId,
 ) -> Result<Level, CheckRefusal>
 {
@@ -167,8 +168,8 @@ pub fn kind_level(
 /// - witness: `tests::codata::a_codata_declaration_observes_something_below_its_universe`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
 #[inline]
-pub fn form_signature(
-    context: &mut CheckingContext<'_>,
+pub fn form_signature<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     position: ConstantIndex,
     signature: &Arc<CodataSignature>,
 ) -> Result<(), CheckRefusal>
@@ -250,8 +251,8 @@ pub fn form_signature(
 /// - witness: `tests::codata::a_self_reference_off_an_observations_result_is_refused`
 /// - witness: `tests::codata::a_codata_declaration_observes_something_below_its_universe`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: |ret| ret.is_err() || context.depth(Zone::Intuitionistic) == depth)]
-fn observation(
-    context: &mut CheckingContext<'_>,
+fn observation<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     position: ConstantIndex,
     parameters: ParameterAt,
     observed: gandr_core_term::CompTypeId,
@@ -333,8 +334,8 @@ fn observation(
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
 /// - witness: `tests::codata::a_self_reference_off_an_observations_result_is_refused`
 #[spec(ensures: |ret| ret.is_err() || arguments.len() == parameters.0)]
-fn uniform(
-    context: &CheckingContext<'_>,
+fn uniform<J: Judge>(
+    context: &CheckingContext<'_, J>,
     (at, arguments): (CompTypeId, &[ValueId]),
     parameters: ParameterAt,
     binders: SpineBinders,
@@ -382,8 +383,8 @@ fn uniform(
 ///   stream at two arguments are refused by name.
 /// - witness: `tests::codata::a_codata_application_names_an_admitted_declaration_at_its_arity`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(comp_type_view(context.arena(), codata), Ok(CompTypeView::Codata { arguments, .. }) if arguments.len() == signature.parameters().len())) == ret.is_ok())]
-pub fn signature(
-    context: &mut CheckingContext<'_>,
+pub fn signature<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     codata: CompTypeId,
 ) -> Result<Arc<CodataSignature>, CheckRefusal>
 {
@@ -423,8 +424,8 @@ pub fn signature(
 /// - hypothesis: L3 — a stream's one argument is read at its position.
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
 #[spec(ensures: |ret| ret.is_err() || matches!(comp_type_view(context.arena(), codata), Ok(CompTypeView::Codata { arguments, .. }) if arguments.get(index.0).copied() == ret.ok()))]
-pub fn argument(
-    context: &CheckingContext<'_>,
+pub fn argument<J: Judge>(
+    context: &CheckingContext<'_, J>,
     codata: CompTypeId,
     index: ParameterAt,
 ) -> Result<ValueId, CheckRefusal>
@@ -463,8 +464,8 @@ pub fn argument(
 /// - hypothesis: L3 — a stream of units reads its head at the unit type.
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
 #[spec(ensures: |ret| prefix.0 != 0 || ret == Ok(subject))]
-pub fn instantiate_value(
-    context: &mut CheckingContext<'_>,
+pub fn instantiate_value<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     codata: CompTypeId,
     mut subject: ValueTypeId,
     prefix: ParameterAt,
@@ -492,8 +493,8 @@ pub fn instantiate_value(
 /// - hypothesis: L3 — as [`instantiate_value`].
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
 #[spec(ensures: |ret| ret.is_err() || index.0 != 0 || ret == argument(context, codata, index))]
-fn carried(
-    context: &mut CheckingContext<'_>,
+fn carried<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     codata: CompTypeId,
     index: ParameterAt,
 ) -> Result<ValueId, CheckRefusal>
@@ -531,8 +532,8 @@ fn carried(
 /// - witness: `tests::codata::a_single_observation_reads_as_a_lazy_product_of_one`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| context.arena().comp_type(*read).is_some()))]
 #[inline]
-pub fn read(
-    context: &mut CheckingContext<'_>,
+pub fn read<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     shape: CompTypeId,
 ) -> Result<CompTypeId, CheckRefusal>
 {

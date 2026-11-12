@@ -77,6 +77,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
 use crate::refusal::Mismatch;
@@ -129,8 +130,8 @@ pub enum Divergence
     | Err(CheckRefusal::TypeMismatch(Mismatch::Computation { at: site, expected: wanted, .. })) => site == at && wanted == expected,
     | Ok(()) | Err(_) => true,
 })]
-pub fn require(
-    context: &mut CheckingContext<'_>,
+pub fn require<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     body: ComputationId,
     expected: CompTypeId,
@@ -659,8 +660,8 @@ fn acts(
     | Ok(Divergence::Unstated(rebuilt)) => rebuilt != expected,
     | Ok(Divergence::Stated) | Err(_) => true,
 })]
-pub fn stated(
-    context: &mut CheckingContext<'_>,
+pub fn stated<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     expected: CompTypeId,
 ) -> Result<Divergence, CheckRefusal>
@@ -806,8 +807,8 @@ pub fn stated(
 ///   row holding `Partial`, a lazy product with one such component, and a value
 ///   type that is no thunk, each asserted as the exact answer.
 /// - witness: `divergence::tests::a_call_returns_only_where_every_row_is_empty`
-pub fn calls(
-    context: &mut CheckingContext<'_>,
+pub fn calls<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     bound: ValueTypeId,
 ) -> Result<Calls, CheckRefusal>
 {
@@ -858,7 +859,9 @@ pub fn calls(
 /// - hypothesis: L3 — as [`calls`], read at every binder.
 /// - witness: `divergence::tests::an_unread_call_converts_only_where_its_row_is_empty`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |indices| indices.is_sorted()))]
-pub fn returning(context: &mut CheckingContext<'_>) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
+pub fn returning<J: Judge>(
+    context: &mut CheckingContext<'_, J>
+) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
 {
     let depth = u32::try_from(usize::from(context.binders().depth(Zone::Intuitionistic)))
         .map_err(|_overflow| CheckRefusal::MachineInvariant)?;

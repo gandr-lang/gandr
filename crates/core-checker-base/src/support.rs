@@ -31,6 +31,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::signature_table;
 use crate::formation::FormedValueType;
+use crate::judge::Judge;
 use crate::report::Verdict;
 use crate::worlds::Located;
 
@@ -547,9 +548,9 @@ impl Supported
     ///   reader keeps the equations of the declaration that it reads.
     /// - witness: `elaboration::tests::a_supported_judgement_keeps_the_suspension_that_the_module_run_reports`
     #[inline]
-    pub fn suspension(
+    pub fn suspension<J: Judge>(
         &self,
-        context: &crate::context::CheckingContext<'_>,
+        context: &crate::context::CheckingContext<'_, J>,
         prior: &alloc::collections::BTreeMap<ConstantIndex, crate::elaboration::Suspension>,
     ) -> Maybe<crate::elaboration::Suspension, waits::Absent>
     {

@@ -97,6 +97,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::failure::Failure;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TypeNode;
@@ -233,8 +234,8 @@ impl FormedCompType
         && ret.is_ok_and(|formed| formed.id() == value_type) == ret.is_ok(),
 )]
 #[inline]
-pub fn form_value_type(
-    context: &mut CheckingContext<'_>,
+pub fn form_value_type<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, CheckRefusal>
 {
@@ -265,8 +266,8 @@ pub fn form_value_type(
         && ret.as_ref().is_ok_and(|formed| formed.id() == value_type) == ret.is_ok(),
 )]
 #[inline]
-pub fn form_value_type_with_failure(
-    context: &mut CheckingContext<'_>,
+pub fn form_value_type_with_failure<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, Failure>
 {
@@ -299,8 +300,8 @@ pub fn form_value_type_with_failure(
         && ret.is_ok_and(|formed| formed.id() == comp_type) == ret.is_ok(),
 )]
 #[inline]
-pub fn form_comp_type(
-    context: &mut CheckingContext<'_>,
+pub fn form_comp_type<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     comp_type: CompTypeId,
 ) -> Result<FormedCompType, CheckRefusal>
 {
@@ -330,8 +331,8 @@ pub fn form_comp_type(
 /// - witness: `formation::tests::universe_families_form_one_level_up_in_the_value_sort`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Value) == ret.is_ok())]
 #[inline]
-pub fn classify_value_type(
-    context: &CheckingContext<'_>,
+pub fn classify_value_type<J: Judge>(
+    context: &CheckingContext<'_, J>,
     formed: FormedValueType,
 ) -> Result<Classifier, CheckRefusal>
 {
@@ -360,8 +361,8 @@ pub fn classify_value_type(
 /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Computation) == ret.is_ok())]
 #[inline]
-pub fn classify_comp_type(
-    context: &CheckingContext<'_>,
+pub fn classify_comp_type<J: Judge>(
+    context: &CheckingContext<'_, J>,
     formed: FormedCompType,
 ) -> Result<Classifier, CheckRefusal>
 {
@@ -429,8 +430,8 @@ enum Task
     },
 })]
 #[inline]
-pub fn level_of(
-    context: &CheckingContext<'_>,
+pub fn level_of<J: Judge>(
+    context: &CheckingContext<'_, J>,
     root: TypeNode,
 ) -> Result<Level, CheckRefusal>
 {

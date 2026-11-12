@@ -81,6 +81,7 @@ use quenchant_shape::shape::Maybe;
 use crate::code::OpenBinders;
 use crate::code::loose_reach;
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -282,8 +283,8 @@ pub enum Vocabulary
 ///   parameter and the empty data type have no coverage.
 /// - witness: `equiv::tests::a_data_type_covers_as_its_constructors_fields`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(ref signature)) if signature.constructors().is_empty()))]
-pub fn data_signature(
-    context: &mut CheckingContext<'_>,
+pub fn data_signature<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     head: ValueTypeId,
 ) -> Result<Maybe<Arc<DataSignature>, uncovered::Absent>, CheckRefusal>
 {
@@ -328,8 +329,8 @@ pub fn data_signature(
     | Err(CheckRefusal::EquivUnsupported { at: site, classifier: found }) => site == at && found == classifier,
     | Ok(_) | Err(_) => true,
 })]
-pub fn codes(
-    context: &mut CheckingContext<'_>,
+pub fn codes<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifier: ValueTypeId,
 ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
@@ -366,8 +367,8 @@ pub fn codes(
 ///
 /// # Specification
 /// trivial.
-pub fn translator(
-    context: &mut CheckingContext<'_>,
+pub fn translator<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (from, to): (ValueTypeId, ValueTypeId),
 ) -> ValueTypeId
 {
@@ -421,8 +422,8 @@ pub fn translator(
     | Ok(ref decided) => decided.evidence.source.len().saturating_add(decided.evidence.target.len()) >= 2,
     | Err(_) => true,
 })]
-pub fn decide(
-    context: &mut CheckingContext<'_>,
+pub fn decide<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     (forward, backward): (ValueId, ValueId),
     (source, target): (ValueTypeId, ValueTypeId),
@@ -479,8 +480,8 @@ pub fn decide(
     | Ok(ref dialogues) => !dialogues.is_empty(),
     | Err(_) => true,
 })]
-fn round_trips(
-    context: &mut CheckingContext<'_>,
+fn round_trips<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     code: ValueTypeId,
     (first, second): (ValueId, ValueId),
@@ -559,8 +560,8 @@ fn round_trips(
         && patterns.iter().all(|pattern| context.arena().value(pattern.value).is_some()),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-pub fn coverage(
-    context: &mut CheckingContext<'_>,
+pub fn coverage<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueTypeId,
     vocabulary: Vocabulary,
 ) -> Result<Maybe<Vec<Pattern>, uncovered::Absent>, CheckRefusal>

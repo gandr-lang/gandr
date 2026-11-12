@@ -331,14 +331,16 @@ pub struct Foresight(usize);
 ///
 /// The context derives nothing: it borrows the whole arena, and an equality
 /// or a debug rendering of it would read every node.
-pub struct CheckingContext<'arena>
+pub struct CheckingContext<'arena, J>
+where
+    J: Judge,
 {
     /// The arena every id the judgement reads resolves in, and the types it
     /// rewrites are minted into.
     arena: &'arena mut CoreArena,
     /// The judgement the formers and formation ask to form a type or check a
     /// value.
-    judge: &'static dyn Judge,
+    judge: &'static J,
     /// The binders the judgement is under; empty between judgements.
     binders: Context,
     /// The types declarations supplied, ascending by admission position.
@@ -634,10 +636,12 @@ enum Closure
 ///   whole module reports and mints the same arena.
 /// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
 #[derive(Clone, Debug)]
-pub struct Checkpoint
+pub struct Checkpoint<J>
+where
+    J: Judge,
 {
     /// [`CheckingContext::judge`].
-    judge: &'static dyn Judge,
+    judge: &'static J,
     /// [`CheckingContext::binders`].
     binders: Context,
     /// [`CheckingContext::signatures`].
@@ -764,7 +768,7 @@ pub struct Checkpoint
     readers: Vec<gandr_core_term::LiteralReader>,
 }
 
-impl<'arena> CheckingContext<'arena>
+impl<'arena, J: Judge> CheckingContext<'arena, J>
 {
     /// A context over `arena` with no declaration admitted, judging under
     /// `budget`, that asks `judge` to form a type or check a value.
@@ -808,7 +812,7 @@ impl<'arena> CheckingContext<'arena>
     pub fn new(
         arena: &'arena mut CoreArena,
         budget: CheckBudget,
-        judge: &'static dyn Judge,
+        judge: &'static J,
     ) -> Self
     {
         let atoms = Atoms {
@@ -923,7 +927,7 @@ impl<'arena> CheckingContext<'arena>
     /// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
     #[inline]
     #[must_use]
-    pub fn checkpoint(&self) -> Checkpoint
+    pub fn checkpoint(&self) -> Checkpoint<J>
     {
         let Self {
             arena: _,
@@ -1077,7 +1081,7 @@ impl<'arena> CheckingContext<'arena>
     #[must_use]
     pub fn resume(
         arena: &'arena mut CoreArena,
-        checkpoint: Checkpoint,
+        checkpoint: Checkpoint<J>,
     ) -> Self
     {
         let Checkpoint {
@@ -3236,7 +3240,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn judge(&self) -> &'static dyn Judge
+    pub const fn judge(&self) -> &'static J
     {
         self.judge
     }

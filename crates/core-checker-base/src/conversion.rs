@@ -195,6 +195,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::code::Lift;
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::Mismatch;
@@ -487,8 +488,8 @@ pub enum Agreement
             true
         },
 )]
-pub fn value_bridge<Synthesised>(
-    context: &mut CheckingContext<'_>,
+pub fn value_bridge<Synthesised, J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     synthesised: Synthesised,
     expected: ValueTypeId,
@@ -639,8 +640,8 @@ pub type Coercion = alloc::collections::BTreeMap<gandr_core_term::FieldLabel, Va
 ///   checks, and one whose port is another value is refused by the port.
 /// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), wanted), Ok(ValueTypeView::Patched { .. })))]
-fn coerced_in(
-    context: &mut CheckingContext<'_>,
+fn coerced_in<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
@@ -700,8 +701,8 @@ fn coerced_in(
 ///   stands as the record of its host, its port and its transport.
 /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), found.node()), Ok(ValueTypeView::Patched { .. })))]
-fn coerced_out(
-    context: &mut CheckingContext<'_>,
+fn coerced_out<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
 ) -> Result<Maybe<(ValueId, Vec<gandr_core_term::FieldLabel>), ()>, CheckRefusal>
@@ -764,8 +765,8 @@ fn coerced_out(
     captures: before = context.deferrals().collecting,
     ensures: context.deferrals().collecting == before,
 )]
-fn crossing(
-    context: &mut CheckingContext<'_>,
+fn crossing<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
 ) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
@@ -805,8 +806,8 @@ fn crossing(
 ///   manifest crosses at the counters by the forgetting map at that carrier.
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
 /// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
-fn kept_crossing(
-    context: &mut CheckingContext<'_>,
+fn kept_crossing<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
 ) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
@@ -896,8 +897,8 @@ fn kept_crossing(
     captures: before = context.deferrals().collecting,
     ensures: context.deferrals().collecting == before,
 )]
-fn literal_reader(
-    context: &mut CheckingContext<'_>,
+fn literal_reader<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     found: Relocated<ValueTypeId>,
     (wanted, expected): (ValueTypeId, ValueTypeId),
@@ -980,8 +981,8 @@ fn literal_reader(
     captures: [before = context.deferrals().collecting, counted = tally.0],
     ensures: context.deferrals().collecting == before && tally.0 == counted.saturating_add(1),
 )]
-pub fn decimal_bridge(
-    context: &mut CheckingContext<'_>,
+pub fn decimal_bridge<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     expected: ValueTypeId,
     tally: &mut ConversionCount,
@@ -1153,8 +1154,8 @@ fn exact(
 /// # Adequacy
 /// - hypothesis: L3 — as [`decimal_bridge`].
 /// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
-fn decimal_reader(
-    context: &mut CheckingContext<'_>,
+fn decimal_reader<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     arguments: [ValueId; 2],
     wanted: ValueTypeId,
 ) -> Result<Readers, CheckRefusal>
@@ -1271,9 +1272,9 @@ impl ReaderOperand
     /// # Adequacy
     /// - hypothesis: L3 — as [`literal_reader`].
     /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
-    fn value(
+    fn value<J: Judge>(
         &mut self,
-        context: &mut CheckingContext<'_>,
+        context: &mut CheckingContext<'_, J>,
     ) -> ValueId
     {
         match *self {
@@ -1331,8 +1332,8 @@ enum Readers
 /// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 /// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
 /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
-fn kept_reader(
-    context: &mut CheckingContext<'_>,
+fn kept_reader<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     operand: &mut ReaderOperand,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
@@ -1420,8 +1421,8 @@ fn kept_reader(
 /// # Adequacy
 /// - hypothesis: L3 — as [`kept_crossing`].
 /// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
-fn carriers(
-    context: &mut CheckingContext<'_>,
+fn carriers<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     found: Relocated<ValueTypeId>,
     chain: CompTypeId,
 ) -> Result<Maybe<Vec<ValueId>, ()>, CheckRefusal>
@@ -1521,8 +1522,8 @@ fn carriers(
             | _ => true,
         },
 )]
-pub fn comp_bridge(
-    context: &mut CheckingContext<'_>,
+pub fn comp_bridge<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     synthesised: CompTypeId,
     expected: CompTypeId,
@@ -1593,8 +1594,8 @@ pub fn comp_bridge(
             | _ => true,
         },
 )]
-pub fn decode_bridge(
-    context: &mut CheckingContext<'_>,
+pub fn decode_bridge<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueId,
     synthesised: ValueTypeId,
     sort: GroundSort,
@@ -1693,8 +1694,8 @@ pub fn decode_bridge(
 ///   twice agree, and an arm leaving it at another state is refused.
 /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
 #[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
-pub fn equivalent(
-    context: &mut CheckingContext<'_>,
+pub fn equivalent<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     left: ValueTypeId,
     right: ValueTypeId,
 ) -> Result<Agreement, CheckRefusal>
@@ -1727,8 +1728,8 @@ pub fn equivalent(
 ///   admits; one annotated at a call that returns another index is refused.
 /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
 #[spec(ensures: |ret| left != right || ret.is_err() || ret == Ok(Agreement::Convertible))]
-pub fn indices_agree(
-    context: &mut CheckingContext<'_>,
+pub fn indices_agree<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     left: ValueId,
     right: ValueId,
 ) -> Result<Agreement, CheckRefusal>
@@ -1769,8 +1770,8 @@ pub fn indices_agree(
 ///   another literal is refused by the field.
 /// - witness: `tests::native_formers::a_literal_s_fixed_field_converts_with_the_fixed_value_5612`
 #[spec(ensures: |ret| field != fixed || ret.is_err() || ret == Ok(Agreement::Convertible))]
-pub fn fixed_field_agrees(
-    context: &mut CheckingContext<'_>,
+pub fn fixed_field_agrees<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     field: ValueId,
     fixed: ValueId,
 ) -> Result<Agreement, CheckRefusal>
@@ -1818,8 +1819,8 @@ pub fn fixed_field_agrees(
 /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
 /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
 /// - witness: `bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
-fn endpoints_agree(
-    context: &mut CheckingContext<'_>,
+fn endpoints_agree<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     left: ValueId,
     right: ValueId,
 ) -> Result<Agreement, CheckRefusal>
@@ -1874,8 +1875,8 @@ fn endpoints_agree(
 /// - hypothesis: L3 — as [`endpoints_agree`].
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
-fn agree(
-    context: &mut CheckingContext<'_>,
+fn agree<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (left, right): (ValueId, ValueId),
     returning: &[gandr_kernel_term::DeBruijnIndex],
 ) -> Result<Agreement, CheckRefusal>
@@ -1993,8 +1994,8 @@ fn agree(
     | Pairing::Codes(left, right) | Pairing::Terms(left,right) | Pairing::Endpoints(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Values(..) | Pairing::Assignable(..) | Pairing::SubValues(..) | Pairing::Comps(..) | Pairing::SubComps(..) | Pairing::Codes(..) | Pairing::Terms(..) | Pairing::Endpoints(..) => true,
 })]
-fn convert(
-    context: &mut CheckingContext<'_>,
+fn convert<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     root: Pairing,
 ) -> Result<Agreement, CheckRefusal>
 {
@@ -3123,8 +3124,8 @@ enum Rows
 /// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
 /// - witness: `conversion::tests::returners_of_several_values_agree_on_rows_and_results`
 #[spec(captures: before = pending.len(), ensures: |ret| !matches!(ret, Ok(Rows::Unified | Rows::Refuted)) || pending.len() == before)]
-fn compared_rows(
-    context: &mut CheckingContext<'_>,
+fn compared_rows<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (first, second): (
         &gandr_core_term::effect::EffectRow,
         &gandr_core_term::effect::EffectRow,
@@ -3207,8 +3208,8 @@ fn compared_rows(
 ///   withholds is refused before any pair is read.
 /// - witness: `conversion::tests::a_capability_at_an_implicit_sort_is_read_at_its_solution_2944`
 /// - witness: `capability::tests::attenuation_narrows_and_never_widens`
-fn atoms_agree(
-    context: &mut CheckingContext<'_>,
+fn atoms_agree<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     atoms: Vec<Maybe<(ValueTypeId, ValueTypeId), grant::Absent>>,
 ) -> Result<RowInclusion, CheckRefusal>
 {
@@ -3255,8 +3256,8 @@ fn atoms_agree(
 /// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
 #[spec(ensures: |ret| ret.is_err() || side.relocation() != Relocation::IDENTITY
     || ret.as_ref().is_ok_and(|head| head.relocation() == Relocation::IDENTITY))]
-fn value_head(
-    context: &mut CheckingContext<'_>,
+fn value_head<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     side: Relocated<ValueTypeId>,
 ) -> Result<Relocated<ValueTypeId>, CheckRefusal>
 {
@@ -3326,8 +3327,8 @@ fn value_head(
 /// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
 #[spec(ensures: |ret| ret.is_err() || side.relocation() != Relocation::IDENTITY
     || ret.as_ref().is_ok_and(|head| head.relocation() == Relocation::IDENTITY))]
-fn comp_head(
-    context: &mut CheckingContext<'_>,
+fn comp_head<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     side: Relocated<CompTypeId>,
 ) -> Result<Relocated<CompTypeId>, CheckRefusal>
 {
@@ -3818,8 +3819,8 @@ fn relocated_comps(
     | Ok(found) => (found == Knowledge::Unknown) == matches!(context.arena().value(node), Some(Value::Hole(_) | Value::Mark { .. })),
     | Err(_) => context.arena().value(node).is_none(),
 })]
-fn root_knowledge(
-    context: &CheckingContext<'_>,
+fn root_knowledge<J: Judge>(
+    context: &CheckingContext<'_, J>,
     node: ValueId,
 ) -> Result<Knowledge, CheckRefusal>
 {
@@ -3861,8 +3862,8 @@ fn root_knowledge(
 ///   known end is solved to it; a hole no judgement nominated stays unknown.
 /// - witness: `bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
 /// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
-fn pose_open(
-    context: &mut CheckingContext<'_>,
+fn pose_open<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     left: ValueId,
     right: ValueId,
 ) -> Result<Maybe<crate::elaboration::Unified, open::Absent>, CheckRefusal>

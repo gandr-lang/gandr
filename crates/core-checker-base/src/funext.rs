@@ -113,6 +113,7 @@ use crate::code::Reading;
 use crate::code::Stalled;
 use crate::code::loose_reach;
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -363,8 +364,8 @@ struct Stuck
     | Err(CheckRefusal::FunextUnsupported { at: site, .. } | CheckRefusal::PointwiseDistinct { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn decide(
-    context: &mut CheckingContext<'_>,
+pub fn decide<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     functions: (ValueId, ValueId),
     classifier: ValueTypeId,
@@ -504,8 +505,8 @@ pub fn decide(
 /// - witness: `funext::tests::what_the_rule_cannot_show_it_refuses_by_name`
 /// - witness: `funext::tests::a_pointwise_pair_the_machine_declines_is_undecided_6550`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::Undecided { at: site }) if site != at))]
-fn agreement(
-    context: &CheckingContext<'_>,
+fn agreement<J: Judge>(
+    context: &CheckingContext<'_, J>,
     at: ValueId,
     left: ValueId,
     right: ValueId,
@@ -554,8 +555,8 @@ enum Agreement
     | Ok(Maybe::Absent(reason)) => reason == outside::Absent::Former,
     | Err(_) => true,
 })]
-fn arrow(
-    context: &mut CheckingContext<'_>,
+fn arrow<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     classifier: ValueTypeId,
 ) -> Result<Maybe<(ValueTypeId, ValueTypeId), outside::Absent>, CheckRefusal>
 {
@@ -613,8 +614,8 @@ fn arrow(
     | Ok(Maybe::Absent(reason)) => reason == outside::Absent::Former,
     | Err(_) => true,
 })]
-fn first_order(
-    context: &mut CheckingContext<'_>,
+fn first_order<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     ty: ValueTypeId,
 ) -> Result<Maybe<ValueTypeId, outside::Absent>, CheckRefusal>
 {
@@ -735,8 +736,8 @@ fn first_order(
         && patterns.iter().all(|pattern| context.arena().value(pattern.left).is_some() && context.arena().value(pattern.right).is_some()),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-fn coverage(
-    context: &mut CheckingContext<'_>,
+fn coverage<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     domain: ValueTypeId,
 ) -> Result<Maybe<Vec<Pattern>, outside::Absent>, CheckRefusal>
 {
@@ -1054,8 +1055,8 @@ fn coverage(
     | Maybe::Present(found) => context.arena().value(found.input).is_some(),
     | Maybe::Absent(reason) => reason == applied::Absent::Elsewhere,
 })]
-fn stuck(
-    context: &CheckingContext<'_>,
+fn stuck<J: Judge>(
+    context: &CheckingContext<'_, J>,
     normal: ValueId,
     binders: Binders,
 ) -> Maybe<Stuck, applied::Absent>
@@ -1119,8 +1120,8 @@ fn stuck(
     | Continuation::Tail => context.arena().computation(ret) == Some(&Computation::Return(output.0)),
     | Continuation::Bind(_) => context.arena().computation(ret).is_some(),
 })]
-fn resume(
-    context: &mut CheckingContext<'_>,
+fn resume<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     continuation: Continuation,
     output: (ValueId, Binders),
 ) -> ComputationId

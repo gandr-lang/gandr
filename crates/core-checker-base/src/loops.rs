@@ -113,6 +113,7 @@ use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::LoopRespect;
 use crate::code::converted;
+use crate::judge::Judge;
 
 /// One loop a case over a sort owes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,8 +147,8 @@ pub struct Loop
 ///   integers owes none.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.iter().all(|owed| context.data_signatures().get(&owed.words).is_some_and(|signature| signature.presentation().cells().is_some())))]
-pub fn loops(
-    context: &mut CheckingContext<'_>,
+pub fn loops<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
 ) -> Vec<Loop>
 {
@@ -292,8 +293,8 @@ fn lifted(
 ///   owes nothing, and a dependent family that is no returner is refused.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
-pub fn respected(
-    context: &mut CheckingContext<'_>,
+pub fn respected<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     (datatype, signature): (ValueTypeId, &DataSignature),
 ) -> Result<(), CheckRefusal>
@@ -443,8 +444,8 @@ pub fn respected(
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`].
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
-fn owe(
-    context: &CheckingContext<'_>,
+fn owe<J: Judge>(
+    context: &CheckingContext<'_, J>,
     (at, cell): (ComputationId, CellIndex),
     (left, right): (ComputationId, ComputationId),
 ) -> Result<(), CheckRefusal>
@@ -509,8 +510,8 @@ struct Held
 ///   `Base`; without it the obligation over `a` reads `b` free and sticks.
 /// - witness: `tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|held| !held.points.is_empty())))]
-fn scrutinees(
-    context: &mut CheckingContext<'_>,
+fn scrutinees<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (at, branches): (ValueId, &[ComputationId]),
 ) -> Result<Vec<Held>, CheckRefusal>
 {
@@ -619,8 +620,8 @@ fn scrutinees(
 ///   refused naming the square.
 /// - witness: `tests::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|sort| matches!(context.arena().value_type(family), Some(&ValueType::Path { carrier, .. }) if carrier == sort))))]
-fn presented_set(
-    context: &mut CheckingContext<'_>,
+fn presented_set<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     family: ValueTypeId,
 ) -> Result<Option<ValueTypeId>, CheckRefusal>
 {
@@ -673,8 +674,8 @@ fn presented_set(
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
-pub fn arm_type(
-    context: &mut CheckingContext<'_>,
+pub fn arm_type<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ComputationId,
     (datatype, signature): (ValueTypeId, &DataSignature),
     owed: Loop,
@@ -745,8 +746,8 @@ pub fn arm_type(
 ///   at its reflexivity.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
-fn reflexivities(
-    context: &CheckingContext<'_>,
+fn reflexivities<J: Judge>(
+    context: &CheckingContext<'_, J>,
     words: ConstantIndex,
 ) -> Result<Reflexivities, CheckRefusal>
 {
@@ -776,8 +777,8 @@ fn reflexivities(
 /// - hypothesis: L3 — as [`respected`]: the circle's point is `Base`.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&point| matches!(context.arena().value(point), Some(Value::Constructor { .. }))))]
-pub fn point(
-    context: &mut CheckingContext<'_>,
+pub fn point<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (datatype, arities): (ValueTypeId, &[FieldCount]),
     words: ConstantIndex,
 ) -> Result<ValueId, CheckRefusal>
@@ -825,8 +826,8 @@ pub fn point(
 ///   of its point in both checkers.
 /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
 #[spec(captures: before = (carrier, point), ensures: |ret| reflexivities != Reflexivities::NONE || ret == before)]
-pub fn wrapped(
-    context: &mut CheckingContext<'_>,
+pub fn wrapped<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (carrier, point): (ValueTypeId, ValueId),
     reflexivities: Reflexivities,
 ) -> (ValueTypeId, ValueId)
@@ -865,8 +866,8 @@ pub fn wrapped(
 ///   with `Base`, in both checkers.
 /// - witness: `tests::native_formers::a_path_whose_endpoints_compute_the_point_is_its_words_485`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |point| point.is_none_or(|point| matches!(context.arena().value(point), Some(Value::Constructor { .. })))))]
-pub fn point_of(
-    context: &mut CheckingContext<'_>,
+pub fn point_of<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     carrier: ValueTypeId,
     words: ConstantIndex,
 ) -> Result<Option<ValueId>, CheckRefusal>

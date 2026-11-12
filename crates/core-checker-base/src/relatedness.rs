@@ -81,6 +81,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
+use crate::judge::Judge;
 use crate::view::CompTypeView;
 use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
@@ -125,8 +126,8 @@ enum Reached
 /// - witness: `bridge::tests::bridges::a_bridge_at_a_sealed_type_is_refused_by_name`
 /// - witness: `bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::BridgeAtSealedType { at: named, .. }) if named != at))]
-pub fn require_unsealed(
-    context: &mut CheckingContext<'_>,
+pub fn require_unsealed<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueTypeId,
     carrier: ValueTypeId,
 ) -> Result<(), CheckRefusal>
@@ -282,8 +283,8 @@ pub enum Fibre
 /// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
 /// - witness: `bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::OutsideFold { at: named, .. }) if named != at))]
-pub fn fibre(
-    context: &mut CheckingContext<'_>,
+pub fn fibre<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     (bridge, carrier, left, right): (ValueTypeId, ValueTypeId, ValueId, ValueId),
 ) -> Result<Fibre, CheckRefusal>
@@ -360,8 +361,8 @@ enum Visit
 /// - hypothesis: L3 — as [`fibre`], whose endpoints it reads.
 /// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
 #[spec(ensures: |ret| !matches!(context.arena().value(ret), Some(Value::Ascribe { .. } | Value::Mark { .. })))]
-fn written(
-    context: &CheckingContext<'_>,
+fn written<J: Judge>(
+    context: &CheckingContext<'_, J>,
     mut value: ValueId,
 ) -> ValueId
 {
@@ -436,8 +437,8 @@ enum Form
 /// # Adequacy
 /// - hypothesis: L3 — as [`fibre`].
 /// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
-fn clause(
-    context: &CheckingContext<'_>,
+fn clause<J: Judge>(
+    context: &CheckingContext<'_, J>,
     code: ValueTypeId,
 ) -> Result<Clause, CheckRefusal>
 {
@@ -503,8 +504,8 @@ fn clause(
 /// # Adequacy
 /// - hypothesis: L3 — as [`fibre`].
 /// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
-fn form(
-    context: &CheckingContext<'_>,
+fn form<J: Judge>(
+    context: &CheckingContext<'_, J>,
     value: ValueId,
 ) -> Form
 {
@@ -544,8 +545,8 @@ fn form(
 /// - hypothesis: L3 — as [`fibre`].
 /// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
 /// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
-fn visit(
-    context: &mut CheckingContext<'_>,
+fn visit<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (code, left, right): (ValueTypeId, ValueId, ValueId),
 ) -> Result<Visit, CheckRefusal>
 {
@@ -676,8 +677,8 @@ fn visit(
     Ok(_) => false,
     Err(_) => true,
 })]
-fn constructor_fields(
-    context: &mut CheckingContext<'_>,
+fn constructor_fields<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueTypeId,
     tag: ConstructorTag,
     (lefts, rights): (&[ValueId], &[ValueId]),
@@ -740,8 +741,8 @@ fn constructor_fields(
 ///   name, and the codes the clauses read pass.
 /// - witness: `bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::OutsideFold { at: named, .. }) if named != at))]
-fn interpret(
-    context: &mut CheckingContext<'_>,
+fn interpret<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     bridge: ValueTypeId,
     carrier: ValueTypeId,
@@ -861,8 +862,8 @@ fn interpret(
 /// # Adequacy
 /// - hypothesis: L3 — as [`interpret`], whose data clause it reads.
 /// - witness: `bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
-fn data_fields(
-    context: &mut CheckingContext<'_>,
+fn data_fields<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
 ) -> Result<Option<Vec<ValueTypeId>>, CheckRefusal>
 {

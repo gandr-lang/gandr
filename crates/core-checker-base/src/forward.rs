@@ -83,6 +83,7 @@ use crate::code::loose_reach;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
 use crate::equiv::Vocabulary;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -201,8 +202,8 @@ enum Leaf
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn codes(
-    context: &mut CheckingContext<'_>,
+pub fn codes<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     classifier: ValueTypeId,
 ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
@@ -255,8 +256,8 @@ pub fn codes(
     | Ok(ref decided) => !decided.images.is_empty() && decided.images.len() == decided.dialogues.len(),
     | Err(_) => true,
 })]
-pub fn decide(
-    context: &mut CheckingContext<'_>,
+pub fn decide<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     translator: ValueId,
     (source, target): (ValueTypeId, ValueTypeId),
@@ -353,8 +354,8 @@ pub fn decide(
     | Ok((image, _)) => matches!(context.arena().value(image), Some(&Value::Thunk(_))),
     | Err(_) => true,
 })]
-fn recursive(
-    context: &mut CheckingContext<'_>,
+fn recursive<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     translator: ValueId,
     (claim, applied): (ValueId, ComputationId),
@@ -426,8 +427,8 @@ fn recursive(
 ///
 /// # Specification
 /// trivial.
-fn flow_between(
-    context: &mut CheckingContext<'_>,
+fn flow_between<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (from, to): (ValueTypeId, ValueTypeId),
 ) -> ValueTypeId
 {
@@ -471,8 +472,8 @@ fn flow_between(
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
-fn first_order(
-    context: &mut CheckingContext<'_>,
+fn first_order<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     code: ValueTypeId,
     vocabulary: Vocabulary,
@@ -597,8 +598,8 @@ enum Walk
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 /// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
 /// - witness: `forward::tests::data_shapes_are_read_constructor_by_constructor`
-fn leaves(
-    context: &mut CheckingContext<'_>,
+fn leaves<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     pattern: ValueId,
     source: ValueTypeId,
@@ -752,8 +753,8 @@ fn leaves(
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
-fn natural(
-    context: &mut CheckingContext<'_>,
+fn natural<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     output: ValueId,
     target: ValueTypeId,
@@ -907,8 +908,8 @@ fn natural(
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-fn decoded(
-    context: &mut CheckingContext<'_>,
+fn decoded<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     code: ValueId,
 ) -> Result<ValueTypeId, CheckRefusal>
@@ -926,8 +927,8 @@ fn decoded(
 ///
 /// # Specification
 /// trivial.
-fn function_code(
-    context: &mut CheckingContext<'_>,
+fn function_code<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (domain, result): (ValueTypeId, ValueTypeId),
 ) -> ValueId
 {
@@ -959,8 +960,8 @@ fn function_code(
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn arrow(
-    context: &mut CheckingContext<'_>,
+pub fn arrow<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     (domain, domain_type): (ValueId, ValueTypeId),
     (codomain, codomain_type): (ValueId, ValueTypeId),
@@ -1011,8 +1012,8 @@ pub fn arrow(
     | Err(CheckRefusal::Boundary { at: site }) => site == domain || site == codomain,
     | Ok(()) | Err(_) => true,
 })]
-pub fn against(
-    context: &mut CheckingContext<'_>,
+pub fn against<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     (domain, codomain): (ValueId, ValueId),
     (synthesised, expected): (ValueTypeId, ValueTypeId),
@@ -1077,8 +1078,8 @@ pub fn against(
 /// # Adequacy
 /// - hypothesis: L3 — as [`against`].
 /// - witness: `forward::tests::a_misdirected_boundary_is_refused_by_name`
-fn function_parts(
-    context: &mut CheckingContext<'_>,
+fn function_parts<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     code: ValueId,
 ) -> Result<Maybe<(ValueTypeId, ValueTypeId), unread::Absent>, CheckRefusal>
 {

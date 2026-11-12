@@ -104,6 +104,7 @@ use gandr_theory_sites::Boundary;
 use crate::compose::Endpoint;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::ExpectedShape;
 use crate::refusal::TermNode;
@@ -551,8 +552,8 @@ struct Curried
     | Ok(_) | Err(_) => true,
 })]
 #[inline]
-pub fn realise(
-    context: &mut CheckingContext<'_>,
+pub fn realise<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     types: &[ValueTypeId],
 ) -> Result<Realisation, CheckRefusal>
@@ -821,8 +822,8 @@ pub fn realise(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
 #[spec(ensures: |ret| ret.as_ref().is_err() || matches!(listing, Listing::Columns(_)))]
-fn column_sides(
-    context: &mut CheckingContext<'_>,
+fn column_sides<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     (listing, inhabited): (Listing, &[ValueTypeId]),
 ) -> Result<(ValueTypeId, Vec<Boundary<Endpoint>>), CheckRefusal>
@@ -883,8 +884,8 @@ fn column_sides(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
-fn telescope(
-    context: &mut CheckingContext<'_>,
+fn telescope<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     generator: ValueTypeId,
     count: Cells,
@@ -918,8 +919,8 @@ fn telescope(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 #[spec(captures: before = *opened, ensures: *opened >= before)]
-fn curried(
-    context: &mut CheckingContext<'_>,
+fn curried<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     generator: ValueTypeId,
     count: Cells,
@@ -1012,8 +1013,8 @@ fn curried(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
-fn layers(
-    context: &mut CheckingContext<'_>,
+fn layers<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     ty: ValueTypeId,
 ) -> Result<Layers, CheckRefusal>
 {
@@ -1051,8 +1052,8 @@ fn layers(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::a_fill_refuses_each_defect_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::GeneratorFamilyUnsupported { cell: named, .. }) if named != cell))]
-fn classify(
-    context: &mut CheckingContext<'_>,
+fn classify<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     cell: ValueId,
     found: ValueTypeId,
@@ -1115,8 +1116,8 @@ fn classify(
 /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
 /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::GeneratorFamilyUnsupported { cell: named, .. }) if named != vertex))]
-fn classify_vertex(
-    context: &mut CheckingContext<'_>,
+fn classify_vertex<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     at: ValueId,
     vertex: ValueId,
     found: ValueTypeId,
@@ -1164,8 +1165,8 @@ fn classify_vertex(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::a_fill_refuses_each_defect_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::GeneratorFamilyUnsupported { cell: named, .. }) if named != entry))]
-fn lifted_path(
-    context: &CheckingContext<'_>,
+fn lifted_path<J: Judge>(
+    context: &CheckingContext<'_, J>,
     at: ValueId,
     entry: ValueId,
     head: ValueTypeId,
@@ -1230,8 +1231,8 @@ fn lifted_path(
     | Err(CheckRefusal::NoFiller { at: site, .. }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
-fn bordered(
-    context: &mut CheckingContext<'_>,
+fn bordered<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     listing: Listing,
     (at, sides, stratum): (ValueId, (ValueId, ValueId), Stratum),
     read: &mut [Cell],
@@ -1292,8 +1293,8 @@ fn bordered(
 /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
 /// - witness: `fill::tests::a_set_that_is_no_pasting_context_is_refused`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |half| half.is_none_or(|half| half != side)))]
-fn unwhiskered(
-    context: &CheckingContext<'_>,
+fn unwhiskered<J: Judge>(
+    context: &CheckingContext<'_, J>,
     side: ValueId,
     along: ValueId,
     moving: Whisker,

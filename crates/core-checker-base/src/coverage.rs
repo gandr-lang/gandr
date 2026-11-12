@@ -88,6 +88,7 @@ use quenchant_shape::shape::Maybe;
 use crate::context::CheckingContext;
 use crate::formation::FormedValueType;
 use crate::former;
+use crate::judge::Judge;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TypeNode;
@@ -203,8 +204,8 @@ pub enum CoverageFault
     | Err(_) => true,
 })]
 #[inline]
-pub fn cover(
-    context: &mut CheckingContext<'_>,
+pub fn cover<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     scrutinee: FormedValueType,
     patterns: &Patterns,
     arms: &[PatternId],
@@ -414,10 +415,12 @@ struct Problem
 }
 
 /// The state one coverage question walks with.
-struct Walker<'table, 'context, 'arena>
+struct Walker<'table, 'context, 'arena, J>
+where
+    J: Judge,
 {
     /// The context types are read in.
-    context: &'context mut CheckingContext<'arena>,
+    context: &'context mut CheckingContext<'arena, J>,
     /// The patterns the arms are written in.
     patterns: &'table Patterns,
     /// The unknown type, minted once, for the fields of unknown columns.
@@ -426,7 +429,7 @@ struct Walker<'table, 'context, 'arena>
     remaining: usize,
 }
 
-impl Walker<'_, '_, '_>
+impl<J: Judge> Walker<'_, '_, '_, J>
 {
     /// Decide whether `query` is useful against `rows` in a column of type
     /// `column`, under one reading of holes and unknown signatures.

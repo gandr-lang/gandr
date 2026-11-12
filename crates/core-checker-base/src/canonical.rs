@@ -63,6 +63,7 @@ use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::GroundSort;
 
 use crate::context::CheckingContext;
+use crate::judge::Judge;
 
 /// Compare the data declaration at `holder` with the canonical signature
 /// type of an inductive-recursive definition.
@@ -395,8 +396,8 @@ pub fn pair(
 ///   `std.ir`'s `args` and `decodeArgs` answer, and an `E` whose `δ` case asks
 ///   for `h : X -> A` is refused at `δ`, each in the corpus.
 /// - witness: `canonical::tests::a_holder_of_e_is_refused_at_its_first_departing_answer_5255`
-pub fn answers(
-    context: &mut CheckingContext<'_>,
+pub fn answers<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     role: Builtin,
     (holder, defined): (ConstantIndex, ValueId),
 ) -> Result<(), Departure>

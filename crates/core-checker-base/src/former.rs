@@ -153,6 +153,7 @@ use crate::failure::judged;
 use crate::formation::form_value_type;
 use crate::formation::form_value_type_with_failure;
 use crate::formation::level_of;
+use crate::judge::Judge;
 use crate::refusal::CoreNode;
 
 /// Read a data kind's value-universe level.
@@ -170,8 +171,8 @@ use crate::refusal::CoreNode;
 /// - hypothesis: L3 — both universe sorts and a non-universe separate the rule.
 /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|level| matches!(context.arena().value_type(kind), Some(ValueType::Universe { sort: Sort::Ground(GroundSort::Value), level: held }) if held == level)) == ret.is_ok())]
-pub fn kind_level(
-    context: &CheckingContext<'_>,
+pub fn kind_level<J: Judge>(
+    context: &CheckingContext<'_, J>,
     kind: ValueTypeId,
 ) -> Result<Level, CheckRefusal>
 {
@@ -231,8 +232,8 @@ pub fn kind_level(
     && (matches!(context.data_in_scope(position), Maybe::Absent(_))
         || context.data_signatures().contains_key(&position)
         || context.block_of(position) != crate::occurrence::Block::lone(position)))]
-pub fn form_signature(
-    context: &mut CheckingContext<'_>,
+pub fn form_signature<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     position: ConstantIndex,
     signature: &Arc<DataSignature>,
 ) -> Result<(), CheckRefusal>
@@ -263,8 +264,8 @@ pub fn form_signature(
 ///   the projected refusal is [`form_signature`]'s.
 /// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
-pub fn form_signature_with_failure(
-    context: &mut CheckingContext<'_>,
+pub fn form_signature_with_failure<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     position: ConstantIndex,
     signature: &Arc<DataSignature>,
 ) -> Result<(), Failure>
@@ -408,8 +409,8 @@ pub fn form_signature_with_failure(
 /// - witness: `tests::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
 /// - witness: `tests::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotPresentable { .. })))]
-fn present(
-    context: &CheckingContext<'_>,
+fn present<J: Judge>(
+    context: &CheckingContext<'_, J>,
     position: ConstantIndex,
     signature: &DataSignature,
 ) -> Result<(), CheckRefusal>
@@ -523,8 +524,8 @@ quenchant_shape::reason_enum! {
 ///   endpoint are refused by name, in both checkers.
 /// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::NotADataType(_) | CheckRefusal::Undecided { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::OutOfFragment { .. })))]
-pub fn apart(
-    context: &mut CheckingContext<'_>,
+pub fn apart<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     carrier: ValueTypeId,
     endpoints: (ValueId, ValueId),
 ) -> Result<Maybe<Apartness, carrier::Absent>, CheckRefusal>
@@ -633,8 +634,8 @@ fn node(
     ensures: |ret| context.seal_table().sites().len() == minted
         && (ret.is_err() || matches!(context.seal_table().lookup(declared.site()), Maybe::Absent(_))),
 )]
-pub fn form_abstract(
-    context: &mut CheckingContext<'_>,
+pub fn form_abstract<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     declared: AbstractType,
 ) -> Result<Level, CheckRefusal>
 {
@@ -690,8 +691,8 @@ pub fn form_abstract(
 /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
 /// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
 #[spec(ensures: |ret| matches!(declared.interface(), Maybe::Present(_)) || ret.is_ok())]
-pub fn form_interface(
-    context: &mut CheckingContext<'_>,
+pub fn form_interface<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     declared: AbstractType,
     level: &Level,
 ) -> Result<(), CheckRefusal>
@@ -832,8 +833,8 @@ pub fn law_type(
 /// - hypothesis: L3 — equal carriers at distinct positions stay nominal.
 /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if matches!(context.data_in_scope(*declaration), Maybe::Present(ref held) if held == signature) && signature.arity().0 == arguments.len())) == ret.is_ok())]
-pub fn signature(
-    context: &mut CheckingContext<'_>,
+pub fn signature<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
 ) -> Result<Arc<DataSignature>, CheckRefusal>
 {
@@ -869,8 +870,8 @@ pub fn signature(
 /// - hypothesis: L3 — two open arguments distinguish reversal and capture.
 /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
 #[spec(ensures: |ret| usize::from(prefix) != 0 || ret == Ok(subject))]
-pub fn instantiate(
-    context: &mut CheckingContext<'_>,
+pub fn instantiate<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
     mut subject: ValueTypeId,
     prefix: gandr_core_term::BinderDepth,
@@ -916,8 +917,8 @@ pub fn instantiate(
 ///   of the field it names.
 /// - witness: `former::tests::a_later_field_reads_its_parameters_past_the_earlier_fields`
 #[spec(ensures: |ret| !matches!(context.arena().value_type(datatype), Some(ValueType::Data { arguments, .. }) if arguments.is_empty()) || ret == Ok(field))]
-pub fn field_type(
-    context: &mut CheckingContext<'_>,
+pub fn field_type<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
     field: ValueTypeId,
     earlier: Binders,
@@ -984,8 +985,8 @@ pub fn field_type(
 /// - witness: `former::tests::a_dependent_field_checks_at_the_value_of_the_field_it_names`
 /// - witness: `former::tests::a_field_that_reads_a_lambda_field_reads_its_thunk_5374`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
-pub fn field_at(
-    context: &mut CheckingContext<'_>,
+pub fn field_at<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (datatype, constructor): (ValueTypeId, ValueId),
     field: ValueTypeId,
     position: FieldPosition,
@@ -1061,8 +1062,8 @@ quenchant_shape::reason_enum! {
 ///   code before it is dependent.
 /// - witness: `former::tests::a_later_field_reads_its_parameters_past_the_earlier_fields`
 #[spec(ensures: |ret| usize::from(position) != 0 || matches!(ret, Ok(Maybe::Present(_)) | Err(_)))]
-pub fn field_outside(
-    context: &mut CheckingContext<'_>,
+pub fn field_outside<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
     field: ValueTypeId,
     position: FieldPosition,
@@ -1102,8 +1103,8 @@ pub fn field_outside(
 ///   and its element is refused there.
 /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
 #[spec(ensures: |ret| ret.is_err() || usize::try_from(u32::from(position)).is_ok_and(|position| position <= stated.len()))]
-pub fn index_at(
-    context: &mut CheckingContext<'_>,
+pub fn index_at<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     index: ValueTypeId,
     (stated, position): (&[ValueId], Binders),
     fields: Binders,
@@ -1147,8 +1148,8 @@ pub fn index_at(
 ///   `Vec(a, Z)` whatever its annotation says.
 /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
-pub fn stated_at(
-    context: &mut CheckingContext<'_>,
+pub fn stated_at<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (datatype, constructor): (ValueTypeId, ValueId),
     tag: ConstructorTag,
 ) -> Result<ValueTypeId, CheckRefusal>
@@ -1218,8 +1219,8 @@ pub fn stated_at(
 ///   index read, separates a read field from its tail, which no type reads.
 /// - witness: `tests::native_formers::a_constructor_field_written_as_a_call_meets_its_annotation_3625`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.windows(2).all(|pair| matches!(pair, [before, after] if usize::from(*before) < usize::from(*after)))))]
-pub fn type_read_fields(
-    context: &mut CheckingContext<'_>,
+pub fn type_read_fields<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
     tag: ConstructorTag,
 ) -> Result<Vec<FieldPosition>, CheckRefusal>
@@ -1315,8 +1316,8 @@ pub fn type_read_fields(
 /// - witness: `former::tests::a_branch_binds_a_field_only_where_its_result_names_it`
 /// - witness: `former::tests::an_indexed_branch_binds_its_equations_after_its_fields`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().comp_type(id).is_some()) == ret.is_ok())]
-pub fn branch_type(
-    context: &mut CheckingContext<'_>,
+pub fn branch_type<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     datatype: ValueTypeId,
     tag: ConstructorTag,
     motive: CompTypeId,
@@ -1400,8 +1401,8 @@ pub fn branch_type(
 /// - witness: `former::tests::an_indexed_branch_binds_its_equations_after_its_fields`
 /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.len() == signature.indices().len()))]
-fn equations(
-    context: &mut CheckingContext<'_>,
+fn equations<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     (datatype, signature): (ValueTypeId, &DataSignature),
     (beneath, constructor): (ValueTypeId, ValueId),
     tag: ConstructorTag,
@@ -1457,8 +1458,8 @@ fn equations(
 ///
 /// # Specification
 /// trivial.
-fn data_arguments<'arena>(
-    context: &'arena CheckingContext<'_>,
+fn data_arguments<'arena, J: Judge>(
+    context: &'arena CheckingContext<'_, J>,
     application: ValueTypeId,
 ) -> &'arena [ValueId]
 {
@@ -1473,8 +1474,8 @@ fn data_arguments<'arena>(
 ///
 /// # Specification
 /// trivial.
-fn bound(
-    context: &mut CheckingContext<'_>,
+fn bound<J: Judge>(
+    context: &mut CheckingContext<'_, J>,
     domain: ValueTypeId,
     result: CompTypeId,
 ) -> CompTypeId
