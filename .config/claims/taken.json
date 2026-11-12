@@ -195,10 +195,11 @@
     "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=sorts -->\n" }
   },
   {
-    "name": "claim:take takes a release marker off as it claims",
+    "name": "claim:take takes a release marker off as it claims, once the release is 2 hours old",
     "input": {
       "step": "take",
       "lane": "sorts",
+      "now": 1793797200,
       "issue": {
         "number": 3403,
         "state": "open",
@@ -207,6 +208,39 @@
       }
     },
     "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=sorts -->\n" }
+  },
+  {
+    "name": "#6954: claim:take refuses an issue another lane released within 2 hours, and names that lane and the end of its hold",
+    "input": {
+      "step": "take",
+      "lane": "sorts",
+      "now": 1793788200,
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["kind:gap"],
+        "body": "Text.\n\n<!-- released: lane=triage at=2026-11-04T10:00:00Z -->\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "claim:take: triage released #3403 at 2026-11-04T10:00:00Z, and keeps it until 2026-11-04T12:00:00Z for its next landing. To move it, the coordinator runs `claim:take 3403 --lane triage`, then `claim:release triage 3403 --forgo`, then `claim:take 3403 --lane sorts` (#6954)"
+    }
+  },
+  {
+    "name": "#6954: claim:take takes an issue its own lane released within 2 hours",
+    "input": {
+      "step": "take",
+      "lane": "triage",
+      "now": 1793788200,
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["kind:gap"],
+        "body": "Text.\n\n<!-- released: lane=triage at=2026-11-04T10:00:00Z -->\n"
+      }
+    },
+    "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=triage -->\n" }
   },
   {
     "name": "#5531: claim:take claims a body whose lapsed claim left another lane's marker and no status:claimed, and writes its own marker alone",

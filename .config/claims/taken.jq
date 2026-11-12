@@ -13,6 +13,7 @@
 #   branch  under `branch` and `gate`, the branch the gate runs on, or ""
 #   lanes   under `branch` and `gate`, the keys of the factory's lane table
 #   lane    under `take` and `release`, the lane that acts on the claim
+#   now     under `take`, the time of the take in seconds
 #   issue   under `gate`, `take` and `release`, `{number, state, labels, body}` as GitHub
 #           holds it, or null when the read failed
 #
@@ -29,6 +30,12 @@
 # edit of its body (#6210). The label stands, so a lane holds it. The gate of
 # the lane whose branch works it writes that lane's marker back (`mark`), and
 # `claim:take` refuses it, so a second lane never takes it in the gap.
+#
+# A merge that advances an open issue, and `claim:release` without `--forgo`,
+# write a release marker (`claims.sh`). The lane it names keeps the issue for
+# 2 hours (`kept`). `claim:take` refuses the issue to every other lane in that
+# time, as `claim:next` passes it over, so a pool's pins never give a unit of
+# several landings to a second lane between two landings (#6954).
 
 include "markers";
 
@@ -72,6 +79,7 @@ elif .step == "gate" then
     end
 elif .step == "take" then
   .lane as $lane
+  | .now as $now
   | if .issue.state == "closed" then
       {verdict: "refused", line: "claim:take: #\(.issue.number) is closed; a closed issue takes no claim"}
     else holder(.issue) as $holder
@@ -80,6 +88,9 @@ elif .step == "take" then
           {verdict: "refused", line: "claim:take: \($holder) holds the claim of #\(.issue.number); the coordinator decides which lane works it"}
         elif (.issue.labels | index("status:claimed")) then
           {verdict: "refused", line: "claim:take: #\(.issue.number) carries status:claimed and no claim marker: an edit of its body dropped the marker of the lane that works it, and that lane's next gate writes it back; the coordinator decides which lane works it (#6210)"}
+        elif ([.issue.body | kept($now) | .lane != $lane] | any) then
+          (.issue.body | kept($now)) as $kept
+          | {verdict: "refused", line: "claim:take: \($kept.lane) released #\(.issue.number) at \($kept.at | todate), and keeps it until \($kept.at + 7200 | todate) for its next landing. To move it, the coordinator runs `claim:take \(.issue.number) --lane \($kept.lane)`, then `claim:release \($kept.lane) \(.issue.number) --forgo`, then `claim:take \(.issue.number) --lane \($lane)` (#6954)"}
         # A body without the label keeps no lapsed lane's marker (#5531).
         else {verdict: "write", body: (.issue as $issue | $issue.body | claiming($lane; $issue.labels))}
         end
