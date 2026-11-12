@@ -3,7 +3,9 @@
 # last let it go and when, `<!-- released: lane=<lane> at=<time> -->`,
 # written by `claim:release` and by the merge that advances it. Writing a
 # release removes every marker, so a released body carries that one alone. A
-# release under `--forgo` writes neither (#4104). A claim keeps another lane's
+# merge that advances a unit leaves its claim standing, so its release keeps
+# the claim markers (`renewing`, #6954). A release under `--forgo` writes
+# neither (#4104). A claim keeps another lane's
 # claim standing before its own (`claiming`, #4660): when two runs claim at
 # once, the first claim marker is the earlier claim, and it holds the issue.
 # A marker holds a claim only under `status:claimed`, so a claim of a body
@@ -31,6 +33,13 @@ def unmarked: gsub(alone("<!-- (claim|released): [^>\\n]*-->"); "\n");
 
 # The body carrying `$marker` alone, after its text.
 def marked($marker): (. // "" | unmarked | sub("\\s+$"; "")) + "\n\n" + $marker + "\n";
+
+# The body carrying its claim markers and `$lane`'s release at `$at` after
+# them, any earlier release removed: a merge advances a unit whose claim
+# stays, and the release renews the claim's age (#6954).
+def renewing($lane; $at):
+  (. // "" | gsub(alone("<!-- released: [^>\\n]*-->"); "\n") | sub("\\s+$"; ""))
+  + "\n\n" + released_marker($lane; $at) + "\n";
 
 # The lane a body's first claim marker names, the earlier claim, or null.
 def claim_lane: [(. // "") | unfenced | capture(alone("<!-- claim: lane=(?<lane>[^ \\n]+) -->")).lane][0];

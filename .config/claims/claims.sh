@@ -11,10 +11,11 @@
 # lets `decide.jq` pick the claims that come off, removes the
 # label from each and prints one line per removal; nothing is posted for a
 # removal. A silent claim's lapse also takes its lane's claim marker off the
-# body, so the body agrees with the label (#5531). A merge then writes a
-# release marker on each open issue it advanced, naming the lane its branch
-# opens with (`markers.jq`), so that lane claims the continuation first for 2
-# hours (`next.jq`, #3915). It ticks the
+# body, so the body agrees with the label (#5531). An issue a merge advances
+# keeps its claim while it stays open (#6954). The merge then writes a
+# release marker on it, naming the lane its branch opens with (`markers.jq`):
+# that lane claims the continuation first for 2 hours (`next.jq`, #3915), and
+# a release of the claim's own lane renews the claim's age. It ticks the
 # rows of each `collector` it advances and closes one it leaves with no open
 # row (#3732). `--dry-run` prints the removals, the releases and the rows
 # without making them.
@@ -52,12 +53,13 @@ if [[ $mode == merged && -n $base && $base != "${CLAIMS_DEFAULT_BRANCH:-main}" ]
   done
 fi
 
-# Each claim's lane is its body's first claim marker at this reading (#5531).
-# The listing keeps the lane and drops the body, so each later reading of the
-# listing stays small.
+# Each claim's lane is its body's first claim marker at this reading (#5531),
+# and its release the body's release marker, which renews the claim's age
+# when its lane is the claim's (#6954). The listing keeps the two and drops
+# the body, so each later reading of the listing stays small.
 listed=$(gh api --paginate "repos/$repo/issues?state=all&labels=$label&per_page=100" \
   --jq '[.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], created_at, updated_at, body}]' \
-  | jq -s -L "$here" 'include "markers"; add // [] | map(.lane = (.body | claim_lane) | del(.body))')
+  | jq -s -L "$here" 'include "markers"; add // [] | map(.lane = (.body | claim_lane) | .released = (.body | release) | del(.body))')
 open_prs=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {number, body: (.body // ""), head: .head.ref}]' | jq -s 'add // []')
 # The claims whose label's age the sweep reads from their events (#5078):
@@ -83,9 +85,9 @@ claimed=$(jq -c '.[]' <<< "$listed" | while IFS= read -r issue; do
   if [[ -n ${aged[$number]:-} ]]; then
     at=$(gh api --paginate "repos/$repo/issues/$number/events?per_page=100" \
       --jq "[.[] | select(.event == \"labeled\" and .label.name == \"$label\") | .created_at] | last // empty" | awk 'NF { at = $0 } END { print at }')
-    jq -c --arg at "$at" '{number, state, labels, claimed_at: (if $at == "" then .created_at else $at end)}' <<< "$issue"
+    jq -c --arg at "$at" '{number, state, labels, lane, released, claimed_at: (if $at == "" then .created_at else $at end)}' <<< "$issue"
   else
-    jq -c '{number, state, labels, claimed_at: .updated_at}' <<< "$issue"
+    jq -c '{number, state, labels, lane, released, claimed_at: .updated_at}' <<< "$issue"
   fi
 done | jq -s .)
 
@@ -154,18 +156,20 @@ lane=$(lanes_keys | jq -r --arg head "$head" '[.[] | select(. as $l | $head == $
 [[ -n $lane ]] || lane=$(sed -nE 's/^([a-z]+(-[a-z]+)*)-[0-9].*$/\1/p' <<< "$head")
 if [[ -n $lane ]]; then
   at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  while IFS=$'\t' read -r number reason; do
-    [[ $reason == advanced ]] || continue
+  # Each claimed issue the body advances, which keeps its claim (#6954).
+  for number in $(jq -r -L "$here" --argjson claimed "$claimed" 'include "targets";
+    (env.CLAIMS_MERGED_BODY // "" | targets("advances")) as $advanced
+    | $claimed[] | select(.number as $n | $advanced | index($n)) | .number' -n); do
     issue=$(gh api "repos/$repo/issues/$number" --jq '{state, body: (.body // "")}')
     [[ $(jq -r .state <<< "$issue") == open ]] || continue
     if [[ "$dry" == --dry-run ]]; then
       printf 'would release #%s to %s\n' "$number" "$lane"
       continue
     fi
-    jq -c -L "$here" --arg lane "$lane" --arg at "$at" 'include "markers"; {body: (.body | marked(released_marker($lane; $at)))}' <<< "$issue" \
+    jq -c -L "$here" --arg lane "$lane" --arg at "$at" 'include "markers"; {body: (.body | renewing($lane; $at))}' <<< "$issue" \
       | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
     printf 'released #%s to %s\n' "$number" "$lane"
-  done <<< "$removals"
+  done
 fi
 
 # A merge that advances a `collector` ticks the rows its body's `## Rows`

@@ -29,7 +29,7 @@
 #   comments  the comment lines the change removes (`comments.bash`, #6004),
 #             one row per source: [{path, removed, dropped}]
 #
-# A merge takes the claim off what the body works (`decide.jq`), so the body
+# A merge reads the claims of what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
 # `Advances #n` or a closing keyword for that issue, and a branch with none
 # needs one such line for some issue, the issue the change advances.

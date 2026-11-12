@@ -2502,7 +2502,8 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
 # that come off. Each case in `.config/claims/cases.json` holds an input and
-# the removals it must give: a merge's `Advances` and closing targets, the
+# the removals it must give: a merge's closing targets, an advanced open
+# issue that keeps its claim and a release that renews its age (#6954), the
 # closed and epic sweep, a label 4 hours old however fresh the issue (#3915),
 # read on a merge's run too, and an open pull
 # request that keeps a claim. Each case in `.config/claims/opening.json`
