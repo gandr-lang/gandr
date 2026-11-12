@@ -41,6 +41,14 @@
 # a comment compiles to no item and no documentation, so the change runs no
 # `check:doc` and no `check:corpus`.
 #
+# A light check runs on every change, unless the table's `reads` scopes it
+# (#6895). A scoped check runs when the change touches a path of its row or a
+# path of `reads.every`, such as the tools' pins. A path that no row of
+# `paths` maps runs every scoped check too, as it selects every group. A
+# change that touches none of them leaves the check's verdict as the base's.
+# `check:gate-scope` holds each row to the paths that its check reads
+# (`reads.jq`).
+#
 # Input:
 #   tasks     every `check:*` task's name
 #   changed   the paths the change touches
@@ -66,6 +74,15 @@ include "rows";
        end)[]]
    | unique) as $chosen
 | ([$table.groups[][]] | unique) as $grouped
-| [.tasks[] | select(. as $task | ($task | IN($grouped[]) | not) or any($chosen[]; . as $group | $task | IN($table.groups[$group][])))]
+| ($table.reads.checks // {}) as $rows
+| .changed as $changed
+| any($changed[]; . as $path
+    | any(($table.reads.every // [])[]; mapped({path: .}; $path))
+      or (any($table.paths[]; mapped(.; $path)) | not)) as $whole
+| [.tasks[] | select(. as $task
+    | if $task | IN($grouped[]) then any($chosen[]; . as $group | $task | IN($table.groups[$group][]))
+      elif $rows[$task] == null or $whole then true
+      else any($changed[]; . as $path | any($rows[$task][]; mapped({path: .}; $path)))
+      end)]
 | map(select(($landing | not) or (IN($grouped[]) | not) or IN(($table.landing // [])[])))
 | sort

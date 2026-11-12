@@ -87,6 +87,206 @@
       "mise.toml"
     ]
   },
+  "reads": {
+    "every": [
+      ".config/mise/tasks/mise-tasks-check.toml",
+      ".mise/",
+      "mise.lock",
+      "mise.toml",
+      "rust-toolchain.toml"
+    ],
+    "checks": {
+      "check:bench": [
+        ".cargo/",
+        ".config/bench/",
+        ".config/cases/",
+        ".config/claims/",
+        ".config/issues/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/references/",
+        ".github/ISSUE_TEMPLATE/unit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "hotpath/",
+        "ledger/concerns.sql",
+        "library/std/"
+      ],
+      "check:cases": [".config/cases/"],
+      "check:census": [".config/cases/", ".config/census/"],
+      "check:claims": [
+        ".cargo/",
+        ".config/",
+        ".github/ISSUE_TEMPLATE/unit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "contrib/",
+        "corpus/",
+        "crates/",
+        "ledger/concerns.sql",
+        "ledger/features.sql"
+      ],
+      "check:commits": [".config/commits/", ".config/pr-stack/", "commitlint.config.mjs"],
+      "check:coverage": [".config/cases/", ".config/coverage/", ".github/workflows/coverage.yml"],
+      "check:crate-lead": [".config/cases/", ".config/crate-lead/", "crates/"],
+      "check:crate-map": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/crate-map/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "ledger/README.md",
+        "ledger/concerns.sql",
+        "ledger/crates.dot"
+      ],
+      "check:dead-weight": [".config/cases/", ".config/dead-weight/"],
+      "check:debug": [".config/debug/"],
+      "check:doc-features": [
+        ".cargo/",
+        ".config/doc/",
+        ".config/mise/gated",
+        ".config/mise/scope",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:find-image": [".github/actions/find-image/"],
+      "check:follow": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/follow/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:gh-budget": [".config/", ".github/"],
+      "check:hooks": ["prek.toml"],
+      "check:host-lock": [".config/mise/"],
+      "check:hotpath": [
+        ".config/cases/",
+        ".config/hotpath/",
+        ".github/workflows/ci.yml",
+        "hotpath/"
+      ],
+      "check:issues": [
+        ".config/cases/",
+        ".config/claims/",
+        ".config/epics/",
+        ".config/gh/",
+        ".config/issues/",
+        ".config/mise/disabled-tools.bash",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/triage/",
+        "ledger/concerns.sql"
+      ],
+      "check:landing-queue": [
+        ".config/cases/",
+        ".config/landing/",
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly.yml"
+      ],
+      "check:landing-rebase": [".config/cases/", ".config/landing/"],
+      "check:ledger": [
+        ".config/ledger/",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/pr-stack/",
+        "contrib/",
+        "corpus/",
+        "crates/",
+        "ledger/"
+      ],
+      "check:lockfile": [],
+      "check:merge-driver": [".config/merge-driver/", "crates/surface-lowering/"],
+      "check:merge-residue": [".config/merge-residue/"],
+      "check:mutants": [".config/cases/", ".config/mutants/"],
+      "check:nightly": [".config/cases/", ".config/nightly/", ".github/workflows/nightly.yml"],
+      "check:pr-stack": [
+        ".config/cases/",
+        ".config/gh/",
+        ".config/mise/disabled-tools.bash",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/pr-stack/",
+        ".github/workflows/"
+      ],
+      "check:pr-title": [".config/pr-title/"],
+      "check:publish": [".cargo/", "Cargo.lock", "Cargo.toml", "crates/"],
+      "check:purposes": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/purposes/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "ledger/",
+        "library/"
+      ],
+      "check:readme-pin": [".config/readme.sha256", "README.md"],
+      "check:recovery-change": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/recovery/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "corpus/",
+        "crates/",
+        "ledger/"
+      ],
+      "check:references": [
+        ".config/claims/",
+        ".config/references/",
+        "README.md",
+        "corpus/",
+        "crates/",
+        "ledger/references.sql",
+        "library/"
+      ],
+      "check:replay": [".config/cases/", ".config/pr-stack/", ".config/replay/"],
+      "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
+      "check:service": [".config/cases/", ".config/service/"],
+      "check:sites": ["crates/theory-sites/"],
+      "check:spec-cost-landed": [
+        ".cargo/",
+        ".config/mise/enforcing",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/spec-cost/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
+      "check:stall": [".config/cases/", ".config/claims/", ".config/stall/"],
+      "check:syntax-ledger": [
+        ".cargo/",
+        ".config/ledger/",
+        ".config/mise/scope",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "corpus/",
+        "crates/",
+        "ledger/"
+      ],
+      "check:tracking": [
+        ".config/cases/",
+        ".config/claims/",
+        ".config/tracking/",
+        "crates/core-term/",
+        "ledger/features.sql"
+      ],
+      "check:vectors": [".config/pr-stack/", "crates/storage-records/", "crates/storage-values/"],
+      "check:vscode-smoke-admits": [".config/vscode-smoke/"],
+      "check:witness-cases": [".config/cases/", ".config/witnesses/"],
+      "check:workflow-hashing": [".config/cases/", ".config/workflow-contexts/", ".github/"],
+      "check:workflow-hashing-shell": [".config/cases/", ".config/workflow-contexts/", ".github/"]
+    }
+  },
   "paths": [
     { "path": ".config/nextest.toml", "groups": ["rust", "doc"] },
     { "path": ".config/obligations/", "groups": ["rust", "doc"] },
