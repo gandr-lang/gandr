@@ -81,6 +81,14 @@ use anodized::spec;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Severity;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
@@ -99,14 +107,6 @@ use quenchant_shape::shape::Maybe;
 
 use super::LedgerFault;
 use super::exemplars::listed;
-use crate::compose::Composed;
-use crate::entry::entries;
-use crate::pool::Pool;
-use crate::report::Goals;
-use crate::report::Verb;
-use crate::walk::Step;
-use crate::walk::Walk;
-use crate::width::Width;
 
 /// The directory of rule exemplars under the exemplar directory.
 const SYNTAX: &str = "syntax";

@@ -78,6 +78,7 @@ digraph crates {
     "surface-format";
     "surface-grammar";
     "surface-layout";
+    "surface-ledger";
     "surface-lowering";
     "surface-lowering-base";
     "surface-lsp";
@@ -232,7 +233,6 @@ digraph crates {
   "surface-dispatcher" -> "theory-cell-complexes";
   "surface-dispatcher" -> "theory-coherent-resolutions";
   "surface-dispatcher" -> "theory-exact-reals";
-  "surface-dispatcher" -> "theory-graphs";
   "surface-dispatcher" -> "theory-ordered-algebras";
   "surface-dispatcher" -> "theory-sites";
   "surface-driver" -> "core-fork";
@@ -245,6 +245,7 @@ digraph crates {
   "surface-driver" -> "surface-dispatcher";
   "surface-driver" -> "surface-format";
   "surface-driver" -> "surface-grammar";
+  "surface-driver" -> "surface-ledger";
   "surface-driver" -> "surface-lsp";
   "surface-driver" -> "surface-mcp";
   "surface-driver" -> "surface-render-terminal";
@@ -263,6 +264,15 @@ digraph crates {
   "surface-grammar" -> "surface-render-remote";
   "surface-grammar" -> "surface-syntax";
   "surface-grammar" -> "theory-graphs";
+  "surface-ledger" -> "core-term";
+  "surface-ledger" -> "surface-corpus";
+  "surface-ledger" -> "surface-diagnostics";
+  "surface-ledger" -> "surface-dispatcher";
+  "surface-ledger" -> "surface-grammar";
+  "surface-ledger" -> "surface-lowering";
+  "surface-ledger" -> "surface-parser";
+  "surface-ledger" -> "surface-syntax";
+  "surface-ledger" -> "theory-graphs";
   "surface-lowering" -> "core-term";
   "surface-lowering" -> "kernel-strata";
   "surface-lowering" -> "kernel-term";
@@ -307,6 +317,7 @@ digraph crates {
   "surface-lsp" -> "surface-syntax";
   "surface-mcp" -> "core-fork";
   "surface-mcp" -> "surface-dispatcher";
+  "surface-mcp" -> "surface-ledger";
   "surface-mcp" -> "surface-lsp";
   "surface-mcp" -> "surface-render-remote";
   "surface-mcp" -> "surface-tui";

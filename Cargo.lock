@@ -1352,6 +1352,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-format",
  "gandr-surface-grammar",
+ "gandr-surface-ledger",
  "gandr-surface-lsp",
  "gandr-surface-mcp",
  "gandr-surface-parser",
@@ -1582,7 +1583,6 @@ dependencies = [
  "gandr-theory-circuit-algebras",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-exact-reals",
- "gandr-theory-graphs",
  "gandr-theory-levitation",
  "gandr-theory-ordered-algebras",
  "gandr-theory-probability",
@@ -1643,6 +1643,24 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-surface-ledger"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-surface-corpus",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "gandr-theory-graphs",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde_json",
 ]
 
 [[package]]
@@ -1743,6 +1761,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-fork",
  "gandr-surface-dispatcher",
+ "gandr-surface-ledger",
  "gandr-surface-lsp",
  "gandr-surface-mcp",
  "gandr-surface-render-remote",

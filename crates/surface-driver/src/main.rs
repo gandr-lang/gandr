@@ -46,9 +46,9 @@
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr cells <paths>` | one line per rewriting cell of each declaration a source writes, `<path>:<line>:<column>: cell <n> <provenance>, <growth>: <hole> <count>, …`, each hole with how many times the cell's right-hand side writes it (`gandr-surface-dispatcher`'s `cells` module); nothing is checked | a path that cannot be read or names no source, or a source that does not parse or lower, or that the lowering refuses whole |
 //! | `gandr doc <path> --out <directory>` | the path of each page written, one per source under the path, then the index's (`gandr-surface-lsp`'s `doc` module): each page the source's own documentation, then each public declaration's hover block under a heading naming it | a path that names no source, or a source that cannot be read or judged, or a page that cannot be written |
-//! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
-//! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
-//! | `gandr ledger recovery <directory>` | the near-miss table, one line per literal tile the syntax exemplars write, then each mutant whose first error marks other bytes than its mutation, `<path>:<byte>: <tile> <mutation>: <error> at <span>, not at <site>`, then the count swept (`gandr-surface-dispatcher`'s `ledger::recovery` module) | a mutant marked elsewhere, or a directory that cannot be listed |
+//! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-ledger`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
+//! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-ledger`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
+//! | `gandr ledger recovery <directory>` | the near-miss table, one line per literal tile the syntax exemplars write, then each mutant whose first error marks other bytes than its mutation, `<path>:<byte>: <tile> <mutation>: <error> at <span>, not at <site>`, then the count swept (`gandr-surface-ledger`'s `ledger::recovery` module) | a mutant marked elsewhere, or a directory that cannot be listed |
 //! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
 //! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
 //! | `gandr lsp --socket <path> --linger-ms <ms>` | as `lsp`, through the hub on that socket, a hub it starts lingering that long | as `lsp` |
@@ -357,7 +357,6 @@ use gandr_storage_store::Store;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_dispatcher::Area;
 use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
@@ -367,8 +366,6 @@ use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Exporting;
-use gandr_surface_dispatcher::FeatureId;
-use gandr_surface_dispatcher::FeatureLedger;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Fusions;
@@ -379,8 +376,6 @@ use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Input;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
-use gandr_surface_dispatcher::LedgerRun;
-use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Lock;
@@ -413,7 +408,6 @@ use gandr_surface_dispatcher::Site;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Standing;
-use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Traversal;
@@ -443,6 +437,12 @@ use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
+use gandr_surface_ledger::Area;
+use gandr_surface_ledger::FeatureId;
+use gandr_surface_ledger::FeatureLedger;
+use gandr_surface_ledger::LedgerRun;
+use gandr_surface_ledger::LedgerTask;
+use gandr_surface_ledger::Status;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Entry;
 use gandr_surface_lsp::File;
@@ -2214,46 +2214,25 @@ fn main() -> ExitCode
                 },
             );
         },
-        Some(Command::Ledger {
-            ledger: LedgerName::Syntax { write, exemplars },
-        }) => (
-            Invocation::Ledger(LedgerTask::Syntax {
-                exemplars: exemplars.unwrap_or_else(|| write.join("exemplars")),
-                directory: write,
-            }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::Exemplars { directory },
-        }) => (
-            Invocation::Ledger(LedgerTask::Exemplars { directory }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::Recovery { directory },
-        }) => (
-            Invocation::Ledger(LedgerTask::Recovery { directory }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::List { area, status, root },
-        }) => (
-            Invocation::Ledger(LedgerTask::List {
-                root,
-                area: area.map(Area),
-                status: status.map(Status::from),
-            }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::Show { id, root },
-        }) => (
-            Invocation::Ledger(LedgerTask::Show {
-                root,
-                id: FeatureId(id),
-            }),
-            Verbosity::User,
-        ),
+        Some(Command::Ledger { ledger: name }) => {
+            return ledgered(&match name {
+                LedgerName::Syntax { write, exemplars } => LedgerTask::Syntax {
+                    exemplars: exemplars.unwrap_or_else(|| write.join("exemplars")),
+                    directory: write,
+                },
+                LedgerName::Exemplars { directory } => LedgerTask::Exemplars { directory },
+                LedgerName::Recovery { directory } => LedgerTask::Recovery { directory },
+                LedgerName::List { area, status, root } => LedgerTask::List {
+                    root,
+                    area: area.map(Area),
+                    status: status.map(Status::from),
+                },
+                LedgerName::Show { id, root } => LedgerTask::Show {
+                    root,
+                    id: FeatureId(id),
+                },
+            });
+        },
         Some(Command::Toolchain { action }) => return toolchains(action),
         Some(Command::Lsp {
             capabilities: true, ..
@@ -2624,7 +2603,7 @@ fn toolchains(action: ToolchainAction) -> ExitCode
 /// - witness: `tests::cli::a_package_s_constraint_chooses_among_the_toolchains`
 fn described() -> ExitCode
 {
-    let written = match gandr_surface_dispatcher::FeatureLedger::built_in() {
+    let written = match FeatureLedger::built_in() {
         Ok(ledger) => write!(
             std::io::stdout().lock(),
             "{}",
@@ -3842,8 +3821,7 @@ fn doubled(doubled: Doubled) -> ExitCode
 ///   line on standard error: what it prints goes to standard output, what it
 ///   writes to standard error goes there beside its diagnostics, the lines it
 ///   reads come from standard input, and its run status chooses the exit. A
-///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
-///   and a census [`cells`].
+///   staging follows [`stage`], a formatting [`fmt`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -3938,7 +3916,6 @@ fn render(
             let pool = Pool::new(formatting.width());
             fmt(formatting, &pool, stdout, stderr)
         },
-        Outcome::Ledger(task) => ledger(&task, stdout, stderr),
         Outcome::Cells(census) => cells(census, stdout, stderr),
     }
 }
@@ -4030,6 +4007,42 @@ fn ledger(
         Err(fault) => {
             writeln!(stderr, "gandr: {fault}")?;
             Ok(ExitCode::from(FAULTED))
+        },
+    }
+}
+
+/// Run `task` on the process's standard streams, as [`ledger`] prints it, and
+/// choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: what [`ledger`] prints, flushed, and its exit code; output the
+///   driver cannot write is noted on standard error, when that is writable, and
+///   exits `2`.
+/// - provides: the `ledger` verbs, which the driver runs itself: the ledger
+///   crate stands above the dispatcher, so no [`Outcome`] carries a ledger
+///   task.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ledger`]: each verb's output and exit are observed
+///   through the binary.
+/// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
+/// - witness: `tests::cli::the_exemplars_verify_and_a_stray_one_is_named`
+/// - witness: `tests::cli::the_recovery_sweep_reports_its_table_and_count`
+/// - witness: `tests::cli::the_features_ledger_lists_and_shows_1827`
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNEXEMPLIFIED) || ret == ExitCode::from(FAULTED))]
+fn ledgered(task: &LedgerTask) -> ExitCode
+{
+    let mut stdout = std::io::stdout().lock();
+    let mut stderr = std::io::stderr().lock();
+    let written =
+        ledger(task, &mut stdout, &mut stderr).and_then(|exit| stdout.flush().map(|()| exit));
+    match written {
+        Ok(exit) => exit,
+        Err(error) => match writeln!(stderr, "gandr: cannot write the output: {error}") {
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
         },
     }
 }

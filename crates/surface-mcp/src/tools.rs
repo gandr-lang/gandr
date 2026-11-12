@@ -65,12 +65,12 @@ use core::fmt;
 use std::path::PathBuf;
 
 use anodized::spec;
-use gandr_surface_dispatcher::Area;
-use gandr_surface_dispatcher::Feature;
-use gandr_surface_dispatcher::FeatureId;
-use gandr_surface_dispatcher::FeatureLedger;
-use gandr_surface_dispatcher::LedgerFault;
-use gandr_surface_dispatcher::Status;
+use gandr_surface_ledger::Area;
+use gandr_surface_ledger::Feature;
+use gandr_surface_ledger::FeatureId;
+use gandr_surface_ledger::FeatureLedger;
+use gandr_surface_ledger::LedgerFault;
+use gandr_surface_ledger::Status;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;

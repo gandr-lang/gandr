@@ -1,0 +1,44 @@
+[package]
+name = "gandr-surface-ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "gandr's ledgers of its own surface: the syntax ledger read off the grammar, its exemplars, the recovery sweep and the features ledger"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "toolchain"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The syntax ledger reads the built-in grammar, the parser's labeler and
+# molder, and the lowering's attribute registry. An exemplar is parsed,
+# lowered and judged as the corpus states it, and the recovery sweep
+# composes each mutant through the dispatcher on its pool. The ledger's
+# machine form is written through serde_json. Its decision table reads a
+# mold's left bound through the graph crate's `Bound` where it asks whether
+# a hole faces an opener. The pinned anodized facade supplies the
+# executable specifications.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-graphs.workspace = true
+quenchant-shape.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

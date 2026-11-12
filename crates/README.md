@@ -20,7 +20,7 @@ workflow  repository tooling and gates
 
 ## Map
 
-The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot). [§ Files](../ledger/README.md#files) states how both are generated and checked.
+The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
 
 ## Members
 
@@ -59,6 +59,7 @@ crates/
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
+├── surface-ledger/                the syntax and features ledgers, their exemplars and the recovery sweep
 ├── surface-lowering/              the molded tree into core terms: module collection, declaration lowering
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits
 ├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the model, semantic tokens from highlight roles, and the hub serving a workspace's clients on a Unix socket
@@ -108,7 +109,7 @@ crates/
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins; `check:dylint` states which of its lints deny and why.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 
 A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
 

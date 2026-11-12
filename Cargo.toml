@@ -31,6 +31,7 @@ members = [
   "crates/surface-format",
   "crates/surface-grammar",
   "crates/surface-layout",
+  "crates/surface-ledger",
   "crates/surface-lowering",
   "crates/surface-lowering-base",
   "crates/surface-lsp",
@@ -160,6 +161,7 @@ default-features = false
 # - surface-format
 # - surface-grammar
 # - surface-layout
+# - surface-ledger
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lsp
@@ -433,6 +435,7 @@ path = "crates/core-session"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-format
+# - surface-ledger
 # - surface-lowering
 # - surface-lowering-base
 # - surface-pretty
@@ -626,6 +629,7 @@ path = "crates/storage-values"
 # - runtime-stencils (dev)
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-ledger
 # - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
@@ -638,6 +642,7 @@ path = "crates/surface-corpus"
 # - surface-dispatcher
 # - surface-driver
 # - surface-format
+# - surface-ledger
 # - surface-lsp
 # - surface-render-terminal
 # - surface-repl
@@ -651,6 +656,7 @@ path = "crates/surface-diagnostics"
 # - runtime-stencils (dev)
 # - surface-diagnostics (dev)
 # - surface-driver
+# - surface-ledger
 # - surface-lsp
 # - surface-mcp
 # - surface-render-terminal (dev)
@@ -678,6 +684,7 @@ path = "crates/surface-format"
 # - surface-dispatcher
 # - surface-driver
 # - surface-format
+# - surface-ledger
 # - surface-lowering
 # - surface-lowering-base (dev)
 # - surface-lsp
@@ -698,6 +705,14 @@ path = "crates/surface-grammar"
 [workspace.dependencies.gandr-surface-layout]
 path = "crates/surface-layout"
 
+# The ledgers of the surface: the syntax ledger read off the grammar, its
+# exemplars, the recovery sweep over them and the features ledger.
+# consumers:
+# - surface-driver
+# - surface-mcp
+[workspace.dependencies.gandr-surface-ledger]
+path = "crates/surface-ledger"
+
 # Lowering the surface into the core: resolution, module collection, the
 # attribute side table, the origin table and the refusal classifier.
 # consumers:
@@ -705,6 +720,7 @@ path = "crates/surface-layout"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-format
+# - surface-ledger
 # - surface-lowering-base (dev)
 # - surface-lsp
 # - surface-render-terminal (dev)
@@ -743,6 +759,7 @@ path = "crates/surface-mcp"
 # - surface-dispatcher
 # - surface-format
 # - surface-grammar (dev)
+# - surface-ledger
 # - surface-lowering (dev)
 # - surface-lowering-base (dev)
 # - surface-lsp
@@ -811,6 +828,7 @@ path = "crates/surface-session"
 # - surface-dispatcher
 # - surface-format
 # - surface-grammar
+# - surface-ledger
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lsp
@@ -995,7 +1013,7 @@ default-features = false
 # - none: alloc-only graph machinery.
 # consumers:
 # - surface-grammar
-# - surface-dispatcher
+# - surface-ledger
 # - surface-format
 # - surface-parser
 # - surface-diagnostics (dev)
@@ -1496,6 +1514,7 @@ default-features = false
 # - surface-driver
 # - surface-format
 # - surface-layout
+# - surface-ledger
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lsp
@@ -1662,8 +1681,9 @@ features = ["alloc", "derive"]
 # consumers:
 # - core-checker (dev)
 # - surface-diagnostics
-# - surface-dispatcher
+# - surface-dispatcher (dev)
 # - surface-driver
+# - surface-ledger
 # - surface-lsp
 # - surface-mcp
 # - surface-render-remote (dev)
