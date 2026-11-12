@@ -1871,12 +1871,12 @@ jobs:
   # The daily mutation run (`mutants:nightly`, #1456): one crate a night in a
   # fixed rotation, each mutant under the witnesses of its function, resumed
   # where the last night stopped. A night is held to fifteen minutes of
-  # runner time. The job's own limit is fourteen, and the run starts no group
-  # later than eleven minutes after the job's first step, which leaves the
-  # image start, the stop of the group then running and the state's save
-  # inside the limit. A crate too large for one night continues the next, so
-  # it is cut into as many nights as its cost needs and no night waits
-  # longer. A crate's next pass lists only its new mutants and its survivors
+  # runner time. The job's own limit is fourteen, and the run starts no mutant
+  # or group later than eleven minutes after the job's first step, which
+  # leaves the image start, the stop of the one then running and the state's
+  # save inside the limit. A crate too large for one night continues the
+  # next, so it is cut into as many nights as its cost needs and no night
+  # waits longer. A crate's next pass lists only its new mutants and its survivors
   # (`--iterate`). The outcomes, a few names per mutant, are one cache entry
   # per night, restored from the newest; only a scheduled run saves one. The
   # report is the job summary. Nothing needs this job; the nightly lane
