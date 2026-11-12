@@ -1725,6 +1725,225 @@ struct Lone
     marks: (ArenaWatermark, ArenaWatermark),
 }
 
+/// What the commit of one lone declaration needs beside its check: its
+/// place, its keys, the positions that its content names and the arena's
+/// marks. The committer keeps it while the check runs.
+///
+/// # Specification
+/// - requires: made by [`Environment::release`].
+/// - ensures: the place, the keys, the references and the marks that
+///   [`Environment::settle`] commits with the check's outcome.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`Environment::release`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Environment::release`].
+/// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+#[derive(Debug)]
+pub struct Pending
+{
+    /// Its position and its rank.
+    place: (ConstantIndex, SourceRank),
+    /// Its content key, and whether its admission is generative.
+    content: (
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        bool,
+    ),
+    /// Its entry key and its chain key.
+    keys: (
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+    ),
+    /// The positions that its content names.
+    references: Box<[ConstantIndex]>,
+    /// The arena's mark past its content, and the mark that a refusal
+    /// truncates to.
+    marks: (ArenaWatermark, ArenaWatermark),
+}
+
+/// The check of one lone declaration, released from the environment.
+///
+/// It is a recorded verdict, or a check that owns everything that it reads.
+/// So it runs on any thread while the committer writes the environment.
+///
+/// # Specification
+/// - requires: made by [`Environment::release`].
+/// - ensures: [`Self::run`] answers what the check of [`Environment::add_decl`]
+///   answers for the declaration.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`Environment::release`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Environment::release`].
+/// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+#[derive(Debug)]
+pub struct Check
+{
+    /// The declaration that the check reads.
+    declaration: Declaration,
+    /// A recorded verdict, or what the check reads.
+    way: Way,
+}
+
+/// How a released check answers.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per released check, moved once to its thread and back; boxing the scope would allocate at every release to shrink the rare recall"
+)]
+enum Way
+{
+    /// A verdict that a trusted record holds under the declaration's key.
+    Recalled(check::Accessibility),
+    /// The check's own scope, and what its judgement reads beside it.
+    Checking(Scope, Judged),
+}
+
+/// What a check owns of the environment: a view of the entries below its
+/// rank through its support, a clone of the frozen arena that it mints its
+/// intermediates into, and a fork of the session that it names records in.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Scope
+{
+    /// The entries, read through the check's support below its rank.
+    view: Entries,
+    /// The clone of the frozen arena.
+    arena: TermArena,
+    /// The fork of the environment's session.
+    session: crate::support::SupportContext,
+}
+
+/// What a released check's judgement reads beside its scope: the levels of
+/// the declaration, the atoms open at its release and the policy of
+/// admitted results.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Judged
+{
+    /// The declaration's level context.
+    levels: LevelContext,
+    /// The atoms whose representation the declaration reads.
+    manifest: Vec<ConstantIndex>,
+    /// Whether the check takes a closed pair's admitted result.
+    admitting: crate::admitted::AdmissionPolicy,
+}
+
+/// What a released check found: its outcome and its tally, with the scope
+/// that the committer takes back at the settle.
+///
+/// # Specification
+/// - requires: made by [`Check::run`].
+/// - ensures: the declaration, the outcome, the admission, the census and the
+///   admitted results taken, as [`Environment::add_decl`] finds them.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by [`Check::run`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Environment::release`].
+/// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+#[derive(Debug)]
+pub struct Ran
+{
+    /// The declaration that the check read.
+    declaration: Declaration,
+    /// Its reading, or the refusal of its check.
+    outcome: Result<check::Accessibility, KernelError>,
+    /// Whether its check ran, or a recorded verdict recalled it.
+    admission: Admission,
+    /// What its check charged.
+    census: ExpansionCensus,
+    /// The admitted results that its check took.
+    took: crate::admitted::AdmittedCount,
+    /// The scope that the check ran in, absent for a recall.
+    scope: Maybe<Scope, ran::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a check that ran holds no scope.
+    pub mod ran {
+        /// The reason the scope is absent.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A recorded verdict answered, so no check ran.
+            Recalled,
+        }
+    }
+}
+
+impl Check
+{
+    /// Run the check on the thread that calls: answer a recorded verdict,
+    /// or check the declaration against the check's own scope.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a recall, its reading with an empty census; otherwise the
+    ///   answer of the kernel's check of the declaration against the check's
+    ///   view, arena and session, with the census it charged and the admitted
+    ///   results it took.
+    /// - panics: none.
+    /// - executable: none — the answer is the check's, which no predicate
+    ///   restates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::release`].
+    /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+    #[inline]
+    #[must_use]
+    pub fn run(self) -> Ran
+    {
+        let Self { declaration, way } = self;
+        match way {
+            Way::Recalled(accessibility) => Ran {
+                declaration,
+                outcome: Ok(accessibility),
+                admission: Admission::Recalled,
+                census: ExpansionCensus::new(),
+                took: crate::admitted::AdmittedCount::NONE,
+                scope: Maybe::Absent(ran::Absent::Recalled),
+            },
+            Way::Checking(mut scope, judged) => {
+                let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+                let mut census = ExpansionCensus::new();
+                let outcome = {
+                    let Scope {
+                        ref view,
+                        ref mut arena,
+                        ref mut session,
+                    } = scope;
+                    check::check_declaration(
+                        arena,
+                        check::Judgement::new(view, &judged.levels)
+                            .unsealing(&judged.manifest)
+                            .taking(crate::admitted::Taking::under(judged.admitting, &taken)),
+                        &declaration,
+                        session,
+                        &mut census,
+                    )
+                };
+                Ran {
+                    declaration,
+                    outcome,
+                    admission: Admission::Checked,
+                    census,
+                    took: taken.get(),
+                    scope: Maybe::Present(scope),
+                }
+            },
+        }
+    }
+}
+
 /// Whether each live entry's place in rank order is its position.
 ///
 /// # Specification
@@ -3684,6 +3903,47 @@ impl Environment
         staged: StagedDeclaration,
     ) -> Result<CheckedId, KernelError>
     {
+        let (pending, check) = self.release(staged)?;
+        let ran = check.run();
+        self.settle(pending, ran)
+    }
+
+    /// Release the check of a lone declaration: the guards, the keys and the
+    /// recall run here, and the check runs apart from the environment, on any
+    /// thread, until [`Self::settle`] commits what it found.
+    ///
+    /// # Specification
+    /// - requires: `staged` was built into this environment's arena through
+    ///   [`Self::stage`], and no other check of this environment is released
+    ///   and not yet settled.
+    /// - ensures: the declaration's place, keys, references and marks, and its
+    ///   check: the reading of a verdict that a trusted record holds under its
+    ///   key, or a check that owns a view of the entries below its rank through
+    ///   its support, a clone of the frozen arena and a fork of the session.
+    ///   The environment holds no new entry until the settle.
+    /// - fails: as [`Self::add_decl`] fails before its check.
+    /// - panics: none.
+    /// - executable: none — the clauses state what the check owns, which no
+    ///   predicate over one call reads.
+    ///
+    /// # Errors
+    /// [`KernelError::OutstandingStagedContent`] when a declaration staged
+    /// after this one is still unresolved, [`KernelError::RankTaken`] when a
+    /// live entry holds its rank, and the refusal of its levels, which leaves
+    /// a vacancy at its position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a check released from the environment crosses threads
+    ///   and settles as [`Self::add_decl`] admits; each witness of
+    ///   [`Self::add_decl`] runs through it.
+    /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    #[inline]
+    pub fn release(
+        &mut self,
+        staged: StagedDeclaration,
+    ) -> Result<(Pending, Check), KernelError>
+    {
         let StagedDeclaration {
             content_start,
             rank,
@@ -3761,42 +4021,157 @@ impl Environment
             (recalled, Maybe::Present(_) | Maybe::Absent(_)) => recalled,
         };
         let named = references(&self.arena, &declaration);
-        let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
-        let mut census = ExpansionCensus::new();
-        let (outcome, admission) = match recalled {
-            Maybe::Present(accessibility) => (Ok(accessibility), Admission::Recalled),
+        let way = match recalled {
+            Maybe::Present(accessibility) => Way::Recalled(accessibility),
+            // The check reads through the support its content names, and a
+            // read outside it refuses the declaration whatever the check
+            // decided.
             Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => {
-                // The check reads through the support its content names, and a
-                // read outside it refuses the declaration whatever the check
-                // decided.
-                let checked = self.within_view(
-                    (&named, rank),
-                    (&levels, &taken),
-                    |arena, judgement, session| {
-                        check::check_declaration(
-                            arena,
-                            judgement,
-                            &declaration,
-                            session,
-                            &mut census,
-                        )
-                    },
-                );
-                (checked, Admission::Checked)
+                Way::Checking(self.open_scope((&named, rank)), Judged {
+                    levels,
+                    manifest: self.manifest.clone(),
+                    admitting: self.admitting,
+                })
             },
         };
-        self.commit(Lone {
+        Ok((
+            Pending {
+                place: (position, rank),
+                content: (content, generative),
+                keys: (entry_key, key),
+                references: named,
+                marks: (content_end, rejected),
+            },
+            Check { declaration, way },
+        ))
+    }
+
+    /// Settle a released check: take back the scope that it ran in, refuse a
+    /// read outside its support, and commit what it found.
+    ///
+    /// # Specification
+    /// - requires: `pending` and the check that `ran` answers come from one
+    ///   [`Self::release`] of this environment, and no other check settled
+    ///   since.
+    /// - ensures: as [`Self::add_decl`] ensures after its check: on an outcome
+    ///   that admits, one entry at the released position; on a refusal, a
+    ///   vacancy there. The session holds what the check named, and the entries
+    ///   hold no horizon.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal of the check, or [`KernelError::OutsideSupport`] at the
+    /// first position that it read outside its support.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::release`].
+    /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    #[inline]
+    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1) && self.entries.horizon.is_none())]
+    pub fn settle(
+        &mut self,
+        pending: Pending,
+        ran: Ran,
+    ) -> Result<CheckedId, KernelError>
+    {
+        let Ran {
             declaration,
-            place: (position, rank),
-            content: (content, generative),
-            keys: (entry_key, key),
-            references: named,
-            census,
-            took: taken.get(),
             outcome,
             admission,
-            marks: (content_end, rejected),
+            census,
+            took,
+            scope,
+        } = ran;
+        let outcome = match scope {
+            Maybe::Present(scope) => self.close_scope(scope, outcome),
+            Maybe::Absent(ran::Absent::Recalled) => outcome,
+        };
+        let Pending {
+            place,
+            content,
+            keys,
+            references,
+            marks,
+        } = pending;
+        self.commit(Lone {
+            declaration,
+            place,
+            content,
+            keys,
+            references,
+            census,
+            took,
+            outcome,
+            admission,
+            marks,
         })
+    }
+
+    /// Open a check's scope below `rank`: a view whose support `roots`
+    /// start, a clone of the frozen arena and a fork of the session, which
+    /// names the view's constants first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn open_scope(
+        &mut self,
+        (roots, rank): (&[ConstantIndex], SourceRank),
+    ) -> Scope
+    {
+        let mut view = self.entries.view();
+        view.open(roots.iter().copied(), rank);
+        // A freeze moves the nodes minted since the last one into a segment,
+        // so the clone shares every node and copies none.
+        self.arena.freeze();
+        let arena = self.arena.clone();
+        let Self {
+            arena: ref frozen,
+            ref mut names,
+            ..
+        } = *self;
+        let session = names.session_mut();
+        // The session names the view's constants before the fork, so the
+        // job shares the names by reference and names none.
+        session.name_constants(&view);
+        let session = session.fork(frozen);
+        Scope {
+            view,
+            arena,
+            session,
+        }
+    }
+
+    /// Close a check's scope: fold its session back into the environment's,
+    /// forget the clone's nodes, take back the view's support, and refuse
+    /// `checked` when the check read outside its support.
+    ///
+    /// # Specification
+    /// trivial.
+    fn close_scope<T>(
+        &mut self,
+        scope: Scope,
+        checked: Result<T, KernelError>,
+    ) -> Result<T, KernelError>
+    {
+        let Scope {
+            mut view,
+            arena,
+            session,
+        } = scope;
+        {
+            let Self {
+                arena: ref frozen,
+                ref mut names,
+                ..
+            } = *self;
+            names.session_mut().join(frozen, session);
+        }
+        // A reader that names nodes by their positions forgets the clone's.
+        self.arena.dropped(&arena);
+        let outside = view.close();
+        self.entries.restore(view);
+        supported(checked, outside)
     }
 
     /// Run `check` against a view of this environment: a clone of the frozen
@@ -3838,42 +4213,22 @@ impl Environment
         ) -> Result<T, KernelError>,
     ) -> Result<T, KernelError>
     {
-        let mut view = self.entries.view();
-        view.open(roots.iter().copied(), rank);
-        // A freeze moves the nodes minted since the last one into a segment,
-        // so the clone shares every node and copies none.
-        self.arena.freeze();
-        let mut arena = self.arena.clone();
+        let mut scope = self.open_scope((roots, rank));
         let checked = {
-            let Self {
-                arena: ref frozen,
-                ref manifest,
-                ref mut names,
-                admitting,
-                ..
-            } = *self;
-            let session = names.session_mut();
-            // The session names the view's constants before the fork, so the
-            // job shares the names by reference and names none.
-            session.name_constants(&view);
-            let mut job = session.fork(frozen);
-            let checked = check(
-                &mut arena,
-                check::Judgement::new(&view, levels)
-                    .unsealing(manifest)
-                    .taking(crate::admitted::Taking::under(admitting, taken)),
-                &mut job,
-            );
-            // The serial run folds each job at its commit, which follows at
-            // once.
-            names.session_mut().join(frozen, job);
-            checked
+            let Scope {
+                ref view,
+                ref mut arena,
+                ref mut session,
+            } = scope;
+            check(
+                arena,
+                check::Judgement::new(view, levels)
+                    .unsealing(&self.manifest)
+                    .taking(crate::admitted::Taking::under(self.admitting, taken)),
+                session,
+            )
         };
-        // A reader that names nodes by their positions forgets the clone's.
-        self.arena.dropped(&arena);
-        let outside = view.close();
-        self.entries.restore(view);
-        supported(checked, outside)
+        self.close_scope(scope, checked)
     }
 
     /// Commit what the check of a lone declaration found: record its verdict,
@@ -6509,6 +6864,80 @@ mod tests
             environment.add_decl(second).is_ok(),
             "a reference to an admitted declaration resolves to its declared type"
         );
+    }
+
+    #[test]
+    fn a_released_check_crosses_threads_and_settles_as_an_admission_3476()
+    {
+        /// The body of a staged unit definition.
+        #[derive(Clone, Copy)]
+        enum Body
+        {
+            /// The unit value: admitted.
+            Unit,
+            /// A reference to the first entry: admitted.
+            First,
+            /// A text literal, which no unit inhabits: refused.
+            Text,
+        }
+        /// A unit definition with `body`, staged into `environment`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn staged(
+            environment: &mut Environment,
+            body: Body,
+        ) -> StagedDeclaration
+        {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = match body {
+                Body::Unit => staging.arena().value_unit(),
+                Body::First => staging.arena().value_constant(ConstantIndex::from(0_usize)),
+                Body::Text => staging
+                    .arena()
+                    .value_literal(Literal::Text(StringLiteral::new(String::from("x")))),
+            };
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        }
+        extern crate std;
+        let mut serial = Environment::new();
+        let mut released = Environment::new();
+        for body in [Body::Unit, Body::First, Body::Text] {
+            let serial_staged = staged(&mut serial, body);
+            let admitted = serial.add_decl(serial_staged);
+            let released_staged = staged(&mut released, body);
+            let (pending, check) = released
+                .release(released_staged)
+                .expect("a monomorphic definition releases its check");
+            // The check runs on a thread of its own while the environment
+            // stays on this one.
+            let ran = std::thread::scope(|scope| scope.spawn(move || check.run()).join())
+                .expect("the released check runs to its end on its thread");
+            assert_eq!(
+                released.settle(pending, ran),
+                admitted,
+                "a released check settles as the check of add_decl answers"
+            );
+        }
+        assert!(
+            serial.entries().get(2_usize).is_none() && released.entries().get(2_usize).is_none(),
+            "the third declaration is refused and leaves a vacancy"
+        );
+        assert_eq!(released.entries().len(), serial.entries().len());
+        for position in 0_usize .. 2 {
+            assert_eq!(
+                released
+                    .entries()
+                    .get(position)
+                    .map(super::AdmittedDeclaration::census),
+                serial
+                    .entries()
+                    .get(position)
+                    .map(super::AdmittedDeclaration::census),
+                "each admitted entry charges the census of the serial check"
+            );
+        }
     }
 
     /// The census of a unit definition admitted into `environment`.
