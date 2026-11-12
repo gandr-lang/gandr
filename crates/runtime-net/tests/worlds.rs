@@ -157,9 +157,9 @@ fn a_migration_runs_at_the_far_host_and_its_answer_comes_back()
     let mut here = Store::new();
     let (twenty, twenty_two) = (integer(&mut here, Small(20)), integer(&mut here, Small(22)));
     let captures = {
-        let mut chunks = near_chunks.lock();
+        let mut chunks = &near_chunks;
         [twenty, twenty_two]
-            .map(|value| commit(&here, value, params(), &mut *chunks).expect("an integer crosses"))
+            .map(|value| commit(&here, value, params(), &mut chunks).expect("an integer crosses"))
     };
     let configuration = swap(captures.to_vec());
     let swapped = pair(&mut here, [twenty_two, twenty]);
@@ -180,14 +180,14 @@ fn a_migration_runs_at_the_far_host_and_its_answer_comes_back()
             .map(|capture| {
                 far.fetch_arrived(arrival.id, capture, &[])
                     .expect("a capture is fetched over the migration's connection");
-                deref(capture, params(), &*far_chunks.lock(), &mut there)
+                deref(capture, params(), &&far_chunks, &mut there)
                     .expect("a fetched capture reads back")
             })
             .collect::<Vec<HeapValueId>>();
         let [first, second]: [HeapValueId; 2] = fetched.try_into().expect("two captures");
         let answered = pair(&mut there, [second, first]);
         let manifest =
-            commit(&there, answered, params(), &mut *far_chunks.lock()).expect("the pair crosses");
+            commit(&there, answered, params(), &mut &far_chunks).expect("the pair crosses");
         far.answer(arrival.id, &Answer::Answered(manifest))
             .expect("the answer is sent");
         let again = far.answer(arrival.id, &Answer::Answered(manifest));
@@ -206,7 +206,7 @@ fn a_migration_runs_at_the_far_host_and_its_answer_comes_back()
         "the answer is the pair's manifest, and an answered arrival is unknown"
     );
     let mut back = Store::new();
-    let read = deref(&expected, params(), &*near_chunks.lock(), &mut back)
+    let read = deref(&expected, params(), &&near_chunks, &mut back)
         .expect("the answer's chunks are in the asker's store");
     assert_eq!(
         manifest_of(&back, read),
@@ -234,8 +234,7 @@ fn a_refusal_crosses_back_and_nothing_is_fetched()
     let (mut near, mut far) = (on_loopback(&near_chunks), on_loopback(&far_chunks));
     let mut here = Store::new();
     let value = integer(&mut here, Small(21));
-    let capture =
-        commit(&here, value, params(), &mut *near_chunks.lock()).expect("an integer crosses");
+    let capture = commit(&here, value, params(), &mut &near_chunks).expect("an integer crosses");
     let far_peer = peer_of(&far);
     let serving = thread::spawn(move || {
         for reason in REASONS {
@@ -254,11 +253,7 @@ fn a_refusal_crosses_back_and_nothing_is_fetched()
         .collect();
     let far = serving.join().expect("the far owner refuses");
     assert_eq!(
-        (
-            answers,
-            far_chunks.lock().chunk_count(),
-            near_chunks.lock().chunk_count()
-        ),
+        (answers, far_chunks.chunk_count(), near_chunks.chunk_count()),
         (
             REASONS.map(Answer::Refused).to_vec(),
             ChunkCount::from(0_usize),
@@ -285,7 +280,7 @@ fn an_owner_dropped_once_it_answers_still_serves_the_answer()
     let serving = thread::spawn(move || {
         let arrival = far.arrive().expect("the migration arrives");
         let manifest =
-            commit(&there, answered, params(), &mut *far_chunks.lock()).expect("the pair crosses");
+            commit(&there, answered, params(), &mut &far_chunks).expect("the pair crosses");
         far.answer(arrival.id, &Answer::Answered(manifest))
             .expect("the answer is sent");
         drop(far);
@@ -298,7 +293,7 @@ fn an_owner_dropped_once_it_answers_still_serves_the_answer()
         "the answer crosses although its owner ended"
     );
     let mut back = Store::new();
-    let read = deref(&expected, params(), &*near_chunks.lock(), &mut back)
+    let read = deref(&expected, params(), &&near_chunks, &mut back)
         .expect("the answer's chunks are in the asker's store");
     assert_eq!(
         manifest_of(&back, read),

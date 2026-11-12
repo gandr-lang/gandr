@@ -21,13 +21,17 @@ path = "tests/lib.rs"
 # iroh-base spells the keys a peer is named by and an endpoint proves. tokio
 # carries the requests to the endpoint's thread and runs it. The value plane
 # holds the chunks an endpoint serves and fetches, and verifies each on
-# receipt. The core's world vocabulary names why a migration answered
-# nothing. The pinned anodized facade supplies the specification attribute.
+# receipt. boxcar's arena keeps each chunk at a fixed address and papaya's
+# index finds its slot, so threads share the holder with no lock. The core's
+# world vocabulary names why a migration answered nothing. The pinned anodized
+# facade supplies the specification attribute.
 [dependencies]
 anodized.workspace = true
+boxcar.workspace = true
 gandr-core-term.workspace = true
 gandr-storage-values.workspace = true
 iroh-base.workspace = true
+papaya.workspace = true
 tokio.workspace = true
 
 # The chunk wire's witnesses commit a run's values through the emitter's

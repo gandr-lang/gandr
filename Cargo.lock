@@ -260,6 +260,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxcar"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36f64beae40a84da1b4b26ff2761a5b895c12adc41dc25aaee1c4f2bbfe97a6e"
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1396,6 +1402,7 @@ dependencies = [
 name = "gandr-runtime-net"
 version = "0.0.0"
 dependencies = [
+ "boxcar",
  "gandr-core-sequent",
  "gandr-core-term",
  "gandr-kernel-term",
@@ -1405,6 +1412,7 @@ dependencies = [
  "iroh",
  "iroh-base",
  "iroh-mdns-address-lookup",
+ "papaya",
  "quenchant-anodized",
  "tokio",
 ]

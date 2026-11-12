@@ -344,11 +344,11 @@ pub(super) fn shipped(
     }
     let params = world::chunking();
     let committed = {
-        let mut chunks = net.chunks().lock();
+        let mut chunks = net.chunks();
         request
             .captures
             .iter()
-            .map(|&capture| values.commit(capture, params, &mut *chunks))
+            .map(|&capture| values.commit(capture, params, &mut chunks))
             .collect::<Result<Vec<ValueManifest>, _>>()
     };
     let Ok(captures) = committed
@@ -358,7 +358,7 @@ pub(super) fn shipped(
     let configuration = Configuration::new(worlds.program.code(request.at), world, captures);
     match net.migrate(peer, &configuration) {
         Ok(Answer::Answered(manifest)) => {
-            let answered = values.deref(&manifest, params, &*net.chunks().lock());
+            let answered = values.deref(&manifest, params, &net.chunks());
             answered.map_or(
                 Migrated::Refused(Unmigrated::Unanswered),
                 Migrated::Answered,
@@ -511,7 +511,7 @@ impl Program<'_>
         };
         let params = world::chunking();
         for capture in configuration.captures() {
-            let whole = capture.closure(&*net.chunks().lock()).is_ok();
+            let whole = capture.closure(&net.chunks()).is_ok();
             if !whole {
                 match net.fetch_arrived(arrival.id, capture, held) {
                     Ok(carried) => {
@@ -526,11 +526,11 @@ impl Program<'_>
         }
         let mut store = Store::new();
         let captures = {
-            let chunks = net.chunks().lock();
+            let chunks = net.chunks();
             configuration
                 .captures()
                 .iter()
-                .map(|capture| crossing::deref(capture, params, &*chunks, &mut store))
+                .map(|capture| crossing::deref(capture, params, &chunks, &mut store))
                 .collect::<Result<Vec<HeapValueId>, _>>()
         };
         let Ok(captures) = captures
@@ -546,7 +546,7 @@ impl Program<'_>
             Ok(answer) => answer,
             Err(why) => return Answer::Refused(why),
         };
-        let committed = crossing::commit(&store, answer, params, &mut *net.chunks().lock());
+        let committed = crossing::commit(&store, answer, params, &mut net.chunks());
         match committed {
             Ok(manifest) => {
                 held.push(manifest);

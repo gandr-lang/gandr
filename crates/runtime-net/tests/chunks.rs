@@ -180,7 +180,7 @@ fn read_back(
 ) -> ContentPtr
 {
     let mut store = Store::new();
-    let value = deref(manifest, params(), &*chunks.lock(), &mut store).expect("the value derefs");
+    let value = deref(manifest, params(), &chunks, &mut store).expect("the value derefs");
     commit(&store, value, params(), &mut InMemoryChunkStore::new())
         .expect("the value read back commits")
         .root()
@@ -196,12 +196,12 @@ fn a_second_fetch_carries_only_the_chunks_an_edit_changed()
     let reached = peer_of(&holder);
     let mut values = Store::new();
     let original = list(&mut values, Edited::No);
-    let first = commit(&values, original, params(), &mut *at_holder.lock()).expect("crosses");
+    let first = commit(&values, original, params(), &mut &at_holder).expect("crosses");
     let whole_closure = first
-        .closure(&*at_holder.lock())
+        .closure(&&at_holder)
         .expect("the holder holds what it committed");
     let whole = whole_closure.chunk_count();
-    let whole_bytes = image_bytes(&*at_holder.lock(), whole_closure.digests());
+    let whole_bytes = image_bytes(&&at_holder, whole_closure.digests());
     let fetched = asker
         .fetch(&reached, &first, &[])
         .expect("the value is fetched");
@@ -216,9 +216,9 @@ fn a_second_fetch_carries_only_the_chunks_an_edit_changed()
         "it reads back equal"
     );
     let edited = list(&mut values, Edited::Yes);
-    let second = commit(&values, edited, params(), &mut *at_holder.lock()).expect("crosses");
+    let second = commit(&values, edited, params(), &mut &at_holder).expect("crosses");
     let depth = EditDepth::from(EDITED.saturating_add(1));
-    let measured = measure_edit(&*at_holder.lock(), first.root(), second.root(), depth)
+    let measured = measure_edit(&&at_holder, first.root(), second.root(), depth)
         .expect("the edit is measured");
     let fetched = asker
         .fetch(&reached, &second, &[first])
@@ -228,10 +228,10 @@ fn a_second_fetch_carries_only_the_chunks_an_edit_changed()
         "naming the first as held, the second fetch carries exactly the chunks the edit added"
     );
     let edited_closure = second
-        .closure(&*at_holder.lock())
+        .closure(&&at_holder)
         .expect("the holder holds what it committed");
     let added_bytes = image_bytes(
-        &*at_holder.lock(),
+        &&at_holder,
         edited_closure.digests().difference(whole_closure.digests()),
     );
     assert_eq!(
@@ -386,7 +386,7 @@ fn an_answer_that_does_not_verify_or_frame_is_refused_before_any_chunk_is_kept()
         "a chunk not what its digest names is refused by it: {refused:?}"
     );
     assert_eq!(
-        at_asker.lock().chunk_count(),
+        at_asker.chunk_count(),
         ChunkCount::from(0_usize),
         "the chunk that verified before it is not kept either"
     );
@@ -395,7 +395,7 @@ fn an_answer_that_does_not_verify_or_frame_is_refused_before_any_chunk_is_kept()
         Err(Fault::Malformed { peer: holder.id() }),
         "a part shorter than a digest does not frame"
     );
-    assert_eq!(at_asker.lock().chunk_count(), ChunkCount::from(0_usize));
+    assert_eq!(at_asker.chunk_count(), ChunkCount::from(0_usize));
     serving.join().expect("the forged holder ends");
 }
 
@@ -419,7 +419,7 @@ fn a_value_the_holder_lacks_is_refused_by_its_first_chunk()
         }),
         "a holder lacking the value answers nothing, and the walk names its root chunk"
     );
-    assert_eq!(at_asker.lock().chunk_count(), ChunkCount::from(0_usize));
+    assert_eq!(at_asker.chunk_count(), ChunkCount::from(0_usize));
 }
 
 #[test]
@@ -454,4 +454,52 @@ fn a_part_announced_past_the_frame_limit_does_not_frame()
         "a part announced one byte past the limit does not frame"
     );
     serving.join().expect("the forged holder ends");
+}
+
+/// Sixteen threads that share one holder put every chunk of one value at
+/// once, with no lock. The holder keeps one slot for each digest, and each
+/// thread loads the image that the value committed (#6899).
+#[test]
+fn sixteen_puts_of_one_chunk_leave_one_digest_6899()
+{
+    const PUTTERS: usize = 16;
+    let mut committed = InMemoryChunkStore::new();
+    let mut values = Store::new();
+    let original = list(&mut values, Edited::No);
+    let manifest = commit(&values, original, params(), &mut committed).expect("crosses");
+    let closure = manifest
+        .closure(&committed)
+        .expect("the committed store holds the value");
+    let holder = Chunks::new();
+    let start = std::sync::Barrier::new(PUTTERS);
+    thread::scope(|scope| {
+        for _ in 0 .. PUTTERS {
+            let (mut holder, committed, closure, start) = (&holder, &committed, &closure, &start);
+            scope.spawn(move || {
+                let _leader = start.wait();
+                for &digest in closure.digests() {
+                    let chunk = committed
+                        .load(digest)
+                        .expect("the committed store loads its chunk");
+                    holder.insert(chunk).expect("the holder keeps the chunk");
+                }
+                for &digest in closure.digests() {
+                    let held = holder.load(digest).expect("the holder loads the chunk");
+                    let kept = committed
+                        .load(digest)
+                        .expect("the committed store loads its chunk");
+                    assert_eq!(
+                        <&[u8]>::from(held.image()),
+                        <&[u8]>::from(kept.image()),
+                        "each thread loads the image that the value committed"
+                    );
+                }
+            });
+        }
+    });
+    assert_eq!(
+        holder.chunk_count(),
+        closure.chunk_count(),
+        "the holder keeps one slot for each digest"
+    );
 }
