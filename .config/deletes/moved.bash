@@ -19,6 +19,23 @@ moved() {
     done
 }
 
+# The fork of a signed commit with the base (#6920). `signed_fork <sha>
+# <base>` prints the merge base of `<sha>` and `<base>`, and fails when the
+# clone holds none. The merge queue's clone is shallow, and the check fetches
+# a signed commit by its name at depth 1. `git fetch --deepen` does not
+# deepen a commit that the clone holds at depth 1 by its name alone, so the
+# deepening gave no fork for pull request 6914. An explicit `--depth` on the
+# signed commit gives its line, and `--deepen` on the base gives the base's.
+# Each fetch reads at most 500 commits, and it runs only when the clone holds
+# no fork.
+signed_fork() {
+  local sha=$1 base=$2
+  git merge-base "$sha" "$base" 2> /dev/null && return 0
+  git fetch --quiet --depth=500 origin "$sha" 2> /dev/null || :
+  git fetch --quiet --deepen=500 origin "$base" 2> /dev/null || :
+  git merge-base "$sha" "$base" 2> /dev/null
+}
+
 # The item's half of a sign-off (#6852). A restack can keep the change's own
 # patch and still change what the deletion means. The architect reads the
 # item as it stands at the base, with its readers, so the check binds both.

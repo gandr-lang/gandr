@@ -100,15 +100,13 @@ done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
       break
     fi
   done
-  # The fork of the signed commit with the base. The merge queue's clone is
-  # shallow, and a signed commit fetched at depth 1 shares no commit with it,
-  # so the check deepens both by 500 commits once. A sign-off with no fork
+  # The fork of the signed commit with the base (`signed_fork`, #6920). The
+  # merge queue's clone is shallow, so the check fetches the signed line and
+  # deepens the base, each by 500 commits, once. A sign-off with no fork
   # binds neither half, and the rule reads it as stale with that cause.
   fork=
   if [[ -n $sha ]]; then
-    fork=$(git merge-base "$sha" "$base" 2> /dev/null) \
-      || { git fetch --quiet --deepen=500 origin "$sha" "$base" 2> /dev/null; fork=$(git merge-base "$sha" "$base" 2> /dev/null); } \
-      || fork=
+    fork=$(signed_fork "$sha" "$base") || fork=
   fi
   if [[ -n $fork ]]; then
     moved "$fork" "$sha" "$base" "$head" | jq -R . | jq -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" \
