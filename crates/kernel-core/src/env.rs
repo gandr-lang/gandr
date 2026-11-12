@@ -1488,6 +1488,20 @@ impl AdmittedDeclaration
         self.rank
     }
 
+    /// The positions the declaration's content names, ascending: the entries
+    /// that its check reads first, and what joins the support of a later
+    /// check that reads it. A member of a mutual block names the references
+    /// of the whole block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn references(&self) -> &[ConstantIndex]
+    {
+        &self.references
+    }
+
     /// The entry's kind: live, or retired by a readmission.
     ///
     /// # Specification
