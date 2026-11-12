@@ -371,8 +371,8 @@
 //!   prohibition, so the lookup at a binder keeps the binding the binder hides
 //!   and refuses nothing.
 
-// Module documentation that predates the shape lint: 150 headings outside the
-// vocabulary, 91 decision records, 38 issue references and 32 budgets exceeded.
+// Module documentation that predates the shape lint: 145 headings outside the
+// vocabulary, 79 decision records, 177 issue references and 40 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

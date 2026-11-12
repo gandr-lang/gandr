@@ -47,8 +47,8 @@
 //!   and never cuts through one, so the base takes the lowering's tables,
 //!   refusals and descriptions whole.
 
-// Module documentation that predates the shape lint: 16 headings outside the
-// vocabulary, 2 decision records, 2 issue references and 1 budget exceeded.
+// Module documentation that predates the shape lint: 80 headings outside the
+// vocabulary, 26 decision records, 40 issue references and 13 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
