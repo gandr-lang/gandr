@@ -230,6 +230,7 @@ impl SortTerm
     ///   indexed at a builtin type derives its family over that type.
     /// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
     /// - witness: `model::tests::a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079`
+    #[inline]
     pub fn builtin(&self) -> Maybe<BuiltinSort, builtin_sort::Absent>
     {
         if !self.indices.is_empty() {
@@ -600,6 +601,7 @@ impl Presentation
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn wired(&self) -> impl Iterator<Item = &PresentedCircuit>
     {
         self.circuits
@@ -1279,6 +1281,7 @@ pub(crate) fn derive_members<'wired>(
 ///   and endpoints over the group's own operations.
 /// - witness: `derive::tests::a_derived_rule_states_its_law_over_the_theory`
 #[must_use]
+#[inline]
 pub fn derive_laws(
     members: &Members,
     laws: &[PresentedLaw],
@@ -1495,6 +1498,8 @@ pub enum Tail<'form>
         reason = "bounded: `named` holds the variables one operation's telescope and result mention"
     )
 )]
+#[inline]
+#[must_use]
 pub fn dependence(
     telescope: &[Binder],
     tail: Tail<'_>,
@@ -1551,6 +1556,8 @@ pub fn dependence(
         reason = "bounded: `named` holds the variables one port's sorts mention"
     )
 )]
+#[inline]
+#[must_use]
 pub fn variable_dependence(
     variables: &[Variable],
     result: &SortTerm,

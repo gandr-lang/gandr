@@ -2253,6 +2253,7 @@ impl OriginTable
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before,
     )]
+    #[inline]
     pub fn relabel(
         &mut self,
         from: &Labelled,
@@ -2285,6 +2286,7 @@ impl OriginTable
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before,
     )]
+    #[inline]
     pub fn relabel_action(
         &mut self,
         from: ComputationId,

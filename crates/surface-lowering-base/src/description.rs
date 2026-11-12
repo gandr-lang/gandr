@@ -480,6 +480,8 @@ impl DescriptionDiagnostic
     /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
     /// - witness: `description::theory::tests::a_seam_refusal_stands_at_its_rule_5763`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
+    #[inline]
+    #[must_use]
     pub fn lowering_refusal<'source>(
         &self,
         written: gandr_surface_syntax::SourceFragment<'source>,
@@ -1082,6 +1084,7 @@ impl<'held> Visible<'held>
     captures: before = report.declarations.len(),
     ensures: |result| result.is_err() || report.declarations.len() >= before,
 )]
+#[inline]
 pub fn elaborate_roots<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,

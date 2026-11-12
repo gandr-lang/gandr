@@ -602,9 +602,11 @@ struct Theory<'cells>
 }
 
 /// The proof that `left` and `right` are equal in every model of the theory
-/// `presentation` presents, whose cells `cells` holds: one lemma per derived
-/// cell the proof fires, in the order completion derived them, then the
-/// statement's own, named `name` and written at `named`.
+/// that `presentation` presents.
+///
+/// `cells` holds the theory's cells. The proof has one lemma for each derived
+/// cell that it fires, in the order that completion derived them, then the
+/// statement's own lemma, named `name` and written at `named`.
 ///
 /// # Specification
 /// - requires: `cells` is the cell report of the declaration presenting
@@ -633,6 +635,7 @@ struct Theory<'cells>
 /// - witness: `derive::tests::sides_the_completion_keeps_apart_are_refused`
 /// - witness: `derive::tests::a_side_naming_no_operation_is_refused`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |lemmas| !lemmas.is_empty()))]
+#[inline]
 pub fn plan(
     (name, named): (&Name, Placed),
     (left, right): (&FreeTerm, &FreeTerm),

@@ -2732,12 +2732,15 @@ pub enum DeclaredFamily<'module>
 #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
     && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
 #[inline]
-pub fn described_types<'module>(
+pub fn described_types<'module, Declared, Described>(
     arena: &mut CoreArena,
-    declared: impl IntoIterator<Item = DeclaredFamily<'module>>,
-    described: impl IntoIterator<Item = &'module DescribedDeclaration>,
+    declared: Declared,
+    described: Described,
     natives: &'module [NativeFamily],
 ) -> DescribedTypes
+where
+    Declared: IntoIterator<Item = DeclaredFamily<'module>>,
+    Described: IntoIterator<Item = &'module DescribedDeclaration>,
 {
     let mut typer = Typer {
         arena,

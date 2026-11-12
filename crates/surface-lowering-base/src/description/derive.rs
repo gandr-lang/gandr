@@ -1,6 +1,8 @@
-//! The statement a derived rule declaration writes, `rule T.r : l <=> r;`:
-//! the theory it holds in, the rule's name, and its two sides read as terms
-//! over the theory's operations, as a theory's own rule reads them.
+//! The statement a derived rule declaration writes, `rule T.r : l <=> r;`.
+//!
+//! The statement holds the theory, the rule's name, and its two sides. The
+//! sides are read as terms over the theory's operations, as a theory's own
+//! rule reads them.
 
 use alloc::collections::BTreeSet;
 
@@ -75,6 +77,7 @@ pub struct DerivedStatement
 ///   written.
 /// - witness: `description::derive::tests::a_derived_rule_reads_its_theory_its_name_and_its_sides`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.as_ref().map_or(true, |statement| statement.theory.span.start() >= at.span.start())))]
+#[inline]
 pub fn derived_statement<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,

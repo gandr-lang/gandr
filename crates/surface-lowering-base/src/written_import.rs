@@ -1,6 +1,7 @@
-//! An import as its tiles spell it: the address, the alias, the signature,
-//! the translation and the list, read before any import binds. The
-//! description route reads the imports of each source through
+//! An import as its tiles spell it, read before any import binds.
+//!
+//! The import gives the address, the alias, the signature, the translation and
+//! the list. The description route reads the imports of each source through
 //! [`unqualified_imports`], and the lowering's collection reads each import
 //! through [`read_import`].
 
@@ -274,6 +275,7 @@ quenchant_shape::reason_enum! {
         | Err(_) => false,
     },
 )]
+#[inline]
 pub fn read_import<'source>(
     tree: &SyntaxTree<'source>,
     import: Placed,
@@ -433,6 +435,7 @@ quenchant_shape::reason_enum! {
     | Maybe::Present(WrittenTranslation::Renaming(ref pairs)) => !pairs.is_empty(),
     | Maybe::Present(WrittenTranslation::Via(_)) | Maybe::Absent(_) => true,
 })]
+#[inline]
 pub fn read_translation(
     cursor: &mut Cursor<'_>
 ) -> Maybe<WrittenTranslation, written_translation::Absent>
@@ -510,6 +513,7 @@ quenchant_shape::reason_enum! {
     | Maybe::Present((_, between)) => between.end() <= cursor.here().start(),
     | Maybe::Absent(_) => true,
 })]
+#[inline]
 pub fn quoted(
     tree: &SyntaxTree<'_>,
     cursor: &mut Cursor<'_>,
@@ -655,6 +659,8 @@ pub fn written_imports<'source>(
 ///   writing no import sees the prelude alone.
 /// - witness: `written_import::tests::a_source_sees_what_it_imports_unqualified_and_the_prelude`
 #[spec(ensures: |ret| ret.values().all(|targets| !targets.is_empty()))]
+#[inline]
+#[must_use]
 pub fn unqualified_imports(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,

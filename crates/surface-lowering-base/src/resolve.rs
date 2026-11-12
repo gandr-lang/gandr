@@ -2204,6 +2204,7 @@ impl<'source> Scope<'source>
             && ret.read.len() <= prior.read.len().saturating_add(added),
     )]
     #[must_use]
+    #[inline]
     pub fn in_scope_after(
         &self,
         prior: &InScope,

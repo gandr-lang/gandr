@@ -142,6 +142,8 @@ impl CellDiagnostic
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn lowering_refusal(&self) -> crate::error::LoweringRefusal<'static>
     {
         let fault = match self.fault {

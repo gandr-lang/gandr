@@ -1650,7 +1650,7 @@ impl<'source> Lowerer<'_, 'source>
                 gandr_core_term::hole::HoleId::nominated_in(form, at)
             },
         }
-        .ok_or(LoweringRefusal::BudgetExceeded {
+        .ok_or_else(|| LoweringRefusal::BudgetExceeded {
             budget: self.fuel.budget(),
         })?;
         let _first = self.nominations.insert(hole, nomination);

@@ -2344,6 +2344,7 @@ const STATEMENT_BLOCK: RuleIdentity = RuleIdentity("statement_block");
 /// - hypothesis: L3 — a thunk's block reads as its braces, statements and last
 ///   computation; a block expression stays one operand.
 /// - witness: `form::tests::a_shared_block_reads_as_its_host_s_braces`
+#[inline]
 pub fn own_children<'tree>(
     pbg: &'tree Pbg,
     tree: &'tree SyntaxTree<'_>,
@@ -2816,6 +2817,7 @@ fn application_spine(
         && found.nested == Maybe::Absent(nested::Absent::Own),
     | Maybe::Absent(_) => true,
 })]
+#[inline]
 pub fn stop_of(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -3571,6 +3573,8 @@ fn holes(regex: RegexView<'_>) -> Holes
 ///   misspelt, and a name used alone heads none.
 /// - witness: `form::tests::a_word_one_edit_from_a_keyword_is_that_keyword_misspelt`
 #[spec(ensures: |ret| ret.is_none_or(|at| tree.node(at).is_some_and(|node| Some(node.label()) == pbg.application().map(NodeLabel::Meld))))]
+#[inline]
+#[must_use]
 pub fn applied_word(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -3622,6 +3626,7 @@ pub fn applied_word(
 ///   letter too many each read as `return` misspelt, and a word one edit from
 ///   no keyword as none.
 /// - witness: `form::tests::a_word_one_edit_from_a_keyword_is_that_keyword_misspelt`
+#[inline]
 pub fn misspelt_keyword(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -3695,7 +3700,9 @@ pub fn misspelt_keyword(
 }
 
 /// The operator tile a name inside `within` nearly spells, with the name's
-/// bytes. The labeler reads a run its operator table does not hold as one
+/// bytes.
+///
+/// The labeler reads a run its operator table does not hold as one
 /// name, so `∷∷`, the cons written twice, is a name. The name is the first
 /// identifier in source order that the lowering refused as unresolved, that
 /// holds no letter, digit, `_` or `'`, and that one deletion, or one swap of
@@ -3721,6 +3728,8 @@ pub fn misspelt_keyword(
 /// - hypothesis: L3 — `∷∷` and `:::` each read as their operator written twice,
 ///   and a word of letters as none.
 /// - witness: `form::tests::a_run_one_edit_from_an_operator_is_that_operator_misspelt`
+#[inline]
+#[must_use]
 pub fn misspelt_operator(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -3820,6 +3829,7 @@ pub enum RunReading
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn run_reading(written: SourceFragment<'_>) -> RunReading
 {
     let written = <&str>::from(written);
@@ -3863,6 +3873,7 @@ pub enum KeywordOpening
 /// - hypothesis: L3 — `return` opens an expression and `where` none.
 /// - witness: `form::tests::a_word_one_edit_from_a_keyword_is_that_keyword_misspelt`
 #[must_use]
+#[inline]
 pub fn opens_expression(
     pbg: &Pbg,
     keyword: TileName,
@@ -3921,6 +3932,7 @@ pub fn opens_expression(
 ///   found, and one closed before it is not.
 /// - witness: `form::tests::a_bracket_open_at_the_refusal_is_the_bare_one`
 #[must_use]
+#[inline]
 pub fn bare_bracket(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -4279,6 +4291,7 @@ quenchant_shape::reason_enum! {
     | (_, Maybe::Present(_)) => false,
     | (_, Maybe::Absent(tiled::Absent::Untiled)) => true,
 })]
+#[inline]
 pub fn tile_label(
     pbg: &Pbg,
     node: &Node,
@@ -4434,6 +4447,7 @@ impl Iterator for Shared<'_>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn next(&mut self) -> Option<Placed>
     {
         self.0.next().map(|piece| piece.placed())
@@ -4473,6 +4487,7 @@ impl WrittenPath
     /// - witness: `form::tests::a_cursor_reads_a_dotted_path_to_its_last_name`
     #[spec(ensures: |ret| ret.end() == self.last.span.end())]
     #[must_use]
+    #[inline]
     pub fn span(&self) -> ByteSpan
     {
         self.prefix.first().map_or(self.last.span, |first| {
@@ -4487,6 +4502,7 @@ impl WrittenPath
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn name<'source>(
         &self,
         tree: &SyntaxTree<'source>,
@@ -4694,10 +4710,11 @@ fn operand_path<'source>(
 /// trivial.
 pub type EntryPath = (WrittenPath, Vec<(Placed, Placed)>);
 
-/// The path and fixed sorts a type operand spells as an effect's entry: a
-/// package's path, `std.io.Console.Eff`, or one the manifest type fixes sorts
-/// of, `std.io.Console.Eff with sort S = A`, which the type sort reads whole
-/// where a theory's tiles read the `with` apart.
+/// The path and fixed sorts that a type operand spells as an effect's entry.
+///
+/// The entry is a package's path, `std.io.Console.Eff`, or one whose sorts the
+/// manifest type fixes, `std.io.Console.Eff with sort S = A`. The type sort
+/// reads it whole, where a theory's tiles read the `with` apart.
 ///
 /// # Specification
 /// - requires: `written` is an operand of `tree`.
@@ -4720,6 +4737,7 @@ pub type EntryPath = (WrittenPath, Vec<(Placed, Placed)>);
 ///   fixing one sort, read as their paths and sorts.
 /// - witness: `form::tests::a_type_operand_spells_an_entry_s_path`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |entry| entry.as_ref().is_none_or(|&(ref path, ref fixed)| path.span().end() <= written.span.end() && fixed.iter().all(|&(sort, ty)| path.span().end() < sort.span.start() && sort.span.end() < ty.span.start()))))]
+#[inline]
 pub fn operand_entry<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -4804,9 +4822,10 @@ pub fn operand_entry<'source>(
 }
 
 /// Read an effect's entry where a row, a capability scope's head, a world's
-/// requirement or a site's offer writes one: a theory's tiles, `State.Eff`,
-/// or a type operand spelling a package's path, `std.io.Console.Eff`, with
-/// the sorts the operand fixes.
+/// requirement or a site's offer writes one.
+///
+/// The entry is a theory's tiles, `State.Eff`, or a type operand that spells a
+/// package's path, `std.io.Console.Eff`, with the sorts that the operand fixes.
 ///
 /// # Specification
 /// - requires: `cursor` reads pieces of `tree`.
@@ -4826,6 +4845,7 @@ pub fn operand_entry<'source>(
 /// - hypothesis: L3 — a cursor at an operand spelling a package's path reads
 ///   the entry and moves past it, and at a lowercase name reads none.
 /// - witness: `form::tests::a_type_operand_spells_an_entry_s_path`
+#[inline]
 pub fn entry_path<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -5356,6 +5376,7 @@ impl<'pieces> Cursor<'pieces>
     ///   classifies a theory sort; a level at or past the greatest has none
     ///   above it.
     /// - witness: `description::theory::tests::each_universe_at_level_zero_classifies_a_sort_2664`
+    #[inline]
     pub fn universe(
         &mut self,
         tree: &SyntaxTree<'_>,
@@ -5436,6 +5457,7 @@ impl<'pieces> Cursor<'pieces>
             reason = "bounded: `labels` holds the one or two tiles a parameter's shared names spell"
         )
     )]
+    #[inline]
     pub fn shared(
         &mut self,
         labels: &[TileName],
@@ -5650,6 +5672,8 @@ pub enum Family
         )
     },
 )]
+#[inline]
+#[must_use]
 pub const fn family_of(former: Former) -> Family
 {
     match former {
@@ -5740,15 +5764,17 @@ pub const fn family_of(former: Former) -> Family
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AsType(pub bool);
 
-/// Whether a form of `former` stands as a type where a type is read: a former
-/// of the type family, a name or a constructor, which stands there as a type
-/// head, or a call the expression grammar molds, which stands there as the
-/// type application it spells. Where a type is read, the lowering refuses
+/// Whether a form of `former` stands as a type where a type is read.
+///
+/// A former of the type family, a name or a constructor stands there as a type
+/// head. A call that the expression grammar molds stands there as the type
+/// application that it spells. Where a type is read, the lowering refuses
 /// every other form for its wrong sort.
 ///
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub const fn read_as_type(former: Former) -> AsType
 {
     AsType(

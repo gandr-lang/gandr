@@ -90,6 +90,7 @@ use crate::description::written::RuleDirection;
 /// - witness: `certify::tests::a_groups_certificate_replays_in_the_kernel`
 #[spec(ensures: |ref ret| ret.turns.len() == cells.directions.len())]
 #[must_use]
+#[inline]
 pub fn rule_certificate<G>(
     description: &TheoryDesc<G>,
     cells: &DeclarationCells,
@@ -191,10 +192,12 @@ where
     }
 }
 
-/// The first critical pair of `description`'s rules and `derived`, one of
-/// them instantiating a variable or conditioned, that the kernel's
-/// second-order reading does not join: its two rules' places, the later
-/// first, the written rules numbered before the derived ones.
+/// The first critical pair of `description`'s rules and `derived` that the
+/// kernel's second-order reading does not join.
+///
+/// One rule of the pair instantiates a variable or is conditioned. The pair
+/// gives its two rules' places, the later first, and the written rules are
+/// numbered before the derived ones.
 ///
 /// # Specification
 /// - requires: `description`'s rules are oriented.
@@ -211,6 +214,8 @@ where
 /// - witness: `tests::coincide::a_second_order_rule_overlapping_another_refuses_the_block`
 #[spec(ensures: |ref ret| ret.is_none_or(|(later, earlier)| earlier <= later
     && usize::from(later) < description.rules.len().saturating_add(derived.len())))]
+#[inline]
+#[must_use]
 pub fn second_order_parts<G>(
     description: &TheoryDesc<G>,
     derived: &[&(FreeTerm, FreeTerm)],
@@ -276,6 +281,7 @@ pub fn second_order_parts<G>(
 ///   continuation below an operation reach the normal forms substitution gives,
 ///   a binder the normal form keeps reading back at its depth.
 /// - witness: `tests::coincide::an_instantiating_rule_fires_at_an_inspected_call_2966`
+#[inline]
 pub fn second_order_normal_form<G>(
     description: &TheoryDesc<G>,
     cells: &DeclarationCells,

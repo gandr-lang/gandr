@@ -6,6 +6,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueType;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::described::DescribedRole;
@@ -67,7 +68,7 @@ fn each_family_answers_at_its_own_declaration_6908()
             .find(|declaration| {
                 declaration.role() == Role::Declared && declaration.name().as_ref() == name
             })
-            .map(|declaration| declaration.constant())
+            .map(LoweredDeclaration::constant)
             .expect("the family is declared")
     };
     for (family, constructor) in [("Left", "L"), ("Right", "R")] {

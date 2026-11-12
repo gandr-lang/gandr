@@ -1,6 +1,8 @@
-//! A table by key, and a list, each held in two parts: the entries of the
-//! closure a module was lowered after, shared with every other module lowered
-//! after it and with the suspended lowering, and the module's own.
+//! A table by key, and a list, each held in two parts.
+//!
+//! One part holds the entries of the closure that a module was lowered after.
+//! Every other module lowered after that closure, and the suspended lowering,
+//! share it. The other part holds the module's own entries.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -90,6 +92,7 @@ where
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn whole(own: BTreeMap<Key, Value>) -> Self
     {
         Self {
@@ -266,6 +269,7 @@ where
     /// - hypothesis: L3 — as [`Layered`].
     /// - witness: `layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
     #[inline]
+    #[must_use]
     pub fn count(&self) -> EntryCount
     {
         let closure = match self.closure {
@@ -382,6 +386,7 @@ where
     ///   whole, and one written over differs.
     /// - witness: `layered::tests::a_table_resumed_after_its_closure_reads_as_the_whole`
     /// - witness: `layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
+    #[inline]
     fn eq(
         &self,
         other: &Self,
@@ -410,6 +415,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -453,6 +459,7 @@ impl<Value> LayeredList<Value>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn whole(own: Vec<Value>) -> Self
     {
         Self {
@@ -515,6 +522,7 @@ impl<Value> LayeredList<Value>
     /// - hypothesis: L3 — as [`LayeredList`].
     /// - witness: `layered::tests::a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446`
     #[inline]
+    #[must_use]
     pub fn count(&self) -> EntryCount
     {
         let closure = match self.closure {
@@ -529,6 +537,7 @@ impl<Value> LayeredList<Value>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn read(&self) -> Listed<'_, Value>
     {
         Listed {
@@ -578,6 +587,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn eq(
         &self,
         other: &Self,
@@ -599,6 +609,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,

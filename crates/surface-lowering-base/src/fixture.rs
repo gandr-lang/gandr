@@ -11,15 +11,14 @@
 //!
 //! This crate's own tests read the module, and the `fixture` feature opens it
 //! to the tests of `gandr-surface-lowering`, whose fixture adds the units it
-//! lowers. A fixture panics where the test misread its source, so outside a
-//! test build the module expects the panic lints.
-#![cfg_attr(
-    not(test),
-    expect(
-        clippy::expect_used,
-        clippy::panic,
-        reason = "a fixture refuses loudly a source or a tree the test did not mean"
-    )
+//! lowers. A fixture panics where the test misread its source. The module
+//! is built for a test or for the feature, and in each build it expects the
+//! panic lints.
+#![expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    reason = "a fixture refuses loudly a source or a tree the test did not mean, and its specification states each panic"
 )]
 
 use alloc::string::String;
@@ -68,6 +67,8 @@ pub struct Spelled(pub &'static str);
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn grammar() -> Pbg
 {
     built_in().expect("the built-in grammar builds")
@@ -90,6 +91,8 @@ pub fn grammar() -> Pbg
 #[spec(
     ensures: |ret| ret.source() == source && ret.grammar() == pbg.fingerprint(),
 )]
+#[inline]
+#[must_use]
 pub fn parsed<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
@@ -122,6 +125,8 @@ pub fn parsed<'source>(
 #[spec(
     ensures: |ret| ret.source() == source && ret.grammar() == pbg.fingerprint(),
 )]
+#[inline]
+#[must_use]
 pub fn repaired<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
@@ -155,6 +160,8 @@ pub fn repaired<'source>(
     requires: start <= end,
     ensures: |ret| ret.start() == start && ret.end() == end,
 )]
+#[inline]
+#[must_use]
 pub fn span(
     start: ByteOffset,
     end: ByteOffset,
@@ -180,6 +187,8 @@ pub fn span(
 #[spec(
     ensures: |ret| ret.as_ref() == name.as_ref(),
 )]
+#[inline]
+#[must_use]
 pub fn registered(name: SurfaceName<'_>) -> RegisteredAttribute
 {
     let Maybe::Present((entry, _schema)) = AttributeRegistry::lookup(name)
@@ -205,6 +214,7 @@ pub fn registered(name: SurfaceName<'_>) -> RegisteredAttribute
 ///   own offset; a shifted block or offset differs.
 /// - witness: `fixture::tests::synthetic_origins_span_one_byte_from_their_offset`
 #[spec(ensures: |ret| usize::from(ret.block()) == 0_usize && ret.offset() == BlockOffset::from(offset))]
+#[inline]
 pub fn node<Offset>(offset: Offset) -> NodeIndex
 where
     Offset: Copy,
@@ -236,6 +246,8 @@ where
             && ret.provenance() == crate::origin::Provenance::Written
     },
 )]
+#[inline]
+#[must_use]
 pub fn origin_at(position: NodeIndex) -> Origin
 {
     let start = usize::from(position.offset());
@@ -276,6 +288,8 @@ impl<'run, 'source> Handmade<'run, 'source>
     #[spec(
         ensures: |ret| ret.pbg.fingerprint() == pbg.fingerprint(),
     )]
+    #[inline]
+    #[must_use]
     pub fn new(
         pbg: &'run Pbg,
         source: SourceText<'source>,
@@ -303,6 +317,8 @@ impl<'run, 'source> Handmade<'run, 'source>
     #[spec(
         ensures: |ret| ret.pbg.fingerprint() == pbg.fingerprint(),
     )]
+    #[inline]
+    #[must_use]
     pub fn under(
         pbg: &'run Pbg,
         source: SourceText<'source>,
@@ -335,6 +351,8 @@ impl<'run, 'source> Handmade<'run, 'source>
                 && self.pbg.mold(ret).is_ok_and(|held| held.label == label.0)
         },
     )]
+    #[inline]
+    #[must_use]
     pub fn mold(
         &self,
         rule: Rule,
@@ -373,6 +391,7 @@ impl<'run, 'source> Handmade<'run, 'source>
     #[spec(
         ensures: |ret| !children.contains(&ret),
     )]
+    #[inline]
     pub fn raw(
         &mut self,
         label: NodeLabel,
@@ -410,6 +429,7 @@ impl<'run, 'source> Handmade<'run, 'source>
             })
         }),
     )]
+    #[inline]
     pub fn tile(
         &mut self,
         rule: Rule,
@@ -441,6 +461,7 @@ impl<'run, 'source> Handmade<'run, 'source>
     #[spec(
         ensures: |ret| !children.contains(&ret),
     )]
+    #[inline]
     pub fn meld(
         &mut self,
         rule: Rule,
@@ -481,6 +502,8 @@ impl<'run, 'source> Handmade<'run, 'source>
             })
         },
     )]
+    #[inline]
+    #[must_use]
     pub fn module(
         mut self,
         at: ByteSpan,
@@ -511,6 +534,8 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - hypothesis: L3 — a tree finished at a declaration is rooted there and
     ///   reads as that declaration.
     /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    #[inline]
+    #[must_use]
     pub fn finish(
         self,
         root: StagedId,
@@ -542,6 +567,7 @@ impl<'run, 'source> Handmade<'run, 'source>
 /// - witness: `fixture::tests::a_presentation_spells_each_constructor_and_text`
 #[spec(ensures: |ret| !ret.is_empty())]
 #[must_use]
+#[inline]
 pub fn presentation_text(
     arena: &CoreArena,
     value: ValueId,

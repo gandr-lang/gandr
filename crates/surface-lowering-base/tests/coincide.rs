@@ -3,7 +3,7 @@
 
 use alloc::borrow::Cow;
 use alloc::string::String;
-use alloc::string::ToString;
+use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
