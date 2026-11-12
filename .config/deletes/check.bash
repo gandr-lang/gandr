@@ -57,7 +57,8 @@ source "$here/moved.bash"
 repo=$(repo_name)
 SECONDS=0
 
-git diff --no-renames --name-only "$base" "$head" > "$scratch/changed"
+from=$(change_base "$base" "$head")
+git diff --no-renames --name-only "$from" "$head" > "$scratch/changed"
 lonely='[]'
 if [[ $mode == full ]]; then
   metadata=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path "$root/Cargo.toml")
@@ -109,7 +110,7 @@ done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
     fork=$(signed_fork "$sha" "$base") || fork=
   fi
   if [[ -n $fork ]]; then
-    moved "$fork" "$sha" "$base" "$head" | jq -R . | jq -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" \
+    moved "$fork" "$sha" "$from" "$head" | jq -R . | jq -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" \
       '$c + {sha: $sha, fork: $fork, changed: ., joined: {}, reshaped: []}'
   else
     jq -c --arg sha "$sha" '. + {sha: (if $sha == "" then null else $sha end), fork: null, changed: null, joined: {}, reshaped: []}' <<< "$comment"
