@@ -18,9 +18,9 @@ use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::Universe;
 use crate::form::shape_of;
-use crate::module::Role;
 use crate::module::Sealing;
 use crate::module::SlotIndex;
+use crate::slot::Role;
 
 /// Whether a pass refused a slot it had not refused before.
 ///

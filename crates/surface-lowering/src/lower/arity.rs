@@ -1447,7 +1447,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::zoned`].
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(captures: before = self.fuel.remaining, ensures: |_| self.fuel.remaining <= before)]
+    #[spec(captures: before = self.fuel.remaining(), ensures: |_| self.fuel.remaining() <= before)]
     fn type_zone(
         &mut self,
         at: Placed,
@@ -2279,7 +2279,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::stated_observations`], and the result an
     ///   observation of a stream writes, read for the next link of a chain.
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present(constant) if self.collected.slots.get(usize::from(constant)).is_none())))]
     fn stated_family(
@@ -2374,7 +2374,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a copattern block under a stream answer and an
     ///   observation of a thunked stream each read their labels here.
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |labels| !matches!(*labels, Maybe::Present(ref labels) if labels.is_empty())))]
     pub(super) fn stated_observations(
         &mut self,
@@ -2437,7 +2437,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::stated_observations`].
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| !matches!(ret, Maybe::Present(ref labels) if labels.is_empty()))]
     fn codata_observations(
         &self,

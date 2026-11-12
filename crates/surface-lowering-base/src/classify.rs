@@ -195,7 +195,7 @@ impl LoweringRefusal<'_>
                 ..
             }
             | Self::IllFormedDescription {
-                kind: crate::WfKind::UndecidedCondition,
+                kind: gandr_theory_levitation::WfKind::UndecidedCondition,
                 ..
             }
             | Self::GenericUncovered {
@@ -316,7 +316,7 @@ impl LoweringRefusal<'_>
     {
         match *self {
             Self::IllFormedDescription {
-                kind: crate::WfKind::UndecidedCondition,
+                kind: gandr_theory_levitation::WfKind::UndecidedCondition,
                 ..
             } => FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             Self::UnresolvedName { .. }
@@ -781,6 +781,7 @@ mod tests
     use crate::attribute::AttributeSchema;
     use crate::attribute::PayloadForm;
     use crate::attribute::suggestion;
+    use crate::budget::LoweringBudget;
     use crate::error::AscriptionForm;
     use crate::error::FormFault;
     use crate::error::FragmentBoundary;
@@ -791,7 +792,6 @@ mod tests
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::form::FormName;
-    use crate::lower::LoweringBudget;
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
@@ -1069,7 +1069,7 @@ mod tests
                 method: SurfaceName::from("len"),
                 first: SurfaceName::from("Str"),
                 second: SurfaceName::from("Bytes"),
-                more: crate::CandidateCount::from(1_usize),
+                more: crate::resolve::CandidateCount::from(1_usize),
             },
             LoweringRefusal::UndescribedMember {
                 span: empty,
@@ -1080,10 +1080,10 @@ mod tests
             LoweringRefusal::IllFormedDescription {
                 span: empty,
                 fault: empty,
-                kind: crate::WfKind::DuplicateSortName,
+                kind: gandr_theory_levitation::WfKind::DuplicateSortName,
                 subjects: [
                     Maybe::Present(SurfaceName::from("Tm")),
-                    Maybe::Absent(crate::description_subject::Absent::Unnamed),
+                    Maybe::Absent(crate::error::description_subject::Absent::Unnamed),
                 ],
             },
             LoweringRefusal::NonExhaustiveMatch { span: empty },
@@ -1161,7 +1161,7 @@ mod tests
                 name: SurfaceName::from("Red"),
                 first: SurfaceName::from("Color"),
                 second: SurfaceName::from("Light"),
-                more: crate::CandidateCount::from(0_usize),
+                more: crate::resolve::CandidateCount::from(0_usize),
             },
             LoweringRefusal::NonUniformResult { span: empty },
         ]
@@ -1395,18 +1395,18 @@ mod tests
                 kind,
                 subjects: [
                     Maybe::Present(SurfaceName::from("a")),
-                    Maybe::Absent(crate::description_subject::Absent::Unnamed),
+                    Maybe::Absent(crate::error::description_subject::Absent::Unnamed),
                 ],
             }
             .classify()
         };
         assert_eq!(
-            ill_formed(crate::WfKind::UndecidedCondition),
+            ill_formed(gandr_theory_levitation::WfKind::UndecidedCondition),
             FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             "a condition no rewriting step decides yet names the issue tracking it"
         );
         assert_eq!(
-            ill_formed(crate::WfKind::Capture),
+            ill_formed(gandr_theory_levitation::WfKind::Capture),
             FailureClass::MalformedSource,
             "a crossing left unstated is the source's fault"
         );

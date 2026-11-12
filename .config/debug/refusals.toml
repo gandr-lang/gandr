@@ -32,7 +32,7 @@ sites = [
 
 [refusal.WrongSort]
 sites = [
-  { file = "crates/surface-lowering/src/classify.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
+  { file = "crates/surface-lowering-base/src/classify.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
   { file = "crates/surface-dispatcher/src/compose.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
 ]
 
@@ -66,7 +66,7 @@ sites = [
 
 [refusal.Unstated]
 sites = [
-  { file = "crates/surface-lowering/src/description/theory.rs", pattern = '^\s*fault: DescriptionFault::Unstated \{$' },
+  { file = "crates/surface-lowering-base/src/description/theory.rs", pattern = '^\s*fault: DescriptionFault::Unstated \{$' },
 ]
 
 [refusal.StrayReceiverMode]
@@ -98,7 +98,7 @@ sites = [
 [refusal.IllFormedDescription]
 sites = [
   { file = "crates/surface-lowering/src/module/sealing.rs", pattern = '^\s*return Err\(LoweringRefusal::IllFormedDescription \{$' },
-  { file = "crates/surface-lowering/src/description.rs", pattern = 'LoweringRefusal::IllFormedDescription \{$' },
+  { file = "crates/surface-lowering-base/src/description.rs", pattern = 'LoweringRefusal::IllFormedDescription \{$' },
 ]
 
 [refusal.UndecidedCoverage]

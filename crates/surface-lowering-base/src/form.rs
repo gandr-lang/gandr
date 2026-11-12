@@ -845,12 +845,9 @@ impl TileName
     ///   items; the function readers check admission in context.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — ordinary term parameters lower to a lambda chain,
-    ///   while a type-spelled parameter receives the typed unadmitted refusal.
-    ///   These witnesses concern binder recognition in function tails, not all
-    ///   custom grammar labels or all binder positions.
-    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
-    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - hypothesis: L3 — a parameter written as a lowercase name and one
+    ///   written as a capital name each read as a binder's tile.
+    /// - witness: `form::tests::a_parameter_s_name_is_a_binder_s_tile`
     pub const BINDERS: [Self; 3] = [Self::IDENTIFIER, Self::TYPE_VARIABLE, Self::TYPE_IDENTIFIER];
 
     /// The tile's label as a name: the head a built-in form spells, where a
@@ -1233,7 +1230,6 @@ impl Former
 ///   dispatch outcomes; grammar realisation checks that the table's keys are
 ///   exactly the kinds the built-in grammar's rules realise, so a kind the
 ///   grammar gains breaks the table rather than silently declining the form.
-/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
 pub const FORMERS: [(&str, Former); 137_usize] = [
@@ -1438,7 +1434,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
 ///   asserted to be exactly the kinds the built-in grammar realises, so a
 ///   renamed or added grammar kind breaks the table rather than silently
 ///   declining the form.
-/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
 #[spec(
@@ -1518,7 +1513,6 @@ pub fn declined_feature(name: FormName) -> Maybe<Unbuilt, declined::Absent>
 ///   names the tile it lacks. The evidence covers those labels, not the
 ///   parser's repair-selection algorithm.
 /// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
-/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Repair
 {
@@ -1560,7 +1554,7 @@ pub enum Repair
 /// # Adequacy
 /// - hypothesis: L3 — the keyword `type` in a `theory` member's classifier slot
 ///   is read with `Type` offered.
-/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
+/// - witness: `form::tests::a_reserved_word_and_a_stray_keyword_are_refused_at_the_word`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StrayKeyword
 {
@@ -1597,7 +1591,7 @@ pub enum Offer
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Repair`].
-/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Ending
 {
@@ -1814,12 +1808,9 @@ pub struct Boxed(pub bool);
 /// `known` holds is read no more.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a kind arrow over universes stays the static Pi, an arrow
-///   between value types is the box, and an arrow from a universe to a value
-///   type is the box.
-/// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
-/// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
-/// - witness: `lower::tests::an_arrow_from_a_universe_to_a_value_type_is_the_box_5203`
+/// - hypothesis: L3 — `Type`, `Type[-]`, `Row`, a kind arrow and a grouped kind
+///   arrow classify codes; `Integer` and an arrow of other types do not.
+/// - witness: `form::tests::a_kind_classifies_codes_and_an_arrow_of_other_types_is_the_box`
 #[inline]
 pub fn classifies_codes<'source>(
     pbg: &Pbg,
@@ -1912,12 +1903,9 @@ pub fn classifies_codes<'source>(
 /// [`LoweringRefusal::UnknownMold`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a lambda passed for a box parameter, an implicit box
-///   applied in a body, a family a box states and a clause definition over a
-///   box, each written with `->`, lower and check. An arrow from a universe to
-///   a value type is the box.
-/// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
-/// - witness: `lower::tests::an_arrow_from_a_universe_to_a_value_type_is_the_box_5203`
+/// - hypothesis: L3 — an arrow between types that are no kinds is the box, and
+///   a kind arrow or a type that is no arrow is not.
+/// - witness: `form::tests::a_kind_classifies_codes_and_an_arrow_of_other_types_is_the_box`
 #[inline]
 pub fn writes_box<'source>(
     pbg: &Pbg,
@@ -2220,7 +2208,6 @@ impl Piece
 ///   rather than the definition's.
 /// - witness: `form::tests::a_repair_among_the_children_is_reported_beside_them`
 /// - witness: `form::tests::the_first_repair_survives_later_repairs`
-/// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Repaired
 {
@@ -2249,8 +2236,7 @@ impl Repaired
     /// # Adequacy
     /// - hypothesis: L3 — an own repair names the form read and a nested one
     ///   the form holding it.
-    /// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
-    /// - witness: `lower::tests::a_repaired_declaration_is_refused`
+    /// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
     #[spec(ensures: |ret| ret == LoweringRefusal::MalformedForm {
         span: self.span,
         form: match self.nested { Maybe::Present(inner) => inner, Maybe::Absent(_) => form },
@@ -2672,13 +2658,9 @@ pub fn read_pieces<'source>(
 ///   allocation beyond the buffer's growth.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `f x y` lowers as `f(x, y)`, and a call inside an
-///   argument as its own call. While the call form stands, a `(` after an
-///   operand molds as a call, so `f ()` and a grouped argument reach the spine
-///   only after the call form leaves the grammar. `Var (Extend g n) n` in a
-///   type lowers as `Var(Extend(g, n), n)`.
-/// - witness: `lower::tests::a_call_argument_and_an_inferring_call_lower_4853`
-/// - witness: `lower::tests::a_type_applies_its_family_by_juxtaposition_5326`
+/// - hypothesis: L3 — `f x y`, `f ()` and a type's `Vec A n` read as the calls
+///   they spell.
+/// - witness: `form::tests::a_juxtaposed_call_reads_as_the_call_it_spells`
 #[spec(ensures: |ret| match ret {
     Some(head) => matches!(read.pieces.first(), Some(&Piece::Operand(at) | &Piece::Tile { at, .. }) if at == head) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
     None => read.pieces.is_empty(),
@@ -2823,8 +2805,11 @@ fn application_spine(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as the torn declaration that reads it.
-/// - witness: `module::tests::a_torn_declaration_is_refused_where_it_stopped_2877`
+/// - hypothesis: L3 — a form's own unended end is its stop, a form whose own
+///   children are whole has none, and a group torn before a stray `;` stops
+///   where the `;` stands.
+/// - witness: `form::tests::a_form_s_stop_and_a_root_child_s_repair_are_its_own`
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| match ret {
     | Maybe::Present(found) => matches!(tree.node(position).map(Node::label), Some(NodeLabel::Meld(_)))
         && matches!(found.repair, Repair::GhostClose(_) | Repair::Unended(_) | Repair::Diverged(_))
@@ -2904,15 +2889,10 @@ pub fn stop_of(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a definition missing its `;` before the next definition
-///   is pointed past its value and names `;`, which the parser mints there,
-///   after the `=` no tile ends at; a string never closed is pointed past its
-///   text on its own line and names `"`; a declaration stopping at its name
-///   names nothing and is pointed past the name, not past a stray `;` after it;
-///   a data member missing the separator before the next member is pointed at
-///   its end and names nothing, since a `;` or a `,` may stand there.
-/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
-/// - witness: `lower::tests::a_repaired_declaration_is_refused`
+/// - hypothesis: L3 — a definition missing its `;`, a string never closed and a
+///   projection missing its field are each marked past their last written
+///   material, naming the tile every ending carries or none.
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| ret.nested == ghost.nested && matches!(ret.repair, Repair::Unended(_)))]
 fn unended(
     pbg: &Pbg,
@@ -3027,7 +3007,7 @@ fn unended(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unended`].
-/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 fn agreed(
     pbg: &Pbg,
     mut molds: impl Iterator<Item = MoldId>,
@@ -3066,13 +3046,9 @@ fn agreed(
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a source ending inside a case's arms, within a
-///   definition, finds the case's minted close under the definition's own; a
-///   string never closed, within a definition, is read as the string's end;
-///   among repairs, the deepest, then the first written, is reported.
-/// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
-/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
-/// - witness: `lower::tests::an_unended_form_reports_its_deepest_repair_first_written_among_equals`
+/// - hypothesis: L3 — of the holes in nested groups the deepest is reported,
+///   then the first written among equals, at the form that holds it.
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(found)) => matches!(found.nested, Maybe::Present(_)),
     | Ok(Maybe::Absent(_)) | Err(LoweringRefusal::UnknownMold { .. }) => true,
@@ -3172,13 +3148,10 @@ fn nested_repair<'source>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a path type missing a comma between its type and its
-///   first endpoint is marked at the comma's gap, a labelled sum missing its
-///   `{` at the brace's gap, a group left open before a stray `;` at the gap
-///   its `)` belongs in, and a module never closed keeps its close.
-/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
-/// - witness: `lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812`
-/// - witness: `tests::modules::a_repaired_container_keeps_its_member`
+/// - hypothesis: L3 — an injection missing its label's `.` is marked at the
+///   gap, a group torn before a stray `;` where the `;` stands, and a module
+///   never closed at its end.
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| ret == found || (ret.nested == found.nested && (ret.repair == found.repair || matches!(ret.repair, Repair::Diverged(_))) && ret.span.start() < found.span.start()))]
 fn earliest(
     pbg: &Pbg,
@@ -3225,8 +3198,7 @@ fn earliest(
 /// # Adequacy
 /// - hypothesis: L3 — a group's `)` left out where two places parse is marked
 ///   over both, and one left out where one place parses keeps its point.
-/// - witness: `lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812`
-/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| ret.repair == found.repair && ret.nested == found.nested && ret.span.end() == found.span.end() && ret.span.start() <= found.span.start())]
 fn owed(
     pbg: &Pbg,
@@ -3272,7 +3244,7 @@ fn owed(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`earliest`].
-/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Divergence
 {
@@ -3305,7 +3277,7 @@ struct Divergence
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`earliest`].
-/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| match ret {
     | Maybe::Present(point) => point.at.start() == point.at.end(),
     | Maybe::Absent(_) => true,
@@ -3516,9 +3488,9 @@ impl Holes
 /// strictly smaller subtrees of a finite expression.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a path type's rule writes no two holes side by side and a
-///   module's repeated members do.
-/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+/// - hypothesis: L3 — an injection's rule writes no two holes side by side and
+///   a module's repeated members do.
+/// - witness: `form::tests::each_repair_is_marked_where_the_source_went_wrong`
 #[spec(ensures: |ret| !ret.side_by_side || !matches!(regex.shape(), RegexShape::Empty | RegexShape::Sym(_)))]
 fn holes(regex: RegexView<'_>) -> Holes
 {
@@ -3597,7 +3569,7 @@ fn holes(regex: RegexView<'_>) -> Holes
 /// # Adequacy
 /// - hypothesis: L3 — `retur x` heads an application and is refused as `return`
 ///   misspelt, and a name used alone heads none.
-/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+/// - witness: `form::tests::a_word_one_edit_from_a_keyword_is_that_keyword_misspelt`
 #[spec(ensures: |ret| ret.is_none_or(|at| tree.node(at).is_some_and(|node| Some(node.label()) == pbg.application().map(NodeLabel::Meld))))]
 pub fn applied_word(
     pbg: &Pbg,
@@ -3646,10 +3618,10 @@ pub fn applied_word(
 /// - executable: none — the clause restates the search.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `retur x` in a body is refused at `retur` naming
-///   `return`; a word that is no near miss of a keyword leaves the refusal at
-///   the operand.
-/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+/// - hypothesis: L3 — a last letter left off, two letters swapped and one
+///   letter too many each read as `return` misspelt, and a word one edit from
+///   no keyword as none.
+/// - witness: `form::tests::a_word_one_edit_from_a_keyword_is_that_keyword_misspelt`
 pub fn misspelt_keyword(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -3746,10 +3718,9 @@ pub fn misspelt_keyword(
 /// - executable: none — the clause restates the search.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `∷∷` and `:::` read as `∷` and `::`; a declared `∷∷`
-///   reads as none; `=>>` with `=>` expected reads as `=>`.
-/// - witness: `lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
-/// - witness: `lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
+/// - hypothesis: L3 — `∷∷` and `:::` each read as their operator written twice,
+///   and a word of letters as none.
+/// - witness: `form::tests::a_run_one_edit_from_an_operator_is_that_operator_misspelt`
 pub fn misspelt_operator(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -3889,9 +3860,8 @@ pub enum KeywordOpening
 /// - executable: none — a clause would restate the scan of the label's molds.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `retur x` is `return` misspelt, and `here x`, one edit
-///   from `where`, which opens no expression, stays an unresolved name.
-/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+/// - hypothesis: L3 — `return` opens an expression and `where` none.
+/// - witness: `form::tests::a_word_one_edit_from_a_keyword_is_that_keyword_misspelt`
 #[must_use]
 pub fn opens_expression(
     pbg: &Pbg,
@@ -3947,11 +3917,9 @@ pub fn opens_expression(
 /// - executable: none — the clause restates the scan.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `access xs[1] as v` and `self[i + 1]` are refused at
-///   their bracket; a malformed form after a closed `f[T]`, and one inside a
-///   keyword's bracket, keep their refusal.
-/// - witness: `lower::tests::a_bare_index_that_parses_as_no_argument_is_refused_at_its_bracket_4944`
-/// - witness: `tests::modules::models::a_written_forgetting_map_names_only_its_theory_s_sorts_2130`
+/// - hypothesis: L3 — an index bracket no `]` closes before the refusal is
+///   found, and one closed before it is not.
+/// - witness: `form::tests::a_bracket_open_at_the_refusal_is_the_bare_one`
 #[must_use]
 pub fn bare_bracket(
     pbg: &Pbg,
@@ -4030,10 +3998,9 @@ pub fn bare_bracket(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the keyword `type` grouted in a classifier slot reads
-///   with `Type` offered, at the keyword's own bytes; reading it as a missing
-///   term, or offering nothing, changes the observation.
-/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
+/// - hypothesis: L3 — the keyword `type` grouted in a classifier slot reads as
+///   the keyword, `Type` offered.
+/// - witness: `form::tests::a_reserved_word_and_a_stray_keyword_are_refused_at_the_word`
 #[spec(ensures: |ret| shape == GroutShape::Convex || matches!(ret, Repair::Grout(_)))]
 fn grouted(
     pbg: &Pbg,
@@ -4086,9 +4053,9 @@ fn grouted(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `match` as a definition's name reads as the reserved
-///   word; `matched`, and the contextual word `ext` as a name, read as none.
-/// - witness: `lower::tests::a_reserved_word_as_a_name_is_refused_by_name_6266`
+/// - hypothesis: L3 — `match`, `data` and `type` as names read as the reserved
+///   words, and `matched` as none.
+/// - witness: `form::tests::a_reserved_word_and_a_stray_keyword_are_refused_at_the_word`
 #[spec(ensures: |ret| ret.is_none_or(|word| RESERVED_WORDS.contains(&word.0) && tree.fragment(node).is_some_and(|text| <&str>::from(text) == word.0)))]
 fn reserved_name(
     pbg: &Pbg,
@@ -4241,10 +4208,9 @@ fn note_repair(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a byte no label molds, standing between two declarations,
-///   reads as a missing term at its own bytes; a declaration reads as no
-///   repair.
-/// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+/// - hypothesis: L3 — the hole of a sum and a group's close left out each read
+///   as their repair at their own span, and a whole definition holds none.
+/// - witness: `form::tests::a_form_s_stop_and_a_root_child_s_repair_are_its_own`
 #[spec(ensures: |ret| match ret {
     | Maybe::Present(found) => found.span == child.span
         && found.nested == Maybe::Absent(nested::Absent::Own)
@@ -4304,9 +4270,9 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the slot a `while` names in its condition and in an
-///   access is found, and the keywords and operators beside it are not.
-/// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+/// - hypothesis: L3 — the tiles of a definition answer their labels, and the
+///   definition and the sum it binds answer none.
+/// - witness: `form::tests::a_tile_answers_its_label_and_a_form_none`
 #[spec(ensures: |ret| match (node.label(), ret) {
     | (NodeLabel::Tile(mold), Maybe::Present(label)) => pbg.mold(mold).is_ok_and(|held| held.label == label.0),
     | (NodeLabel::Tile(mold), Maybe::Absent(tiled::Absent::Untiled)) => pbg.mold(mold).is_err(),
@@ -4549,10 +4515,9 @@ impl WrittenPath
 ///   defaults.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — bare, explicitly sorted and explicitly levelled spellings
-///   keep their universes, including the universe of a decoded bound code.
-/// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
-/// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+/// - hypothesis: L3 — bare, sorted and level-zero spellings each classify a
+///   theory sort as their universe does.
+/// - witness: `description::theory::tests::each_universe_at_level_zero_classifies_a_sort_2664`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Universe
 {
@@ -4578,10 +4543,10 @@ impl Universe
     ///   level.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — bare and explicitly sorted universe spellings
-    ///   distinguish the value default from a computation universe.
-    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
-    pub(crate) const FUSS_FREE: Self = Self {
+    /// - hypothesis: L3 — a bare `Type` classifies a sort as the sorted value
+    ///   spelling does, apart from a computation universe.
+    /// - witness: `description::theory::tests::each_universe_at_level_zero_classifies_a_sort_2664`
+    pub const FUSS_FREE: Self = Self {
         sort: GroundSort::Value,
         level: LevelConstant::ZERO,
     };
@@ -4623,12 +4588,9 @@ pub enum Misspelt
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a host interface's lowercase home in a row, labelled and
-///   unlabelled, beside a row variable, each lowered to its interface or its
-///   tail.
-/// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
-/// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
-/// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+/// - hypothesis: L3 — a package's path, a capital name alone and a lowercase
+///   name alone separate the three answers.
+/// - witness: `form::tests::a_type_operand_spells_an_entry_s_path`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.as_ref().is_none_or(|path| written.span.start() <= path.span().start() && path.span().end() <= written.span.end())))]
 fn operand_path<'source>(
     pbg: &Pbg,
@@ -4754,9 +4716,9 @@ pub type EntryPath = (WrittenPath, Vec<(Placed, Placed)>);
 /// inside the one before it in the finite tree.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a host interface's home fixing a sort it does not have,
-///   refused by that sort's name as a theory's tiles are.
-/// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+/// - hypothesis: L3 — a package's path, and the same path under a manifest type
+///   fixing one sort, read as their paths and sorts.
+/// - witness: `form::tests::a_type_operand_spells_an_entry_s_path`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |entry| entry.as_ref().is_none_or(|&(ref path, ref fixed)| path.span().end() <= written.span.end() && fixed.iter().all(|&(sort, ty)| path.span().end() < sort.span.start() && sort.span.end() < ty.span.start()))))]
 pub fn operand_entry<'source>(
     pbg: &Pbg,
@@ -4861,10 +4823,9 @@ pub fn operand_entry<'source>(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`operand_path`].
-/// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
-/// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
-/// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+/// - hypothesis: L3 — a cursor at an operand spelling a package's path reads
+///   the entry and moves past it, and at a lowercase name reads none.
+/// - witness: `form::tests::a_type_operand_spells_an_entry_s_path`
 pub fn entry_path<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -4950,7 +4911,7 @@ impl<'pieces> Cursor<'pieces>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn remaining(&self) -> &'pieces [Piece]
+    pub const fn remaining(&self) -> &'pieces [Piece]
     {
         self.rest
     }
@@ -5394,10 +5355,8 @@ impl<'pieces> Cursor<'pieces>
     /// - hypothesis: L3 — each universe spelling lowers to its universe and
     ///   classifies a theory sort; a level at or past the greatest has none
     ///   above it.
-    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
-    /// - witness: `lower::tests::a_universe_level_at_or_past_the_greatest_has_none_above_2653`
     /// - witness: `description::theory::tests::each_universe_at_level_zero_classifies_a_sort_2664`
-    pub(crate) fn universe(
+    pub fn universe(
         &mut self,
         tree: &SyntaxTree<'_>,
     ) -> Result<Universe, Misspelt>
@@ -5467,10 +5426,9 @@ impl<'pieces> Cursor<'pieces>
     ///   walks, which restating reads again.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two and three names that share a type, after a
-    ///   parameter of its own and after a type the head binds, each lower to
-    ///   the parameters written apart.
-    /// - witness: `lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    /// - hypothesis: L3 — two names after a parameter's first are read in order
+    ///   up to its colon, and with none the cursor stays.
+    /// - witness: `form::tests::a_parameter_s_shared_names_are_read_in_order`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -5478,7 +5436,7 @@ impl<'pieces> Cursor<'pieces>
             reason = "bounded: `labels` holds the one or two tiles a parameter's shared names spell"
         )
     )]
-    pub(crate) fn shared(
+    pub fn shared(
         &mut self,
         labels: &[TileName],
     ) -> Shared<'pieces>
@@ -5557,6 +5515,246 @@ impl<'pieces> Cursor<'pieces>
         }
         self.edge = placed.span;
     }
+}
+
+/// Whether a former is a term, a type, or neither.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The family distinguishes term, type and non-expression forms
+///   without forbidding the explicitly admitted type-in-value reading.
+/// - provides: The coarse family check preceding former-specific admission.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No originating former is retained; `family_of` and
+///   `classify_form` check classification and its quoting exception.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda and a session action are terms, an arrow and a
+///   session type types, and a declaration and an attribute block neither.
+/// - witness: `form::tests::each_former_falls_in_its_family`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Family
+{
+    /// Values and computations.
+    Term,
+    /// Value types and computation types.
+    Type,
+    /// Neither: a declaration or an attribute block.
+    Neither,
+}
+
+/// The family `former` belongs to.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: syntax formers are classified as terms, types or neither
+///   independently of the demanded reading; static abstractions and session
+///   types belong to the type-former family, session actions and offers to the
+///   term family, and a reserved form to neither.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda and a session action are terms, an arrow and a
+///   session type types, and a declaration and an attribute block neither.
+/// - witness: `form::tests::each_former_falls_in_its_family`
+#[spec(
+    ensures: |ret| {
+        matches!(
+            (former, ret),
+            (
+                Former::Name
+                    | Former::Constructor
+                    | Former::Hole
+                    | Former::Number
+                    | Former::Boolean
+                    | Former::Text
+                    | Former::Character
+                    | Former::Parenthesized
+                    | Former::TypeQuote
+                    | Former::Thunk
+                    | Former::Lambda
+                    | Former::Block
+                    | Former::Return
+                    | Former::Exit
+                    | Former::Become
+                    | Former::Loop
+                    | Former::While
+                    | Former::For
+                    | Former::Break
+                    | Former::Continue
+                    | Former::Force
+                    | Former::Run
+                    | Former::Call
+                    | Former::ForgetModel
+                    | Former::Binary
+                    | Former::Unary
+                    | Former::Projection
+                    | Former::Case
+                    | Former::If
+                    | Former::Telescope
+                    | Former::List
+                    | Former::PackModel
+                    | Former::Injection
+                    | Former::LazyRecord
+                    | Former::Instantiation
+                    | Former::Scope
+                    | Former::Action
+                    | Former::Offer
+                    | Former::Access
+                    | Former::World,
+                Family::Term
+            ) | (
+                Former::TypeHead
+                    | Former::TypePath
+                    | Former::Universe
+                    | Former::TypeApplication
+                    | Former::ThunkType
+                    | Former::ReturnerType
+                    | Former::ArrowType
+                    | Former::LinearArrowType
+                    | Former::ProductType
+                    | Former::SumType
+                    | Former::LazyProductType
+                    | Former::TelescopeType
+                    | Former::LabelledSumType
+                    | Former::LazyRecordType
+                    | Former::ParenthesizedType
+                    | Former::PathType
+                    | Former::BridgeType
+                    | Former::FlowType
+                    | Former::RelationType
+                    | Former::ManifestType
+                    | Former::CapabilityType
+                    | Former::AtType
+                    | Former::StagedType
+                    | Former::ModedType
+                    | Former::SessionType,
+                Family::Type
+            ) | (
+                Former::Declaration
+                    | Former::AttributeBlock
+                    | Former::Visibility
+                    | Former::Import
+                    | Former::Module
+                    | Former::Data
+                    | Former::Mutual
+                    | Former::Reserved(_)
+                    | Former::WorldDeclaration
+                    | Former::Unadmitted(_)
+                    | Former::Misplaced,
+                Family::Neither
+            )
+        )
+    },
+)]
+pub const fn family_of(former: Former) -> Family
+{
+    match former {
+        Former::Name
+        | Former::Constructor
+        | Former::Hole
+        | Former::Number
+        | Former::Boolean
+        | Former::Text
+        | Former::Character
+        | Former::Parenthesized
+        | Former::TypeQuote
+        | Former::Thunk
+        | Former::Lambda
+        | Former::Block
+        | Former::Return
+        | Former::Exit
+        | Former::Become
+        | Former::Loop
+        | Former::While
+        | Former::For
+        | Former::Break
+        | Former::Continue
+        | Former::Force
+        | Former::Run
+        | Former::Call
+        | Former::ForgetModel
+        | Former::Binary
+        | Former::Unary
+        | Former::Projection
+        | Former::Case
+        | Former::If
+        | Former::Telescope
+        | Former::List
+        | Former::PackModel
+        | Former::Injection
+        | Former::LazyRecord
+        | Former::Instantiation
+        | Former::Scope
+        | Former::Action
+        | Former::Offer
+        | Former::Access
+        | Former::World => Family::Term,
+        Former::TypeHead
+        | Former::TypePath
+        | Former::Universe
+        | Former::TypeApplication
+        | Former::ThunkType
+        | Former::ReturnerType
+        | Former::ArrowType
+        | Former::LinearArrowType
+        | Former::ProductType
+        | Former::SumType
+        | Former::LazyProductType
+        | Former::TelescopeType
+        | Former::LabelledSumType
+        | Former::LazyRecordType
+        | Former::ParenthesizedType
+        | Former::PathType
+        | Former::BridgeType
+        | Former::FlowType
+        | Former::RelationType
+        | Former::ManifestType
+        | Former::CapabilityType
+        | Former::AtType
+        | Former::StagedType
+        | Former::ModedType
+        | Former::SessionType => Family::Type,
+        Former::Declaration
+        | Former::AttributeBlock
+        | Former::Visibility
+        | Former::Import
+        | Former::Module
+        | Former::Data
+        | Former::Mutual
+        | Former::Reserved(_)
+        | Former::WorldDeclaration
+        | Former::Unadmitted(_)
+        | Former::Misplaced => Family::Neither,
+    }
+}
+
+/// Whether a form stands as a type where a type is read.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AsType(pub bool);
+
+/// Whether a form of `former` stands as a type where a type is read: a former
+/// of the type family, a name or a constructor, which stands there as a type
+/// head, or a call the expression grammar molds, which stands there as the
+/// type application it spells. Where a type is read, the lowering refuses
+/// every other form for its wrong sort.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub const fn read_as_type(former: Former) -> AsType
+{
+    AsType(
+        matches!(family_of(former), Family::Type)
+            || matches!(former, Former::Name | Former::Constructor | Former::Call),
+    )
 }
 
 #[cfg(test)]
@@ -6584,5 +6782,758 @@ mod tests
                 && unended.to_string().contains("`end`")
                 && reserved.to_string().contains("`match`")
         );
+    }
+
+    /// The refusal the reading of a repaired source reports: the root's own
+    /// repair, or else the first top-level form's, read as the lowering reads
+    /// each.
+    ///
+    /// # Specification
+    /// trivial.
+    fn repair_refusal<'source>(
+        pbg: &Pbg,
+        tree: &SyntaxTree<'source>,
+    ) -> Option<crate::error::LoweringRefusal<'source>>
+    {
+        let mut root = Pieces::new();
+        read_pieces(pbg, tree, tree.root(), &mut root).unwrap();
+        if let Maybe::Present(repair) = root.repair {
+            return Some(repair.refusal(FormName::ROOT));
+        }
+        for piece in &root.pieces {
+            let mut read = Pieces::new();
+            read_pieces(pbg, tree, piece.placed().node, &mut read).unwrap();
+            if let Maybe::Present(repair) = read.repair {
+                return Some(repair.refusal(FormName::DECLARATION));
+            }
+        }
+        None
+    }
+
+    /// Each repair is marked where the source went wrong and names the form
+    /// that holds it: an end the parser appended past the last written tile,
+    /// naming the tile every ending carries or none; a close the innermost
+    /// open form is missing; the gap where a closed form first leaves its
+    /// rule's shape; a close owed at two places, marked over both; and of two
+    /// holes the deepest, then the first written.
+    #[test]
+    fn each_repair_is_marked_where_the_source_went_wrong()
+    {
+        use gandr_surface_syntax::ClosingClass;
+
+        use super::Ending;
+        use crate::error::FormFault;
+        use crate::error::LoweringRefusal;
+
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let named = |kind: &'static str| FormName::from(NamedKind(kind));
+        let owed = include_str!(
+            "form/tests/unformatted/a-closer-owed-at-two-places-is-marked-over-both-3812.gandr"
+        );
+        let after = |written: &str| {
+            owed.find(written)
+                .map_or(0_usize, |start| start.saturating_add(written.len()))
+        };
+        let mut rows = Vec::from([
+            (
+                "def x ;",
+                at(5, 5),
+                FormName::DECLARATION,
+                Repair::Unended(Ending::Unnamed),
+            ),
+            (
+                include_str!(
+                    "form/tests/unformatted/a-missing-close-is-reported-at-the-innermost-form-tree.gandr"
+                ),
+                at(74, 74),
+                FormName::MATCH,
+                Repair::GhostClose(ClosingClass::Brace),
+            ),
+            (
+                include_str!(
+                    "form/tests/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-1.gandr"
+                ),
+                at(27, 27),
+                named("def_value"),
+                Repair::Unended(Ending::Tile(TileName::SEMICOLON)),
+            ),
+            (
+                include_str!(
+                    "form/tests/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-2.gandr"
+                ),
+                at(31, 31),
+                named("string"),
+                Repair::Unended(Ending::Tile(TileName::QUOTE)),
+            ),
+            (
+                "def a = r.",
+                at(10, 10),
+                named("projection_expression"),
+                Repair::Unended(Ending::Unnamed),
+            ),
+            (
+                include_str!(
+                    "form/tests/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-1.gandr"
+                ),
+                at(47, 47),
+                named("labelled_sum_expression"),
+                Repair::Diverged(Ending::Tile(TileName::DOT)),
+            ),
+        ]);
+        for (source, point) in [
+            ("def a = (1 + ) * ((2 + ) * 3)", 22_usize),
+            ("def a = ((1 + ) * 3) * (2 + )", 13),
+            ("def a = (1 + ) * (2 + )", 12),
+            ("def a = ( * )", 10),
+        ] {
+            rows.push((
+                source,
+                at(point, point),
+                named("binary_expression"),
+                Repair::Grout(GroutShape::Convex),
+            ));
+        }
+        let (observed, expected): (Vec<_>, Vec<_>) = rows
+            .into_iter()
+            .map(|(source, span, form, repair)| {
+                (
+                    (
+                        source,
+                        repair_refusal(&pbg, &repaired(&pbg, SourceText::from(source))),
+                    ),
+                    (
+                        source,
+                        Some(LoweringRefusal::MalformedForm {
+                            span,
+                            form,
+                            fault: FormFault::Repaired(repair),
+                        }),
+                    ),
+                )
+            })
+            .unzip();
+        assert_eq!(observed, expected);
+        // A group left open before the `;` of its declaration tears the
+        // declaration, so the group's own close is read at the group's stop.
+        let closed = |source: &str| {
+            let tree = repaired(&pbg, SourceText::from(source));
+            let mut stack = Vec::from([tree.root()]);
+            let mut form = None;
+            while let Some(position) = stack.pop() {
+                let ghost = tree.children(position).any(|child| {
+                    tree.node(child).is_some_and(|node| {
+                        matches!(node.label(), super::NodeLabel::GhostClose { .. })
+                    })
+                });
+                if ghost {
+                    form = Some(position);
+                    break;
+                }
+                stack.extend(tree.children(position));
+            }
+            match super::stop_of(&pbg, &tree, form.unwrap()) {
+                Maybe::Present(found) => Some((found.span, found.repair)),
+                Maybe::Absent(_) => None,
+            }
+        };
+        assert_eq!(
+            [closed("def x = ( 1 ;\n"), closed(owed)],
+            [
+                Some((at(11, 11), Repair::GhostClose(ClosingClass::Paren))),
+                Some((
+                    at(after("(xs"), after("2 }")),
+                    Repair::GhostClose(ClosingClass::Paren)
+                )),
+            ],
+            "a group's `)` left out before a stray `;` is owed where the `;` stands, and one owed \
+             at two places is marked over both"
+        );
+        let open = include_str!(
+            "form/tests/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-2.gandr"
+        );
+        assert!(
+            matches!(
+                repair_refusal(&pbg, &repaired(&pbg, SourceText::from(open))),
+                Some(LoweringRefusal::MalformedForm {
+                    span,
+                    fault: FormFault::Repaired(Repair::GhostClose(_)),
+                    ..
+                }) if span == at(44, 44)
+            ),
+            "a module never closed keeps its close at its end: its rule writes its members side \
+             by side"
+        );
+    }
+
+    /// A reserved word the parser read as a name is refused at the word, by
+    /// the word; a longer word is no reserved word. A keyword the parser
+    /// grouted where a classifier belongs is named at its bytes, with its
+    /// capitalised spelling offered.
+    #[test]
+    fn a_reserved_word_and_a_stray_keyword_are_refused_at_the_word()
+    {
+        use super::Offer;
+        use crate::error::FormFault;
+        use crate::error::LoweringRefusal;
+
+        let pbg = grammar();
+        let fault = |source: &'static str| match repair_refusal(
+            &pbg,
+            &repaired(&pbg, SourceText::from(source)),
+        ) {
+            Some(LoweringRefusal::MalformedForm {
+                span,
+                fault: FormFault::Repaired(repair),
+                ..
+            }) => Some((
+                source
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default(),
+                repair,
+            )),
+            _ => None,
+        };
+        for (source, word) in [
+            ("def match(x : Integer) -> Integer = x;", "match"),
+            ("def data : Integer = 1;", "data"),
+            ("def f(type : Integer) -> Integer = 1;", "type"),
+        ] {
+            assert!(
+                matches!(fault(source), Some((at, Repair::ReservedName(named)))
+                    if at == word && named.as_ref() == word),
+                "`{source}`: {:?}",
+                fault(source)
+            );
+        }
+        assert_eq!(
+            first_declaration(
+                &pbg,
+                &parsed(&pbg, SourceText::from("def matched : Integer = 1;"))
+            )
+            .repair,
+            Maybe::Absent(super::repair::Absent::Unrepaired)
+        );
+        let stray = include_str!(
+            "form/tests/unformatted/a-keyword-in-a-classifier-slot-is-read-with-its-offer-293-tree.gandr"
+        );
+        assert!(
+            matches!(fault(stray), Some(("type", Repair::Keyword(keyword)))
+                if keyword.written == TileName::TYPE
+                    && keyword.offer == Offer::Capitalised(TileName::UNIVERSE)),
+            "{:?}",
+            fault(stray)
+        );
+    }
+
+    /// A form's stop is its own first repair, read as the form's reading
+    /// reads its own, whatever a form inside it holds; a form whose children
+    /// are whole has none. Each hole and each minted close is its own repair
+    /// at its own span, and a whole definition holds none.
+    #[test]
+    fn a_form_s_stop_and_a_root_child_s_repair_are_its_own()
+    {
+        use gandr_surface_syntax::ClosingClass;
+
+        use super::repair_at;
+        use super::stop_of;
+
+        let pbg = grammar();
+        let declaration = |tree: &SyntaxTree<'_>| {
+            let mut root = Pieces::new();
+            read_pieces(&pbg, tree, tree.root(), &mut root).unwrap();
+            root.pieces.first().unwrap().placed()
+        };
+        let unended = repaired(&pbg, SourceText::from("def x ;"));
+        let mut read = Pieces::new();
+        read_pieces(&pbg, &unended, declaration(&unended).node, &mut read).unwrap();
+        assert_eq!(
+            stop_of(&pbg, &unended, declaration(&unended).node),
+            read.repair
+        );
+        let inner = gandr_surface_parser::parse(&pbg, SourceText::from("def a = (1 + ) * 3;"))
+            .unwrap()
+            .into_tree();
+        assert_eq!(
+            stop_of(&pbg, &inner, declaration(&inner).node),
+            Maybe::Absent(super::repair::Absent::Unrepaired),
+            "the hole is the group's, not the declaration's own"
+        );
+        let repairs = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .unwrap()
+                .into_tree();
+            tree.positions()
+                .filter_map(|node| {
+                    let span = tree.node(node)?.span();
+                    match repair_at(&pbg, &tree, Placed { node, span }) {
+                        Maybe::Present(found) if found.span == span => {
+                            Some((usize::from(span.start()), found.repair))
+                        },
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(repairs("def a = (1 + ) * 3;"), [(
+            12,
+            Repair::Grout(GroutShape::Convex)
+        )]);
+        assert_eq!(repairs("def x = ( 1 ;\n"), [(
+            11,
+            Repair::GhostClose(ClosingClass::Paren)
+        )]);
+        assert_eq!(repairs("def a = 1;\n"), Vec::<(usize, Repair)>::new());
+    }
+
+    /// The span of the first top-level form of `tree`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn first_form(
+        pbg: &Pbg,
+        tree: &SyntaxTree<'_>,
+    ) -> Placed
+    {
+        let mut root = Pieces::new();
+        read_pieces(pbg, tree, tree.root(), &mut root).unwrap();
+        root.pieces.first().unwrap().placed()
+    }
+
+    /// The deepest node of `tree` that spans `wanted` exactly.
+    ///
+    /// # Specification
+    /// trivial.
+    fn node_spanning(
+        tree: &SyntaxTree<'_>,
+        wanted: ByteSpan,
+    ) -> Option<gandr_surface_syntax::NodeIndex>
+    {
+        let mut found = None;
+        let mut stack = Vec::from([tree.root()]);
+        while let Some(position) = stack.pop() {
+            let Some(node) = tree.node(position)
+            else {
+                continue;
+            };
+            if node.span().start() <= wanted.start() && wanted.end() <= node.span().end() {
+                if node.span() == wanted {
+                    found = Some(position);
+                }
+                stack.extend(tree.children(position));
+            }
+        }
+        found
+    }
+
+    /// A word one edit from `return` heads its application and is `return`
+    /// misspelt, whichever edit the hand made; a word one edit from no
+    /// keyword is none, and a word alone heads no application. `return`
+    /// opens an expression and `where` none.
+    #[test]
+    fn a_word_one_edit_from_a_keyword_is_that_keyword_misspelt()
+    {
+        use super::KeywordOpening;
+        use super::applied_word;
+        use super::misspelt_keyword;
+        use super::opens_expression;
+
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let read = |written: &str| {
+            let source = alloc::format!("def a = {written} 1;\n");
+            let tree = parsed(&pbg, SourceText::from(source.as_str()));
+            let start = source.find(written).unwrap();
+            let word = at(start, start.saturating_add(written.len()));
+            let within = first_form(&pbg, &tree).span;
+            (
+                misspelt_keyword(
+                    &pbg,
+                    &tree,
+                    within,
+                    at(word.end().into(), word.end().into()),
+                ),
+                applied_word(&pbg, &tree, word)
+                    .and_then(|node| tree.node(node))
+                    .map(|node| node.span().start() == word.start()),
+                word,
+            )
+        };
+        for written in ["retur", "retrun", "returnn"] {
+            let (misspelt, heads, word) = read(written);
+            assert_eq!(
+                (misspelt, heads),
+                (Some((word, TileName::RETURN)), Some(true)),
+                "`{written}`"
+            );
+        }
+        let (misspelt, heads, _) = read("zebra");
+        assert_eq!((misspelt, heads), (None, Some(true)));
+        let source = "def a = zebra;\n";
+        let tree = parsed(&pbg, SourceText::from(source));
+        assert_eq!(applied_word(&pbg, &tree, at(8, 13)), None);
+        assert_eq!(
+            (
+                opens_expression(&pbg, TileName::RETURN),
+                opens_expression(&pbg, TileName::WHERE)
+            ),
+            (KeywordOpening::Expression, KeywordOpening::Elsewhere)
+        );
+    }
+
+    /// An operator written twice is a name one deletion from the operator,
+    /// and a name that holds a letter is no operator misspelt.
+    #[test]
+    fn a_run_one_edit_from_an_operator_is_that_operator_misspelt()
+    {
+        use alloc::string::String;
+
+        use super::misspelt_operator;
+
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let misspelt = |written: &str| {
+            let source = alloc::format!("def a = x {written} y;\n");
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source.as_str()))
+                .unwrap()
+                .into_tree();
+            let start = source.find(written).unwrap();
+            let run = at(start, start.saturating_add(written.len()));
+            let node = node_spanning(&tree, run).unwrap();
+            misspelt_operator(
+                &pbg,
+                &tree,
+                first_form(&pbg, &tree).span,
+                &[(node, run)],
+                None,
+            )
+            .map(|(found, operator)| (found == run, String::from(operator.as_ref())))
+        };
+        assert_eq!(["∷∷", ":::", "zebra"].map(misspelt), [
+            Some((true, String::from("∷"))),
+            Some((true, String::from("::"))),
+            None
+        ]);
+    }
+
+    /// A bracket after a value's operand that no `]` closes before the
+    /// refusal is the bare bracket open there; once closed it is none.
+    #[test]
+    fn a_bracket_open_at_the_refusal_is_the_bare_one()
+    {
+        use super::bare_bracket;
+
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let source = "def summed(xs : Integer, i : Integer) -> -F Integer { xs[i + 1] }\n";
+        let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+            .unwrap()
+            .into_tree();
+        let bracket = source.find("xs[").unwrap().saturating_add(2);
+        let closed = source.find(']').unwrap();
+        let within = at(0, source.len().saturating_sub(1));
+        assert_eq!(
+            [
+                at(bracket.saturating_add(1), bracket.saturating_add(2)),
+                at(closed.saturating_add(2), closed.saturating_add(3)),
+            ]
+            .map(|refused| bare_bracket(&pbg, &tree, within, refused)),
+            [Some(at(bracket, bracket.saturating_add(1))), None]
+        );
+    }
+
+    /// A tile's label is the one its mold holds, and a form has none.
+    #[test]
+    fn a_tile_answers_its_label_and_a_form_none()
+    {
+        use super::tile_label;
+
+        let pbg = grammar();
+        let tree = parsed(&pbg, SourceText::from("def x = 3 + 4 ;"));
+        let declaration = first_form(&pbg, &tree).node;
+        let labels: Vec<_> = core::iter::once(declaration)
+            .chain(tree.children(declaration))
+            .filter_map(|position| tree.node(position))
+            .filter(|node| !matches!(node.label(), super::NodeLabel::Space))
+            .map(|node| match tile_label(&pbg, node) {
+                Maybe::Present(TileName(name)) => Some(name),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        assert_eq!(labels, [
+            None,
+            Some("def"),
+            Some("identifier"),
+            Some("="),
+            None,
+            Some(";")
+        ]);
+    }
+
+    /// Each former falls in its family: the term formers, session actions
+    /// among them; the type formers, static ones and session types among
+    /// them; and neither for a declaration or an attribute block.
+    #[test]
+    fn each_former_falls_in_its_family()
+    {
+        use super::Family;
+        use super::family_of;
+
+        assert_eq!(
+            [
+                Former::Lambda,
+                Former::Action,
+                Former::ArrowType,
+                Former::SessionType,
+                Former::Declaration,
+                Former::AttributeBlock,
+            ]
+            .map(family_of),
+            [
+                Family::Term,
+                Family::Term,
+                Family::Type,
+                Family::Type,
+                Family::Neither,
+                Family::Neither
+            ]
+        );
+    }
+
+    /// A parameter written as a lowercase name and one written as a capital
+    /// name each read as a binder's tile.
+    #[test]
+    fn a_parameter_s_name_is_a_binder_s_tile()
+    {
+        use super::tile_label;
+
+        let pbg = grammar();
+        for (source, name) in [
+            ("def f(x : Integer) -> Integer = x;", "x"),
+            ("def f(T : Type) -> Type = T;", "T"),
+        ] {
+            let tree = parsed(&pbg, SourceText::from(source));
+            let start = source.find(name).unwrap();
+            let written = span(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(1)),
+            );
+            let label = node_spanning(&tree, written)
+                .and_then(|position| tree.node(position))
+                .map(|node| tile_label(&pbg, node));
+            assert!(
+                matches!(label, Some(Maybe::Present(label)) if TileName::BINDERS.contains(&label)),
+                "`{source}`: {label:?}"
+            );
+        }
+    }
+
+    /// A universe, the row kind and an arrow between kinds classify codes,
+    /// through parentheses; every other type does not. An arrow between
+    /// types that are no kinds is the box.
+    #[test]
+    fn a_kind_classifies_codes_and_an_arrow_of_other_types_is_the_box()
+    {
+        use alloc::collections::BTreeMap;
+
+        use super::Boxed;
+        use super::Kinded;
+        use super::classifies_codes;
+        use super::writes_box;
+
+        let pbg = grammar();
+        let read = |ty: &str| {
+            let source = alloc::format!("def x : {ty};\n");
+            let tree = parsed(&pbg, SourceText::from(source.as_str()));
+            let written = first_declaration(&pbg, &tree)
+                .pieces
+                .iter()
+                .find_map(|piece| match *piece {
+                    Piece::Operand(at) => Some(at),
+                    Piece::Tile { .. } => None,
+                })
+                .unwrap();
+            (
+                classifies_codes(
+                    &pbg,
+                    &tree,
+                    written,
+                    &mut Pieces::new(),
+                    &mut BTreeMap::new(),
+                )
+                .ok(),
+                writes_box(&pbg, &tree, written.node, &mut Pieces::new()).ok(),
+            )
+        };
+        for (ty, kinded, boxed) in [
+            ("Type", true, false),
+            ("Type[-]", true, false),
+            ("Row", true, false),
+            ("Type -> Type", true, false),
+            ("(Type -> Type)", true, false),
+            ("Integer", false, false),
+            ("Integer -> Integer", false, true),
+            ("Type -> Integer", false, true),
+        ] {
+            assert_eq!(
+                read(ty),
+                (Some(Kinded(kinded)), Some(Boxed(boxed))),
+                "`{ty}`"
+            );
+        }
+    }
+
+    /// A juxtaposed call reads as the call it spells: the head, then each
+    /// argument between the tiles that stand for `(`, `,` and `)`; `()` is
+    /// no argument; and a type's head written as a type name is its tile.
+    #[test]
+    fn a_juxtaposed_call_reads_as_the_call_it_spells()
+    {
+        let pbg = grammar();
+        let spine = |source: &'static str| {
+            let tree = parsed(&pbg, SourceText::from(source));
+            let applied = first_declaration(&pbg, &tree)
+                .pieces
+                .iter()
+                .rev()
+                .find_map(|piece| match *piece {
+                    Piece::Operand(at) => Some(at),
+                    Piece::Tile { .. } => None,
+                })
+                .unwrap();
+            let mut read = Pieces::new();
+            read_pieces(&pbg, &tree, applied.node, &mut read).unwrap();
+            read.pieces
+                .iter()
+                .map(|piece| match *piece {
+                    Piece::Operand(at) => source
+                        .get(usize::from(at.span.start()) .. usize::from(at.span.end()))
+                        .unwrap_or_default(),
+                    Piece::Tile { label, .. } if label == TileName::TYPE_IDENTIFIER => "head",
+                    Piece::Tile { .. } => "tile",
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(spine("def a = f x y;"), [
+            "f", "tile", "x", "tile", "y", "tile"
+        ]);
+        assert_eq!(spine("def a = f ();"), ["f", "tile", "tile"]);
+        assert_eq!(spine("def a : Vec A n;"), [
+            "head", "tile", "A", "tile", "n", "tile"
+        ]);
+    }
+
+    /// A type operand spelling a package's path reads as that path, its last
+    /// name apart; a manifest type over one adds each sort it fixes; a
+    /// capital name alone is a path of one name; a lowercase name alone is
+    /// none. A cursor at such an operand reads it as an entry and moves past.
+    #[test]
+    fn a_type_operand_spells_an_entry_s_path()
+    {
+        use super::entry_path;
+        use super::operand_entry;
+
+        let pbg = grammar();
+        let entry = |source: &'static str| {
+            let tree = parsed(&pbg, SourceText::from(source));
+            let read = first_declaration(&pbg, &tree);
+            let text = |at: Placed| {
+                source
+                    .get(usize::from(at.span.start()) .. usize::from(at.span.end()))
+                    .unwrap_or_default()
+            };
+            let written = read
+                .pieces
+                .iter()
+                .find_map(|piece| match *piece {
+                    Piece::Operand(at) => Some(at),
+                    Piece::Tile { .. } => None,
+                })
+                .unwrap();
+            let spelled = |(path, sorts): super::EntryPath| {
+                (
+                    path.prefix
+                        .iter()
+                        .map(|&at| text(at))
+                        .chain(core::iter::once(text(path.last)))
+                        .collect::<Vec<_>>(),
+                    sorts
+                        .iter()
+                        .map(|&(sort, ty)| (text(sort), text(ty)))
+                        .collect::<Vec<_>>(),
+                )
+            };
+            let direct = operand_entry(&pbg, &tree, written).unwrap().map(spelled);
+            let at = read
+                .pieces
+                .iter()
+                .position(|piece| piece.placed() == written)
+                .unwrap();
+            let mut cursor = Cursor::new(&read.pieces[at ..], first_form(&pbg, &tree).span);
+            let through = match entry_path(&pbg, &tree, &mut cursor).unwrap() {
+                Maybe::Present(found) => Some((spelled(found), cursor.here() != written.span)),
+                Maybe::Absent(_) => None,
+            };
+            (direct, through)
+        };
+        let path = |names: &[&'static str], sorts: &[(&'static str, &'static str)]| {
+            Some((names.to_vec(), sorts.to_vec()))
+        };
+        let package = path(&["std", "io", "Console", "Eff"], &[]);
+        assert_eq!(
+            entry("def x : std.io.Console.Eff;"),
+            (package.clone(), package.map(|read| (read, true)))
+        );
+        let fixed = path(&["std", "io", "Console", "Eff"], &[("S", "Integer")]);
+        assert_eq!(
+            entry("def x : std.io.Console.Eff with sort S = Integer;").0,
+            fixed
+        );
+        assert_eq!(entry("def x : State;").0, path(&["State"], &[]));
+        assert_eq!(entry("def x : foo;"), (None, None));
+    }
+
+    /// The names after a parameter's first that share its type are read in
+    /// written order, up to the first other piece; with none, the cursor
+    /// stays where it stood.
+    #[test]
+    fn a_parameter_s_shared_names_are_read_in_order()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let name = |node: usize, start: usize| Placed {
+            node: crate::fixture::node(node),
+            span: at(start, start.saturating_add(1)),
+        };
+        let pieces = [
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: name(1, 0),
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: name(2, 2),
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: name(3, 4),
+            },
+            Piece::Tile {
+                label: TileName::COLON,
+                at: name(4, 6),
+            },
+            Piece::Operand(name(5, 8)),
+        ];
+        let mut reading = Cursor::new(&pieces, at(0, 9));
+        assert_eq!(
+            reading.tile(TileName::IDENTIFIER),
+            Maybe::Present(name(1, 0))
+        );
+        assert_eq!(
+            reading.shared(&[TileName::IDENTIFIER]).collect::<Vec<_>>(),
+            [name(2, 2), name(3, 4)]
+        );
+        assert_eq!(reading.here(), at(6, 7));
+        assert_eq!(reading.shared(&[TileName::IDENTIFIER]).count(), 0_usize);
+        assert_eq!(reading.here(), at(6, 7), "a miss leaves the cursor unmoved");
     }
 }

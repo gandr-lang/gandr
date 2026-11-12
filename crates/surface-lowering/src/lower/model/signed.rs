@@ -71,9 +71,9 @@ use crate::module::Functor;
 use crate::module::SlotIndex;
 use crate::module::Stratum;
 use crate::module::TheoryPath;
-use crate::module::Visibility;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
+use crate::slot::Visibility;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 

@@ -1651,7 +1651,7 @@ impl<'source> Lowerer<'_, 'source>
             },
         }
         .ok_or(LoweringRefusal::BudgetExceeded {
-            budget: self.fuel.budget,
+            budget: self.fuel.budget(),
         })?;
         let _first = self.nominations.insert(hole, nomination);
         let _counted = self

@@ -140,9 +140,7 @@
 //! `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`.
 
 use alloc::collections::BTreeMap;
-use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
@@ -166,10 +164,9 @@ use crate::namespace::Trie;
 use crate::resolve::SurfaceName;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
-
-/// The reason the import policy gives for refusing a second binding of one
-/// alias.
-pub const ONE_SOURCE: &str = "an import alias must name one source";
+use crate::written_import::ImportUri;
+use crate::written_import::ONE_SOURCE;
+use crate::written_import::direct;
 
 /// An import's position among the module's imports, in source order.
 #[repr(transparent)]
@@ -199,53 +196,6 @@ impl From<ImportIndex> for usize
     fn from(index: ImportIndex) -> Self
     {
         index.0
-    }
-}
-
-/// The address an import names, its escapes decoded and nothing resolved.
-#[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ImportUri(String);
-
-impl From<String> for ImportUri
-{
-    /// The address `text`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(text: String) -> Self
-    {
-        Self(text)
-    }
-}
-
-impl AsRef<str> for ImportUri
-{
-    /// The address's text.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn as_ref(&self) -> &str
-    {
-        self.0.as_str()
-    }
-}
-
-impl fmt::Display for ImportUri
-{
-    /// Writes the address's text.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(self.0.as_str())
     }
 }
 
@@ -373,21 +323,6 @@ pub struct Translation<'source>
     /// The first member of the flow's domain the source publishes nothing of
     /// its name for.
     pub lacking: Maybe<SurfaceName<'source>, lacked::Absent>,
-}
-
-/// A translation as its tiles spell it, after an import's signature or after
-/// an offer's module.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum WrittenTranslation
-{
-    /// `via f`: the flow's name tile.
-    Via(Placed),
-    /// `renaming { fetch as get, … }`: each pair's tiles, the member read
-    /// first and the name it is read as second, in written order.
-    Renaming(Vec<(Placed, Placed)>),
 }
 
 /// The flow a renaming derives, `renaming { fetch as get }`: each member of
@@ -594,22 +529,6 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// Every pair reads a member and gives a fresh name.
             Renamable,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why an import or an offer is read through no flow.
-    pub mod direct {
-        /// The reason none is read.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No translation follows the import's signature or the offer's
-            /// module, so it is read as it is.
-            Unwritten,
-            /// A renaming follows it, so it is read by name through the
-            /// renaming and through no flow.
-            Renamed,
         }
     }
 }

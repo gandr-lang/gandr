@@ -149,7 +149,7 @@
 //!
 //! The verdict here is the lowering's. An operation a `data` block routes
 //! carries its oriented rules to the kernel on the definition it lowers to
-//! ([`crate::operation::OperationPlan::rules`]), and the kernel decides them
+//! (`OperationPlan::rules`), and the kernel decides them
 //! itself (`gandr_kernel_term::OperationRules::converge`): the path order with
 //! the admission order as its precedence, every critical pair by unification
 //! of the linear patterns, and each join by normalizing both reducts. That a
@@ -224,7 +224,6 @@ use gandr_theory_levitation::orient_rules_with;
 use gandr_theory_levitation::path_greater;
 use quenchant_shape::shape::Maybe;
 
-use crate::LoweringRefusal;
 use crate::certify::second_order_normal_form;
 use crate::certify::second_order_parts;
 use crate::desc_cells::CellDiagnosticIndex;
@@ -233,6 +232,7 @@ use crate::desc_cells::DeclarationCells;
 use crate::desc_cells::located;
 use crate::description::written::RuleDirection;
 use crate::description::written::RuleOrientation;
+use crate::error::LoweringRefusal;
 
 mod kept;
 
@@ -254,7 +254,7 @@ pub const DERIVED_RULES: usize = 64;
 
 /// A block's rules oriented so each left side is above its right, with the
 /// direction the order chose for each written rule.
-pub(crate) struct OrientedBlock<G>
+pub struct OrientedBlock<G>
 {
     /// The description the kernel-facing table is read from.
     pub description: TheoryDesc<G>,
@@ -283,16 +283,17 @@ pub(crate) struct OrientedBlock<G>
 ///   cancellation pinned left to right is refused, a growing pinned rule is
 ///   refused at itself, each rule pinned the way the order runs it orients and
 ///   pinned against it is refused, and a commuting rule orients neither way.
-/// - witness: `coincide::tests::an_equation_written_backwards_orients_forwards`
-/// - witness: `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`
-/// - witness: `coincide::tests::a_pinned_rule_orients_only_the_way_it_is_pinned`
+/// - witness: `tests::coincide::an_equation_written_backwards_orients_forwards`
+/// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
+/// - witness: `tests::coincide::a_pinned_rule_orients_only_the_way_it_is_pinned`
 #[spec(ensures: |ret| match ret.as_ref() {
     Ok(oriented) => oriented.directions.len() == description.rules.len()
         && oriented.description.rules.len() == description.rules.len()
         && orient_rules(&oriented.description) == Termination::Oriented,
     Err(index) => usize::from(*index) < description.rules.len(),
 })]
-pub(crate) fn orient_block<G>(
+#[inline]
+pub fn orient_block<G>(
     description: &TheoryDesc<G>,
     orientations: &[RuleOrientation],
 ) -> Result<OrientedBlock<G>, RuleIndex>
@@ -441,7 +442,7 @@ impl<A: CellAlphabet> DerivedRule<A>
     /// - hypothesis: L3 — every rule a group's inverse law derives replays over
     ///   the completed store, and the same certificate retargeted at a later
     ///   cell, or with its final step dropped, does not.
-    /// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
+    /// - witness: `tests::coincide::a_groups_inverse_law_completes_to_the_rules_it_derives`
     #[inline]
     #[must_use]
     pub fn replay(
@@ -674,10 +675,9 @@ impl fmt::Display for CoherenceFault
     ///   its peak and both normal forms in order, and so is a pair completion
     ///   leaves apart; swapping them or dropping the peak changes the witnessed
     ///   text.
-    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
-    /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
-    /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
-    /// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
+    /// - witness: `tests::coincide::a_third_cancellation_parts_the_circles_readings`
+    /// - witness: `tests::coincide::a_permuted_call_no_order_orients_is_uncompleted`
+    /// - witness: `tests::coincide::a_scope_extrusion_family_never_completes`
     #[inline]
     fn fmt(
         &self,
@@ -828,17 +828,16 @@ impl fmt::Display for PairTerm
 ///   parts from it under its condition; reporting the earlier rule's span,
 ///   deciding joinability first, reading the circle in the sequent store alone,
 ///   or deriving a rule between two constructor terms changes one of them.
-/// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
-/// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
-/// - witness: `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`
-/// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
-/// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
-/// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
-/// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
-/// - witness: `coincide::tests::a_data_blocks_derived_rule_is_a_pattern_rule`
-/// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
-/// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
-/// - witness: `coincide::tests::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
+/// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
+/// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
+/// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
+/// - witness: `tests::coincide::a_third_cancellation_parts_the_circles_readings`
+/// - witness: `tests::coincide::a_groups_inverse_law_completes_to_the_rules_it_derives`
+/// - witness: `tests::coincide::a_permuted_call_no_order_orients_is_uncompleted`
+/// - witness: `tests::coincide::a_data_blocks_derived_rule_is_a_pattern_rule`
+/// - witness: `tests::coincide::a_second_order_rule_overlapping_another_refuses_the_block`
+/// - witness: `tests::coincide::a_scope_extrusion_family_never_completes`
+/// - witness: `tests::coincide::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
@@ -1041,9 +1040,8 @@ where
     ///   rule, written after or before the earlier one in the overlap, and an
     ///   interior pair of the circle whose later rule is the overlap's left
     ///   cell is located at that rule all the same.
-    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
-    /// - witness: `coincide::tests::two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same`
-    /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
+    /// - witness: `tests::coincide::two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same`
+    /// - witness: `tests::coincide::a_third_cancellation_parts_the_circles_readings`
     fn located(
         &self,
         left: CellId,
@@ -1120,10 +1118,9 @@ where
     ///   leaves apart is uncompleted; a scope-extrusion family is refused at
     ///   its second derived rule, and completes beside a rule flattening its
     ///   third wrapping.
-    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
-    /// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
-    /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
-    /// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
+    /// - witness: `tests::coincide::a_groups_inverse_law_completes_to_the_rules_it_derives`
+    /// - witness: `tests::coincide::a_permuted_call_no_order_orients_is_uncompleted`
+    /// - witness: `tests::coincide::a_scope_extrusion_family_never_completes`
     #[spec(captures: before = store.len(), ensures: |ret| ret.as_ref().is_err()
         || ret.as_ref().is_ok_and(|completed| usize::from(store.len()) == usize::from(before).saturating_add(completed.1.len())
             && completed.1.iter().all(|derived| bool::from(derived.replay(store)))))]
@@ -1328,9 +1325,9 @@ where
 ///   each rule it derives, a derived rule calling an operation that calls its
 ///   head rides the precedence by the subterm property, a permuted call orients
 ///   neither way, and a `data` block's derived rule is one the kernel reads.
-/// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
-/// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
-/// - witness: `coincide::tests::a_data_blocks_derived_rule_is_a_pattern_rule`
+/// - witness: `tests::coincide::a_groups_inverse_law_completes_to_the_rules_it_derives`
+/// - witness: `tests::coincide::a_permuted_call_no_order_orients_is_uncompleted`
+/// - witness: `tests::coincide::a_data_blocks_derived_rule_is_a_pattern_rule`
 #[spec(captures: before = ranking.len().saturating_add(riding.len()), ensures: |ret|
     ranking.len().saturating_add(riding.len()) == before.saturating_add(usize::from(ret.is_some())))]
 fn orient_derived<G>(
@@ -1410,7 +1407,7 @@ fn orient_derived<G>(
 /// - hypothesis: L3 — a `theory` block's congruence is left out while its faces
 ///   keep their identifiers, alone and beside a rule's face, and a family with
 ///   no circuit is read in place.
-/// - witness: `coincide::tests::a_congruence_is_no_rewrite_of_its_own`
+/// - witness: `tests::coincide::a_congruence_is_no_rewrite_of_its_own`
 #[spec(ensures: |ret| usize::from(ret.len()) <= usize::from(store.len()))]
 pub(crate) fn rewriting_store<'store>(
     store: &'store CellStore,
@@ -1585,8 +1582,7 @@ impl fmt::Display for NormalFormFault
     /// - hypothesis: L3 — an unread call and a call into a refused block read
     ///   apart, and an ill-sorted call reads apart from one that does not
     ///   elaborate.
-    /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
-    /// - witness: `coincide::tests::a_call_nesting_operations_reads_over_terms_1510`
+    /// - witness: `tests::coincide::a_call_nesting_operations_reads_over_terms_1510`
     #[inline]
     fn fmt(
         &self,
@@ -1684,10 +1680,9 @@ impl fmt::Display for NormalFormFault
 ///   or reading the circle's word in the sequent store changes one of them; a
 ///   rule instantiating a variable fires by substitution, not as an operation
 ///   named by the variable (#2966).
-/// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
-/// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
-/// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
-/// - witness: `coincide::tests::an_instantiating_rule_fires_at_an_inspected_call_2966`
+/// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
+/// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
+/// - witness: `tests::coincide::an_instantiating_rule_fires_at_an_inspected_call_2966`
 #[spec(ensures: |ret| {
     let admitted = matches!(cells.coincidence, Coincidence::Orthogonal | Coincidence::Joined(_));
     let instantiates = cells.oriented.iter().any(|face| bool::from(face.instantiates()));
@@ -1775,7 +1770,7 @@ pub fn normal_form<G>(
 /// # Adequacy
 /// - hypothesis: L3 — a choice over a graded sort reaches its cut, and the same
 ///   choice with its branches swapped is ill sorted.
-/// - witness: `coincide::tests::a_call_nesting_operations_reads_over_terms_1510`
+/// - witness: `tests::coincide::a_call_nesting_operations_reads_over_terms_1510`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.1 == terms.written(&found.1)))]
 fn over_terms(
     terms: &PresentedRules,
@@ -1811,8 +1806,8 @@ fn over_terms(
 /// - hypothesis: L3 — a sequent call and a circle word each reach their normal
 ///   form along a path that replays; reading before the replay or dropping the
 ///   budget check changes them.
-/// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
-/// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
+/// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
+/// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0.len() <= NORMAL_FORM_STEPS))]
 fn certified_normal<A, R>(
     store: &CellStore<A>,
@@ -1856,7 +1851,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a theory's call of operations over operations, at a plain
 ///   and at an indexed sort, reaches the normal form its law gives.
-/// - witness: `coincide::tests::a_call_nesting_operations_reads_over_terms_1510`
+/// - witness: `tests::coincide::a_call_nesting_operations_reads_over_terms_1510`
 ///
 /// [`elaborate_desc`'s presented reading]: gandr_theory_computads::PresentedRules
 #[spec(ensures: |ret| ret.faces.len().saturating_add(ret.conditioned.len()) <= cells.oriented.len())]
@@ -1921,7 +1916,7 @@ fn oriented_terms<G>(
 ///   display they are, and a missing parenthesis, trailing text and an
 ///   undeclared name are refused apart; the channel a restriction abstracts
 ///   reads as its occurrence inside the abstraction and is unknown beside it.
-/// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
+/// - witness: `coincide::tests::a_call_reads_as_the_term_it_spells_or_says_why_not`
 #[spec(ensures: |ret| ret.as_ref().is_err() || text.0.split_whitespace().collect::<String>()
     == ret.as_ref().map(|term| term.to_string().split_whitespace().collect::<String>()).unwrap_or_default())]
 fn read_call<G>(

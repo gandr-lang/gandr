@@ -293,7 +293,6 @@ use super::written::WrittenTerm;
 use super::written::WrittenWire;
 use super::written::head;
 use super::written::port_name;
-use crate::SurfaceName;
 use crate::attribute::RegisteredAttribute;
 use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
@@ -319,6 +318,7 @@ use crate::model::PresentedDiagram;
 use crate::model::SortTerm;
 use crate::model::StatedLaw;
 use crate::model::presentation;
+use crate::resolve::SurfaceName;
 use crate::resolve::type_atom;
 use crate::unit::SourceIndex;
 
@@ -551,7 +551,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
-    /// - witness: `description::theory::tests::an_included_member_is_refused_at_its_include_2752`
+    /// - witness: `tests::theory::an_included_member_is_refused_at_its_include_2752`
     /// - witness: `description::theory::tests::an_extension_generates_its_signature`
     /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
     /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
@@ -1023,7 +1023,7 @@ impl Reader<'_, '_>
             classifier: Maybe::Absent(family_classifier::Absent::Signature),
             presentation: Maybe::Present(presentation),
             written,
-            exported: crate::module::Visibility::Private,
+            exported: crate::slot::Visibility::Private,
         })
     }
 
@@ -1117,7 +1117,6 @@ impl Reader<'_, '_>
     ///   imported sources is refused where one presented by one is read.
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
-    /// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
     #[spec(ensures: |ret| match ret {
         | Ok((found, presented, _, _)) => {
             matches!(found.presentation, Maybe::Present(ref own) if own == presented)
@@ -1284,7 +1283,7 @@ impl Reader<'_, '_>
     ///   refuse the whole module; one with no filler is declined at the
     ///   declaration by its own name, so the blocks before it decorate it.
     /// - witness: `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`
-    /// - witness: `description::theory::tests::a_decorated_top_level_operation_is_refused_at_itself_3073`
+    /// - witness: `tests::theory::a_decorated_top_level_operation_is_refused_at_itself_3073`
     pub(super) fn circuit_declaration(
         &self,
         at: Placed,
@@ -1326,7 +1325,7 @@ impl Reader<'_, '_>
             classifier: Maybe::Absent(family_classifier::Absent::Circuit),
             presentation: Maybe::Absent(presentation::Absent::Circuit),
             written: WrittenMembers::default(),
-            exported: crate::module::Visibility::Private,
+            exported: crate::slot::Visibility::Private,
         })
     }
 
@@ -1354,7 +1353,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::a_terminated_block_is_not_told_it_lacks_terminators`
     /// - witness: `description::theory::tests::unseparated_members_are_declined_rather_than_dropped`
     /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
     /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn signature_sort(
         &self,
@@ -1720,8 +1719,8 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::a_two_output_operation_keeps_both_ports_in_order`
     /// - witness: `description::theory::tests::a_port_name_on_both_sides_is_two_ports`
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
-    /// - witness: `description::theory::tests::a_rule_bearing_theory_defines_its_presentation_with_its_laws`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
+    /// - witness: `tests::theory::a_rule_bearing_theory_defines_its_presentation_with_its_laws`
     fn signature_operation(
         &self,
         run: &mut Run<'_>,
@@ -2077,7 +2076,7 @@ impl Reader<'_, '_>
     ///   is an indexed sort, read back their binder and their sort, and a
     ///   restriction's `nu` port its abstraction.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
     /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
     /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn presented_ports(
@@ -3298,9 +3297,10 @@ impl Run<'_>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an inner block before a sort, one after a member and one
-///   doubling an outer block each reach the lowering at their spans.
-/// - witness: `description::theory::tests::an_inner_attribute_decorates_its_theory_3586`
+/// - hypothesis: L3 — two inner blocks before a sort, the first over a
+///   bracketed payload, one after a member and one in a theory an outer block
+///   decorates each reach the reading at their spans.
+/// - witness: `description::theory::tests::each_inner_block_reaches_the_reading_at_its_span_3586`
 #[spec(ensures: |(blocks, rest)| blocks.iter().map(|block| block.len()).sum::<usize>().saturating_add(rest.len()) == member.len())]
 fn inner_blocks(member: &[Piece]) -> (Vec<&[Piece]>, &[Piece])
 {
@@ -3534,7 +3534,6 @@ enum Presenting<'earlier>
 /// - hypothesis: L3 — one name presented by two imported sources is ambiguous
 ///   where one presented by one is found, for an `include` member and an
 ///   `under` row alike.
-/// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
 /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
 #[spec(ensures: |ret| match ret {
     | Presenting::Found(found, presented) => {

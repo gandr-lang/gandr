@@ -61,12 +61,12 @@ use crate::form::entry_path;
 use crate::form::read_pieces;
 use crate::import::ImportResolution;
 use crate::import::RenamingFault;
-use crate::import::WrittenTranslation;
-use crate::import::direct;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
+use crate::written_import::WrittenTranslation;
+use crate::written_import::direct;
 
 /// One entry of a world's requirement row as it is written, `store : Store
 /// with sort V = String`, read once every name is collected.

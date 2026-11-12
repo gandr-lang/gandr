@@ -4600,7 +4600,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_named_paths_stated_type_2995`
-    #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
+    #[spec(captures: before = self.fuel.remaining(), ensures: self.fuel.remaining() <= before)]
     fn reads_path(
         &mut self,
         path: NodeIndex,
@@ -4691,7 +4691,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
-    #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
+    #[spec(captures: before = self.fuel.remaining(), ensures: self.fuel.remaining() <= before)]
     fn answers_path(
         &mut self,
         site: Site,

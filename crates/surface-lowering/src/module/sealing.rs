@@ -125,6 +125,7 @@ use super::misplaced_in;
 use super::one_in;
 use super::slot_refusal;
 use crate::WfKind;
+use crate::budget::FACE_CELLS;
 use crate::error::AscriptionForm;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
@@ -1397,11 +1398,6 @@ impl RecordFaces<'_>
             .filter(|met| met.decisions().contains(&Membership::Inside))
     }
 }
-
-/// The most cells a record type's face poset holds: its faces and their new
-/// meets. Each row of the order keeps one word for each 64 cells, so a poset
-/// at the budget keeps 64 words for each cell.
-pub const FACE_CELLS: usize = 4_096;
 
 /// The face poset of `faces`: each face in written order, then each nonempty
 /// meet of two faces that no earlier cell is, each cell below the cells that

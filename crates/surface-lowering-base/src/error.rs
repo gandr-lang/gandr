@@ -119,15 +119,16 @@ use crate::attribute::AttributeSchema;
 use crate::attribute::PayloadForm;
 use crate::attribute::RegisteredAttribute;
 use crate::attribute::suggestion;
+use crate::budget::FACE_CELLS;
+use crate::budget::LoweringBudget;
 use crate::form::FormName;
 use crate::form::Repair;
-use crate::import::ONE_SOURCE;
-use crate::lower::LoweringBudget;
 use crate::resolve::CandidateCount;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
+use crate::written_import::ONE_SOURCE;
 
 quenchant_shape::reason_enum! {
     /// Why a refusal names no span of the source.
@@ -169,12 +170,9 @@ quenchant_shape::reason_enum! {
 ///   the required sort could be derived.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a declaration at the root and a number as a run's operand
-///   report module and computation respectively, separating expected sort from
-///   the form's own sort. These witnesses bound the claim to those positions.
-/// - witness: `lower::tests::a_root_that_is_not_a_module_is_refused`
-/// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
-/// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
+/// - hypothesis: L3 — each sort renders a message of its own, so a report names
+///   one sort and no other.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentSort
 {
@@ -238,22 +236,9 @@ impl fmt::Display for FragmentSort
 ///   admission policy or actual operands needed to verify the report.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — reserved recursion claims, unadmitted forms, a wrong-sort
-///   run operand and zero/two-operand refusals distinguish the four boundaries
-///   by exact typed payloads. The fixtures do not enumerate every grammar form.
-/// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
-/// - witness: `lower::native::tests::a_descent_claim_names_its_own_function_873`
-/// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
-/// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
-/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-/// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
-/// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
-/// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
-/// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
-/// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
-/// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
-/// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
-/// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
+/// - hypothesis: L3 — each boundary renders a message of its own, an arity
+///   report with the count it carries.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
@@ -484,12 +469,6 @@ impl fmt::Display for FragmentBoundary
 ///   and spans. The raw missing-operand variant is included in the span
 ///   projection fixture; the source examples are not a complete enumeration of
 ///   malformed child sequences.
-/// - witness: `lower::tests::a_repaired_declaration_is_refused`
-/// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
-/// - witness: `lower::tests::a_tile_out_of_place_is_refused`
-/// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
-/// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
-/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
 /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FormFault
@@ -667,10 +646,8 @@ impl fmt::Display for Opener
 ///   components, so it cannot validate the producer's classification.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an opaque operator component is asserted as a typed
-///   refusal; a transparent one and a manifest component are admitted instead
-///   of conflated with it.
-/// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - hypothesis: L3 — the two unread forms render messages of their own.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AscriptionForm
 {
@@ -715,9 +692,8 @@ impl fmt::Display for AscriptionForm
 /// - executable: none — the tag holds no tree to check the keyword against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `break` and a `continue` outside every loop are each
-///   refused with their own keyword.
-/// - witness: `lower::loops::tests::a_loop_exit_off_every_loop_body_is_refused_by_name`
+/// - hypothesis: L3 — a `break` and a `continue` render messages of their own.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LoopExit
 {
@@ -758,9 +734,9 @@ impl fmt::Display for LoopExit
 /// - executable: none — the tag holds no tree to check the keyword against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `become`, a `break` and a `continue` in a subject are
-///   each refused with their own keyword.
-/// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
+/// - hypothesis: L3 — a `become`, a `break` and a `continue` render messages of
+///   their own.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CrossedExit
 {
@@ -808,12 +784,9 @@ impl fmt::Display for CrossedExit
 /// - executable: none — the fault holds neither telescope.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a family binding too few parameters, one binding a
-///   parameter at another sort, and one into value types at a `Type[-]` sort
-///   are refused with their faults.
-/// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
-/// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
-/// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+/// - hypothesis: L3 — a count, an index and each ground mismatch render
+///   messages of their own.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TelescopeFault
 {
@@ -2051,7 +2024,7 @@ fn ill_formed(
             f,
             "the faces of the record type {one} and their meets number more than the {} cells \
              of a face poset",
-            crate::module::FACE_CELLS
+            FACE_CELLS
         ),
         WfKind::UnsortedBinding => write!(
             f,
@@ -2823,11 +2796,11 @@ mod tests
     use super::refusal_span;
     use crate::attribute::AttributeSchema;
     use crate::attribute::PayloadForm;
+    use crate::budget::LoweringBudget;
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::form::FormName;
     use crate::form::Repair;
-    use crate::lower::LoweringBudget;
     use crate::resolve::CandidateCount;
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
@@ -3117,10 +3090,10 @@ mod tests
             LoweringRefusal::IllFormedDescription {
                 span: s(99_usize, 100_usize),
                 fault: s(99_usize, 100_usize),
-                kind: crate::WfKind::NonRepresentableBinder,
+                kind: gandr_theory_levitation::WfKind::NonRepresentableBinder,
                 subjects: [
                     Maybe::Present(SurfaceName::from("Tm")),
-                    Maybe::Absent(crate::description_subject::Absent::Unwritten),
+                    Maybe::Absent(crate::error::description_subject::Absent::Unwritten),
                 ],
             },
             LoweringRefusal::RulesNeverComplete {
@@ -3382,7 +3355,7 @@ mod tests
         use alloc::string::ToString as _;
         use alloc::vec::Vec;
 
-        use crate::WfKind;
+        use gandr_theory_levitation::WfKind;
 
         let messages: Vec<String> = [
             WfKind::OutOfSignatureRule,
@@ -3493,7 +3466,8 @@ mod tests
             &FragmentBoundary::ChainedArrow,
             &FragmentBoundary::BareArms,
         ]));
-        let ill_formed = |kind: crate::WfKind, second: Maybe<SurfaceName<'static>, _>| {
+        let ill_formed = |kind: gandr_theory_levitation::WfKind,
+                          second: Maybe<SurfaceName<'static>, _>| {
             LoweringRefusal::IllFormedDescription {
                 span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
                 fault: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
@@ -3505,43 +3479,43 @@ mod tests
         let named = Maybe::Present(SurfaceName::from("b"));
         assert_apart(
             &[
-                crate::WfKind::OutOfSignatureRule,
-                crate::WfKind::UnboundRhsVariable,
-                crate::WfKind::ArityDoesNotCompose,
-                crate::WfKind::DeclaresDerivedMetadata,
-                crate::WfKind::DerivedBoundaryMismatch,
-                crate::WfKind::CyclicCircuitWiring,
-                crate::WfKind::UnknownRewritePort,
-                crate::WfKind::CircuitDerivationBudget,
-                crate::WfKind::DuplicateSortName,
-                crate::WfKind::UnknownResultSort,
-                crate::WfKind::UnknownVarSort,
-                crate::WfKind::UnknownPortSort,
-                crate::WfKind::SortPolarityDisagreement,
-                crate::WfKind::MisplacedResults,
-                crate::WfKind::NonRepresentableBinder,
-                crate::WfKind::SplitCircuitOutputs,
-                crate::WfKind::SharedCircuitPort,
-                crate::WfKind::DuplicateFaceName,
-                crate::WfKind::FaceOutsideShape,
-                crate::WfKind::FacePosetPastBudget,
-                crate::WfKind::UnsortedBinding,
-                crate::WfKind::MisplacedAbstraction,
-                crate::WfKind::AtomResult,
-                crate::WfKind::NonAtomAbstraction,
-                crate::WfKind::UnknownFreshness,
-                crate::WfKind::Capture,
-                crate::WfKind::MisplacedAtom,
-                crate::WfKind::UndecidedCondition,
+                gandr_theory_levitation::WfKind::OutOfSignatureRule,
+                gandr_theory_levitation::WfKind::UnboundRhsVariable,
+                gandr_theory_levitation::WfKind::ArityDoesNotCompose,
+                gandr_theory_levitation::WfKind::DeclaresDerivedMetadata,
+                gandr_theory_levitation::WfKind::DerivedBoundaryMismatch,
+                gandr_theory_levitation::WfKind::CyclicCircuitWiring,
+                gandr_theory_levitation::WfKind::UnknownRewritePort,
+                gandr_theory_levitation::WfKind::CircuitDerivationBudget,
+                gandr_theory_levitation::WfKind::DuplicateSortName,
+                gandr_theory_levitation::WfKind::UnknownResultSort,
+                gandr_theory_levitation::WfKind::UnknownVarSort,
+                gandr_theory_levitation::WfKind::UnknownPortSort,
+                gandr_theory_levitation::WfKind::SortPolarityDisagreement,
+                gandr_theory_levitation::WfKind::MisplacedResults,
+                gandr_theory_levitation::WfKind::NonRepresentableBinder,
+                gandr_theory_levitation::WfKind::SplitCircuitOutputs,
+                gandr_theory_levitation::WfKind::SharedCircuitPort,
+                gandr_theory_levitation::WfKind::DuplicateFaceName,
+                gandr_theory_levitation::WfKind::FaceOutsideShape,
+                gandr_theory_levitation::WfKind::FacePosetPastBudget,
+                gandr_theory_levitation::WfKind::UnsortedBinding,
+                gandr_theory_levitation::WfKind::MisplacedAbstraction,
+                gandr_theory_levitation::WfKind::AtomResult,
+                gandr_theory_levitation::WfKind::NonAtomAbstraction,
+                gandr_theory_levitation::WfKind::UnknownFreshness,
+                gandr_theory_levitation::WfKind::Capture,
+                gandr_theory_levitation::WfKind::MisplacedAtom,
+                gandr_theory_levitation::WfKind::UndecidedCondition,
             ]
             .map(|kind| ill_formed(kind, named)),
         );
         let unspelled = ill_formed(
-            crate::WfKind::OutOfSignatureRule,
-            Maybe::Absent(crate::description_subject::Absent::Unnamed),
+            gandr_theory_levitation::WfKind::OutOfSignatureRule,
+            Maybe::Absent(crate::error::description_subject::Absent::Unnamed),
         );
         assert_apart(&[
-            ill_formed(crate::WfKind::OutOfSignatureRule, named),
+            ill_formed(gandr_theory_levitation::WfKind::OutOfSignatureRule, named),
             unspelled.clone(),
         ]);
         assert!(

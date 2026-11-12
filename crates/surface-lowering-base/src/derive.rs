@@ -633,7 +633,7 @@ struct Theory<'cells>
 /// - witness: `derive::tests::sides_the_completion_keeps_apart_are_refused`
 /// - witness: `derive::tests::a_side_naming_no_operation_is_refused`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |lemmas| !lemmas.is_empty()))]
-pub(crate) fn plan(
+pub fn plan(
     (name, named): (&Name, Placed),
     (left, right): (&FreeTerm, &FreeTerm),
     presentation: &Presentation,

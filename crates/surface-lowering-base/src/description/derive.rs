@@ -16,7 +16,7 @@ use super::Reader;
 use super::Run;
 use super::Spelling;
 use super::written::WrittenDerived;
-use crate::LoweringRefusal;
+use crate::error::LoweringRefusal;
 use crate::form::FormName;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -33,8 +33,9 @@ use crate::form::read_pieces;
 /// - executable: none — a statement is data the collection reads.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a group's inverse of a product reads as its two sides.
-/// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+/// - hypothesis: L3 — a group's inverse of a product reads its theory, its name
+///   and its two sides where they are written.
+/// - witness: `description::derive::tests::a_derived_rule_reads_its_theory_its_name_and_its_sides`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DerivedStatement
 {
@@ -69,10 +70,10 @@ pub struct DerivedStatement
 /// [`read_pieces`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a group's inverse of a product reads as its two sides,
-///   and a statement its theory keeps apart reads as its sides too.
-/// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
-/// - witness: `tests::modules::models::a_rule_the_theory_does_not_derive_is_refused`
+/// - hypothesis: L3 — a group's inverse of a product, written with either face
+///   arrow, reads its theory, its name and its two sides where they are
+///   written.
+/// - witness: `description::derive::tests::a_derived_rule_reads_its_theory_its_name_and_its_sides`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.as_ref().map_or(true, |statement| statement.theory.span.start() >= at.span.start())))]
 pub fn derived_statement<'source>(
     grammar: &Pbg,
@@ -107,7 +108,7 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`derived_statement`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - witness: `description::derive::tests::a_derived_rule_reads_its_theory_its_name_and_its_sides`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |statement| statement.theory.span.start() < statement.named.span.start() && statement.named.span.start() < statement.left.span.start() && statement.left.span.start() < statement.right.span.start()))]
     fn derived(
         &self,
@@ -173,5 +174,52 @@ impl Reader<'_, '_>
                 right: (rhs, right_nodes),
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_surface_syntax::SourceText;
+
+    use super::derived_statement;
+    use crate::fixture::grammar;
+    use crate::fixture::parsed;
+    use crate::form::Pieces;
+    use crate::form::Placed;
+    use crate::form::read_pieces;
+
+    /// A group's inverse of a product, written with either face arrow, reads
+    /// its theory, its name and its two sides where the source writes them.
+    #[test]
+    fn a_derived_rule_reads_its_theory_its_name_and_its_sides()
+    {
+        let grammar = grammar();
+        for arrow in ["<=>", "==>"] {
+            let text =
+                alloc::format!("rule Grp.inv : inv (mul x y) {arrow} mul (inv y) (inv x);\n");
+            let tree = parsed(&grammar, SourceText::from(text.as_str()));
+            let mut root = Pieces::new();
+            read_pieces(&grammar, &tree, tree.root(), &mut root).unwrap();
+            let declaration = root.pieces.first().unwrap().placed();
+            let statement = derived_statement(&grammar, &tree, declaration)
+                .unwrap()
+                .unwrap();
+            let spelled = |at: Placed| {
+                text.get(usize::from(at.span.start()) .. usize::from(at.span.end()))
+                    .unwrap()
+            };
+            assert_eq!(
+                [
+                    statement.theory,
+                    statement.named,
+                    statement.left,
+                    statement.right
+                ]
+                .map(spelled),
+                ["Grp", "inv", "inv (mul x y)", "mul (inv y) (inv x)"],
+                "{arrow}"
+            );
+        }
     }
 }

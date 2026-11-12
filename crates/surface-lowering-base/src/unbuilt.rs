@@ -5,16 +5,16 @@
 //!
 //! A form the fragment reserves or does not admit carries the [`Unbuilt`]
 //! feature it stops at, written by the site that refuses it:
-//! [`FragmentBoundary::Reserved`](crate::FragmentBoundary::Reserved) and
-//! [`FragmentBoundary::Unadmitted`](crate::FragmentBoundary::Unadmitted) take
-//! the feature as their payload, and the dispatch table's declined kinds,
-//! [`Former::Reserved`](crate::Former::Reserved) and
-//! [`Former::Unadmitted`](crate::Former::Unadmitted), carry theirs. A site
-//! that names no feature does not compile. Each feature answers its spelling,
-//! the qualifier a fixture's `refuses("OutOfFragment.<spelling>")` names it
-//! by, and the issue tracking it: an open issue of its own, or one a shared
-//! cause shares (#2529). `check:tracking` holds every issue open, or closed as
-//! not planned.
+//! [`FragmentBoundary::Reserved`](crate::error::FragmentBoundary::Reserved) and
+//! [`FragmentBoundary::Unadmitted`](crate::error::FragmentBoundary::Unadmitted)
+//! take the feature as their payload, and the dispatch table's declined kinds,
+//! [`Former::Reserved`](crate::form::Former::Reserved) and
+//! [`Former::Unadmitted`](crate::form::Former::Unadmitted), carry theirs. A
+//! site that names no feature does not compile. Each feature answers its
+//! spelling, the qualifier a fixture's `refuses("OutOfFragment.<spelling>")`
+//! names it by, and the issue tracking it: an open issue of its own, or one a
+//! shared cause shares (#2529). `check:tracking` holds every issue open, or
+//! closed as not planned.
 //!
 //! **Choice.** The feature is chosen at the site; the alternative, a table
 //! from a refused form and the sort its position demands to an issue, named

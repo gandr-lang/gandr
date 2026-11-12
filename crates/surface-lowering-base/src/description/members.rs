@@ -179,7 +179,7 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — `Skip(Z)` reads as `Skip` over the constructor `Z`,
     ///   so the operation's ports answer at the family at that index.
-    /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
+    /// - witness: `tests::described::an_indexed_family_s_operation_answers_at_its_index_2940`
     #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.0.arguments.len() == read.1.indices.len() && read.1.span == at.span))]
     fn family_sort(
         &self,
@@ -331,7 +331,7 @@ impl Reader<'_, '_>
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
-    /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
     /// - witness: `description::theory::tests::a_rule_term_names_an_atom_inside_its_abstraction`
     /// - witness: `description::tests::a_rule_names_a_port_through_parentheses_4853`
@@ -362,7 +362,7 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — `Z` and `S(Z)` in `Skip(S(Z))` read as constructor
     ///   terms.
-    /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
+    /// - witness: `tests::described::an_indexed_family_s_operation_answers_at_its_index_2940`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     fn term(
         &self,

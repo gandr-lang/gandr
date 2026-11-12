@@ -4802,7 +4802,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a parenthesised application and a bare head.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
-    #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
+    #[spec(captures: before = self.fuel.remaining(), ensures: self.fuel.remaining() <= before)]
     pub(super) fn unwrapped(
         &mut self,
         mut node: NodeIndex,
@@ -5622,7 +5622,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a codata family and a data family beside it separate
     ///   the hit from the miss.
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.collected.slots.get(usize::from(constant)).is_some())]
     pub(super) fn codata_family(
         &self,
@@ -5660,7 +5660,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a codata family read as a function's answer lowers to
     ///   the nominal computation type over its argument; one a body quotes
     ///   reads its argument at its index in the body.
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
     #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Codata(constant, self.kept(applied))))]
     pub(super) fn codata_type(
@@ -10805,7 +10805,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::codata_type`].
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_codata(
         &self,

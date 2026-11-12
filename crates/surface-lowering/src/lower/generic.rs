@@ -85,7 +85,6 @@ use super::Resolved;
 use super::Segment;
 use super::Sink;
 use super::Site;
-use super::atom_type;
 use super::exactly;
 use super::identity::spelled;
 use crate::description::DescriptionFault;
@@ -99,11 +98,12 @@ use crate::form::shape_of;
 use crate::module::DeclarationSlot;
 use crate::module::Half;
 use crate::module::Operand;
-use crate::module::Role;
 use crate::module::SlotIndex;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
+use crate::resolve::atom_type;
 use crate::resolve::type_atom;
+use crate::slot::Role;
 
 #[cfg(test)]
 mod tests;

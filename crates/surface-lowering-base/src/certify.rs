@@ -208,7 +208,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a relative monad's laws pass, and a `let` rule beside a
 ///   second rewriting its constant apart is named with that rule.
-/// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
+/// - witness: `tests::coincide::a_second_order_rule_overlapping_another_refuses_the_block`
 #[spec(ensures: |ref ret| ret.is_none_or(|(later, earlier)| earlier <= later
     && usize::from(later) < description.rules.len().saturating_add(derived.len())))]
 pub fn second_order_parts<G>(
@@ -275,7 +275,7 @@ pub fn second_order_parts<G>(
 /// - hypothesis: L3 — β at a binding field and a rule instantiating its
 ///   continuation below an operation reach the normal forms substitution gives,
 ///   a binder the normal form keeps reading back at its depth.
-/// - witness: `coincide::tests::an_instantiating_rule_fires_at_an_inspected_call_2966`
+/// - witness: `tests::coincide::an_instantiating_rule_fires_at_an_inspected_call_2966`
 pub fn second_order_normal_form<G>(
     description: &TheoryDesc<G>,
     cells: &DeclarationCells,

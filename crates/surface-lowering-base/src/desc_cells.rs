@@ -142,7 +142,7 @@ impl CellDiagnostic
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn lowering_refusal(&self) -> crate::LoweringRefusal<'static>
+    pub const fn lowering_refusal(&self) -> crate::error::LoweringRefusal<'static>
     {
         let fault = match self.fault {
             CellFault::Coherence(ref fault) => return fault.lowering_refusal(self.span),
@@ -155,13 +155,13 @@ impl CellDiagnostic
                 OpElaborateError::AggregatedOutput,
             )) => MemberFault::AggregatedOutput,
             CellFault::NonLinear { copy, .. } => {
-                return crate::LoweringRefusal::RulesNonLinear {
+                return crate::error::LoweringRefusal::RulesNonLinear {
                     span: self.span,
                     copy,
                 };
             },
             CellFault::Rule(ElaborateError::NonLinear(_)) => {
-                return crate::LoweringRefusal::RulesNonLinear {
+                return crate::error::LoweringRefusal::RulesNonLinear {
                     span: self.span,
                     copy: self.span,
                 };
@@ -183,7 +183,7 @@ impl CellDiagnostic
                 CircuitElaborationError::PositionOffBoundary { .. },
             )) => MemberFault::OffBoundary,
         };
-        crate::LoweringRefusal::UndescribedMember {
+        crate::error::LoweringRefusal::UndescribedMember {
             span: self.span,
             fault,
         }
@@ -304,8 +304,7 @@ pub struct CellReport
 /// - witness: `desc_cells::tests::a_rule_over_a_declined_operation_owes_no_refusal_of_its_own_2666`
 /// - witness: `desc_cells::tests::a_two_redex_body_declines_with_both_occurrences`
 /// - witness: `desc_cells::tests::declaration_order_is_the_cell_order`
-/// - witness: `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
-/// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+/// - witness: `tests::desc_cells::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
 #[spec(ensures: |report| report.declarations.len() == declarations.len()
     && report.declarations.iter().zip(declarations).all(|(cells, declaration)| cells.at == declaration.at
         && ((cells.declined_faces.is_empty() && !declaration.ill_formed) || cells.coincidence == Coincidence::Unexamined)))]

@@ -200,7 +200,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
 /// - witness: `model::tests::a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum BuiltinSort
+pub enum BuiltinSort
 {
     /// A builtin type: `Integer`, `String`.
     Atom(TypeAtom),
@@ -230,7 +230,7 @@ impl SortTerm
     ///   indexed at a builtin type derives its family over that type.
     /// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
     /// - witness: `model::tests::a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079`
-    pub(crate) fn builtin(&self) -> Maybe<BuiltinSort, builtin_sort::Absent>
+    pub fn builtin(&self) -> Maybe<BuiltinSort, builtin_sort::Absent>
     {
         if !self.indices.is_empty() {
             return Maybe::Absent(builtin_sort::Absent::Indexed);
@@ -454,9 +454,10 @@ pub struct Presentation
 /// - executable: none — a stated law is data the derivation reads.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a theory's `refl`, `sym` and `trans` derive the law
-///   components a model proves or admits.
-/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+/// - hypothesis: L3 — `refl`, `sym` and `trans` derive the components their
+///   binders, hypotheses and paths spell; a law naming an unbound variable or
+///   at the wrong sort is refused.
+/// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatedLaw
 {
@@ -486,8 +487,9 @@ pub struct StatedLaw
 /// - executable: none — a hypothesis is data the lowering mints from.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`StatedLaw`].
-/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+/// - hypothesis: L3 — the two hypotheses of `trans` follow its variables, each
+///   a path over them.
+/// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Hypothesis
 {
@@ -598,7 +600,7 @@ impl Presentation
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn wired(&self) -> impl Iterator<Item = &PresentedCircuit>
+    pub fn wired(&self) -> impl Iterator<Item = &PresentedCircuit>
     {
         self.circuits
             .iter()
@@ -701,7 +703,7 @@ impl Members
     /// - hypothesis: L3 — a wire that only a later reading reaches, a rewrite
     ///   side read off the side it rewrites, and an output read off its
     ///   operation's result each take their sort.
-    /// - witness: `described::tests::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
+    /// - witness: `tests::described::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
     /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
     pub(crate) fn wire_sorts(
         &self,
@@ -1046,9 +1048,8 @@ impl core::fmt::Display for ModelFault
 /// - executable: none — a fault is data a refusal carries.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a theory refused at each fault, each asserted as the
-///   exact refusal.
-/// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
+/// - hypothesis: L3 — each fault reads as a clause of its own.
+/// - witness: `model::tests::each_interface_fault_reads_as_its_own_clause`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum InterfaceFault
 {
@@ -1278,7 +1279,7 @@ pub(crate) fn derive_members<'wired>(
 ///   and endpoints over the group's own operations.
 /// - witness: `derive::tests::a_derived_rule_states_its_law_over_the_theory`
 #[must_use]
-pub(crate) fn derive_laws(
+pub fn derive_laws(
     members: &Members,
     laws: &[PresentedLaw],
 ) -> Vec<Result<ModelForm, ModelFault>>
@@ -1450,14 +1451,14 @@ fn derive_heads(
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct Dependent(pub bool);
+pub struct Dependent(pub bool);
 
 /// The tail of a derived value component's telescope.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Tail<'form>
+pub enum Tail<'form>
 {
     /// An operation's results.
     Results(&'form [SortTerm]),
@@ -1485,7 +1486,7 @@ pub(crate) enum Tail<'form>
 /// # Adequacy
 /// - hypothesis: L3 — `comp`'s sort binders bind and its morphisms do not;
 ///   every binder of `unitL` binds.
-/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `model::tests::each_binder_a_later_sort_or_the_tail_names_is_dependent`
 #[spec(ensures: |ret| ret.len() == telescope.len())]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -1494,7 +1495,7 @@ pub(crate) enum Tail<'form>
         reason = "bounded: `named` holds the variables one operation's telescope and result mention"
     )
 )]
-pub(crate) fn dependence(
+pub fn dependence(
     telescope: &[Binder],
     tail: Tail<'_>,
 ) -> Vec<Dependent>
@@ -1550,7 +1551,7 @@ pub(crate) fn dependence(
         reason = "bounded: `named` holds the variables one port's sorts mention"
     )
 )]
-pub(crate) fn variable_dependence(
+pub fn variable_dependence(
     variables: &[Variable],
     result: &SortTerm,
 ) -> Vec<Dependent>
@@ -1616,7 +1617,7 @@ fn binder_vars<'term>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`dependence`].
-/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `model::tests::each_binder_a_later_sort_or_the_tail_names_is_dependent`
 #[spec(
     captures: before = into.len(),
     ensures: into.len() >= before,
@@ -1644,7 +1645,7 @@ fn sort_vars<'term>(
 /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands back
 ///   one theory, its two sorts and two operations, and the model its instance
 ///   checks against.
-/// - witness: `tests::modules::models::a_lowered_theory_exposes_its_description_and_its_model`
+/// - witness: `tests::model::a_lowered_theory_reads_its_description_and_its_model`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LoweredTheory<'module>
 {

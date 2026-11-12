@@ -70,6 +70,7 @@
 //!   the block already defines — which a face then reads as it reads any other.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -101,9 +102,10 @@ use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
 use quenchant_shape::shape::Maybe;
 
-use crate::DeclarationOutcome;
+use crate::description::DescribedDeclaration;
 use crate::description::DescriptionGrade;
 use crate::description::FamilyParameter;
+use crate::description::NativeFamily;
 use crate::description::written::WrittenCircuit;
 use crate::description::written::WrittenMembers;
 use crate::description::written::WrittenOperation;
@@ -111,7 +113,6 @@ use crate::description::written::WrittenPath;
 use crate::description::written::WrittenPort;
 use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
-use crate::lower::atom_type;
 use crate::model::Binder;
 use crate::model::BuiltinSort;
 use crate::model::Dependent;
@@ -127,8 +128,8 @@ use crate::model::Variable;
 use crate::model::dependence;
 use crate::model::derive_members;
 use crate::model::variable_dependence;
-use crate::module::LoweredModule;
 use crate::resolve::SurfaceName;
+use crate::resolve::atom_type;
 use crate::resolve::type_atom;
 
 /// What a described node is, for a face reading it.
@@ -442,9 +443,9 @@ impl<'form> Unstated<'form>
     /// - hypothesis: L3 — `let(u, t)` places `u` at `Tm` and `t` at the binding
     ///   port's `Tm`; `nu(bind a . p)` places `p` at the abstracting port's
     ///   `Proc`; `new(bind x . q)` places `q` at the field's `C`.
-    /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
-    /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
-    /// - witness: `described::tests::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
+    /// - witness: `tests::described::a_second_order_law_answers_at_its_written_sorts`
+    /// - witness: `tests::described::a_variable_under_an_abstraction_answers_at_its_port`
+    /// - witness: `tests::described::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
     fn of(
         operations: &'form BTreeMap<&'form Name, &'form PresentedOperation>,
         left: &'form FreeTerm,
@@ -521,7 +522,7 @@ impl<'form> Unstated<'form>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `let(u, t)` stands at `Tm`.
-    /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
+    /// - witness: `tests::described::a_second_order_law_answers_at_its_written_sorts`
     #[spec(ensures: |ret| ret.is_none_or(|sort| sort.indices.is_empty()))]
     fn result(
         &self,
@@ -565,7 +566,7 @@ struct Typer<'arena>
 /// # Adequacy
 /// - hypothesis: L3 — `comp`'s result `Hom(a, c)` reads `Hom(a, b)` under the
 ///   law `unitL`'s elaborated arguments.
-/// - witness: `described::tests::a_theory_answers_at_every_member`
+/// - witness: `tests::described::a_theory_answers_at_every_member`
 #[spec(ensures: |ret| !by.is_empty() || ret.eq(term))]
 fn substitute(
     term: &FreeTerm,
@@ -768,8 +769,7 @@ impl Typer<'_>
                         let injected = self
                             .arena
                             .value_injection(gandr_kernel_term::Summand::from(side), unit);
-                        let boolean =
-                            crate::lower::atom_type(self.arena, crate::resolve::TypeAtom::Boolean);
+                        let boolean = atom_type(self.arena, crate::resolve::TypeAtom::Boolean);
                         built.push(self.arena.value_ascribe(injected, boolean));
                     },
                     TermView::Ctor { .. }
@@ -870,7 +870,7 @@ impl Typer<'_>
     /// # Adequacy
     /// - hypothesis: L3 — `comp`'s three object binders bind and its two
     ///   morphisms do not; `unitL`'s law relates two applications.
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
     #[spec(captures: before = scope.binders.len(), ensures: scope.binders.len() == before)]
     fn telescope(
         &mut self,
@@ -1111,7 +1111,7 @@ impl Typer<'_>
     /// - hypothesis: L3 — `get`'s continuation answers at the function from its
     ///   state, its variable at the state's sort, so a binding port read as
     ///   first-order, or its variable unread, shows.
-    /// - witness: `described::tests::a_binding_port_answers_at_the_function_from_its_variables_765`
+    /// - witness: `tests::described::a_binding_port_answers_at_the_function_from_its_variables_765`
     #[spec(captures: before = scope.binders.len(), ensures: scope.binders.len() == before)]
     fn taking(
         &mut self,
@@ -1269,7 +1269,7 @@ impl Typer<'_>
     /// - hypothesis: L3 — an operation whose index applies a binding port
     ///   answers at each binder's sort and each index term, so an operation
     ///   read only for its sorts' heads shows.
-    /// - witness: `described::tests::an_unelaborated_operation_s_ports_answer_as_written_2969`
+    /// - witness: `tests::described::an_unelaborated_operation_s_ports_answer_as_written_2969`
     fn binding(
         &mut self,
         scope: &mut Scope,
@@ -1320,8 +1320,8 @@ impl Typer<'_>
     /// - hypothesis: L3 — a `bind` port beside first-order ones: its atom
     ///   answers at its atom sort and its own name nowhere, so an abstracting
     ///   port read as first-order, or not read at all, shows.
-    /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
-    /// - witness: `described::tests::an_unelaborated_operation_s_ports_answer_as_written_2969`
+    /// - witness: `tests::described::a_variable_under_an_abstraction_answers_at_its_port`
+    /// - witness: `tests::described::an_unelaborated_operation_s_ports_answer_as_written_2969`
     fn bound(
         &mut self,
         scope: &Scope,
@@ -1396,10 +1396,10 @@ impl Typer<'_>
     ///   laws and circuit answer at the types asserted; the identity-return
     ///   `lam`'s binder answers at its indexed sort and its port at the
     ///   function from it.
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
-    /// - witness: `described::tests::a_stated_law_answers_at_its_statement_2356`
-    /// - witness: `described::tests::a_derived_rule_answers_each_side_node_at_its_sort`
-    /// - witness: `described::tests::a_binding_port_answers_at_the_function_from_its_variables_765`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_stated_law_answers_at_its_statement_2356`
+    /// - witness: `tests::described::a_derived_rule_answers_each_side_node_at_its_sort`
+    /// - witness: `tests::described::a_binding_port_answers_at_the_function_from_its_variables_765`
     /// - witness: `description::theory::tests::a_model_type_reads_as_a_nested_model_1226`
     fn theory(
         &mut self,
@@ -1736,13 +1736,13 @@ impl Typer<'_>
     ///   under `bind d .` and `bind c .` at the port's `C`, and `d` and `c`
     ///   there at the sorts their ports bind them at; `k(x)` in `mono`'s index
     ///   at `k`'s sort `C`, and `k` at the function from `V`.
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
-    /// - witness: `described::tests::a_binding_port_answers_at_the_function_from_its_variables_765`
-    /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
-    /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
-    /// - witness: `described::tests::an_occurrence_answers_at_its_port`
-    /// - witness: `described::tests::an_unelaborated_operation_s_ports_answer_as_written_2969`
-    /// - witness: `described::tests::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_binding_port_answers_at_the_function_from_its_variables_765`
+    /// - witness: `tests::described::a_second_order_law_answers_at_its_written_sorts`
+    /// - witness: `tests::described::a_variable_under_an_abstraction_answers_at_its_port`
+    /// - witness: `tests::described::an_occurrence_answers_at_its_port`
+    /// - witness: `tests::described::an_unelaborated_operation_s_ports_answer_as_written_2969`
+    /// - witness: `tests::described::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
     fn law_side(
         &mut self,
         scope: &Scope,
@@ -2004,8 +2004,8 @@ impl Typer<'_>
     ///   `Nat`, and `add` at its type; a wire only a later reading reaches, a
     ///   rewrite side read off the side it rewrites and an output read off its
     ///   operation's result each answer at their sort.
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
-    /// - witness: `described::tests::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
     fn circuit(
         &mut self,
         scope: &Scope,
@@ -2093,9 +2093,9 @@ impl Typer<'_>
     ///   one-result operation's result at the family itself; an indexed
     ///   family's operation and rule answer at the family at the index its
     ///   ports write, and its constructors at the index each states.
-    /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
-    /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
-    /// - witness: `described::tests::an_indexed_constructor_answers_at_the_index_it_states_3528`
+    /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `tests::described::an_indexed_family_s_operation_answers_at_its_index_2940`
+    /// - witness: `tests::described::an_indexed_constructor_answers_at_the_index_it_states_3528`
     fn family(
         &mut self,
         description: &TheoryDesc<DescriptionGrade>,
@@ -2430,8 +2430,8 @@ impl Typer<'_>
     ///   argument answer under `a`, and `List(a)`'s tail, scoped past the
     ///   head's binder, answers at `List(a)`; `V(a)`'s constructors answer at
     ///   `V(a, Z)` and `V(a, S(n))`.
-    /// - witness: `described::tests::a_parameterised_constructor_answers_under_its_parameters`
-    /// - witness: `described::tests::an_indexed_constructor_answers_at_the_index_it_states_3528`
+    /// - witness: `tests::described::a_parameterised_constructor_answers_under_its_parameters`
+    /// - witness: `tests::described::an_indexed_constructor_answers_at_the_index_it_states_3528`
     fn parameterised(
         &mut self,
         parameters: &[FamilyParameter],
@@ -2518,7 +2518,7 @@ impl Typer<'_>
     /// - hypothesis: L3 — `FZ` returns `Fin(S(n))` with `n` bound, `AtZ`
     ///   answers at `At(Z)`, and `V(a)`'s constructors at `V(a, Z)` and `V(a,
     ///   S(n))`, so a dropped row or an unlifted parameter shows.
-    /// - witness: `described::tests::an_indexed_constructor_answers_at_the_index_it_states_3528`
+    /// - witness: `tests::described::an_indexed_constructor_answers_at_the_index_it_states_3528`
     fn stated(
         &mut self,
         constant: ConstantIndex,
@@ -2569,7 +2569,7 @@ impl Typer<'_>
     ///   Stream(a)` answer under `a`: `a` read as a type at `Type`, the family
     ///   at `Type[-]` and its argument at the parameter's classifier; a base
     ///   type observed by an unparameterised family at `Type`.
-    /// - witness: `described::tests::a_codata_observation_s_type_answers_at_its_universe`
+    /// - witness: `tests::described::a_codata_observation_s_type_answers_at_its_universe`
     fn codata(
         &mut self,
         parameters: &[FamilyParameter],
@@ -2672,175 +2672,180 @@ impl Typer<'_>
     }
 }
 
-impl LoweredModule<'_>
+/// A family a lowered module declares, as the typer reads it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub enum DeclaredFamily<'module>
 {
-    /// The type each described node answers at, minted into `arena`.
-    ///
-    /// # Specification
-    /// - requires: `arena` is the one the module was lowered into.
-    /// - ensures: for every `theory` block and every unparameterised `data`
-    ///   family's operations and rules, each written node at the type its
-    ///   member states, as the [`crate::described`] documentation lays out,
-    ///   each read in its context; a parameterised family's constructors, and
-    ///   those of a family the native reading owns whole, at its native
-    ///   signature under its parameters; each node of a codata family's
-    ///   observation types at its universe under its parameters; the first
-    ///   context is the empty one.
-    /// - provides: what a face answers inside a described declaration.
-    /// - fails: never; a node no type is stated for records nothing.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a theory's sorts, operations, laws and circuit, a
-    ///   data family's operations and rules, and the constructors of a family
-    ///   with a function field answer at the types asserted.
-    /// - witness: `described::tests::a_theory_answers_at_every_member`
-    /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
-    /// - witness: `described::tests::a_family_the_native_reading_owns_answers_at_its_signature`
-    /// - witness: `described::tests::a_codata_observation_s_type_answers_at_its_universe`
-    #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
-        && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
-    #[inline]
-    pub fn described_types(
-        &self,
-        arena: &mut CoreArena,
-    ) -> DescribedTypes
+    /// A data family: its name, its constant, its signature and the names of
+    /// its constructors, in signature order.
+    Data
     {
-        let mut typer = Typer {
-            arena,
-            types: DescribedTypes {
-                entries: Vec::new(),
-                contexts: Vec::from([Vec::new()]),
-                uses: Vec::new(),
-            },
-            members: BTreeMap::new(),
-        };
-        let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
-        let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)> =
-            BTreeMap::new();
-        let mut signatures: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
-        let mut codatas: BTreeMap<Name, (ConstantIndex, &CodataSignature)> = BTreeMap::new();
-        let mut kinds: BTreeMap<ConstantIndex, ValueTypeId> = BTreeMap::new();
-        let base = typer.universe(Level::zero());
-        for (name, atom) in [
-            ("Integer", BaseType::Integer),
-            ("String", BaseType::String),
-            ("Char", BaseType::Character),
-            ("u32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U32)),
-            ("u64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U64)),
-            ("i32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I32)),
-            ("i64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64)),
-        ] {
-            let ty = typer.arena.value_type_base(atom);
-            let _first = families.insert(Name::from(name), (ty, base));
-        }
-        let unit = typer.arena.value_type_unit();
-        let _first = families.insert(Name::from("Unit"), (unit, base));
-        for declaration in self.declarations() {
-            // The words of a family's loops are minted under the family's
-            // name, and a theory's terms under the theory's, never written:
-            // the name is the family's or the theory's.
-            if matches!(
-                declaration.role(),
-                crate::module::Role::Words | crate::module::Role::Terms
-            ) {
+        /// The family's name.
+        name: Name,
+        /// The family's constant.
+        constant: ConstantIndex,
+        /// The family's signature.
+        signature: &'module DataSignature,
+        /// The names of the family's constructors, in signature order.
+        constructors: &'module [String],
+    },
+    /// A codata family: its name, its constant and its signature.
+    Codata
+    {
+        /// The family's name.
+        name: Name,
+        /// The family's constant.
+        constant: ConstantIndex,
+        /// The family's signature.
+        signature: &'module CodataSignature,
+    },
+}
+
+/// The type each described node answers at, minted into `arena`, over the
+/// families `declared` names, the declarations `described` holds and the
+/// families the native reading owns whole, `natives`.
+///
+/// # Specification
+/// - requires: `arena` is the one the families were lowered into.
+/// - ensures: for every `theory` block and every unparameterised `data`
+///   family's operations and rules, each written node at the type its member
+///   states, as the [`crate::described`] documentation lays out, each read in
+///   its context; a parameterised family's constructors, and those of a family
+///   the native reading owns whole, at its native signature under its
+///   parameters; each node of a codata family's observation types at its
+///   universe under its parameters; the first context is the empty one.
+/// - provides: what a face answers inside a described declaration.
+/// - fails: never; a node no type is stated for records nothing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a theory's sorts, operations, laws and circuit, a data
+///   family's operations and rules, and the constructors of a family with a
+///   function field answer at the types asserted.
+/// - witness: `tests::described::a_theory_answers_at_every_member`
+/// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
+/// - witness: `tests::described::a_family_the_native_reading_owns_answers_at_its_signature`
+/// - witness: `tests::described::a_codata_observation_s_type_answers_at_its_universe`
+#[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
+    && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
+#[inline]
+pub fn described_types<'module>(
+    arena: &mut CoreArena,
+    declared: impl IntoIterator<Item = DeclaredFamily<'module>>,
+    described: impl IntoIterator<Item = &'module DescribedDeclaration>,
+    natives: &'module [NativeFamily],
+) -> DescribedTypes
+{
+    let mut typer = Typer {
+        arena,
+        types: DescribedTypes {
+            entries: Vec::new(),
+            contexts: Vec::from([Vec::new()]),
+            uses: Vec::new(),
+        },
+        members: BTreeMap::new(),
+    };
+    let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
+    let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)> =
+        BTreeMap::new();
+    let mut signatures: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
+    let mut codatas: BTreeMap<Name, (ConstantIndex, &CodataSignature)> = BTreeMap::new();
+    let mut kinds: BTreeMap<ConstantIndex, ValueTypeId> = BTreeMap::new();
+    let base = typer.universe(Level::zero());
+    for (name, atom) in [
+        ("Integer", BaseType::Integer),
+        ("String", BaseType::String),
+        ("Char", BaseType::Character),
+        ("u32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U32)),
+        ("u64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U64)),
+        ("i32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I32)),
+        ("i64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64)),
+    ] {
+        let ty = typer.arena.value_type_base(atom);
+        let _first = families.insert(Name::from(name), (ty, base));
+    }
+    let unit = typer.arena.value_type_unit();
+    let _first = families.insert(Name::from("Unit"), (unit, base));
+    for family in declared {
+        let (name, constant, signature, names) = match family {
+            DeclaredFamily::Data {
+                name,
+                constant,
+                signature,
+                constructors: names,
+            } => (name, constant, signature, names),
+            DeclaredFamily::Codata {
+                name,
+                constant,
+                signature,
+            } => {
+                let _first = codatas.insert(name, (constant, signature));
                 continue;
-            }
-            let (index, signature) = match declaration.outcome() {
-                DeclarationOutcome::Data(index) => match self.data(index) {
-                    Maybe::Present(signature) => (index, signature),
-                    Maybe::Absent(_) => continue,
-                },
-                DeclarationOutcome::Codata(index) => {
-                    if let Maybe::Present(signature) = self.codata(index) {
-                        let _first = codatas.insert(
-                            Name::from(declaration.name().as_ref()),
-                            (declaration.constant(), signature),
-                        );
+            },
+        };
+        let _first = kinds.insert(constant, signature.kind());
+        let _first = signatures.insert(name.clone(), (constant, signature));
+        if !signature.parameters().is_empty() {
+            continue;
+        }
+        let ty = typer.arena.value_type_data(constant, Vec::new());
+        let _first = families.insert(name, (ty, signature.kind()));
+        for (tag, (constructor, fields)) in names.iter().zip(signature.constructors()).enumerate() {
+            let _first = constructors.insert(
+                Name::from(constructor.as_str()),
+                (fields.clone(), ty, ConstructorTag::from(tag)),
+            );
+        }
+    }
+    let code = families.get(&Name::from("Theory")).map(|&(ty, _)| ty);
+    for described in described {
+        match described.presentation {
+            Maybe::Present(ref presentation) => {
+                typer.theory(presentation, &described.written, code);
+            },
+            Maybe::Absent(_) => {
+                if described.description.polarity == DeclPolarity::Codata {
+                    if let Some(&codata) = codatas.get(&described.description.id.name) {
+                        typer.codata(&described.parameters, &described.written, codata, &kinds);
                     }
                     continue;
-                },
-                DeclarationOutcome::Uncompleted { .. }
-                | DeclarationOutcome::Completed { .. }
-                | DeclarationOutcome::Bodied { .. }
-                | DeclarationOutcome::Abstract(_)
-                | DeclarationOutcome::World
-                | DeclarationOutcome::Refused(_) => continue,
-            };
-            let _first = kinds.insert(declaration.constant(), signature.kind());
-            let _first = signatures.insert(
-                Name::from(declaration.name().as_ref()),
-                (declaration.constant(), signature),
-            );
-            if !signature.parameters().is_empty() {
-                continue;
-            }
-            let ty = typer
-                .arena
-                .value_type_data(declaration.constant(), Vec::new());
-            let _first = families.insert(
-                Name::from(declaration.name().as_ref()),
-                (ty, signature.kind()),
-            );
-            for (tag, (name, fields)) in self
-                .constructors(index)
-                .iter()
-                .zip(signature.constructors())
-                .enumerate()
-            {
-                let _first = constructors.insert(
-                    Name::from(name.as_str()),
-                    (fields.clone(), ty, ConstructorTag::from(tag)),
-                );
-            }
+                }
+                if described.parameters.is_empty() {
+                    let stated = signatures
+                        .get(&described.description.id.name)
+                        .map(|&(constant, signature)| (constant, signature.results()));
+                    typer.family(
+                        &described.description,
+                        &described.written,
+                        &families,
+                        &constructors,
+                        stated,
+                    );
+                }
+                else if let Some(&(constant, signature)) =
+                    signatures.get(&described.description.id.name)
+                {
+                    typer.parameterised(
+                        &described.parameters,
+                        &described.written,
+                        constant,
+                        signature,
+                    );
+                }
+            },
         }
-        let code = families.get(&Name::from("Theory")).map(|&(ty, _)| ty);
-        for described in self.described() {
-            match described.presentation {
-                Maybe::Present(ref presentation) => {
-                    typer.theory(presentation, &described.written, code);
-                },
-                Maybe::Absent(_) => {
-                    if described.description.polarity == DeclPolarity::Codata {
-                        if let Some(&codata) = codatas.get(&described.description.id.name) {
-                            typer.codata(&described.parameters, &described.written, codata, &kinds);
-                        }
-                        continue;
-                    }
-                    if described.parameters.is_empty() {
-                        let stated = signatures
-                            .get(&described.description.id.name)
-                            .map(|&(constant, signature)| (constant, signature.results()));
-                        typer.family(
-                            &described.description,
-                            &described.written,
-                            &families,
-                            &constructors,
-                            stated,
-                        );
-                    }
-                    else if let Some(&(constant, signature)) =
-                        signatures.get(&described.description.id.name)
-                    {
-                        typer.parameterised(
-                            &described.parameters,
-                            &described.written,
-                            constant,
-                            signature,
-                        );
-                    }
-                },
-            }
-        }
-        // A family the native reading owns whole answers as a parameterised
-        // one does, at its signature, under however many parameters it has.
-        for native in self.natives() {
-            if let Some(&(constant, signature)) = signatures.get(&native.name) {
-                typer.parameterised(&native.parameters, &native.written, constant, signature);
-            }
-        }
-        typer.types
     }
+    // A family the native reading owns whole answers as a parameterised one
+    // does, at its signature, under however many parameters it has.
+    for native in natives {
+        if let Some(&(constant, signature)) = signatures.get(&native.name) {
+            typer.parameterised(&native.parameters, &native.written, constant, signature);
+        }
+    }
+    typer.types
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ name = "gandr-surface-lowering-base"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The base of gandr's lowering: the namespace engine, the per-node table, the form stretches and the circuit readings that the lowering's families share"
+description = "The base of gandr's lowering: the namespace engine, the per-node table, the form readers, the refusals, the origin table, the attribute side table and the description route that the lowering's families share"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -20,22 +20,49 @@ path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the executable specifications. The
 # circuit readings wire a body through the circuit algebras. The levitation
-# crate names a circuit body's nodes and the namespace's segments.
+# crate names a circuit body's nodes and the namespace's segments, and holds
+# the descriptions. The cell complexes, the computads and the coherent
+# resolutions elaborate a description's cells and decide its rules. The shapes
+# crate reads a record family's boundary. The kernel crates name the core
+# terms the description route mints. `hotpath` profiles a rule block's
+# decision for the benchmark report. The parser builds the trees of the
+# `fixture` feature.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-parser = { workspace = true, optional = true }
 gandr-surface-syntax.workspace = true
+gandr-theory-cell-complexes.workspace = true
 gandr-theory-circuit-algebras.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-computads.workspace = true
 gandr-theory-levitation.workspace = true
+gandr-theory-shapes.workspace = true
+hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
 
 # The integration target lowers a unit through the lowering, which depends on
 # this crate. Cargo admits that cycle for a test target, and the test links
-# one copy of this crate.
+# one copy of this crate, its `fixture` feature on. The checker judges a
+# description's minted values.
 [dev-dependencies]
-gandr-surface-grammar.workspace = true
+gandr-core-checker.workspace = true
 gandr-surface-lowering.workspace = true
+gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
 gandr-surface-parser.workspace = true
+
+[features]
+default = []
+# The test fixtures: parsed and hand-built trees, synthetic positions, origins
+# and spans. The lowering's tests read them beside its own units.
+fixture = ["dep:gandr-surface-parser"]
+# A rule block's decision, its completion included, and the completion's
+# overlap queries and normalization: timed and their allocations counted for
+# the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

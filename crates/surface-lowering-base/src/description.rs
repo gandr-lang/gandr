@@ -145,18 +145,20 @@ use gandr_theory_levitation::WfDiagnostic;
 use gandr_theory_levitation::WfKind;
 use quenchant_shape::shape::Maybe;
 
-use crate::LoweringRefusal;
+use crate::error::LoweringRefusal;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
+use crate::form::read_as_type;
 use crate::form::read_pieces;
 use crate::form::shape_of;
-use crate::lower::read_as_type;
-use crate::module::Visibility;
+use crate::layered::Layered;
+use crate::slot::Visibility;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
+use crate::written_import::unqualified_imports;
 
 /// A field's declared usage, retained in the description.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -182,7 +184,7 @@ pub enum DescriptionFault
         repaired: crate::form::Repaired,
         /// The form the repair is reported against when it stands among the
         /// declaration's own children.
-        form: crate::FormName,
+        form: crate::form::FormName,
     },
     /// Family parameters must be typed and the head must declare its index
     /// arity.
@@ -473,13 +475,12 @@ impl DescriptionDiagnostic
     ///   neighboring member, and an unguarded feed, a reversible glyph and a
     ///   cycle keep three classes apart; a binder over an unrepresentable sort
     ///   is refused naming the sort and the port as written.
-    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
-    /// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
+    /// - witness: `tests::theory::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
     /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
     /// - witness: `description::theory::tests::a_seam_refusal_stands_at_its_rule_5763`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
-    pub(crate) fn lowering_refusal<'source>(
+    pub fn lowering_refusal<'source>(
         &self,
         written: gandr_surface_syntax::SourceFragment<'source>,
     ) -> LoweringRefusal<'source>
@@ -490,8 +491,8 @@ impl DescriptionDiagnostic
         };
         let malformed = || LoweringRefusal::MalformedForm {
             span: self.span,
-            form: crate::FormName::DECLARATION,
-            fault: crate::FormFault::MisplacedTile,
+            form: crate::form::FormName::DECLARATION,
+            fault: crate::error::FormFault::MisplacedTile,
         };
         match self.fault {
             DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
@@ -581,8 +582,8 @@ impl DescriptionDiagnostic
             DescriptionFault::Signature(crate::circuit::SignatureFault::RetiredShapeMember) => {
                 LoweringRefusal::MalformedForm {
                     span: self.span,
-                    form: crate::FormName::DECLARATION,
-                    fault: crate::FormFault::Retired(crate::form::TileName::BOUNDARY),
+                    form: crate::form::FormName::DECLARATION,
+                    fault: crate::error::FormFault::Retired(crate::form::TileName::BOUNDARY),
                 }
             },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
@@ -627,22 +628,22 @@ impl DescriptionDiagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`DescriptionDiagnostic::lowering_refusal`].
-/// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
+/// - witness: `tests::theory::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
 #[spec(ensures: |ret| match (subject, ret) {
-    (None, Maybe::Absent(crate::description_subject::Absent::Unnamed)) => true,
+    (None, Maybe::Absent(crate::error::description_subject::Absent::Unnamed)) => true,
     (Some(name), Maybe::Present(spelled)) => spelled.as_ref() == name.as_ref(),
-    (Some(name), Maybe::Absent(crate::description_subject::Absent::Unwritten)) => !<&str>::from(written).contains(name.as_ref()),
-    (None, Maybe::Present(_) | Maybe::Absent(crate::description_subject::Absent::Unwritten))
-        | (Some(_), Maybe::Absent(crate::description_subject::Absent::Unnamed)) => false,
+    (Some(name), Maybe::Absent(crate::error::description_subject::Absent::Unwritten)) => !<&str>::from(written).contains(name.as_ref()),
+    (None, Maybe::Present(_) | Maybe::Absent(crate::error::description_subject::Absent::Unwritten))
+        | (Some(_), Maybe::Absent(crate::error::description_subject::Absent::Unnamed)) => false,
 })]
 fn spelled<'source>(
     subject: Option<&gandr_theory_levitation::Name>,
     written: gandr_surface_syntax::SourceFragment<'source>,
-) -> Maybe<crate::SurfaceName<'source>, crate::description_subject::Absent>
+) -> Maybe<crate::resolve::SurfaceName<'source>, crate::error::description_subject::Absent>
 {
     let Some(subject) = subject
     else {
-        return Maybe::Absent(crate::description_subject::Absent::Unnamed);
+        return Maybe::Absent(crate::error::description_subject::Absent::Unnamed);
     };
     let name: &str = subject.as_ref();
     let written: &'source str = written.into();
@@ -650,8 +651,8 @@ fn spelled<'source>(
         .find(name)
         .and_then(|at| written.get(at .. at.saturating_add(name.len())))
         .map_or(
-            Maybe::Absent(crate::description_subject::Absent::Unwritten),
-            |text| Maybe::Present(crate::SurfaceName::from(text)),
+            Maybe::Absent(crate::error::description_subject::Absent::Unwritten),
+            |text| Maybe::Present(crate::resolve::SurfaceName::from(text)),
         )
 }
 
@@ -710,7 +711,7 @@ pub struct DescribedDeclaration
     pub written: written::WrittenMembers,
     /// Whether a `pub` mark precedes the declaration, so that a source
     /// importing its source names it: set by the reading of its root.
-    pub exported: crate::module::Visibility,
+    pub exported: Visibility,
 }
 
 impl DescribedDeclaration
@@ -926,7 +927,6 @@ impl<'pieces> Run<'pieces>
 ///   incorrectly global refusal; a `theory` with a keyword in a member's
 ///   classifier slot is refused once, at the keyword.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
 /// - witness: `desc_cells::tests::an_ill_formed_rule_is_refused_once_and_left_unexamined_2375`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |report| report.declarations.iter().all(|entry| tree.node(entry.at.node).is_some())))]
@@ -951,7 +951,7 @@ pub fn elaborate_descriptions<'source>(
         &mut report,
         Sight {
             unit,
-            prior: &crate::module::Layered::whole(BTreeMap::new()),
+            prior: &Layered::whole(BTreeMap::new()),
         },
     )?;
 
@@ -964,13 +964,13 @@ pub fn elaborate_descriptions<'source>(
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Sight<'held>
+pub struct Sight<'held>
 {
     /// The unit the sources stand in.
     pub unit: &'held Unit,
     /// The declarations read before the roots this reading reads, by their
     /// nodes: a resumed document's closure's.
-    pub prior: &'held crate::module::Layered<NodeIndex, DescribedDeclaration>,
+    pub prior: &'held Layered<NodeIndex, DescribedDeclaration>,
 }
 
 /// The declarations an `include` written in one source may name.
@@ -1004,10 +1004,10 @@ impl<'held> Visible<'held>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declaration of a source not imported is not seen,
-    ///   nor is one its imported source keeps private.
-    /// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
-    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - hypothesis: L3 — a declaration sees its own source's and an imported
+    ///   source's public one, and reads past a private one of an imported
+    ///   source and one of a source not imported.
+    /// - witness: `description::tests::a_declaration_sees_its_own_source_and_what_its_imports_export`
     #[spec(ensures: |ret| ret.own.iter().all(|declaration| unit.source_at(declaration.at.span.start()) == source)
         && ret.imported.iter().all(|&(from, declaration)| from != source && imports.contains(&from)
             && unit.source_at(declaration.at.span.start()) == from))]
@@ -1025,9 +1025,7 @@ impl<'held> Visible<'held>
             if from == source {
                 visible.own.push(declaration);
             }
-            else if imports.contains(&from)
-                && declaration.exported == crate::module::Visibility::Public
-            {
+            else if imports.contains(&from) && declaration.exported == Visibility::Public {
                 visible.imported.push((from, declaration));
             }
         }
@@ -1080,12 +1078,11 @@ impl<'held> Visible<'held>
 /// - hypothesis: L3 — as [`elaborate_descriptions`]; a document resumed after
 ///   its closure numbers its declarations as the whole unit's reading does.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[spec(
     captures: before = report.declarations.len(),
     ensures: |result| result.is_err() || report.declarations.len() >= before,
 )]
-pub(crate) fn elaborate_roots<'source>(
+pub fn elaborate_roots<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
     roots: &[NodeIndex],
@@ -1095,7 +1092,7 @@ pub(crate) fn elaborate_roots<'source>(
 ) -> Result<(), LoweringRefusal<'source>>
 {
     let reader = Reader { grammar, tree };
-    let imports = crate::module::unqualified_imports(grammar, tree, roots, sight.unit);
+    let imports = unqualified_imports(grammar, tree, roots, sight.unit);
     let none = BTreeSet::new();
     // The declarations in source order: a mutual block's members are read in
     // its place, as declarations of their own.
@@ -1246,7 +1243,7 @@ pub(crate) fn elaborate_roots<'source>(
                     form: match shape_of(grammar, node)? {
                         Shape::Form { name, .. } => name,
                         Shape::Root | Shape::Layout | Shape::Repair(_) => {
-                            crate::FormName::DECLARATION
+                            crate::form::FormName::DECLARATION
                         },
                     },
                 },
@@ -1617,7 +1614,7 @@ impl Reader<'_, '_>
     ///   uniformity, and an uncoded field keeps the fields and result after it
     ///   written; a two-output constructor describes as its two ports.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-    /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
     /// - witness: `description::tests::a_multi_output_constructor_describes_one_constructor_per_port`
     #[spec(ensures: |result| result.as_ref().map_or(true, |read| !read.written.is_empty() && read.ctors.as_ref().map_or(true, |ctors| ctors.len() == read.written.len() && ctors.iter().all(|ctor| ctor.result == *family))))]
@@ -1817,7 +1814,6 @@ impl Reader<'_, '_>
     ///   observations from data generators, and an observation that is no type
     ///   is refused once.
     /// - witness: `description::tests::codata_observations_preserve_their_codes`
-    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |result| match result {
         Ok(Observation::Nullary(ref ctor, ref written)) => ctor.result == *family
             && !written.ty.nodes.is_empty()
@@ -2402,8 +2398,7 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a tail at the parameters swapped, at the family
     ///   applied again and at a data family reads each argument the family does
     ///   not head at its own node.
-    /// - witness: `description::tests::a_codata_self_reference_keeps_its_written_arguments_2188`
-    /// - witness: `description::tests::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
+    /// - witness: `description::tests::a_codata_self_reference_reads_its_written_steps_2188`
     #[spec(ensures: |result| result.as_ref().map_or(true, |steps| !steps.is_empty()))]
     fn self_applied(
         &self,
@@ -2632,7 +2627,7 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a field written in parentheses reads as the field it
     ///   groups, and a group over two types is left whole.
-    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
+    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_where_it_is_written_2664`
     #[spec(ensures: |result| result.as_ref().map_or(true, |&(read, _)| read.span.start() >= at.span.start() && read.span.end() <= at.span.end()))]
     fn ungrouped(
         &self,
@@ -2675,10 +2670,10 @@ impl Reader<'_, '_>
     /// Returns `NoType`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a numeral, a string, a boolean, a character, a hole,
-    ///   `()`, a group over two types and a grouped numeral are no type, and
-    ///   the lowering refuses each once.
-    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
+    /// - hypothesis: L3 — a numeral, a string, a character, a hole, `()`, a
+    ///   group over two types and a grouped numeral are each refused as no type
+    ///   at their own bytes.
+    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_where_it_is_written_2664`
     #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| refusal.span == at.span && refusal.fault == DescriptionFault::NoType, |&()| true))]
     fn typed(
         &self,
@@ -2837,7 +2832,7 @@ fn split_members(
     result
 }
 
-pub(crate) mod derive;
+pub mod derive;
 
 mod family;
 

@@ -1680,13 +1680,22 @@ dependencies = [
 name = "gandr-surface-lowering-base"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-checker",
  "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
+ "gandr-surface-lowering-base",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "gandr-theory-cell-complexes",
  "gandr-theory-circuit-algebras",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-computads",
  "gandr-theory-levitation",
+ "gandr-theory-shapes",
+ "hotpath",
  "quenchant-anodized",
  "quenchant-shape",
 ]
