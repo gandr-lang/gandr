@@ -109,7 +109,7 @@ jobs:
         run: mise run ci:coverage "$COVERAGE_PART"
       - &save-coverage-state
         name: cache instrumented build state
-        if: ${{ !cancelled() && env.COVERAGE_STATE_SAVE == 'true' && steps.coverage-state-restore.outputs.cache-hit != 'true' && hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)) != '' }}
+        if: ${{ !cancelled() && env.COVERAGE_STATE_SAVE == 'true' && steps.coverage-state-restore.outputs.cache-hit != 'true' && hashFiles(format('target/{0}/.rustc_info.json', env.COVERAGE_STATE)) != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/${{ env.COVERAGE_STATE }}

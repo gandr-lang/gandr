@@ -30,5 +30,37 @@
       }
     },
     "output": "[]"
+  },
+  {
+    "name": "#6888: a hashFiles walk of a build directory is refused",
+    "input": {
+      "workflow": ".github/workflows/coverage.yml",
+      "jobs": {
+        "coverage-part": {
+          "steps": [
+            {
+              "if": "${{ hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)) != '' }}"
+            }
+          ]
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/coverage.yml` job `coverage-part` walks a build directory with `hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)`. Test one file at the directory's root\"]"
+  },
+  {
+    "name": "a hashFiles test of one file at a build directory's root holds",
+    "input": {
+      "workflow": ".github/workflows/coverage.yml",
+      "jobs": {
+        "coverage-part": {
+          "steps": [
+            {
+              "if": "${{ hashFiles(format('target/{0}/.rustc_info.json', env.COVERAGE_STATE)) != '' }}"
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
   }
 ]
