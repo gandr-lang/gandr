@@ -272,11 +272,8 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
                 "second waits on first and third on second; beside waits on none of them"
             );
             let bound = checks.bound();
-            for pair in bound.chain().windows(2) {
-                let &[before, after] = pair
-                else {
-                    unreachable!("a window of two holds two items");
-                };
+            let chain = bound.chain();
+            for (&before, &after) in chain.iter().zip(chain.iter().skip(1)) {
                 // `Dependences` keeps its edges sorted, so one search finds each.
                 assert!(
                     checks
@@ -287,7 +284,7 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
                             after: usize::from(after)
                         })
                         .is_ok(),
-                    "the chain of the critical path follows the dependences: {pair:?}"
+                    "the chain of the critical path follows the dependences: {before:?} to {after:?}"
                 );
             }
             assert!(

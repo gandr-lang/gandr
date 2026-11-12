@@ -202,8 +202,9 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The schedule that the checks of one component's admission can reach:
-/// each declaration that the kernel admitted is a job, its references to
+/// The schedule that the checks of one component's admission can reach.
+///
+/// Each declaration that the kernel admitted is a job, its references to
 /// earlier jobs are its dependences, and the time of its admission is its
 /// cost.
 ///
@@ -254,8 +255,10 @@ impl CheckSchedule
     ///   chain and beside it, a job waits on exactly the jobs that its
     ///   definition names, and the critical path covers the chain's costs.
     /// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
-    #[spec(ensures: |ret| ret.untimed.len() <= ret.jobs.len()
-        && ret.jobs.len() <= readmission.readmitted().len())]
+    #[spec(ensures: |ret| {
+        let jobs = ret.jobs.len();
+        ret.untimed.len() <= jobs && jobs <= readmission.readmitted().len()
+    })]
     #[must_use]
     pub(crate) fn of(readmission: &bridge::Readmission) -> Self
     {
