@@ -18,7 +18,7 @@
 
 **Why.** The package lock, the build layer and the kernel's verdict cache each need a store on disk, and each opening the storage crates on its own would split one key space into three. The planes keep a persistent backend out of themselves, so the backend lives here, beside them.
 
-**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. An insertion is held in memory and written by the operation that made it, published through `gandr-core-publish` as a temporary file renamed into place; a load reads the file once and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots`, and a journal of the namings since, `roots.journal`, both changed under `roots.lock`. A naming appends one entry, and the journal folds into the tree once it holds as many entries as the tree holds roots, so a naming costs amortised constant time.
+**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. A plane lists its directory once, when the store opens, and holds each listed object's bytes under a `OnceLock`, so threads share one store with no lock. Each call holds a batch over a plane, the section of the plane that the call owns: an insertion goes into the batch, and the batch publishes each object through `gandr-core-publish` as a temporary file renamed into place when the call ends. Two batches that take one object write the same bytes, so the rename publishes one. A load reads a listed file once in the process, reads an object published after the store opened by its name once in the call, and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots`, and a journal of the namings since, `roots.journal`, both changed under `roots.lock`. A naming appends one entry, and the journal folds into the tree once it holds as many entries as the tree holds roots, so a naming costs amortised constant time.
 
 ## References
 
@@ -27,19 +27,20 @@
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: the integrity design (§ the two layers) — integrity never stands for validity, the wall this store keeps.
 - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the planes and the roots publish through `core-publish`, whose guard owns each temporary.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage programme's chunk DAG, whose closure of a pointer `Store::closure` reads with no codec.
+- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan (§ the idempotent part) — the planes' puts take `&self`, since two puts of one object write the same bytes.
 
 ## Provided features
 
 - `Store::open` makes the directory and its planes where they are missing and lists what they hold.
-- `Store::commit` commits a `Stored` value under the store's chunking profile and the value's own codec identity, and returns its `ContentPtr`; `Store::deref` reads it back.
+- `Store::commit` commits a `Stored` value under the store's chunking profile and the value's own codec identity through `&self`, on any thread, and returns its `ContentPtr`; `Store::deref` reads it back.
 - `Store::closure` reads where a value resides with no codec: its `Residence`, the chunks a dereference of its pointer loads, each verified, and the `ImageBytes` of their images. The store writes nothing for it.
-- `Store::write_tree` admits a record tree to the record plane; `Store::records` is the plane, a `BlockStore`, for opening a stored root and proving against it.
+- `Store::write_tree` admits a record tree to the record plane through `&self`; `Store::records` is a `NodeBatch` over the plane, a `BlockStore`, for opening a stored root and proving against it.
 - `Store::set_root` names a pointer by a `RootName` in amortised constant time, reading under the lock what another store over the same directory named since, so two stores keep each other's roots; `Store::roots` reads them.
 - `StoreError` names the file system's faults by path, and carries each plane's own refusal, a chunk or node changed on disk among them.
 
 ## Expected features
 
-A stored value implements `CanonicalValue` and names its codec by `Stored::codec`, a new identity whenever its token encoding changes. A consumer opens one store per run and passes it to each part that reads or writes it. The store establishes integrity only: a consumer decides, or asks the kernel, whether the bytes a pointer names are valid.
+A stored value implements `CanonicalValue` and names its codec by `Stored::codec`, a new identity whenever its token encoding changes. A consumer opens one store per run and shares it with each part that reads or writes it, on any thread. The store establishes integrity only: a consumer decides, or asks the kernel, whether the bytes a pointer names are valid.
 
 ## Examples
 
@@ -56,7 +57,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Topic | Module |
 | ----- | ------ |
 | The facade's layer, its wall, references | [`src/lib.rs`](src/lib.rs) |
-| The two planes on disk and their pending writes | [`plane`](src/plane.rs) |
+| The two planes on disk, their listing at open and each call's batch | [`plane`](src/plane.rs) |
 | Named roots as a record tree and a journal of the namings since | [`roots`](src/roots.rs) |
 | The facade, its profile and its faults | [`store`](src/store.rs) |
 

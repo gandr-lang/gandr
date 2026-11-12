@@ -4,7 +4,7 @@
 //! In this process a migration's body runs at its world over a store of its
 //! own, and what crosses between the caller's store
 //! and the world's — each capture in, the answer back — crosses by content
-//! through the one chunk store the process holds, committed then dereferenced
+//! through a chunk store of that crossing alone, committed then dereferenced
 //! ([`crate::crossing`]). A host that binds the world to another process runs
 //! the migration there instead ([`crate::HostHandler::migrate`]), and
 //! [`arrive`] runs one another host shipped here.
@@ -26,8 +26,10 @@
 //!   or declined, a value that does not cross, or a host's refusal, declines
 //!   the caller's run at the migration: a failing far run is no branch of the
 //!   caller's yet.
-//! - **The chunk store only grows.** A crossing's chunks stay for the process's
-//!   life, as a content-addressed memory keeps what it was given.
+//! - **A crossing's chunk store is its own.** Each crossing commits into a
+//!   chunk store that it starts and derefs from it, on the caller's thread, so
+//!   a crossing takes no lock and its chunks go with it. The process keeps no
+//!   chunk store that grows with its crossings.
 //!
 //! # References
 //!
@@ -38,12 +40,12 @@
 //!   programme, § storage-programme-worlds-sessions: a world a locus the host
 //!   binds, and a crossing between two a commit at the source then a deref at
 //!   the destination.
+//! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single
+//!   writer plan, which removes every lock around a chunk store: a crossing's
+//!   commit and deref share no store with another crossing.
 
 use alloc::vec::Vec;
 use core::num::NonZeroU64;
-use std::sync::LazyLock;
-use std::sync::Mutex;
-use std::sync::PoisonError;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -86,10 +88,6 @@ const CAP: NonZeroU64 = match NonZeroU64::new(64) {
     Some(cap) => cap,
     None => NonZeroU64::MIN,
 };
-
-/// The process's chunk store, which every world reaches.
-static CAM: LazyLock<Mutex<InMemoryChunkStore>> =
-    LazyLock::new(|| Mutex::new(InMemoryChunkStore::new()));
 
 /// The chunker's constants every crossing between worlds commits and reads
 /// under, in this process and between hosts.
@@ -161,7 +159,9 @@ pub(crate) fn migrate(
 ///
 /// The migration at `at` of `arena`, closed over `captures`, values of
 /// `store`, runs on the tier the policy picks, and its answer is a value of
-/// `store`.
+/// `store`. `at` is the migration's place in the program that both hosts
+/// hold, and the caller reads the shipped captures into a fresh `store`.
+/// [`Unmigrated`], of `gandr-core-term`, names why a migration runs nowhere.
 ///
 /// # Specification
 /// - requires: `captures` are the values the migration's body binds, in the
@@ -218,7 +218,7 @@ pub fn arrive(
 }
 
 /// Cross the value `from` binds at `value` into `to`, committed then
-/// dereferenced through the process's chunk store.
+/// dereferenced through a chunk store of this crossing alone.
 ///
 /// # Specification
 /// trivial.
@@ -232,7 +232,7 @@ pub(crate) fn cross(
 ) -> Result<HeapValueId, CrossingRefusal>
 {
     let params = chunking();
-    let mut cam = CAM.lock().unwrap_or_else(PoisonError::into_inner);
-    let manifest = commit(from, value, params, &mut *cam)?;
-    deref(&manifest, params, &*cam, to)
+    let mut cam = InMemoryChunkStore::new();
+    let manifest = commit(from, value, params, &mut cam)?;
+    deref(&manifest, params, &cam, to)
 }

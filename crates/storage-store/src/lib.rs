@@ -13,9 +13,11 @@
 //! by [`ContentPtr`], [`Store::closure`] reads the chunks it resides in and
 //! their bytes, [`Store::write_tree`] and [`Store::records`] a record tree,
 //! and [`Store::set_root`] and [`Store::roots`] name a pointer for a
-//! consumer to find again. The planes' own traits verify every load, so a
-//! file changed on disk is refused by the plane's own fault, carried as
-//! [`StoreError`].
+//! consumer to find again. The puts take `&self`: each call holds a
+//! [`NodeBatch`] or a batch over the value plane, the section of the plane
+//! that the call owns, so threads share one store with no lock. The planes'
+//! own traits verify every load, so a file changed on disk is refused by the
+//! plane's own fault, carried as [`StoreError`].
 //!
 //! # Boundaries
 //!
@@ -40,6 +42,9 @@
 //! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage
 //!   programme's chunk DAG, whose closure of a pointer `Store::closure` reads
 //!   with no codec.
+//! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single
+//!   writer plan, whose idempotent part is the planes' puts through `&self`:
+//!   two puts of one object write the same bytes, so neither waits.
 
 extern crate alloc;
 
@@ -49,8 +54,7 @@ mod store;
 
 pub use gandr_storage_values::ContentPtr;
 
-pub use crate::plane::ChunkDirectory;
-pub use crate::plane::NodeDirectory;
+pub use crate::plane::NodeBatch;
 pub use crate::roots::RootName;
 pub use crate::roots::Roots;
 pub use crate::roots::unrooted;

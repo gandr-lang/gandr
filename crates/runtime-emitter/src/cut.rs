@@ -40,7 +40,7 @@
 //!   command. A writer's function records a site for each closure the root's
 //!   function builds, and so lays out any closure its captures hold.
 //! - **No lock and no chunk on the way.** A copy goes from store to store, so a
-//!   cut takes no lock and writes nothing to the process's chunk store.
+//!   cut takes no lock and commits no chunk.
 //! - **A thunk that does not copy declines its spawn.** A capture holding a
 //!   capability does not copy, since a capability's address is its identity.
 //!   The run then stops stuck at the spawn. Focus's caller marks no writer that

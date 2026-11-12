@@ -1,5 +1,6 @@
 //! The store's contract: each plane and the roots read back from disk after
-//! reopening, and bytes changed on disk are refused.
+//! reopening, bytes changed on disk are refused, and threads share one store
+//! with no lock.
 
 extern crate alloc;
 
@@ -172,7 +173,7 @@ fn a_committed_value_derefs_back_after_reopening()
     let root = scratch(Path::new("committed"));
     let value = labels(Count(120));
     let pointer = {
-        let mut store = Store::open(&root).expect("the store opens");
+        let store = Store::open(&root).expect("the store opens");
         let pointer = store.commit(&value).expect("the value commits");
         let back: Labels = store
             .deref(pointer)
@@ -189,7 +190,7 @@ fn a_committed_value_derefs_back_after_reopening()
         written.contains(&root.join("chunks").join(pointer.digest().to_string())),
         "the root chunk is the file its digest names"
     );
-    let mut reopened = Store::open(&root).expect("the store opens again");
+    let reopened = Store::open(&root).expect("the store opens again");
     let back: Labels = reopened
         .deref(pointer)
         .expect("the value derefs after reopening");
@@ -312,7 +313,7 @@ fn a_refused_chunk_is_written_afresh_by_the_next_commit_4074()
     let last = bytes.last_mut().expect("a chunk has bytes");
     *last ^= 0xFF_u8;
     std::fs::write(&file, &bytes).expect("the chunk's file is changed");
-    let mut reopened = Store::open(&root).expect("the store opens again");
+    let reopened = Store::open(&root).expect("the store opens again");
     assert!(
         matches!(
             reopened.deref::<Labels>(pointer),
@@ -352,7 +353,7 @@ fn a_written_tree_opens_from_the_record_plane_after_reopening()
         .write_tree(&tree)
         .expect("the tree is written");
     let reopened = Store::open(&root).expect("the store opens again");
-    let opened = StoredRoot::open(tree.root(), tree.root_node_hash(), reopened.records())
+    let opened = StoredRoot::open(tree.root(), tree.root_node_hash(), &reopened.records())
         .expect("the tree's root opens from the record plane");
     assert_eq!(opened.root(), tree.root());
     for leaf in &tree.leaf_hashes() {
@@ -624,4 +625,103 @@ fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
         0_usize,
         "the roots start anew"
     );
+}
+
+/// How many threads commit one value at once.
+const WRITERS: usize = 16_usize;
+
+/// Sixteen threads that share one store and commit one value at once each
+/// return its pointer, leave one file for each chunk, as one writer does,
+/// and the value derefs back from a store opened later (#6899).
+#[test]
+fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
+{
+    let alone = scratch(Path::new("one-writer"));
+    let value = labels(Count(120));
+    let expected = Store::open(&alone)
+        .expect("the store opens")
+        .commit(&value)
+        .expect("one writer commits the value");
+    let root = scratch(Path::new("sixteen-writers"));
+    let store = Store::open(&root).expect("the store opens");
+    let start = std::sync::Barrier::new(WRITERS);
+    let pointers: Vec<Result<ContentPtr, StoreError>> = std::thread::scope(|scope| {
+        let writers: Vec<_> = core::iter::repeat_with(|| {
+            scope.spawn(|| {
+                let _leader = start.wait();
+                store.commit(&value)
+            })
+        })
+        .take(WRITERS)
+        .collect();
+        writers
+            .into_iter()
+            .map(|writer| writer.join().expect("a writer runs to its end"))
+            .collect()
+    });
+    assert!(
+        pointers.iter().all(|pointer| *pointer == Ok(expected)),
+        "every writer returns the pointer one writer returns: {pointers:?}"
+    );
+    let names = |directory: &Path| -> Vec<std::ffi::OsString> {
+        files(directory)
+            .iter()
+            .filter_map(|file| file.file_name().map(std::ffi::OsStr::to_os_string))
+            .collect()
+    };
+    assert_eq!(
+        names(&root.join("chunks")),
+        names(&alone.join("chunks")),
+        "sixteen writers leave the chunk files one writer leaves, and no temporary"
+    );
+    let back: Labels = Store::open(&root)
+        .expect("the store opens again")
+        .deref(expected)
+        .expect("the value derefs after reopening");
+    assert_eq!(back, value);
+}
+
+/// How many leaves the tree of the same-store test spans at least: more than
+/// the first two tables of reads by name hold, 12 and 24 objects.
+const LEAVES: usize = 37_usize;
+
+/// A record tree that a store writes opens from the same store's record plane,
+/// which did not list its nodes at open and reads them by name, through more
+/// tables of reads than one (#6899).
+#[test]
+fn a_written_tree_opens_from_the_store_that_wrote_it_6899()
+{
+    let root = scratch(Path::new("tree-same-store"));
+    let mut records: Vec<([u8; 4], Vec<u8>)> = (0_u32 .. 20_000_u32)
+        .map(|index| (index.to_le_bytes(), index.to_le_bytes().repeat(16)))
+        .collect();
+    records.sort_unstable();
+    let refs: Vec<RecordRef<'_>> = records
+        .iter()
+        .map(|&(ref key, ref value)| RecordRef::new(key.as_slice(), value.as_slice()))
+        .collect();
+    let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
+    let leaves = tree.leaf_hashes();
+    assert!(leaves.len() >= LEAVES, "{} leaves", leaves.len());
+    let store = Store::open(&root).expect("the store opens");
+    store.write_tree(&tree).expect("the tree is written");
+    let nodes = store.records();
+    let opened = StoredRoot::open(tree.root(), tree.root_node_hash(), &nodes)
+        .expect("the tree's root opens from the store that wrote it");
+    assert_eq!(opened.root(), tree.root());
+    for leaf in &leaves {
+        let node = nodes.load(*leaf).expect("every leaf loads verified");
+        assert_eq!(
+            node.identity(),
+            *leaf,
+            "each read by name answers its own name"
+        );
+    }
+    for leaf in &leaves {
+        assert_eq!(
+            nodes.load(*leaf).map(|node| node.identity()),
+            Ok(*leaf),
+            "a second load finds each name in its table"
+        );
+    }
 }
