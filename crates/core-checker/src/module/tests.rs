@@ -1631,7 +1631,7 @@ fn a_base_value_at_a_patched_type_crosses_as_a_restriction_5578()
         environment.arena().value(body)
     );
     report
-        .coercions
+        .coercions_mut()
         .get_mut(&named)
         .expect("the coercion is recorded")
         .remove(&label("tls"));
@@ -1792,11 +1792,12 @@ fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
         label("port"),
         eighty
     )]);
-    report.judged[0].verdict = Verdict::Checked {
+    let entry = &mut report.judged_mut()[0];
+    *entry = crate::report::Judged::new(entry.constant(), entry.origin(), Verdict::Checked {
         declared: crate::formation::FormedValueType::derived(differing),
         body,
         evidence,
-    };
+    });
     assert_eq!(
         crate::bridge::readmit(&mut arena, &report).readmitted()[0].outcome(),
         &crate::bridge::Outcome::Rejected(gandr_kernel_core::KernelError::FixedFieldDiffers {
@@ -1812,11 +1813,12 @@ fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
         label("port"),
         also_zero
     )]);
-    report.judged[0].verdict = Verdict::Checked {
+    let entry = &mut report.judged_mut()[0];
+    *entry = crate::report::Judged::new(entry.constant(), entry.origin(), Verdict::Checked {
         declared: crate::formation::FormedValueType::derived(mistyped),
         body,
         evidence,
-    };
+    });
     let readmission = crate::bridge::readmit(&mut arena, &report);
     assert!(
         matches!(
@@ -1953,11 +1955,12 @@ fn equal_meets_over_other_glued_values_share_no_formation_5748()
         );
     };
     let differing = system(&mut arena, integer_literal());
-    report.judged[1].verdict = Verdict::Checked {
+    let entry = &mut report.judged_mut()[1];
+    *entry = crate::report::Judged::new(entry.constant(), entry.origin(), Verdict::Checked {
         declared: crate::formation::FormedValueType::derived(differing),
         body,
         evidence,
-    };
+    });
     let readmission = crate::bridge::readmit(&mut arena, &report);
     assert!(
         matches!(
@@ -4194,12 +4197,12 @@ fn an_unmarked_atom_is_met_wherever_a_type_holds_it_3375()
         ),
         (
             reported,
-            Maybe::Absent(super::unmarked::Absent::Unheld),
+            Maybe::Absent(crate::report::unmarked::Absent::Unheld),
             "a marked atom",
         ),
         (
             integer,
-            Maybe::Absent(super::unmarked::Absent::Unheld),
+            Maybe::Absent(crate::report::unmarked::Absent::Unheld),
             "a type naming no atom",
         ),
     ] {

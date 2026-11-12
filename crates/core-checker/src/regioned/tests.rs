@@ -140,9 +140,9 @@ fn a_call_of_a_definition_over_a_region_checks_where_it_stands()
     use crate::context::CheckingContext;
     use crate::declaration::Declaration;
     use crate::declaration::OriginToken;
-    use crate::module::Judged;
-    use crate::module::Verdict;
     use crate::module::check_module;
+    use crate::report::Judged;
+    use crate::report::Verdict;
 
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);

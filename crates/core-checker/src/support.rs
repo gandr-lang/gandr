@@ -31,8 +31,59 @@ use quenchant_shape::shape::Maybe;
 
 use crate::context::signature_table;
 use crate::formation::FormedValueType;
-use crate::module::Verdict;
+use crate::report::Verdict;
 use crate::worlds::Located;
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement keeps no failure.
+    pub mod kept {
+        /// The reason no failure is kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration was not refused.
+            Accepted,
+            /// The declaration was refused before its body was run.
+            Unrun,
+            /// A module run keeps the failure in its report
+            /// ([`crate::ModuleReport::failures`]), not beside its support.
+            Reported,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement carries no elaboration.
+    pub mod elaborated {
+        /// The reason no elaboration is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The body held no computation written where a value is read, or
+            /// there was no body.
+            Unnested,
+            /// The first run refused the body, so nothing was elaborated.
+            Unaccepted,
+            /// A module run keeps the elaboration in its report
+            /// ([`crate::ModuleReport::nested_elaborations`]), not beside its
+            /// support.
+            Reported,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement keeps no suspension.
+    pub mod waits {
+        /// The reason no suspension is kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The verdict is not suspended.
+            Unsuspended,
+            /// A module run keeps the suspension in its report
+            /// ([`crate::ModuleReport::suspensions`]), not beside its support.
+            Reported,
+        }
+    }
+}
 
 /// One answer a judgement read from the signature table, beside what the
 /// world register held of the same declaration: its home and its spending.
@@ -345,12 +396,12 @@ pub struct Supported
     entered: Entered,
     /// The failure of the run that refused the declaration, when this
     /// judgement keeps one.
-    failure: Maybe<crate::Failure, crate::kept::Absent>,
+    failure: Maybe<crate::Failure, kept::Absent>,
     /// What elaborating the body's nested computations did, when this
     /// judgement keeps it.
-    elaboration: Maybe<crate::NestedElaboration, crate::elaborated::Absent>,
+    elaboration: Maybe<crate::NestedElaboration, elaborated::Absent>,
     /// What a suspended run left undecided, or why this judgement keeps none.
-    residue: Maybe<crate::elaboration::Residue, crate::waits::Absent>,
+    residue: Maybe<crate::elaboration::Residue, waits::Absent>,
     /// The goal memo's consults of the decision, where a module run that
     /// keeps supports counted them; none otherwise.
     #[cfg(feature = "instrument")]
@@ -367,10 +418,10 @@ impl Supported
     /// trivial.
     pub(crate) fn new(
         (verdict, support, entered): (Verdict, Support, Entered),
-        failure: Maybe<crate::Failure, crate::kept::Absent>,
+        failure: Maybe<crate::Failure, kept::Absent>,
         (elaboration, residue): (
-            Maybe<crate::NestedElaboration, crate::elaborated::Absent>,
-            Maybe<crate::elaboration::Residue, crate::waits::Absent>,
+            Maybe<crate::NestedElaboration, elaborated::Absent>,
+            Maybe<crate::elaboration::Residue, waits::Absent>,
         ),
     ) -> Self
     {
@@ -452,7 +503,7 @@ impl Supported
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn failure(&self) -> Maybe<&crate::Failure, crate::kept::Absent>
+    pub const fn failure(&self) -> Maybe<&crate::Failure, kept::Absent>
     {
         match self.failure {
             Maybe::Present(ref failure) => Maybe::Present(failure),
@@ -467,7 +518,7 @@ impl Supported
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn elaboration(&self) -> Maybe<&crate::NestedElaboration, crate::elaborated::Absent>
+    pub const fn elaboration(&self) -> Maybe<&crate::NestedElaboration, elaborated::Absent>
     {
         match self.elaboration {
             Maybe::Present(ref elaboration) => Maybe::Present(elaboration),
@@ -500,7 +551,7 @@ impl Supported
         &self,
         context: &crate::context::CheckingContext<'_>,
         prior: &alloc::collections::BTreeMap<ConstantIndex, crate::elaboration::Suspension>,
-    ) -> Maybe<crate::elaboration::Suspension, crate::waits::Absent>
+    ) -> Maybe<crate::elaboration::Suspension, waits::Absent>
     {
         let residue = match self.residue {
             Maybe::Present(ref residue) => residue,
@@ -517,7 +568,7 @@ impl Supported
             | Verdict::Checked { .. }
             | Verdict::Synthesised { .. }
             | Verdict::Owed(_)
-            | Verdict::Refused(_) => Maybe::Absent(crate::waits::Absent::Unsuspended),
+            | Verdict::Refused(_) => Maybe::Absent(waits::Absent::Unsuspended),
         }
     }
 }

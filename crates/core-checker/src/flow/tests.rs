@@ -46,14 +46,14 @@ use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::RunFault;
 use crate::refusal::RunStep;
 use crate::refusal::UnadmittedFormer;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// The seat protocols the witnesses relate.
 #[derive(Clone, Copy, Debug)]

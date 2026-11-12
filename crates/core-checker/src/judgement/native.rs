@@ -38,7 +38,6 @@ use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
 use super::Crossing;
-use super::Direction;
 use super::Frame;
 use super::Goal;
 use super::Machine;
@@ -50,6 +49,7 @@ use crate::CoreNode;
 use crate::ExpectedShape;
 use crate::TermNode;
 use crate::TypeNode;
+use crate::answer::Direction;
 use crate::comonoid::Grade;
 use crate::former;
 use crate::respect::Reading;

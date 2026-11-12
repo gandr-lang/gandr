@@ -478,7 +478,7 @@ pub struct CheckingContext<'arena>
     grants: crate::capability::Grants,
     /// The term judgements and type formations a typed run finished, in the
     /// order finished, when one is recording.
-    typings: Option<crate::judgement::Kept>,
+    typings: Option<crate::record::Kept>,
     /// The types whose formations a recording keeps, and which of them it
     /// has kept.
     formations: Wanted,
@@ -732,7 +732,7 @@ pub struct Checkpoint
     /// [`CheckingContext::grants`].
     grants: crate::capability::Grants,
     /// [`CheckingContext::typings`].
-    typings: Option<crate::judgement::Kept>,
+    typings: Option<crate::record::Kept>,
     /// [`CheckingContext::formations`].
     formations: Wanted,
     /// [`CheckingContext::stages`].
@@ -1600,7 +1600,7 @@ impl<'arena> CheckingContext<'arena>
     )]
     pub(crate) fn keep_typing(
         &mut self,
-        typing: crate::judgement::Typing,
+        typing: crate::record::Typing,
     )
     {
         if let Some(ref mut log) = self.typings {
@@ -1629,7 +1629,7 @@ impl<'arena> CheckingContext<'arena>
     )]
     pub(crate) fn keep_endpoint(
         &mut self,
-        standing: crate::judgement::Typing,
+        standing: crate::record::Typing,
     )
     {
         if let Some(ref mut log) = self.typings {
@@ -1868,7 +1868,7 @@ impl<'arena> CheckingContext<'arena>
             *first = First::Kept;
         }
         if let Some(ref mut log) = self.typings {
-            log.formed.push(crate::judgement::Formed { ty, level });
+            log.formed.push(crate::record::Formed { ty, level });
         }
     }
 
@@ -1967,9 +1967,9 @@ impl<'arena> CheckingContext<'arena>
     ///   recorded keeps the two logs apart and joins them in order.
     /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
     #[spec(ensures: self.typings.as_ref().is_some_and(|log| log.typings.is_empty() && log.formed.is_empty()))]
-    pub(crate) fn start_typings(&mut self) -> Option<crate::judgement::Kept>
+    pub(crate) fn start_typings(&mut self) -> Option<crate::record::Kept>
     {
-        self.typings.replace(crate::judgement::Kept::default())
+        self.typings.replace(crate::record::Kept::default())
     }
 
     /// Stop recording: the log kept since [`Self::start_typings`], the
@@ -1991,8 +1991,8 @@ impl<'arena> CheckingContext<'arena>
     )]
     pub(crate) fn finish_typings(
         &mut self,
-        outer: Option<crate::judgement::Kept>,
-    ) -> crate::judgement::Kept
+        outer: Option<crate::record::Kept>,
+    ) -> crate::record::Kept
     {
         core::mem::replace(&mut self.typings, outer).unwrap_or_default()
     }

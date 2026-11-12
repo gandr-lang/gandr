@@ -27,7 +27,6 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
-use super::Direction;
 use super::Frame;
 use super::Goal;
 use super::Machine;
@@ -35,6 +34,7 @@ use super::Produced;
 use super::Step;
 use super::session::Opened;
 use super::session::Resident;
+use crate::answer::Direction;
 use crate::context::Recording;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;

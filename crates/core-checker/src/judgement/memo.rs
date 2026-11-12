@@ -65,31 +65,14 @@ use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
-use super::Direction;
 use super::Goal;
 use super::Machine;
 use super::Produced;
 use super::session::Scope;
+use crate::answer::Direction;
+use crate::answer::unanswered;
 use crate::refusal::TypeNode;
 use crate::solution::Migrating;
-
-quenchant_shape::reason_enum! {
-    /// Why the memo gives a goal no answer.
-    pub mod unanswered {
-        /// The reason it gives none.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The memo neither answers nor records where the run stands.
-            Closed,
-            /// The goal is not a value judgement or a value type's formation,
-            /// or it reads a linear binder or one the context does not hold.
-            Unkeyed,
-            /// The memo holds no answer for the goal's key; the goal is now
-            /// under way, and its answer is recorded when it finishes.
-            Missed,
-        }
-    }
-}
 
 /// The most answers one run's memo holds. Past it the memo records nothing
 /// more, and each goal it does not hold runs as it does without a memo.

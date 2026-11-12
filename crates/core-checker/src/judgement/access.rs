@@ -23,7 +23,6 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_ordered_algebras::Usage;
 
 use super::Control;
-use super::Direction;
 use super::Frame;
 use super::Goal;
 use super::Machine;
@@ -34,6 +33,7 @@ use super::session::Opened;
 use super::session::Resided;
 use super::session::Resident;
 use crate::access::AccessDefect;
+use crate::answer::Direction;
 use crate::context::Atom;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
