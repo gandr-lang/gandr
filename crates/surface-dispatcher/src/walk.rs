@@ -697,6 +697,7 @@ impl Walk
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret <= bound)]
     pub fn sources_up_to(
         &self,
         bound: SourceCount,

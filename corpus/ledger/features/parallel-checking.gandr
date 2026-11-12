@@ -1,11 +1,15 @@
-/// `parallel-checking`: Parallel checking over supports.
-/// Implemented: `gandr check` of fewer sources than its threads checks apart
-/// the code obligations of each last drain that holds 64 of them or more, in
-/// runs of 16 or more, one run for each thread, and gives the verdict of the
-/// serial check.
-/// Not implemented: the forks at the arguments of an application and at the
-/// branches of a case, the fork in a run of as many sources as threads or
-/// more, and the schedule of the checks of a component.
+/// `parallel-checking`: the checker forks the obligations of a long drain.
+///
+/// Implemented: `gandr check` forks the last drain of a declaration on its pool.
+/// It forks a drain only when the drain holds 64 code obligations or more.
+/// Each run holds 16 obligations or more, and each thread takes one run.
+/// The driver installs the fork only in a run of fewer sources than threads.
+/// The forked drain gives the verdict of the serial drain.
+///
+/// Not implemented: no fork splits the arguments of an application.
+/// No fork splits the branches of a case.
+/// A run of as many sources as threads or more does not fork.
+/// No schedule orders the checks of a component.
 ///
 /// - owes: #2802 — the forks at the frames of a check
 /// - owes: #3476 — the schedule of the checks of a component
@@ -14,8 +18,8 @@
 import std.math.cylinder (cylinderComposite2);
 
 /// Two squares of paths side by side, at identity verticals. The check of
-/// this source readmits `std.math.cylinder`, whose composites hold last drains
-/// of 64 obligations or more, so a check on more than one thread forks them.
+/// this source readmits `std.math.cylinder`. Its composites hold last drains
+/// of 64 obligations or more. A check on more than one thread forks them.
 def sideBySide(
   A : Type,
   x : A,
