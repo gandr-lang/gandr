@@ -1645,6 +1645,57 @@ fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Box<dyn Er
     Ok(())
 }
 
+/// A closer reaches its open partner across one free form, and a bracketed
+/// form of its family further down keeps the closer it owns.
+///
+/// `fork (task : Task.)` with no name after `Task.` leaves the `type_path`
+/// open, and the `)` continues no tile of it. The `(` of the fork is open
+/// directly below, so the `)` reaches it across the `type_path`, and the
+/// binder owes its one missing name. Without the reach, the `)` stayed
+/// stray, and the source owed 4 to 8 tiles (#6323). In
+/// `(forget[sort R = Integer](upReadings at Model ReadCounter)`, the
+/// `forget` group lost its `)`. The last `)` belongs to the outer group, so
+/// it does not reach the `(` of `forget`, and the source owes its one minted
+/// closer. A reach there leaves the outer group open, at 5 obligations.
+#[test]
+fn a_closer_reaches_its_open_partner_6323() -> Result<(), Box<dyn Error>>
+{
+    for (rel, dropped) in [
+        ("model/tasks/forced.gandr", 74_usize),
+        ("model/sessions/seat-exchange.gandr", 117),
+        ("model/completion/closed-statements.gandr", 50),
+        ("pathological/completion/buffer-orphaned.gandr", 52),
+        ("model/identity/model-counter-manifest-explicit.gandr", 137),
+    ] {
+        let source = std::fs::read_to_string(corpus_root().join(rel))?;
+        let token = label(SourceFragment::from(source.as_str()))
+            .into_iter()
+            .filter(|token| token.lexeme != Lexeme::Space)
+            .nth(dropped)
+            .ok_or("the source holds the dropped token")?;
+        let (start, end) = (usize::try_from(token.start)?, usize::try_from(token.end)?);
+        let damaged = format!(
+            "{}{}",
+            source
+                .get(.. start)
+                .ok_or("the token starts in the source")?,
+            source.get(end ..).ok_or("the token ends in the source")?
+        );
+        let result = parse(built(), SourceText::from(damaged.as_str()))?;
+        let owed: Vec<Oblig> = result
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.class)
+            .collect();
+        assert_eq!(
+            vec![Oblig::MissingTile],
+            owed,
+            "{rel} without its token {dropped} owes its one missing tile"
+        );
+    }
+    Ok(())
+}
+
 /// A group pattern whose first label has no dot recovers with the one
 /// missing tile, and the declaration around it stays one form.
 ///

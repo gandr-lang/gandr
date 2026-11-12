@@ -155,7 +155,10 @@ struct TokenCount(usize);
 /// is a reviewed diff, never a
 /// blind re-pin: a dropped row whose counts grew is a recovery regression, and
 /// a whole or cut-short row that moved is a tree change, each answered by the
-/// change that causes it.
+/// change that causes it. A row that a landing leaves worse by a reviewed
+/// ruling keeps its new count in the record and a line of
+/// `tests/recovery-owed.tsv` that names the issue owing the count it lost
+/// (#6323); once the row reads that count again, the sweep refuses the line.
 ///
 /// The whole matrix is some two hundred thousand parses, two for each of the
 /// corpus's hundred thousand significant tokens (`mise run ci:recovery`, and
@@ -281,6 +284,29 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
         blake3::hash(&preimage).to_hex().to_string()
     };
     let records = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recovery");
+    // The rows a landing reads worse and lists as owed (#6323): each line
+    // names a source, a dropped token, the obligations the row owes and the
+    // issue that owes them. A row that reads its owed count or less ends its
+    // line, so a repair cannot leave a stale one.
+    let owed_text = std::fs::read_to_string(records.with_file_name("recovery-owed.tsv"))?;
+    let owed_rows = owed_text
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| {
+            let mut fields = line.split('\t');
+            let source = fields.next().ok_or("an owed line names no source")?;
+            let drop: usize = fields
+                .next()
+                .ok_or("an owed line names no token")?
+                .parse()?;
+            let owed: usize = fields
+                .next()
+                .ok_or("an owed line names no count")?
+                .parse()?;
+            let issue = fields.next().ok_or("an owed line names no issue")?;
+            Ok((source, drop, owed, issue))
+        })
+        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let only: Option<HashSet<String>> = std::env::var("GANDR_RECOVERY_SOURCE").ok().map(|names| {
         names
@@ -453,6 +479,15 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
                     let nodes: usize = nodes.parse()?;
                     let old_obligations: usize = old_obligations.parse()?;
                     let old_nodes: usize = old_nodes.parse()?;
+                    if let Some(&(_, _, owed, issue)) = owed_rows
+                        .iter()
+                        .find(|&&(source, drop, ..)| source == rel && drop == token)
+                        && obligations <= owed
+                    {
+                        stale.push(format!(
+                            "{rel} drop {token} reads {obligations} obligations, at most the {owed} that #{issue} owes it; delete its line of tests/recovery-owed.tsv"
+                        ));
+                    }
                     if obligations > old_obligations || nodes > old_nodes {
                         worse.push((
                             obligations.saturating_sub(old_obligations),

@@ -1,0 +1,5 @@
+# The dropped-token rows that read worse than they owe, one on each line:
+# the source, the dropped token, the obligations the row owes, and the issue
+# that owes them. The recovery sweep refuses a line whose row reads its owed
+# count or less, so the repair deletes the line.
+fixture/model/sessions/type-quote.gandr	217	1	6323
