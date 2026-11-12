@@ -44,6 +44,8 @@
 # the packages the change touches and every package that depends on one
 # (`.config/gate-scope/packages.jq`, #5014), passed as `GATE_SCOPE`; a change
 # to the workspace's own configuration runs them over the whole workspace.
+# The shared formatters read the paths that the change touches, against the
+# base `GATE_BASE` (`.config/gate-scope/format.jq`, #6883).
 #
 # A gate that passes records the tree of the work it read and the checks it
 # ran (`.config/gate-scope/passed.bash`, #5076), and `pr:open` and `pr:land`
@@ -86,6 +88,11 @@ mapfile -t checks <<< "$selected"
 echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the integration cycle and \`mise run gate:all\` run every one" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
+# The base of the change, which `check:format` reads the change against
+# (#6883). Without the trunk no base stands, and the check reads the whole
+# tree.
+source .config/pr-stack/trunk.bash
+if GATE_BASE=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then export GATE_BASE; else unset GATE_BASE; fi
 if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:tests-enforcing "* ]]; then
   GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
   GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash)
@@ -152,7 +159,7 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 hold_gate_slot "mise run gate:all"
 gate_bound
 echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
-unset GATE_SCOPE
+unset GATE_SCOPE GATE_BASE
 tree=$(.config/gate-scope/passed.bash tree)
 mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
 mkdir -p target/gate
@@ -548,16 +555,18 @@ env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 
 # The blocking set of the queue on `landing` (#5439) is Clippy's two passes
-# and the compiler policy with its specification gates. The queue runs these
-# tasks over the workspace in two jobs of `ci.yml`: `check Clippy wall` and
-# `check quenchant compiler policy`. The gate runs them over the change's
-# packages before `pr:open`. `check:landing-queue` holds the two jobs to this
-# list. Thus the two sets stay one. The integration cycle runs the tests, the
-# sweeps and the other gates (#5438).
+# and the compiler policy with its specification gates, and the shared
+# formatters over the paths the group changes (#6883). The queue runs these
+# tasks in two jobs of `ci.yml`: `check Clippy wall`, which runs the
+# formatters first, and `check quenchant compiler policy`. The gate runs
+# them over the change's packages and paths before `pr:open`.
+# `check:landing-queue` holds the two jobs to this list. Thus the two sets
+# stay one. The integration cycle runs the tests, the sweeps and the other
+# gates (#5438).
 ["check:landing"]
-description = "The checks a merge group on landing runs: Clippy and the compiler policy"
-depends = ["check:clippy-plain-only", "check:clippy-enforcing", "check:dylint", "check:anodized", "check:anodized-enforcing"]
-run = "echo 'landing check OK: Clippy and the compiler policy hold'"
+description = "The checks a merge group on landing runs: the formatting of the change, Clippy and the compiler policy"
+depends = ["check:format", "check:clippy-plain-only", "check:clippy-enforcing", "check:dylint", "check:anodized", "check:anodized-enforcing"]
+run = "echo 'landing check OK: the formatting of the change, Clippy and the compiler policy hold'"
 
 # CI separates compilation from execution so failed tests retain built state.
 # The plain build still covers every workspace target before test execution.
@@ -3305,10 +3314,17 @@ cargo metadata --manifest-path Cargo.toml --locked --format-version 1 | jq -se '
 description = "Validate the declared hook floor"
 run = "prek validate-config prek.toml"
 
+# The shared formatters over the paths that the change touches (#6883,
+# `.config/gate-scope/format.bash`): the gate and the queue of `landing` name
+# the change's base in `GATE_BASE`. Without it the check reads the whole
+# tree. A change of a formatter's configuration or a pin reads the whole tree
+# too. The type-aware lint of TypeScript installs the extension's packages
+# only when the check formats a TypeScript source.
 ["check:format"]
-description = "Shared formatter and configuration wall"
-depends = ["aube:install"]
-run = "treefmt --ci"
+description = "The shared formatters over the paths the change touches, or over the whole tree without a base or when the change touches a formatter's configuration or a pin"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = ".config/gate-scope/format.bash"
 
 # npm sidecars and mise.lock move together; a warm install can hide a digest
 # mismatch that fails cold CI bootstrap. --locked refuses that mismatch.

@@ -45,6 +45,36 @@
     "check:witnesses"
   ],
   "comments": ["rust"],
+  "formatting": {
+    "configuration": [
+      ".mise/locks/",
+      ".oxfmtrc.json",
+      ".oxlintrc.json",
+      "mise.lock",
+      "mise.toml",
+      "rumdl.toml",
+      "rust-toolchain.toml",
+      "rustfmt.toml",
+      "sizelint.toml",
+      "tombi.toml",
+      "treefmt.toml",
+      "typos.toml"
+    ],
+    "programs": [
+      {
+        "reads": [
+          "**.mts",
+          "**.ts",
+          "aube-lock.yaml",
+          "aube-workspace.yaml",
+          "contrib/gandr-vscode/package.json",
+          "contrib/gandr-vscode/tsconfig.json",
+          "package.json"
+        ],
+        "sources": ["**.mts", "**.ts"]
+      }
+    ]
+  },
   "paths": [
     { "path": ".config/nextest.toml", "groups": ["rust", "doc"] },
     { "path": ".config/obligations/", "groups": ["rust", "doc"] },

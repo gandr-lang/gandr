@@ -32,11 +32,13 @@
 # - Heavy jobs run in the CI image, which every job extracts whole before its
 #   first step; its payload stays what most jobs run (ci.Dockerfile).
 # - A merge group on `landing` runs the blocking set alone (#5438, #5439).
-#   The set is the run's setup, Clippy, the compiler policy and the brake,
-#   and `pr-title.yml` lints the title. Clippy and the compiler policy run
-#   the tasks of `check:landing`. The brake fails while `main` lags
-#   `landing` past its limits (#5442). Every other job skips a group on
-#   `landing`.
+#   The set is the run's setup, the formatting of the change, Clippy, the
+#   compiler policy and the brake. `pr-title.yml` lints the title and each
+#   entry's authored commits, and checks the ledger against the issues the
+#   group closes (#6883). The Clippy job runs the formatting first, and it
+#   and the compiler policy run the tasks of `check:landing`. The brake
+#   fails while `main` lags `landing` past its limits (#5442). Every other
+#   job skips a group on `landing`.
 #   The integration cycle tests `landing`. A pull request on `landing` runs
 #   no Clippy, because its lane ran `check:landing` before `pr:open`.
 #   `check:landing-queue` holds the jobs to these rules.
@@ -1334,6 +1336,11 @@ jobs:
   # A pull request on `landing` skips the lane, and the skip satisfies the
   # required check (#5439). The author ran `check:landing` before `pr:open`,
   # and the group on `landing` runs the lane again.
+  # The group on `landing` first runs the shared formatters over the paths
+  # that its entries change against its base (#6883). The queue builds a
+  # tree that no lane's gate read, and a red formatter fails the group
+  # before Clippy starts. The check takes seconds, so it shares this
+  # required job and its image rather than paying for a job of its own.
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
@@ -1349,9 +1356,17 @@ jobs:
       CI_BUILD_STATE: cargo-clippy-crate
     steps:
       - *git-checkout
+      # The formatting check reads the change through Git inside the job's
+      # container.
+      - *trust-workspace
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
+      - name: check the formatting of the change
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' }}
+        env:
+          GATE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: mise run check:format
       - name: restore the Clippy state
         id: clippy-state-restore
         uses: *cache-restore
