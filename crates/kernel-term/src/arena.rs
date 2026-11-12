@@ -953,6 +953,10 @@ pub struct Family<Node>
 {
     /// The nodes frozen before the family's own, as segments, oldest first.
     /// Each clone shares the list and each segment by reference.
+    #[expect(
+        clippy::rc_buffer,
+        reason = "a freeze pushes a segment onto the list in place while no clone shares it"
+    )]
     frozen: Option<alloc::sync::Arc<Vec<Segment<Node>>>>,
     /// How many nodes the segments hold, so a read finds its side at once.
     frozen_len: usize,
@@ -969,6 +973,10 @@ struct Segment<Node>
     start: usize,
     /// The nodes, in allocation order. A freeze adds to them in place while no
     /// clone shares them.
+    #[expect(
+        clippy::rc_buffer,
+        reason = "a freeze appends to the segment in place while no clone shares it"
+    )]
     nodes: alloc::sync::Arc<Vec<Node>>,
 }
 
@@ -1099,10 +1107,10 @@ impl<Node> Family<Node>
         // The newest segment first: it holds the content that a check reads
         // most. A family that no clone outlives holds no other.
         let newest = segments.last()?;
-        match offset.0.checked_sub(newest.start) {
-            Some(within) => newest.nodes.get(within),
-            None => Self::searched(segments, offset),
-        }
+        offset.0.checked_sub(newest.start).map_or_else(
+            || Self::searched(segments, offset),
+            |within| newest.nodes.get(within),
+        )
     }
 
     /// The node at `offset` among `segments`, found by one binary search over
@@ -1160,10 +1168,10 @@ impl<Node> Family<Node>
         Offset: Into<ArenaLength>,
     {
         let offset = offset.into();
-        match offset.0.checked_sub(self.frozen_len) {
-            Some(own) => self.own.get(own),
-            None => self.frozen_at(offset),
-        }
+        offset
+            .0
+            .checked_sub(self.frozen_len)
+            .map_or_else(|| self.frozen_at(offset), |own| self.own.get(own))
     }
 
     /// The node minted last, or `None` for an empty family.
@@ -5267,7 +5275,7 @@ mod tests
                 "a mint after it at {length}, alone"
             );
         }
-        for (clone, nodes) in &clones {
+        for &(ref clone, ref nodes) in &clones {
             assert_eq!(&rows(clone), nodes, "each clone keeps the nodes it took");
         }
         assert_eq!(rows(&shared), kept);
@@ -5312,11 +5320,11 @@ mod tests
             plain.truncated_since(since),
             "at the floor that the truncation gives"
         );
-        let unchanged = kept.truncated_since(since).map(|truncated| truncated.now());
+        let unchanged = kept.truncated_since(since).map(super::Truncated::now);
         let idle = kept.clone();
         kept.dropped(&idle);
         assert_eq!(
-            kept.truncated_since(since).map(|truncated| truncated.now()),
+            kept.truncated_since(since).map(super::Truncated::now),
             unchanged,
             "a clone that mints nothing takes no stamp"
         );
@@ -5329,12 +5337,11 @@ mod tests
         back.truncate_to(start);
         let read = back
             .truncated_since(since)
-            .map(|truncated| truncated.now())
+            .map(super::Truncated::now)
             .expect("the clone's truncation takes a stamp");
         kept.dropped(&back);
         assert_eq!(
-            kept.truncated_since(read)
-                .map(|truncated| truncated.floor()),
+            kept.truncated_since(read).map(super::Truncated::floor),
             Some(start),
             "a reader at the clone's stamp forgets each name past the start"
         );
@@ -5377,7 +5384,7 @@ mod tests
         intermediates(&mut inner);
         let read = inner
             .truncated_since(since)
-            .map(|truncated| truncated.now())
+            .map(super::Truncated::now)
             .expect("the innermost clone's truncation takes a stamp");
         left.dropped(&inner);
         intermediates(&mut right);
@@ -5390,16 +5397,12 @@ mod tests
         );
         assert_eq!(check, before, "and every node of them");
         assert_eq!(
-            check
-                .truncated_since(since)
-                .map(|truncated| truncated.floor()),
+            check.truncated_since(since).map(super::Truncated::floor),
             Some(mark),
             "a reader from before the forks forgets each name past the check's nodes"
         );
         assert_eq!(
-            check
-                .truncated_since(read)
-                .map(|truncated| truncated.floor()),
+            check.truncated_since(read).map(super::Truncated::floor),
             Some(mark),
             "and so does a reader at the innermost clone's stamp"
         );
