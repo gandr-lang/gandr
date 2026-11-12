@@ -223,14 +223,13 @@ jobs:
       - *fetch-dependencies
       - name: sweep the exemplars for recovery
         env:
-          RUSTFLAGS: --cfg anodized_panic
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/enforcing
           CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
           CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
         shell: bash
         run: |
           mkdir -p recovery.out
-          mise run ledger:recovery recovery.out/report.txt > recovery.out/causes.txt
+          .config/mise/enforcing mise run ledger:recovery recovery.out/report.txt > recovery.out/causes.txt
           {
             echo '## Recovery sweep'
             echo

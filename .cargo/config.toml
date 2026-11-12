@@ -5,15 +5,25 @@
 build-dist = ["build", "--config=.cargo/config.dist.toml", "--profile=dist"]
 check-dist = ["check", "--config=.cargo/config.dist.toml", "--profile=dist"]
 
-# The tree's link on Linux, whatever a host configuration says (#4221).
-# Cargo joins a host's `rustflags` with these, the tree's last, so the
-# tree's `--ld-path` outranks a host's: clang takes the last one it reads,
-# and no `mold` or `wild` links the tree's builds under parallel lanes.
-# `ld.lld` compresses debug sections with zstd. A task that sets `RUSTFLAGS`
-# drops every `rustflags` array and keeps `linker`.
-[target.x86_64-unknown-linux-gnu]
-linker = "/usr/bin/clang"
-rustflags = ["-Ctarget-cpu=native", "-Clink-arg=--ld-path=/usr/bin/ld.lld", "-Clink-arg=-Wl,--compress-debug-sections=zstd"]
+# Each mold process uses every core. With `MOLD_JOBS=1`, concurrent links
+# take one lock of the user and run one at a time, each at full width.
+# Cargo passes this to rustc, and rustc passes it to the linker.
+[env]
+MOLD_JOBS = "1"
+
+# rustc's parallel front end compiles one crate on up to 16 threads. The
+# gain stops at 16 threads on the hosts measured. The threads take their
+# tokens from Cargo's jobserver, so a build never runs more than `-j` admits.
+[target."cfg(all())"]
+rustflags = ["-Zthreads=16"]
+
+# Every Linux build of the tree links with mold, on each host and in CI.
+# GCC and clang both read `-fuse-ld=mold`, so the CI image's `cc` and a
+# host's clang take one flag. mold compresses debug sections with zstd.
+# A host's own `rustflags` come first, and Cargo joins these after them.
+# A task that sets `RUSTFLAGS` drops every `rustflags` array.
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Clink-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--compress-debug-sections=zstd"]
 
 [unstable]
 # Freshness is by source content, not mtime. A worktree starts with a copy of

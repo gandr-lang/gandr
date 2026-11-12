@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Runs a command with the specifications enforced: `--cfg anodized_panic`
+# for the whole build graph.
+#
+# A build that sets `RUSTFLAGS` drops each `rustflags` array of the tree and
+# of the host, so it loses the tree's link and the width of its front end.
+# Cargo appends `CARGO_TARGET_<TRIPLE>_RUSTFLAGS` after those arrays. So the
+# helper exports the cfg there, and the build keeps the tree's tables.
+#
+# The triple is the one that a `--target` argument names. Without one it is
+# the host's, which `rustc -vV` states. A build for the host also gives the
+# cfg to its build scripts and procedural macros, as `RUSTFLAGS` did.
+set -euo pipefail
+
+# Cargo reads `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS` before the flags of
+# any target, even when the variable is empty. Then the cfg does not reach
+# the build, and the run tests nothing that it claims.
+for flags in RUSTFLAGS CARGO_ENCODED_RUSTFLAGS; do
+  if [[ -n ${!flags+set} ]]; then
+    echo "enforcing: $flags is set. Cargo then drops the cfg. Unset $flags." >&2
+    exit 2
+  fi
+done
+
+target=
+previous=
+for argument in "$@"; do
+  case $argument in
+    --target=*) target=${argument#--target=} ;;
+  esac
+  if [[ $previous == --target ]]; then
+    target=$argument
+  fi
+  previous=$argument
+done
+if [[ -z $target ]]; then
+  target=$(rustc -vV | sed -n 's/^host: //p')
+fi
+[[ -n $target ]] || { echo 'enforcing: rustc -vV names no host triple' >&2; exit 2; }
+
+variable=CARGO_TARGET_$(tr '[:lower:].-' '[:upper:]__' <<< "$target")_RUSTFLAGS
+flags=${!variable:-}
+if [[ " $flags " != *' --cfg anodized_panic '* ]]; then
+  flags=${flags:+$flags }'--cfg anodized_panic'
+fi
+export "$variable=$flags"
+exec "$@"

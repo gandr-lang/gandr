@@ -6,10 +6,10 @@
 # a grouped check. The table's `light` list names a heavy check that runs on
 # every change anyway.
 #
-# A check that builds `GATE_SCOPE` under `--cfg anodized_panic` unifies the
-# features over the whole workspace. A scope that keeps no member using
-# `anodized` otherwise builds `quenchant-anodized` without its feature under
-# the cfg, and its build stops.
+# A check that builds `GATE_SCOPE` under `--cfg anodized_panic`, through
+# `.config/mise/enforcing`, unifies the features over the whole workspace. A
+# scope that keeps no member using `anodized` otherwise builds
+# `quenchant-anodized` without its feature under the cfg, and its build stops.
 #
 # Input:
 #   tasks  each `check:*` task as `mise tasks ls --json` lists it: name, run,
@@ -35,7 +35,7 @@ import "table" as $table;
     | select(IN($names[]) | not)
     | "landing: it names \(.), which is no check task"),
   (.tasks[]
-    | select(any(.env[]?; test("^RUSTFLAGS=.*--cfg anodized_panic")))
+    | select(.run | tostring | test("\\.config/mise/enforcing\\b"))
     | select(.run | tostring | test("GATE_SCOPE"))
     | select((.run | tostring | test("resolver\\.feature-unification=\\\\?\"workspace\\\\?\""))
         and any(.env[]?; . == "CARGO_UNSTABLE_FEATURE_UNIFICATION=true") | not)

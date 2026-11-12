@@ -276,10 +276,9 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 ["check:clippy-enforcing"]
 description = "The clippy wall with specification enforcement"
 usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
-env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' {% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
+run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' {% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
 
 # CI's plain Clippy pass lints only the targets that carry plain-only code,
 # `cfg(not(anodized_panic))`, as the plain test lane runs only their tests
@@ -550,9 +549,8 @@ run = "quenchant-gates anodized --manifest-path Cargo.toml"
 description = "Require specification enforcement in the enforcing configuration"
 depends = ["workflow:install"]
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
-env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
+run = ".config/mise/enforcing quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 
 # The blocking set of the queue on `landing` (#5439) is Clippy's two passes
 # and the compiler policy with its specification gates, and the shared
@@ -606,10 +604,9 @@ run = ".config/mise/gated .config/mise/scope cargo nextest run --locked --packag
 # inherits the environment and would answer for the whole workspace.
 ["build:tests-enforcing"]
 description = "Compile enforcing test targets without running them"
-env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --no-run"
+run = ".config/mise/enforcing .config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --no-run"
 
 # The test twin under enforcement; the suite's runtime sentinels refuse a
 # target-only or stale macro build. A loaded host lengthens the run and never
@@ -621,10 +618,9 @@ run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value
 # over `GATE_SCOPE`, or the whole workspace.
 ["check:tests-enforcing"]
 description = "Unit and integration tests over every target, specifications enforced"
-env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% elif env.GATE_TEST_SCOPE is defined %}{{ env.GATE_TEST_SCOPE }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% elif env.GATE_TEST_SCOPE is defined %}{{ env.GATE_TEST_SCOPE }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory. With `CI_WITNESS_LISTINGS` naming a directory
@@ -644,7 +640,6 @@ run = ".config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHAR
 description = "Resolve adequacy witnesses in the consumer test inventory, a witness this host builds no test for left to the gate host whose cfg builds it"
 depends = ["workflow:install"]
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
-env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 tools.jq = "1.8.1"
 run = '''
@@ -674,7 +669,7 @@ for argument in $shard; do
 done
 witnesses=.config/witnesses
 status=0
-report=$(quenchant-gates witnesses --manifest-path Cargo.toml "${listings[@]}" "${scope[@]}" 2> "$summary") || status=$?
+report=$(.config/mise/enforcing quenchant-gates witnesses --manifest-path Cargo.toml "${listings[@]}" "${scope[@]}" 2> "$summary") || status=$?
 if (( status != 1 )); then
   [[ -z $report ]] || printf '%s\n' "$report"
   cat "$summary" >&2
@@ -1021,7 +1016,6 @@ echo "obligations check OK: the recorded change obliges bump's clause, a tick ho
 # batch's JUnit report is kept beside the others as `junit-<n>.xml`.
 ["evidence:witnesses"]
 description = "Rerun the obligated witnesses with specifications enforced"
-env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 env.CARGO_RESOLVER_FEATURE_UNIFICATION = "workspace"
@@ -1050,7 +1044,7 @@ done
 batches+=("$batch")
 status=0
 for index in "${!batches[@]}"; do
-  .config/mise/scope cargo nextest run --locked --profile "$profile" "${packages[@]}" -E "${batches[index]}" || status=1
+  .config/mise/enforcing .config/mise/scope cargo nextest run --locked --profile "$profile" "${packages[@]}" -E "${batches[index]}" || status=1
   report=target/nextest/$profile/junit.xml
   if (( ${#batches[@]} > 1 )) && [[ -f $report ]]; then
     mv "$report" "target/nextest/$profile/junit-$((index + 1)).xml"
