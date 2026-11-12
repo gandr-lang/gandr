@@ -1142,6 +1142,7 @@ impl Names
     /// # Adequacy
     /// - hypothesis: L3 — as [`ContentTable::definition_digest`].
     /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
+    #[spec(ensures: self.payload.0.len() == 16)]
     fn pair_digest(
         &mut self,
         first: RecordName,
@@ -1776,6 +1777,8 @@ impl ContentTable
     /// - hypothesis: L3 — one definition admitted into two environments that
     ///   met its content in two orders takes one digest in each.
     /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
+    #[spec(ensures: |digest| matches!(self.naming, Naming::On(_))
+        || digest == ContentDigest::default())]
     fn definition_digest(
         &mut self,
         declared: ContentId,
@@ -5083,6 +5086,7 @@ impl<'table> MintNames<'table>
     ///   naming places no node.
     /// - witness: `encoding::tests::a_definition_named_at_mint_is_named_with_no_walk`
     #[inline]
+    #[spec(ensures: matches!(self.0.placed.get(image), Maybe::Present(_)))]
     pub fn name(
         &mut self,
         arena: &TermArena,
@@ -6627,6 +6631,8 @@ mod tests
     /// - provides: the digest the naming cases compare.
     /// - fails: never.
     /// - panics: when the naming gives a positional name.
+    /// - executable: none — the cases compare the digest, and no predicate here
+    ///   computes it again.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the cases compare digests across tables and bodies.
