@@ -24,6 +24,10 @@
 //! counts the client's allocations alone. The server's allocations are
 //! counted under its own functions, `recheck::judge_laid` among them.
 //!
+//! A walk and a staging run serial. `--jobs <n>` after the `--` of the
+//! `cargo bench` line runs them on `n` threads, as the scaling account does at
+//! each width of its curve (`mise run bench:scaling`).
+//!
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
 //! allocator, and links the upload client. The run prints the report on exit;
@@ -65,10 +69,10 @@ use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::ProgramSpec;
-use gandr_surface_dispatcher::Width;
 use lsp::live;
 use support::check;
 use support::corpus;
+use support::width;
 
 /// The source the closure check and the keystroke run on: the largest model
 /// source's closure.
@@ -233,7 +237,7 @@ fn stage_readmission()
         .collect();
     let Outcome::Stage(staging) = gandr_surface_dispatcher::dispatch(Invocation::Stage {
         programs,
-        width: Width::SERIAL,
+        width: width(),
     })
     else {
         panic!("stage dispatches a staging");
