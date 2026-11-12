@@ -12,6 +12,7 @@ use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::Resolution;
+use gandr_surface_lowering::ScopeId;
 use gandr_surface_lowering::Shadow;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Recognition;
@@ -343,5 +344,42 @@ fn each_shadowing_binder_keeps_the_binding_it_hides_6270()
         ],
         "a pattern binder hides the parameter, a parameter the earlier declaration, a `let` \
          the opened member; a parameter over a later declaration hides nothing"
+    );
+}
+
+/// The coordinate of each frame a name of `source` is read under, from its
+/// form `two` on, in written order.
+///
+/// # Specification
+/// trivial.
+fn second_form_reads(source: SourceText<'static>) -> Vec<ScopeId>
+{
+    let text = <&str>::from(source);
+    let start = ByteOffset::from(text.find("def two").expect("the source writes `def two`"));
+    lowered(source)
+        .in_scope()
+        .reads()
+        .iter()
+        .filter(|&&(span, _)| span.start() >= start)
+        .map(|&(_, frame)| frame)
+        .collect()
+}
+
+#[test]
+fn a_form_s_frames_keep_their_coordinates_when_another_form_changes_4457()
+{
+    let narrow = second_form_reads(SourceText::from(include_str!(
+        "scopes/unformatted/a-form-s-frames-keep-their-coordinates-when-another-form-changes-4457-narrow.gandr"
+    )));
+    let wide = second_form_reads(SourceText::from(include_str!(
+        "scopes/unformatted/a-form-s-frames-keep-their-coordinates-when-another-form-changes-4457-wide.gandr"
+    )));
+    assert!(
+        !narrow.is_empty(),
+        "the second form reads a name under a binder"
+    );
+    assert_eq!(
+        wide, narrow,
+        "two binders more in the first form leave the second form's frames where they were"
     );
 }

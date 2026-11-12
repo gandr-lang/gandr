@@ -59,8 +59,8 @@ crates/
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
-├── surface-lowering/              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
-├── surface-lowering-base/         the lowering's base: the namespace engine, node tables, circuits
+├── surface-lowering/              the molded tree into core terms: module collection, declaration lowering
+├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits
 ├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the model, semantic tokens from highlight roles, and the hub serving a workspace's clients on a Unix socket
 ├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations

@@ -1,0 +1,6 @@
+def a = 1;
+def b = 2;
+import "./zero.gandr";
+import "./one.gandr" as one;
+import "file:///far.gandr";
+def c = 3;

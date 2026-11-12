@@ -25,8 +25,8 @@ use super::Sink;
 use crate::error::LoweringRefusal;
 use crate::module::Container;
 use crate::module::DeclarationOutcome;
-use crate::module::Role;
 use crate::module::SlotIndex;
+use crate::slot::Role;
 
 /// The name a source declares its program's entry under.
 pub const ENTRY: &str = "main";

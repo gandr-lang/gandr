@@ -69,7 +69,6 @@ use crate::module::Functor;
 use crate::module::FunctorIndex;
 use crate::module::ParameterForm;
 use crate::module::PathDeclaration;
-use crate::module::Role;
 use crate::module::RoundTrip;
 use crate::module::Side;
 use crate::module::SlotIndex;
@@ -77,6 +76,7 @@ use crate::module::TypeMeaning;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::slot::Role;
 
 /// The model a body binds and the model it packs: each signature's bundle and
 /// the type it mints to.

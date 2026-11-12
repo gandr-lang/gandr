@@ -146,7 +146,6 @@ impl<'source> Collector<'_, 'source>
     ///   reaching the semigroup through it, and two extensions of the semigroup
     ///   included together, reaching it once.
     /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
-    /// - witness: `description::theory::tests::the_include_subject_s_ways_round_compose_to_one_inclusion`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before

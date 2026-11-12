@@ -279,9 +279,17 @@ digraph crates {
   "surface-lowering" -> "theory-spec-combinators";
   "surface-lowering" -> "theory-stone-duality";
   "surface-lowering-base" -> "core-term";
+  "surface-lowering-base" -> "kernel-strata";
+  "surface-lowering-base" -> "kernel-term";
+  "surface-lowering-base" -> "surface-grammar";
+  "surface-lowering-base" -> "surface-parser";
   "surface-lowering-base" -> "surface-syntax";
+  "surface-lowering-base" -> "theory-cell-complexes";
   "surface-lowering-base" -> "theory-circuit-algebras";
+  "surface-lowering-base" -> "theory-coherent-resolutions";
+  "surface-lowering-base" -> "theory-computads";
   "surface-lowering-base" -> "theory-levitation";
+  "surface-lowering-base" -> "theory-shapes";
   "surface-lsp" -> "core-fork";
   "surface-lsp" -> "core-incremental";
   "surface-lsp" -> "kernel-term";

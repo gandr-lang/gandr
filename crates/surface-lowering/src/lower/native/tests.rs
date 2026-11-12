@@ -33,6 +33,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use super::ParameterAt;
+use crate::budget::LoweringBudget;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
@@ -42,7 +43,6 @@ use crate::fixture::listing;
 use crate::fixture::parsed;
 use crate::fixture::registered;
 use crate::form::FormName;
-use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
@@ -136,7 +136,7 @@ pub(in crate::lower) fn assert_checked(
         module.declarations()
     );
     for (declaration, verdict) in module.declarations().iter().zip(report.judged()) {
-        let admitted = declaration.role() == crate::module::Role::Admitted
+        let admitted = declaration.role() == crate::slot::Role::Admitted
             && matches!(verdict.verdict(), Verdict::Owed(_));
         assert!(
             admitted || matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data),
@@ -177,10 +177,10 @@ pub(in crate::lower) fn judged(
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
                 DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
-                    Maybe::Absent(if declaration.role() == crate::module::Role::Admitted {
+                    Maybe::Absent(if declaration.role() == crate::slot::Role::Admitted {
                         body::Absent::Hosted
                     }
-                    else if declaration.role() == crate::module::Role::Discharged {
+                    else if declaration.role() == crate::slot::Role::Discharged {
                         body::Absent::Discharged
                     }
                     else {
@@ -5182,7 +5182,7 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
     let words = module
         .declarations()
         .iter()
-        .find(|declaration| declaration.role() == crate::module::Role::Words)
+        .find(|declaration| declaration.role() == crate::slot::Role::Words)
         .map(crate::module::LoweredDeclaration::constant)
         .expect("the circle's loop mints its words");
     let (motive, branches) = cased(&arena, "looped");
@@ -5973,7 +5973,7 @@ fn a_loop_mints_the_words_at_its_point()
     use gandr_core_term::RuleNode;
     use gandr_core_term::RuleVariable;
 
-    use crate::module::Role;
+    use crate::slot::Role;
     let mut arena = CoreArena::new();
     let source = include_str!("tests/fixtures/a-loop-mints-the-words-at-its-point.gandr");
     let module = lowered(SourceText::from(source), &mut arena);
@@ -6294,7 +6294,7 @@ fn a_word_conses_its_letters_and_matches_them()
     let words = module
         .declarations()
         .iter()
-        .find(|declaration| declaration.role() == crate::module::Role::Words)
+        .find(|declaration| declaration.role() == crate::slot::Role::Words)
         .map(crate::module::LoweredDeclaration::constant)
         .expect("the circle's loop mints its words");
     let is_words = |datatype| {

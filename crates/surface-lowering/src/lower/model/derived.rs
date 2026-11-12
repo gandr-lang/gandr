@@ -73,12 +73,12 @@ use crate::model::ModelSignature;
 use crate::model::SortTerm;
 use crate::module::DerivedSlot;
 use crate::module::Member;
-use crate::module::Role;
 use crate::module::SlotIndex;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
+use crate::slot::Role;
 
 /// What a proof is minted under: the law's telescope, every binder binding,
 /// the model's fields, and the type of the terms its legs rewrite.

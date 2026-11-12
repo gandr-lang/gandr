@@ -26,8 +26,8 @@ use super::Site;
 use crate::error::LoweringRefusal;
 use crate::module::Container;
 use crate::module::DeclarationSlot;
-use crate::module::Role;
 use crate::module::SlotIndex;
+use crate::slot::Role;
 
 quenchant_shape::reason_enum! {
     /// Why a slot stands at no phase.

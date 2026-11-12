@@ -67,6 +67,9 @@ name = "surface-layout"
 name = "surface-lowering"
 
 [[crate]]
+name = "surface-lowering-base"
+
+[[crate]]
 name = "surface-lsp"
 
 [[crate]]

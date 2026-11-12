@@ -286,6 +286,7 @@ use crate::attribute::AttributeTable;
 use crate::attribute::DeprecatedUse;
 use crate::attribute::Deprecation;
 use crate::attribute::RegisteredAttribute;
+use crate::budget::Fuel;
 use crate::by_form::ByForm;
 use crate::coincide::Decisions;
 use crate::description::DescriptionFault;
@@ -313,21 +314,19 @@ use crate::import::ImportDeclaration;
 use crate::import::ImportIndex;
 use crate::import::ImportResolution;
 use crate::import::ImportSignature;
-use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::import::Opens;
 use crate::import::ReadAs;
 use crate::import::Renaming;
 use crate::import::Translation;
-use crate::import::WrittenTranslation;
-use crate::import::direct;
+use crate::layered::Layered;
+use crate::layered::LayeredList;
+use crate::layered::Listed;
 use crate::lower::ElidableExit;
-use crate::lower::Fuel;
 use crate::lower::InferredExit;
 use crate::lower::InferredRun;
 use crate::lower::LinearRun;
 use crate::lower::NestedSite;
-use crate::lower::decode_escapes;
 use crate::model::Included;
 use crate::namespace::Recognition;
 use crate::namespace::Scope;
@@ -339,12 +338,22 @@ use crate::resolve::InScope;
 use crate::resolve::Resolution;
 use crate::resolve::Shadow;
 use crate::resolve::SurfaceName;
+use crate::slot::Role;
+use crate::slot::Visibility;
 use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
 use crate::unit::PathImportOrdinal;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
 use crate::unit::UnitKey;
+use crate::written_import::Address;
+use crate::written_import::WrittenTranslation;
+use crate::written_import::direct;
+use crate::written_import::quoted;
+use crate::written_import::read_import;
+use crate::written_import::read_translation;
+use crate::written_import::unaliased;
+use crate::written_import::written_translation;
 
 mod closer;
 
@@ -371,14 +380,6 @@ mod reduct;
 mod sealing;
 
 mod terms;
-
-mod layered;
-
-pub use self::layered::Layered;
-use self::layered::LayeredList;
-pub use self::layered::Listed;
-pub use self::layered::ListedIter;
-pub use self::layered::listed_entry;
 
 mod world;
 
@@ -436,7 +437,6 @@ pub use self::reduct::ForgetSlot;
 pub use self::reduct::ReductSlot;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
-pub use self::sealing::FACE_CELLS;
 use self::sealing::KindForm;
 pub use self::sealing::Mark;
 pub use self::sealing::Sealed;
@@ -767,87 +767,6 @@ pub enum Container
     TopLevel(SourceIndex),
     /// The body of this module.
     Module(StructureIndex),
-}
-
-/// What a slot stands for.
-///
-/// # Specification
-/// - requires: nothing to construct this data; its producers and consumers
-///   state coordinate preconditions separately.
-/// - ensures: Declared slots introduce names, witnesses check an extra type
-///   without declaring a name, held slots own components or refusals without
-///   becoming exports, abstract slots declare the atom an opaque ascription
-///   mints without entering a name table, the generic program is named without
-///   declaring anything, and an admitted or a discharged law declares its type
-///   with no body.
-/// - fails: not applicable to the data item.
-/// - panics: not applicable to the data item.
-/// - executable: none — the enabled specification facade does not expose
-///   type-invariant expansion; executable predicates cover the producing and
-///   consuming operations.
-///
-/// # Adequacy
-/// - hypothesis: L3 — declared names export while signature witnesses and held
-///   refusals do not; an opaque ascription's abstract component is declared
-///   before the members.
-/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `tests::modules::signatures_attach_to_their_defs`
-/// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
-/// - witness: `tests::modules::opaque_ascription_seals`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Role
-{
-    /// A name the source declared: a top-level definition or a module
-    /// member.
-    Declared,
-    /// A second type stated for a member, checked by a declaration whose body
-    /// is that member; or the kind a transparent ascription states for a type
-    /// member, checked by a declaration whose body is that member's code.
-    Witness,
-    /// A slot that declares nothing: it carries a refusal a module or a
-    /// signature component raised, or owns a manifest type component's type,
-    /// and yields a declaration only when it holds a refusal.
-    Held,
-    /// An operation a `data` family declares and the module can call: entered
-    /// in no namespace, its body compiled from its rules.
-    Operation,
-    /// A rule a theory's completion derives, `rule T.r : l <=> r;`, or a
-    /// lemma its proof rests on: entered in no name table, the statement read
-    /// through its theory's path `T.r`. Also the check an extern block
-    /// carrying `boundary` takes, entered in no name table either.
-    Derived,
-    /// The abstract type an opaque ascription declares for one abstract
-    /// component of its signature: admitted before the module's members,
-    /// entered in no name table, and named through the namespace as the atom
-    /// it mints.
-    Abstract,
-    /// The words of a `data` family's loops at one point: the presented type a
-    /// path at that point reads as, minted from the family's form and entered
-    /// in no namespace.
-    Words,
-    /// The terms of a theory a source writes as `Terms(S)`: a presented type
-    /// whose constructors are the theory's operations and whose rules are
-    /// its rules, minted from its presentation and entered in no namespace.
-    Terms,
-    /// A component of a functor's parameter: the template's stand-in for the
-    /// argument's component, which each application renames and which
-    /// declares nothing.
-    Parameter,
-    /// The prelude's generic program, `Eq.generic`: entered in its module's
-    /// name table under its written signature, read only as the head of a
-    /// definition `def m = Eq.generic(T)`, whose body the lowering derives
-    /// from `T`'s constructors, and declaring nothing itself.
-    Generic,
-    /// A law of a module's model the host asserts at a primitive carrier,
-    /// `law refl = ~admitted;`: entered in the module's name table, declared at
-    /// the law's derived type with no definition, and crossing as the axiom
-    /// the report's audit lists.
-    Admitted,
-    /// A law of a module's model the module omits: entered in the module's
-    /// name table under the law's name, introduced by the module's form,
-    /// declared at the law's derived type with no definition, and discharged
-    /// by the checker, `here` at the law's left side where its sides convert.
-    Discharged,
 }
 
 /// Whether a declaration is inert, which a package's address leaves out.
@@ -1907,7 +1826,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a module with a theory that refuses nothing mints
 ///   `Theory` once, before the theory's own slot, and a generic program matches
 ///   on it; a later source's block takes the same code.
-/// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+/// - witness: `tests::theory::a_theory_block_defines_its_presentation`
 /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TheorySlot
@@ -4438,16 +4357,6 @@ pub fn collect_source<'source>(
     Ok(())
 }
 
-/// Whether a source exports a declaration of its top level.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Visibility
-{
-    /// A `pub` mark precedes it: a source importing its source reads it.
-    Public,
-    /// No mark precedes it: it is read in its own source alone.
-    Private,
-}
-
 /// Whether a slot is the image of a flow's member that an import's
 /// translation binds.
 #[repr(transparent)]
@@ -4599,614 +4508,6 @@ fn first_token<'source>(
         }
     }
     SurfaceName::from("")
-}
-
-/// Whether an import's address names a scheme, a package's coordinate, a
-/// path or a module.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Address
-{
-    /// `scheme:…`: a letter, then letters, digits, `+`, `-` or `.`, then a
-    /// colon (RFC 3986 § 3.1), the scheme no coordinate's.
-    Scheme,
-    /// `path:…`: the coordinate of a package rooted at the directory the rest
-    /// names, whose root module the import reads.
-    Coordinate,
-    /// Anything else written between quotes: a path relative to the importing
-    /// source.
-    Path,
-    /// A module path written bare, `text.greet`: the file `text/greet.gandr`
-    /// relative to the directory of the package's root module.
-    Module,
-}
-
-impl Address
-{
-    /// What `uri` names.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`Address::Coordinate`] exactly when `uri` opens with the
-    ///   scheme [`PATH_SCHEME`] or [`GITHUB_SCHEME`] and its colon;
-    ///   [`Address::Scheme`] when it opens with another RFC 3986 scheme and its
-    ///   colon; [`Address::Path`] otherwise.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a `file:` URL, a `path:` and a `gh:` coordinate, a
-    ///   relative path, a path holding a colon after a slash and a scheme
-    ///   opening with a digit each classify exactly.
-    /// - witness: `module::tests::an_address_names_a_scheme_a_coordinate_or_a_path`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret == Self::Path || uri.as_ref().contains(':'))]
-    pub fn of(uri: &ImportUri) -> Self
-    {
-        let text = uri.as_ref();
-        let Some(colon) = text.find(':')
-        else {
-            return Self::Path;
-        };
-        let scheme = text.get(.. colon).unwrap_or_default();
-        let mut characters = scheme.chars();
-        let opens = characters
-            .next()
-            .is_some_and(|first| first.is_ascii_alphabetic());
-        let rest = characters
-            .all(|later| later.is_ascii_alphanumeric() || matches!(later, '+' | '-' | '.'));
-        if !(opens && rest) {
-            Self::Path
-        }
-        else if scheme == PATH_SCHEME || scheme == GITHUB_SCHEME {
-            Self::Coordinate
-        }
-        else {
-            Self::Scheme
-        }
-    }
-}
-
-/// The scheme of a package's coordinate on disk, `path:../hello`: a
-/// directory, read from the importing package's root, that roots the package.
-pub const PATH_SCHEME: &str = "path";
-
-/// The scheme of a package's coordinate on GitHub, `gh:acme-org/rope`: the
-/// repository whose top directory roots the package, at the revision the
-/// importing package's lock records.
-pub const GITHUB_SCHEME: &str = "gh";
-
-/// One import as its tiles spell it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WrittenImport
-{
-    /// The address, its escapes decoded; for a module path, the file it names
-    /// relative to the root module's directory, `text/greet.gandr`.
-    pub uri: ImportUri,
-    /// The alias, when one is written.
-    pub alias: Maybe<Placed, unaliased::Absent>,
-    /// The names the import's list binds by their own names, in the order
-    /// written; empty when no list is written.
-    pub listed: Vec<Placed>,
-    /// The signature the import is written at, `: Gandr.Package`: the
-    /// segments of its path, the theory's name last; empty when none is
-    /// written.
-    pub signature: Vec<Placed>,
-    /// The translation the signature is read through, `via f` or `renaming
-    /// { fetch as get }`, as its tiles spell it.
-    pub translation: Maybe<WrittenTranslation, direct::Absent>,
-    /// The bytes the import covers.
-    pub span: ByteSpan,
-    /// The bytes between the address's quotes, as written, escapes included;
-    /// for a module path, the path's from its first name to its last.
-    pub addressed: ByteSpan,
-    /// What the address names.
-    pub address: Address,
-}
-
-quenchant_shape::reason_enum! {
-    /// Why an import has no alias.
-    pub mod unaliased {
-        /// The reason none is written.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The import binds its sibling's exports unqualified.
-            Unqualified,
-            /// The import binds its module qualified, under the module path
-            /// it names.
-            Pathed,
-        }
-    }
-}
-
-/// Read one import form's pieces.
-///
-/// # Specification
-/// - requires: `pieces` is the reading of the import `import`.
-/// - ensures: the import the tiles `import " … " (as name)? (: Path
-///   (translation)?)? (( names ))? ;` spell, in that order with nothing after
-///   them, its address read between the quotes; or the tiles `import name (.
-///   name)* (as name)? (: Path (translation)?)? (( names ))? ;`, its address
-///   the module path's file, as [`module_file`] names it, and bound under the
-///   path when no alias is written. `Path` is a type name then any number of
-///   dotted names of either case, each kept in `signature`; the translation, as
-///   [`read_translation`] reads it, is kept in `translation`. `names` is one
-///   name or more, separated by commas, a trailing one admitted, each kept in
-///   `listed`.
-/// - provides: the reading the collection and [`written_imports`] share.
-/// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
-///   inside the import that holds it or else `form`, as
-///   [`Repaired::refusal`](crate::form::Repaired::refusal) names it; and naming
-///   `form` for a tile out of place.
-/// - panics: none.
-///
-/// # Errors
-/// [`LoweringRefusal::MalformedForm`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — exact address decoding with and without an alias, and a
-///   tile out of place, distinguish reading from binding refusal.
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `tests::namespace::an_import_repaired_inside_a_nested_form_is_refused_by_that_form`
-#[spec(
-    ensures: |ret| match ret {
-        | Ok(ref entry) => entry.span == import.span && {
-            let (outer, inner) = (import.span, entry.addressed);
-            outer.start() <= inner.start() && inner.end() <= outer.end()
-        },
-        | Err(LoweringRefusal::MalformedForm { form: found, .. }) => found == form
-            || matches!(pieces.repair, Maybe::Present(crate::form::Repaired { nested: Maybe::Present(inner), .. }) if inner == found),
-        | Err(_) => false,
-    },
-)]
-fn read_import<'source>(
-    tree: &SyntaxTree<'source>,
-    import: Placed,
-    form: FormName,
-    pieces: &Pieces,
-) -> Result<WrittenImport, LoweringRefusal<'source>>
-{
-    if let Maybe::Present(repaired) = pieces.repair {
-        return Err(repaired.refusal(form));
-    }
-    let out_of_place = |cursor: &Cursor<'_>| LoweringRefusal::MalformedForm {
-        span: cursor.here(),
-        form,
-        fault: FormFault::MisplacedTile,
-    };
-    let mut cursor = Cursor::new(&pieces.pieces, import.span);
-    if let Maybe::Absent(_) = cursor.tile(TileName::IMPORT) {
-        return Err(out_of_place(&cursor));
-    }
-    let (uri, addressed, address) = match quoted(tree, &mut cursor) {
-        Maybe::Present((written, addressed)) => {
-            let uri = ImportUri::from(written);
-            let address = Address::of(&uri);
-            (uri, addressed, address)
-        },
-        Maybe::Absent(quoted_text::Absent::Unclosed) => return Err(out_of_place(&cursor)),
-        Maybe::Absent(quoted_text::Absent::Unopened) => {
-            let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER)
-            else {
-                return Err(out_of_place(&cursor));
-            };
-            let mut last = first;
-            while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
-                let Maybe::Present(next) = cursor.tile(TileName::IDENTIFIER)
-                else {
-                    return Err(out_of_place(&cursor));
-                };
-                last = next;
-            }
-            let addressed = ByteSpan::new(first.span.start(), last.span.end())
-                .map_err(|_inverted| out_of_place(&cursor))?;
-            let Some(path) = tree.spanned(addressed)
-            else {
-                return Err(out_of_place(&cursor));
-            };
-            (module_file(path), addressed, Address::Module)
-        },
-    };
-    let alias = match cursor.tile(TileName::AS) {
-        Maybe::Present(_) => match cursor.tile(TileName::IDENTIFIER) {
-            Maybe::Present(alias) => Maybe::Present(alias),
-            Maybe::Absent(_) => return Err(out_of_place(&cursor)),
-        },
-        Maybe::Absent(_) if address == Address::Module => Maybe::Absent(unaliased::Absent::Pathed),
-        Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
-    };
-    let mut signature = Vec::new();
-    let mut translation = Maybe::Absent(direct::Absent::Unwritten);
-    if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
-        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
-        else {
-            return Err(out_of_place(&cursor));
-        };
-        signature.push(head);
-        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
-            match cursor.tile(TileName::TYPE_IDENTIFIER) {
-                Maybe::Present(segment) => signature.push(segment),
-                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
-                    Maybe::Present(segment) => signature.push(segment),
-                    Maybe::Absent(_) => return Err(out_of_place(&cursor)),
-                },
-            }
-        }
-        match read_translation(&mut cursor) {
-            Maybe::Present(written) => translation = Maybe::Present(written),
-            Maybe::Absent(written_translation::Absent::Unwritten) => {},
-            Maybe::Absent(written_translation::Absent::Misplaced) => {
-                return Err(out_of_place(&cursor));
-            },
-        }
-    }
-    let mut listed = Vec::new();
-    if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
-        loop {
-            match cursor.tile(TileName::IDENTIFIER) {
-                Maybe::Present(name) => listed.push(name),
-                Maybe::Absent(_) => match cursor.tile(TileName::TYPE_IDENTIFIER) {
-                    Maybe::Present(name) => listed.push(name),
-                    Maybe::Absent(_) => break,
-                },
-            }
-            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
-                break;
-            }
-        }
-        if listed.is_empty() {
-            return Err(out_of_place(&cursor));
-        }
-        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
-            return Err(out_of_place(&cursor));
-        }
-    }
-    if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
-        return Err(out_of_place(&cursor));
-    }
-    if let Maybe::Present(_) = cursor.peek() {
-        return Err(out_of_place(&cursor));
-    }
-
-    Ok(WrittenImport {
-        uri,
-        alias,
-        listed,
-        signature,
-        translation,
-        span: import.span,
-        addressed,
-        address,
-    })
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a cursor reads no translation.
-    pub mod written_translation {
-        /// The reason none is read.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// Neither `via` nor `renaming` stands at the cursor.
-            Unwritten,
-            /// A translation's keyword stands at the cursor, and a tile after
-            /// it is out of place.
-            Misplaced,
-        }
-    }
-}
-
-/// The translation the tiles at `cursor` spell, `via f` or `renaming { a as
-/// b (, a as b)* ,? }`, the cursor past it.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: [`WrittenTranslation::Via`] with the flow's name tile after
-///   `via`; [`WrittenTranslation::Renaming`] with each pair's two name tiles,
-///   of either case, in written order, after `renaming`;
-///   [`written_translation::Absent::Unwritten`], the cursor unmoved, where
-///   neither keyword stands; [`written_translation::Absent::Misplaced`], the
-///   cursor at the first tile out of place, otherwise.
-/// - provides: the reading an import's signature and a site's offer share.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an import read via a flow, an import read through a
-///   renaming and an offer read through each are read whole.
-/// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-/// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
-/// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
-#[spec(ensures: |ret| match ret {
-    | Maybe::Present(WrittenTranslation::Renaming(ref pairs)) => !pairs.is_empty(),
-    | Maybe::Present(WrittenTranslation::Via(_)) | Maybe::Absent(_) => true,
-})]
-fn read_translation(
-    cursor: &mut Cursor<'_>
-) -> Maybe<WrittenTranslation, written_translation::Absent>
-{
-    let misplaced = Maybe::Absent(written_translation::Absent::Misplaced);
-    if let Maybe::Present(_) = cursor.tile(TileName::VIA) {
-        return match cursor.tile(TileName::IDENTIFIER) {
-            Maybe::Present(flow) => Maybe::Present(WrittenTranslation::Via(flow)),
-            Maybe::Absent(_) => misplaced,
-        };
-    }
-    if let Maybe::Absent(_) = cursor.tile(TileName::RENAMING) {
-        return Maybe::Absent(written_translation::Absent::Unwritten);
-    }
-    if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
-        return misplaced;
-    }
-    let name = |cursor: &mut Cursor<'_>| match cursor.tile(TileName::IDENTIFIER) {
-        Maybe::Present(name) => Maybe::Present(name),
-        Maybe::Absent(_) => cursor.tile(TileName::TYPE_IDENTIFIER),
-    };
-    let mut pairs = Vec::new();
-    while let Maybe::Present(read) = name(cursor) {
-        let (Maybe::Present(_), Maybe::Present(named)) = (cursor.tile(TileName::AS), name(cursor))
-        else {
-            return misplaced;
-        };
-        pairs.push((read, named));
-        if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
-            break;
-        }
-    }
-    if pairs.is_empty() {
-        return misplaced;
-    }
-    match cursor.tile(TileName::BRACE_CLOSE) {
-        Maybe::Present(_) => Maybe::Present(WrittenTranslation::Renaming(pairs)),
-        Maybe::Absent(_) => misplaced,
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a cursor reads no quoted string.
-    pub mod quoted_text {
-        /// The reason none is read.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No quote stands at the cursor.
-            Unopened,
-            /// A quote opens a string no quote closes.
-            Unclosed,
-        }
-    }
-}
-
-/// The string the quoted tiles at `cursor` spell, `"…"`, its escapes decoded,
-/// beside the bytes between its quotes, the cursor past the closing quote.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the fragments and escapes between the quotes, in order, decoded
-///   as [`decode_escapes`] decodes them, with the bytes the two quotes bound;
-///   [`quoted_text::Absent::Unopened`], the cursor unmoved, where no quote
-///   stands; [`quoted_text::Absent::Unclosed`] where no quote follows the
-///   string's last fragment.
-/// - provides: the string reading an import's address and an extern block's
-///   language and library share.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an escaped address reads decoded, and an extern block's
-///   language and library read as written.
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-#[spec(ensures: |ref ret| match *ret {
-    | Maybe::Present((_, between)) => between.end() <= cursor.here().start(),
-    | Maybe::Absent(_) => true,
-})]
-fn quoted(
-    tree: &SyntaxTree<'_>,
-    cursor: &mut Cursor<'_>,
-) -> Maybe<(String, ByteSpan), quoted_text::Absent>
-{
-    let Maybe::Present(opened) = cursor.tile(TileName::QUOTE)
-    else {
-        return Maybe::Absent(quoted_text::Absent::Unopened);
-    };
-    let mut written = String::new();
-    loop {
-        let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
-            Maybe::Present(fragment) => fragment,
-            Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
-                Maybe::Present(escape) => escape,
-                Maybe::Absent(_) => break,
-            },
-        };
-        if let Some(text) = tree.fragment(piece.node) {
-            written.push_str(text.as_ref());
-        }
-    }
-    let Maybe::Present(closed) = cursor.tile(TileName::QUOTE)
-    else {
-        return Maybe::Absent(quoted_text::Absent::Unclosed);
-    };
-    let Ok(between) = ByteSpan::new(opened.span.end(), closed.span.start())
-    else {
-        return Maybe::Absent(quoted_text::Absent::Unclosed);
-    };
-
-    Maybe::Present((
-        decode_escapes(SourceFragment::from(written.as_str())),
-        between,
-    ))
-}
-
-/// The file the module path `path` names, relative to the directory of the
-/// package's root module: its names joined by `/`, then `.gandr`, so
-/// `text.greet` is `text/greet.gandr`.
-///
-/// # Specification
-/// - requires: `path` is names joined by dots, with layout beside a dot.
-/// - ensures: each name of `path`, its layout trimmed, in order, joined by `/`
-///   and followed by `.gandr`.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a one-name and a two-name path, the second written with
-///   layout beside its dot, each name their file.
-/// - witness: `module::tests::a_module_path_names_its_file_2687`
-#[spec(ensures: |ret| ret.as_ref().strip_suffix(".gandr").is_some() && ret.as_ref().matches('/').count() == path.as_ref().matches('.').count())]
-fn module_file(path: SourceFragment<'_>) -> ImportUri
-{
-    let mut file = String::new();
-    for (index, name) in path.as_ref().split('.').enumerate() {
-        if index > 0 {
-            file.push('/');
-        }
-        file.push_str(name.trim());
-    }
-    file.push_str(".gandr");
-    ImportUri::from(file)
-}
-
-/// Every import `tree`'s root writes, in source order, read as the collection
-/// reads it.
-///
-/// # Specification
-/// - requires: `tree` was molded under `pbg`.
-/// - ensures: one entry per import form at the root, in source order; every
-///   other root child is passed over.
-/// - provides: what a caller reads to lay out a [`Unit`] before lowering it:
-///   the sources an import names, without collecting a declaration.
-/// - fails: [`LoweringRefusal::MalformedForm`] for a repaired root or an import
-///   out of shape, and [`LoweringRefusal::UnknownMold`] for a mold the grammar
-///   does not hold.
-/// - panics: none.
-///
-/// # Errors
-/// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::UnknownMold`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — a source with an unqualified and an aliased import
-///   between two declarations lists exactly the two imports.
-/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.windows(2).all(|pair| match *pair {
-    [ref first, ref second] => first.span.start() < second.span.start(),
-    _ => false,
-})))]
-#[inline]
-pub fn written_imports<'source>(
-    pbg: &Pbg,
-    tree: &SyntaxTree<'source>,
-) -> Result<Vec<WrittenImport>, LoweringRefusal<'source>>
-{
-    let mut root = Pieces::new();
-    read_pieces(pbg, tree, tree.root(), &mut root)?;
-    if let Maybe::Present(repaired) = root.repair {
-        return Err(repaired.refusal(FormName::ROOT));
-    }
-    let mut found = Vec::new();
-    let mut pieces = Pieces::new();
-    for piece in root.pieces {
-        let child = piece.placed();
-        let Some(node) = tree.node(child.node)
-        else {
-            continue;
-        };
-        if let Shape::Form {
-            former: Former::Import,
-            name,
-            ..
-        } = shape_of(pbg, node)?
-        {
-            read_pieces(pbg, tree, child.node, &mut pieces)?;
-            found.push(read_import(tree, child, name, &pieces)?);
-        }
-    }
-
-    Ok(found)
-}
-
-/// The sources each source under `roots` imports unqualified, as `unit` lays
-/// its path imports out.
-///
-/// # Specification
-/// - requires: `tree` was molded under `pbg`, and `unit` lays out its text.
-/// - ensures: for each source written under `roots`, the targets of its
-///   unaliased quoted path imports with no list that `unit` resolves to a
-///   source; an import that does not read, a scheme address, an unresolved
-///   path, a module path and a list add nothing, the collection refusing or
-///   binding them as it does. Every source of the unit but its prelude also
-///   imports the prelude, which no source writes.
-/// - provides: the sources whose `theory` blocks an `include` may name.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a source importing one sibling unqualified and another
-///   under an alias sees the first alone; a source writing no import sees the
-///   prelude's theories.
-/// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
-/// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
-#[spec(ensures: |ret| ret.values().all(|targets| !targets.is_empty()))]
-pub fn unqualified_imports(
-    pbg: &Pbg,
-    tree: &SyntaxTree<'_>,
-    roots: &[NodeIndex],
-    unit: &Unit,
-) -> BTreeMap<SourceIndex, BTreeSet<SourceIndex>>
-{
-    let mut seen: BTreeMap<SourceIndex, BTreeSet<SourceIndex>> = BTreeMap::new();
-    let mut ordinals: BTreeMap<SourceIndex, PathImportOrdinal> = BTreeMap::new();
-    let mut root = Pieces::new();
-    let mut pieces = Pieces::new();
-    for &position in roots {
-        if read_pieces(pbg, tree, position, &mut root).is_err() {
-            continue;
-        }
-        for piece in &root.pieces {
-            let child = piece.placed();
-            let Some(node) = tree.node(child.node)
-            else {
-                continue;
-            };
-            let Ok(Shape::Form {
-                former: Former::Import,
-                name,
-                ..
-            }) = shape_of(pbg, node)
-            else {
-                continue;
-            };
-            if read_pieces(pbg, tree, child.node, &mut pieces).is_err() {
-                continue;
-            }
-            let Ok(written) = read_import(tree, child, name, &pieces)
-            else {
-                continue;
-            };
-            if written.address == Address::Scheme {
-                continue;
-            }
-            let source = unit.source_at(child.span.start());
-            let ordinal = ordinals.entry(source).or_default();
-            let target = unit.target(source, *ordinal);
-            *ordinal = ordinal.next();
-            if let (
-                Maybe::Absent(unaliased::Absent::Unqualified),
-                ImportTarget::Source(target),
-                true,
-            ) = (written.alias, target, written.listed.is_empty())
-            {
-                let _fresh = seen.entry(source).or_default().insert(target);
-            }
-        }
-    }
-    if let Some(prelude) = unit.prelude() {
-        for source in (0 .. unit.sources().len()).map(SourceIndex::from) {
-            if source != prelude {
-                let _fresh = seen.entry(source).or_default().insert(prelude);
-            }
-        }
-    }
-
-    seen
 }
 
 impl<'source> Collector<'_, 'source>
@@ -5781,8 +5082,8 @@ impl<'source> Collector<'_, 'source>
     ///   reaches the decoder, which refuses it at its own span, and an
     ///   attribute written before a codata family is filed under it rather than
     ///   refusing the module as a stray block.
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
-    /// - witness: `description::tests::an_attribute_block_decorates_the_codata_declaration_after_it`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::an_attribute_block_decorates_the_codata_declaration_after_it`
     fn admit_described(
         &mut self,
         child: Placed,
@@ -5875,10 +5176,10 @@ impl<'source> Collector<'_, 'source>
     ///   whose rules rewrite one term apart is refused under its own name; a
     ///   held rule reads the attribute block before it, and a block before a
     ///   member that is not held apart refuses the family.
-    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
-    /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
-    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
-    /// - witness: `description::tests::a_held_member_states_its_own_expectation_1462`
+    /// - witness: `tests::description::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `tests::description::an_unended_family_is_refused_once_at_its_close`
+    /// - witness: `tests::coincide::two_rules_rewriting_one_term_apart_refuse_the_block`
+    /// - witness: `tests::description::a_held_member_states_its_own_expectation_1462`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -5920,8 +5221,8 @@ impl<'source> Collector<'_, 'source>
     ///   held rule written without one reads none of the family's, and a block
     ///   before a member that is not held apart is left for the family to
     ///   refuse.
-    /// - witness: `description::tests::a_held_member_states_its_own_expectation_1462`
-    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `tests::description::a_held_member_states_its_own_expectation_1462`
+    /// - witness: `tests::description::member_refusals_keep_their_spans_and_other_declarations`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -6042,9 +5343,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — as [`Self::hold_described_refusals`] and
     ///   [`Self::refuse_signature`]; an unended `theory` block whose last
     ///   member the cell gate refuses is refused once, at its missing close.
-    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
-    /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
-    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
+    /// - witness: `tests::description::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `tests::description::an_unended_family_is_refused_once_at_its_close`
+    /// - witness: `tests::description::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |ret| ret.iter().all(|&(span, _)| span.start() >= child.span.start() && span.end() <= child.span.end()))]
     fn described_refusals(
         &self,
@@ -6166,8 +5467,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a refused operation keeps its span, a decoration
     ///   before it states it, its name enters no namespace, and a decoration
     ///   out of shape refuses it at the decoration's stray material.
-    /// - witness: `description::theory::tests::a_refused_top_level_operation_states_its_refusal`
-    /// - witness: `description::theory::tests::an_unreadable_decoration_refuses_a_refused_operation_first_4113`
+    /// - witness: `tests::theory::a_refused_top_level_operation_states_its_refusal`
+    /// - witness: `tests::theory::an_unreadable_decoration_refuses_a_refused_operation_first_4113`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() >= before.0 && self.collected.by_name.len() == before.1,
@@ -6259,8 +5560,8 @@ impl<'source> Collector<'_, 'source>
     ///   that a program matching on `Theory` reads, and a refused block's name
     ///   is a declaration refused at its first member refusal that a decoration
     ///   before the block states.
-    /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
-    /// - witness: `description::theory::tests::a_refused_theory_block_states_its_refusal`
+    /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
+    /// - witness: `tests::theory::a_refused_theory_block_states_its_refusal`
     fn theory(
         &mut self,
         child: Placed,
@@ -6400,7 +5701,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an inner block leading a theory's body decorates the
     ///   theory as an outer block before it does.
-    /// - witness: `description::theory::tests::an_inner_attribute_decorates_its_theory_3586`
+    /// - witness: `tests::theory::an_inner_attribute_decorates_its_theory_3586`
     #[spec(
         captures: before = attributes.len(),
         ensures: |ret| ret.is_err() || attributes.get(before ..).is_some_and(|appended| {
@@ -6462,7 +5763,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — two clean blocks share one `Theory`, which a program
     ///   matches on by its constructors' names; a block of a source laid after
     ///   another source's block takes its code and names it.
-    /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+    /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
     /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(
         captures: before = self.collected.theory.clone(),
@@ -11747,7 +11048,7 @@ impl From<DataIndex> for usize
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a codata declaration answers its own signature.
-/// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+/// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CodataIndex(usize);
@@ -13539,7 +12840,7 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a codata declaration answers its own signature.
-    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(signature) => self.codata.get(index.0).is_some_and(|held| Arc::ptr_eq(held, signature)),
         | Maybe::Absent(_) => index.0 >= self.codata.len(),
@@ -13641,6 +12942,71 @@ impl<'source> LoweredModule<'source>
         &self.natives
     }
 
+    /// The type each described node answers at, minted into `arena`: the
+    /// module's data and codata families, read by
+    /// [`crate::described::described_types`].
+    ///
+    /// # Specification
+    /// - requires: `arena` is the one the module was lowered into.
+    /// - ensures: what [`crate::described::described_types`] ensures over each
+    ///   data family whose signature the module holds, with the names of its
+    ///   constructors, and each codata family whose signature it holds; a
+    ///   family's words and a theory's terms take no part.
+    /// - provides: what a face answers inside a described declaration.
+    /// - fails: never; a node no type is stated for records nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two described data families each answer at their own
+    ///   declaration, and a codata family written in its own observation
+    ///   answers at its kind.
+    /// - witness: `tests::described::each_family_answers_at_its_own_declaration_6908`
+    #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
+        && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
+    #[inline]
+    pub fn described_types(
+        &self,
+        arena: &mut CoreArena,
+    ) -> crate::described::DescribedTypes
+    {
+        let declared = self.declarations().into_iter().filter_map(|declaration| {
+            // The words of a family's loops are minted under the family's
+            // name, and a theory's terms under the theory's, never written:
+            // the name is the family's or the theory's.
+            if matches!(declaration.role(), Role::Words | Role::Terms) {
+                return None;
+            }
+            let name = Name::from(declaration.name().as_ref());
+            let constant = declaration.constant();
+            match declaration.outcome() {
+                DeclarationOutcome::Data(index) => match self.data(index) {
+                    Maybe::Present(signature) => Some(crate::described::DeclaredFamily::Data {
+                        name,
+                        constant,
+                        signature,
+                        constructors: self.constructors(index),
+                    }),
+                    Maybe::Absent(_) => None,
+                },
+                DeclarationOutcome::Codata(index) => match self.codata(index) {
+                    Maybe::Present(signature) => Some(crate::described::DeclaredFamily::Codata {
+                        name,
+                        constant,
+                        signature,
+                    }),
+                    Maybe::Absent(_) => None,
+                },
+                DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Completed { .. }
+                | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
+                | DeclarationOutcome::Refused(_) => None,
+            }
+        });
+        crate::described::described_types(arena, declared, self.described(), self.natives())
+    }
+
     /// Every `theory` block the module declares, in declaration order: its
     /// description and the presentation its models' signature derives from.
     ///
@@ -13701,7 +13067,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — a family's declaration and its operation read one
     ///   call to one normal form, and a declaration outside every described one
     ///   is undescribed.
-    /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
+    /// - witness: `tests::coincide::a_call_reads_its_normal_form_or_says_why_not`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -14827,7 +14193,6 @@ mod tests
     use gandr_surface_syntax::SyntaxTree;
     use quenchant_shape::shape::Maybe;
 
-    use super::Address;
     use super::Container;
     use super::DeclarationSlot;
     use super::Half;
@@ -14837,6 +14202,8 @@ mod tests
     use super::collect;
     use super::declaration_half;
     use super::slot_refusal;
+    use crate::budget::Fuel;
+    use crate::budget::LoweringBudget;
     use crate::classify::FailureClass;
     use crate::error::FormFault;
     use crate::error::FragmentBoundary;
@@ -14851,9 +14218,6 @@ mod tests
     use crate::fixture::span;
     use crate::form::FormName;
     use crate::form::Placed;
-    use crate::import::ImportUri;
-    use crate::lower::Fuel;
-    use crate::lower::LoweringBudget;
     use crate::resolve::SurfaceName;
     use crate::unit::SourceIndex;
     use crate::unit::Unit;
@@ -14902,66 +14266,6 @@ mod tests
                 form: FormName::MODULE,
                 fault: FormFault::ExtraOperand
             })
-        );
-    }
-
-    #[test]
-    fn an_address_names_a_scheme_a_coordinate_or_a_path()
-    {
-        let of = |uri: &str| Address::of(&ImportUri::from(alloc::string::String::from(uri)));
-        assert_eq!(
-            of("file:///far.gandr"),
-            Address::Scheme,
-            "a URL names its scheme"
-        );
-        assert_eq!(of("./circle-base.gandr"), Address::Path, "a relative path");
-        assert_eq!(
-            of("./a:b.gandr"),
-            Address::Path,
-            "a colon after a slash opens no scheme"
-        );
-        assert_eq!(
-            of("1file:far.gandr"),
-            Address::Path,
-            "a scheme opens with a letter"
-        );
-        assert_eq!(
-            of("git+ssh:repo"),
-            Address::Scheme,
-            "a scheme continues with letters, digits, `+`, `-` and `.`"
-        );
-        assert_eq!(
-            of("path:../hello"),
-            Address::Coordinate,
-            "the `path` scheme names a package's coordinate"
-        );
-        assert_eq!(
-            of("gh:acme-org/rope"),
-            Address::Coordinate,
-            "the `gh` scheme names a package's coordinate"
-        );
-        assert_eq!(
-            of("paths:../hello"),
-            Address::Scheme,
-            "a longer scheme is no coordinate"
-        );
-    }
-
-    /// #2687: a module path names its file by its names joined by `/`, the
-    /// layout beside a dot dropped, then `.gandr`.
-    #[test]
-    fn a_module_path_names_its_file_2687()
-    {
-        let file = |path: &str| {
-            alloc::string::String::from(
-                super::module_file(gandr_surface_syntax::SourceFragment::from(path)).as_ref(),
-            )
-        };
-        assert_eq!(file("greet"), "greet.gandr", "one name is its file");
-        assert_eq!(
-            file("text . greet"),
-            "text/greet.gandr",
-            "two names are a directory and its file"
         );
     }
 

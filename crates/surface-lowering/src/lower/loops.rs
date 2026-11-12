@@ -1062,7 +1062,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         }
         let reentry = self.reentry(site.reading.frame(), site)?;
-        let budget = self.fuel.budget;
+        let budget = self.fuel.budget();
         let past = |index: DeBruijnIndex| {
             u32::from(index)
                 .checked_add(1_u32)

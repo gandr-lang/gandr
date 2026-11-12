@@ -40,7 +40,6 @@ use crate::module::Matched;
 use crate::module::Member;
 use crate::module::ParameterComponent;
 use crate::module::ParameterForm;
-use crate::module::Role;
 use crate::module::Sealing;
 use crate::module::SlotIndex;
 use crate::module::Stratum;
@@ -49,6 +48,7 @@ use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
+use crate::slot::Role;
 
 impl<'source> Lowerer<'_, 'source>
 {

@@ -34,6 +34,7 @@ use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::budget::LoweringBudget;
 use crate::coincide::Decisions;
 use crate::error::CrossedExit;
 use crate::error::FragmentBoundary;
@@ -45,7 +46,6 @@ use crate::fixture::imported;
 use crate::fixture::listed;
 use crate::fixture::listing;
 use crate::fixture::parsed;
-use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
 use crate::lower::lower_unit;
 use crate::model::InterfaceFault;

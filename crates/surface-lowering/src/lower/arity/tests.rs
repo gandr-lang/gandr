@@ -19,6 +19,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
+use crate::budget::LoweringBudget;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -27,7 +28,6 @@ use crate::fixture::grammar;
 use crate::fixture::parsed;
 use crate::fixture::span;
 use crate::form::FormName;
-use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredDeclaration;

@@ -51,10 +51,12 @@ self_cell.workspace = true
 # The kernel's content digest witnesses that two spellings readmit as one
 # declaration content; the univalence witnesses name the stratum they lower.
 # The collapse probes check their matchings through the Morse crate. The
-# e-graph suite closes each corpus block under congruence.
+# e-graph suite closes each corpus block under congruence. The base crate's
+# `fixture` feature gives the tests its parsed and hand-built trees.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-kernel-core.workspace = true
+gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
 gandr-surface-parser.workspace = true
 gandr-theory-discrete-morse.workspace = true
 gandr-theory-e-graphs.workspace = true
@@ -66,7 +68,7 @@ default = []
 # overlap queries and normalization; a model slot's candidates, each one's
 # packing, an include's reduct maps and a derived equality: timed and their
 # allocations counted for the benchmark report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
+hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

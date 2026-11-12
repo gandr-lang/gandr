@@ -435,7 +435,7 @@ struct Formed<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a held rule reads the block before it.
-/// - witness: `description::tests::a_held_member_states_its_own_expectation_1462`
+/// - witness: `tests::description::a_held_member_states_its_own_expectation_1462`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataMember
 {
@@ -462,7 +462,7 @@ pub struct DataMember
 /// - hypothesis: L3 — a constructor of a written family and one of `Theory`
 ///   each apply and match through their own generators.
 /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-/// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+/// - witness: `tests::theory::a_theory_block_defines_its_presentation`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Generators
 {

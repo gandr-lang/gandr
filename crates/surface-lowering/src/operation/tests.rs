@@ -25,9 +25,9 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::budget::LoweringBudget;
 use crate::fixture::grammar;
 use crate::fixture::parsed;
-use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;

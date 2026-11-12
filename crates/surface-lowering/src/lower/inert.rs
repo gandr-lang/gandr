@@ -21,8 +21,8 @@ use crate::error::LoweringRefusal;
 use crate::module::Container;
 use crate::module::DeclarationSlot;
 use crate::module::Inertness;
-use crate::module::Role;
 use crate::module::SlotIndex;
+use crate::slot::Role;
 
 impl<'source> Lowerer<'_, 'source>
 {

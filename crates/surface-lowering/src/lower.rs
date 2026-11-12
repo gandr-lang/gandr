@@ -525,7 +525,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::OnceCell;
-use core::fmt;
 use core::ops::ControlFlow;
 
 use anodized::spec;
@@ -599,6 +598,8 @@ use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
 use crate::attribute::texts;
+use crate::budget::Fuel;
+use crate::budget::LoweringBudget;
 use crate::by_form::At;
 use crate::by_form::ByForm;
 use crate::by_form::FormPlace;
@@ -618,6 +619,7 @@ use crate::error::LoweringRefusal;
 use crate::error::MatchFault;
 use crate::error::Unexported;
 use crate::form::Cursor;
+use crate::form::Family;
 use crate::form::FormName;
 use crate::form::Former;
 use crate::form::KeywordOpening;
@@ -634,9 +636,11 @@ use crate::form::Universe;
 use crate::form::applied_word;
 use crate::form::bare_bracket;
 use crate::form::declined_feature;
+use crate::form::family_of;
 use crate::form::misspelt_keyword;
 use crate::form::misspelt_operator;
 use crate::form::opens_expression;
+use crate::form::read_as_type;
 use crate::form::read_pieces;
 use crate::form::run_reading;
 use crate::form::shape_of;
@@ -679,7 +683,6 @@ use crate::module::ParameterForm;
 use crate::module::Payload;
 use crate::module::Plicity;
 use crate::module::ReceiverMode;
-use crate::module::Role;
 use crate::module::SealedComponent;
 use crate::module::Sealing;
 use crate::module::SlotIndex;
@@ -690,7 +693,6 @@ use crate::module::THEORY_CODE;
 use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
 use crate::module::ValueComponent;
-use crate::module::Visibility;
 use crate::module::WrittenAttribute;
 use crate::module::WrittenDoc;
 use crate::module::begin_collection;
@@ -730,6 +732,7 @@ use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
+use crate::resolve::atom_type;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::homed_atom;
@@ -737,11 +740,14 @@ use crate::resolve::homed_former;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
 use crate::resolve::type_head;
+use crate::slot::Role;
+use crate::slot::Visibility;
 use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
 use crate::unit::UnitKey;
+use crate::written_import::decode_escapes;
 
 mod access;
 
@@ -884,192 +890,6 @@ quenchant_shape::reason_enum! {
             /// No signature type encloses the node.
             Unscoped,
         }
-    }
-}
-
-/// The work one lowering may spend before it refuses.
-///
-/// One step is charged per node visited, per binder frame walked, per module
-/// child and per attribute, so the allowance bounds the whole lowering rather
-/// than any single sweep.
-///
-/// # Specification
-/// - requires: coordinates, when present, are interpreted in their originating
-///   run.
-/// - ensures: The limit is shared across the lowering run rather than renewed
-///   for each pass.
-/// - provides: A nominal bound on charged work, including the zero allowance.
-/// - fails: none as a data value; interpretation belongs to its consumers.
-/// - panics: none as a data value.
-/// - executable: none — The value has no work history to inspect; `Fuel::new`
-///   and `Fuel::spend` check initialization and consumption.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the last allowed charge succeeds, the next charge names
-///   the original limit, and a module exceeding its allowance is refused.
-/// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
-/// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
-/// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct LoweringBudget(usize);
-
-impl LoweringBudget
-{
-    /// The allowance a caller with no reason to bound the walk takes.
-    pub const DEFAULT: Self = Self(1_000_000_usize);
-}
-
-impl From<usize> for LoweringBudget
-{
-    /// The allowance of `steps` steps.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(steps: usize) -> Self
-    {
-        Self(steps)
-    }
-}
-
-impl From<LoweringBudget> for usize
-{
-    /// The number of steps `budget` allows.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(budget: LoweringBudget) -> Self
-    {
-        budget.0
-    }
-}
-
-impl fmt::Display for LoweringBudget
-{
-    /// Writes the number of steps.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
-/// One lowering's remaining allowance.
-///
-/// # Specification
-/// - requires: Instances are created by new and changed only by spend.
-/// - ensures: The remaining allowance never exceeds its original budget, and an
-///   exhausted tank remains exhausted.
-/// - provides: The shared state of all charged passes.
-/// - fails: none as a data value; interpretation belongs to its consumers.
-/// - panics: none as a data value.
-/// - executable: none — Type-level invariant expansion is unavailable in the
-///   enabled specification facade; new and spend carry the executable state
-///   relation.
-///
-/// # Adequacy
-/// - hypothesis: L3 — initialization and the last-success/first-refusal
-///   boundary distinguish off-by-one charging and preserve the reported
-///   allowance.
-/// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
-/// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Fuel
-{
-    /// How many steps are left.
-    remaining: usize,
-    /// The allowance the caller set, carried so a refusal can name it.
-    budget: LoweringBudget,
-}
-
-impl Fuel
-{
-    /// A full tank at `budget`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the remaining allowance equals the supplied budget, whose
-    ///   original value is retained.
-    /// - provides: a shared tank for every charged pass.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the last permitted charge and first excess charge
-    ///   distinguish initialization from an off-by-one allowance.
-    /// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
-    /// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
-    #[spec(
-        ensures: |ret| ret.remaining == budget.0 && ret.budget.0 == budget.0,
-    )]
-    #[inline]
-    #[must_use]
-    pub const fn new(budget: LoweringBudget) -> Self
-    {
-        Self {
-            remaining: budget.0,
-            budget,
-        }
-    }
-
-    /// Charge one step of work.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the remaining allowance is one lower on success, so a caller
-    ///   that charges once per unit of work cannot outrun the allowance by more
-    ///   than the unit it was charged for.
-    /// - provides: the one place the allowance is spent, so no sweep can walk
-    ///   uncharged.
-    /// - fails: [`LoweringRefusal::BudgetExceeded`], naming the allowance the
-    ///   caller set, once nothing remains; the tank stays empty, so every later
-    ///   charge refuses alike.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::BudgetExceeded`] when the allowance is spent.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 only — one checked subtraction, separated by the
-    ///   boundary pair of the last successful charge and the first refused one
-    ///   over an allowance of one, with the exact refusal variant and its
-    ///   allowance asserted.
-    /// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
-    /// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
-    #[spec(
-        captures: before = (self.remaining, self.budget),
-        ensures: |ret| {
-            self.budget == before.1
-                && self.remaining == before.0.saturating_sub(1)
-                && ret
-                    == if before.0 == 0 {
-                        Err(LoweringRefusal::BudgetExceeded { budget: before.1 })
-                    }
-                    else {
-                        Ok(())
-                    }
-        },
-    )]
-    #[inline]
-    pub fn spend<'refusal>(&mut self) -> Result<(), LoweringRefusal<'refusal>>
-    {
-        let Some(remaining) = self.remaining.checked_sub(1_usize)
-        else {
-            return Err(LoweringRefusal::BudgetExceeded {
-                budget: self.budget,
-            });
-        };
-        self.remaining = remaining;
-
-        Ok(())
     }
 }
 
@@ -1310,36 +1130,6 @@ impl Reading
     }
 }
 
-/// Whether a former is a term, a type, or neither.
-///
-/// # Specification
-/// - requires: coordinates, when present, are interpreted in their originating
-///   run.
-/// - ensures: The family distinguishes term, type and non-expression forms
-///   without forbidding the explicitly admitted type-in-value reading.
-/// - provides: The coarse family check preceding former-specific admission.
-/// - fails: none as a data value; interpretation belongs to its consumers.
-/// - panics: none as a data value.
-/// - executable: none — No originating former is retained; `family_of` and
-///   `classify_form` check classification and its quoting exception.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a computation in value position is nested, while a type
-///   in value position can be quoted or used as a static code.
-/// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
-/// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
-/// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Family
-{
-    /// Values and computations.
-    Term,
-    /// Value types and computation types.
-    Type,
-    /// Neither: a declaration or an attribute block.
-    Neither,
-}
-
 /// How a form standing where a body ends treats that end.
 ///
 /// # Specification
@@ -1511,220 +1301,6 @@ fn iterating(former: Former) -> Ending
         },
         Ending::Passes | Ending::Inferred => Ending::Inferred,
     }
-}
-
-/// The family `former` belongs to.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: syntax formers are classified as terms, types or neither
-///   independently of the demanded reading; static abstractions and session
-///   types belong to the type-former family, session actions and offers to the
-///   term family, and a reserved form to neither.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — term and type formers distinguish ordinary interpretation
-///   from the positional quote, including a static abstraction.
-/// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
-/// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
-/// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
-#[spec(
-    ensures: |ret| {
-        matches!(
-            (former, ret),
-            (
-                Former::Name
-                    | Former::Constructor
-                    | Former::Hole
-                    | Former::Number
-                    | Former::Boolean
-                    | Former::Text
-                    | Former::Character
-                    | Former::Parenthesized
-                    | Former::TypeQuote
-                    | Former::Thunk
-                    | Former::Lambda
-                    | Former::Block
-                    | Former::Return
-                    | Former::Exit
-                    | Former::Become
-                    | Former::Loop
-                    | Former::While
-                    | Former::For
-                    | Former::Break
-                    | Former::Continue
-                    | Former::Force
-                    | Former::Run
-                    | Former::Call
-                    | Former::ForgetModel
-                    | Former::Binary
-                    | Former::Unary
-                    | Former::Projection
-                    | Former::Case
-                    | Former::If
-                    | Former::Telescope
-                    | Former::List
-                    | Former::PackModel
-                    | Former::Injection
-                    | Former::LazyRecord
-                    | Former::Instantiation
-                    | Former::Scope
-                    | Former::Action
-                    | Former::Offer
-                    | Former::Access
-                    | Former::World,
-                Family::Term
-            ) | (
-                Former::TypeHead
-                    | Former::TypePath
-                    | Former::Universe
-                    | Former::TypeApplication
-                    | Former::ThunkType
-                    | Former::ReturnerType
-                    | Former::ArrowType
-                    | Former::LinearArrowType
-                    | Former::ProductType
-                    | Former::SumType
-                    | Former::LazyProductType
-                    | Former::TelescopeType
-                    | Former::LabelledSumType
-                    | Former::LazyRecordType
-                    | Former::ParenthesizedType
-                    | Former::PathType
-                    | Former::BridgeType
-                    | Former::FlowType
-                    | Former::RelationType
-                    | Former::ManifestType
-                    | Former::CapabilityType
-                    | Former::AtType
-                    | Former::StagedType
-                    | Former::ModedType
-                    | Former::SessionType,
-                Family::Type
-            ) | (
-                Former::Declaration
-                    | Former::AttributeBlock
-                    | Former::Visibility
-                    | Former::Import
-                    | Former::Module
-                    | Former::Data
-                    | Former::Mutual
-                    | Former::Reserved(_)
-                    | Former::WorldDeclaration
-                    | Former::Unadmitted(_)
-                    | Former::Misplaced,
-                Family::Neither
-            )
-        )
-    },
-)]
-const fn family_of(former: Former) -> Family
-{
-    match former {
-        Former::Name
-        | Former::Constructor
-        | Former::Hole
-        | Former::Number
-        | Former::Boolean
-        | Former::Text
-        | Former::Character
-        | Former::Parenthesized
-        | Former::TypeQuote
-        | Former::Thunk
-        | Former::Lambda
-        | Former::Block
-        | Former::Return
-        | Former::Exit
-        | Former::Become
-        | Former::Loop
-        | Former::While
-        | Former::For
-        | Former::Break
-        | Former::Continue
-        | Former::Force
-        | Former::Run
-        | Former::Call
-        | Former::ForgetModel
-        | Former::Binary
-        | Former::Unary
-        | Former::Projection
-        | Former::Case
-        | Former::If
-        | Former::Telescope
-        | Former::List
-        | Former::PackModel
-        | Former::Injection
-        | Former::LazyRecord
-        | Former::Instantiation
-        | Former::Scope
-        | Former::Action
-        | Former::Offer
-        | Former::Access
-        | Former::World => Family::Term,
-        Former::TypeHead
-        | Former::TypePath
-        | Former::Universe
-        | Former::TypeApplication
-        | Former::ThunkType
-        | Former::ReturnerType
-        | Former::ArrowType
-        | Former::LinearArrowType
-        | Former::ProductType
-        | Former::SumType
-        | Former::LazyProductType
-        | Former::TelescopeType
-        | Former::LabelledSumType
-        | Former::LazyRecordType
-        | Former::ParenthesizedType
-        | Former::PathType
-        | Former::BridgeType
-        | Former::FlowType
-        | Former::RelationType
-        | Former::ManifestType
-        | Former::CapabilityType
-        | Former::AtType
-        | Former::StagedType
-        | Former::ModedType
-        | Former::SessionType => Family::Type,
-        Former::Declaration
-        | Former::AttributeBlock
-        | Former::Visibility
-        | Former::Import
-        | Former::Module
-        | Former::Data
-        | Former::Mutual
-        | Former::Reserved(_)
-        | Former::WorldDeclaration
-        | Former::Unadmitted(_)
-        | Former::Misplaced => Family::Neither,
-    }
-}
-
-/// Whether a form stands as a type where a type is read.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AsType(pub bool);
-
-/// Whether a form of `former` stands as a type where a type is read: a former
-/// of the type family, a name or a constructor, which stands there as a type
-/// head, or a call the expression grammar molds, which stands there as the
-/// type application it spells. Where a type is read, the lowering refuses
-/// every other form for its wrong sort.
-///
-/// # Specification
-/// trivial.
-#[must_use]
-pub const fn read_as_type(former: Former) -> AsType
-{
-    AsType(
-        matches!(family_of(former), Family::Type)
-            || matches!(former, Former::Name | Former::Constructor | Former::Call),
-    )
 }
 
 /// The sort a former produces before positional bridges.
@@ -5472,9 +5048,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 module: entry.module.span,
                                 structure,
                                 translation: match entry.translation {
-                                    Maybe::Present(crate::import::WrittenTranslation::Via(
-                                        flow,
-                                    )) => Maybe::Present(crate::module::OfferedTranslation::Via {
+                                    Maybe::Present(
+                                        crate::written_import::WrittenTranslation::Via(flow),
+                                    ) => Maybe::Present(crate::module::OfferedTranslation::Via {
                                         flow: flow.span,
                                         rewritten: entry
                                             .rewritten
@@ -5483,7 +5059,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                             .collect(),
                                     }),
                                     Maybe::Present(
-                                        crate::import::WrittenTranslation::Renaming(ref pairs),
+                                        crate::written_import::WrittenTranslation::Renaming(
+                                            ref pairs,
+                                        ),
                                     ) => {
                                         Maybe::Present(crate::module::OfferedTranslation::Renaming(
                                             pairs
@@ -5899,7 +5477,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — each table's [`NodeTable::share`] or
-    ///   [`crate::module::Layered::share`] states its own clause.
+    ///   [`gandr_surface_lowering_base::layered::Layered::share`] states its
+    ///   own clause.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a document resumed after its closure lowers as the
@@ -7250,20 +6829,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
     #[spec(
         captures: before = (
-            self.fuel.remaining,
+            usize::from(self.fuel.remaining()),
             self.collected.slots.len(),
             self.plans.count(),
         ),
         ensures: |ret| {
             self.collected.slots.len() == before.1
                 && self.plans.count() == before.2
-                && self.fuel.remaining <= before.0
+                && usize::from(self.fuel.remaining()) <= before.0
                 && ret
                     .as_ref()
                     .err()
                     .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
                 && (ret.is_err()
-                    || self.fuel.remaining
+                    || usize::from(self.fuel.remaining())
                         <= before.0.saturating_sub(self.own.len()))
         },
     )]
@@ -7437,7 +7016,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a module's frames keep their coordinates when one
     ///   form before them takes another binder.
-    /// - witness: `resolve::tests::a_form_s_frames_keep_their_coordinates_when_another_form_changes_4457`
+    /// - witness: `tests::scopes::a_form_s_frames_keep_their_coordinates_when_another_form_changes_4457`
     #[spec(ensures: |ret| self.tree.descendants(position).is_some() || ret == position.block())]
     fn form_of(
         &self,
@@ -9226,9 +8805,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(
-        captures: before = self.fuel.remaining,
+        captures: before = self.fuel.remaining(),
         ensures: |ret| {
-            self.fuel.remaining <= before
+            self.fuel.remaining() <= before
                 && match ret {
                     | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
                         matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.constant == constant && ((entry.name == name && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. }))) || matches!((self.collected.block_of(SlotIndex::from(usize::from(constant))), self.collected.block_of(own)), (Maybe::Present(held), Maybe::Present(holding)) if held == holding)) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped) }) || matches!(self.collected.imported_slot(self.collected.unit.source_at(site.at.span.start()), name), Ok(Maybe::Present((slot, _))) if usize::from(slot) == usize::from(constant)))))
@@ -9294,8 +8873,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::opening::tests::an_opened_module_answers_the_rest_of_its_block`
     /// - witness: `tests::modules::a_backward_member_reference_resolves`
     #[spec(
-        captures: before = self.fuel.remaining,
-        ensures: |_| self.fuel.remaining <= before,
+        captures: before = self.fuel.remaining(),
+        ensures: |_| self.fuel.remaining() <= before,
     )]
     fn past_binders(
         &mut self,
@@ -9343,8 +8922,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_shadowing_binder_hides_an_import_and_reaches_none_6270`
     /// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
     #[spec(
-        captures: before = (self.fuel.remaining, self.collected.reached.len()),
-        ensures: |ret| self.fuel.remaining <= before.0
+        captures: before = (self.fuel.remaining(), self.collected.reached.len()),
+        ensures: |ret| self.fuel.remaining() <= before.0
             && self.collected.reached.len() == before.1
             && ret.as_ref().err().is_none_or(|refusal| matches!(refusal, LoweringRefusal::BudgetExceeded { .. })),
     )]
@@ -9411,8 +8990,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
     /// - witness: `lower::opening::tests::a_name_two_scopes_answer_is_refused_at_its_use`
     #[spec(
-        captures: before = self.fuel.remaining,
-        ensures: |_| self.fuel.remaining <= before,
+        captures: before = self.fuel.remaining(),
+        ensures: |_| self.fuel.remaining() <= before,
     )]
     fn declared_name(
         &mut self,
@@ -10368,7 +9947,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   and a signature type the signature's: the arrow minted from each, and
     ///   the label spelled for each, tell the two apart.
     /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
-    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
     #[spec(ensures: |ret| (ret == Telescope::Quote) == self.in_quote.contains(&node))]
     fn telescope_at(
         &self,
@@ -19045,7 +18623,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.read_holes(LayoutBlock::from(0_usize));
         }
         let exceeded = LoweringRefusal::BudgetExceeded {
-            budget: self.fuel.budget,
+            budget: self.fuel.budget(),
         };
         let block = self.form_of(at.node);
         let (form, first_block) = self.hole_group(block);
@@ -23705,9 +23283,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_module_respects_attribute_files_its_laws_under_the_module`
     /// - witness: `lower::tests::a_module_attribute_refusal_refuses_its_first_member_alone`
     #[spec(
-        captures: before = (self.fuel.remaining, usize::from(table.attributed_count())),
+        captures: before = (self.fuel.remaining(), usize::from(table.attributed_count())),
         ensures: |ret| {
-            self.fuel.remaining <= before.0
+            self.fuel.remaining() <= before.0
                 && usize::from(table.attributed_count()) >= before.1
                 && ret
                     .as_ref()
@@ -23800,20 +23378,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     #[spec(
         captures: before = (
-            self.fuel.remaining,
+            usize::from(self.fuel.remaining()),
             slots.iter().fold(0_usize, |count, slot| {
                 count.saturating_add(slot.attributes.len())
             }),
             usize::from(table.attributed_count()),
         ),
         ensures: |ret| {
-            self.fuel.remaining <= before.0
+            usize::from(self.fuel.remaining()) <= before.0
                 && usize::from(table.attributed_count()) >= before.2
                 && ret
                     .as_ref()
                     .err()
                     .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
-                && (ret.is_err() || self.fuel.remaining == before.0.saturating_sub(before.1))
+                && (ret.is_err() || usize::from(self.fuel.remaining()) == before.0.saturating_sub(before.1))
         },
     )]
     fn attribute_slots(
@@ -23961,8 +23539,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   link.
     /// - witness: `lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
     #[spec(
-        captures: before = self.fuel.remaining,
-        ensures: self.fuel.remaining <= before,
+        captures: before = self.fuel.remaining(),
+        ensures: self.fuel.remaining() <= before,
     )]
     fn document_files(
         &mut self,
@@ -24049,8 +23627,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   first member at the link.
     /// - witness: `lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
     #[spec(
-        captures: before = self.fuel.remaining,
-        ensures: self.fuel.remaining <= before,
+        captures: before = self.fuel.remaining(),
+        ensures: self.fuel.remaining() <= before,
     )]
     fn document_modules(
         &mut self,
@@ -24297,8 +23875,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         )
     )]
     #[spec(
-        captures: before = self.fuel.remaining,
-        ensures: |ret| self.fuel.remaining <= before
+        captures: before = self.fuel.remaining(),
+        ensures: |ret| self.fuel.remaining() <= before
             && (ret.is_err() || slots.iter().all(|slot| slot.docs.is_empty())),
     )]
     fn document_slots(
@@ -24377,7 +23955,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
     /// - witness: `lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     /// - witness: `lower::tests::traces_is_written_once_per_channel_3338`
-    /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
     /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = seen.len(),
@@ -26299,48 +25876,6 @@ impl Sink<'_>
     }
 }
 
-/// The value type the builtin type `atom` names, minted into `arena`.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the two-summand sum of units for `Boolean`, the unit, the
-///   integers, the strings, the characters, the binary64 floats, a width's
-///   integers, the empty sum, the buffer, the qubit, the webs and the row kind
-///   for `Unit`, `Integer`, `Text`, `Character`, `Float64`, `Fixed`, `Void`,
-///   `Buffer`, `Qubit`, `Web` and `Row`.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — each builtin type head mints its own core type.
-/// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
-/// - witness: `described::tests::a_theory_answers_at_every_member`
-#[spec(ensures: |ret| arena.value_type(ret).is_some())]
-#[inline]
-pub fn atom_type(
-    arena: &mut CoreArena,
-    atom: TypeAtom,
-) -> ValueTypeId
-{
-    match atom {
-        TypeAtom::Boolean => {
-            let unit = arena.value_type_unit();
-            arena.value_type_sum(&[unit, unit])
-        },
-        TypeAtom::Unit => arena.value_type_unit(),
-        TypeAtom::Integer => arena.value_type_base(BaseType::Integer),
-        TypeAtom::Text => arena.value_type_base(BaseType::String),
-        TypeAtom::Character => arena.value_type_base(BaseType::Character),
-        TypeAtom::Float64 => arena.value_type_base(BaseType::Float64),
-        TypeAtom::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
-        TypeAtom::Void => arena.value_type_sum(&[]),
-        TypeAtom::Buffer => arena.value_type_buffer(),
-        TypeAtom::Qubit => arena.value_type_qubit(),
-        TypeAtom::Web => arena.value_type_web(),
-        TypeAtom::Row => arena.value_type_row(),
-    }
-}
-
 /// The parameter of a lambda: exactly one identifier between parentheses,
 /// with the type written after its `:`, if one is.
 ///
@@ -27303,92 +26838,6 @@ fn typed_number_literal(text: SourceFragment<'_>) -> Maybe<Literal, literal::Abs
     })
 }
 
-/// Decode the escapes of a string literal's or an import address's content.
-///
-/// # Specification
-/// - requires: the input is UTF-8 content without its surrounding quote tiles.
-/// - ensures: n, t, r and 0 escapes decode to their control characters; escaped
-///   LF and CRLF or CR are removed; every other escaped character loses only
-///   its backslash.
-/// - provides: decoded literal or import-address content, preserving unescaped
-///   Unicode.
-/// - fails: a trailing backslash contributes no character; unknown escapes are
-///   not rejected.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the named escape classes, CR/LF continuations, unknown
-///   escapes, Unicode and a trailing backslash have exact decoded values.
-/// - witness: `lower::tests::escape_decoding_covers_continuations_unknowns_and_unicode`
-/// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
-#[spec(
-    ensures: |ret| {
-        let content: &str = content.as_ref();
-        let actual: &str = ret.as_str();
-        let mut escaped = false;
-        let mut after_cr = false;
-        actual.chars().eq(content.chars().filter_map(|character| {
-            if after_cr {
-                after_cr = false;
-                if character == '\n' {
-                    return None;
-                }
-            }
-            if escaped {
-                escaped = false;
-                match character {
-                    | 'n' => Some('\n'),
-                    | 't' => Some('\t'),
-                    | 'r' => Some('\r'),
-                    | '0' => Some('\0'),
-                    | '\r' => {
-                        after_cr = true;
-                        None
-                    },
-                    | '\n' => None,
-                    | other => Some(other),
-                }
-            }
-            else if character == '\\' {
-                escaped = true;
-                None
-            }
-            else {
-                Some(character)
-            }
-        }))
-    },
-)]
-#[inline]
-#[must_use]
-pub fn decode_escapes(content: SourceFragment<'_>) -> String
-{
-    let spelled: &str = content.as_ref();
-    let mut decoded = String::with_capacity(spelled.len());
-    let mut chars = spelled.chars().peekable();
-    while let Some(character) = chars.next() {
-        if character != '\\' {
-            decoded.push(character);
-            continue;
-        }
-        match chars.next() {
-            Some('n') => decoded.push('\n'),
-            Some('t') => decoded.push('\t'),
-            Some('r') => decoded.push('\r'),
-            Some('0') => decoded.push('\0'),
-            Some('\r') => {
-                if chars.peek() == Some(&'\n') {
-                    let _break = chars.next();
-                }
-            },
-            Some('\n') | None => {},
-            Some(other) => decoded.push(other),
-        }
-    }
-
-    decoded
-}
-
 /// Whether `text` is a numeric lexeme with a fraction or an exponent.
 ///
 /// # Specification
@@ -27751,8 +27200,6 @@ mod tests
     use gandr_surface_syntax::SyntaxTree;
     use quenchant_shape::shape::Maybe;
 
-    use super::Fuel;
-    use super::LoweringBudget;
     use super::is_value_form;
     use super::literal;
     use super::lower_module;
@@ -27761,6 +27208,8 @@ mod tests
     use crate::attribute::AttributeRegistry;
     use crate::attribute::AttributeSchema;
     use crate::attribute::payload_form;
+    use crate::budget::Fuel;
+    use crate::budget::LoweringBudget;
     use crate::classify::FailureClass;
     use crate::error::FormFault;
     use crate::error::FragmentBoundary;
@@ -32957,7 +32406,7 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(include_str!(
-                "lower/unformatted/a-missing-close-is-reported-at-the-innermost-form-tree.gandr"
+                "../../surface-lowering-base/src/form/tests/unformatted/a-missing-close-is-reported-at-the-innermost-form-tree.gandr"
             )),
         );
         assert_eq!(
@@ -32982,7 +32431,7 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(include_str!(
-                "lower/unformatted/a-keyword-in-a-classifier-slot-is-read-with-its-offer-293-tree.gandr"
+                "../../surface-lowering-base/src/form/tests/unformatted/a-keyword-in-a-classifier-slot-is-read-with-its-offer-293-tree.gandr"
             )),
         );
         let LoweringRefusal::MalformedForm { span, fault, .. } = refusal_in(&pbg, &tree)
@@ -33047,7 +32496,7 @@ mod tests
         for (source, point, form, tile, why) in [
             (
                 include_str!(
-                    "lower/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-1.gandr"
+                    "../../surface-lowering-base/src/form/tests/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-1.gandr"
                 ),
                 27_usize,
                 "def_value",
@@ -33057,7 +32506,7 @@ mod tests
             ),
             (
                 include_str!(
-                    "lower/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-2.gandr"
+                    "../../surface-lowering-base/src/form/tests/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-2.gandr"
                 ),
                 31_usize,
                 "string",
@@ -33100,7 +32549,7 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(include_str!(
-                "lower/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-1.gandr"
+                "../../surface-lowering-base/src/form/tests/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-1.gandr"
             )),
         );
         assert_eq!(
@@ -33131,7 +32580,7 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(include_str!(
-                "lower/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-2.gandr"
+                "../../surface-lowering-base/src/form/tests/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-2.gandr"
             )),
         );
         assert!(
@@ -33154,7 +32603,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
         let source = include_str!(
-            "lower/unformatted/a-closer-owed-at-two-places-is-marked-over-both-3812.gandr"
+            "../../surface-lowering-base/src/form/tests/unformatted/a-closer-owed-at-two-places-is-marked-over-both-3812.gandr"
         );
         let after = |written: &str| {
             source
@@ -35587,51 +35036,6 @@ mod tests
                 parse_literal(former, SourceFragment::from(spelled)),
                 Maybe::Absent(reason),
                 "`{spelled}` is not a {former:?} literal"
-            );
-        }
-    }
-
-    #[test]
-    fn the_last_step_of_an_allowance_is_spendable()
-    {
-        let mut fuel = Fuel::new(LoweringBudget::from(1_usize));
-
-        assert_eq!(fuel.spend(), Ok(()), "an allowance of one admits one step");
-    }
-
-    #[test]
-    fn a_step_past_the_allowance_is_refused()
-    {
-        let budget = LoweringBudget::from(1_usize);
-        let mut fuel = Fuel::new(budget);
-        let _first = fuel.spend();
-
-        assert_eq!(
-            fuel.spend(),
-            Err(LoweringRefusal::BudgetExceeded { budget }),
-            "the step past the allowance is refused, naming the allowance"
-        );
-    }
-
-    /// Escape classes and continuations preserve their specified characters.
-    #[test]
-    fn escape_decoding_covers_continuations_unknowns_and_unicode()
-    {
-        for (written, expected) in [
-            ("plain λ", "plain λ"),
-            ("\\n\\t\\r\\0", "\n\t\r\0"),
-            ("a\\\nb", "ab"),
-            ("a\\\r\nb", "ab"),
-            ("a\\\rb", "ab"),
-            ("a\\q\\λ", "aqλ"),
-            ("a\\", "a"),
-            ("a\r\nb", "a\r\nb"),
-            ("\\\\", "\\"),
-            ("\\\r\\n", "\n"),
-        ] {
-            assert_eq!(
-                super::decode_escapes(SourceFragment::from(written)),
-                expected
             );
         }
     }

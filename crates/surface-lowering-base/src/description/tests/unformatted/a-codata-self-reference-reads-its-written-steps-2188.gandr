@@ -1,0 +1,4 @@
+codata Swap(a : Type, b : Type) : Type[-] where { head : a; tail : Swap(b, a); }
+codata Twisted(a : Type) : Type[-] where { head : a; tail : Twisted(Twisted(a)); }
+codata Stream(a : Type) : Type[-] where { head : a; tail : Stream Small; }
+data Small : Type where { | Mk : Small }
