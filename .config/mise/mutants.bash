@@ -76,6 +76,47 @@ mutants_grouped() {
   jq -r '.[] | select(.filter == null) | .names[]' "$output/groups.json" | sort -u > "$output/unwitnessed.txt"
 }
 
+# The key of each witnessed mutant's outcome (#6878). It writes
+# `$3/keyed.json`, one `{name, id, key, filter, tests, unit}` for each mutant
+# that a witness reaches, `id` its place in `list.json` from 1. The key
+# hashes each input of the outcome: the toolchain, the flags of the host
+# triple, the workspace manifest, `Cargo.lock`, the cargo and nextest
+# settings, the timeout `$2`, the files of the crate `$1` and of each
+# workspace crate that it depends on (tracked, changed and untracked), and
+# the mutant's name, replacement and witnesses. An edit outside those files
+# changes no key.
+mutants_keyed() {
+  local crate=$1 timeout=$2 output=$3 flags base line
+  local -a dirs settings
+  mapfile -t dirs < <(cargo metadata --locked --format-version 1 | jq -r --arg crate "$crate" '
+    .workspace_root as $root
+    | (.packages | map({key: .id, value: (.manifest_path | rtrimstr("/Cargo.toml") | ltrimstr($root + "/"))}) | from_entries) as $dirs
+    | [.workspace_members[]] as $members
+    | (.resolve.nodes | map({key: .id, value: [.deps[].pkg | select(IN($members[]))]}) | from_entries) as $deps
+    | [first(.packages[] | select(.name == $crate) | .id)]
+    | until(([.[], (.[] | $deps[.][])] | unique) == .; [.[], (.[] | $deps[.][])] | unique)
+    | .[] | $dirs[.]')
+  for line in Cargo.toml Cargo.lock .cargo/config.toml .config/nextest.toml; do [[ ! -f $line ]] || settings+=("$line"); done
+  flags=CARGO_TARGET_$(rustc -vV | sed -n 's/^host: //p' | tr '[:lower:]-' '[:upper:]_')_RUSTFLAGS
+  base=$({
+    rustc -vV
+    printf '%s\n%s\n' "${!flags:-}" "$timeout"
+    git hash-object "${settings[@]}"
+    git ls-files --stage -- "${dirs[@]}"
+    git diff --binary HEAD -- "${dirs[@]}"
+    git ls-files -z --others --exclude-standard -- "${dirs[@]}" | xargs -0 -r git hash-object
+  } | git hash-object --stdin)
+  jq -c --slurpfile list "$output/list.json" '
+    ($list[0] | to_entries | map({key: .value.name, value: {id: (.key + 1), replacement: .value.replacement}}) | from_entries) as $by
+    | [.[] | select(.filter != null) | . as $group
+        | .names[] | {name: ., id: $by[.].id, replacement: $by[.].replacement, filter: $group.filter, tests: $group.tests, unit: $group.unit}]' \
+    "$output/groups.json" > "$output/keyed.json"
+  jq -c '.[] | [.name, .replacement, .filter]' "$output/keyed.json" | while IFS= read -r line; do
+    printf '%s\n%s\n' "$base" "$line" | git hash-object --stdin
+  done | jq -R . | jq -s --slurpfile keyed "$output/keyed.json" '[$keyed[0], .] | transpose | map(.[0] + {key: .[1]} | del(.replacement))' > "$output/keyed.json.next"
+  mv "$output/keyed.json.next" "$output/keyed.json"
+}
+
 # The survivors of one witnessed run (`mutants:witnessed`'s outcome directory
 # `$1`) as a Markdown table collapsed under a summary counting them. It lists
 # each missed mutant, then each timeout. Unwitnessed mutants are a static gap.
