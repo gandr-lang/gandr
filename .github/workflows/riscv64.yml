@@ -6,7 +6,10 @@
 # </critical>
 name: riscv64
 
-# The self-hosted riscv64 lane runs after the nightly. It runs no fork code.
+# The riscv64 lane runs after the nightly on runners of our own. An x86-64
+# runner compiles the tests for riscv64 and packs them in a nextest archive.
+# The riscv64 runner runs the archive on its own instruction set. The lane
+# starts only from the schedule or a dispatch, so it runs no fork code.
 on:
   schedule:
     - cron: "0 5 * * *"
@@ -15,9 +18,26 @@ on:
 permissions:
   contents: read
 
+# One run at a time, so one run holds the links on each host.
 concurrency:
   group: riscv64-main
   cancel-in-progress: true
+
+env:
+  # The compiler writes two paths into the test binaries: the checkout's, for
+  # `env!("CARGO_MANIFEST_DIR")`, and the target directory's, for
+  # `env!("CARGO_BIN_EXE_<name>")`. So both jobs see each at one fixed path,
+  # a link to the job's own directory. Cargo keeps a linked path as it is
+  # given. The paths hold no run number, so the kept target directory stays
+  # warm from one run to the next. Cargo does not rebuild when the target
+  # path alone changes, so a new target path needs an empty kept directory.
+  GANDR_RISCV64_SOURCE: /tmp/gandr-riscv64
+  GANDR_RISCV64_TARGET_DIR: /tmp/gandr-riscv64-target
+  GANDR_RISCV64_TARGET: riscv64gc-unknown-linux-gnu
+  GANDR_RISCV64_ARCHIVE: riscv64-tests.tar.zst
+  # The sweeps run their samples here; main measured at its own head has no
+  # change to add to them.
+  GANDR_SWEEP_BASE: HEAD
 
 jobs:
   template:
@@ -32,15 +52,66 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+      - &link-source
+        name: link the checkout at the source path of the archive
+        run: ln -sfn "$GITHUB_WORKSPACE" "$GANDR_RISCV64_SOURCE"
+
+  # The compile runs on the 32 cores of an x86-64 host of ours. The host's
+  # path holds the cross linker and its riscv64 C library. The host's runners
+  # share one kept target directory under the runner user's cache, so the
+  # build stays warm whichever runner takes the job. The concurrency group
+  # lets one run at a time write it.
+  archive:
+    name: build the riscv64 test archive (x86-64)
+    if: ${{ github.repository_owner == 'gandr-lang' }}
+    runs-on: [self-hosted, integration] # zizmor: ignore[self-hosted-runner]
+    permissions: *contents-read
+    timeout-minutes: 30
+    env:
+      GANDR_RISCV64_KEPT: .cache/gandr-riscv64-target
+    steps:
+      - *git-checkout
+      - *link-source
+      - name: make the kept target directory
+        run: mkdir -p "$HOME/$GANDR_RISCV64_KEPT"
+      - name: link the kept target directory at the target path of the archive
+        run: ln -sfn "$HOME/$GANDR_RISCV64_KEPT" "$GANDR_RISCV64_TARGET_DIR"
+      - name: add the riscv64 standard library
+        run: rustup target add "$GANDR_RISCV64_TARGET"
+      - name: build the test archive
+        env:
+          CARGO_TARGET_DIR: ${{ env.GANDR_RISCV64_TARGET_DIR }}
+          CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER: riscv64-linux-gnu-gcc
+        run: cargo nextest archive --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml" --workspace --target "$GANDR_RISCV64_TARGET" --profile riscv64 --archive-file "$RUNNER_TEMP/$GANDR_RISCV64_ARCHIVE"
+      # The archive is zstd already, so the upload stores it as it is.
+      - name: upload the test archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: riscv64-tests
+          path: ${{ runner.temp }}/${{ env.GANDR_RISCV64_ARCHIVE }}
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
 
   test:
     name: test (riscv64)
+    needs: archive
     runs-on: *riscv64
     permissions: *contents-read
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - *git-checkout
-      - name: test the workspace
-        env:
-          CARGO_TARGET_DIR: ${{ runner.workspace }}/target
-        run: cargo nextest run --workspace --profile ci
+      - *link-source
+      # The download makes the directory that the extraction needs.
+      - name: download the test archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: riscv64-tests
+          path: ${{ runner.temp }}/riscv64-tests
+      # The archive holds the target directory under `target/`, and the
+      # extraction puts it beside the archive. The link reads it at the
+      # target path that the binaries name.
+      - name: link the extracted target directory at the target path of the archive
+        run: ln -sfn "$RUNNER_TEMP/riscv64-tests/target" "$GANDR_RISCV64_TARGET_DIR"
+      - name: test the workspace from the archive
+        run: cargo nextest run --archive-file "$RUNNER_TEMP/riscv64-tests/$GANDR_RISCV64_ARCHIVE" --extract-to "$RUNNER_TEMP/riscv64-tests" --workspace-remap "$GANDR_RISCV64_SOURCE" --profile riscv64

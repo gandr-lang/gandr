@@ -43,6 +43,19 @@ path = "junit.xml"
 [profile.ci-enforcing]
 inherits = "ci"
 
+# The riscv64 lane runs the tests from an archive that an x86-64 runner
+# builds (`riscv64.yml`). The driver runs itself, not the default toolchain,
+# when its directory holds Cargo's `.cargo-lock` (#4510). So the archive
+# carries that file, and the extracted directory is a profile directory, as
+# the build's directory is.
+[profile.riscv64]
+inherits = "ci"
+
+[profile.riscv64.archive]
+include = [
+  { path = "riscv64gc-unknown-linux-gnu/debug/.cargo-lock", relative-to = "target", on-missing = "error" },
+]
+
 # The sweeps whole. A sweep drives the whole corpus through one feature and
 # sits in a `sweeps` module, which is all this filter names: a new sweep joins
 # by where it is written. Under every other profile but `nightly` a sweep
