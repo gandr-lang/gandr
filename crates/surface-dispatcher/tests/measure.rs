@@ -4,8 +4,10 @@
 use alloc::collections::BTreeMap;
 use core::convert::Infallible;
 use core::ops::ControlFlow;
+use core::time::Duration;
 use std::path::PathBuf;
 
+use gandr_core_fork::Dependence;
 use gandr_kernel_term::ArtifactImage;
 use gandr_kernel_term::ByteCount;
 use gandr_kernel_term::ExpandedWork;
@@ -18,6 +20,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::measure;
 use gandr_surface_dispatcher::measured;
+use gandr_surface_dispatcher::schedule;
 use quenchant_shape::shape::Maybe;
 
 /// The sizes of every declaration a component's artifact holds, by the last
@@ -192,4 +195,142 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
         written.len(),
         "the unasked walk reaches every source the measuring one did"
     );
+}
+
+/// The checks of a source whose definitions read each other in a chain, with
+/// one beside the chain: each job waits on exactly the jobs that its
+/// definition names. The chain of the critical path is a path of
+/// dependences, and the critical path covers the costs of the written chain.
+/// The schedule names each job of its chain by the artifact's name.
+#[test]
+fn a_component_s_schedule_waits_on_the_references_of_each_job()
+{
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "tests/measure/fixtures/a-component-s-schedule-waits-on-the-references-of-each-job.gandr",
+    );
+    let mut scheduled = 0_usize;
+    let ControlFlow::Continue(_) = Walk::new(vec![source]).measuring().visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let Step::Source { ref composed, .. } = step
+            else {
+                panic!("the source is read: {step:?}");
+            };
+            let Composed::Settled {
+                ref report,
+                positions: Maybe::Present(ref positions),
+                ..
+            } = *composed
+            else {
+                panic!("the source is judged, admitted and positioned");
+            };
+            let Ok(Maybe::Present(row)) = schedule(composed)
+            else {
+                panic!("a measured admission reads its schedule");
+            };
+            let checks = row.schedule();
+            let Ok(Maybe::Present(rows)) = measure(composed)
+            else {
+                panic!("the source is measured");
+            };
+            // Each written definition's job, and the time its admission took.
+            let job = |name: &str| -> (usize, Duration) {
+                let declaration = report
+                    .declarations()
+                    .iter()
+                    .find(|declaration| declaration.name().as_ref() == name)
+                    .unwrap_or_else(|| panic!("the source writes {name}"));
+                let Maybe::Present(placed) = positions.placed(declaration.constant())
+                else {
+                    panic!("{name} crosses into the kernel");
+                };
+                let at = checks
+                    .jobs()
+                    .binary_search(&placed.position())
+                    .unwrap_or_else(|_| panic!("{name} is a job"));
+                let Some(Maybe::Present(took)) = rows
+                    .iter()
+                    .find(|row| row.name().as_ref() == name)
+                    .map(gandr_surface_dispatcher::Measure::took)
+                else {
+                    panic!("{name}'s admission is timed");
+                };
+                (at, took.wall())
+            };
+            let [first, second, third, beside] = ["first", "second", "third", "beside"].map(job);
+            let written = [first.0, second.0, third.0, beside.0];
+            let among: Vec<(usize, usize)> = checks
+                .dependences()
+                .edges()
+                .iter()
+                .map(|edge| (edge.before, edge.after))
+                .filter(|&(before, after)| written.contains(&before) && written.contains(&after))
+                .collect();
+            assert_eq!(
+                among,
+                [(first.0, second.0), (second.0, third.0)],
+                "second waits on first and third on second; beside waits on none of them"
+            );
+            let bound = checks.bound();
+            for pair in bound.chain().windows(2) {
+                let &[before, after] = pair
+                else {
+                    unreachable!("a window of two holds two items");
+                };
+                assert!(
+                    checks
+                        .dependences()
+                        .edges()
+                        .contains(&Dependence { before, after }),
+                    "the chain of the critical path follows the dependences: {pair:?}"
+                );
+            }
+            assert!(
+                bound.critical() >= first.1.saturating_add(second.1).saturating_add(third.1),
+                "the critical path covers the written chain"
+            );
+            assert!(
+                bound.critical() <= bound.folded() && bound.folded() <= bound.serial(),
+                "no schedule passes the serial cost, and the fold waits at least for the chain"
+            );
+            assert_eq!(
+                checks.untimed(),
+                0,
+                "a source with no mutual block times each job"
+            );
+            let on_chain: Vec<_> = bound
+                .chain()
+                .iter()
+                .filter_map(|&item| checks.jobs().get(item).copied())
+                .collect();
+            assert_eq!(
+                row.chain()
+                    .iter()
+                    .map(|&(position, _)| position)
+                    .collect::<Vec<_>>(),
+                on_chain,
+                "the schedule names each job of its chain, in order"
+            );
+            for (written, at) in [
+                ("first", first.0),
+                ("second", second.0),
+                ("third", third.0),
+                ("beside", beside.0),
+            ] {
+                if let Some(&(_, ref name)) = row
+                    .chain()
+                    .iter()
+                    .find(|&&(position, _)| checks.jobs().get(at) == Some(&position))
+                {
+                    assert!(
+                        name.rsplit('.').next() == Some(written),
+                        "the chain names {written} by the artifact's name: {name}"
+                    );
+                }
+            }
+            scheduled = scheduled.saturating_add(1);
+            ControlFlow::Continue(())
+        },
+    );
+    assert_eq!(scheduled, 1, "the walk reads the one source");
 }

@@ -20,6 +20,16 @@
 //! admitted ran no check, and its row says so rather than counting nothing. A
 //! resumed declaration carries the tally of the run that admitted it.
 //!
+//! # A component's checks are jobs of one schedule
+//!
+//! Each declaration that the kernel admitted is one job. Its references to
+//! the entries that the same admission added are its dependences, and the
+//! time of its admission is its cost. [`CheckSchedule`] reads from them the
+//! critical path that no width beats, the bound of a release at the fold and
+//! the chain of the critical path ([`gandr_core_fork::Dependences::bound`]).
+//! An entry that the admission resumed or that the prelude holds is committed
+//! before the first job, so no job waits on it.
+//!
 //! # Measuring reads and never checks
 //!
 //! [`measure`] decodes the artifact the admission already exported and
@@ -38,15 +48,30 @@
 //! - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing
 //!   format's one table per artifact and its expanded-work budget, the shared
 //!   and unshared sizes a row reads.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — newest: the checks of one
+//!   environment run over the dependence graph of their supports, and the
+//!   critical path bounds the wall time at every width. [`CheckSchedule`] reads
+//!   that bound before the schedule runs.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::time::Duration;
 
 use anodized::spec;
+use gandr_core_checker::bridge;
 use gandr_core_checker::bridge::AdmissionCost;
+use gandr_core_fork::Bound;
+use gandr_core_fork::Dependence;
+use gandr_core_fork::Dependences;
+use gandr_kernel_core::AdmittedDeclaration;
 use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::tallied;
 use gandr_kernel_term::ByteCount;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::ExpandedWork;
 use gandr_kernel_term::TableEntryCount;
+use gandr_kernel_term::decode;
 use gandr_kernel_term::decode_measured;
 use gandr_surface_lowering::SurfaceName;
 use quenchant_shape::shape::Maybe;
@@ -171,7 +196,188 @@ quenchant_shape::reason_enum! {
             /// The admission recorded no artifact positions: the walk was
             /// not asked to measure.
             Unpositioned,
+            /// The admission read no clock, so its jobs carry no cost and
+            /// it has no schedule.
+            Untimed,
         }
+    }
+}
+
+/// The schedule that the checks of one component's admission can reach:
+/// each declaration that the kernel admitted is a job, its references to
+/// earlier jobs are its dependences, and the time of its admission is its
+/// cost.
+///
+/// # Specification
+/// - requires: built by [`CheckSchedule::of`].
+/// - ensures: the jobs in kernel position order, their dependences by job, the
+///   count of jobs that carry no time and the bound of their schedule.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`CheckSchedule::of`], whose specification states them.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`CheckSchedule::of`]'s.
+/// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckSchedule
+{
+    /// The kernel position of each job, ascending.
+    jobs: Vec<ConstantIndex>,
+    /// The dependences of the jobs, each by its place in `jobs`.
+    dependences: Dependences,
+    /// How many jobs carry no time, each at no cost: a member of a mutual
+    /// block, which the kernel admits with its block.
+    untimed: usize,
+    /// What a schedule of the jobs can reach.
+    bound: Bound,
+}
+
+impl CheckSchedule
+{
+    /// The schedule of the declarations that `readmission` admitted, each
+    /// after the ones that it resumed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one job for each readmitted declaration after the resumed
+    ///   ones whose outcome is a definition, an axiom or a nominal declaration,
+    ///   at its kernel position, in position order. A job waits on each other
+    ///   job at a position that its entry's references name. Its cost is the
+    ///   time that its admission took, and nothing when no time was read, which
+    ///   the untimed count counts. The bound is [`Dependences::bound`] over
+    ///   those dependences and costs.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — over a source whose definitions read each other in a
+    ///   chain and beside it, a job waits on exactly the jobs that its
+    ///   definition names, and the critical path is the chain's. A schedule
+    ///   read with no clock carries every job untimed.
+    /// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every readmitted declaration; the clause reads each job once"
+        )
+    )]
+    #[spec(ensures: |ret| ret.jobs.is_sorted() && ret.untimed <= ret.jobs.len()
+        && ret.jobs.len() <= readmission.readmitted().len())]
+    #[must_use]
+    pub(crate) fn of(readmission: &bridge::Readmission) -> Self
+    {
+        let entries = readmission.environment().entries();
+        let mut timed: Vec<(ConstantIndex, AdmissionCost)> = readmission
+            .readmitted()
+            .iter()
+            .skip(usize::from(readmission.resumed()))
+            .filter_map(|entry| match *entry.outcome() {
+                bridge::Outcome::Data { admitted, .. }
+                | bridge::Outcome::Defined { admitted, .. }
+                | bridge::Outcome::Assumed { admitted, .. } => {
+                    Some((admitted.position(), entry.took()))
+                },
+                bridge::Outcome::Marked(_)
+                | bridge::Outcome::Suspended
+                | bridge::Outcome::Static
+                | bridge::Outcome::Refused(_)
+                | bridge::Outcome::Rejected(_) => None,
+            })
+            .collect();
+        timed.sort_unstable_by_key(|&(position, _)| position);
+        let jobs: Vec<ConstantIndex> = timed.iter().map(|&(position, _)| position).collect();
+        let mut untimed = 0_usize;
+        let costs: Vec<Duration> = timed
+            .iter()
+            .map(|&(_, took)| match took {
+                Maybe::Present(spent) => spent.wall(),
+                Maybe::Absent(_) => {
+                    untimed = untimed.saturating_add(1);
+                    Duration::ZERO
+                },
+            })
+            .collect();
+        let held = &jobs;
+        let dependences = Dependences::new(held.iter().enumerate().flat_map(|(after, &position)| {
+            entries
+                .get(usize::from(position))
+                .map_or(&[][..], AdmittedDeclaration::references)
+                .iter()
+                .filter_map(move |reference| {
+                    held.binary_search(reference)
+                        .ok()
+                        .filter(|&before| before < after)
+                        .map(|before| Dependence { before, after })
+                })
+        }))
+        // Each edge waits on an earlier job, so none is backward.
+        .unwrap_or_default();
+        let bound = dependences.bound(&costs);
+        Self {
+            jobs,
+            dependences,
+            untimed,
+            bound,
+        }
+    }
+
+    /// The kernel position of each job, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn jobs(&self) -> &[ConstantIndex]
+    {
+        &self.jobs
+    }
+
+    /// The dependences of the jobs, each by its place in [`Self::jobs`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn dependences(&self) -> &Dependences
+    {
+        &self.dependences
+    }
+
+    /// How many jobs carry no time, each counted at no cost.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn untimed(&self) -> usize
+    {
+        self.untimed
+    }
+
+    /// What a schedule of the jobs can reach: the serial cost, the critical
+    /// path and the bound of the release at the fold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn bound(&self) -> &Bound
+    {
+        &self.bound
+    }
+
+    /// The kernel position of each job on the critical path, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn chain(&self) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        self.bound
+            .chain()
+            .iter()
+            .filter_map(|&item| self.jobs.get(item).copied())
     }
 }
 
@@ -263,4 +469,137 @@ pub fn measure<'source>(
         })
         .collect();
     Ok(Maybe::Present(rows))
+}
+
+/// The schedule that the checks of one source's component can reach, beside
+/// the name of each job on its critical path.
+///
+/// # Specification
+/// - requires: built by [`schedule`].
+/// - ensures: the component's schedule, and the kernel position and the
+///   structured name of each job on its chain, in chain order.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by [`schedule`],
+///   whose specification states them.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`schedule`]'s.
+/// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScheduleRow<'composed>
+{
+    /// The component's schedule.
+    schedule: &'composed CheckSchedule,
+    /// Each job on the critical path, in chain order: its kernel position and
+    /// its structured name, its segments apart by `.`. The name is empty
+    /// when the producer gave the declaration none.
+    chain: Vec<(ConstantIndex, String)>,
+}
+
+impl<'composed> ScheduleRow<'composed>
+{
+    /// The component's schedule.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn schedule(&self) -> &'composed CheckSchedule
+    {
+        self.schedule
+    }
+
+    /// Each job on the critical path, in chain order: its kernel position and
+    /// its structured name, its segments apart by `.`. The name is empty
+    /// when the producer gave the declaration none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn chain(&self) -> &[(ConstantIndex, String)]
+    {
+        &self.chain
+    }
+}
+
+/// The schedule that the checks of `composed`'s component can reach.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: absent as [`measured::Absent::Refused`] for a source refused as a
+///   whole, as [`measured::Absent::Pending`] before its admission ran, as
+///   [`measured::Absent::Unpositioned`] when its admission recorded no
+///   positions, and as [`measured::Absent::Untimed`] when it read no clock.
+///   Otherwise the component's [`CheckSchedule`], and each job on its chain in
+///   chain order: its kernel position and the structured name that the
+///   component's artifact gives it, empty when it has none.
+/// - provides: the line `gandr check --measure` prints after a source's rows.
+/// - fails: [`DecodeError`] when the exported artifact does not decode, which
+///   the kernel's own export never meets.
+/// - panics: none.
+///
+/// # Errors
+/// [`DecodeError`] from [`decode`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — over a source whose definitions read each other in a
+///   chain and beside it, each chain name is a declaration of the artifact, one
+///   for each job of the chain.
+/// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
+#[inline]
+#[spec(ensures: |ret| match (composed, ret.as_ref()) {
+    (&Composed::Settled { .. }, Ok(&Maybe::Present(ref row))) => row.chain.len() == row.schedule.bound().chain().len(),
+    (&Composed::Refused(_), Ok(&Maybe::Absent(measured::Absent::Refused)))
+    | (&Composed::Settled { .. }, Ok(&Maybe::Absent(measured::Absent::Pending | measured::Absent::Unpositioned | measured::Absent::Untimed)) | Err(_)) => true,
+    _ => false,
+})]
+pub fn schedule<'composed>(
+    composed: &'composed Composed<'_>
+) -> Result<Maybe<ScheduleRow<'composed>, measured::Absent>, DecodeError>
+{
+    let Composed::Settled {
+        ref kernel,
+        ref positions,
+        ..
+    } = *composed
+    else {
+        return Ok(Maybe::Absent(measured::Absent::Refused));
+    };
+    let Maybe::Present(ref kernel) = *kernel
+    else {
+        return Ok(Maybe::Absent(measured::Absent::Pending));
+    };
+    let Maybe::Present(ref positions) = *positions
+    else {
+        return Ok(Maybe::Absent(measured::Absent::Unpositioned));
+    };
+    let Maybe::Present(schedule) = positions.schedule()
+    else {
+        return Ok(Maybe::Absent(measured::Absent::Untimed));
+    };
+    let artifact = decode(kernel.as_image())?;
+    let declarations = artifact.declarations();
+    let chain = schedule
+        .chain()
+        .map(|position| {
+            let mut name = String::new();
+            if let Some(declaration) = declarations.get(usize::from(position)) {
+                for (at, segment) in declaration
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .enumerate()
+                {
+                    if at > 0 {
+                        name.push('.');
+                    }
+                    name.push_str(segment.as_ref());
+                }
+            }
+            (position, name)
+        })
+        .collect();
+    Ok(Maybe::Present(ScheduleRow { schedule, chain }))
 }

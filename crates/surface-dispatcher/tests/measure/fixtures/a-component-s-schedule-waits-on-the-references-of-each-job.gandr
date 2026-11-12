@@ -1,0 +1,4 @@
+def first(n : Integer) -> -F Integer { n }
+def second(n : Integer) -> -F Integer { first n }
+def third(n : Integer) -> -F Integer { second n }
+def beside(n : Integer) -> -F Integer { n }

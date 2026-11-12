@@ -878,9 +878,10 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 
 /// `gandr check --measure` prints one line per declaration a source writes:
 /// its sizes, the goals the kernel's check of it charged and the time its
-/// admission took. A check without the flag prints none. A declaration a
-/// recorded verdict admits ran no check, and its line says so in place of the
-/// counts.
+/// admission took. Each source then prints the schedule that its component's
+/// checks can reach. A check without the flag prints none. A declaration a
+/// recorded verdict admits ran no check, and its line says so in place of
+/// the counts.
 #[test]
 fn check_measures_each_declaration_a_source_writes()
 {
@@ -959,11 +960,74 @@ fn check_measures_each_declaration_a_source_writes()
             .collect()
     };
 
-    let checked = rows(&check(&[Path::new("--measure")]));
+    let measured = check(&[Path::new("--measure")]);
+    let checked = rows(&measured);
     assert_eq!(
         named(&checked),
         written,
         "each source measures the declaration it writes, and none it imports"
+    );
+    // Both sources share one component, so both print its schedule.
+    let printed = stdout(&measured);
+    let schedules: Vec<&str> = printed
+        .lines()
+        .filter_map(|line| line.strip_prefix("schedule: "))
+        .map(|line| {
+            line.split_once(": ")
+                .expect("a schedule names its source")
+                .1
+        })
+        .collect();
+    let [first, second] = *schedules.as_slice()
+    else {
+        panic!("each source prints one schedule: {schedules:?}");
+    };
+    assert_eq!(
+        first, second,
+        "the two sources print their one component's schedule"
+    );
+    let (counts, chain) = first
+        .split_once(", chain of ")
+        .unwrap_or_else(|| panic!("{first:?} spells its chain"));
+    let [jobs, dependences, untimed, serial, critical, folded] =
+        *counts.split(", ").collect::<Vec<_>>().as_slice()
+    else {
+        panic!("{counts:?} spells three counts and three times");
+    };
+    assert!(count(jobs, "jobs") >= 2, "one and two are jobs: {first}");
+    assert!(
+        count(dependences, "dependences") >= 1,
+        "two waits on one: {first}"
+    );
+    assert_eq!(count(untimed, "untimed"), 0, "each job is timed: {first}");
+    let time = |field: &str, label: &str| {
+        count(
+            field
+                .strip_prefix(label)
+                .unwrap_or_else(|| panic!("{field:?} is the {label}")),
+            "ns",
+        )
+    };
+    let (serial, critical, folded) = (
+        time(serial, "serial "),
+        time(critical, "critical path "),
+        time(folded, "folded "),
+    );
+    assert!(
+        0 < critical && critical <= folded && folded <= serial,
+        "the critical path is at most the folded bound, and that at most the serial cost: {first}"
+    );
+    let (length, names) = chain
+        .split_once(':')
+        .unwrap_or_else(|| panic!("{chain:?} counts its jobs"));
+    let length: usize = length.parse().expect("the chain counts its jobs");
+    assert_eq!(
+        names
+            .split(", ")
+            .filter(|name| !name.trim().is_empty())
+            .count(),
+        length,
+        "the chain names each of its jobs: {first}"
     );
     for &(_, ref name, ref tally) in &checked {
         let [ref expanded, ref recalled, ref kept, ref took] = *tally.as_slice()
