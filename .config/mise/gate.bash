@@ -2,12 +2,14 @@
 # `.config/mise/gated`. Three seats' gates on one host pushed its load past 50
 # on 32 cores, and the enforcing suite's slowest tests, which pass alone in 9 to
 # 11 seconds, timed out at 30: a false red that costs a rerun and hides a real
-# one. So a gate holds one of `GANDR_GATE_SLOTS` (default 2) slots for its
-# whole run. `gate:all` runs one full test suite, `check:tests-enforcing`, as CI
-# does (#5216), so the suite takes the host's cores divided by the slots, never
-# more. The plain build runs only `check:tests-plain-only`, one test. The
-# landing's gate, `check`, runs the enforcing suite of the packages its change
-# touches alone (#6595), not of their dependents (#5458).
+# one. So a gate holds one of the host's gate slots for its whole run. The
+# count is `GANDR_GATE_SLOTS` when it is set, and otherwise one slot for each
+# 8 cores, at least one (#6699). `gate:all` runs one full test suite,
+# `check:tests-enforcing`, as CI does (#5216), so the suite takes the host's
+# cores divided by the slots, never more. The plain build runs only
+# `check:tests-plain-only`, one test. The landing's gate, `check`, runs the
+# enforcing suite of the packages its change touches alone (#6595), not of
+# their dependents (#5458).
 #
 # One lane once held both slots, its two worktrees' gates running at once, and
 # the host's load reached 70 on 32 cores (#4911). So a gate first takes its
@@ -42,7 +44,14 @@
 source "${BASH_SOURCE[0]%/*}/host-lock.bash"
 source "${BASH_SOURCE[0]%/*}/../claims/lanes.bash"
 
-gate_slots=${GANDR_GATE_SLOTS:-2}
+# One slot for each 8 cores (#6699). Four gates of a code edit on 32 cores
+# end soonest at 4 slots, where each gate takes 8 build jobs. At 6 and at 8
+# slots each gate takes 5 or 4 jobs, the cores stand partly idle, and each
+# gate takes longer. A host that runs more lanes at once than its slots
+# makes the later gates wait, and a gate that waits costs less than four
+# gates that each run slower.
+gate_cores=$(getconf _NPROCESSORS_ONLN)
+gate_slots=${GANDR_GATE_SLOTS:-$(( gate_cores / 8 > 1 ? gate_cores / 8 : 1 ))}
 
 # The lane of the worktree the gate runs in: the longest lane of the lane
 # table that the worktree's name equals or starts with before a `-`, a leading
@@ -124,9 +133,8 @@ gate_wait() {
 # jobserver that `MAKEFLAGS` already names stays, and so does a lower
 # `NEXTEST_TEST_THREADS`.
 gate_bound() {
-  local cores share
-  cores=$(getconf _NPROCESSORS_ONLN)
-  share=$(( cores / gate_slots ))
+  local share
+  share=$(( gate_cores / gate_slots ))
   (( share >= 1 )) || share=1
   NEXTEST_TEST_THREADS=$(gate_lower "${NEXTEST_TEST_THREADS:-}" "$share")
   export NEXTEST_TEST_THREADS

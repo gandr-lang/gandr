@@ -12,13 +12,14 @@
 # loop of its own.
 
 # The gate graph holds its lane's lock and one of the host's gate slots for
-# its whole run, so at most `GANDR_GATE_SLOTS` (default 2) gates share a host,
-# one per lane (`.config/mise/gate.bash`, #3057, #4911). A lane's second gate,
-# or a third gate, waits, naming the holders, or with `--no-wait` refuses at
-# once. A change that selects no check of the table's groups (Rust, rustdoc,
-# corpus, extension, prose) runs only light checks and takes no lock and no
-# slot: it never waits behind a gate that builds the workspace. A change of
-# `//` comments alone in a crate selects the Rust group alone (#6648).
+# its whole run, so at most `GANDR_GATE_SLOTS` gates share a host, or one for
+# each 8 cores without it, one per lane (`.config/mise/gate.bash`, #3057,
+# #4911, #6699). A lane's second gate, or a gate past the slots, waits, naming
+# the holders, or with `--no-wait` refuses at once. A change that selects no
+# check of the table's groups (Rust, rustdoc, corpus, extension, prose) runs
+# only light checks and takes no lock and no slot: it never waits behind a
+# gate that builds the workspace. A change of `//` comments alone in a crate
+# selects the Rust group alone (#6648).
 #
 # It is the landing's gate (#5458): `pr:open` runs it on a head that no gate
 # passed on, and `pr:land` runs it again when a rebase changes the head's
