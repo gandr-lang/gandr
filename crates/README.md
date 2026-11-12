@@ -53,7 +53,7 @@ crates/
 ├── storage-store/                 one store over both planes and named roots
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
-├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once, with their loci and the rules a refusal stood inside, for every face to project
+├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
 ├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `run`, `fmt`, `stage`, `lsp`, `serve`, `mcp`, `view`, `repl`, `tui` and the exit codes
 ├── surface-features/              the features ledger as data, read by the toolchain and the tools
@@ -69,7 +69,7 @@ crates/
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
 ├── surface-render-terminal/       the terminal face of the diagnostics model: a diagnostic laid out as a located source snippet, plain or styled
 ├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
-├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions since the last and the parser's repairs, for the REPL, server and terminal
+├── surface-session/               the interactive session: each revision lowered, judged and checkpointed for the REPL, server and terminal
 ├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
 ├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
@@ -103,6 +103,7 @@ crates/
 ├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-ledger/               the comment and prose gates' debt ledger
+├── workflow-ledger-tasks/         the `gandr-ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read
 ├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
 ├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly

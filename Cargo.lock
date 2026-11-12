@@ -1368,6 +1368,7 @@ dependencies = [
  "gandr-surface-session",
  "gandr-surface-syntax",
  "gandr-surface-tui",
+ "gandr-workflow-ledger-tasks",
  "gandr-workflow-sweep",
  "getrandom 0.4.3",
  "hotpath",
@@ -1593,7 +1594,6 @@ dependencies = [
  "gandr-theory-circuit-algebras",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-exact-reals",
- "gandr-theory-graphs",
  "gandr-theory-levitation",
  "gandr-theory-ordered-algebras",
  "gandr-theory-probability",
@@ -2248,6 +2248,26 @@ dependencies = [
 [[package]]
 name = "gandr-workflow-ledger"
 version = "0.0.0"
+
+[[package]]
+name = "gandr-workflow-ledger-tasks"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "gandr-core-term",
+ "gandr-surface-corpus",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-features",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "gandr-theory-graphs",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde_json",
+]
 
 [[package]]
 name = "gandr-workflow-prose"

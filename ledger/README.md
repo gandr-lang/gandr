@@ -18,7 +18,7 @@ The language surface and its features, each checked by the gates. The syntax led
 
 `ledger/` is a fixture root, so an exemplar states what the checker makes of its form, `refuses` included where the checker does not reach it yet, its comment naming the issue that would settle it.
 
-How each row is read off the grammar, the notation a form is spelled in, why a rule is internal and what an exemplar must hold are in the `ledger` module of [`gandr-surface-dispatcher`](../crates/surface-dispatcher/src/ledger.rs).
+How each row is read off the grammar, the notation a form is spelled in, why a rule is internal and what an exemplar must hold are in the `ledger` module of [`gandr-workflow-ledger-tasks`](../crates/workflow-ledger-tasks/src/ledger.rs).
 
 ## Map
 
@@ -44,12 +44,14 @@ flowchart BT
   runtime -->|2| kernel
   runtime -->|5| core
   runtime -->|3| storage
-  surface -->|28| theory
+  surface -->|27| theory
   surface -->|16| kernel
   surface -->|30| core
   surface -->|8| storage
   surface -->|4| runtime
-  workflow -->|4| surface
+  workflow -->|1| theory
+  workflow -->|1| core
+  workflow -->|12| surface
 ```
 <!-- crate-map:end -->
 

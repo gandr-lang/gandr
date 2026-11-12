@@ -2562,8 +2562,6 @@ crates/surface-diagnostics/README.md STE-3.2 0a3e2fde4ece19f9
 crates/surface-dispatcher/README.md STE-3.2 30f62e5d9d0d6fe2
 crates/surface-dispatcher/README.md STE-9.3 12877f4e32b9930b
 crates/surface-dispatcher/README.md STE-9.3 30f62e5d9d0d6fe2
-crates/surface-driver/README.md STE-2.1 6b24f385ee2da5d3
-crates/surface-driver/README.md STE-9.3 6b24f385ee2da5d3
 crates/surface-format/README.md STE-3.6 b90ce5df9cbfc5dc
 crates/surface-format/README.md STE-3.2 8c05d63acbdf567a
 crates/surface-format/README.md STE-3.5 13245964ac729ed0

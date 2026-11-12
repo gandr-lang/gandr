@@ -10,24 +10,14 @@
 //! form's full tree. Nothing is listed by hand, so the ledger is exhaustive by
 //! construction, and both files open with the grammar's fingerprint: a ledger
 //! whose fingerprint is not the built grammar's is stale by definition.
-//! `gandr ledger syntax --write <directory>` writes `syntax.md` and
+//! `gandr-ledger syntax --write <directory>` writes `syntax.md` and
 //! `syntax.json` there, each committed rule's admission read off its exemplar
 //! under `--exemplars`, `<directory>/exemplars` by default;
 //! `mise run check:syntax-ledger` writes them into a temporary directory and
 //! compares both with the committed files byte for byte. Each committed rule
 //! and each attribute also has an exemplar, a hand-cut source the `exemplars`
-//! module verifies against the ledger: `gandr ledger exemplars <directory>`,
+//! module verifies against the ledger: `gandr-ledger exemplars <directory>`,
 //! gated by `mise run check:syntax-exemplars`.
-//!
-//! - Choice: a driver verb over this module. The dispatcher already holds the
-//!   grammar, the parser and the lowering a row reads.
-//! - Alternatives: a binary in the grammar crate's tools, which cannot see the
-//!   lowering's registry without a dependency cycle, since the lowering depends
-//!   on the grammar; a golden test rewriting the files under `UPDATE_EXPECT=1`,
-//!   which makes the staleness check a whole test target and hides the
-//!   generator behind a test harness.
-//! - Reversal: a ledger that needs a crate the dispatcher does not depend on
-//!   moves the generator into a crate of its own.
 //!
 //! # A row reads the grammar, the parser and the highlighter
 //!
@@ -193,7 +183,7 @@ const JSON: &str = "syntax.json";
 /// runs the host's default toolchain (#4500).
 const REGENERATE: &str = "mise run ledger:syntax";
 
-/// Which ledger a `gandr ledger` invocation writes, verifies or reads, and
+/// Which ledger a `gandr-ledger` invocation writes, verifies or reads, and
 /// where.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LedgerTask
@@ -384,9 +374,9 @@ impl LedgerTask
     ///   `recovery` module). Under [`LedgerTask::List`] and
     ///   [`LedgerTask::Show`], what [`FeatureLedger::listed`] and
     ///   [`FeatureLedger::shown`] answer of the root's features ledger.
-    /// - provides: `gandr ledger syntax --write <directory>`, `gandr ledger
-    ///   exemplars <directory>`, `gandr ledger recovery <directory>`, `gandr
-    ///   ledger list` and `gandr ledger show <id>`.
+    /// - provides: `gandr-ledger syntax --write <directory>`, `gandr-ledger
+    ///   exemplars <directory>`, `gandr-ledger recovery <directory>`,
+    ///   `gandr-ledger list` and `gandr-ledger show <id>`.
     /// - fails: the ledger cannot be built, a committed rule's exemplar cannot
     ///   be read, a file cannot be written, an exemplar directory cannot be
     ///   listed, or the features ledger cannot be read or answer.

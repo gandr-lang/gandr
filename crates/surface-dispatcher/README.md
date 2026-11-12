@@ -107,7 +107,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The exercised table | [`exercised`](src/exercised.rs) |
 | The run and the stage verbs; the store account | [`script`](src/script.rs), [`stage`](src/stage.rs); [`stored`](src/stored.rs) |
 | The format verb | [`format`](src/format.rs) |
-| The ledger verb | [`ledger`](src/ledger.rs) |
 
 ## References
 

@@ -492,7 +492,7 @@ impl core::fmt::Display for ExemplarReport
 ///   exemplars and the owed table are verified as the `diagnostics` module
 ///   states. A missing `syntax`, `attributes`, `features` or `diagnostics`
 ///   directory reads as empty.
-/// - provides: `gandr ledger exemplars <directory>`.
+/// - provides: `gandr-ledger exemplars <directory>`.
 /// - fails: a directory that exists and cannot be listed.
 /// - panics: none.
 ///
