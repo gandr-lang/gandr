@@ -265,3 +265,88 @@ fn dependences_keep_forward_edges_once_in_order()
         "an item cannot wait on a later one"
     );
 }
+
+/// The dependences of `pairs`, each `(before, after)`.
+fn dependences(pairs: &[(usize, usize)]) -> Dependences
+{
+    Dependences::new(
+        pairs
+            .iter()
+            .map(|&(before, after)| Dependence { before, after }),
+    )
+    .unwrap()
+}
+
+/// Each cost in microseconds.
+fn costs(micros: &[u64]) -> Vec<Duration>
+{
+    micros.iter().copied().map(Duration::from_micros).collect()
+}
+
+#[test]
+fn the_bound_of_jobs_with_no_edge_is_the_costliest_job()
+{
+    let bound = Dependences::default().bound(&costs(&[3, 1, 4, 1]));
+    assert_eq!(
+        bound.serial(),
+        Duration::from_micros(9),
+        "the serial cost sums every job"
+    );
+    assert_eq!(
+        bound.critical(),
+        Duration::from_micros(4),
+        "no job waits, so the costliest one is the critical path"
+    );
+    assert_eq!(
+        bound.folded(),
+        Duration::from_micros(4),
+        "every job starts at once, and the last fold waits for the costliest"
+    );
+    assert_eq!(bound.chain(), [2], "the chain is the costliest job alone");
+    assert_eq!(
+        Dependences::default().bound(&[]),
+        Bound::default(),
+        "no job has no cost and no chain"
+    );
+}
+
+#[test]
+fn the_bound_of_a_chain_is_its_whole_cost()
+{
+    let chain = dependences(&[(0, 1), (1, 2), (2, 3)]);
+    let bound = chain.bound(&costs(&[1, 2, 3, 4]));
+    assert_eq!(bound.serial(), Duration::from_micros(10));
+    assert_eq!(
+        bound.critical(),
+        Duration::from_micros(10),
+        "each job waits on the one before, so the chain costs the whole"
+    );
+    assert_eq!(bound.folded(), Duration::from_micros(10));
+    assert_eq!(bound.chain(), [0, 1, 2, 3], "the chain in slice order");
+    let past = dependences(&[(0, 1), (1, 7), (5, 6)]).bound(&costs(&[2, 2]));
+    assert_eq!(
+        (past.critical(), past.chain()),
+        (Duration::from_micros(4), [0_usize, 1].as_slice()),
+        "an edge past the costs is ignored"
+    );
+}
+
+#[test]
+fn a_fold_in_slice_order_waits_behind_a_costly_item()
+{
+    // The costly item 0 waits on nothing. Item 2 waits on the cheap item 1,
+    // whose fold comes after the fold of item 0.
+    let bound = dependences(&[(1, 2)]).bound(&costs(&[5, 1, 1]));
+    assert_eq!(bound.serial(), Duration::from_micros(7));
+    assert_eq!(
+        bound.critical(),
+        Duration::from_micros(5),
+        "item 2 can start once item 1 returns, at 1"
+    );
+    assert_eq!(bound.chain(), [0]);
+    assert_eq!(
+        bound.folded(),
+        Duration::from_micros(6),
+        "item 2 starts at the fold of item 1, which waits for the fold of item 0 at 5"
+    );
+}

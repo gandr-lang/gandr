@@ -20,7 +20,9 @@
 //! owns its thread states why in an expectation at the site.
 //!
 //! Jobs that read each other's results go to [`Fork::schedule`], in the order
-//! that [`Dependences`] names.
+//! that [`Dependences`] names. [`Dependences::bound`] reads, from the serial
+//! cost of each job, the critical path that no width beats and the bound of
+//! the release at the fold.
 //!
 //! With the `instrument` feature, the `activity` module records which task
 //! each worker runs, and when. Each worker writes into a lock-free ring of its
@@ -44,6 +46,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use core::fmt;
+use core::time::Duration;
 
 use anodized::spec;
 
@@ -274,6 +277,171 @@ impl Dependences
     pub fn edges(&self) -> &[Dependence]
     {
         &self.edges
+    }
+
+    /// What a schedule of jobs that cost `costs` can reach under these
+    /// dependences, at any width.
+    ///
+    /// # Specification
+    /// - requires: nothing; an edge that names an item past `costs` is ignored,
+    ///   as [`Fork::schedule`] ignores it.
+    /// - ensures: the serial cost is the sum of the costs. The critical path is
+    ///   the longest chain of dependences, each item weighted by its cost: a
+    ///   job starts when the jobs that it waits on return. The folded bound is
+    ///   the end of the last fold when a job starts at the fold of the items
+    ///   that it waits on, the folds run in slice order and a fold costs
+    ///   nothing. The chain holds the items of the critical path in slice
+    ///   order, and its costs sum to the critical path. The critical path is at
+    ///   most the folded bound, and the folded bound is at most the serial
+    ///   cost.
+    /// - provides: the bound that no width beats, the bound of the release at
+    ///   the fold, and the chain that names the first.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — jobs with no edge, a chain, an edge past the costs
+    ///   and a cheap dependence behind a costly item distinguish a sum for the
+    ///   critical path, a release at the return for the fold and a chain read
+    ///   from the wrong end.
+    /// - witness: `tests::the_bound_of_jobs_with_no_edge_is_the_costliest_job`
+    /// - witness: `tests::the_bound_of_a_chain_is_its_whole_cost`
+    /// - witness: `tests::a_fold_in_slice_order_waits_behind_a_costly_item`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every item and every edge; the clause walks the chain once"
+        )
+    )]
+    #[spec(ensures: |ret| ret.critical <= ret.folded && ret.folded <= ret.serial
+        && ret.chain.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later))
+        && ret.chain.iter().try_fold(Duration::ZERO, |sum, &item| costs.get(item).map(|&cost| sum.saturating_add(cost)))
+            == Some(ret.critical))]
+    #[inline]
+    #[must_use]
+    pub fn bound(
+        &self,
+        costs: &[Duration],
+    ) -> Bound
+    {
+        let count = costs.len();
+        // The latest return among the jobs that each item waits on, and the
+        // item whose return that is.
+        let mut ready = alloc::vec![(Duration::ZERO, None::<usize>); count];
+        // The latest fold among the items that each item waits on.
+        let mut released = alloc::vec![Duration::ZERO; count];
+        let mut serial = Duration::ZERO;
+        let mut folded = Duration::ZERO;
+        let mut last = (Duration::ZERO, None::<usize>);
+        let mut edges = self.edges.iter().peekable();
+        for (item, &cost) in costs.iter().enumerate() {
+            let start = ready.get(item).map_or(Duration::ZERO, |&(start, _)| start);
+            let release = released.get(item).copied().unwrap_or_default();
+            serial = serial.saturating_add(cost);
+            let end = start.saturating_add(cost);
+            if end > last.0 || last.1.is_none() {
+                last = (end, Some(item));
+            }
+            folded = folded.max(release.saturating_add(cost));
+            // The edges are sorted by the item waited on, so the edges out of
+            // this item come next.
+            while let Some(edge) = edges.next_if(|edge| edge.before == item) {
+                if let Some(waiting) = ready.get_mut(edge.after)
+                    && end > waiting.0
+                {
+                    *waiting = (end, Some(item));
+                }
+                if let Some(waiting) = released.get_mut(edge.after) {
+                    *waiting = (*waiting).max(folded);
+                }
+            }
+        }
+        let mut chain = Vec::new();
+        let mut at = last.1;
+        while let Some(item) = at {
+            chain.push(item);
+            at = ready.get(item).and_then(|&(_, before)| before);
+        }
+        chain.reverse();
+        Bound {
+            serial,
+            critical: last.0,
+            folded,
+            chain,
+        }
+    }
+}
+
+/// What a schedule over [`Dependences`] can reach, read from each job's
+/// serial cost.
+///
+/// # Specification
+/// - provides: the serial cost, the critical path, the folded bound and the
+///   chain of the critical path, as [`Dependences::bound`] states them.
+/// - panics: none.
+/// - executable: none — a plain record; [`Dependences::bound`] states what it
+///   holds.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Bound
+{
+    /// The sum of the costs: the wall time at width one.
+    serial: Duration,
+    /// The longest chain of dependences, weighted by cost.
+    critical: Duration,
+    /// The end of the last fold when each job starts at the fold of the items
+    /// that it waits on.
+    folded: Duration,
+    /// The items of the critical path, in slice order.
+    chain: Vec<usize>,
+}
+
+impl Bound
+{
+    /// The sum of the costs: the wall time at width one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn serial(&self) -> Duration
+    {
+        self.serial
+    }
+
+    /// The longest chain of dependences, weighted by cost: no width ends
+    /// sooner.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn critical(&self) -> Duration
+    {
+        self.critical
+    }
+
+    /// The end of the last fold when each job starts at the fold of the items
+    /// that it waits on and the folds run in slice order: the bound of
+    /// [`Fork::schedule`] at any width.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn folded(&self) -> Duration
+    {
+        self.folded
+    }
+
+    /// The items of the critical path, in slice order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn chain(&self) -> &[usize]
+    {
+        &self.chain
     }
 }
 
