@@ -22,6 +22,7 @@ The fork that a check hands its independent jobs to, and its serial reference.
 ## References
 
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-sax), whose reader waits for its writer. That wait sets the order that `Fork::join` states, and it is the wait that `Spawn::wait` performs.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — newest: the core and kernel reassessment, whose checks of one environment run over the dependence graph of their supports, with one committer. `Fork::schedule` is the seam that this schedule runs on.
 - `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — newest: the engine surface, § engine-surface-activity and § engine-surface-stream: the rows of the activity pane and the append-only activity card.
 
 ## Provided features

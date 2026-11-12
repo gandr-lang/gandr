@@ -33,6 +33,10 @@
 //!   (§ futures-sax): a cut's reader waits for its writer, so a join's right
 //!   half may wait for its left half, and never the reverse. A spawned job's
 //!   wait is that reader's wait, which runs or helps its writer.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — newest: the checks of one
+//!   environment run over the dependence graph of their supports, and one
+//!   committer folds them. [`Fork::schedule`] is the seam that this schedule
+//!   runs on.
 
 #![no_std]
 
