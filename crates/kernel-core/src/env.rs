@@ -1690,6 +1690,40 @@ struct Horizon
     presentations: crate::presented::Presentations,
 }
 
+/// What the check of one lone declaration hands its commit: the declaration,
+/// its place, its keys and its outcome. The check reads its view alone, and
+/// the commit alone writes the environment.
+struct Lone
+{
+    /// The declaration staged at the next position.
+    declaration: Declaration,
+    /// Its position and its rank.
+    place: (ConstantIndex, SourceRank),
+    /// Its content key, and whether its admission is generative.
+    content: (
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        bool,
+    ),
+    /// Its entry key and its chain key.
+    keys: (
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+    ),
+    /// The positions that its content names.
+    references: Box<[ConstantIndex]>,
+    /// What its check charged.
+    census: ExpansionCensus,
+    /// The admitted results that its check took.
+    took: crate::admitted::AdmittedCount,
+    /// Its reading, or the refusal of its check.
+    outcome: Result<check::Accessibility, KernelError>,
+    /// Whether its check ran, or a recorded verdict recalled it.
+    admission: Admission,
+    /// The arena's mark past its content, and the mark that a refusal
+    /// truncates to.
+    marks: (ArenaWatermark, ArenaWatermark),
+}
+
 /// Whether each live entry's place in rank order is its position.
 ///
 /// # Specification
@@ -2335,6 +2369,38 @@ impl Entries
             support: self.support.clone(),
             horizon: self.horizon.clone(),
         }
+    }
+
+    /// These entries for one check: the log shared, and the buffer of the
+    /// support taken from the entries, so the check opens a horizon and a
+    /// support of its own while the entries keep none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn view(&mut self) -> Self
+    {
+        Self {
+            log: self.log.clone(),
+            support: self.support.take(),
+            horizon: None,
+        }
+    }
+
+    /// Take back the buffer of the support that `view` held, once its check
+    /// closed it. The view's share of the log ends here, so the next
+    /// admission changes the log in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restore(
+        &mut self,
+        view: Self,
+    )
+    {
+        self.support = view.support;
     }
 
     /// The log, to change: shared with no clone or reading after.
@@ -3397,32 +3463,136 @@ impl Environment
                 // The check reads through the support its content names, and a
                 // read outside it refuses the declaration whatever the check
                 // decided.
-                self.entries.open(named.iter().copied(), rank);
-                let checked = {
-                    let Self {
-                        ref mut arena,
-                        ref entries,
-                        ref manifest,
-                        ref mut names,
-                        admitting,
-                        ..
-                    } = *self;
-                    check::check_declaration(
-                        arena,
-                        check::Judgement::new(entries, &levels)
-                            .unsealing(manifest)
-                            .taking(crate::admitted::Taking::under(admitting, &taken)),
-                        &declaration,
-                        names.session_mut(),
-                        &mut census,
-                    )
-                };
-                (supported(checked, self.entries.close()), Admission::Checked)
+                let checked = self.within_view(
+                    (&named, rank),
+                    (&levels, &taken),
+                    |arena, judgement, session| {
+                        check::check_declaration(
+                            arena,
+                            judgement,
+                            &declaration,
+                            session,
+                            &mut census,
+                        )
+                    },
+                );
+                (checked, Admission::Checked)
             },
         };
+        self.commit(Lone {
+            declaration,
+            place: (position, rank),
+            content: (content, generative),
+            keys: (entry_key, key),
+            references: named,
+            census,
+            took: taken.get(),
+            outcome,
+            admission,
+            marks: (content_end, rejected),
+        })
+    }
+
+    /// Run `check` against a view of this environment: the arena that it
+    /// mints its intermediates into, a judgement over the entries below
+    /// `rank` through the support that `roots` start, and the session that it
+    /// names records in. The check reads and writes no other part of the
+    /// environment.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the answer of `check`, unless the check read a position
+    ///   outside its support: then [`KernelError::OutsideSupport`] at the first
+    ///   such position. The entries keep no horizon after the call.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The error of `check`, or [`KernelError::OutsideSupport`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a read outside the support refuses the declaration,
+    ///   and an entry ranked above the declaration is unbound to its check.
+    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `env::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
+    #[spec(ensures: self.entries.horizon.is_none())]
+    fn within_view<T>(
+        &mut self,
+        (roots, rank): (&[ConstantIndex], SourceRank),
+        (levels, taken): (
+            &LevelContext,
+            &core::cell::Cell<crate::admitted::AdmittedCount>,
+        ),
+        check: impl FnOnce(
+            &mut TermArena,
+            check::Judgement<'_>,
+            &mut crate::support::SupportContext,
+        ) -> Result<T, KernelError>,
+    ) -> Result<T, KernelError>
+    {
+        let mut view = self.entries.view();
+        view.open(roots.iter().copied(), rank);
+        let checked = {
+            let Self {
+                ref mut arena,
+                ref manifest,
+                ref mut names,
+                admitting,
+                ..
+            } = *self;
+            check(
+                arena,
+                check::Judgement::new(&view, levels)
+                    .unsealing(manifest)
+                    .taking(crate::admitted::Taking::under(admitting, taken)),
+                names.session_mut(),
+            )
+        };
+        let outside = view.close();
+        self.entries.restore(view);
+        supported(checked, outside)
+    }
+
+    /// Commit what the check of a lone declaration found: record its verdict,
+    /// keep its content and push its entry, or drop its content on a refusal.
+    ///
+    /// # Specification
+    /// - requires: `lone` is the declaration staged at the next position, and
+    ///   the arena holds its content below `lone.marks.0`.
+    /// - ensures: on an outcome that admits, one entry at `lone.place.0` and
+    ///   the admission floor at `lone.marks.0`; on a refusal, the entries as
+    ///   they stood and the arena truncated to `lone.marks.1`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal that `lone.outcome` carries.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::add_decl`].
+    /// - witness: `env::tests::a_rejected_declaration_leaves_the_environment_unchanged`
+    /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
+    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| match ret.as_ref() {
+        Ok(id) => usize::from(id.position()) == usize::from(entry_len) && self.admission_floor == self.arena.watermark(),
+        Err(_) => self.entries.len() == entry_len,
+    })]
+    fn commit(
+        &mut self,
+        lone: Lone,
+    ) -> Result<CheckedId, KernelError>
+    {
+        let Lone {
+            declaration,
+            place: (position, rank),
+            content: (content, generative),
+            keys: (entry_key, key),
+            references: named,
+            census,
+            took,
+            outcome,
+            admission,
+            marks: (content_end, rejected),
+        } = lone;
         match outcome {
             Ok(accessibility) => {
-                let took = taken.get();
                 if (admission, took) == (Admission::Checked, crate::admitted::AdmittedCount::NONE) {
                     self.verdicts.checked(entry_key, key, accessibility.clone());
                 }
@@ -3834,31 +4004,22 @@ impl Environment
                 member.levels().params(),
                 member.levels().constraints().to_vec(),
             )?;
-            self.entries.open(named.iter().copied(), first_rank);
-            let formed = {
-                let Self {
-                    ref mut arena,
-                    ref entries,
-                    ref manifest,
-                    ref mut names,
-                    admitting,
-                    ..
-                } = *self;
-                check::form_declared(
-                    arena,
-                    check::Judgement::new(entries, &levels)
-                        .unsealing(manifest)
-                        .taking(crate::admitted::Taking::under(admitting, &taken))
-                        .within_mutual(
+            self.within_view(
+                (&named, first_rank),
+                (&levels, &taken),
+                |arena, judgement, session| {
+                    check::form_declared(
+                        arena,
+                        judgement.within_mutual(
                             check::occurrence::Block::new(first, past_families, past_families),
                             members,
                         ),
-                    member.declared_id(),
-                    names.session_mut(),
-                    census,
-                )
-            };
-            supported(formed, self.entries.close())?;
+                        member.declared_id(),
+                        session,
+                        census,
+                    )
+                },
+            )?;
             self.arena.truncate_to(content_end);
         }
         for (((offset, member), census), &rank) in members
@@ -3876,20 +4037,11 @@ impl Environment
             // as a lone one is, every family and definition before it
             // admitted, inside the block only so its own fixpoint reads its
             // constant as the self binder.
-            self.entries.open(named.iter().copied(), rank);
-            let checked = {
-                let Self {
-                    ref mut arena,
-                    ref entries,
-                    ref manifest,
-                    ref mut names,
-                    admitting,
-                    ..
-                } = *self;
-                let judgement = check::Judgement::new(entries, &levels)
-                    .unsealing(manifest)
-                    .taking(crate::admitted::Taking::under(admitting, &taken))
-                    .within_mutual(
+            let accessibility = self.within_view(
+                (&named, rank),
+                (&levels, &taken),
+                |arena, judgement, session| {
+                    let judgement = judgement.within_mutual(
                         check::occurrence::Block::new(
                             first,
                             past_families,
@@ -3897,9 +4049,9 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member, names.session_mut(), census)
-            };
-            let accessibility = supported(checked, self.entries.close())?;
+                    check::check_declaration(arena, judgement, member, session, census)
+                },
+            )?;
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
                 member.content(),
@@ -8461,18 +8613,22 @@ mod tests
         )
         .expect("no level parameter admits");
         let check = |environment: &mut Environment, roots: &[ConstantIndex]| {
-            environment
-                .entries
-                .open(roots.iter().copied(), gandr_kernel_term::SourceRank::ABOVE);
-            let mut arena = environment.arena.clone();
-            let checked = crate::check::check_declaration(
-                &mut arena,
-                crate::check::Judgement::new(&environment.entries, &levels),
-                &reading.declaration,
-                &mut crate::support::SupportContext::new(),
-                &mut ExpansionCensus::new(),
-            );
-            super::supported(checked, environment.entries.close())
+            let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+            // The check runs on copies of the arena and of the session, so the
+            // environment stays as the admission below finds it.
+            environment.within_view(
+                (roots, gandr_kernel_term::SourceRank::ABOVE),
+                (&levels, &taken),
+                |arena, judgement, _session| {
+                    crate::check::check_declaration(
+                        &mut arena.clone(),
+                        judgement,
+                        &reading.declaration,
+                        &mut crate::support::SupportContext::new(),
+                        &mut ExpansionCensus::new(),
+                    )
+                },
+            )
         };
         let roots = super::references(&environment.arena, &reading.declaration);
         assert_eq!(&*roots, &[named], "the definition names the one before it");
