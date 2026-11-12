@@ -277,11 +277,16 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
                 else {
                     unreachable!("a window of two holds two items");
                 };
+                // `Dependences` keeps its edges sorted, so one search finds each.
                 assert!(
-                    checks.dependences().edges().contains(&Dependence {
-                        before: usize::from(before),
-                        after: usize::from(after)
-                    }),
+                    checks
+                        .dependences()
+                        .edges()
+                        .binary_search(&Dependence {
+                            before: usize::from(before),
+                            after: usize::from(after)
+                        })
+                        .is_ok(),
                     "the chain of the critical path follows the dependences: {pair:?}"
                 );
             }
