@@ -5,9 +5,8 @@
 //! certificate or per family. The driver owns the threads, their number and
 //! their pool, as it owns a walk's width. [`Serial`] runs every job on the
 //! calling thread in order. It is the reference that a forked check equals.
-//!
-//! The trait lives in a crate of its own. So a consumer at any layer from the
-//! core upward takes it without a dependency on the checker.
+//! The trait lives in a crate of its own, so any layer takes it without the
+//! checker.
 //!
 //! A job whose start and whose wait are apart runs in a scope. [`Fork::scope`]
 //! opens one, and its body spawns through a [`Spawn`]. A wait runs a job that
@@ -20,6 +19,9 @@
 //! starts a thread or a pool outside the driver's pool is refused. A site that
 //! owns its thread states why in an expectation at the site.
 //!
+//! Jobs that read each other's results go to [`Fork::schedule`], in the order
+//! that [`Dependences`] names.
+//!
 //! With the `instrument` feature, the `activity` module records which task
 //! each worker runs, and when. Each worker writes into a lock-free ring of its
 //! own, and the hub folds the rings. Without the feature, the crate carries
@@ -31,11 +33,19 @@
 //!   (§ futures-sax): a cut's reader waits for its writer, so a join's right
 //!   half may wait for its left half, and never the reverse. A spawned job's
 //!   wait is that reader's wait, which runs or helps its writer.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — newest: the checks of one
+//!   environment run over the dependence graph of their supports, and one
+//!   committer folds them. [`Fork::schedule`] is the seam that this schedule
+//!   runs on.
 
 #![no_std]
 
-#[cfg(any(test, feature = "instrument"))]
 extern crate alloc;
+
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
 
 #[cfg(feature = "instrument")]
 pub mod activity;
@@ -43,9 +53,10 @@ pub mod activity;
 /// Runs independent jobs on the workers the driver provides.
 ///
 /// # Specification
-/// - provides: the three shapes a program forks by: one job per item, each
+/// - provides: the four shapes a program forks by: one job per item, each
 ///   worker carrying state of its own; two independent halves run beside each
-///   other; and a scope whose jobs start apart from their waits.
+///   other; a scope whose jobs start apart from their waits; and jobs in
+///   dependence order, each item folded on the calling thread in slice order.
 /// - panics: none of its own; a job's panic is the job's.
 /// - executable: none — the trait states obligations its implementations carry;
 ///   [`Serial`] carries them on the calling thread.
@@ -136,6 +147,193 @@ pub trait Fork: Sync
     {
         body.run(&Serial)
     }
+
+    /// Run `job` once on every item, each once `fold` has run on every item
+    /// that it waits on, and `fold` on every item on the calling thread, in
+    /// slice order.
+    ///
+    /// # Specification
+    /// - requires: nothing; an edge of `after` that names an item past the
+    ///   slice is ignored.
+    /// - ensures: on return `job` has run exactly once on every item, after
+    ///   `fold` has run on every item that `after` names before it, from a
+    ///   state handed as [`Fork::each`] hands it; `fold` has run exactly once
+    ///   on every item, on the calling thread, in slice order, each after the
+    ///   item's own job has returned.
+    /// - provides: by default the serial schedule, which runs each item's job
+    ///   and then its fold, in slice order, from one state; a fork over threads
+    ///   overrides it.
+    /// - panics: a panic of `start`, `job` or `fold`, wherever it ran.
+    /// - executable: none — when each job and each fold ran is a property of
+    ///   the implementation's schedule, which a postcondition over the items
+    ///   cannot observe.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no item, one item and several items under a chain,
+    ///   each stamping its job and its fold, distinguish a state made for
+    ///   nothing, a fold before its job and a reordered item. Each fork over
+    ///   threads stamps every job's start and end and every fold, over graphs
+    ///   with no edge, a chain and a scattered fan.
+    /// - witness: `tests::serial_runs_each_job_then_its_fold_in_order`
+    #[inline]
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        _after: &Dependences,
+        start: Start,
+        job: Job,
+        mut fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        // Every edge goes from an earlier item to a later one, so slice order
+        // waits on each of them, and the serial schedule reads no edge.
+        if items.is_empty() {
+            return;
+        }
+        let mut state = start();
+        for item in items {
+            job(&mut state, item);
+            fold(item);
+        }
+    }
+}
+
+/// The jobs that each job of a [`Fork::schedule`] waits on, by slice
+/// position.
+///
+/// # Specification
+/// - provides: edges `(before, after)`, each from an earlier item to a later
+///   one, sorted and without repeats. The job of the item at `after` waits on
+///   the job of the item at `before`. The default has no edge.
+/// - panics: none.
+/// - executable: none — a type-level block; [`Dependences::new`] states the
+///   order that it keeps.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an edge to an earlier item, or to the item itself, is
+///   refused, and repeated edges are kept once in order.
+/// - witness: `tests::dependences_keep_forward_edges_once_in_order`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Dependences
+{
+    /// Every edge, sorted and without repeats.
+    edges: Vec<Dependence>,
+}
+
+impl Dependences
+{
+    /// The dependences that `edges` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the edges, sorted by their earlier item and then by their
+    ///   later one, each kept once.
+    /// - fails: [`Backward`] for the first edge whose waiting item does not
+    ///   come after the item that it waits on.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the first [`Backward`] edge.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Dependences`].
+    /// - witness: `tests::dependences_keep_forward_edges_once_in_order`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|dependences| {
+        dependences.edges.iter().all(|edge| edge.before < edge.after)
+            && dependences.edges.iter().zip(dependences.edges.iter().skip(1)).all(|(first, second)| first < second)
+    }))]
+    #[inline]
+    pub fn new<Edges>(edges: Edges) -> Result<Self, Backward>
+    where
+        Edges: IntoIterator<Item = Dependence>,
+    {
+        let mut kept = Vec::new();
+        for edge in edges {
+            if edge.before >= edge.after {
+                return Err(Backward { edge });
+            }
+            kept.push(edge);
+        }
+        kept.sort_unstable();
+        kept.dedup();
+        Ok(Self { edges: kept })
+    }
+
+    /// Every edge, sorted by its earlier item and then by its later one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn edges(&self) -> &[Dependence]
+    {
+        &self.edges
+    }
+}
+
+/// One edge of [`Dependences`], by slice position: the job of the item at
+/// `after` waits on the job of the item at `before`.
+///
+/// # Specification
+/// - provides: the two positions as given; the order is by `before`, then by
+///   `after`.
+/// - panics: none.
+/// - executable: none — a type-level block: a plain record that
+///   [`Dependences::new`] orders and checks.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Dependence
+{
+    /// The item waited on.
+    pub before: usize,
+    /// The item that waits.
+    pub after: usize,
+}
+
+/// An edge whose waiting item does not come after the item that it waits on,
+/// so slice order would not be a schedule.
+///
+/// # Specification
+/// - provides: the edge as given.
+/// - panics: none.
+/// - executable: none — a type-level block: a plain record of the refusal of
+///   [`Dependences::new`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Backward
+{
+    /// The edge as given, whose item that waits is at or before the item
+    /// that it waits on.
+    pub edge: Dependence,
+}
+
+impl fmt::Display for Backward
+{
+    /// Names the edge.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "item {} cannot wait on item {}, which does not come before it",
+            self.edge.after, self.edge.before
+        )
+    }
+}
+
+impl core::error::Error for Backward
+{
 }
 
 /// Every job on the calling thread, in order: the serial reference.
@@ -143,9 +341,9 @@ pub trait Fork: Sync
 /// # Specification
 /// - provides: a [`Fork`] that runs items in slice order from one state made
 ///   only when there is an item, and the left half before the right; as a
-///   [`Spawn`], it holds each job until its wait and runs it there.
-/// - panics: none.
-/// - executable: none — a unit marker; its methods carry the behavior.
+///   [`Spawn`], it holds each job until its wait and runs it there. Its
+///   schedule is the serial one: each item's job, then its fold, in slice
+///   order, from one state.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — no item, one item and several items, and a join that
@@ -156,6 +354,7 @@ pub trait Fork: Sync
 /// - witness: `tests::serial_runs_each_item_in_order_from_one_state`
 /// - witness: `tests::serial_runs_the_left_half_before_the_right`
 /// - witness: `tests::serial_runs_a_spawned_job_at_its_wait`
+/// - witness: `tests::serial_runs_each_job_then_its_fold_in_order`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Serial;
 

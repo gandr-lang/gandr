@@ -281,11 +281,14 @@ features = ["std"]
 # The activity ring: each worker of the pool writes its events into a bounded
 # lock-free queue, and a full queue drops its oldest event. Chosen over
 # `ringbuf` and `rtrb`, whose single-producer rings drop no oldest event while
-# a consumer reads, and over a ring of our own.
+# a consumer reads, and over a ring of our own. The pool's dependence schedule
+# queues the jobs that may run in the same bounded queue: the calling thread
+# pushes, and every task pops with no lock.
 # features:
 # - alloc: `ArrayQueue` in the `no_std` fork crate
 # consumers:
 # - core-fork
+# - surface-dispatcher
 [workspace.dependencies.crossbeam-queue]
 version = "0.3.14"
 default-features = false
