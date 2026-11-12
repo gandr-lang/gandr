@@ -202,16 +202,10 @@ jobs:
             slice: plain
             state: coverage-plain
             save: true
-    # The tree pins `/usr/bin/clang` as the x86-64 linker (#4221). The image
-    # carries `cc` and no clang. Thus `cc` links each part. `cc` refuses the
-    # tree's clang flag `--ld-path`. The empty `RUSTFLAGS` drops the tree's
-    # flags for the plain part. The enforcing parts set their own (#4902).
     env:
       COVERAGE_PART: ${{ matrix.slice }}
       COVERAGE_STATE: ${{ matrix.state }}
       COVERAGE_STATE_SAVE: ${{ matrix.save }}
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: cc
-      RUSTFLAGS: ""
     steps:
       - *git-checkout
       - *trust-workspace

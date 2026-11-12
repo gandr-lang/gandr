@@ -39,6 +39,16 @@ runs:
       # Composite actions have no default shell: `run` steps must name
       # their `shell:` explicitly or GitHub rejects the action at setup.
       shell: bash
+    # `.cargo/config.toml` links every Linux build with mold. The CI image
+    # carries it, and a bare Linux runner does not. So the job installs it.
+    - name: "read the package index"
+      if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
+      run: sudo apt-get update
+      shell: bash
+    - name: "install mold"
+      if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
+      run: sudo apt-get install -y --no-install-recommends mold
+      shell: bash
     # mise reads rust-toolchain.toml as its `rust` tool, so every later
     # `mise run` would install that toolchain again through rustup, and on
     # macOS runners that second install is killed by SIGKILL in about one
