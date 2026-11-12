@@ -6,9 +6,12 @@
 # query of aliases the check sends: every issue it names answered from the
 # case, or the whole read failed as a rate limit does when any is missing
 # (#4263). A case's `closes` are `Closes` lines of a commit on the branch,
-# its `body` the pull request's body as `pr:open` gives it, and its `event`
-# the body as a pull request's CI event holds it (#6767). `check.bash` runs
-# there, and its exit status and standard error are the case's.
+# its `body` the pull request's body as `pr:open` gives it, its `bodies` the
+# bodies of a merge group's entries in the directory the queue gives (#6883),
+# and its `event` the body as a pull request's CI event holds it (#6767).
+# `check.bash` runs there, and its exit status and standard error are the
+# case's. The base of the change that a gate names is not the scratch
+# repository's, so the harness drops it.
 set -euo pipefail
 # The scratch repository's git reads no identity from the host, as the CI
 # image has none, and guesses none: a commit that names no author fails
@@ -79,11 +82,18 @@ while IFS= read -r case; do
     jq -r .body <<< "$case" > "$scratch/body.md"
     env+=(LEDGER_BODY="$scratch/body.md")
   fi
+  if jq -e 'has("bodies")' <<< "$case" > /dev/null; then
+    rm -rf "$scratch/bodies" && mkdir "$scratch/bodies"
+    for index in $(jq -r '.bodies | keys[]' <<< "$case"); do
+      jq -r --argjson i "$index" '.bodies[$i]' <<< "$case" > "$scratch/bodies/$((index + 1)).md"
+    done
+    env+=(LEDGER_BODY="$scratch/bodies")
+  fi
   if jq -e 'has("event")' <<< "$case" > /dev/null; then
     jq -c '{pull_request: {body: .event}}' <<< "$case" > "$scratch/event.json"
     env+=(GITHUB_EVENT_PATH="$scratch/event.json")
   fi
-  (cd "$repo" && env -u LEDGER_BODY -u GITHUB_EVENT_PATH "${env[@]}" "$root/.config/ledger/check.bash") \
+  (cd "$repo" && env -u LEDGER_BODY -u GITHUB_EVENT_PATH -u GATE_BASE "${env[@]}" "$root/.config/ledger/check.bash") \
     > /dev/null 2> "$scratch/err" || status=$?
   if [[ $status != $(jq .exit <<< "$case") || $(< "$scratch/err") != $(jq -r .stderr <<< "$case") ]]; then
     printf 'ledger case FAILED: %s\n  exit %s, wanted %s\n  stderr:\n%s\n' \

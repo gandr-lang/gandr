@@ -118,11 +118,20 @@ read_issue() {
 # `Closes #n` line of a commit on the branch, and each issue a closing keyword
 # of the pull request's body names, since GitHub closes that issue when the
 # pull request merges (#6767). `pr:open` and `pr:land` give the body as the
-# file `LEDGER_BODY`; a pull request's CI run reads it from its event.
+# file `LEDGER_BODY`; a pull request's CI run reads it from its event. The
+# merge queue gives a directory of the bodies of every entry of its group
+# (`.config/queue/bodies.bash`, #6883), since the group closes the issues
+# that each one names. The branch's commits run from `GATE_BASE`, the base
+# of the change that the gate and the queue name, or else from the fork from
+# the trunk.
 declare -A closing=()
 read_closing() {
-  local base line body= number
-  if [[ -n ${LEDGER_BODY:-} ]]; then
+  local base line body= number file
+  if [[ -d ${LEDGER_BODY:-} ]]; then
+    for file in "$LEDGER_BODY"/*.md; do
+      if [[ -f $file ]]; then body+=$(< "$file")$'\n'; fi
+    done
+  elif [[ -n ${LEDGER_BODY:-} ]]; then
     body=$(< "$LEDGER_BODY")
   elif [[ -n ${GITHUB_EVENT_PATH:-} && -f $GITHUB_EVENT_PATH ]]; then
     body=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
@@ -131,7 +140,11 @@ read_closing() {
     closing[$number]=1
   done
   source "$(dirname "${BASH_SOURCE[0]}")/../pr-stack/trunk.bash"
-  if ! base=$(git merge-base "origin/$trunk" HEAD); then return 0; fi
+  if [[ -n ${GATE_BASE:-} ]]; then
+    base=$GATE_BASE
+  elif ! base=$(git merge-base "origin/$trunk" HEAD); then
+    return 0
+  fi
   while IFS= read -r line; do
     if [[ $line =~ ^Closes[[:space:]]+\#([0-9]+)\.?$ ]]; then
       closing[${BASH_REMATCH[1]}]=1

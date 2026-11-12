@@ -57,7 +57,6 @@ site = [
   # the merge queue's title job.
   { file = ".config/deletes/check.bash", scope = "-", api = "rest", identity = "read", calls = 1, points = 1, pages = 1, measured = "rest", hour = 8, trigger = "pr:open, through check:deletes: the comments of each issue the body works, one paged read of 100 comments an issue, one issue for most bodies; about 8 openings an hour" },
   { file = ".config/deletes/check.bash", scope = "-", api = "rest", identity = "actions", calls = 1, points = 1, pages = 1, measured = "rest", hour = 30, trigger = "pr-title.yml, through queue.bash: each entry of each merge group, the comments of each issue the body works, one paged read of 100 comments an issue; a group of N entries reads N bodies, about 10 groups an hour of 3 entries" },
-  { file = ".config/deletes/queue.bash", scope = "-", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 30, trigger = "pr-title.yml: each entry of each merge group, the pull request's body as it stands (#6839); a group of N entries reads N bodies, about 10 groups an hour of 3 entries" },
 
   # Epics: epics.yml closes an epic whose last child closed (Actions).
   { file = ".config/epics/epics.sh", scope = "-", api = "graphql", identity = "actions", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "epics.yml: each issue closed; a comment and a close; the repository comes from GITHUB_REPOSITORY (repo_name)" },
@@ -97,6 +96,8 @@ site = [
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:ledger in each pull request's CI run" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "check:ledger in a seat's gate" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 24, trigger = "check:ledger in each pull request's CI run" },
+  { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 10, trigger = "pr-title.yml: the ledger check in each merge group on landing (#6883), one aliased batch of the issues rows name; about 10 groups an hour" },
+  { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 10, trigger = "pr-title.yml: the ledger check in each merge group on landing (#6883)" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "pr:open: the issues its body closes against the rows that owe them, one aliased batch (#6767)" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "pr:open: the issues its body closes against the rows that owe them (#6767)" },
 
@@ -248,6 +249,10 @@ site = [
   { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "landing", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "landing.yml: one read for each server stack at each link, where it read one for each member, about three, before #5671" },
   { file = ".config/pr-stack/stack.bash", scope = "stack_link", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "pr:open: the stack linked" },
   { file = ".config/pr-stack/stack.bash", scope = "stack_link", api = "graphql", identity = "landing", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "landing.yml: the stack linked at each queueing" },
+
+  # The merge queue's title job: the body of each entry of a group, read once
+  # for every check that reads it (#6883).
+  { file = ".config/queue/bodies.bash", scope = "-", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 30, trigger = "pr-title.yml: each entry of each merge group, the pull request's body as it stands (#6839), for the account of what it takes out and the ledger's check; a group of N entries reads N bodies, about 10 groups an hour of 3 entries" },
 
   # The references watch, the stall reading and triage.
   { file = ".config/references/watch.bash", scope = "references_watch", api = "graphql", identity = "read", calls = 1, points = 2, measured = "cost", hour = 1, trigger = "the references watch, once a day" },

@@ -56,5 +56,12 @@
     "body": "Closes #3.\n\nAdvances #2, and the row owes it still.",
     "exit": 0,
     "stderr": ""
+  },
+  {
+    "name": "#6883: a merge group whose lower entry's body closes an owed issue is refused, read from the directory of the entries' bodies",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse" },
+    "bodies": ["The lower entry.\n\nCloses #2", "Fixes #3"],
+    "exit": 1,
+    "stderr": "owing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on a `/// - owes:` line that owes the rest (#2635)\nledger check FAILED"
   }
 ]
