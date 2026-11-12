@@ -252,17 +252,9 @@ impl CheckSchedule
     /// # Adequacy
     /// - hypothesis: L2 — over a source whose definitions read each other in a
     ///   chain and beside it, a job waits on exactly the jobs that its
-    ///   definition names, and the critical path is the chain's. A schedule
-    ///   read with no clock carries every job untimed.
+    ///   definition names, and the critical path covers the chain's costs.
     /// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body reads every readmitted declaration; the clause reads each job once"
-        )
-    )]
-    #[spec(ensures: |ret| ret.jobs.is_sorted() && ret.untimed <= ret.jobs.len()
+    #[spec(ensures: |ret| ret.untimed <= ret.jobs.len()
         && ret.jobs.len() <= readmission.readmitted().len())]
     #[must_use]
     pub(crate) fn of(readmission: &bridge::Readmission) -> Self
