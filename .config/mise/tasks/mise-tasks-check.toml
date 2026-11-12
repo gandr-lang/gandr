@@ -2324,20 +2324,21 @@ echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as 
 '''
 
 # The queue on `landing` runs the blocking set alone (#5439).
-# `.config/landing/jobs.jq` refuses five faults. The first is a job that runs
+# `.config/landing/jobs.jq` refuses six faults. The first is a job that runs
 # in a merge group on `landing` outside the blocking set, the brake (#5442)
 # and the run's setup.
 # The second is a check in that set that `check:landing` does not name. The
 # third is a task of `check:landing` that no job of that set runs. The fourth
 # is Clippy on a pull request on `landing`. The fifth is a build state that
 # the nightly restores and that no job saves on a push to main whose queue
-# run, the merge group into `landing`, holds none (#6790). Each case in
-# `.config/landing/cases.json` gives its refusals. Then the jobs of
-# `.github/workflows/ci.yml`, anchors expanded, give none against the tasks
-# that `check:landing` depends on and the states that
-# `.github/workflows/nightly.yml` restores.
+# run, the merge group into `landing`, holds none (#6790). The sixth is a
+# job that can run on a push to `landing` outside the report lanes (#6993).
+# Each case in `.config/landing/cases.json` gives its refusals. Then the jobs
+# of `.github/workflows/ci.yml`, anchors expanded, give none against the
+# tasks that `check:landing` depends on, the states that
+# `.github/workflows/nightly.yml` restores and the branches of its `on.push`.
 ["check:landing-queue"]
-description = "A merge group on landing runs only the run's setup, the brake and the tasks of check:landing, and a pull request on landing runs no Clippy"
+description = "A merge group on landing runs only the run's setup, the brake and the tasks of check:landing, a pull request on landing runs no Clippy, and a push to landing runs the report lanes alone"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -2346,7 +2347,8 @@ set -euo pipefail
 .config/cases/run.bash landing .config/landing/cases.json --program .config/landing/jobs.jq --mode c
 landing=$(mise tasks ls --json | jq -c '[.[] | select(.name == "check:landing") | .depends[]]')
 states=$(yq -o=json 'explode(.) | [.jobs[].env.CI_BUILD_STATE | select(. != null)] | unique' .github/workflows/nightly.yml | jq -c .)
-refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/ci.yml | jq -c --argjson landing "$landing" --argjson states "$states" '{jobs: ., landing: $landing, states: $states}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/ci.yml: \(.)"')
+pushes=$(yq -o=json '.on.push.branches // []' .github/workflows/ci.yml | jq -c .)
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/ci.yml | jq -c --argjson landing "$landing" --argjson states "$states" --argjson pushes "$pushes" '{jobs: ., landing: $landing, states: $states, pushes: $pushes}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/ci.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1

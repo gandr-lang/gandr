@@ -15,11 +15,13 @@
 #   (#2001); what falls off the tail rolls on as the next stack. Nothing
 #   restacks a stack before queueing it: a restack reruns every member's
 #   pull-request run and floods the runners.
-# - A pull-request run lints and reports; the merge group tests. The title,
-#   treefmt and Clippy are required checks, and obligations gates the landing.
-#   The report lanes never block a green. The hotpath lane always runs and
-#   files its follow-up issues. The mutants lanes are off (`GANDR_MUTANTS`,
-#   #3695) until the dedicated host of #3207 runs them.
+# - A pull-request run lints; the merge group tests; each push to `landing`
+#   reports (#6993, the owner's order of 2026-11-12). The title, treefmt and
+#   Clippy are required checks. The report lanes, hotpath, obligations and
+#   mutants, run on each push to `landing` against the push before, block
+#   nothing and comment on each pull request the push lands. The hotpath
+#   lane files its follow-up issues. The mutants lanes are off
+#   (`GANDR_MUTANTS`, #3695) until the dedicated host of #3207 runs them.
 # - The queue is tuned for throughput, pull requests landed per hour, not for
 #   one pull request's latency. Entries batch (at least 3, or a 5-minute
 #   wait); every entry gets its own cumulative group run; the runner pool is
@@ -81,8 +83,12 @@ on:
   # builds over it rather than over the last queued landing. macOS is
   # tested daily and on dispatch, never on a push or in the queue: no
   # landing waits for it (#702, #1177).
+  # A push to `landing` is a group of the queue that has landed. Its run is
+  # the report lanes alone, hotpath, obligations and mutants, each against
+  # the push before (#6993); `prepare` names it `landed`, and every other
+  # job skips it (`check:landing-queue`).
   push:
-    branches: [main]
+    branches: [main, landing]
   merge_group: {}
   # The daily run times the plain baseline of main, which every enforcing
   # lane divides its own report by, and tests main on macOS, saving the macOS
@@ -208,11 +214,11 @@ jobs:
       - &setup-rust
         id: setup-rust
         name: setup rust
-        if: ${{ github.event_name != 'push' || env.CI_ON_MAIN == 'true' || env.CI_BUILD_STATE_FOUND == 'true' }}
+        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' || env.CI_ON_MAIN == 'true' || env.CI_BUILD_STATE_FOUND == 'true' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.prepare.outputs.image == '' }}
-          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache
       # (`.github/actions/install-tools`, shared with every workflow).
@@ -221,7 +227,7 @@ jobs:
         if: &without-image ${{ needs.prepare.outputs.image == '' || env.CI_INSTALL_TOOLCHAIN == 'true' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
-          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'schedule' && env.CI_ON_MAIN == 'true') || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'schedule' && env.CI_ON_MAIN == 'true') || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Every policy cache is keyed on the quenchant revision the Dylint
       # metadata pins (`workflow:revision`), so a restored library is always
       # this revision's policy: Cargo can consider a library from another
@@ -246,10 +252,10 @@ jobs:
         with:
           path: &gate-binary target/workflow-tools
           key: &gate-binary-key quenchant-gates-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ env.CI_POLICY_REVISION }}
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - &save-gate-binary
         name: save the gate binary
-        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && hashFiles('target/workflow-tools/bin/quenchant-gates') != '' && steps.gate-binary-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && hashFiles('target/workflow-tools/bin/quenchant-gates') != '' && steps.gate-binary-restore.outputs.cache-hit != 'true' }}
         uses: &cache-save actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *gate-binary
@@ -278,11 +284,11 @@ jobs:
           key: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-${{ github.sha }}
           restore-keys: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-
           # Promotion already downloads the verified queue artifact.
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - &save-policy-state
         name: save the policy state
         id: save-policy-state
-        if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && env.CI_BUILD_STATE_FOUND == 'true') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CI_BUILD_STATE_FOUND == 'true') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
         uses: *cache-save
         with:
           path: *policy-state
@@ -347,17 +353,19 @@ jobs:
         uses: ./.github/actions/restore-test-state # zizmor: ignore[self-repository]
         with:
           # Promotion already downloads the verified queue artifact; a lane
-          # that runs on main's push restores main's newest state itself.
-          lookup-only: ${{ github.event_name == 'push' && env.CI_ON_MAIN != 'true' }}
+          # that runs on main's push restores main's newest state itself. A
+          # lane on a push to `landing` restores it as a pull request does
+          # (#6993).
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CI_ON_MAIN != 'true' }}
       # A cache a queue run saves is visible to that queue ref alone, so
-      # only main's push, the daily run and a dispatch save: a queue run's
-      # save would take gigabytes of the repository's cache for no reader. A
-      # lane on main saves only the state it archived, and a shard none: its
-      # join hands the whole on.
+      # only main's push, the daily run and a dispatch save: a queue run's or
+      # a push to `landing`'s save would take gigabytes of the repository's
+      # cache for no reader. A lane on main saves only the state it archived,
+      # and a shard none: its join hands the whole on.
       - &save-test-state
         name: cache complete test state
         id: save-test-state
-        if: ${{ !cancelled() && env.ACT != 'true' && env.CI_SHARD == '' && (github.event_name == 'push' && (env.CI_ON_MAIN != 'true' || steps.build-state-archive.outcome == 'success') || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && env.CI_BUILD_STATE_FOUND == 'true' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && env.CI_SHARD == '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && (env.CI_ON_MAIN != 'true' || steps.build-state-archive.outcome == 'success') || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && env.CI_BUILD_STATE_FOUND == 'true' }}
         uses: *cache-save
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
@@ -368,7 +376,7 @@ jobs:
       # state, so it deletes its superseded entry as a push does (#6951).
       - &delete-superseded-state
         name: delete superseded test state
-        if: ${{ env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.save-test-state.outcome == 'success' }}
+        if: ${{ env.ACT != 'true' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.save-test-state.outcome == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -381,7 +389,7 @@ jobs:
       # shard's build is part of the state, which the join hands on.
       - &prune-build-state
         name: prune build state to this run's units
-        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true')) }}
+        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') || ((github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true')) }}
         continue-on-error: true
         env:
           CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || env.CI_DOCS == 'true' && 'ci:prune-docs' || env.CI_DOCTESTS == 'true' && 'ci:prune-doctests' || 'ci:prune-plain' }}
@@ -486,9 +494,10 @@ jobs:
   #   lane a merge group runs, the recovery sweep, the extension, the
   #   compiler policy and the formatting among them, and red main is red
   #   on its own run;
-  # - `stacked`: a pull request whose base is not the trunk, a stack member
-  #   (#2045). Its run is the lint, Clippy and formatting; the merge group
-  #   tests its tree, and the reports run on the stack's bottom;
+  # - `landed`: a push to `landing`, a group of the queue that has landed
+  #   (#6993). Its run is the report lanes alone, and `rust` reads its change
+  #   against the push before (`github.event.before`), as a pull request's
+  #   against its base;
   # - `rebased`: a push that is GitHub's own rebase of the change, its patch
   #   unchanged, over a replaced head whose required checks passed (#2070,
   #   #2700). Every lane skips, so the required checks pass at once, and the
@@ -535,12 +544,12 @@ jobs:
       checks: read
       statuses: read
     outputs:
-      rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      rust: ${{ github.event_name != 'schedule' && (github.event_name != 'push' || github.ref == 'refs/heads/landing') && ((github.event_name != 'pull_request' && github.event_name != 'push') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
       extension: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
       parser: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name == 'merge_group' && steps.group-base.outcome != 'success' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
       unbuilt: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' }}
       sweep-base: ${{ steps.group-base.outputs.sha }}
-      stacked: ${{ github.event_name == 'pull_request' && github.base_ref != github.event.repository.default_branch }}
+      landed: ${{ github.event_name == 'push' && github.ref == 'refs/heads/landing' }}
       rebased: ${{ steps.rebased.outputs.rebased == 'true' }}
       image: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
       build: ${{ steps.image.outputs.tag != '' && steps.image.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
@@ -555,7 +564,7 @@ jobs:
       landing-states: ${{ format('{{"cargo-clippy-crate":"{0}","cargo-dylint-crate":"{1}"}}', steps.landing-clippy-state.outputs.run-id, steps.landing-policy-state.outputs.run-id) }}
     env:
       CI_SHA: ${{ github.sha }}
-      CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/landing' }}
       CI_QUEUE_STATE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -1416,7 +1425,7 @@ jobs:
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && github.base_ref != 'landing' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    if: ${{ !cancelled() && !failure() && github.base_ref != 'landing' && needs.prepare.outputs.landed != 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     # A landing's push deletes the Clippy state it superseded.
     permissions:
@@ -1628,20 +1637,18 @@ jobs:
       - *lane-state
 
   # A change owes re-verification by every specification naming a changed
-  # item (`evidence:obligations`). A pull request reruns only the obligated
-  # witnesses, specifications enforced, and lists them in one comment it
-  # updates in place; the merge queue still runs every test. The lane informs
-  # and does not gate: `pr:open` and `pr:land` run no specification obligation
-  # (#5458), so the body holds no ticks for the lane to require. A stack
-  # member's pull request skips it (#2045). Dispatches run the lane too,
-  # against the parent commit and without a body, so `ci:act` exercises it. A
-  # fork's read-only token cannot comment: its witnesses stay in the log. The
-  # comment is posted after the lane, from a bare runner, so the job running
-  # the change's code holds no write token.
+  # item (`evidence:obligations`). Each push to `landing` reruns only the
+  # obligated witnesses of the group it lands, specifications enforced, and
+  # lists them in one comment on each pull request of the group (#6993). The
+  # lane informs and does not gate: `pr:open` and `pr:land` run no
+  # specification obligation (#5458). Dispatches run the lane too, against
+  # the parent commit, so `ci:act` exercises it. The comment is posted after
+  # the lane, from a bare runner, so the job running the change's code holds
+  # no write token.
   obligations:
     name: re-verify obligated specifications (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1660,9 +1667,8 @@ jobs:
       # policy state: its library, records and rustdoc JSON. Nothing is saved.
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
-      # A pull request checks out its own head, not GitHub's merge commit, and
-      # a dispatch its commit with the parent it compares against.
-      CI_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
+      # A push to `landing` compares its head with the push before it, and a
+      # dispatch its commit with the parent.
       CI_FETCH_DEPTH: "2"
     steps:
       - *git-checkout
@@ -1677,58 +1683,29 @@ jobs:
       - *restore-test-state
       - *find-build-state
       - *unpack-build-state
-      # The body as it reads when the job runs, never the event's copy: a
-      # rerun after the boxes are ticked reads the ticks.
-      - name: read the pull request body
-        if: ${{ github.event_name == 'pull_request' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          mkdir -p target/evidence
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > target/evidence/body.md
-      # The change is measured as `pr:open` and `pr:land` measure it: the pull
-      # request's head against `evidence:base`, its merge base with the trunk
-      # as it reads now, or the head of an open pull request below it that it
-      # carries past that, never GitHub's merge commit, whose first parent can
-      # be a trunk older than the run (#2067). The trunk is fetched until its
-      # history meets the head's, which holds every carried head. A dispatch
+      # The change is the group the push lands: its head against the push
+      # before it (`github.event.before`), fetched at depth one. A dispatch
       # reads its parent commit.
-      - name: fetch the trunk to the change's merge base
+      - name: fetch the push before
         shell: bash
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: |
-          if [[ -z $BASE_REF ]]; then
+          if [[ -z $BEFORE ]]; then
             printf 'CI_OBLIGATIONS_BASE=%s\n' "$(git rev-parse --short=12 HEAD^)" >> "$GITHUB_ENV"
             exit 0
           fi
-          git fetch --quiet --no-tags --depth=50 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-          for _ in $(seq 20); do
-            git merge-base HEAD "origin/$BASE_REF" > /dev/null && exit 0
-            git fetch --quiet --no-tags --deepen=100 origin HEAD "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-          done
-          printf '::error::the head and %s share no commit within the fetched history\n' "$BASE_REF"
-          exit 1
+          git fetch --quiet --no-tags --depth=1 origin "$BEFORE"
+          printf 'CI_OBLIGATIONS_BASE=%s\n' "${BEFORE::12}" >> "$GITHUB_ENV"
       # The read-only token reads the labels the lint assessment is owed under
       # and the head's hotpath checks the hotpath verdict is owed under.
       - name: list the re-verification obligations
         id: obligations
         shell: bash
         env:
-          OBLIGATIONS_BODY: ${{ github.event_name == 'pull_request' }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          # The head the run checks, so the task reads no pull request for it.
-          CI_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          extra=()
-          if [[ $OBLIGATIONS_BODY == true ]]; then
-            extra=(--previous target/evidence/body.md --pr "$PR_NUMBER")
-          fi
-          mise run evidence:obligations ${CI_OBLIGATIONS_BASE:+"$CI_OBLIGATIONS_BASE"} "${extra[@]}"
+        run: mise run evidence:obligations "$CI_OBLIGATIONS_BASE"
       - name: rerun the obligated witnesses
         env:
           NEXTEST_PROFILE: ci-enforcing
@@ -1746,27 +1723,32 @@ jobs:
       - *upload-test-report
       - *lane-state
 
-  # Posted whatever the witnesses' verdict and the boxes' state, once the
-  # report exists: the comment lists the witnesses rerun. GitHub refuses a
-  # comment body over 65,536 characters, so a longer report is cut at a line
-  # boundary below that, and the comment links the full report's artifact.
-  # The comment is updated in place: the poster finds this workflow's own
-  # comment by its marker when it posts, so a rerun of the lane, which reuses
-  # the first attempt's other jobs, edits the comment the first attempt
-  # posted (#2067). Only `github-actions[bot]`'s comment is updated; a comment
-  # by anyone else that copies the marker is ignored. The poster runs on a
-  # bare runner, so the job running the change's code holds no write token.
+  # Posted whatever the witnesses' verdict, once the report exists: the
+  # comment lists the witnesses rerun. A push to `landing` posts it on each
+  # pull request the group lands, the `(#n)` of each first-parent commit from
+  # the push before to the head, read through the compare API, since the
+  # poster checks nothing out (#6993). GitHub refuses a comment body over
+  # 65,536 characters, so a longer report is cut at a line boundary below
+  # that, and the comment links the full report's artifact. The comment is
+  # updated in place: the poster finds this workflow's own comment by its
+  # marker when it posts, so a rerun of the lane, which reuses the first
+  # attempt's other jobs, edits the comment the first attempt posted (#2067).
+  # Only `github-actions[bot]`'s comment is updated; a comment by anyone else
+  # that copies the marker is ignored. The poster runs on a bare runner, so
+  # the job running the change's code holds no write token.
   obligations-comment:
     name: post the obligations comment
     needs: obligations
-    if: ${{ !cancelled() && needs.obligations.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
+    if: ${{ !cancelled() && needs.obligations.outputs.comment == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       pull-requests: write
+      contents: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BEFORE: ${{ github.event.before }}
+      HEAD_SHA: ${{ github.sha }}
       COMMENT_ARTIFACT: obligations-comment
       COMMENT_MARKER: <!-- quenchant-obligations -->
       REPORT_URL: ${{ needs.obligations.outputs.report }}
@@ -1786,30 +1768,36 @@ jobs:
             } > comment.cut.md
             mv comment.cut.md comment.md
           fi
-          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" |
-            jq -r --arg marker "$COMMENT_MARKER" '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker)))] | first | .id // ""')
-          if [[ -n $id ]]; then
-            gh api --method PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@comment.md --silent
-          else
-            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
-          fi
+          numbers=$(gh api "repos/$GH_REPO/compare/$BEFORE...$HEAD_SHA" |
+            jq -r --arg head "$HEAD_SHA" '(.commits | map({key: .sha, value: .}) | from_entries) as $by
+              | [$head | recurse($by[.].parents[0].sha // empty | select($by[.] != null))]
+              | map($by[.].commit.message | split("\n") | first | capture("\\(#(?<n>[0-9]+)\\)$").n) | reverse | .[]')
+          for number in $numbers; do
+            id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$number/comments?per_page=100" |
+              jq -r --arg marker "$COMMENT_MARKER" '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker)))] | first | .id // ""')
+            if [[ -n $id ]]; then
+              gh api --method PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@comment.md --silent
+            else
+              gh api --method POST "repos/$GH_REPO/issues/$number/comments" -F body=@comment.md --silent
+            fi
+          done
 
-  # The mutants of a pull request's own lines (`mutants:changed`, #1456): each
-  # mutant on a line the change adds runs under the witnesses of its function,
-  # and one comment, updated in place, names the survivors. The lane is a
-  # report, never a gate. No check of it is required and nothing needs it; a
-  # surviving mutant is a warning and a line in the comment, never a red
-  # check, and main's push files the landings' survivors (`mutants-landed`).
-  # The merge queue, main and a stack member's pull request (#2045) do not
-  # run it. The daily run maps each crate whole (`mutants-nightly`).
-  # Dispatches run it against the parent commit, so `ci:act` exercises it. As
-  # with the obligations comment, the comment is found by `prepare` and
-  # posted after the lane from bare runners, so the job running the change's
+  # The mutants of a landed group's own lines (`mutants:changed`, #1456):
+  # each mutant on a line the group adds runs under the witnesses of its
+  # function, and one comment on each pull request of the group, updated in
+  # place, names the survivors. Each push to `landing` runs it against the
+  # push before (#6993). The lane is a report, never a gate. No check of it
+  # is required and nothing needs it; a surviving mutant is a warning and a
+  # line in the comment, never a red check, and the same push files the
+  # landings' survivors (`mutants-landed`). The daily run maps each crate
+  # whole (`mutants-nightly`). Dispatches run it against the parent commit,
+  # so `ci:act` exercises it. As with the obligations comment, the comment is
+  # posted after the lane from a bare runner, so the job running the change's
   # code holds no write token.
   mutants:
     name: report the mutants of the change (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && needs.prepare.outputs.rust == 'true' && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1824,9 +1812,10 @@ jobs:
       # The mutants build over main's plain test state and the listing reads
       # main's rustdoc JSON from the policy state. Nothing is saved.
       CI_BUILD_STATE: cargo-test-plain-only
-      # A pull request checks out its merge commit, whose first parent is the
-      # base it merges into; a dispatch reads its parent commit.
+      # A push to `landing` reads the push before it, fetched at depth one; a
+      # dispatch reads its parent commit.
       CI_FETCH_DEPTH: "2"
+      MUTANTS_BASE: ${{ github.event_name == 'push' && github.event.before || 'HEAD^' }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -1849,7 +1838,8 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          mise run mutants:changed -- --base HEAD^ --lanes "$(nproc)" --until 300 --seed-target target
+          if [[ $MUTANTS_BASE != HEAD^ ]]; then git fetch --quiet --no-tags --depth=1 origin "$MUTANTS_BASE"; fi
+          mise run mutants:changed -- --base "$MUTANTS_BASE" --lanes "$(nproc)" --until 300 --seed-target target
           { printf '<!-- gandr-mutants -->\n'; cat mutants.out/changed/report.md; } > mutants.out/changed/comment.md
           cat mutants.out/changed/report.md >> "$GITHUB_STEP_SUMMARY"
       - name: upload the mutants comment
@@ -1879,14 +1869,16 @@ jobs:
   mutants-comment:
     name: post the mutants comment
     needs: mutants
-    if: ${{ !cancelled() && needs.mutants.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
+    if: ${{ !cancelled() && needs.mutants.outputs.comment == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       pull-requests: write
+      contents: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BEFORE: ${{ github.event.before }}
+      HEAD_SHA: ${{ github.sha }}
       COMMENT_ARTIFACT: mutants-comment
       COMMENT_MARKER: <!-- gandr-mutants -->
       REPORT_URL: ${{ needs.mutants.outputs.report }}
@@ -1970,37 +1962,26 @@ jobs:
   # The benchmark report (`mise run ci:hotpath`): each series runs under the
   # hotpath profiler and uploads its report to hotpath Cloud twice, as
   # `<series>`, judged on allocation in every crate, and as `<series>-timing`,
-  # judged on wall-clock time in the crates a pull request's change reaches
-  # (hotpath/<series>-policy.toml, hotpath/<series>-timing-policy.toml). The
-  # Cloud compares each report with the report of its base commit, comments
-  # when one changed, and fails its `hotpath / <benchmark>` check on a
-  # regression; no check of it is required. Main's push uploads main's
-  # reports, which merge groups and pull requests on main compare with; a
-  # dispatch runs the series too, which is how act exercises the job. The
-  # upload signs in with the job's OIDC token, which a fork's pull request is
-  # not given. Nothing needs this job. It builds over main's plain test state,
-  # rebuilding only what the profiler's features change.
+  # judged on wall-clock time (hotpath/<series>-policy.toml,
+  # hotpath/<series>-timing-policy.toml). Each push to `landing` runs it,
+  # every push alike, so each push keeps the runs the next one reads (#6993,
+  # the owner's order of 2026-11-12): the verdict comes after the land and
+  # holds nothing up. A dispatch runs the series too, which is how act
+  # exercises the job. The upload signs in with the job's OIDC token. Nothing
+  # needs this job. It builds over main's plain test state, rebuilding only
+  # what the profiler's features change.
   #
-  # A pull request measures its own head, not GitHub's merge commit, against
-  # its base branch's head, so a stacked pull request reads only its own
-  # contribution: a regression the pull request below carries reads 0 % here.
-  # Every run keeps its reports as the artifact `hotpath-<commit>`; a pull
-  # request uploads its base head's reports from that artifact before its own
-  # (`mise run ci:hotpath-base`), and builds and runs the base in this job
-  # only when no run left one.
-  #
-  # hotpath Cloud judges one report a side, skips the rows under the
-  # policy's share floor (#2079) and judges nothing on a push. Each series
-  # also runs until HOTPATH_RUNS are kept, three on a pull request and five
-  # on main's push, as the artifact `hotpath-runs-<commit>`, and is judged
-  # over its runs and its base's kept ones, never rerun here (`mise run
-  # ci:hotpath-judge`): a pull request's rows under the floor, and every row
-  # of main's push against the commit main stood at before it, so a chain
-  # pushed by hand is judged whole. `hotpath-judged` posts the checks.
+  # Every run keeps its reports as the artifact `hotpath-<commit>`. hotpath
+  # Cloud judges nothing on a push. Each series runs until HOTPATH_RUNS are
+  # kept, as the artifact `hotpath-runs-<commit>`, and every row is judged
+  # over its runs and the push before's kept ones, never rerun here (`mise
+  # run ci:hotpath-judge`). A push whose push before kept no runs, the first
+  # after the move among them, is judged on nothing and says so once.
+  # `hotpath-judged` posts the checks on the pushed commit.
   hotpath:
     name: report the hotpath benchmarks (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' && !inputs.cycle || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.stacked != 'true')) }}
+    if: ${{ !cancelled() && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     outputs:
       judged: ${{ steps.judge.outputs.checks }}
       unsent: ${{ steps.unsent.outputs.benchmarks }}
@@ -2014,17 +1995,12 @@ jobs:
     timeout-minutes: 30
     env:
       CI_BUILD_STATE: cargo-test-plain-only
-      # Main's push restores main's newest state rather than looking it up.
-      CI_ON_MAIN: "true"
-      CI_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
-      # A pull request's lane fails on a report hotpath Cloud did not take;
-      # main's push keeps it, warns and files it (#2641): a report never
-      # turns `main` red.
-      HOTPATH_UPLOAD: ${{ github.event_name == 'pull_request' && 'fail-on-error' || 'enabled' }}
+      # A report hotpath Cloud did not take is kept, warned and filed (#2641):
+      # a report never turns a run red.
+      HOTPATH_UPLOAD: enabled
       HOTPATH_ALLOC_METRIC: count
-      CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      HOTPATH_RUNS: ${{ github.event_name == 'pull_request' && '3' || '5' }}
+      CI_HEAD_SHA: ${{ github.sha }}
+      HOTPATH_RUNS: "5"
       HOTPATH_FUNCTIONS_LIMIT: "0"
       HOTPATH_USER_METADATA: runner=linux-arm64,profile=test
       GH_TOKEN: ${{ github.token }}
@@ -2038,9 +2014,6 @@ jobs:
       - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
-      - name: upload the base head's reports
-        if: ${{ github.event_name == 'pull_request' }}
-        run: mise run ci:hotpath-base gandr:gandr-lang:hotpath store:gandr-storage-schema:store conversion:gandr-lang:conversion
       - name: run the gandr series
         run: mise run ci:hotpath gandr gandr-lang hotpath
       - name: run the store series
@@ -2054,32 +2027,29 @@ jobs:
         run: printf 'benchmarks=%s\n' "$(ls target/hotpath/unsent | paste -sd' ')" >> "$GITHUB_OUTPUT"
       - name: judge the runs against the base's
         id: judge
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
         env:
-          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HOTPATH_JUDGE_ALL: ${{ github.event_name == 'push' }}
+          CI_BASE_SHA: ${{ github.event.before }}
         run: |
-          if [[ $HOTPATH_JUDGE_ALL == true ]]; then set -- --all; fi
-          mise run ci:hotpath-judge "$@" gandr store conversion
+          mise run ci:hotpath-judge gandr store conversion
           if compgen -G 'target/hotpath/judged/checks/*.json' > /dev/null; then
             echo checks=true >> "$GITHUB_OUTPUT"
           fi
-      # A lost artifact costs a later pull request one in-job base run, never
-      # this run's result.
+      # A lost artifact loses its measurements, never this run's result.
       - name: keep the reports
         continue-on-error: true
         uses: *upload-artifact
         with:
-          name: hotpath-${{ github.event.pull_request.head.sha || github.sha }}
+          name: hotpath-${{ github.sha }}
           path: target/hotpath/reports/*.json
           retention-days: 14
-      # A lost artifact leaves a later pull request's band unjudged, never
-      # this run's result.
+      # A lost artifact leaves the next push unjudged, never this run's
+      # result.
       - name: keep the runs
         continue-on-error: true
         uses: *upload-artifact
         with:
-          name: hotpath-runs-${{ github.event.pull_request.head.sha || github.sha }}
+          name: hotpath-runs-${{ github.sha }}
           path: target/hotpath/runs/*.json
           retention-days: 14
       - name: keep the judged checks
@@ -2088,14 +2058,6 @@ jobs:
         with:
           name: hotpath-judged
           path: target/hotpath/judged/checks/*.json
-          retention-days: 14
-      - name: keep the base head's reports measured here
-        if: ${{ github.event_name == 'pull_request' && hashFiles('target/hotpath/base/measured/*.json') != '' }}
-        continue-on-error: true
-        uses: *upload-artifact
-        with:
-          name: hotpath-${{ github.event.pull_request.base.sha }}
-          path: target/hotpath/base/measured/*.json
           retention-days: 14
       - *lane-state
 
@@ -2145,7 +2107,7 @@ jobs:
   hotpath-judged:
     name: post the judged hotpath checks
     needs: hotpath
-    if: ${{ !cancelled() && needs.hotpath.outputs.judged == 'true' && (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork || github.event_name == 'push' && github.event.repository.fork == false) }}
+    if: ${{ !cancelled() && needs.hotpath.outputs.judged == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       actions: write
@@ -2153,8 +2115,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.sha }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       REPO_ID: ${{ github.event.repository.node_id }}
     steps:
@@ -2179,17 +2140,18 @@ jobs:
                variables: ({repo: $repo, sha: $sha, at: $at}
                   + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "o\(.key)": .value.output}) | add))}' *.json \
             | gh api graphql --input - --silent
-          gh workflow run hotpath-guard.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA" ${PR_NUMBER:+-f pull="$PR_NUMBER"}
+          gh workflow run hotpath-guard.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA"
 
   # A landing's hotpath verdicts become ledger rows (`mise run
-  # ci:hotpath-landed`): main's push reads the `hotpath / <benchmark>` checks
-  # of every pull request it landed and adds a row per red check or
-  # improvement to the landed-deltas tracking issue, linking the issue the
-  # hotpath guard workflow filed. Nothing needs this job.
+  # ci:hotpath-landed`): each push to `landing` reads the `hotpath /
+  # <benchmark>` checks `hotpath-judged` posts on its commit, once they are
+  # posted, and adds a row per red check or improvement for each pull request
+  # the push lands to the landed-deltas tracking issue, linking the issue the
+  # hotpath guard workflow filed (#6993). Nothing needs this job.
   hotpath-landed:
     name: add the landings' hotpath verdicts to the ledger
-    needs: *rust-needs
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    needs: [prepare, ci-image, hotpath-judged]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       contents: read
@@ -2210,14 +2172,14 @@ jobs:
       - name: add the landed verdicts
         run: mise run ci:hotpath-landed
 
-  # A report the hotpath job could not upload on main's push is a row of one
-  # `kind:ci` issue (`mise run ci:hotpath-unsent`, #2641), opened or updated
-  # here; the run's `hotpath-<commit>` artifact keeps the measurements and
-  # `main` stays green. Nothing needs this job.
+  # A report the hotpath job could not upload on a push to `landing` is a row
+  # of one `kind:ci` issue (`mise run ci:hotpath-unsent`, #2641), opened or
+  # updated here; the run's `hotpath-<commit>` artifact keeps the measurements
+  # and the run stays green. Nothing needs this job.
   hotpath-unsent:
     name: file the hotpath reports not uploaded
     needs: [prepare, ci-image, hotpath]
-    if: ${{ !cancelled() && needs.hotpath.outputs.unsent != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    if: ${{ !cancelled() && needs.hotpath.outputs.unsent != '' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       contents: read
@@ -2237,14 +2199,14 @@ jobs:
         run: mise run ci:hotpath-unsent
 
   # A landing that leaves a mutant of its own lines alive files it (`mise run
-  # ci:mutants-landed`): main's push reads the mutants comment of every pull
-  # request it landed, and each one whose report names survivors gets one
-  # issue, routed by the tiers of the crates the survivors live in. Nothing
-  # needs this job.
+  # ci:mutants-landed`): each push to `landing` reads the mutants comment of
+  # every pull request it lands, once `mutants-comment` posts it (#6993), and
+  # each one whose report names survivors gets one issue, routed by the tiers
+  # of the crates the survivors live in. Nothing needs this job.
   mutants-landed:
     name: file the landings' surviving mutants
-    needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.outputs.mutants == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    needs: [prepare, ci-image, mutants-comment]
+    if: ${{ !cancelled() && needs.prepare.outputs.mutants == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       contents: read
@@ -2485,7 +2447,7 @@ jobs:
   prose-gate:
     name: check the prose against its ledger
     needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && needs.prepare.outputs.landed != 'true' && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -2526,7 +2488,7 @@ jobs:
   extension-gate:
     name: check the VS Code extension
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && needs.prepare.outputs.extension == 'true' }}
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && needs.prepare.outputs.landed != 'true' && needs.prepare.outputs.extension == 'true' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]

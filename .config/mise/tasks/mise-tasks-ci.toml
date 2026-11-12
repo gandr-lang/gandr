@@ -688,22 +688,19 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref "${GITHUB_REF:?}" --key "${u
 # names only the innermost module, and `*` stands for any modules around it.
 # A series' own `measure_block!` labels belong to its package. CI_BASE_SHA names the
 # base. Each upload's report is also written to target/hotpath/reports/, which
-# the job keeps as the artifact `hotpath-<commit>` for `ci:hotpath-base`.
+# the job keeps as the artifact `hotpath-<commit>`.
 #
-# A report is a report, never a red `main` (#2641). Each upload's outcome is
+# A report is a report, never a red run (#2641). Each upload's outcome is
 # `.config/hotpath/upload.jq`'s: under act, which holds no OIDC token, it is
-# skipped; under `HOTPATH_UPLOAD=fail-on-error` (a pull request's lane) a
-# report hotpath Cloud did not take fails the job, as hotpath itself does;
-# otherwise (main's push) it is a warning, the report is kept all the same,
-# and its benchmark is named under target/hotpath/unsent/ for
-# `ci:hotpath-unsent`, which files it.
+# skipped; otherwise a report hotpath Cloud did not take is a warning, the
+# report is kept all the same, and its benchmark is named under
+# target/hotpath/unsent/ for `ci:hotpath-unsent`, which files it.
 #
 # Every run's report, the uploads' among them, is kept as
 # target/hotpath/runs/<series>-<n>.json, and runs without an upload follow
 # until HOTPATH_RUNS (default 1) are kept: the several-run judgement of
 # `ci:hotpath-judge` reads them, and the job keeps them as the artifact
-# `hotpath-runs-<commit>` for a later pull request's base and main's next
-# push.
+# `hotpath-runs-<commit>` for the next push to `landing` (#6993).
 ["ci:hotpath"]
 description = "Run a hotpath series and upload its allocation, timing and bytes reports"
 tools.jq = "1.8.1"
@@ -734,13 +731,9 @@ send() {
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
     HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/reports/$1.json" \
     "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
-  outcome=$(jq -n --arg mode "${HOTPATH_UPLOAD:-}" --arg act "${ACT:-}" --arg sent "$([[ -s $scratch/$1.json ]] && echo true)" \
-    '{mode: $mode, act: ($act == "true"), sent: ($sent == "true")}' | jq -r -f "$root/.config/hotpath/upload.jq")
+  outcome=$(jq -n --arg act "${ACT:-}" --arg sent "$([[ -s $scratch/$1.json ]] && echo true)" \
+    '{act: ($act == "true"), sent: ($sent == "true")}' | jq -r -f "$root/.config/hotpath/upload.jq")
   case $outcome in
-    refused)
-      echo "::error::hotpath: the $1 report was not uploaded"
-      exit 1
-      ;;
     unsent)
       echo "::warning::hotpath: the $1 report was not uploaded; it is kept in the run's hotpath artifact and filed by ci:hotpath-unsent"
       : > "$scratch/unsent/$1"
@@ -830,107 +823,23 @@ upload "$series-timing" "$scratch/$series-timing-policy.toml"
 more
 {% endraw %}'''
 
-# A pull request's baseline: the reports of its base branch's head, uploaded
-# to hotpath Cloud as this pull request's before its own, so the Cloud
-# compares the head with the commit below it rather than with main's newest
-# (#2019). A stacked pull request then reads only its own contribution, and
-# a regression the pull request below carries reads 0 % here.
-#
-# The base head's run kept its reports as the artifact `hotpath-<base>`
-# (ci:hotpath); each is stamped with this pull request's event fields, its
-# `base_sha` and the other run's `ref` dropped (it is the base), its policy's
-# `pr_check` set to `off` so it posts no check, and posted with the job's
-# OIDC token, as hotpath's own relay posts a report file. When no run kept
-# one (a base whose change reached no Rust, an expired artifact), the base
-# is checked out, each series built and run with the same policy change, its
-# in-process upload reading it as the base's report since the checkout is
-# the event's base, and the head checked out again; the reports land in
-# target/hotpath/base/measured/, which the job keeps as `hotpath-<base>`.
-# Arguments: `<series>:<package>:<bench>`, one per series. GITHUB_EVENT_PATH,
-# GITHUB_REPOSITORY, CI_BASE_SHA and GH_TOKEN describe the run.
-["ci:hotpath-base"]
-description = "Upload a pull request's base head's hotpath reports before its own"
-tools.jq = "1.8.1"
-usage = 'arg "<series>..." help="each series as series:package:bench"'
-run = '''
-{% raw %}#!/usr/bin/env bash
-set -euo pipefail
-base=${CI_BASE_SHA:?the pull request base head}
-repo=${GITHUB_REPOSITORY:?}
-root=$(git rev-parse --show-toplevel)
-dir="$root/target/hotpath/base"
-rm -rf "$dir"
-mkdir -p "$dir/found" "$dir/measured" "$dir/policy"
-eval "series=(${usage_series:?})"
-pull=$(jq -c '.pull_request | {number, base_ref: .base.ref, head_ref: .head.ref, head_sha: .head.sha}' "${GITHUB_EVENT_PATH:?}")
-run=$(gh api "repos/$repo/actions/artifacts?name=hotpath-$base&per_page=100" \
-  --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
-if [[ -n $run ]] && gh run download "$run" -R "$repo" -n "hotpath-$base" -D "$dir/found" \
-  && compgen -G "$dir/found/*.json" > /dev/null; then
-  token=$(curl -sS --fail -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?}" \
-    "${ACTIONS_ID_TOKEN_REQUEST_URL:?}&audience=hotpath.rs" | jq -er .value)
-  echo "::add-mask::$token"
-  for report in "$dir/found"/*.json; do
-    benchmark=$(basename "$report" .json)
-    jq --argjson pull "$pull" '
-      .meta.ci.event = "pull_request"
-      | .meta.ci.pull_request = $pull
-      | del(.meta.git.base_sha, .meta.git.ref)
-      | if .meta.policy then .meta.policy.source |= (split("\n") | map(if startswith("pr_check") then "pr_check = \"off\"" else . end) | join("\n")) else . end
-    ' "$report" > "$dir/upload.json"
-    status=$(curl -sS -X POST "${HOTPATH_API_URL:-https://hotpath.rs}/api/v1/reports" \
-      --url-query "benchmark=$benchmark" -H "Authorization: Bearer $token" \
-      -H "Content-Type: application/json" --data-binary @"$dir/upload.json" \
-      -o "$dir/response.json" -w '%{http_code}')
-    if [[ $status != 200 && $status != 201 ]]; then
-      echo "hotpath.rs refused $benchmark's base report (HTTP $status): $(head -c 2000 "$dir/response.json")" >&2
-      exit 1
-    fi
-    echo "uploaded $benchmark's base report from hotpath-$base (run $run)"
-  done
-  exit 0
-fi
-echo "no run kept hotpath-$base: building and running the base here"
-head=$(git rev-parse HEAD)
-git fetch --quiet --depth=1 origin "$base"
-git checkout --quiet --detach "$base"
-trap 'git checkout --quiet --detach "$head"' EXIT
-for spec in "${series[@]}"; do
-  IFS=: read -r name package bench <<< "$spec"
-  for benchmark in "$name" "$name-timing"; do
-    [[ -f "$root/hotpath/$benchmark-policy.toml" ]] || continue
-    awk '/^pr_check *=/ { print "pr_check = \"off\""; next } { print }' \
-      "$root/hotpath/$benchmark-policy.toml" > "$dir/policy/$benchmark-policy.toml"
-    HOTPATH_BENCHMARK=$benchmark HOTPATH_POLICY_PATH="$dir/policy/$benchmark-policy.toml" \
-      HOTPATH_UPLOAD_RESPONSE_PATH="$dir/$benchmark-response.json" \
-      HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$dir/measured/$benchmark.json" \
-      "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
-    test -s "$dir/$benchmark-response.json"
-  done
-done
-{% endraw %}'''
-
 # A commit's hotpath runs judged against its base's, several a side
-# (crates/workflow-hotpath-guard/src/judge.rs). On a pull request the judge
-# reads only the rows under each policy's share floor: hotpath Cloud judges
-# the rows at and over it on one report a side, and skips the rest. With
-# `--all`, on main's push against the commit main stood at before it (the
-# push's `before`, never its first parent: a chain pushed by hand brings
-# several commits), the judge reads every row, which hotpath Cloud never
-# judges on a push. The base's runs are the artifact `hotpath-runs-<base>`
-# its own run kept, never measured here; without one nothing is judged,
-# said once. Each series is judged as `<series>-<scope>` under its
-# allocation policy and, when `ci:hotpath` wrote a timing policy for it (the
-# change reaches the series), as `<series>-timing-<scope>` under that one,
-# its ignore included, `<scope>` being `band` or, with `--all`, `push`. Each
-# judgement's check run body is written to target/hotpath/judged/, which
-# the job keeps for the poster: the job running the change's code holds no
-# token to post a check. Arguments: `--all`, then each series' name.
-# GITHUB_REPOSITORY, CI_BASE_SHA, CI_HEAD_SHA and GH_TOKEN describe the run.
+# (crates/workflow-hotpath-guard/src/judge.rs), on each push to `landing`
+# against the commit `landing` stood at before it (#6993; the push's
+# `before`, never its first parent: a group brings several merges). The
+# judge reads every row, which hotpath Cloud never judges on a push. The
+# base's runs are the artifact `hotpath-runs-<base>` its own run kept, never
+# measured here; without one nothing is judged, said once. Each series is
+# judged as `<series>-push` under its allocation policy and, when
+# `ci:hotpath` wrote a timing policy for it, as `<series>-timing-push` under
+# that one, its ignore included. Each judgement's check run body is written
+# to target/hotpath/judged/, which the job keeps for the poster: the job
+# running the change's code holds no token to post a check. Arguments: each
+# series' name. GITHUB_REPOSITORY, CI_BASE_SHA, CI_HEAD_SHA and GH_TOKEN
+# describe the run.
 ["ci:hotpath-judge"]
 description = "Judge a commit's hotpath runs against its base's, several a side"
 usage = '''
-flag "--all" help="judge every row, as main's push does, not only those under the share floor"
 arg "<series>..." help="each series by name"
 '''
 run = '''
@@ -946,12 +855,7 @@ dir="$scratch/judged"
 rm -rf "$dir"
 mkdir -p "$dir/base" "$dir/checks"
 eval "series=(${usage_series:?})"
-scope=band
-band=(--band)
-if [[ ${usage_all:-false} == true ]]; then
-  scope=push
-  band=()
-fi
+scope=push
 run=$(gh api "repos/$repo/actions/artifacts?name=hotpath-runs-$base&per_page=100" \
   --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
 if [[ -z $run ]] || ! gh run download "$run" -R "$repo" -n "hotpath-runs-$base" -D "$dir/base"; then
@@ -977,7 +881,7 @@ for name in "${series[@]}"; do
     for report in "${head_runs[@]}"; do runs+=(--head-run "$report"); done
     "$root/.config/mise/scope" cargo run --locked --quiet --profile test --package gandr-workflow-hotpath-guard --bin hotpath-judge -- \
       --repository "$repo" --head "$head" --base "$base" --benchmark "$benchmark-$scope" \
-      --policy "$policy" "${band[@]}" --output "$dir/checks/$benchmark-$scope.json" "${runs[@]}"
+      --policy "$policy" --output "$dir/checks/$benchmark-$scope.json" "${runs[@]}"
   done
 done
 {% endraw %}'''
@@ -993,15 +897,17 @@ done
 description = "A commit's hotpath checks, filed on each regressed function's issue"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --bin hotpath-guard --"
 
-# A landing's hotpath verdicts, read on main's push from each merged pull
-# request's `hotpath / <benchmark>` checks (the number from each landing
-# merge's `(#n)` suffix, the checks on the pull request's head). A merge
-# queue lands a stack in one push, so every merge commit after the push's
-# base (HOTPATH_PUSH_BEFORE) is read, through the compare API: the checkout
-# holds one commit. Only a merge names its pull request: a branch commit the
-# merge brings may end its subject with an issue's number, as `(#1216)` did,
-# and is never read. A number that names no pull request is skipped with a
-# note. Each red check and each report that improves past its policy's
+# A landing's hotpath verdicts, read on each push to `landing` from the
+# `hotpath / <benchmark>` checks `hotpath-judged` posts on the pushed commit
+# (#6993): the push lands a group, and the group's verdict is each of its
+# pull requests' row. The numbers come from each landing merge's `(#n)`
+# suffix. A merge queue lands a group in one push, so every merge commit
+# after the push's base (HOTPATH_PUSH_BEFORE) is read, through the compare
+# API: the checkout holds one commit. Only a merge names its pull request: a
+# branch commit the merge brings may end its subject with an issue's number,
+# as `(#1216)` did, and is never read. A number that names no pull request is
+# skipped with a note. Each red check and each report that improves past its
+# policy's
 # band is a row of the open `Hotpath: the landed deltas` tracking issue, whose
 # body the task rewrites in place through `.config/hotpath/landed.jq` (#3596,
 # its cases held by `check:hotpath`): its prose kept, its rows collapsed under
@@ -1035,20 +941,20 @@ fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 : > "$scratch/rows"
+gh api --paginate "repos/$repo/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+  --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, summary: (.output.summary // "")}' \
+  | jq -s . > "$scratch/runs.json"
 landed=0
 while IFS=' ' read -r commit subject; do
   [[ $subject =~ \(#([0-9]+)\)$ ]] || continue
   pr=${BASH_REMATCH[1]}
-  if ! head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2> /dev/null); then
+  if ! gh pr view "$pr" --repo "$repo" --json number > /dev/null 2>&1; then
     echo "#$pr names no pull request; skipped"
     continue
   fi
   landed=$((landed + 1))
-  gh api --paginate "repos/$repo/commits/$head/check-runs?per_page=100" \
-    --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, summary: (.output.summary // "")}' \
-    | jq -s . > "$scratch/runs.json"
   if [[ $(jq length "$scratch/runs.json") == 0 ]]; then
-    echo "#$pr carries no hotpath check"
+    echo "#$pr: the push carries no hotpath check"
     continue
   fi
   issues=$(gh issue list --repo "$repo" --state all --label kind:performance --limit 100 \
@@ -1116,21 +1022,21 @@ echo "ledger #$ledger"
 cat "$scratch/rows"
 {% endraw %}'''
 
-# Main's hotpath reports not uploaded (#2641): each benchmark `ci:hotpath`
-# could not upload on main's push (HOTPATH_UNSENT, space-separated) is a row
-# of one open `kind:ci` issue, `ci: hotpath reports not uploaded on main`,
-# opened by the first and updated by each later one; `.config/hotpath/
-# unsent.jq` writes its body. The row links the run, whose `hotpath-<commit>`
-# artifact keeps the measurements. GH_REPO names the repository;
-# GITHUB_SERVER_URL, GITHUB_RUN_ID and GITHUB_SHA the run.
+# Landing's hotpath reports not uploaded (#2641, #6993): each benchmark
+# `ci:hotpath` could not upload on a push to `landing` (HOTPATH_UNSENT,
+# space-separated) is a row of one open `kind:ci` issue, `ci: hotpath reports
+# not uploaded on landing`, opened by the first and updated by each later
+# one; `.config/hotpath/unsent.jq` writes its body. The row links the run,
+# whose `hotpath-<commit>` artifact keeps the measurements. GH_REPO names
+# the repository; GITHUB_SERVER_URL, GITHUB_RUN_ID and GITHUB_SHA the run.
 ["ci:hotpath-unsent"]
-description = "File main's hotpath reports not uploaded on one kind:ci issue"
+description = "File landing's hotpath reports not uploaded on one kind:ci issue"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 repo=${GH_REPO:?}
-title='ci: hotpath reports not uploaded on main'
+title='ci: hotpath reports not uploaded on landing'
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 gh issue list --repo "$repo" --state open --label kind:ci --search "\"$title\" in:title" --json number,title,body \
@@ -1150,12 +1056,13 @@ else
 fi
 '''
 
-# A landing's surviving mutants, read on main's push from each merged pull
-# request's mutants comment, the one the `report the mutants of the change`
-# lane last posted (`mutants:changed`, #1456). A merge queue lands a stack in
-# one push, so every merge commit after the push's base (MUTANTS_PUSH_BEFORE)
-# is read through the compare API, as `ci:hotpath-landed` reads them, and a
-# number that names no pull request is skipped with a note. Each pull
+# A landing's surviving mutants, read on each push to `landing` (#6993) from
+# each merged pull request's mutants comment, the one the `report the
+# mutants of the change` lane of the same push posted (`mutants:changed`,
+# #1456). The queue lands a group in one push, so every merge commit after
+# the push's base (MUTANTS_PUSH_BEFORE) is read through the compare API, as
+# `ci:hotpath-landed` reads them, and a number that names no pull request is
+# skipped with a note. Each pull
 # request whose report names a survivor gets one issue, `test: #<n> leaves <k>
 # mutant(s) alive`. A later landing of the same number updates it in place.
 # Its labels are kind:gap, `collector` (#2537), the pull request's `area:`

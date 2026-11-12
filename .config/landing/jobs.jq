@@ -19,10 +19,20 @@
 # `!contains(…, 'build-state-<state>--')`. Without it, no run of main writes
 # the state, and each night builds cold.
 #
-# Input: `{jobs, landing, states}`. `jobs` is `.github/workflows/ci.yml`'s
-# `jobs`, anchors expanded. `landing` is the list of tasks that
-# `check:landing` depends on. `states` is the build states that
-# `.github/workflows/nightly.yml` restores, none when absent.
+# A push to `landing` runs the report lanes alone (#6993): each job whose
+# `if` names `landed == 'true'` or the push to `landing`, the jobs they need,
+# and the jobs that read them. Any other job that can run on that push is a
+# fault. A job can run on it when its `if` holds no `github.event_name ==`
+# test, or tests `== 'push'` other than as main's push, or tests another
+# event with `!=`. Its `if` holds `landed != 'true'` or `github.event_name !=
+# 'push'` to skip it. The fault applies only when `pushes`, the branches of
+# the workflow's `on.push`, holds `landing`.
+#
+# Input: `{jobs, landing, states, pushes}`. `jobs` is
+# `.github/workflows/ci.yml`'s `jobs`, anchors expanded. `landing` is the
+# list of tasks that `check:landing` depends on. `states` is the build states
+# that `.github/workflows/nightly.yml` restores, none when absent. `pushes`
+# is the branches of `on.push`, none when absent.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 
 def skip: "github.event.merge_group.base_ref != 'refs/heads/landing'";
@@ -54,6 +64,19 @@ def closure($jobs):
   | ([$names[] | ($jobs[.] // {}) | needed[]] + $names | unique) as $next
   | if $next == $names then $names else $next | closure($jobs) end;
 
+def landed: "needs.prepare.outputs.landed != 'true'";
+
+def main_push: "github.event_name == 'push' && github.ref == 'refs/heads/main'";
+
+def reports: condition | (contains("needs.prepare.outputs.landed == 'true'") or contains("github.ref == 'refs/heads/landing'"));
+
+def pushes:
+  (condition | gsub(main_push; "")) as $if
+  | ($if | contains(landed) or contains("github.event_name != 'push'")) as $skipped
+  | (condition | test("github\\.event_name == ") | not) as $eventless
+  | ($if | contains("github.event_name == 'push'") or contains("github.event_name != '")) as $pushed
+  | ($skipped | not) and ($eventless or $pushed);
+
 .landing as $landing
 | .jobs as $jobs
 | [$jobs | to_entries[] | select(.key != "template" and (.value | grouped) and (.value | skips | not))] as $running
@@ -80,4 +103,14 @@ def closure($jobs):
     | "`\(.key)` runs Clippy on a pull request on `landing`: add `\(pull)` to its `if` (#5439)"),
   ((.states // [])[] as $state
     | select(any($jobs[]; saves($state) and (condition | contains(unheld($state)))) | not)
-    | "no job saves `\($state)` on a push to main whose queue run holds none, so the nightly restores no state and builds cold: add `\(unheld($state))` to the `if` of the job that saves it (#6790)")]
+    | "no job saves `\($state)` on a push to main whose queue run holds none, so the nightly restores no state and builds cold: add `\(unheld($state))` to the `if` of the job that saves it (#6790)"),
+  (if (.pushes // []) | index("landing") then
+     ([$jobs | to_entries[] | select(.value | reports) | .key]) as $lanes
+     | ($lanes | closure($jobs)) as $reached
+     | $jobs
+     | to_entries[]
+     | select(.key != "template" and (.key | IN($reached[]) | not))
+     | select(any(.value | needed[]; IN($lanes[])) | not)
+     | select(.value | pushes)
+     | "`\(.key)` can run on a push to `landing` outside its report lanes: add `\(landed)` to its `if` (#6993)"
+   else empty end)]
