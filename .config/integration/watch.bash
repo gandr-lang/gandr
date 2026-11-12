@@ -161,7 +161,10 @@ watch_checkout() {
 # slot to it. Its enforcing suite runs over the whole workspace, where a
 # lane's runs the touched packages and the dispatcher (#6812), and past its
 # first red (`GATE_TEST_EVERY_RED`, #6750). A line that names one test runs
-# each test of that name (`watch_test`).
+# each test of that name (`watch_test`). A line of one check runs the gate
+# code of commit `$1`, and a commit before #6638 knows no background gate. So
+# the run exports `GANDR_GATE_SLOT`, and `.config/mise/gated` of each commit
+# since #4911 takes no lock and no slot for it (#6699).
 watch_run() {
   local commit=$1 check=$2 log=$3
   watch_checkout "$commit"
@@ -175,7 +178,7 @@ watch_run() {
       && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
       && GATE_TEST_SCOPE=$(GATE_TEST_EVERY_RED=1 .config/gate-scope/test-scope.bash 2> /dev/null) \
       && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_TEST_SCOPE \
-      && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$log" 2>&1
+      && GANDR_GATE_SLOT=background nice -n 19 mise run "$check") > "$log" 2>&1
   fi
 }
 
@@ -193,7 +196,7 @@ watch_test() {
   (cd "$watch_tree" \
     && GATE_TEST_SCOPE="--workspace --no-tests=pass -E 'test(=$test)'" \
     && export GATE_TEST_SCOPE \
-    && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$2" 2>&1 && return 0
+    && GANDR_GATE_SLOT=background nice -n 19 mise run "$check") > "$2" 2>&1 && return 0
   while IFS= read -r line; do
     line=${line%"${line##*[! ]}"}
     if [[ $line =~ (FAIL|TIMEOUT|ABORT|SIG[A-Z]+)\ +\[ && $line == *" $binary $test" ]]; then
