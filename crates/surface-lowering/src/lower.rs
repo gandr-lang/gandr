@@ -5477,7 +5477,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — each table's [`NodeTable::share`] or
-    ///   [`crate::module::Layered::share`] states its own clause.
+    ///   [`gandr_surface_lowering_base::layered::Layered::share`] states its
+    ///   own clause.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a document resumed after its closure lowers as the
