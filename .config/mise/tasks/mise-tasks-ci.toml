@@ -288,12 +288,39 @@ run = [
 # nights it states.
 # Every other profile visits each sweep's stated sample; `--profile sweeps`
 # visits the whole corpus in every sweep. The run builds into the enforcing
-# gate's target directory, which the nightly workflow restores.
+# gate's target directory. The nightly workflow restores it on a hosted
+# runner, and a runner of our own keeps it (`.config/nightly/tree.bash`).
 # GANDR_SWEEP_NIGHT=<day> replays another night.
 ["ci:sweeps-nightly"]
 description = "Every sweep with specifications enforced, the costliest over the night's slice"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = ".config/mise/enforcing .config/mise/scope cargo nextest run --workspace --locked --profile nightly"
+
+# The night's recovery sweep (a step of `nightly.yml`'s `sweeps`, #1782):
+# every literal tile of every syntax exemplar missed and deleted, built into
+# the enforcing target directory as `ci:sweeps-nightly` builds. The report
+# goes to `recovery.out/report.txt`, which `reports` files from
+# (`ci:recovery-file`).
+# The causes and the count go to the job summary, so the whole backlog shows
+# whether or not it is filed.
+["ci:recovery-nightly"]
+description = "The recovery sweep over the syntax exemplars, its causes in the job summary"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+env.CARGO_RESOLVER_FEATURE_UNIFICATION = "workspace"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p recovery.out
+.config/mise/enforcing mise run ledger:recovery recovery.out/report.txt > recovery.out/causes.txt
+{
+  echo '## Recovery sweep'
+  echo
+  grep -e ' mutants swept: ' recovery.out/causes.txt
+  echo
+  sed -n 's/^cause: /- /p' recovery.out/causes.txt
+} >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+'''
 
 # Each crate's tests with every feature it declares on, which no gate builds:
 # the gate tests each crate with its default features alone (#1785). A crate
