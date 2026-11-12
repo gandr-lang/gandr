@@ -60,6 +60,12 @@ def release:
   [(. // "") | unfenced | capture(alone("<!-- released: lane=(?<lane>[^ \\n]+) at=(?<at>[^ \\n]+) -->"))
     | {lane, at: (.at | fromdateiso8601)}][0];
 
+# A body's release while it keeps the issue for its lane, `{lane, at}`, or
+# nothing. A lane keeps its continuation for 2 hours after its release
+# (#3915). In that time `claim:next` offers the issue to that lane first, and
+# `claim:next` and `claim:take` refuse it to every other lane.
+def kept($now): release | select(. != null and $now - .at < 7200);
+
 # The claim and release markers a body carries alone on their lines, in
 # order, each without its blank text.
 def markers: [(. // "") | unfenced | scan(alone("<!-- (?:claim|released): [^>\\n]*-->")) | gsub("^\\s+|\\s+$"; "")];

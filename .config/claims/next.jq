@@ -120,8 +120,6 @@ def quoted($marked): [axes[] | . as $axis | select($marked | index($axis)) | "`\
 def blocked($live): $live["\(.number)"] as $read
   | if $read != null then $read | length > 0 else (.blocked // 0) > 0 end;
 
-# A release within the 2 hours a lane keeps its continuation (#3915).
-def kept($now): .body | release | select(. != null and $now - .at < 7200);
 # The lane a branch names: the longest key of `$lanes` the branch is, or
 # opens with before a `-`, or null.
 def branch_lane($lanes):
@@ -177,9 +175,9 @@ def observation($refusals):
    end) as $held
 | ($held[] | "held: #\(.number) \(.title)"), (
   [.issues[] | select(candidate and unclaimed($lane)) | . as $issue | select([$prs[] | names($issue.number)] | any | not)
-    | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
+    | select($lane == null or ([.body | kept($now) | .lane != $lane] | any | not))] as $open
 | [
-    ($open | map(select([kept($now) | .lane == $lane] | any)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
+    ($open | map(select([.body | kept($now) | .lane == $lane] | any)) | sort_by(-(.body | kept($now) | .at), .number) | .[] | [., "released"]),
     (.issues
       | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and unclaimed($lane) and open_rows > 0))
       | sort_by(.number) | .[] | [., "collector"]),
