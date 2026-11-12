@@ -1754,7 +1754,8 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The admitted declarations and what a check reads beside them.
+/// The admitted declarations and what a check reads beside them: the view's
+/// part of the log, which every view shares under one `Arc`.
 #[derive(Clone, Debug, Default)]
 struct EntryLog
 {
@@ -1769,6 +1770,17 @@ struct EntryLog
     /// The positions of the plain definitions named by their content, by the
     /// digest of their declared type and body, by rank ascending.
     definitions: BTreeMap<ContentDigest, Vec<ConstantIndex>>,
+    /// How many slots are vacancies.
+    vacancies: usize,
+}
+
+/// What the committer alone reads and writes beside the entries: the
+/// committer's own part of the log. An environment holds it outside the
+/// `Arc` of [`EntryLog`], and no view holds it, so a check has no path to
+/// it. A commit while a view lives copies the view's part alone.
+#[derive(Clone, Debug, Default)]
+struct CommitLog
+{
     /// The entries that name each position: the reverse of each entry's
     /// direct references.
     dependents: crate::dependents::Dependents,
@@ -1779,8 +1791,6 @@ struct EntryLog
     ranked: BTreeMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
     order: Order,
-    /// How many slots are vacancies.
-    vacancies: usize,
 }
 
 /// The slot at one position of the entries: an admitted declaration, or the
@@ -2155,32 +2165,6 @@ impl Entries
         self.live(position).map(AdmittedDeclaration::rank)
     }
 
-    /// The position of the live entry that holds `rank`, if one holds it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub(crate) fn ranked(
-        &self,
-        rank: SourceRank,
-    ) -> Option<ConstantIndex>
-    {
-        self.log.as_deref()?.ranked.get(&rank).copied()
-    }
-
-    /// The positions of the live entries, in rank order.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn in_rank_order(&self) -> impl Iterator<Item = ConstantIndex> + '_
-    {
-        self.log
-            .as_deref()
-            .into_iter()
-            .flat_map(|log| log.ranked.values().copied())
-    }
-
     /// The entries that the check of the live entry at `position` reads
     /// first, as its support joins them: each position that its content
     /// names, each followed by the types of words over it that rank below the
@@ -2207,70 +2191,6 @@ impl Entries
         })
     }
 
-    /// The place of each live position in rank order, which the export of a
-    /// kept environment writes for that position.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: absent as [`places::Absent::InOrder`] while no entry is
-    ///   retired and each entry is admitted at a rank above each earlier
-    ///   entry's rank; then each live position is its own place, and the answer
-    ///   reads no entry. Otherwise each live position's place is its index in
-    ///   [`Self::in_rank_order`].
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a kept environment over the kernel's generated
-    ///   sources exports the bytes of a fresh admission for each class of edit;
-    ///   an environment with nothing retired builds no places.
-    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    /// - witness: `env::tests::an_inserted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::a_deleted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::a_moved_admission_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::an_unedited_source_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::an_export_by_position_after_a_retire_differs_6845`
-    #[inline]
-    #[spec(ensures: |ret| match ret {
-        Maybe::Present(ref places) => self
-            .in_rank_order()
-            .enumerate()
-            .all(|(place, position)| places.place(position) == Some(ConstantIndex::from(place))),
-        Maybe::Absent(places::Absent::InOrder) => self
-            .in_rank_order()
-            .enumerate()
-            .all(|(place, position)| usize::from(position) == place)
-            && self.in_rank_order().count() == usize::from(self.len()),
-    })]
-    pub fn places(&self) -> Maybe<gandr_kernel_term::Places, places::Absent>
-    {
-        match self.log.as_deref() {
-            Some(log) if log.order == Order::Ranked => {
-                Maybe::Present(gandr_kernel_term::Places::new(
-                    log.ranked.values().copied(),
-                    ConstantIndex::from(log.family.len()),
-                ))
-            },
-            Some(_) | None => Maybe::Absent(places::Absent::InOrder),
-        }
-    }
-
-    /// The rank past every rank a live entry holds.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn past_ranks(&self) -> SourceRank
-    {
-        self.log
-            .as_deref()
-            .and_then(|log| log.ranked.last_key_value())
-            .map_or_else(
-                || SourceRank::from(0_usize),
-                |(&rank, _)| SourceRank::from(usize::from(rank).saturating_add(1)),
-            )
-    }
-
     /// The entry key of the live declaration at `position`, read outside any
     /// support; absent as unkeyed for a retired entry and past the last
     /// entry.
@@ -2287,52 +2207,6 @@ impl Entries
             Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed),
             AdmittedDeclaration::key,
         )
-    }
-
-    /// How many generative admissions ranked below `below` hold the content
-    /// key `content`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub(crate) fn generative_count(
-        &self,
-        content: crate::verdict::VerdictKey,
-        below: SourceRank,
-    ) -> crate::verdict::KeyedCount
-    {
-        crate::verdict::KeyedCount::from(
-            self.log
-                .as_deref()
-                .and_then(|log| log.generative.get(&content))
-                .map_or(0, |positions| {
-                    positions
-                        .iter()
-                        .filter(|&&position| {
-                            self.rank_of(position).is_some_and(|rank| rank < below)
-                        })
-                        .count()
-                }),
-        )
-    }
-
-    /// Note the generative admission at `position`, whose content key is
-    /// `content`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub(crate) fn generative(
-        &mut self,
-        content: crate::verdict::VerdictKey,
-        position: ConstantIndex,
-    )
-    {
-        self.log_mut()
-            .generative
-            .entry(content)
-            .or_default()
-            .push(position);
     }
 
     /// The position of the ruled definition whose body thunks the fixpoint
@@ -2410,67 +2284,6 @@ impl Entries
         positions.get(.. held).unwrap_or_default()
     }
 
-    /// The reach of an edit to the entries at `edited`: each of them, with
-    /// each entry whose support holds an entry of the reach, ascending; a
-    /// retired entry stands in no reach.
-    ///
-    /// An entry outside the reach keeps its whole verdict input: the entries
-    /// that its support holds are outside the reach too. So a readmission
-    /// offers the kernel the reach of an edit, and nothing else.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: ascending, each once, each below [`Self::len`] and each live;
-    ///   each live edited position below it, and each live entry whose support
-    ///   holds an entry of the result through its direct references, its mutual
-    ///   block or a type of words admitted before it over a sort that it holds.
-    /// - provides: the entries whose verdict an edit can change.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the reach of each edit of a generated environment
-    ///   equals the entries whose support holds an edited entry, after refused
-    ///   blocks roll back, and a type of words reaches an entry after it
-    ///   through its sort and no entry before it.
-    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
-    /// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
-    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| usize::from(position) < usize::from(self.len())))]
-    #[inline]
-    #[must_use]
-    pub fn reach<Edited>(
-        &self,
-        edited: Edited,
-    ) -> Box<[ConstantIndex]>
-    where
-        Edited: IntoIterator<Item = ConstantIndex>,
-    {
-        let Some(log) = self.log.as_deref()
-        else {
-            return Box::default();
-        };
-        let words = |position: ConstantIndex| {
-            let entry = log.family.get(usize::from(position))?.admitted()?;
-            let sort = entry.declaration.presentation().cells()?.sort();
-            let mut over = log.presentations.over(sort);
-            over.any(|words| words == position).then_some(sort)
-        };
-        let reached = crate::dependents::reach(&log.dependents, words, log.family.len(), edited);
-        // A retired entry keeps its rows in the reverse index, so the walk
-        // can pass through it; the reach holds the live entries alone.
-        if reached
-            .iter()
-            .all(|&position| self.live(position).is_some())
-        {
-            return reached;
-        }
-        reached
-            .iter()
-            .copied()
-            .filter(|&position| self.live(position).is_some())
-            .collect()
-    }
-
     /// These entries and the support of the check that runs, for a reading
     /// the check makes.
     ///
@@ -2536,9 +2349,7 @@ impl Entries
     ///   its content in `arena`, at a rank no entry holds.
     /// - ensures: one more entry; the presentations hold its presented type and
     ///   the type of words it is over its sort, the ruled index its fixpoint,
-    ///   the role index its role, the digest index its content name, the rank
-    ///   index its rank, and the reverse index a row for each of its direct
-    ///   references.
+    ///   the role index its role, and the digest index its content name.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2576,15 +2387,6 @@ impl Entries
         if let ConstantName::Definition { digest, .. } = entry.key_name {
             place_definition(&log.family, &mut log.definitions, digest, (position, rank));
         }
-        if log
-            .ranked
-            .last_key_value()
-            .is_some_and(|(&last, _)| last > rank)
-        {
-            log.order = Order::Ranked;
-        }
-        let _previous = log.ranked.insert(rank, position);
-        log.dependents.admit(position, &entry.references);
         log.family.push(Slot::Admitted(entry));
     }
 
@@ -2594,9 +2396,7 @@ impl Entries
     /// # Specification
     /// - requires: the declaration staged at the next position is refused, and
     ///   the arena holds none of its content.
-    /// - ensures: one more slot, which no read sees and no table holds; each
-    ///   live position's place in rank order is read through [`Self::places`]
-    ///   from now on.
+    /// - ensures: one more slot, which no read sees and no table holds.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2607,9 +2407,6 @@ impl Entries
     pub(crate) fn vacate(&mut self)
     {
         let log = self.log_mut();
-        let position = ConstantIndex::from(usize::from(log.family.len()));
-        log.order = Order::Ranked;
-        log.dependents.admit(position, &[]);
         log.vacancies = log.vacancies.saturating_add(1);
         log.family.push(Slot::Vacant);
     }
@@ -2617,15 +2414,14 @@ impl Entries
     /// Retire the live entry at `position`: no read sees it after, and its
     /// rank is free.
     ///
-    /// The entry keeps its position, its content and its rows in the reverse
-    /// index, the role index and the generative index. A reader of those
-    /// indexes reads the live entries alone, through their ranks.
+    /// The entry keeps its position, its content and its row in the role
+    /// index. A reader of that index reads the live entries alone, through
+    /// their ranks.
     ///
     /// # Specification
     /// - requires: the entry at `position` stands live.
-    /// - ensures: the entry is retired; the rank index, the digest index and
-    ///   the presentations hold no row of it; every other entry and row is
-    ///   unchanged.
+    /// - ensures: the entry is retired; the digest index and the presentations
+    ///   hold no row of it; every other entry and row is unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses state the tables before and after the
@@ -2648,11 +2444,7 @@ impl Entries
             return;
         };
         entry.kind = EntryKind::Retired;
-        log.order = Order::Ranked;
-        let (rank, key_name) = (entry.rank, entry.key_name);
-        if log.ranked.get(&rank) == Some(&position) {
-            let _freed = log.ranked.remove(&rank);
-        }
+        let key_name = entry.key_name;
         if let ConstantName::Definition { digest, .. } = key_name
             && let Some(positions) = log.definitions.get_mut(&digest)
         {
@@ -2667,9 +2459,8 @@ impl Entries
     /// # Specification
     /// - requires: the entry at `position` is retired, and no live entry holds
     ///   `rank`.
-    /// - ensures: the entry stands live at `rank` under `key_name`; the rank
-    ///   index, the digest index, the ruled index and the presentations hold
-    ///   its rows at `rank`.
+    /// - ensures: the entry stands live at `rank` under `key_name`; the digest
+    ///   index, the ruled index and the presentations hold its rows at `rank`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses state the tables before and after the
@@ -2701,7 +2492,6 @@ impl Entries
             ref mut presentations,
             ref mut ruled,
             ref mut definitions,
-            ref mut ranked,
             ..
         } = *log;
         let Some(entry) = family.get(usize::from(position)).and_then(Slot::admitted)
@@ -2723,7 +2513,6 @@ impl Entries
         if let ConstantName::Definition { digest, .. } = key_name {
             place_definition(family, definitions, digest, (position, rank));
         }
-        let _previous = ranked.insert(rank, position);
     }
 
     /// Keep the first `length` entries, dropping later ones and their rows in
@@ -2752,13 +2541,14 @@ impl Entries
         let first = ConstantIndex::from(length);
         let log = self.log_mut();
         let dropped = usize::from(log.family.len()).saturating_sub(usize::from(length));
-        for slot in log.family.iter().rev().take(dropped) {
-            match *slot {
-                Slot::Admitted(ref entry) => log.dependents.forget(&entry.references),
-                Slot::Vacant => log.vacancies = log.vacancies.saturating_sub(1),
-            }
-        }
-        log.dependents.truncate(first);
+        let vacant = log
+            .family
+            .iter()
+            .rev()
+            .take(dropped)
+            .filter(|slot| slot.admitted().is_none())
+            .count();
+        log.vacancies = log.vacancies.saturating_sub(vacant);
         log.family.truncate(length);
         log.presentations.forget_from(first);
         log.ruled.retain(|_, &mut position| position < first);
@@ -2770,11 +2560,6 @@ impl Entries
             positions.retain(|&position| position < first);
             !positions.is_empty()
         });
-        log.generative.retain(|_, positions| {
-            positions.retain(|&position| position < first);
-            !positions.is_empty()
-        });
-        log.ranked.retain(|_, &mut position| position < first);
     }
 
     /// Share every entry with every clone made after.
@@ -2882,6 +2667,253 @@ impl Entries
             || gandr_kernel_term::ArenaLength::from(0_usize),
             crate::weakening::Support::reads,
         )
+    }
+}
+
+impl CommitLog
+{
+    /// The position of the live entry that holds `rank`, if one holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn ranked(
+        &self,
+        rank: SourceRank,
+    ) -> Option<ConstantIndex>
+    {
+        self.ranked.get(&rank).copied()
+    }
+
+    /// The positions of the live entries, in rank order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn in_rank_order(&self) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        self.ranked.values().copied()
+    }
+
+    /// The rank past every rank a live entry holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn past_ranks(&self) -> SourceRank
+    {
+        self.ranked.last_key_value().map_or_else(
+            || SourceRank::from(0_usize),
+            |(&rank, _)| SourceRank::from(usize::from(rank).saturating_add(1)),
+        )
+    }
+
+    /// The place of each live position in rank order, among `length` slots:
+    /// absent while each live position is its own place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn places(
+        &self,
+        length: gandr_kernel_term::ArenaLength,
+    ) -> Maybe<gandr_kernel_term::Places, places::Absent>
+    {
+        match self.order {
+            Order::Ranked => Maybe::Present(gandr_kernel_term::Places::new(
+                self.ranked.values().copied(),
+                ConstantIndex::from(length),
+            )),
+            Order::Positional => Maybe::Absent(places::Absent::InOrder),
+        }
+    }
+
+    /// How many generative admissions of `entries` ranked below `below` hold
+    /// the content key `content`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn generative_count(
+        &self,
+        entries: &Entries,
+        content: crate::verdict::VerdictKey,
+        below: SourceRank,
+    ) -> crate::verdict::KeyedCount
+    {
+        crate::verdict::KeyedCount::from(self.generative.get(&content).map_or(0, |positions| {
+            positions
+                .iter()
+                .filter(|&&position| entries.rank_of(position).is_some_and(|rank| rank < below))
+                .count()
+        }))
+    }
+
+    /// Note the generative admission at `position`, whose content key is
+    /// `content`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn generative(
+        &mut self,
+        content: crate::verdict::VerdictKey,
+        position: ConstantIndex,
+    )
+    {
+        self.generative.entry(content).or_default().push(position);
+    }
+
+    /// Take the rows of the entry admitted at `position` and `rank`, which
+    /// names `references`.
+    ///
+    /// # Specification
+    /// - requires: `position` is the next position, and no live entry holds
+    ///   `rank`.
+    /// - ensures: the rank index holds `rank` at `position`; the reverse index
+    ///   holds a row for each of `references`; the order is ranked once `rank`
+    ///   stands below the rank of an earlier entry.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the tables before and after the
+    ///   change, which a predicate may not capture whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::add_decl`].
+    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    fn admit(
+        &mut self,
+        (position, rank): (ConstantIndex, SourceRank),
+        references: &[ConstantIndex],
+    )
+    {
+        if self
+            .ranked
+            .last_key_value()
+            .is_some_and(|(&last, _)| last > rank)
+        {
+            self.order = Order::Ranked;
+        }
+        let _previous = self.ranked.insert(rank, position);
+        self.dependents.admit(position, references);
+    }
+
+    /// Take the vacancy at `position`: a row of no reference, and the order
+    /// ranked from now on.
+    ///
+    /// # Specification
+    /// trivial.
+    fn vacate(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        self.order = Order::Ranked;
+        self.dependents.admit(position, &[]);
+    }
+
+    /// Free `rank`, which the entry retired at `position` held.
+    ///
+    /// # Specification
+    /// trivial.
+    fn retire(
+        &mut self,
+        (position, rank): (ConstantIndex, SourceRank),
+    )
+    {
+        self.order = Order::Ranked;
+        if self.ranked.get(&rank) == Some(&position) {
+            let _freed = self.ranked.remove(&rank);
+        }
+    }
+
+    /// Hold `rank` at `position` again, for the entry that stands live there
+    /// again.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reinstate(
+        &mut self,
+        (position, rank): (ConstantIndex, SourceRank),
+    )
+    {
+        let _previous = self.ranked.insert(rank, position);
+    }
+
+    /// Keep the rows of the first `length` slots of `entries`, which still
+    /// hold every slot.
+    ///
+    /// # Specification
+    /// - requires: `entries` holds the slots whose rows these tables hold.
+    /// - ensures: the tables as they were when the first `length` slots were
+    ///   all.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the tables before and after the
+    ///   change, which a predicate may not capture whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block refused after one member is admitted leaves
+    ///   the rows it found.
+    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    fn truncate(
+        &mut self,
+        entries: &Entries,
+        length: gandr_kernel_term::ArenaLength,
+    )
+    {
+        let first = ConstantIndex::from(length);
+        // The reverse index drops the rows of the last entry first.
+        for at in (usize::from(length) .. usize::from(entries.len())).rev() {
+            if let Some(entry) = entries.at(at) {
+                self.dependents.forget(&entry.references);
+            }
+        }
+        self.dependents.truncate(first);
+        self.generative.retain(|_, positions| {
+            positions.retain(|&position| position < first);
+            !positions.is_empty()
+        });
+        self.ranked.retain(|_, &mut position| position < first);
+    }
+
+    /// The reach of an edit to the entries of `entries` at `edited`, as
+    /// [`Environment::reach`] states it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reach<Edited>(
+        &self,
+        entries: &Entries,
+        edited: Edited,
+    ) -> Box<[ConstantIndex]>
+    where
+        Edited: IntoIterator<Item = ConstantIndex>,
+    {
+        let Some(log) = entries.log.as_deref()
+        else {
+            return Box::default();
+        };
+        let words = |position: ConstantIndex| {
+            let entry = log.family.get(usize::from(position))?.admitted()?;
+            let sort = entry.declaration.presentation().cells()?.sort();
+            let mut over = log.presentations.over(sort);
+            over.any(|words| words == position).then_some(sort)
+        };
+        let reached = crate::dependents::reach(&self.dependents, words, log.family.len(), edited);
+        // A retired entry keeps its rows in the reverse index, so the walk
+        // can pass through it; the reach holds the live entries alone.
+        if reached
+            .iter()
+            .all(|&position| entries.live(position).is_some())
+        {
+            return reached;
+        }
+        reached
+            .iter()
+            .copied()
+            .filter(|&position| entries.live(position).is_some())
+            .collect()
     }
 }
 
@@ -3100,6 +3132,11 @@ pub struct Environment
     /// The admitted declarations, in admission order: those a freeze froze
     /// shared with every clone made after.
     entries: Entries,
+    /// The committer's own part of the log: the rank index, the order, the
+    /// reverse index and the generative index. No view holds it, so a check
+    /// reads none of it. A clone of the environment shares it, and a commit
+    /// copies it while another environment shares it.
+    commits: alloc::sync::Arc<CommitLog>,
     /// The admission floor: the watermark at the most recent admission,
     /// checked or bypassed. No rejection truncates below it.
     admission_floor: ArenaWatermark,
@@ -3204,6 +3241,7 @@ impl Environment
         Self {
             arena: self.arena.clone(),
             entries: self.entries.clone(),
+            commits: alloc::sync::Arc::clone(&self.commits),
             admission_floor: self.admission_floor,
             outstanding: self.outstanding.clone(),
             manifest: self.manifest.clone(),
@@ -3271,6 +3309,114 @@ impl Environment
     pub const fn entries(&self) -> &Entries
     {
         &self.entries
+    }
+
+    /// The positions of the live entries, in rank order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn in_rank_order(&self) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        self.commits.in_rank_order()
+    }
+
+    /// The place of each live position in rank order, which the export of a
+    /// kept environment writes for that position.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: absent as [`places::Absent::InOrder`] while no entry is
+    ///   retired, no slot is a vacancy, and each entry is admitted at a rank
+    ///   above each earlier entry's rank; then each live position is its own
+    ///   place, and the answer reads no entry. Otherwise each live position's
+    ///   place is its index in [`Self::in_rank_order`].
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each clause walks the live positions in rank order,
+    ///   and a capture runs in every build.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a kept environment over the kernel's generated
+    ///   sources exports the bytes of a fresh admission for each class of edit;
+    ///   an environment with nothing retired builds no places.
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `env::tests::an_inserted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::a_deleted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::a_moved_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::an_unedited_source_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::an_export_by_position_after_a_retire_differs_6845`
+    #[inline]
+    pub fn places(&self) -> Maybe<gandr_kernel_term::Places, places::Absent>
+    {
+        self.commits.places(self.entries.len())
+    }
+
+    /// The reach of an edit to the entries at `edited`: each of them, with
+    /// each entry whose support holds an entry of the reach, ascending; a
+    /// retired entry stands in no reach.
+    ///
+    /// An entry outside the reach keeps its whole verdict input: the entries
+    /// that its support holds are outside the reach too. So a readmission
+    /// offers the kernel the reach of an edit, and nothing else.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: ascending, each once, each below [`Entries::len`] and each
+    ///   live; each live edited position below it, and each live entry whose
+    ///   support holds an entry of the result through its direct references,
+    ///   its mutual block or a type of words admitted before it over a sort
+    ///   that it holds.
+    /// - provides: the entries whose verdict an edit can change.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the reach of each edit of a generated environment
+    ///   equals the entries whose support holds an edited entry, after refused
+    ///   blocks roll back, and a type of words reaches an entry after it
+    ///   through its sort and no entry before it.
+    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| usize::from(position) < usize::from(self.entries.len())))]
+    #[inline]
+    #[must_use]
+    pub fn reach<Edited>(
+        &self,
+        edited: Edited,
+    ) -> Box<[ConstantIndex]>
+    where
+        Edited: IntoIterator<Item = ConstantIndex>,
+    {
+        self.commits.reach(&self.entries, edited)
+    }
+
+    /// Admit `entry` after every entry: the entries and the committer's own
+    /// tables each take its rows.
+    ///
+    /// # Specification
+    /// trivial.
+    fn enter(
+        &mut self,
+        entry: AdmittedDeclaration,
+    )
+    {
+        let position = ConstantIndex::from(usize::from(self.entries.len()));
+        alloc::sync::Arc::make_mut(&mut self.commits)
+            .admit((position, entry.rank), &entry.references);
+        self.entries.push(&self.arena, entry);
+    }
+
+    /// Leave a vacancy at the next position, in the entries and in the
+    /// committer's own tables.
+    ///
+    /// # Specification
+    /// trivial.
+    fn vacate(&mut self)
+    {
+        let position = ConstantIndex::from(usize::from(self.entries.len()));
+        alloc::sync::Arc::make_mut(&mut self.commits).vacate(position);
+        self.entries.vacate();
     }
 
     /// Begin building one declaration's content into this environment's arena.
@@ -3559,13 +3705,13 @@ impl Environment
         let position = ConstantIndex::from(usize::from(self.entries.len()));
         // A declaration staged with no rank ranks past every live entry, so a
         // vacancy before it moves its position and not its rank.
-        let rank = rank.unwrap_or_else(|| self.entries.past_ranks());
+        let rank = rank.unwrap_or_else(|| self.commits.past_ranks());
         let content_end = self.arena.watermark();
         // The rejection mark: this declaration's content-start, clamped into
         // `[admission floor, content-end]`, so a rollback can neither delete an
         // admitted declaration's content nor retain a checker intermediate.
         let rejected = content_start.clamped_into(self.admission_floor, content_end);
-        if let Some(by) = self.entries.ranked(rank) {
+        if let Some(by) = self.commits.ranked(rank) {
             self.arena.truncate_to(rejected);
             return Err(KernelError::RankTaken { rank, by });
         }
@@ -3579,7 +3725,7 @@ impl Environment
                 // environment holds, and a rejected one enters none. Its
                 // position stays as a vacancy.
                 self.arena.truncate_to(rejected);
-                self.entries.vacate();
+                self.vacate();
                 return Err(error);
             },
         };
@@ -3595,9 +3741,9 @@ impl Environment
             DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
         );
         let entry_key = match content {
-            Maybe::Present(content) if generative => {
-                Maybe::Present(content.generative(self.entries.generative_count(content, rank)))
-            },
+            Maybe::Present(content) if generative => Maybe::Present(
+                content.generative(self.commits.generative_count(&self.entries, content, rank)),
+            ),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         let key = self.verdicts.key(&self.arena, (&declaration, rank));
@@ -3786,7 +3932,7 @@ impl Environment
                     admission,
                 );
                 let key_name = self.definition_name(&declaration, rank);
-                self.entries.push(&self.arena, AdmittedDeclaration {
+                self.enter(AdmittedDeclaration {
                     declaration,
                     admission,
                     rested_on,
@@ -3801,7 +3947,7 @@ impl Environment
                     unit: Unit::lone(position),
                 });
                 if let (true, Maybe::Present(content)) = (generative, content) {
-                    self.entries.generative(content, position);
+                    alloc::sync::Arc::make_mut(&mut self.commits).generative(content, position);
                 }
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
@@ -3810,7 +3956,7 @@ impl Environment
                 // Drop this declaration's content, down to the admission floor
                 // and no further. Its position stays as a vacancy.
                 self.arena.truncate_to(rejected);
-                self.entries.vacate();
+                self.vacate();
                 self.verdicts.refused();
                 Err(error)
             },
@@ -3957,10 +4103,10 @@ impl Environment
         let position = ConstantIndex::from(usize::from(self.entries.len()));
         // The bypass refuses nothing, so a held rank gives way to the rank past
         // every live one: two entries never share a rank.
-        let rank = rank.unwrap_or_else(|| self.entries.past_ranks());
-        let rank = match self.entries.ranked(rank) {
+        let rank = rank.unwrap_or_else(|| self.commits.past_ranks());
+        let rank = match self.commits.ranked(rank) {
             None => rank,
-            Some(_) => self.entries.past_ranks(),
+            Some(_) => self.commits.past_ranks(),
         };
         // The bypass commits whatever content the arena holds, so the floor
         // rises to the current watermark. Without this a later rejection could
@@ -3974,7 +4120,7 @@ impl Environment
             Admission::Unchecked,
         );
         let named = references(&self.arena, &declaration);
-        self.entries.push(&self.arena, AdmittedDeclaration {
+        self.enter(AdmittedDeclaration {
             declaration,
             admission: Admission::Unchecked,
             rested_on,
@@ -4069,7 +4215,7 @@ impl Environment
         let rejected = content_start.clamped_into(self.admission_floor, content_end);
         // A member staged with no rank ranks past every live entry, after the
         // members before it.
-        let past = self.entries.past_ranks();
+        let past = self.commits.past_ranks();
         let mut ranks = Vec::with_capacity(staged.len());
         for (offset, member) in staged.iter().enumerate() {
             let position = ConstantIndex::from(usize::from(base).saturating_add(offset));
@@ -4082,7 +4228,7 @@ impl Environment
                 Some(&earlier) if earlier >= rank => {
                     Some(ConstantIndex::from(usize::from(position).saturating_sub(1)))
                 },
-                Some(_) | None => self.entries.ranked(rank),
+                Some(_) | None => self.commits.ranked(rank),
             };
             if let Some(by) = taken {
                 self.arena.truncate_to(rejected);
@@ -4105,9 +4251,10 @@ impl Environment
                 // environment, and each member's position stays as a vacancy.
                 // No later admission takes those positions, so the names and
                 // the kept outcomes that read a member stay unread.
+                alloc::sync::Arc::make_mut(&mut self.commits).truncate(&self.entries, base);
                 self.entries.truncate(base);
                 for _member in &members {
-                    self.entries.vacate();
+                    self.vacate();
                 }
                 self.manifest = manifest;
                 self.arena.truncate_to(rejected);
@@ -4160,9 +4307,13 @@ impl Environment
             )
         });
         let block_key = match content {
-            Maybe::Present(content) if generative => Maybe::Present(
-                content.generative(self.entries.generative_count(content, first_rank)),
-            ),
+            Maybe::Present(content) if generative => {
+                Maybe::Present(content.generative(self.commits.generative_count(
+                    &self.entries,
+                    content,
+                    first_rank,
+                )))
+            },
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         self.verdicts.end();
@@ -4242,7 +4393,7 @@ impl Environment
                 Admission::Checked,
             );
             // The block's families share one stage; a definition stands alone.
-            self.entries.push(&self.arena, AdmittedDeclaration {
+            self.enter(AdmittedDeclaration {
                 declaration: member.clone(),
                 admission: Admission::Checked,
                 rested_on,
@@ -4288,7 +4439,7 @@ impl Environment
         }
         self.admitted = self.admitted.and(taken.get());
         if let (true, Maybe::Present(content)) = (generative, content) {
-            self.entries.generative(content, first);
+            alloc::sync::Arc::make_mut(&mut self.commits).generative(content, first);
         }
         Ok(admitted)
     }
@@ -4358,7 +4509,8 @@ impl Environment
             };
             for member in usize::from(unit.first) .. usize::from(unit.end) {
                 let member = ConstantIndex::from(member);
-                if self.entries.live(member).is_some() {
+                if let Some(rank) = self.entries.live(member).map(AdmittedDeclaration::rank) {
+                    alloc::sync::Arc::make_mut(&mut self.commits).retire((member, rank));
                     self.entries.retire(member);
                 }
             }
@@ -4448,7 +4600,7 @@ impl Environment
             return Err(unkept(KeepRefusal::Unit));
         }
         for &rank in ranks {
-            if let Some(by) = self.entries.ranked(rank) {
+            if let Some(by) = self.commits.ranked(rank) {
                 return Err(KernelError::RankTaken { rank, by });
             }
         }
@@ -4490,7 +4642,7 @@ impl Environment
             return Err(unkept(KeepRefusal::Unkeyed));
         };
         let unit_key = if generative {
-            content.generative(self.entries.generative_count(content, below))
+            content.generative(self.commits.generative_count(&self.entries, content, below))
         }
         else {
             content
@@ -4526,6 +4678,7 @@ impl Environment
                 },
                 (UnitShape::Lone | UnitShape::Block, name) => name,
             };
+            alloc::sync::Arc::make_mut(&mut self.commits).reinstate((position, rank));
             self.entries
                 .reinstate(&self.arena, (position, rank), key_name);
         }
@@ -8355,7 +8508,7 @@ mod tests
     fn in_rank_order(environment: &Environment) -> Vec<gandr_kernel_term::MarkedDeclaration>
     {
         let entries = environment.entries();
-        entries
+        environment
             .in_rank_order()
             .filter_map(|position| entries.get(usize::from(position)))
             .map(|entry| {
@@ -8375,7 +8528,7 @@ mod tests
     fn exported(environment: &Environment) -> gandr_kernel_term::EncodedArtifact
     {
         let marked = in_rank_order(environment);
-        match environment.entries().places() {
+        match environment.places() {
             Maybe::Present(places) => {
                 gandr_kernel_term::encode_placed(environment.arena(), &marked, &places)
             },
@@ -8607,7 +8760,7 @@ mod tests
         proptest::prop_assert_eq!(read_by_rank(&kept), read_by_rank(&fresh));
         let vacant = fresh.entries().admitted() < fresh.entries().len();
         proptest::prop_assert_eq!(
-            matches!(fresh.entries().places(), Maybe::Present(_)),
+            matches!(fresh.places(), Maybe::Present(_)),
             vacant,
             "a fresh admission builds places exactly when a refusal left a vacancy"
         );
@@ -8677,9 +8830,8 @@ mod tests
                 }
             }
             let edited: Vec<ConstantIndex> = edited.into_iter().map(ConstantIndex::from).collect();
-            let entries = environment.entries();
-            let found = forward_reach(entries, &edited);
-            proptest::prop_assert_eq!(&*entries.reach(edited.iter().copied()), found.as_slice());
+            let found = forward_reach(environment.entries(), &edited);
+            proptest::prop_assert_eq!(&*environment.reach(edited.iter().copied()), found.as_slice());
         }
 
         /// #6621, #6845: a kept environment reads as a fresh admission of the

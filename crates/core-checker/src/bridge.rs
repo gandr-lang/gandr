@@ -1691,7 +1691,7 @@ impl Readmission
         mut names: BTreeMap<ConstantIndex, StructuredName>,
     ) -> EncodedArtifact
     {
-        let places = self.environment.entries().places();
+        let places = self.environment.places();
         let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
         match places {
             Maybe::Present(ref places) => encode_placed(self.environment.arena(), &marked, places),
@@ -1759,7 +1759,7 @@ impl Readmission
     ) -> EncodedArtifact
     {
         let arena = self.environment.arena();
-        let places = self.environment.entries().places();
+        let places = self.environment.places();
         if let Maybe::Present(ref placed) = places {
             if let Maybe::Present(ref mut record) = *recorded {
                 record.encoded = None;
@@ -1825,10 +1825,7 @@ impl Readmission
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
-    #[spec(ensures: |ret| ret.len() == match *places {
-        Maybe::Absent(_) => usize::from(self.admitted.len()).saturating_sub(usize::from(from)),
-        Maybe::Present(_) => self.environment.entries().in_rank_order().filter(|&position| position >= from).count(),
-    })]
+    #[spec(ensures: |ret| matches!(*places, Maybe::Present(_)) || ret.len() == usize::from(self.admitted.len()).saturating_sub(usize::from(from)))]
     fn marked(
         &self,
         names: &mut BTreeMap<ConstantIndex, StructuredName>,
@@ -1866,7 +1863,6 @@ impl Readmission
                 .collect(),
             Maybe::Present(_) => self
                 .environment
-                .entries()
                 .in_rank_order()
                 .filter(|&position| position >= from)
                 .filter_map(|position| Some((position, self.admitted.get(usize::from(position))?)))

@@ -968,7 +968,7 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     let marked = first_readmission.marked(
         &mut named.clone(),
         ConstantIndex::from(0_usize),
-        &first_readmission.environment().entries().places(),
+        &first_readmission.environment().places(),
     );
     renamed.encoded = match encode_prefix(
         first_readmission.environment().arena(),
@@ -4724,7 +4724,7 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
         })
         .collect();
     assert_eq!(
-        kept.environment.entries().places(),
+        kept.environment.places(),
         Maybe::Absent(gandr_kernel_core::places::Absent::InOrder),
         "a whole readmission builds no places"
     );
