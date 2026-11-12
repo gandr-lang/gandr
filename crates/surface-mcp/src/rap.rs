@@ -137,6 +137,9 @@
 //!   `Error: ` text, the `subscription_event` and its fields, the `view_update`
 //!   and its `view_type`, the `display_as` segments, and the retry of a `5xx`
 //!   and never of a `4xx`.
+//! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single
+//!   writer plan, which removes every lock around a store: the file of rows has
+//!   one writer, and the toolset's threads send it their rows.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

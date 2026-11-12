@@ -87,6 +87,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8` — anchor: § agent-layer-stream: `subscribe_activity` hears the work ledger as it moves.
 - `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-stream: the activity card only appends, keyed by the sequence number.
 - `vault:01a1c6b9-f57a-73c2-b24a-a7c22a34adad` — anchor: the long operations of a toolset, acknowledged at once and answered by a callback, and the `view_update` of a running call.
+- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan — the toolset's file of rows, with one writer and no lock.
 
 ## License
 

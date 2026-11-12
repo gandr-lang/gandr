@@ -25,6 +25,7 @@ The network a host holds for its `Net` interface: streams to peers named by thei
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — lineage: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — a stream is a location its host holds and never moves, beside the content-addressed values that do cross.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's worlds and sessions; the chunk wire carries a migrating value's chunks to its destination.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: verdict reuse; a fetched chunk is checked for integrity alone.
+- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan — a host's chunk holder, whose puts take `&self` with no lock.
 - [`iroh`](https://docs.rs/iroh/1.3.0/iroh/): the endpoint, its keys and its QUIC connections.
 
 ## Provided features

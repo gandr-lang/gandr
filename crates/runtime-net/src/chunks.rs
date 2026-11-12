@@ -49,6 +49,9 @@
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: integrity never
 //!   substitutes validity, § kernel-verdict-reuse: a chunk verified on receipt
 //!   is integrity only, and no verdict crosses with it.
+//! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single
+//!   writer plan, which removes every lock around a chunk store: the holder's
+//!   puts take `&self`, since two puts of one chunk publish one slot.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
