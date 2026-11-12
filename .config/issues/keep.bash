@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # The one issue a report keeps by its exact title (#5263), sourced by
 # `report:deps`, `report:prose`, `report:dead-weight`, `report:gate-time`,
-# `ci:cycle` and `ci:known-red`. GitHub's search matches a title's words, so
-# a search answers every issue that holds them, and the keeper reads the one
-# whose title is exactly the report's. gh names the repository itself:
-# `GH_REPO` when it is set, else the checkout's remote, so the repository's
-# name costs no read (#5749).
+# `ci:cycle`, `ci:known-red` and `bench:scaling`. GitHub's search matches a
+# title's words, so a search answers every issue that holds them, and the
+# keeper reads the one whose title is exactly the report's. gh names the
+# repository itself: `GH_REPO` when it is set, else the checkout's remote, so
+# the repository's name costs no read (#5749).
 
 # The issue of exactly the title `$1`, open or closed, as compact JSON
 # `{number, state, body}`; `null` when there is none.
