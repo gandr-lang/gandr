@@ -138,5 +138,40 @@ got=$(git -C "$work/clone" merge-base "$shallow_signed" "$shallow_base" 2> /dev/
 got=$(cd "$work/clone" && signed_fork "$shallow_signed" "$shallow_base") || got=none
 [[ $got == "$shallow_fork" ]] || fail "#6920: in a shallow clone, the fork of a signed commit that no branch holds is read" "$got"
 
+# A sign-off whose commit no pushed ref holds (#7012). The seat of pull
+# request 7009 rebased after the sign-off, so only its clone held the signed
+# commit, and the queue's clone could not fetch it. GitHub serves no commit
+# that a force-push leaves behind, so the case's `origin` drops the commit
+# after the push that leaves it. `served` asks `origin` from a scratch
+# repository, so a commit that the seat's clone holds reads as the queue
+# reads it.
+served_origin=$work/served-origin
+git init --quiet --initial-branch landing "$served_origin"
+git -C "$served_origin" config user.email cases@example.invalid
+git -C "$served_origin" config user.name cases
+git -C "$served_origin" config uploadpack.allowReachableSHA1InWant true
+git -C "$served_origin" config uploadpack.allowFilter true
+git -C "$served_origin" commit --quiet --no-verify --allow-empty -m root
+git -C "$served_origin" checkout --quiet -b change
+git -C "$served_origin" commit --quiet --no-verify --allow-empty -m pushed
+pushed=$(git -C "$served_origin" rev-parse HEAD)
+git -C "$served_origin" commit --quiet --no-verify --allow-empty -m 'pushed, then left behind'
+left=$(git -C "$served_origin" rev-parse HEAD)
+git clone --quiet "file://$served_origin" "$work/seat"
+git -C "$work/seat" config user.email cases@example.invalid
+git -C "$work/seat" config user.name cases
+git -C "$work/seat" checkout --quiet change
+git -C "$work/seat" commit --quiet --no-verify --allow-empty -m 'rebased, never pushed'
+unpushed=$(git -C "$work/seat" rev-parse HEAD)
+git -C "$served_origin" reset --quiet --hard "$pushed"
+git -C "$served_origin" reflog expire --expire=now --all
+git -C "$served_origin" gc --quiet --prune=now
+(cd "$work/seat" && served "$work/scratch" "$unpushed") \
+  && fail "#7012: a signed commit that only the seat's clone holds is not served, so the sign-off is stale" "served"
+(cd "$work/seat" && served "$work/scratch" "$left") \
+  && fail "#7012: a signed commit that a force-push leaves behind is not served" "served"
+(cd "$work/seat" && served "$work/scratch" "$pushed") \
+  || fail "#7012: a signed commit that a pushed ref holds is served, so the sign-off holds" "not served"
+
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"

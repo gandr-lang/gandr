@@ -52,6 +52,26 @@ signed_fork() {
   git merge-base "$sha" "$base" 2> /dev/null
 }
 
+# Whether `origin` serves a signed commit (#7012). `served <scratch> <sha>`
+# succeeds when a fetch of the full name `<sha>` from `origin` reaches it, as
+# the merge queue's clone reads a sign-off. A seat's clone holds each commit
+# that the seat makes, pushed or not. When the clone holds the commit, `git
+# fetch` asks `origin` nothing, so the read goes into `<scratch>`, an empty
+# repository that holds no commit. The fetch takes the commit object alone,
+# at depth 1 and with no tree. The scratch repository takes the clone's
+# extra HTTP headers, so a clone that `actions/checkout` authorises reads as
+# it does.
+served() {
+  local scratch=$1 sha=$2 key value url
+  local -a config=()
+  [[ -d $scratch/.git ]] || git init --quiet "$scratch"
+  while read -r key value; do
+    config+=(-c "$key=$value")
+  done < <(git config --get-regexp '^http\..*\.extraheader$' 2> /dev/null || :)
+  url=$(git remote get-url origin) || return 1
+  git -C "$scratch" "${config[@]}" fetch --quiet --depth=1 --filter=tree:0 "$url" "$sha" 2> /dev/null
+}
+
 # The item's half of a sign-off (#6852). A restack can keep the change's own
 # patch and still change what the deletion means. The architect reads the
 # item as it stands at the base, with its readers, so the check binds both.
