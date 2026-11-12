@@ -358,11 +358,13 @@ jobs:
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
           key: ${{ steps.test-state-restore.outputs.cache-primary-key }}
-      # One state per lane: each landing's supersedes the older ones, which
-      # would otherwise sit in the cache until they evicted the tool caches.
+      # One state per lane and ref: each landing's supersedes the older ones,
+      # which would otherwise sit in the cache until they evicted the tool
+      # caches. The integration cycle's dispatch saves too, about 5 GB a
+      # state, so it deletes its superseded entry as a push does (#6951).
       - &delete-superseded-state
         name: delete superseded test state
-        if: ${{ env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'schedule') && steps.save-test-state.outcome == 'success' }}
+        if: ${{ env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.save-test-state.outcome == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
