@@ -278,10 +278,10 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
                     unreachable!("a window of two holds two items");
                 };
                 assert!(
-                    checks
-                        .dependences()
-                        .edges()
-                        .contains(&Dependence { before, after }),
+                    checks.dependences().edges().contains(&Dependence {
+                        before: usize::from(before),
+                        after: usize::from(after)
+                    }),
                     "the chain of the critical path follows the dependences: {pair:?}"
                 );
             }
@@ -293,15 +293,15 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
                 bound.critical() <= bound.folded() && bound.folded() <= bound.serial(),
                 "no schedule passes the serial cost, and the fold waits at least for the chain"
             );
-            assert_eq!(
-                checks.untimed(),
-                0,
-                "a source with no mutual block times each job"
+            assert!(
+                checks.untimed().is_empty(),
+                "a source with no mutual block times each job: {:?}",
+                checks.untimed()
             );
             let on_chain: Vec<_> = bound
                 .chain()
                 .iter()
-                .filter_map(|&item| checks.jobs().get(item).copied())
+                .filter_map(|&item| checks.jobs().get(usize::from(item)).copied())
                 .collect();
             assert_eq!(
                 row.chain()

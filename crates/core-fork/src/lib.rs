@@ -20,9 +20,7 @@
 //! owns its thread states why in an expectation at the site.
 //!
 //! Jobs that read each other's results go to [`Fork::schedule`], in the order
-//! that [`Dependences`] names. [`Dependences::bound`] reads, from the serial
-//! cost of each job, the critical path that no width beats and the bound of
-//! the release at the fold.
+//! that [`Dependences`] names.
 //!
 //! With the `instrument` feature, the `activity` module records which task
 //! each worker runs, and when. Each worker writes into a lock-free ring of its
@@ -350,7 +348,7 @@ impl Dependences
         let mut chain = Vec::new();
         let mut at = last.1;
         while let Some(item) = at {
-            chain.push(item);
+            chain.push(ItemIndex(item));
             at = ready.get(item).and_then(|&(_, before)| before);
         }
         chain.reverse();
@@ -383,7 +381,7 @@ pub struct Bound
     /// that it waits on.
     folded: Duration,
     /// The items of the critical path, in slice order.
-    chain: Vec<usize>,
+    chain: Vec<ItemIndex>,
 }
 
 impl Bound
@@ -430,9 +428,46 @@ impl Bound
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn chain(&self) -> &[usize]
+    pub fn chain(&self) -> &[ItemIndex]
     {
         &self.chain
+    }
+}
+
+/// An item of a schedule, by its slice position.
+///
+/// # Specification
+/// - provides: the position as given; the order is the slice order.
+/// - panics: none.
+/// - executable: none — a type-level block: a plain record that
+///   [`Dependences::bound`] makes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ItemIndex(usize);
+
+impl From<ItemIndex> for usize
+{
+    /// The slice position of `item`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(item: ItemIndex) -> Self
+    {
+        item.0
+    }
+}
+
+impl From<usize> for ItemIndex
+{
+    /// The item at slice position `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
     }
 }
 

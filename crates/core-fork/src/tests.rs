@@ -283,6 +283,12 @@ fn costs(micros: &[u64]) -> Vec<Duration>
     micros.iter().copied().map(Duration::from_micros).collect()
 }
 
+/// The slice positions of the chain of `bound`.
+fn chain_of(bound: &Bound) -> Vec<usize>
+{
+    bound.chain().iter().copied().map(usize::from).collect()
+}
+
 #[test]
 fn the_bound_of_jobs_with_no_edge_is_the_costliest_job()
 {
@@ -302,7 +308,11 @@ fn the_bound_of_jobs_with_no_edge_is_the_costliest_job()
         Duration::from_micros(4),
         "every job starts at once, and the last fold waits for the costliest"
     );
-    assert_eq!(bound.chain(), [2], "the chain is the costliest job alone");
+    assert_eq!(
+        chain_of(&bound),
+        [2],
+        "the chain is the costliest job alone"
+    );
     assert_eq!(
         Dependences::default().bound(&[]),
         Bound::default(),
@@ -322,11 +332,11 @@ fn the_bound_of_a_chain_is_its_whole_cost()
         "each job waits on the one before, so the chain costs the whole"
     );
     assert_eq!(bound.folded(), Duration::from_micros(10));
-    assert_eq!(bound.chain(), [0, 1, 2, 3], "the chain in slice order");
+    assert_eq!(chain_of(&bound), [0, 1, 2, 3], "the chain in slice order");
     let past = dependences(&[(0, 1), (1, 7), (5, 6)]).bound(&costs(&[2, 2]));
     assert_eq!(
-        (past.critical(), past.chain()),
-        (Duration::from_micros(4), [0_usize, 1].as_slice()),
+        (past.critical(), chain_of(&past)),
+        (Duration::from_micros(4), alloc::vec![0_usize, 1]),
         "an edge past the costs is ignored"
     );
 }
@@ -343,7 +353,7 @@ fn a_fold_in_slice_order_waits_behind_a_costly_item()
         Duration::from_micros(5),
         "item 2 can start once item 1 returns, at 1"
     );
-    assert_eq!(bound.chain(), [0]);
+    assert_eq!(chain_of(&bound), [0]);
     assert_eq!(
         bound.folded(),
         Duration::from_micros(6),

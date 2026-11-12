@@ -4662,7 +4662,7 @@ fn measured(
                         path.display(),
                         checks.jobs().len(),
                         checks.dependences().edges().len(),
-                        checks.untimed(),
+                        checks.untimed().len(),
                         bound.serial().as_nanos(),
                         bound.critical().as_nanos(),
                         bound.folded().as_nanos(),
