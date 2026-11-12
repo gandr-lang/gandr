@@ -36,13 +36,13 @@ use std::env::consts::ARCH;
 use std::env::consts::OS;
 
 use anodized::spec;
+use gandr_surface_features::FeatureId;
+use gandr_surface_features::FeatureLedger;
+use gandr_surface_features::Status;
 use quenchant_shape::shape::Maybe;
 
 use super::Basic;
 use super::Listed;
-use crate::FeatureId;
-use crate::FeatureLedger;
-use crate::Status;
 
 /// The comparison a `gandr` constraint is written with.
 const AT_LEAST: &str = ">=";

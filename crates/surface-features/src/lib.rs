@@ -16,7 +16,7 @@
 //! and every exemplar by `check:exemplars`, so what the verbs print is what the
 //! tree holds.
 //!
-//! # The dump is read, never executed
+//! # Boundaries
 //!
 //! The ledger's one copy is a SQLite dump. The reader reads the two statements
 //! the dump writes for the table: the `CREATE TABLE feature(…)`, whose column
@@ -25,7 +25,7 @@
 //! column is `TEXT`, and the table's own constraints keep a newline out of a
 //! name and a line. Every other line is the dump's frame and is passed over; a
 //! row of any other shape refuses the ledger naming its line
-//! ([`LedgerFault::Features`]).
+//! ([`FeaturesFault::Features`]).
 
 use core::fmt;
 use core::str::FromStr;
@@ -37,13 +37,94 @@ use serde_json::Map;
 use serde_json::Value;
 use serde_json::json;
 
-use super::LedgerFault;
+/// Why the features ledger could not be read or could not answer.
+#[derive(Debug)]
+pub enum FeaturesFault
+{
+    /// A file of the features ledger, or an exemplar it names, could not be
+    /// read.
+    Unread
+    {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
+    /// A line of the features ledger is not what the reader reads.
+    Features
+    {
+        /// The ledger's file.
+        path: PathBuf,
+        /// The line, counted from one.
+        line: usize,
+        /// What is wrong with it.
+        malformed: Malformed,
+    },
+    /// A spelling of no status.
+    Status
+    {
+        /// The spelling.
+        spelling: String,
+    },
+    /// An area no feature is in.
+    NoArea
+    {
+        /// The area asked for.
+        area: String,
+        /// The ledger's areas, in byte order, separated by commas.
+        areas: String,
+    },
+    /// An id no feature has.
+    NoFeature
+    {
+        /// The id asked for.
+        id: String,
+    },
+}
+
+impl fmt::Display for FeaturesFault
+{
+    /// Writes the fault and what it names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Unread {
+                ref path,
+                ref error,
+            } => write!(f, "{}: cannot read: {error}", path.display()),
+            Self::Features {
+                ref path,
+                line,
+                malformed,
+            } => write!(f, "{}:{line}: {malformed}", path.display()),
+            Self::Status { ref spelling } => write!(
+                f,
+                "`{spelling}` is no status: implemented, partial, planned or declined"
+            ),
+            Self::NoArea {
+                ref area,
+                ref areas,
+            } => write!(
+                f,
+                "no feature is in the area `{area}`; the areas are {areas}"
+            ),
+            Self::NoFeature { ref id } => write!(f, "no feature is `{id}`"),
+        }
+    }
+}
 
 /// The ledger's file, from a tree's root.
 const LEDGER: &str = "ledger/features.sql";
 
 /// The ledger the binary was built with.
-const BUILT_IN: &str = include_str!("../../../../ledger/features.sql");
+const BUILT_IN: &str = include_str!("../../../ledger/features.sql");
 
 /// The statement that opens the table's definition.
 const CREATE: &str = "CREATE TABLE feature(";
@@ -108,7 +189,7 @@ impl fmt::Display for Status
 
 impl FromStr for Status
 {
-    type Err = LedgerFault;
+    type Err = FeaturesFault;
 
     /// Reads a status as the ledger spells it.
     ///
@@ -119,12 +200,12 @@ impl FromStr for Status
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::Status`] naming the spelling.
+    /// [`FeaturesFault::Status`] naming the spelling.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every status reads back from its spelling, and a
     ///   spelling of none is refused.
-    /// - witness: `ledger::features::tests::a_status_reads_back_from_its_spelling`
+    /// - witness: `tests::a_status_reads_back_from_its_spelling`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |status| status.to_string() == spelling))]
     #[inline]
     fn from_str(spelling: &str) -> Result<Self, Self::Err>
@@ -134,7 +215,7 @@ impl FromStr for Status
             "partial" => Ok(Self::Partial),
             "planned" => Ok(Self::Planned),
             "declined" => Ok(Self::Declined),
-            _ => Err(LedgerFault::Status {
+            _ => Err(FeaturesFault::Status {
                 spelling: String::from(spelling),
             }),
         }
@@ -309,7 +390,7 @@ impl Feature
     /// # Adequacy
     /// - hypothesis: L3 — a row with and without its optional columns is read
     ///   back from its object.
-    /// - witness: `ledger::features::tests::a_row_is_its_object`
+    /// - witness: `tests::a_row_is_its_object`
     #[spec(ensures: |ret| ret.get("id").and_then(Value::as_str) == Some(self.id.as_str())
         && ret.get("status").and_then(Value::as_str).and_then(|spelling| spelling.parse::<Status>().ok())
             == Some(self.status))]
@@ -372,9 +453,9 @@ impl Values<'_>
     /// - hypothesis: L3 — the committed ledger's rows read whole, a doubled
     ///   quote reads as one, and a number, an unclosed string and a missing
     ///   close are refused.
-    /// - witness: `ledger::features::tests::the_committed_ledger_reads_every_row`
-    /// - witness: `ledger::features::tests::a_quote_is_written_twice`
-    /// - witness: `ledger::features::tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
+    /// - witness: `tests::the_committed_ledger_reads_every_row`
+    /// - witness: `tests::a_quote_is_written_twice`
+    /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |values| !values.is_empty()))]
     fn read(self) -> Result<Vec<Option<String>>, Malformed>
     {
@@ -476,8 +557,8 @@ impl fmt::Display for Malformed
 /// # Adequacy
 /// - hypothesis: L3 — the committed ledger's rows read whole, and a short row
 ///   is refused.
-/// - witness: `ledger::features::tests::the_committed_ledger_reads_every_row`
-/// - witness: `ledger::features::tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
+/// - witness: `tests::the_committed_ledger_reads_every_row`
+/// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |feature| !feature.id.is_empty()))]
 fn feature(values: Vec<Option<String>>) -> Result<Feature, Malformed>
 {
@@ -570,21 +651,22 @@ impl FeatureLedger
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::Unread`] naming the file, or [`LedgerFault::Features`]
-    /// naming the file, the line and what is wrong with it.
+    /// [`FeaturesFault::Unread`] naming the file, or
+    /// [`FeaturesFault::Features`] naming the file, the line and what is
+    /// wrong with it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the committed ledger reads every row with its count
     ///   of statements, and a scratch ledger with a malformed row is refused
     ///   naming its line.
-    /// - witness: `ledger::features::tests::the_committed_ledger_reads_every_row`
-    /// - witness: `ledger::features::tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
+    /// - witness: `tests::the_committed_ledger_reads_every_row`
+    /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root))]
     #[inline]
-    pub fn read(root: &Path) -> Result<Self, LedgerFault>
+    pub fn read(root: &Path) -> Result<Self, FeaturesFault>
     {
         let path = root.join(LEDGER);
-        let text = std::fs::read_to_string(&path).map_err(|error| LedgerFault::Unread {
+        let text = std::fs::read_to_string(&path).map_err(|error| FeaturesFault::Unread {
             path: path.clone(),
             error,
         })?;
@@ -605,15 +687,15 @@ impl FeatureLedger
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::Features`] naming the line and what is wrong with it.
+    /// [`FeaturesFault::Features`] naming the line and what is wrong with it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the built-in ledger is the committed one, row for
     ///   row, while the tree's ledger is the one the binary was built from.
-    /// - witness: `ledger::features::tests::the_built_in_ledger_is_the_committed_one`
+    /// - witness: `tests::the_built_in_ledger_is_the_committed_one`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == Path::new(".")))]
     #[inline]
-    pub fn built_in() -> Result<Self, LedgerFault>
+    pub fn built_in() -> Result<Self, FeaturesFault>
     {
         Self::parsed(Path::new("."), Path::new(LEDGER), Dump(BUILT_IN))
     }
@@ -627,20 +709,20 @@ impl FeatureLedger
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::Features`] naming `path`, the line and what is wrong
+    /// [`FeaturesFault::Features`] naming `path`, the line and what is wrong
     /// with it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read`].
-    /// - witness: `ledger::features::tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
+    /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root))]
     fn parsed(
         root: &Path,
         path: &Path,
         dump: Dump<'_>,
-    ) -> Result<Self, LedgerFault>
+    ) -> Result<Self, FeaturesFault>
     {
-        let refused = |line: usize, malformed: Malformed| LedgerFault::Features {
+        let refused = |line: usize, malformed: Malformed| FeaturesFault::Features {
             path: path.to_path_buf(),
             line: line.saturating_add(1),
             malformed,
@@ -688,25 +770,25 @@ impl FeatureLedger
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::NoFeature`] naming the id.
+    /// [`FeaturesFault::NoFeature`] naming the id.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each of a scratch ledger's four rows stands at its
     ///   own status, and an id no row holds is refused.
-    /// - witness: `ledger::features::tests::a_feature_stands_at_its_row_s_status`
+    /// - witness: `tests::a_feature_stands_at_its_row_s_status`
     #[spec(ensures: |ref ret| ret.as_ref().err().is_none_or(|fault|
-        matches!(*fault, LedgerFault::NoFeature { id: ref missing } if *missing == id.0)))]
+        matches!(*fault, FeaturesFault::NoFeature { id: ref missing } if *missing == id.0)))]
     #[inline]
     pub fn status(
         &self,
         id: &FeatureId,
-    ) -> Result<Status, LedgerFault>
+    ) -> Result<Status, FeaturesFault>
     {
         self.features
             .iter()
             .find(|feature| feature.id == id.0)
             .map(|feature| feature.status)
-            .ok_or_else(|| LedgerFault::NoFeature { id: id.0.clone() })
+            .ok_or_else(|| FeaturesFault::NoFeature { id: id.0.clone() })
     }
 
     /// The ids of the features a toolchain built with this ledger meets: each
@@ -725,7 +807,7 @@ impl FeatureLedger
     /// # Adequacy
     /// - hypothesis: L3 — the implemented and partial rows of a scratch ledger
     ///   are met, its declined and planned rows are not.
-    /// - witness: `ledger::features::tests::a_feature_stands_at_its_row_s_status`
+    /// - witness: `tests::a_feature_stands_at_its_row_s_status`
     #[inline]
     pub fn met(&self) -> impl Iterator<Item = &str>
     {
@@ -747,12 +829,12 @@ impl FeatureLedger
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::NoArea`] naming the area and the ledger's areas.
+    /// [`FeaturesFault::NoArea`] naming the area and the ledger's areas.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the committed ledger narrows to one area, to one
     ///   status and to both, and an unknown area is refused naming the areas.
-    /// - witness: `ledger::features::tests::a_list_narrows_to_an_area_and_a_status`
+    /// - witness: `tests::a_list_narrows_to_an_area_and_a_status`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |listed| listed.iter().all(|feature|
         area.is_none_or(|area| feature.area == area.0) && status.is_none_or(|status| feature.status == status))))]
     #[inline]
@@ -760,7 +842,7 @@ impl FeatureLedger
         &self,
         area: Option<&Area>,
         status: Option<Status>,
-    ) -> Result<Vec<Feature>, LedgerFault>
+    ) -> Result<Vec<Feature>, FeaturesFault>
     {
         if let Some(area) = area
             && !self.features.iter().any(|feature| feature.area == area.0)
@@ -772,7 +854,7 @@ impl FeatureLedger
                 .collect();
             areas.sort_unstable();
             areas.dedup();
-            return Err(LedgerFault::NoArea {
+            return Err(FeaturesFault::NoArea {
                 area: area.0.clone(),
                 areas: areas.join(", "),
             });
@@ -801,24 +883,24 @@ impl FeatureLedger
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LedgerFault::NoFeature`] naming the id, or [`LedgerFault::Unread`]
+    /// [`FeaturesFault::NoFeature`] naming the id, or [`FeaturesFault::Unread`]
     /// naming the exemplar.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a committed feature shows its exemplar's bytes and
     ///   its corpus paths, a feature whose evidence is the crate tests shows
     ///   none, and an unknown id is refused.
-    /// - witness: `ledger::features::tests::a_feature_shows_its_exemplar_whole_and_its_corpus`
+    /// - witness: `tests::a_feature_shows_its_exemplar_whole_and_its_corpus`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |shown| shown.feature.id == id.0))]
     #[inline]
     pub fn shown(
         &self,
         id: &FeatureId,
-    ) -> Result<ShownFeature, LedgerFault>
+    ) -> Result<ShownFeature, FeaturesFault>
     {
         let Some(feature) = self.features.iter().find(|feature| feature.id == id.0)
         else {
-            return Err(LedgerFault::NoFeature { id: id.0.clone() });
+            return Err(FeaturesFault::NoFeature { id: id.0.clone() });
         };
         let exemplars = feature
             .exemplar
@@ -832,9 +914,9 @@ impl FeatureLedger
                         path: String::from(path),
                         source,
                     })
-                    .map_err(|error| LedgerFault::Unread { path: file, error })
+                    .map_err(|error| FeaturesFault::Unread { path: file, error })
             })
-            .collect::<Result<Vec<Exemplar>, LedgerFault>>()?;
+            .collect::<Result<Vec<Exemplar>, FeaturesFault>>()?;
         let corpus = feature
             .corpus
             .iter()
@@ -864,7 +946,7 @@ impl ShownFeature
     /// # Adequacy
     /// - hypothesis: L3 — a shown feature's object carries its exemplar's
     ///   source and its corpus paths.
-    /// - witness: `ledger::features::tests::a_feature_shows_its_exemplar_whole_and_its_corpus`
+    /// - witness: `tests::a_feature_shows_its_exemplar_whole_and_its_corpus`
     #[spec(ensures: |ret| ret.pointer("/exemplars").and_then(Value::as_array).map(Vec::len) == Some(self.exemplars.len()))]
     #[inline]
     #[must_use]
@@ -931,7 +1013,7 @@ mod tests
     use super::Area;
     use super::FeatureId;
     use super::FeatureLedger;
-    use super::LedgerFault;
+    use super::FeaturesFault;
     use super::Malformed;
     use super::Status;
     use super::Values;
@@ -1054,7 +1136,7 @@ mod tests
             );
             let refused = FeatureLedger::read(&scratch.0);
             assert!(
-                matches!(refused, Err(LedgerFault::Features { line: 19, malformed: named, .. }) if named == malformed),
+                matches!(refused, Err(FeaturesFault::Features { line: 19, malformed: named, .. }) if named == malformed),
                 "{row}: {refused:?}"
             );
         }
@@ -1066,7 +1148,7 @@ mod tests
         );
         assert!(matches!(
             FeatureLedger::read(&required.0),
-            Err(LedgerFault::Features {
+            Err(FeaturesFault::Features {
                 malformed: Malformed::Required,
                 ..
             })
@@ -1086,7 +1168,7 @@ mod tests
         }
         assert!(matches!(
             "finished".parse::<Status>(),
-            Err(LedgerFault::Status { spelling }) if spelling == "finished"
+            Err(FeaturesFault::Status { spelling }) if spelling == "finished"
         ));
     }
 
@@ -1121,7 +1203,7 @@ mod tests
         );
         let refused = ledger.listed(Some(&Area(String::from("astrology"))), None);
         assert!(
-            matches!(refused, Err(LedgerFault::NoArea { ref area, ref areas }) if area == "astrology" && areas.contains("workflow")),
+            matches!(refused, Err(FeaturesFault::NoArea { ref area, ref areas }) if area == "astrology" && areas.contains("workflow")),
             "{refused:?}"
         );
     }
@@ -1191,7 +1273,7 @@ mod tests
         );
         let absent = status("absent");
         assert!(
-            matches!(absent, Err(LedgerFault::NoFeature { ref id }) if id == "absent"),
+            matches!(absent, Err(FeaturesFault::NoFeature { ref id }) if id == "absent"),
             "{absent:?}"
         );
         assert_eq!(
@@ -1239,7 +1321,7 @@ mod tests
         );
         assert!(matches!(
             ledger.shown(&FeatureId(String::from("c"))),
-            Err(LedgerFault::NoFeature { id }) if id == "c"
+            Err(FeaturesFault::NoFeature { id }) if id == "c"
         ));
         let committed = FeatureLedger::read(&committed()).expect("the committed ledger reads");
         let ledger_row = committed

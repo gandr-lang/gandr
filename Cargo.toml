@@ -28,6 +28,7 @@ members = [
   "crates/surface-diagnostics",
   "crates/surface-dispatcher",
   "crates/surface-driver",
+  "crates/surface-features",
   "crates/surface-format",
   "crates/surface-grammar",
   "crates/surface-layout",
@@ -157,6 +158,7 @@ default-features = false
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-driver
+# - surface-features
 # - surface-format
 # - surface-grammar
 # - surface-layout
@@ -659,6 +661,15 @@ path = "crates/surface-diagnostics"
 # - surface-tui
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
+
+# The features ledger as data: the record `gandr check` reads at the toolchain
+# step, and the rows the tools list and show.
+# consumers:
+# - surface-dispatcher
+# - surface-driver
+# - surface-mcp
+[workspace.dependencies.gandr-surface-features]
+path = "crates/surface-features"
 
 # The source formatter: a parsed source laid out at a page width, its tokens
 # and comments kept and its meaning checked unchanged.
@@ -1664,6 +1675,7 @@ features = ["alloc", "derive"]
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-driver
+# - surface-features
 # - surface-lsp
 # - surface-mcp
 # - surface-render-remote (dev)

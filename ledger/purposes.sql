@@ -2337,13 +2337,6 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::SyntaxLedger','struct',
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::exemplars::ExemplarFault','enum','Why one exemplar does not show what its name says.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::exemplars::ExemplarFinding','struct','One exemplar that does not hold, by its path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::exemplars::ExemplarReport','struct','What a verification of the exemplar directory found.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Area','struct','An area of the ledger, a row''s `area`.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Feature','struct','One row of the ledger.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::FeatureId','struct','A feature''s identifier, its row''s `id`.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::FeatureLedger','struct','The features ledger: every row, in the dump''s order, which is by `id`.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Malformed','enum','How a line of the dump fails to be what the reader reads.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::ShownFeature','struct','A feature as `ledger show` prints it: its row, its exemplars'' sources and its corpus witnesses'' paths.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum','Where a feature stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryTally','struct','What became of a sweep''s mutants, each counted once.',NULL,'fits','sound',NULL);
@@ -2500,6 +2493,14 @@ INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE','constant
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE_MANIFEST','constant','The file name of the manifest the checker writes beside a workspace''s source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::Workspace','struct','A workspace: the directory holding `workspace.gandr`, whose `members` names its packages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::stepped_alone','function','What a reader makes of the step a source''s text takes through the pipeline, laid out at its path and judged as `gandr check` judges a source alone.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','Area','struct','An area of the ledger, a row''s `area`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','Feature','struct','One row of the ledger.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','FeatureId','struct','A feature''s identifier, its row''s `id`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','FeatureLedger','struct','The features ledger: every row, in the dump''s order, which is by `id`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','FeaturesFault','enum','Why the features ledger could not be read or could not answer.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','Malformed','enum','How a line of the dump fails to be what the reader reads.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','ShownFeature','struct','A feature as `ledger show` prints it: its row, its exemplars'' sources and its corpus witnesses'' paths.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-features','Status','enum','Where a feature stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Beside','enum','What a source''s rewrites are checked beside: the source alone, or the sources its imports reach, laid out before it as one unit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Change','enum','What formatting would have changed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Form','enum','The spelling a source is laid out in.',NULL,'fits','sound',NULL);

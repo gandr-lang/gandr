@@ -357,7 +357,6 @@ use gandr_storage_store::Store;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_dispatcher::Area;
 use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
@@ -367,8 +366,6 @@ use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Exporting;
-use gandr_surface_dispatcher::FeatureId;
-use gandr_surface_dispatcher::FeatureLedger;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Fusions;
@@ -413,7 +410,6 @@ use gandr_surface_dispatcher::Site;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Standing;
-use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Traversal;
@@ -438,6 +434,10 @@ use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::schedule;
 use gandr_surface_dispatcher::timed;
+use gandr_surface_features::Area;
+use gandr_surface_features::FeatureId;
+use gandr_surface_features::FeatureLedger;
+use gandr_surface_features::Status;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
@@ -2624,7 +2624,7 @@ fn toolchains(action: ToolchainAction) -> ExitCode
 /// - witness: `tests::cli::a_package_s_constraint_chooses_among_the_toolchains`
 fn described() -> ExitCode
 {
-    let written = match gandr_surface_dispatcher::FeatureLedger::built_in() {
+    let written = match FeatureLedger::built_in() {
         Ok(ledger) => write!(
             std::io::stdout().lock(),
             "{}",

@@ -65,12 +65,12 @@ use core::fmt;
 use std::path::PathBuf;
 
 use anodized::spec;
-use gandr_surface_dispatcher::Area;
-use gandr_surface_dispatcher::Feature;
-use gandr_surface_dispatcher::FeatureId;
-use gandr_surface_dispatcher::FeatureLedger;
-use gandr_surface_dispatcher::LedgerFault;
-use gandr_surface_dispatcher::Status;
+use gandr_surface_features::Area;
+use gandr_surface_features::Feature;
+use gandr_surface_features::FeatureId;
+use gandr_surface_features::FeatureLedger;
+use gandr_surface_features::FeaturesFault;
+use gandr_surface_features::Status;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;
@@ -938,7 +938,7 @@ fn ledger(arguments: &Value) -> Result<FeatureLedger, ToolRefusal>
 ///
 /// # Specification
 /// trivial.
-fn refused(fault: &LedgerFault) -> ToolRefusal
+fn refused(fault: &FeaturesFault) -> ToolRefusal
 {
     ToolRefusal(fault.to_string())
 }

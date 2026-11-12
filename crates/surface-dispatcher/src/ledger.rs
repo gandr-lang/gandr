@@ -124,7 +124,6 @@
 
 mod decisions;
 mod exemplars;
-mod features;
 mod recovery;
 mod standing;
 
@@ -136,6 +135,13 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_features::Area;
+use gandr_surface_features::Feature;
+use gandr_surface_features::FeatureId;
+use gandr_surface_features::FeatureLedger;
+use gandr_surface_features::FeaturesFault;
+use gandr_surface_features::ShownFeature;
+use gandr_surface_features::Status;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
@@ -172,13 +178,6 @@ use serde_json::json;
 pub use self::exemplars::ExemplarFault;
 pub use self::exemplars::ExemplarFinding;
 pub use self::exemplars::ExemplarReport;
-pub use self::features::Area;
-pub use self::features::Feature;
-pub use self::features::FeatureId;
-pub use self::features::FeatureLedger;
-pub use self::features::Malformed;
-pub use self::features::ShownFeature;
-pub use self::features::Status;
 pub use self::recovery::RecoveryFinding;
 pub use self::recovery::RecoveryReport;
 pub use self::recovery::RecoveryTally;
@@ -317,45 +316,8 @@ pub enum LedgerFault
         /// Why.
         error: String,
     },
-    /// A file of the features ledger, or an exemplar it names, could not be
-    /// read.
-    Unread
-    {
-        /// The file.
-        path: PathBuf,
-        /// Why.
-        error: std::io::Error,
-    },
-    /// A line of the features ledger is not what the reader reads.
-    Features
-    {
-        /// The ledger's file.
-        path: PathBuf,
-        /// The line, counted from one.
-        line: usize,
-        /// What is wrong with it.
-        malformed: Malformed,
-    },
-    /// A spelling of no status.
-    Status
-    {
-        /// The spelling.
-        spelling: String,
-    },
-    /// An area no feature is in.
-    NoArea
-    {
-        /// The area asked for.
-        area: String,
-        /// The ledger's areas, in byte order, separated by commas.
-        areas: String,
-    },
-    /// An id no feature has.
-    NoFeature
-    {
-        /// The id asked for.
-        id: String,
-    },
+    /// The features ledger could not be read or could not answer.
+    Features(FeaturesFault),
 }
 
 impl core::fmt::Display for LedgerFault
@@ -398,27 +360,7 @@ impl core::fmt::Display for LedgerFault
                 "{}: the rule's exemplar cannot be read: {error}",
                 path.display()
             ),
-            Self::Unread {
-                ref path,
-                ref error,
-            } => write!(f, "{}: cannot read: {error}", path.display()),
-            Self::Features {
-                ref path,
-                line,
-                malformed,
-            } => write!(f, "{}:{line}: {malformed}", path.display()),
-            Self::Status { ref spelling } => write!(
-                f,
-                "`{spelling}` is no status: implemented, partial, planned or declined"
-            ),
-            Self::NoArea {
-                ref area,
-                ref areas,
-            } => write!(
-                f,
-                "no feature is in the area `{area}`; the areas are {areas}"
-            ),
-            Self::NoFeature { ref id } => write!(f, "no feature is `{id}`"),
+            Self::Features(ref fault) => write!(f, "{fault}"),
         }
     }
 }
@@ -451,10 +393,11 @@ impl LedgerTask
     /// - panics: none.
     ///
     /// # Errors
-    /// What [`SyntaxLedger::build`], [`SyntaxLedger::admitted`],
-    /// [`FeatureLedger::read`], [`FeatureLedger::listed`] and
-    /// [`FeatureLedger::shown`] report, [`LedgerFault::Unwritable`] naming the
-    /// file, or [`LedgerFault::Unreadable`] naming the directory.
+    /// What [`SyntaxLedger::build`] and [`SyntaxLedger::admitted`] report,
+    /// [`LedgerFault::Unwritable`] naming the file,
+    /// [`LedgerFault::Unreadable`] naming the directory, or
+    /// [`LedgerFault::Features`] holding what [`FeatureLedger::read`],
+    /// [`FeatureLedger::listed`] and [`FeatureLedger::shown`] report.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a run into an empty directory writes both files with
@@ -467,8 +410,7 @@ impl LedgerTask
     /// - witness: `ledger::tests::an_unwritable_directory_is_refused_by_path`
     /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
     /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
-    /// - witness: `ledger::features::tests::a_list_narrows_to_an_area_and_a_status`
-    /// - witness: `ledger::features::tests::a_feature_shows_its_exemplar_whole_and_its_corpus`
+    /// - witness: `ledger::tests::a_list_and_a_show_read_the_root_s_features_ledger`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |run| match (self, run) {
         (&Self::Syntax { .. }, &LedgerRun::Written(ref paths)) => paths.len() == 2,
         (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) | (&Self::Recovery { .. }, &LedgerRun::Swept(_))
@@ -512,12 +454,14 @@ impl LedgerTask
                 ref root,
                 ref area,
                 status,
-            } => FeatureLedger::read(root)?
-                .listed(area.as_ref(), status)
-                .map(LedgerRun::Listed),
-            Self::Show { ref root, ref id } => FeatureLedger::read(root)?
-                .shown(id)
-                .map(|shown| LedgerRun::Shown(Box::new(shown))),
+            } => FeatureLedger::read(root)
+                .and_then(|ledger| ledger.listed(area.as_ref(), status))
+                .map(LedgerRun::Listed)
+                .map_err(LedgerFault::Features),
+            Self::Show { ref root, ref id } => FeatureLedger::read(root)
+                .and_then(|ledger| ledger.shown(id))
+                .map(|shown| LedgerRun::Shown(Box::new(shown)))
+                .map_err(LedgerFault::Features),
         }
     }
 }
@@ -2125,6 +2069,9 @@ mod tests
     use std::path::Path;
     use std::path::PathBuf;
 
+    use gandr_surface_features::FeatureId;
+    use gandr_surface_features::FeaturesFault;
+    use gandr_surface_features::Status;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::PrecName;
     use gandr_surface_grammar::Provenance;
@@ -2803,5 +2750,45 @@ mod tests
             "a directory under a file is refused naming it"
         );
         std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+    }
+
+    #[test]
+    fn a_list_and_a_show_read_the_root_s_features_ledger()
+    {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let Ok(LedgerRun::Listed(features)) = (LedgerTask::List {
+            root: root.clone(),
+            area: None,
+            status: Some(Status::Declined),
+        })
+        .run()
+        else {
+            panic!("the committed ledger lists");
+        };
+        assert!(
+            !features.is_empty()
+                && features
+                    .iter()
+                    .all(|feature| feature.json()["status"] == "declined"),
+            "a list narrows to its status"
+        );
+        let Ok(LedgerRun::Shown(shown)) = (LedgerTask::Show {
+            root: root.clone(),
+            id: FeatureId(String::from("features-ledger")),
+        })
+        .run()
+        else {
+            panic!("the committed ledger shows a row");
+        };
+        assert_eq!(shown.json()["feature"]["id"], "features-ledger");
+        let refused = LedgerTask::Show {
+            root,
+            id: FeatureId(String::from("no-such-feature")),
+        }
+        .run();
+        assert!(
+            matches!(refused, Err(LedgerFault::Features(FeaturesFault::NoFeature { ref id })) if id == "no-such-feature"),
+            "an unknown id is the features ledger's fault: {refused:?}"
+        );
     }
 }

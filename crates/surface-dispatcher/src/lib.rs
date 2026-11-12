@@ -143,7 +143,7 @@
 //! destination becomes an explicit API requirement, rather than an incidental
 //! side effect of dispatch.
 
-// Module documentation that predates the shape lint: 50 headings outside the
+// Module documentation that predates the shape lint: 49 headings outside the
 // vocabulary, 12 decision records, 7 issue references and 12 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
@@ -335,22 +335,15 @@ pub use crate::generation::Retired;
 pub use crate::generation::Submitted;
 pub use crate::generation::Watch;
 pub use crate::generation::delivery;
-pub use crate::ledger::Area;
 pub use crate::ledger::ExemplarFault;
 pub use crate::ledger::ExemplarFinding;
 pub use crate::ledger::ExemplarReport;
-pub use crate::ledger::Feature;
-pub use crate::ledger::FeatureId;
-pub use crate::ledger::FeatureLedger;
 pub use crate::ledger::LedgerFault;
 pub use crate::ledger::LedgerRun;
 pub use crate::ledger::LedgerTask;
-pub use crate::ledger::Malformed;
 pub use crate::ledger::RecoveryFinding;
 pub use crate::ledger::RecoveryReport;
 pub use crate::ledger::RecoveryTally;
-pub use crate::ledger::ShownFeature;
-pub use crate::ledger::Status;
 pub use crate::ledger::SyntaxLedger;
 pub use crate::manifold::Manifold;
 pub use crate::manifold::Secreted;

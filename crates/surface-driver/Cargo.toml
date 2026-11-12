@@ -81,6 +81,7 @@ gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
+gandr-surface-features.workspace = true
 gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lsp.workspace = true

@@ -20,7 +20,7 @@ workflow  repository tooling and gates
 
 ## Map
 
-The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot). [§ Files](../ledger/README.md#files) states how both are generated and checked.
+The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
 
 ## Members
 
@@ -56,6 +56,7 @@ crates/
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once, with their loci and the rules a refusal stood inside, for every face to project
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
 ├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `run`, `fmt`, `stage`, `lsp`, `serve`, `mcp`, `view`, `repl`, `tui` and the exit codes
+├── surface-features/              the features ledger as data, read by the toolchain and the tools
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
@@ -108,7 +109,7 @@ crates/
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins; `check:dylint` states which of its lints deny and why.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 
 A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
 
