@@ -69,7 +69,8 @@ static INSTALLED: OnceLock<VerdictCache> = OnceLock::new();
 
 /// The fork this process installed for the obligations of each kernel check.
 // economy: one fork per process, read where every readmission funnels, as
-// the verdict cache is.
+// the verdict cache is. #2802 threads the fork through the admission when
+// the frames of a check fork.
 static FORKING: OnceLock<SharedFork> = OnceLock::new();
 
 /// Where a cache keeps the receipts its kernel signs, and reads them from.
