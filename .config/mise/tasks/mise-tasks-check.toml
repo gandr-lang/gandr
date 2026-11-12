@@ -1412,9 +1412,11 @@ echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no c
 # engine reads the whole archive within a 120 s budget, and a build state
 # large enough to exceed it fails a lane whose tests all passed (#1173). A
 # step that writes or restores a tarball raises a flag in `GITHUB_ENV` and
-# the conditions read the flag.
+# the conditions read the flag. For the same reason a `hashFiles` call never
+# walks a build directory with `**`. A step tests one file at the
+# directory's root (#6888).
 ["check:workflow-hashing"]
-description = "No hashFiles over a tarball or unavailable context in a workflow"
+description = "No hashFiles over a tarball or a build directory, or unavailable context, in a workflow"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1439,7 +1441,7 @@ if git grep -nIE -e 'hashFiles[(][^)]*[.]tar' -- ':/.github'; then
   echo 'workflow hashing check FAILED: hashFiles over a tarball; raise a flag where the tarball is written' >&2
   exit 1
 fi
-echo 'workflow hashing check OK: no hashFiles over a tarball or unavailable context'
+echo 'workflow hashing check OK: no hashFiles over a tarball or a build directory, and no unavailable context'
 '''
 
 ["check:workflow-hashing-shell"]
