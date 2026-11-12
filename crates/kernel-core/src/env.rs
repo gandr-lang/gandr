@@ -20,10 +20,11 @@
 //! > declaration's content. Checker intermediates never persist.
 //!
 //! The mechanism is a two-mark scheme. Staging records content-start;
-//! `add_decl` reads content-end on entry, so the checker's synthesized
-//! intermediates allocate strictly after it. The checker runs, then the arena
-//! is truncated: to **content-end** on success, dropping intermediates and
-//! keeping content, or to **content-start** on rejection, dropping both.
+//! `add_decl` reads content-end on entry. The checker runs on a clone of the
+//! frozen arena, so its synthesized intermediates allocate in the clone, past
+//! content-end, and leave with it. On success the arena keeps the content up
+//! to **content-end**; on rejection it is truncated to **content-start**,
+//! which drops the content too.
 //!
 //! # Staging order, and the two ways it can diverge from admission order
 //!
@@ -3312,15 +3313,15 @@ impl Environment
     ///   declaration's level signature admits, its declared type forms, its
     ///   sealing provenance re-derives, and a definition's body checks against
     ///   that type. The declaration is appended, its audit precomputed, the
-    ///   arena holds prior content plus this declaration's with the checker's
-    ///   intermediates truncated, and the admission floor rises to that mark.
-    ///   The entry keeps the [`ExpansionCensus`] its check charged, empty when
-    ///   a recorded verdict admitted it. On any failure the arena is truncated
-    ///   to this declaration's content-start clamped into `[admission floor,
-    ///   checker-entry mark]`, so every caller-observable face of the
-    ///   environment is exactly what it was before the call. When the
-    ///   environment keys its admissions ([`Self::recalling`] under a trusting
-    ///   policy) and every admission before was a lone keyed one, the
+    ///   arena holds prior content plus this declaration's, the checker's
+    ///   intermediates left with the clone it ran on, and the admission floor
+    ///   rises to that mark. The entry keeps the [`ExpansionCensus`] its check
+    ///   charged, empty when a recorded verdict admitted it. On any failure the
+    ///   arena is truncated to this declaration's content-start clamped into
+    ///   `[admission floor, checker-entry mark]`, so every caller-observable
+    ///   face of the environment is exactly what it was before the call. When
+    ///   the environment keys its admissions ([`Self::recalling`] under a
+    ///   trusting policy) and every admission before was a lone keyed one, the
     ///   declaration's key chains the previous key over its canonical segment.
     ///   A key a verified receipt from a trusted signer attests admits the
     ///   declaration as [`Admission::Recalled`] with the recorded reading and
@@ -3371,8 +3372,9 @@ impl Environment
     // The predicate covers the two structural halves of the success
     // postcondition: exactly one entry is appended, and the admission floor
     // ends at the arena's own watermark — that is, the checker's intermediates
-    // were truncated away rather than committed. Whether the declaration is
-    // *well-typed* is what the body decides and is not restated here.
+    // left with its clone rather than entering the arena. Whether the
+    // declaration is *well-typed* is what the body decides and is not restated
+    // here.
     #[inline]
     #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| ret.is_err()
         || (arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
@@ -3493,17 +3495,18 @@ impl Environment
         })
     }
 
-    /// Run `check` against a view of this environment: the arena that it
-    /// mints its intermediates into, a judgement over the entries below
-    /// `rank` through the support that `roots` start, and the session that it
-    /// names records in. The check reads and writes no other part of the
-    /// environment.
+    /// Run `check` against a view of this environment: a clone of the frozen
+    /// arena that it mints its intermediates into, a judgement over the
+    /// entries below `rank` through the support that `roots` start, and the
+    /// session that it names records in. The check reads and writes no other
+    /// part of the environment, and its intermediates leave with the clone.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the answer of `check`, unless the check read a position
     ///   outside its support: then [`KernelError::OutsideSupport`] at the first
-    ///   such position. The entries keep no horizon after the call.
+    ///   such position. The entries keep no horizon after the call, and the
+    ///   arena holds the nodes it held before, all of them frozen.
     /// - panics: none.
     ///
     /// # Errors
@@ -3531,22 +3534,27 @@ impl Environment
     {
         let mut view = self.entries.view();
         view.open(roots.iter().copied(), rank);
+        // A freeze moves the nodes minted since the last one into a segment,
+        // so the clone shares every node and copies none.
+        self.arena.freeze();
+        let mut arena = self.arena.clone();
         let checked = {
             let Self {
-                ref mut arena,
                 ref manifest,
                 ref mut names,
                 admitting,
                 ..
             } = *self;
             check(
-                arena,
+                &mut arena,
                 check::Judgement::new(&view, levels)
                     .unsealing(manifest)
                     .taking(crate::admitted::Taking::under(admitting, taken)),
                 names.session_mut(),
             )
         };
+        // A reader that names nodes by their positions forgets the clone's.
+        self.arena.dropped(&arena);
         let outside = view.close();
         self.entries.restore(view);
         supported(checked, outside)
@@ -3597,9 +3605,8 @@ impl Environment
                     self.verdicts.checked(entry_key, key, accessibility.clone());
                 }
                 self.admitted = self.admitted.and(took);
-                // Keep this declaration's content; drop the intermediates that
-                // allocated past it.
-                self.arena.truncate_to(content_end);
+                // The arena holds this declaration's content, and the check's
+                // intermediates left with its clone.
                 self.admission_floor = content_end;
                 let rested_on = self.transitive_rest(
                     declaration.content(),
@@ -3629,8 +3636,8 @@ impl Environment
                 Ok(CheckedId::new(position))
             },
             Err(error) => {
-                // Drop the intermediates and this declaration's content, down
-                // to the admission floor and no further.
+                // Drop this declaration's content, down to the admission floor
+                // and no further.
                 self.arena.truncate_to(rejected);
                 self.verdicts.refused();
                 Err(error)
@@ -3909,9 +3916,8 @@ impl Environment
             .map(|member| member.declaration)
             .collect::<Vec<_>>();
         let manifest = self.manifest.clone();
-        match self.admit_block(&members, &ranks, content_end) {
+        match self.admit_block(&members, &ranks) {
             Ok(ids) => {
-                self.arena.truncate_to(content_end);
                 self.admission_floor = content_end;
                 Ok(ids)
             },
@@ -3935,8 +3941,8 @@ impl Environment
     /// checks; the caller rolls back on failure.
     ///
     /// # Specification
-    /// - requires: `members` were staged into this arena below `content_end`,
-    ///   in admission order, and `ranks` holds one free rank per member,
+    /// - requires: `members` were staged into this arena at its watermark, in
+    ///   admission order, and `ranks` holds one free rank per member,
     ///   ascending.
     /// - ensures: on success one entry per member is appended, each audited
     ///   with the union of the block's audits; on failure some prefix of them
@@ -3957,7 +3963,6 @@ impl Environment
         &mut self,
         members: &[Declaration],
         ranks: &[SourceRank],
-        content_end: ArenaWatermark,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
         let base = usize::from(self.entries.len());
@@ -4020,7 +4025,6 @@ impl Environment
                     )
                 },
             )?;
-            self.arena.truncate_to(content_end);
         }
         for (((offset, member), census), &rank) in members
             .iter()
@@ -4052,7 +4056,6 @@ impl Environment
                     check::check_declaration(arena, judgement, member, session, census)
                 },
             )?;
-            self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
                 member.content(),
                 member.laws(),

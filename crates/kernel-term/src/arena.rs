@@ -842,6 +842,31 @@ impl Truncations
             }
         }
     }
+
+    /// Record that a clone, whose stamp reached `theirs`, minted or truncated
+    /// past `now`: a stamp past this record's and the clone's, and a floor at
+    /// `now` in each family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn absorb(
+        &mut self,
+        theirs: TruncationStamp,
+        now: ArenaWatermark,
+    )
+    {
+        self.stamp = TruncationStamp(self.stamp.0.max(theirs.0).saturating_add(1));
+        let stamp = self.stamp;
+        for (floors, length) in [
+            (&mut self.values, now.values),
+            (&mut self.computations, now.computations),
+            (&mut self.value_types, now.value_types),
+            (&mut self.comp_types, now.comp_types),
+        ] {
+            floors.lower(stamp, ArenaLength(length));
+        }
+    }
 }
 
 /// The append-only arena owning every term and type node of one environment.
@@ -1550,6 +1575,45 @@ impl TermArena
         self.truncations.record(before, after);
     }
 
+    /// Record that `clone`, taken at this arena's watermark, minted nodes or
+    /// truncated them, and is dropped: a reader that names nodes by their
+    /// positions, through this arena or through the clone, forgets every name
+    /// at or past this arena's watermark, as if this arena minted the clone's
+    /// nodes itself and truncated them.
+    ///
+    /// # Specification
+    /// - requires: `clone` is a clone of this arena, and this arena minted and
+    ///   truncated nothing since the clone was taken.
+    /// - ensures: the watermark and every node are unchanged. When the clone
+    ///   minted or truncated, the stamp passes each stamp of this arena and of
+    ///   the clone, and [`Self::truncated_since`] answers a truncation to the
+    ///   watermark from each of them. Otherwise nothing changes.
+    /// - provides: the check against a clone (`Environment::within_view`),
+    ///   whose intermediates leave with the clone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clone that mints, truncates and drops reads, to a
+    ///   reader at a stamp of either arena, as the arena that mints and
+    ///   truncates itself.
+    /// - witness: `arena::tests::a_clone_that_drops_its_nodes_reads_as_a_truncation_3476`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn dropped(
+        &mut self,
+        clone: &Self,
+    )
+    {
+        let now = self.watermark();
+        if clone.truncations.stamp != self.truncations.stamp || clone.watermark() != now {
+            self.truncations.absorb(clone.truncations.stamp, now);
+        }
+    }
+
     /// What a reader that last read `since` learns: the stamp now, and the
     /// lowest length each family was truncated to after it.
     ///
@@ -1559,7 +1623,8 @@ impl TermArena
     /// whichever of the arena's truncation sites made it.
     ///
     /// # Specification
-    /// - requires: `since` is the default stamp or one this arena returned.
+    /// - requires: `since` is the default stamp, one this arena returned, or
+    ///   one a clone of it returned before [`Self::dropped`] read the clone.
     /// - ensures: `None` exactly when no truncation after `since` dropped a
     ///   node; otherwise the present stamp, and per family the lowest length a
     ///   truncation after `since` left, or the present length where none did.
@@ -5110,6 +5175,169 @@ mod tests
             "a clone taken before keeps every node"
         );
         assert_eq!(before.len(), family.len(), "and the length holds");
+    }
+
+    /// #3476: a family frozen after each of many runs of mints, some of them
+    /// empty, reads each node at the offset it was minted at, from either
+    /// end. Some freezes find a clone that shares the newest segment, and the
+    /// others add to it in place. Each clone keeps its nodes after the family
+    /// freezes, truncates and changes a frozen node. A truncation at a
+    /// segment's end, inside a segment and to nothing reads as the same
+    /// truncation of a family never frozen, with a clone beside it and with
+    /// none.
+    #[test]
+    fn a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476()
+    {
+        use alloc::vec::Vec;
+
+        let rows = |family: &super::Family<u32>| family.iter().copied().collect::<Vec<_>>();
+        let mut family = super::Family::default();
+        let mut plain = Vec::new();
+        let mut clones = Vec::new();
+        let mut next = 0_u32;
+        for (round, run) in [3_u32, 0, 1, 5, 2, 0, 7, 1].into_iter().enumerate() {
+            for _ in 0 .. run {
+                family.push(next);
+                plain.push(next);
+                next = next.saturating_add(1);
+            }
+            family.freeze();
+            assert!(family.own().is_empty(), "a freeze leaves no own node");
+            if matches!(round, 3 | 6) {
+                clones.push((family.clone(), plain.clone()));
+            }
+        }
+        family.push(next);
+        plain.push(next);
+        assert_eq!(rows(&family), plain, "every node in allocation order");
+        assert_eq!(
+            family.iter().rev().copied().collect::<Vec<_>>(),
+            plain.iter().rev().copied().collect::<Vec<_>>(),
+            "and from the other end"
+        );
+        for (offset, node) in plain.iter().enumerate() {
+            assert_eq!(family.get(offset), Some(node), "the node at {offset}");
+        }
+        assert_eq!(family.get(plain.len()), None, "nothing past the end");
+        assert_eq!(family.last(), plain.last());
+        let (shared, kept) = clones
+            .first()
+            .cloned()
+            .expect("a clone at the fourth freeze");
+        assert_eq!(
+            shared.shared_frozen(&family),
+            shared.len(),
+            "a clone shares each node frozen before it"
+        );
+        if let Some(node) = family.get_mut(super::ArenaLength::from(1_usize)) {
+            *node = 100;
+        }
+        assert_eq!(
+            family.get(1_usize),
+            Some(&100),
+            "a frozen node changes in place"
+        );
+        for length in [19_usize, 15, 11, 6, 4, 0] {
+            let mut cut = family.clone();
+            cut.truncate(super::ArenaLength::from(length));
+            let mut expected = rows(&family);
+            expected.truncate(length);
+            assert_eq!(rows(&cut), expected, "a truncation to {length}");
+            assert_eq!(usize::from(cut.len()), length);
+            cut.push(200);
+            assert_eq!(cut.get(length), Some(&200), "a mint after it at {length}");
+        }
+        for length in [19_usize, 15, 11, 6, 4, 0] {
+            let mut alone = super::Family::default();
+            for (offset, &node) in plain.iter().enumerate() {
+                alone.push(node);
+                if offset.is_multiple_of(3) {
+                    alone.freeze();
+                }
+            }
+            alone.freeze();
+            alone.truncate(super::ArenaLength::from(length));
+            let mut expected = plain.clone();
+            expected.truncate(length);
+            assert_eq!(rows(&alone), expected, "a truncation to {length}, alone");
+            alone.push(200);
+            assert_eq!(
+                alone.get(length),
+                Some(&200),
+                "a mint after it at {length}, alone"
+            );
+        }
+        for (clone, nodes) in &clones {
+            assert_eq!(&rows(clone), nodes, "each clone keeps the nodes it took");
+        }
+        assert_eq!(rows(&shared), kept);
+    }
+
+    /// #3476: a check that mints its intermediates into a clone and drops it
+    /// reads, to a reader that names nodes by their positions, as a check
+    /// that mints them into the arena and truncates them. A clone that mints
+    /// nothing reads as no truncation.
+    #[test]
+    fn a_clone_that_drops_its_nodes_reads_as_a_truncation_3476()
+    {
+        let content = |arena: &mut TermArena| {
+            let value = arena.value_constant(super::ConstantIndex::from(0_usize));
+            let _returned = arena.computation_return(value);
+        };
+        let intermediates = |arena: &mut TermArena| {
+            let value = arena.value_unit();
+            let _type = arena.value_type_unit();
+            let _returned = arena.computation_return(value);
+        };
+        let since = super::TruncationStamp::default();
+        let mut plain = TermArena::new();
+        content(&mut plain);
+        let mark = plain.watermark();
+        intermediates(&mut plain);
+        plain.truncate_to(mark);
+        let mut kept = TermArena::new();
+        content(&mut kept);
+        kept.freeze();
+        let mut clone = kept.clone();
+        intermediates(&mut clone);
+        kept.dropped(&clone);
+        assert_eq!(kept.watermark(), mark, "the arena keeps its content alone");
+        assert_eq!(plain, kept, "and every node of it");
+        assert!(
+            kept.truncated_since(since).is_some(),
+            "a reader learns that the clone's nodes are gone"
+        );
+        assert_eq!(
+            kept.truncated_since(since),
+            plain.truncated_since(since),
+            "at the floor that the truncation gives"
+        );
+        let unchanged = kept.truncated_since(since).map(|truncated| truncated.now());
+        let idle = kept.clone();
+        kept.dropped(&idle);
+        assert_eq!(
+            kept.truncated_since(since).map(|truncated| truncated.now()),
+            unchanged,
+            "a clone that mints nothing takes no stamp"
+        );
+        // A clone that mints and truncates back to its start leaves its
+        // watermark where it found it. A reader at the clone's own stamp still
+        // learns that the clone's nodes are gone.
+        let mut back = kept.clone();
+        let start = back.watermark();
+        intermediates(&mut back);
+        back.truncate_to(start);
+        let read = back
+            .truncated_since(since)
+            .map(|truncated| truncated.now())
+            .expect("the clone's truncation takes a stamp");
+        kept.dropped(&back);
+        assert_eq!(
+            kept.truncated_since(read)
+                .map(|truncated| truncated.floor()),
+            Some(start),
+            "a reader at the clone's stamp forgets each name past the start"
+        );
     }
 
     /// An arena frozen part way answers every read, mint, truncation and
