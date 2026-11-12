@@ -33,7 +33,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **The descent skeleton.** `Descent` and `descent::replay`: one replay for a conversion trace and a guarded family with its rows.
 - **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`), whose certificates replay on readmission, all through ordinary admission.
 - **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
-- **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests.
+- **The content key.** `ContentTable`, `MintNames`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the names that a bridge gives its images at mint, the memo key as one name in the content table built from its members' names, and content digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: each goal expanded, recalled or answered by a kept outcome, per plane, kept on its entry ([`census`](src/census.rs)).
 - **Errors.** `KernelError`, whose payloads are content; [`error`](src/error.rs) states why.
