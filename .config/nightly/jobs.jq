@@ -3,7 +3,9 @@
 # and builds nothing of its own work is a step of the one `reports` job, never
 # a job of its own. In that job a failing step hides none after it: every step
 # after `setup rust` runs unless the run was cancelled, and the lane budget,
-# which refuses a night past its ceiling, is the last step.
+# which refuses a night past its ceiling, is the last step. Two jobs that
+# restore one build state at one commit pay a second container start and a
+# second restore for the same build, so they are steps of one job (#6704).
 #
 # Input: `.github/workflows/nightly.yml`'s `jobs`, anchors expanded, as JSON.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
@@ -25,4 +27,11 @@ def stateless: (.steps // []) | all(.name != "restore complete test state");
     end),
    (if ($steps | length) > 0 and ($steps | last | .name) != "compare each lane with its budget"
     then "`reports` ends with `\($steps | last | .name)`: the lane budget, which refuses a night past its ceiling, runs last so its refusal hides no other step (#3208)"
-    else empty end)]
+    else empty end),
+   ([to_entries[]
+      | select(.key != "template" and (.value.strategy.matrix // null) == null)
+      | select((.value.env.CI_BUILD_STATE // null) != null)
+      | {job: .key, state: .value.env.CI_BUILD_STATE, commit: (.value.env.CI_COMMIT // "")}]
+    | group_by([.state, .commit])[]
+    | select(length > 1)
+    | "\(map("`\(.job)`") | join(" and ")) restore the build state `\(.[0].state)` at one commit: one container start and one restore serve them, so they are steps of one job (#6704)")]

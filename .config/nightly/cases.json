@@ -158,5 +158,49 @@
       }
     },
     "output": "[\"`reports` ends with `report the dependencies`: the lane budget, which refuses a night past its ceiling, runs last so its refusal hides no other step (#3208)\"]"
+  },
+  {
+    "name": "#6704: two jobs that restore one build state at one commit are refused",
+    "input": {
+      "sweeps": {
+        "env": {
+          "CI_BUILD_STATE": "cargo-test-enforcing",
+          "CI_COMMIT": "${{ needs.freshness.outputs.enforcing }}"
+        },
+        "steps": [{ "name": "restore complete test state" }],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      },
+      "recovery": {
+        "env": {
+          "CI_BUILD_STATE": "cargo-test-enforcing",
+          "CI_COMMIT": "${{ needs.freshness.outputs.enforcing }}"
+        },
+        "steps": [{ "name": "restore complete test state" }],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      }
+    },
+    "output": "[\"`sweeps` and `recovery` restore the build state `cargo-test-enforcing` at one commit: one container start and one restore serve them, so they are steps of one job (#6704)\"]"
+  },
+  {
+    "name": "two jobs that restore two build states hold",
+    "input": {
+      "sweeps": {
+        "env": {
+          "CI_BUILD_STATE": "cargo-test-enforcing",
+          "CI_COMMIT": "${{ needs.freshness.outputs.enforcing }}"
+        },
+        "steps": [{ "name": "restore complete test state" }],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      },
+      "all-features": {
+        "env": {
+          "CI_BUILD_STATE": "cargo-test-plain-only",
+          "CI_COMMIT": "${{ needs.freshness.outputs.plain }}"
+        },
+        "steps": [{ "name": "restore complete test state" }],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      }
+    },
+    "output": "[]"
   }
 ]
