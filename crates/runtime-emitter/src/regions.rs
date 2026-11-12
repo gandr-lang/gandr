@@ -4,12 +4,21 @@
 //!
 //! The heap and the window region of a run grow with its input. The bound
 //! holds their sum, so a run heavy in windows and a run heavy in objects share
-//! one number. Each region reserves address space for the whole bound and
-//! commits it in chunks of [`CHUNK`]. The stencils compare each allocation
-//! against the committed end, as they always did. Past that end the cold
-//! branch commits the next chunks, and it refuses a commit that takes the sum
-//! past the bound. The kernel gives a page its memory when the run first
-//! writes it.
+//! one number. Each region reserves address space for the whole bound, up to
+//! its share of the process's address space, and commits it in chunks of
+//! [`CHUNK`]. The stencils compare each allocation against the committed end.
+//! Past that end the cold branch commits the next chunks, and it refuses a
+//! commit that takes the sum past the bound. The kernel gives a page its
+//! memory when the run first writes it.
+//!
+//! The address space is a second account beside the bound. Each thread that
+//! runs a program keeps a set of regions, so a process holds many sets at
+//! once. A host with a small address space cannot give each set the whole
+//! bound twice. So the regions of a process reserve together at most a
+//! quarter of its address space, the least of `RLIMIT_AS` and the host's user
+//! space. Each region asks the least of the bound and its share, the quarter
+//! divided by twice the host's width. The rest of the space stays for the
+//! executable, its libraries, the allocator and the thread stacks.
 //!
 //! The bound is a policy of the invocation. The driver binds it once with
 //! [`bind`], from `--memory`, before the first run. Without a binding, the
@@ -24,8 +33,9 @@
 //!   the runs of one invocation removes this ceiling (#6457).
 //! - **The frame region stays fixed.** It keeps its own bound and its own exit,
 //!   outside the sum.
-//! - **A host can refuse the address space.** A region then reserves half of
-//!   it, and so on down to one chunk, and a stop at the reservation names it.
+//! - **A region can stop at its share.** A run whose region passes its share
+//!   stops at the reservation, and the stop names it. A share that the account
+//!   or the host cannot give halves, down to one chunk.
 //!
 //! # References
 //!
@@ -40,7 +50,10 @@
 use alloc::string::ToString as _;
 use core::fmt;
 use core::fmt::Write as _;
+use core::num::NonZeroUsize;
 use core::str::FromStr;
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use gandr_runtime_stencils::CHUNK;
@@ -569,9 +582,47 @@ pub enum Short
 {
     /// The bound: the regions hold it whole.
     Bound,
-    /// The region's reservation, of this many bytes: the host gave no more
-    /// address space.
-    Reservation(Bytes),
+    /// The region's reservation: the host gave no more address space, or
+    /// the account gave no more of its share.
+    Reservation
+    {
+        /// The bytes that the region reserved.
+        reserved: Bytes,
+        /// The process's account of address space at the stop.
+        standing: Standing,
+    },
+}
+
+/// The process's account of address space when a run stops at a
+/// reservation.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Standing
+{
+    /// The account of the space that the probe read.
+    Bounded
+    {
+        /// The most that one region asks.
+        share: Bytes,
+        /// What the budget holds beyond the live reservations.
+        left: Bytes,
+        /// The space that the probe read.
+        space: Bytes,
+    },
+    /// A host that maps nothing reports no space.
+    Unread,
+}
+
+/// The process's account of address space now, as a stop reports it.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub(crate) fn standing() -> Standing
+{
+    account().standing()
 }
 
 /// The code-word jumps a run spent.
@@ -620,7 +671,9 @@ pub struct Held
 impl fmt::Display for Held
 {
     /// The stop as the report states it: the sum, the step, each region,
-    /// the region that asked, the bound with its origin, and the remedy.
+    /// the region that asked, the bound with its origin, and the remedy; a
+    /// stop at a reservation names the reservation, the share, the account's
+    /// remainder and the space beside the bound.
     ///
     /// # Specification
     /// trivial.
@@ -628,7 +681,9 @@ impl fmt::Display for Held
     /// # Adequacy
     /// - hypothesis: L3 — a stop at the bound names both regions, the region
     ///   that asked, the origin and the remedy, and a stop at a reservation
-    ///   names the reservation; a region named for the other changes both.
+    ///   names the reservation, the share, the remainder, the space and the
+    ///   bound; a region named for the other, or a figure of the account named
+    ///   for another, changes them.
     /// - witness: `regions::tests::a_stop_names_its_regions_its_origin_and_its_remedy`
     #[inline]
     fn fmt(
@@ -648,16 +703,343 @@ impl fmt::Display for Held
         )?;
         match self.short {
             Short::Bound => write!(f, "{}; raise --memory", self.bound),
-            Short::Reservation(reserved) => write!(
+            Short::Reservation {
+                reserved,
+                standing: Standing::Bounded { share, left, space },
+            } => write!(
                 f,
-                "the {reserved} bytes of address space that the host reserved for it"
+                "the {reserved} bytes of address space that it reserved, its share {share} with \
+                 {left} left of a quarter of the process's {space} bytes of address space, \
+                 within {}",
+                self.bound
+            ),
+            Short::Reservation {
+                reserved,
+                standing: Standing::Unread,
+            } => write!(
+                f,
+                "the {reserved} bytes of address space that the host reserved for it, which \
+                 reports no address space, within {}",
+                self.bound
             ),
         }
     }
 }
 
-/// The address space one region of a run reserves: the whole bound, or as
-/// much of it as the host gives, down to one chunk.
+/// The part of a process's address space that the regions of its runs
+/// reserve together: one quarter. The rest stays for the executable, its
+/// libraries, the allocator and the thread stacks.
+const BUDGET_PART: u64 = 4;
+
+/// The process's account of the address space that its regions reserve,
+/// read once.
+static ACCOUNT: OnceLock<Account> = OnceLock::new();
+
+/// The exponent of the first size that the probe of a process's address
+/// space asks: 2⁴⁷ bytes, the user space of a 4-level x86-64 host or a
+/// 48-bit arm64 host.
+const PROBE_TOP: u32 = 47;
+
+/// The address space of a process.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Space
+{
+    /// The host grants the process one mapping of this many bytes.
+    Bounded(Bytes),
+    /// The host maps nothing, so it reports no space.
+    Unread,
+}
+
+impl Space
+{
+    /// The space that the host grants the process now: the largest power of
+    /// two, from 2⁴⁷ bytes down, that one probe mapping takes. The answer
+    /// holds `RLIMIT_AS`, the paging mode and the host's policy together.
+    ///
+    /// # Specification
+    /// - ensures: the space is the largest power of two at or below 2⁴⁷ bytes
+    ///   that the host grants as one mapping, or no space when it grants none;
+    ///   the process holds no probe mapping after the call.
+    /// - executable: none — the host decides what it maps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the host is the oracle: it maps the space again as
+    ///   one probe, and it refuses twice the space unless the space is 2⁴⁷
+    ///   bytes; a probe that skips a size or keeps its mapping changes one.
+    /// - witness: `regions::tests::the_space_is_the_largest_probe_that_the_host_grants_6877`
+    #[cfg(unix)]
+    fn host() -> Self
+    {
+        (0 ..= PROBE_TOP)
+            .rev()
+            .filter_map(|power| 1_u64.checked_shl(power))
+            .map(Bytes)
+            .find(|&bytes| probe(bytes) == Probe::Granted)
+            .map_or(Self::Unread, Self::Bounded)
+    }
+
+    /// The space of a host with no mapping: none, so each region asks the
+    /// whole bound.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(not(unix))]
+    const fn host() -> Self
+    {
+        Self::Unread
+    }
+}
+
+/// The threads that a host runs at once: the width of the pool that takes
+/// region sets.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Width(NonZeroUsize);
+
+impl Width
+{
+    /// The host's width, or one thread when the host reports none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn host() -> Self
+    {
+        Self(std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN))
+    }
+}
+
+/// What the host answers one probe mapping.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Probe
+{
+    /// The host mapped the probe.
+    Granted,
+    /// The host refused it.
+    Refused,
+}
+
+/// Map `bytes` of inaccessible address space with no commit charge, and
+/// unmap it at once.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn probe(bytes: Bytes) -> Probe
+{
+    let Ok(length) = usize::try_from(bytes.0)
+    else {
+        return Probe::Refused;
+    };
+    #[cfg(target_os = "linux")]
+    let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE;
+    #[cfg(not(target_os = "linux"))]
+    let flags = libc::MAP_PRIVATE | libc::MAP_ANON;
+    // SAFETY: an anonymous inaccessible mapping at an address the kernel
+    // picks touches no memory the process holds.
+    let base = unsafe { libc::mmap(core::ptr::null_mut(), length, libc::PROT_NONE, flags, -1, 0) };
+    if base == libc::MAP_FAILED {
+        return Probe::Refused;
+    }
+    // SAFETY: the mapping is the probe's own, and nothing reads it.
+    let _unmapped = unsafe { libc::munmap(base, length) };
+    Probe::Granted
+}
+
+/// The address space that the regions of one process reserve together.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+enum Account
+{
+    /// A process whose space the probe read.
+    Bounded
+    {
+        /// The space that the probe read.
+        space: Bytes,
+        /// The bytes that the live reservations may hold together.
+        budget: Bytes,
+        /// The words that one region asks at most.
+        share: Words,
+        /// The bytes that the live reservations hold.
+        held: AtomicU64,
+    },
+    /// A process whose space is unread: each region asks the whole bound.
+    Unbounded,
+}
+
+impl Account
+{
+    /// The account of a process with `space` on a host `width` threads wide.
+    ///
+    /// # Specification
+    /// - ensures: a bounded space gives a budget of a quarter of it and a share
+    ///   of the budget divided by twice `width`, never below one chunk; an
+    ///   unread space bounds nothing.
+    /// - executable: none — unwitnessable provenance: the space and the width
+    ///   are the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a space of 64 GiB on 16 threads gives a budget of 16
+    ///   GiB and a share of 512 MiB, and a space too small for a chunk a share
+    ///   still gives one chunk; a budget or a share divided otherwise changes
+    ///   one of them.
+    /// - witness: `regions::tests::each_region_of_a_small_space_asks_its_share_6877`
+    fn of(
+        space: Space,
+        width: Width,
+    ) -> Self
+    {
+        match space {
+            Space::Unread => Self::Unbounded,
+            Space::Bounded(space) => {
+                let budget = Bytes(space.0.checked_div(BUDGET_PART).unwrap_or(0));
+                let regions = u64::try_from(width.0.get())
+                    .unwrap_or(u64::MAX)
+                    .saturating_mul(2);
+                let share = Bytes(budget.0.checked_div(regions).unwrap_or(0)).words();
+                Self::Bounded {
+                    space,
+                    budget,
+                    share: Words(share.0.max(CHUNK.0)),
+                    held: AtomicU64::new(0),
+                }
+            },
+        }
+    }
+
+    /// Debit what a region that asks `words` may reserve: the least of
+    /// `words` and the share, halved until the budget holds it, never below
+    /// one chunk.
+    ///
+    /// # Specification
+    /// - ensures: the grant is at most `words` and the share, or one chunk; the
+    ///   account holds it until [`Self::refund`] gives it back.
+    /// - executable: none — unwitnessable provenance: the account is shared by
+    ///   every thread of the process, so another debit can move it between a
+    ///   call and a check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sets of a host twice as wide as the budget plans
+    ///   for: the planned sets take their share, the later ones fit what the
+    ///   budget holds or take one chunk, and a refund gives the share back; a
+    ///   grant past the budget or a refund that keeps a byte changes them.
+    /// - witness: `regions::tests::each_region_of_a_small_space_asks_its_share_6877`
+    fn grant(
+        &self,
+        words: Words,
+    ) -> Words
+    {
+        match *self {
+            Self::Unbounded => words,
+            Self::Bounded {
+                budget,
+                share,
+                ref held,
+                ..
+            } => {
+                let asked = Words(words.0.min(share.0));
+                let mut now = held.load(Ordering::Relaxed);
+                loop {
+                    let left = Bytes(budget.0.saturating_sub(now)).words();
+                    let granted = fitted(asked, left);
+                    let after = now.saturating_add(Bytes::of_words(granted).0);
+                    match held.compare_exchange_weak(
+                        now,
+                        after,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => return granted,
+                        Err(seen) => now = seen,
+                    }
+                }
+            },
+        }
+    }
+
+    /// Credit `words` that a reservation gives back.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refund(
+        &self,
+        words: Words,
+    )
+    {
+        match *self {
+            Self::Unbounded => {},
+            Self::Bounded { ref held, .. } => {
+                let bytes = Bytes::of_words(words).0;
+                // The update never declines, so it always succeeds.
+                let _updated = held.try_update(Ordering::Relaxed, Ordering::Relaxed, |now| {
+                    Some(now.saturating_sub(bytes))
+                });
+            },
+        }
+    }
+
+    /// The account as a stop at a reservation reports it: the share, what
+    /// the budget holds beyond the live reservations, and the space.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(&self) -> Standing
+    {
+        match *self {
+            Self::Unbounded => Standing::Unread,
+            Self::Bounded {
+                space,
+                budget,
+                share,
+                ref held,
+            } => Standing::Bounded {
+                share: Bytes::of_words(share),
+                left: Bytes(budget.0.saturating_sub(held.load(Ordering::Relaxed))),
+                space,
+            },
+        }
+    }
+}
+
+/// The first of `words` and its halvings, down to one chunk, that `left`
+/// holds, or the last of them when none does.
+///
+/// # Specification
+/// trivial.
+fn fitted(
+    words: Words,
+    left: Words,
+) -> Words
+{
+    let mut asked = words.0;
+    while asked > left.0 && asked > CHUNK.0 {
+        asked = asked.checked_div(2).unwrap_or(0).max(CHUNK.0);
+    }
+    Words(asked)
+}
+
+/// The process's account, read the first time a region reserves.
+///
+/// # Specification
+/// trivial.
+fn account() -> &'static Account
+{
+    ACCOUNT.get_or_init(|| Account::of(Space::host(), Width::host()))
+}
+
+/// The address space one region of a run reserves: the whole bound, up to
+/// the region's share of the process's account, or as much of that as the
+/// host gives, down to one chunk.
 ///
 /// # Specification
 /// trivial.
@@ -678,12 +1060,14 @@ pub(crate) struct Reservation
 
 impl Reservation
 {
-    /// Reserve `words` of address space, or half of them when the host
-    /// refuses, and so on down to one chunk.
+    /// Reserve `words` of address space, up to the share that the process's
+    /// account grants, or half of that when the host refuses, and so on down
+    /// to one chunk.
     ///
     /// # Specification
-    /// - ensures: the reservation holds at most `words`; it holds none only
-    ///   when the host refuses even one chunk.
+    /// - ensures: the reservation holds at most `words` and the share; it holds
+    ///   none only when the host refuses even one chunk. The account holds what
+    ///   the reservation holds until the reservation drops.
     /// - executable: none — the host decides what it maps.
     ///
     /// # Adequacy
@@ -694,11 +1078,15 @@ impl Reservation
     #[must_use]
     pub(crate) fn of(words: Words) -> Self
     {
-        let reserved = core::iter::successors(Some(words.0), |&asked| {
+        let account = account();
+        let granted = account.grant(words);
+        let reserved = core::iter::successors(Some(granted.0), |&asked| {
             (asked > CHUNK.0).then(|| asked.checked_div(2).unwrap_or(0).max(CHUNK.0))
         })
-        .find_map(|asked| Self::mapped(Words(asked)));
-        reserved.unwrap_or_else(Self::empty)
+        .find_map(|asked| Self::mapped(Words(asked)))
+        .unwrap_or_else(Self::empty);
+        account.refund(Words(granted.0.saturating_sub(reserved.words.0)));
+        reserved
     }
 
     /// The reservation of no words: every commit past its base refuses.
@@ -861,7 +1249,7 @@ impl Reservation
 
 impl Drop for Reservation
 {
-    /// Unmap the region.
+    /// Unmap the region, and credit its words to the process's account.
     ///
     /// # Specification
     /// trivial.
@@ -879,6 +1267,7 @@ impl Drop for Reservation
                 )
             };
         }
+        account().refund(self.words);
     }
 }
 
@@ -1032,10 +1421,12 @@ const fn physical() -> Option<Bytes>
 mod tests
 {
     use alloc::string::ToString as _;
+    use core::num::NonZeroUsize;
 
     use gandr_runtime_stencils::Word;
     use gandr_runtime_stencils::Words;
 
+    use super::Account;
     use super::Bytes;
     use super::CHUNK;
     use super::Held;
@@ -1044,6 +1435,8 @@ mod tests
     use super::Region;
     use super::Reservation;
     use super::Short;
+    use super::Space;
+    use super::Standing;
     use super::Step;
     use super::Unsized;
     use super::bind;
@@ -1153,10 +1546,30 @@ mod tests
             held.to_string().contains("; the heap asked for"),
             "the heap asks: {held}"
         );
-        held.short = Short::Reservation(Bytes(1 << 30));
+        held.short = Short::Reservation {
+            reserved: Bytes(1 << 30),
+            standing: Standing::Bounded {
+                share: Bytes(512 << 20_u32),
+                left: Bytes(0),
+                space: Bytes(64 << 30),
+            },
+        };
         assert!(
             held.to_string().ends_with(
-                "past the 1 073 741 824 bytes of address space that the host reserved for it"
+                "past the 1 073 741 824 bytes of address space that it reserved, its share \
+                 536 870 912 with 0 left of a quarter of the process's 68 719 476 736 bytes of \
+                 address space, within --memory 2 GiB"
+            ),
+            "{held}"
+        );
+        held.short = Short::Reservation {
+            reserved: Bytes(1 << 30),
+            standing: Standing::Unread,
+        };
+        assert!(
+            held.to_string().ends_with(
+                "past the 1 073 741 824 bytes of address space that the host reserved for it, \
+                 which reports no address space, within --memory 2 GiB"
             ),
             "{held}"
         );
@@ -1187,6 +1600,53 @@ mod tests
         let halved = Reservation::of(huge).words;
         assert!(halved.0 < huge.0, "{halved:?}");
         assert!(halved.0 >= CHUNK.0, "{halved:?}");
+    }
+
+    /// The regions of a process with 64 GiB of space on 16 threads share a
+    /// budget of 16 GiB: each of 32 regions takes its share of 512 MiB, a
+    /// later region takes one chunk, and a refund gives the share back. A
+    /// space too small for a chunk still gives each region one chunk. Before
+    /// the account, each region asked the whole bound and took what the host
+    /// gave, so the sixth set found no space on the `riscv64` runner.
+    #[test]
+    fn each_region_of_a_small_space_asks_its_share_6877()
+    {
+        let width = super::Width(NonZeroUsize::new(16).unwrap_or(NonZeroUsize::MIN));
+        let account = Account::of(Space::Bounded(Bytes(64 << 30)), width);
+        let share = Bytes(512 << 20_u32).words();
+        let bound = Bytes(122 << 30).words();
+        for region in 0_u32 .. 32_u32 {
+            assert_eq!(share, account.grant(bound), "region {region}");
+        }
+        assert_eq!(CHUNK, account.grant(bound), "past the budget");
+        let small = Words(CHUNK.0.saturating_mul(3));
+        account.refund(Words(CHUNK.0.saturating_add(share.0)));
+        assert_eq!(small, account.grant(small), "a region that asks less");
+        account.refund(small);
+        assert_eq!(share, account.grant(bound), "the share given back");
+        let tiny = Account::of(Space::Bounded(Bytes(1 << 20)), width);
+        assert_eq!(CHUNK, tiny.grant(bound), "a space too small for a chunk");
+    }
+
+    /// The space is a power of two that the host maps again as one probe,
+    /// and the host refuses twice it, unless it is 2⁴⁷ bytes.
+    #[cfg(unix)]
+    #[test]
+    fn the_space_is_the_largest_probe_that_the_host_grants_6877()
+    {
+        let Space::Bounded(space) = Space::host()
+        else {
+            panic!("a unix host maps a probe");
+        };
+        assert!(space.0.is_power_of_two(), "{space}");
+        assert_eq!(super::Probe::Granted, super::probe(space), "{space}");
+        if space.0 < 1 << super::PROBE_TOP {
+            assert_eq!(
+                super::Probe::Refused,
+                super::probe(Bytes(space.0.saturating_mul(2))),
+                "{space}"
+            );
+        }
     }
 
     /// A region holds the bytes of one word for each word from its base to

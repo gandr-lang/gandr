@@ -2051,6 +2051,44 @@ fn every_width_prints_the_serial_run_of_the_other_roots()
     agrees(&share(&roots), &[Width::Host]);
 }
 
+/// The other roots at the host's width under 8 GiB of address space print
+/// the run without the limit. The regions of each thread that runs a program
+/// share one account of the process's address space, so the sets fit the
+/// space and leave the rest of the process its allocations.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_other_roots_run_alike_under_a_small_address_space_6877()
+{
+    let roots = [
+        "crates/surface-corpus/strict",
+        "corpus/classifier",
+        "corpus/fragment",
+        "corpus/pending",
+        "corpus/surface",
+    ]
+    .map(Path::new);
+    let free = at(&share(&roots), Width::Host);
+    let driver = gandr(&share(&roots));
+    let mut limited = Command::new("prlimit");
+    limited
+        .arg(format!("--as={}", 8_u64 << 30_u32))
+        .arg(driver.get_program())
+        .args(driver.get_args())
+        .env_remove("GANDR_JOBS");
+    for (key, value) in driver.get_envs() {
+        match value {
+            Some(value) => limited.env(key, value),
+            None => limited.env_remove(key),
+        };
+    }
+    let limited = limited.output().expect("prlimit runs the driver");
+    assert_eq!(
+        (limited.status.code(), stdout(&limited), stderr(&limited)),
+        (free.status.code(), stdout(&free), stderr(&free)),
+        "the other roots under 8 GiB of address space print the run without the limit"
+    );
+}
+
 #[test]
 fn every_width_prints_the_serial_check()
 {

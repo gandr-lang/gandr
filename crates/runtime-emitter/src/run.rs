@@ -538,7 +538,10 @@ impl Buffers
             Region::Windows => (&self.windows, runtime.window_limit()),
         };
         let short = if limit == reservation.end() {
-            Short::Reservation(reservation.bytes())
+            Short::Reservation {
+                reserved: reservation.bytes(),
+                standing: regions::standing(),
+            }
         }
         else {
             Short::Bound

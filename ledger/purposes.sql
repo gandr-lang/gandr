@@ -1768,6 +1768,7 @@ INSERT INTO purpose VALUES('runtime-emitter','regions::Origin','enum','Names whe
 INSERT INTO purpose VALUES('runtime-emitter','regions::Region','enum','Names the region that asked for the chunk a run could not commit: the heap or the window region.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Short','enum','Names what a region found short of the chunk it asked for: the bound, or its reservation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Spelled','struct','Writes a size as its largest unit that divides it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Standing','enum','Names the account of the process''s address space at a stop at a reservation: the share, what the budget holds and the space, or a host that reports no space.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Step','struct','The code-word jumps a run spent before it stopped.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Unsized','enum','Names why a text names no size: no digit, an unknown unit, a zero size, or a size past 64 bits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::bind','function','Binds the invocation''s memory bound once, before its first run, and returns the bound in force when an earlier binding fixed it.',NULL,'fits','sound',NULL);
