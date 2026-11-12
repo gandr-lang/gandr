@@ -21,14 +21,17 @@ runs:
     # Under act mise's install is what provides rustup.
     #
     # The pinned mise must read mise.lock's format version 2; an older one
-    # warns and resolves every tool unlocked. The CI image reads this step's
-    # `version` for the mise it bakes, so the two cannot drift.
+    # warns and resolves every tool unlocked. It is the version that writes the
+    # lock on the hosts: 2026.10.3 drops each `checksum_source` line, so a
+    # job's first install changed `mise.lock` and widened the queue's scope to
+    # the whole workspace (#6976). The CI image reads this step's `version`
+    # for the mise it bakes, so the two cannot drift.
     - name: "install mise-managed tools"
       env:
         MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
       uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
       with:
-        version: 2026.10.3
+        version: 2026.11.4
         cache: ${{ inputs.cache }}
         cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
         cache_save: ${{ inputs.cache-save }}

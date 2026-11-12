@@ -816,6 +816,32 @@
     "output": []
   },
   {
+    "name": "#6976: a mise.lock that the job's mise rewrites, beside one crate's sources, reads the whole workspace for the queue's lints",
+    "program": "packages.jq",
+    "input": {
+      "changed": ["crates/core-term/src/lib.rs", "mise.lock"],
+      "lints": true,
+      "packages": [
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        },
+        {
+          "name": "gandr-kernel-core",
+          "dir": "crates/kernel-core",
+          "deps": ["gandr-core-term"]
+        },
+        {
+          "name": "gandr-surface-lsp",
+          "dir": "crates/surface-lsp",
+          "deps": []
+        }
+      ]
+    },
+    "output": "\"workspace\""
+  },
+  {
     "name": "#5014: a change every package depends on runs over the whole workspace",
     "program": "packages.jq",
     "input": {

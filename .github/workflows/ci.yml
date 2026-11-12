@@ -127,6 +127,10 @@ env:
   # CI installs every job tool inside mise-action; skip only workstation tools.
   # The image checks this list against its own at build time.
   MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  # A job's mise keeps every entry of `mise.lock`, a disabled tool's too, and
+  # writes no line of it (#6976): the lock is the hosts', and a job that
+  # rewrites it reads `mise.lock` as part of its change.
+  MISE_LOCKFILE_MODE: merge
   # The Linux image switch: empty selects the bare-runner bootstrap; any other
   # value selects the image, and every run then pulls the pin-file tag of its
   # own checkout. A tag that is not published yet is built inside the run that
@@ -1444,6 +1448,22 @@ jobs:
           GATE_BASE: ${{ github.event.merge_group.base_sha }}
         shell: bash
         run: mise exec jq@1.8.1 -- .config/gate-scope/scope.bash --lints | awk '{ print "GATE_SCOPE=" $0 }' >> "$GITHUB_ENV"
+      # The format check and the scope read the change as the working tree
+      # against the group's base, so a step that writes a tracked file widens
+      # both: the job's mise wrote `mise.lock` and every group read the whole
+      # workspace (#6976). Here the tree must match its commit after the tools
+      # install and the scope reads it; a path that differs fails the job by
+      # name.
+      - &tree-matches-commit
+        name: refuse a working tree that differs from its commit
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' }}
+        shell: bash
+        run: |
+          changed=$(git status --porcelain --untracked-files=all)
+          if [[ -n $changed ]]; then
+            printf 'the working tree differs from its commit, so the scope reads paths the change does not hold:\n%s\n' "$changed" >&2
+            exit 1
+          fi
       # The newest state that a group on `landing` uploaded for this job
       # (`landing-states`). A failed download falls back to main's state.
       - &download-landing-state
@@ -1536,6 +1556,7 @@ jobs:
       - *install-policy-tools
       - *setup-rust
       - *lint-scope
+      - *tree-matches-commit
       - *identify-policy
       - *restore-dylint-drivers
       - *restore-gate-binary

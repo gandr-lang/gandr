@@ -53,6 +53,8 @@ env:
   MISE_CARGO_BINSTALL_NATIVE: "true"
   # Must match ci.yml and the image. The image checks the list at build time.
   MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  # Must match ci.yml: a job's mise writes no line of `mise.lock` (#6976).
+  MISE_LOCKFILE_MODE: merge
 
 jobs:
   file:
