@@ -205,13 +205,25 @@ jobs:
   # fingerprints bring up to date, and run the nightly task. The plain build
   # of the whole test graph costs six minutes on its own; the sweeps run
   # enforced alone, as every pull-request lane runs their samples. The job's
-  # share of the nightly's 900 s is 504 s, its 458 s in nightly 40667395217
-  # scaled by 900/818, as every job's share is (#3013): 56 s of setup and
-  # 402 s of sweeps. A night's slice of a rotating sweep costs what its
-  # sources cost, so one night's sweeps can run past the share while the
-  # whole nightly stays within 900 s. A sweep that reaches its 240 s limit
-  # ends and passes, and the job uploads its JUnit report for `reports` to
-  # file (#3975).
+  # share of the nightly's 900 s is 611 s: 504 s for the sweeps and 107 s for
+  # the recovery sweep, each its time in nightly 40667395217 scaled by
+  # 900/818, as every job's share is (#3013). A night's slice of a rotating
+  # sweep costs what its sources cost, so one night's sweeps can run past the
+  # share while the whole nightly stays within 900 s. A sweep that reaches
+  # its 240 s limit ends and passes, and the job uploads its JUnit report for
+  # `reports` to file (#3975).
+  #
+  # The recovery sweep (`mise run ledger:recovery`, #1782) runs in this job
+  # after the sweeps, from the same enforcing state, so one container start
+  # and one restore serve both (#6704). Each of them runs once the setup
+  # passes, whatever the other gives. The rotation of the sweeps (#6704)
+  # holds the two together at about 5 minutes, inside the job's 15. The
+  # recovery sweep covers every literal tile of every syntax exemplar, missed
+  # and deleted. Its causes and counts are the job summary, the whole backlog
+  # visible whether or not it is filed; the report goes to `reports`, which
+  # holds the write token. The sweep runs the driver the restored test build
+  # links, resolved as that state was, so the step is the sweep: 7175
+  # mutants on one thread take 20 s locally (#3289).
   sweeps:
     name: sweep the night's inputs, specifications enforced
     needs: [ci-image-ref, freshness]
@@ -233,7 +245,8 @@ jobs:
       - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
-      - name: run the night's sweeps
+      - id: night-sweeps
+        name: run the night's sweeps
         run: mise run ci:sweeps-nightly
       - name: upload the sweeps' test report
         if: ${{ always() }}
@@ -244,39 +257,8 @@ jobs:
           path: target/nextest/nightly/junit.xml
           retention-days: 7
           if-no-files-found: ignore
-
-  # The recovery sweep (`mise run ledger:recovery`, #1782): every literal
-  # tile of every syntax exemplar missed and deleted, built from the same
-  # enforcing state as the sweeps, in a job of its own beside them: the two
-  # together outrun one job's fifteen minutes. Its causes and counts are the
-  # job summary, the whole backlog visible whether or not it is filed; the
-  # report goes to `reports`, which holds the write token. The job's share of
-  # the nightly's 900 s is 107 s, its 97 s in nightly 40667395217 scaled by
-  # 900/818 (#3013). The sweep runs the driver the restored test build links,
-  # resolved as that state was, so the step is the sweep: 7175 mutants on one
-  # thread took 20 s locally (#3289).
-  recovery:
-    name: sweep the exemplars for recovery, specifications enforced
-    needs: [ci-image-ref, freshness]
-    if: *main-moved
-    runs-on: *linux
-    permissions: *image-read-permissions
-    container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 15
-    env:
-      CI_BUILD_STATE: cargo-test-enforcing
-      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
-    steps:
-      - *git-checkout
-      - *trust-workspace
-      - *install-policy-tools
-      - *setup-rust
-      - *identify-build-state
-      - *restore-test-state
-      - *find-build-state
-      - *unpack-build-state
-      - *fetch-dependencies
       - name: sweep the exemplars for recovery
+        if: &swept ${{ !cancelled() && steps.night-sweeps.outcome != 'skipped' }}
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/enforcing
           CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
@@ -293,6 +275,7 @@ jobs:
             sed -n 's/^cause: /- /p' recovery.out/causes.txt
           } >> "$GITHUB_STEP_SUMMARY"
       - name: upload the recovery report
+        if: *swept
         uses: *upload-artifact
         with:
           name: recovery-report
@@ -344,7 +327,7 @@ jobs:
   # The recovery sweep's causes, filed (`mise run ci:recovery-file`): one
   # issue per first error and mutation kind, at most three new a night, a
   # cause already filed skipped. Only the scheduled run files; a dispatch
-  # prints what it would file. The report comes from the recovery job, so
+  # prints what it would file. The report comes from the sweeps job, so
   # filing builds nothing.
   #
   # The dependency report (`mise run report:deps`, #2902): every open epic
@@ -422,16 +405,15 @@ jobs:
   # which this job does not sample. The mutants lanes are off (#3695), so
   # their budgets went with them: the change report's 300 s and the daily
   # crate's 840 s held over `--daily`, its job's own limit. Both come back
-  # with the lanes. This workflow's own all-features and recovery lanes are
-  # held over its scheduled runs (`--nightly`): about 1.5 times the 194 to
-  # 216 s each third of the all-features crates took on a dispatch, and the
-  # 210 s the recovery sweep's setup and run took inside the sweeps job. The
+  # with the lanes. This workflow's own all-features lane is held over its
+  # scheduled runs (`--nightly`): about 1.5 times the 194 to 216 s each
+  # third of the all-features crates took on a dispatch. The
   # hosted budget is this workflow's summed job time per run (`--summed`): 15
   # minutes for its median, 20 the ceiling no night passes; the table times
   # every active workflow and reads the cache's usage.
   reports:
     name: report and file the night's findings
-    needs: [ci-image-ref, sweeps, recovery]
+    needs: [ci-image-ref, sweeps]
     if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
     runs-on: *linux
     permissions:
@@ -456,7 +438,7 @@ jobs:
       - *install-policy-tools
       - *setup-rust
       - name: download the recovery report
-        if: &recovered ${{ !cancelled() && needs.recovery.result != 'skipped' }}
+        if: &recovered ${{ !cancelled() && needs.sweeps.result != 'skipped' }}
         uses: &download-artifact actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: recovery-report
@@ -545,6 +527,5 @@ jobs:
           --budget "check Clippy wall=150"
           --budget "re-verify obligated specifications (linux)=180"
           --nightly "test every crate with every feature on=300"
-          --nightly "sweep the exemplars for recovery, specifications enforced=320"
           --summed "Nightly=900/1200"
           >> "$GITHUB_STEP_SUMMARY"
