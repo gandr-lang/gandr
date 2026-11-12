@@ -1418,7 +1418,7 @@ impl Toolset
     /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
     /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509`
     /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
-    /// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job`
+    /// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3020,7 +3020,21 @@ mod tests
         status: &Value,
     ) -> (Message, std::time::Instant)
     {
-        let (mut stream, _peer) = callback.accept().expect("the toolset calls back");
+        let (stream, _peer) = callback.accept().expect("the toolset calls back");
+        answered_on(stream, status)
+    }
+
+    /// The request on `stream`, read whole and answered with the status line
+    /// `status`, and the instant just before the answer is written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answered_on(
+        mut stream: TcpStream,
+        status: &Value,
+    ) -> (Message, std::time::Instant)
+    {
+        stream.set_nonblocking(false).expect("the stream blocks");
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .expect("the timeout is set");
@@ -3081,6 +3095,42 @@ mod tests
             .set_nonblocking(false)
             .expect("the listener blocks again");
         silent
+    }
+
+    /// Whether `callback` takes no result for `wait`. Each request that it
+    /// takes in the wait is read whole and answered `200`. A delivery thread
+    /// can take a view update before a cancel or a retirement. The attempt in
+    /// flight then ends after the `200` of the cancel, so the update can
+    /// arrive in the wait.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resultless(
+        callback: &TcpListener,
+        wait: Duration,
+    ) -> Answer
+    {
+        callback
+            .set_nonblocking(true)
+            .expect("the listener stops blocking");
+        let started = std::time::Instant::now();
+        let mut resultless = Answer(true);
+        while started.elapsed() < wait {
+            if let Ok((stream, _peer)) = callback.accept() {
+                let (message, _before) = answered_on(stream, &json!("200 OK"));
+                if message.json().get("type") == Some(&json!("tool_result")) {
+                    resultless = Answer(false);
+                    break;
+                }
+            }
+            else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        callback
+            .set_nonblocking(false)
+            .expect("the listener blocks again");
+        resultless
     }
 
     /// The frame that the text of `message`, a result or an event, holds.
@@ -4263,7 +4313,7 @@ mod tests
     }
 
     #[test]
-    fn a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job()
+    fn a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940()
     {
         let scratch = Scratch::new(&json!("rap-retired"));
         let callback = loopback();
@@ -4344,7 +4394,7 @@ mod tests
         // start or the change retired it, the run delivers no result of its
         // own after it.
         assert_eq!(
-            quiet(&callback, Duration::from_millis(300)),
+            resultless(&callback, Duration::from_millis(300)),
             Answer(true),
             "a retired run delivers no result of its own"
         );
@@ -4371,7 +4421,7 @@ mod tests
         // Load only delays a stray result past the wait, so load cannot turn
         // this red.
         assert_eq!(
-            quiet(&callback, Duration::from_millis(300)),
+            resultless(&callback, Duration::from_millis(300)),
             Answer(true),
             "an ended job delivers no result of its own"
         );

@@ -798,7 +798,7 @@ pub fn call(
 ///   paths, `replay` answers the admission of a revision, and `run` answers the
 ///   line of a declaration's run.
 /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
-/// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job`
+/// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940`
 #[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| matches!(named, "check" | "replay" | "run" | "test")))]
 #[inline]
 pub fn job(
