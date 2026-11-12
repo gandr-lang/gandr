@@ -711,9 +711,18 @@ fn a_hosted_workload_answers_what_it_read()
 }
 
 /// A session's output, which the test's client reads while the session
-/// writes it.
+/// writes it, and which can make the session answer slowly.
 #[derive(Clone, Default)]
-struct Shared(Arc<(Mutex<Vec<u8>>, Condvar)>);
+struct Shared
+{
+    /// The bytes written, and the signal of each write.
+    written: Arc<(Mutex<Vec<u8>>, Condvar)>,
+    /// How long each write waits while the output holds fewer than
+    /// `answered` frames: a session slow to answer, as on a loaded host.
+    slow: Duration,
+    /// How many frames the slow writes cover.
+    answered: usize,
+}
 
 impl Shared
 {
@@ -728,7 +737,7 @@ impl Shared
         ceiling: Duration,
     )
     {
-        let (bytes, wrote) = &*self.0;
+        let (bytes, wrote) = &*self.written;
         let held = bytes
             .lock()
             .expect("no write panics while it holds the output");
@@ -745,7 +754,7 @@ impl Shared
     /// trivial.
     fn bytes(&self) -> Vec<u8>
     {
-        self.0
+        self.written
             .0
             .lock()
             .expect("no write panics while it holds the output")
@@ -755,7 +764,8 @@ impl Shared
 
 impl std::io::Write for Shared
 {
-    /// Append `buf`, and wake the client that waits for it.
+    /// Wait out `slow` while the answer is short, then append `buf`, and
+    /// wake the client that waits for it.
     ///
     /// # Specification
     /// trivial.
@@ -764,7 +774,15 @@ impl std::io::Write for Shared
         buf: &[u8],
     ) -> std::io::Result<usize>
     {
-        let (bytes, wrote) = &*self.0;
+        let (bytes, wrote) = &*self.written;
+        let short = header_ends(
+            &bytes
+                .lock()
+                .expect("no write panics while it holds the output"),
+        ) < self.answered;
+        if short && !self.slow.is_zero() {
+            std::thread::sleep(self.slow);
+        }
         bytes
             .lock()
             .expect("no write panics while it holds the output")
@@ -887,11 +905,15 @@ impl gandr_surface_lsp::Unread for Lingering
 /// What a session writes when the client, its quiet interval the setting
 /// `quiet`, opens a document, types an unfinished declaration into it and
 /// then sits idle for a second once the session answers the change: each
-/// message's `id`, and each publication's version and codes.
+/// message's `id`, and each publication's version and codes. Each write of
+/// the answer first waits `slow`, as a session on a loaded host answers.
 ///
 /// # Specification
 /// trivial.
-fn idled(quiet: &Value) -> Vec<Value>
+fn idled(
+    quiet: &Value,
+    slow: Duration,
+) -> Vec<Value>
 {
     let uri = "file:///strict/idle.gandr";
     let messages = [
@@ -913,13 +935,18 @@ fn idled(quiet: &Value) -> Vec<Value>
             }],
         }}),
     ];
-    let output = Shared::default();
+    // The answer to `initialize`, and a publication for each version.
+    let answered = 3_usize;
+    let output = Shared {
+        written: Arc::default(),
+        slow,
+        answered,
+    };
     let mut input = Lingering {
         frames: frames(&messages).as_ref().to_vec(),
         read: 0_usize,
         written: output.clone(),
-        // The answer to `initialize`, and a publication for each version.
-        answered: 3_usize,
+        answered,
         linger: Duration::from_secs(1),
     };
     let served = serve(
@@ -968,7 +995,7 @@ fn a_held_diagnostic_publishes_once_the_document_is_quiet()
     let publication =
         |version: i32, codes: &[&str]| json!(["textDocument/publishDiagnostics", version, codes]);
     assert_eq!(
-        idled(&json!(0.05_f64)),
+        idled(&json!(0.05_f64), Duration::ZERO),
         [
             json!(0_i32),
             publication(1_i32, &[]),
@@ -979,13 +1006,31 @@ fn a_held_diagnostic_publishes_once_the_document_is_quiet()
              document is quiet, with no frame arriving"
     );
     assert_eq!(
-        idled(&json!(0_i32)),
+        idled(&json!(0_i32), Duration::ZERO),
         [
             json!(0_i32),
             publication(1_i32, &[]),
             publication(2_i32, &["MalformedForm"]),
         ],
         "a zero interval publishes it with its change, and nothing after"
+    );
+}
+
+#[test]
+fn a_held_diagnostic_publishes_after_a_slow_answer_6945()
+{
+    let publication =
+        |version: i32, codes: &[&str]| json!(["textDocument/publishDiagnostics", version, codes]);
+    assert_eq!(
+        idled(&json!(0.05_f64), Duration::from_millis(400)),
+        [
+            json!(0_i32),
+            publication(1_i32, &[]),
+            publication(2_i32, &[]),
+            publication(2_i32, &["MalformedForm"]),
+        ],
+        "the quiet interval runs from the publication that holds, so a session that takes \
+             longer than the client's idle second to answer still publishes what it held"
     );
 }
 
