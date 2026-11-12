@@ -36,7 +36,10 @@
 #   compiler policy and the brake. `pr-title.yml` lints the title and each
 #   entry's authored commits, and checks the ledger against the issues the
 #   group closes (#6883). The Clippy job runs the formatting first, and it
-#   and the compiler policy run the tasks of `check:landing`. The brake
+#   and the compiler policy run the tasks of `check:landing`. The two lints
+#   read the packages that the group's change reaches against its base,
+#   over the newest state that a group on `landing` handed on, and a group
+#   that reaches no package runs neither lint (#6894). The brake
 #   fails while `main` lags `landing` past its limits (#5442). Every other
 #   job skips a group on `landing`.
 #   The integration cycle tests `landing`. A pull request on `landing` runs
@@ -255,9 +258,13 @@ jobs:
       # record, so a pull request lints and documents only what it changed.
       # It also holds the inline sources each check listed, because the
       # allowlist check of `check:dylint` reads them for a fresh unit too.
+      # A group on `landing` that downloaded the newest landing state
+      # (`landing-state`) restores none (#6894); a job with no such step
+      # always restores.
       - &restore-policy-state
         name: restore the policy state
         id: policy-state-restore
+        if: ${{ steps.landing-state.outcome != 'success' }}
         uses: *cache-restore
         with:
           path: &policy-state |
@@ -308,8 +315,8 @@ jobs:
         continue-on-error: true
         env:
           CI_TEST_STATE: ${{ steps.test-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.download-build-state.outcome == 'success' && 'queue artifact' || steps.test-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.test-state-restore.outcome == 'success' && 'miss' || 'not used' }}
-          CI_POLICY_STATE: ${{ steps.policy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.policy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.policy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
-          CI_CLIPPY_STATE: ${{ steps.clippy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.clippy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.clippy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+          CI_POLICY_STATE: ${{ github.job == 'cargo-dylint-crate' && steps.landing-state.outcome == 'success' && 'the newest landing state' || steps.policy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.policy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.policy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+          CI_CLIPPY_STATE: ${{ github.job == 'cargo-clippy-crate' && steps.landing-state.outcome == 'success' && 'the newest landing state' || steps.clippy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.clippy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.clippy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
         shell: bash
         run: |
           line=
@@ -492,7 +499,14 @@ jobs:
   #   no cached state of its generation matched or when that build completed
   #   after main's newest state of that lane was saved. Artifact discovery
   #   is skipped under act, and a failed lookup means no reuse, not a failed
-  #   run.
+  #   run;
+  # - for a merge group on `landing` (#6894), `lints`: whether its change
+  #   against the group's base reaches a package for the lints, as
+  #   `.config/gate-scope/packages.jq` reads it with `lints`. A failed fetch
+  #   or diff reads as a reach. And `landing-states`: for each lint job, the
+  #   newest run of the queue on `landing` that uploaded the job's state, an
+  #   artifact of this repository's own queue ref. Each lookup is one read,
+  #   so a group of no lint between two others breaks no chain of states.
   # Always trigger the workflow: a skipped workflow supplies no required
   # check, whereas a skipped job succeeds. Dependency updates land through a
   # maintainer's pull request, so a Renovate pull request runs nothing:
@@ -530,6 +544,8 @@ jobs:
       baseline-sha: ${{ steps.baseline.outputs.sha }}
       baseline-created: ${{ steps.baseline.outputs.created }}
       mutants: ${{ env.GANDR_MUTANTS == 'on' }}
+      lints: ${{ github.event.merge_group.base_ref != 'refs/heads/landing' || steps.lint-reach.outcome != 'success' || steps.lint-reach.outputs.reach != '[]' }}
+      landing-states: ${{ format('{{"cargo-clippy-crate":"{0}","cargo-dylint-crate":"{1}"}}', steps.landing-clippy-state.outputs.run-id, steps.landing-policy-state.outputs.run-id) }}
     env:
       CI_SHA: ${{ github.sha }}
       CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
@@ -566,6 +582,56 @@ jobs:
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
           jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/") or (startswith("corpus/") and endswith(".gandr"))) | tostring)' >> "$GITHUB_OUTPUT"
+      # A group on `landing` lints only what its change reaches against the
+      # group's own base (#6894). Its base on main, which the steps above
+      # read, holds every landing since main's head too.
+      - id: landing-base
+        name: fetch the base of the group on landing
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' }}
+        continue-on-error: true
+        env: &landing-base
+          CI_LANDING_BASE: ${{ github.event.merge_group.base_sha }}
+        run: git fetch --depth=1 origin "$CI_LANDING_BASE"
+      - id: lint-reach
+        name: read what the group's change reaches for the lints
+        if: ${{ steps.landing-base.outcome == 'success' }}
+        continue-on-error: true
+        env: *landing-base
+        shell: bash
+        run: >-
+          git diff --no-renames --name-only "$CI_LANDING_BASE" HEAD |
+          jq -nR '{changed: [inputs], packages: [], lints: true}' |
+          jq -c -L .config/gate-scope -f .config/gate-scope/packages.jq |
+          jq -r '"reach=" + tojson' >> "$GITHUB_OUTPUT"
+      # The newest state of each lint job that a group on `landing` uploaded.
+      # A run of this repository's own queue ref uploaded it, never a fork's.
+      # Each step spells its call out, so `check:gh-budget` finds the site.
+      - id: landing-clippy-state
+        name: find the newest landing Clippy state
+        if: &landing-lints ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && env.ACT != 'true' && steps.lint-reach.outputs.reach != '[]' }}
+        continue-on-error: true
+        env:
+          CI_LINT_JOB: cargo-clippy-crate
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+          CI_REPO_ID: ${{ github.repository_id }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/artifacts"
+          -f name="build-state-$CI_LINT_JOB--$CI_STATE_GENERATION" -f per_page=20
+          --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch | startswith("gh-readonly-queue/landing/")) | select(.workflow_run.head_repository_id == (env.CI_REPO_ID | tonumber))][0].workflow_run.id // "" | "run-id=\(.)"'
+          >> "$GITHUB_OUTPUT"
+      - id: landing-policy-state
+        name: find the newest landing policy state
+        if: *landing-lints
+        continue-on-error: true
+        env:
+          CI_LINT_JOB: cargo-dylint-crate
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+          CI_REPO_ID: ${{ github.repository_id }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/artifacts"
+          -f name="build-state-$CI_LINT_JOB--$CI_STATE_GENERATION" -f per_page=20
+          --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch | startswith("gh-readonly-queue/landing/")) | select(.workflow_run.head_repository_id == (env.CI_REPO_ID | tonumber))][0].workflow_run.id // "" | "run-id=\(.)"'
+          >> "$GITHUB_OUTPUT"
       # GitHub rebases a stack's members itself when a member below merges
       # (its committer is `web-flow`), and no setting turns that off (#2070).
       # A rebase that leaves the change's patch as it was, measured against
@@ -653,10 +719,12 @@ jobs:
       # A group's ref is `gh-readonly-queue/<base>/…`. A group on `landing`
       # runs no test lane, so its run holds no test state for a group on
       # main (#5439). The lookup reads the newest 30 successful queue runs and
-      # keeps the newest one of the group's own queue.
+      # keeps the newest one of the group's own queue. A group on `landing`
+      # reads none of the three outputs that follow, so it skips the lookup:
+      # its lint jobs find their states by the two lookups above (#6894).
       - id: previous
         name: find the latest successful queue run
-        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' }}
+        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' && github.event.merge_group.base_ref != 'refs/heads/landing' }}
         continue-on-error: true
         env:
           CI_QUEUE_BASE: ${{ github.event.merge_group.base_ref || github.event.repository.default_branch }}
@@ -1331,6 +1399,13 @@ jobs:
   # tree that no lane's gate read, and a red formatter fails the group
   # before Clippy starts. The check takes seconds, so it shares this
   # required job and its image rather than paying for a job of its own.
+  # Then the group lints the packages that its change reaches against its
+  # base (#6894), and a group that reaches none lints nothing. Each package
+  # outside that set is the base's, so the base's verdict on it stands. The
+  # group starts from the newest state that a group on `landing` uploaded,
+  # not from main's, which lags `landing` by the integration cycle. The
+  # prune's two passes read the whole workspace, so the state that the group
+  # hands on is whole for its tree whichever state it started from.
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
@@ -1357,8 +1432,36 @@ jobs:
         env:
           GATE_BASE: ${{ github.event.merge_group.base_sha }}
         run: mise run check:format
+      # The scope of the two lints of a group on `landing` (#6894). The image
+      # holds jq as a tool of mise alone, as the tasks pin it.
+      - &lint-scope
+        name: name the packages that the change reaches
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && needs.prepare.outputs.lints == 'true' }}
+        env:
+          GATE_BASE: ${{ github.event.merge_group.base_sha }}
+        shell: bash
+        run: mise exec jq@1.8.1 -- .config/gate-scope/scope.bash --lints | awk '{ print "GATE_SCOPE=" $0 }' >> "$GITHUB_ENV"
+      # The newest state that a group on `landing` uploaded for this job
+      # (`landing-states`). A failed download falls back to main's state.
+      - &download-landing-state
+        name: download the newest landing state
+        id: landing-state
+        if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && needs.prepare.outputs.lints == 'true' && fromJSON(needs.prepare.outputs.landing-states || '{}')[github.job] != '' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: build-state-${{ github.job }}--${{ env.CI_BUILD_GENERATION }}
+          run-id: ${{ fromJSON(needs.prepare.outputs.landing-states || '{}')[github.job] }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: landing-state
+      - &unpack-landing-state
+        name: unpack the newest landing state
+        if: ${{ steps.landing-state.outcome == 'success' }}
+        shell: bash
+        run: zstd -dc "landing-state/build-state-$GITHUB_JOB.tar.zst" | tar -xf -
       - name: restore the Clippy state
         id: clippy-state-restore
+        if: ${{ needs.prepare.outputs.lints == 'true' && steps.landing-state.outcome != 'success' }}
         uses: *cache-restore
         with:
           path: &clippy-state |
@@ -1368,9 +1471,11 @@ jobs:
           restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
       - name: lint the plain-only targets
         id: clippy-plain
+        if: ${{ needs.prepare.outputs.lints == 'true' }}
         run: mise run check:clippy-plain-only
       - name: lint every target with specification enforcement
         id: clippy-enforcing
+        if: ${{ needs.prepare.outputs.lints == 'true' }}
         run: mise run check:clippy-enforcing
       - name: prune the Clippy state to this run's units
         id: prune-clippy-state
@@ -1407,27 +1512,42 @@ jobs:
   # compiler- and revision-matched policy artifacts. Every landing hands its
   # policy state to main, the rustdoc JSON included, so the obligations lane
   # starts from main's records and documentation rather than from nothing.
+  # A group on `landing` lints the packages that its change reaches, over the
+  # newest landing state, as the Clippy job does (#6894). A group that
+  # reaches none skips the job. The dead-weight report and main read the
+  # records that the group hands on, so a scoped group then lints the rest of
+  # the workspace over the same state. A unit that the state holds fresh is
+  # read, never linted again.
   cargo-dylint-crate:
     name: check quenchant compiler policy
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     steps:
       - *git-checkout
+      # The scope reads the change through Git inside the job's container.
+      - *trust-workspace
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
+      - *lint-scope
       - *identify-policy
       - *restore-dylint-drivers
       - *restore-gate-binary
+      - *download-landing-state
+      - *unpack-landing-state
       - *restore-policy-state
       - name: lint every workspace target
         id: policy-library
         # The task strips enforcement cfgs: the separately built plugin runs
         # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
         run: mise run check:dylint
+      - name: lint the rest of the workspace for the state it hands on
+        id: policy-rest
+        if: ${{ github.event_name == 'merge_group' && env.GATE_SCOPE != '' && env.GATE_SCOPE != '--workspace' }}
+        run: env -u GATE_SCOPE mise run check:dylint
       # The specification gates run from the gate binary installed at the
       # policy's metadata revision: the invocation state and the enforcing
       # requirement. The enforcing test lane resolves adequacy witnesses.
@@ -1448,7 +1568,7 @@ jobs:
       # landing.
       - name: prune the evidence records
         id: evidence-prune
-        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.policy-rest.outcome != 'failure' }}
         run: mise run evidence:prune
       - name: keep the evidence records for the dead-weight report
         if: ${{ !cancelled() && env.ACT != 'true' && steps.evidence-prune.outcome == 'success' }}
@@ -1461,7 +1581,7 @@ jobs:
       # This lane hands over its policy caches, not the dependency cache.
       - name: archive the policy state and gate binary
         id: build-state-archive
-        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.policy-rest.outcome != 'failure' && steps.invocation-state.outcome == 'success' }}
         shell: bash
         run: |
           tar -cf - target/dylint target/evidence target/embedded-sources target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"

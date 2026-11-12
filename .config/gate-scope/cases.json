@@ -636,6 +636,37 @@
     "output": []
   },
   {
+    "name": "#6894: a change of the policy's task reads the whole workspace for the queue's lints",
+    "program": "packages.jq",
+    "input": {
+      "changed": [".config/mise/tasks/mise-tasks-check.toml"],
+      "lints": true,
+      "packages": [
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        },
+        {
+          "name": "gandr-kernel-core",
+          "dir": "crates/kernel-core",
+          "deps": ["gandr-core-term"]
+        }
+      ]
+    },
+    "output": "\"workspace\""
+  },
+  {
+    "name": "#6894: a workflow-only change reaches no package for the queue's lints, so a group of it runs neither lint",
+    "program": "packages.jq",
+    "input": {
+      "changed": [".config/claims/next.jq"],
+      "lints": true,
+      "packages": []
+    },
+    "output": []
+  },
+  {
     "name": "#5014: a change every package depends on runs over the whole workspace",
     "program": "packages.jq",
     "input": {

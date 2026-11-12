@@ -563,12 +563,15 @@ run = [
 # prune keeps are the units the lint used. A pass spelled here apart from its
 # task drifted from it: it linted the whole plain graph and resolved other
 # features, so it pruned the units the plain pass used, and each merge group
-# checked 13 of them again (#5930).
+# checked 13 of them again (#5930). The two passes read the whole workspace
+# whatever `GATE_SCOPE` names: a group on `landing` lints its scope first,
+# and the state it hands on stays whole for its tree (#6894). Over a state
+# that holds the rest fresh, the two passes take 1 to 2 s on a quiet host.
 ["ci:prune-clippy"]
 description = "Prune the Clippy state to the units this run's passes used"
 run = [
-  "mise run check:clippy-plain-only --units target/debug/units-clippy.jsonl",
-  "mise run check:clippy-enforcing --units target/enforcing/debug/units-clippy.jsonl",
+  "env -u GATE_SCOPE mise run check:clippy-plain-only --units target/debug/units-clippy.jsonl",
+  "env -u GATE_SCOPE mise run check:clippy-enforcing --units target/enforcing/debug/units-clippy.jsonl",
   ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-clippy.jsonl target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",

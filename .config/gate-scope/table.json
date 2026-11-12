@@ -75,6 +75,18 @@
       }
     ]
   },
+  "lints": {
+    "configuration": [
+      ".config/mise/enforcing",
+      ".config/mise/tasks/mise-tasks-check.toml",
+      ".github/actions/",
+      ".github/docker/",
+      ".github/workflows/ci.yml",
+      ".mise/locks/",
+      "mise.lock",
+      "mise.toml"
+    ]
+  },
   "paths": [
     { "path": ".config/nextest.toml", "groups": ["rust", "doc"] },
     { "path": ".config/obligations/", "groups": ["rust", "doc"] },

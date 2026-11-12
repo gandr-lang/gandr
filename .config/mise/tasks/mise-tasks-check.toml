@@ -289,7 +289,9 @@ run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo clippy
 # `not(anodized_panic)` sits in a listed target's directory, or the task
 # fails naming it. A new such target joins this list and the plain-only test
 # filters. `--units FILE` writes the units of every listed target to FILE as
-# Cargo's JSON messages, for `ci:prune-clippy` (#5930).
+# Cargo's JSON messages, for `ci:prune-clippy` (#5930). A target whose
+# package `GATE_SCOPE` excludes is not linted: the change reaches nothing of
+# it (#6894).
 ["check:clippy-plain-only"]
 description = "The plain clippy wall over the targets that carry plain-only code"
 usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
@@ -315,6 +317,10 @@ if [[ -n $units ]]; then : > "$units"; fi
 for target in "${targets[@]}"; do
   package=${target%%:*}
   test=${target#*:}
+  if [[ " ${GATE_SCOPE:-} " == *" --exclude $package "* ]]; then
+    echo "check:clippy-plain-only: GATE_SCOPE excludes $package, so its target ${test%%:*} is not linted" >&2
+    continue
+  fi
   if [[ -n $units ]]; then
     .config/mise/gated .config/mise/scope cargo clippy --locked --package "$package" --test "${test%%:*}" \
       --message-format json -- --deny warnings >> "$units"
@@ -334,10 +340,13 @@ done
 # graph, hence the encoded rustflags rather than Dylint's own cfg. Incremental
 # compilation is off because the driver reads whole-crate HIR. A toolchain bump
 # invalidates the driver: `rm -rf ~/.dylint_drivers target/dylint` before the
-# wall runs again.
+# wall runs again. The run reads `GATE_SCOPE` as the Clippy passes do, and
+# unifies the features over the whole workspace, so a scoped run builds the
+# units of a whole one (#6894).
 ["check:dylint"]
 description = "quenchant's policy library over the workspace"
 env.CARGO_INCREMENTAL = "0"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 # The plugin links through dylint-link, which renames the artifact with the
 # toolchain suffix Dylint loads by; Cargo's linker variable is per target.
 env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
@@ -498,17 +507,24 @@ directory = "{{ config_root }}/target/embedded-sources"
 # and then each crate's lint results too; `ci.yml` keys its policy caches on
 # the revision for this reason. So the task stamps `target/dylint` with the
 # revision it builds. A run whose pinned revision differs from the stamp
-# starts from an empty `target/dylint`.
+# starts from an empty `target/dylint`. A group on `landing` starts from the
+# state of another group, whose artifact names no pin (#6894). So a second
+# stamp holds the version of Dylint, and a run under another version starts
+# from an empty `target/dylint` too. A state with no second stamp keeps its
+# units and takes the stamp.
 run = '''
 rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
 revision=$(mise run --quiet workflow:revision)
-if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ]; then
+dylint=$(cargo dylint --version)
+if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ] \
+  || { [ -e target/dylint/dylint-version ] && [ "$(cat target/dylint/dylint-version)" != "$dylint" ]; }; then
   rm -rf target/dylint
   mkdir -p target/dylint
   printf '%s\n' "$revision" > target/dylint/quenchant-revision
 fi
-set -- .config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets
+printf '%s\n' "$dylint" > target/dylint/dylint-version
+set -- .config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --config 'resolver.feature-unification="workspace"'
 if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver" ]; then
   channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
   set -- .github/docker/rust-clippy.bash "${XDG_CACHE_HOME:-$HOME/.cache}/gandr/rust-clippy.git" "$channel" "$@"
