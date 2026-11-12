@@ -373,14 +373,18 @@ if [[ $(jq length "$output/pending.json") != 0 ]]; then
   # `GANDR_MUTANT` set to its number. An exit of 0 reads missed, the timeout
   # timeout, and any other failure caught, as cargo-mutants reads its test
   # phase. A failed build or an empty test list leaves no outcome, and so
-  # does a stop at `--until` (`$2`, the seconds left).
+  # does a stop at `--until` (`$2`, the seconds left). The witnesses run one
+  # at a time, in nextest's order, and the first failure stops the run. So
+  # the outcome is a function of the mutant's key. With two tests at once, a
+  # test that runs to the timeout can start before a failure stops the run,
+  # and the outcome then depends on which test ends first.
   held_mutant() {
     local mutant=$1 limit=$timeout id status
     [[ -z "$2" ]] || (( $2 >= limit )) || limit=$2
     id=$(jq -r .id <<< "$mutant")
     status=0
     (cd "$schema" && GANDR_MUTANT=$id timeout --kill-after=30 "$limit" "${mutants_scope[@]}" cargo nextest run --locked --package "$crate" \
-      "${selectors[@]}" --no-tests=fail -E "$(jq -r .filter <<< "$mutant")") > "$output/logs/mutant-$id.log" 2>&1 || status=$?
+      "${selectors[@]}" --test-threads 1 --no-tests=fail -E "$(jq -r .filter <<< "$mutant")") > "$output/logs/mutant-$id.log" 2>&1 || status=$?
     case $status in
       0) record "$(jq -r .key <<< "$mutant")" missed ;;
       124 | 137) (( limit != timeout )) || record "$(jq -r .key <<< "$mutant")" timeout ;;
