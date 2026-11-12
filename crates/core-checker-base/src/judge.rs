@@ -212,3 +212,42 @@ pub trait Judge: fmt::Debug + Sync
         expected: FormedValueType,
     ) -> Result<Checked, Failure>;
 }
+
+// The judgement crate defines both functions (`#[unsafe(no_mangle)]`), and the
+// linker binds each ask to its definition.
+unsafe extern "Rust" {
+    /// The judgement's formation of `node`, defined by the judgement crate.
+    safe fn gandr_core_checker_judge_form(
+        context: &mut CheckingContext<'_>,
+        node: TypeNode,
+    ) -> Result<(), Failure>;
+
+    /// The judgement's check of `value` at `expected`, defined by the
+    /// judgement crate.
+    safe fn gandr_core_checker_judge_check_value(
+        context: &mut CheckingContext<'_>,
+        value: ValueId,
+        expected: FormedValueType,
+    ) -> Result<Checked, Failure>;
+}
+
+/// Form `node` in the judgement the linker binds.
+#[inline]
+pub fn linked_form(
+    context: &mut CheckingContext<'_>,
+    node: TypeNode,
+) -> Result<(), Failure>
+{
+    gandr_core_checker_judge_form(context, node)
+}
+
+/// Check `value` at `expected` in the judgement the linker binds.
+#[inline]
+pub fn linked_check_value(
+    context: &mut CheckingContext<'_>,
+    value: ValueId,
+    expected: FormedValueType,
+) -> Result<Checked, Failure>
+{
+    gandr_core_checker_judge_check_value(context, value, expected)
+}

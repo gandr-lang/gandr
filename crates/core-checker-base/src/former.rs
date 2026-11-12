@@ -359,7 +359,7 @@ pub fn form_signature_with_failure(
                 let expected = index_at(context, index, (stated, at), past)
                     .map_err(|refusal| bare(refusal, index))?;
                 let formed = form_value_type_with_failure(context, expected)?;
-                let _checked = context.judge().check_value(context, value, formed)?;
+                let _checked = crate::judge::linked_check_value(context, value, formed)?;
             }
             while context.depth(Zone::Intuitionistic) != below {
                 let _closed = context
@@ -708,9 +708,7 @@ pub fn form_interface(
     let outer = arena.comp_type_arrow(representation, inner);
     let relations = arena.value_type_thunk(outer);
     let formed = form_value_type(context, relations)?;
-    let _checked = context
-        .judge()
-        .check_value(context, interface.relation(), formed)
+    let _checked = crate::judge::linked_check_value(context, interface.relation(), formed)
         .map_err(|failure| failure.refusal())?;
     let arena = context.arena_mut();
     let element = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -724,9 +722,7 @@ pub fn form_interface(
     let reflexive = arena.comp_type_pi(representation, witnessed);
     let reflexive = arena.value_type_thunk(reflexive);
     let formed = form_value_type(context, reflexive)?;
-    let _checked = context
-        .judge()
-        .check_value(context, interface.reflexivity(), formed)
+    let _checked = crate::judge::linked_check_value(context, interface.reflexivity(), formed)
         .map_err(|failure| failure.refusal())?;
     let Maybe::Present(law) = interface.law()
     else {
@@ -739,9 +735,7 @@ pub fn form_interface(
         (interface.relation(), interface.reflexivity()),
     );
     let formed = form_value_type(context, lawful)?;
-    let _checked = context
-        .judge()
-        .check_value(context, law, formed)
+    let _checked = crate::judge::linked_check_value(context, law, formed)
         .map_err(|failure| failure.refusal())?;
     Ok(())
 }

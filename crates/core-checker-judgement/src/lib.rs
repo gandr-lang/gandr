@@ -196,3 +196,24 @@ pub use crate::support::Supported;
 pub use crate::support::elaborated;
 pub use crate::support::kept;
 pub use crate::support::waits;
+
+/// The definition of the base's `gandr_core_checker_judge_form`.
+#[unsafe(no_mangle)]
+pub fn gandr_core_checker_judge_form(
+    context: &mut crate::context::CheckingContext<'_>,
+    node: crate::refusal::TypeNode,
+) -> Result<(), crate::failure::Failure>
+{
+    crate::judgement::form_with_failure(context, node)
+}
+
+/// The definition of the base's `gandr_core_checker_judge_check_value`.
+#[unsafe(no_mangle)]
+pub fn gandr_core_checker_judge_check_value(
+    context: &mut crate::context::CheckingContext<'_>,
+    value: gandr_core_term::ValueId,
+    expected: crate::formation::FormedValueType,
+) -> Result<crate::judge::Checked, crate::failure::Failure>
+{
+    crate::judgement::check_value_with_failure(context, value, expected)
+}
