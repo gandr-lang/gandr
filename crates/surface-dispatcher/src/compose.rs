@@ -288,6 +288,7 @@ use crate::evaluate::Focused;
 use crate::evaluate::Program;
 use crate::evaluate::ScheduledRuns;
 use crate::exercised::Exercised;
+use crate::measure::CheckSchedule;
 use crate::schedule::Scheduling;
 use crate::schedule::independent;
 use crate::stage::Monotonic;
@@ -988,10 +989,12 @@ impl Admission
                 judged,
                 positions: match positioning {
                     Positioning::Positioned | Positioning::Tallied => {
-                        Maybe::Present(ArtifactPositions::of(&readmission))
+                        Maybe::Present(ArtifactPositions::of(&readmission, positioning))
                     },
                     #[cfg(feature = "instrument")]
-                    Positioning::Metered => Maybe::Present(ArtifactPositions::of(&readmission)),
+                    Positioning::Metered => {
+                        Maybe::Present(ArtifactPositions::of(&readmission, positioning))
+                    },
                     Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
                 },
                 declined: declined(&readmission),
@@ -1351,7 +1354,7 @@ quenchant_shape::reason_enum! {
 
 /// Where each declaration that crossed into the kernel stands in the artifact
 /// its admission exported, and what its admission tallied, by its module
-/// position.
+/// position, with the schedule that its checks can reach.
 ///
 /// The kernel numbers only the declarations that cross, so a declaration's
 /// kernel position is not its module position.
@@ -1360,18 +1363,40 @@ quenchant_shape::reason_enum! {
 /// - requires: read off a readmission by [`Admission::admit_resuming`] under
 ///   [`Positioning::Positioned`].
 /// - ensures: one entry per declaration the kernel admitted as a definition, an
-///   axiom or a nominal declaration, and none for one it was not offered.
+///   axiom or a nominal declaration, and none for one it was not offered. The
+///   schedule is present only under [`Positioning::Positioned`], whose
+///   admission reads a clock.
 /// - panics: none.
-/// - executable: none — a data declaration; [`ArtifactPositions::placed`] reads
-///   it.
+/// - executable: none — a data declaration; [`ArtifactPositions::placed`] and
+///   [`ArtifactPositions::schedule`] read it.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`crate::measure()`]: a row read at a declaration's
 ///   module position reads another declaration's segment and tally.
 /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
-#[repr(transparent)]
+/// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ArtifactPositions(BTreeMap<ConstantIndex, Placed>);
+pub struct ArtifactPositions
+{
+    /// Where each declaration stands, by its module position.
+    placed: BTreeMap<ConstantIndex, Placed>,
+    /// The schedule that the checks of the admission can reach, or why none
+    /// was read.
+    schedule: Maybe<CheckSchedule, scheduled::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an admission's positions carry no schedule.
+    pub mod scheduled {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The admission read no clock for the measure, so its jobs
+            /// carry no cost.
+            Untimed,
+        }
+    }
+}
 
 /// Where one declaration stands in its component's kernel artifact, and what
 /// the kernel's admission of it tallied.
@@ -1442,7 +1467,8 @@ impl ArtifactPositions
 {
     /// The position `readmission` gave each declaration the kernel admitted,
     /// beside the census its environment entry keeps and the time its entry
-    /// carries.
+    /// carries, and the schedule of its checks when `positioning` read a
+    /// clock for the measure.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1450,18 +1476,26 @@ impl ArtifactPositions
     ///   readmission resumed whose outcome is a definition, an axiom or a
     ///   nominal declaration, at the position its receipt names, with what the
     ///   environment's entry there answers of its census and the readmitted
-    ///   time. A resumed declaration did not cross, so it has no entry.
+    ///   time. A resumed declaration did not cross, so it has no entry. Under
+    ///   [`Positioning::Positioned`] the schedule is [`CheckSchedule::of`] the
+    ///   readmission, and under any other positioning it is absent as
+    ///   [`scheduled::Absent::Untimed`].
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`ArtifactPositions`].
     /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
-    #[spec(ensures: |ret| ret.0.len() <= readmission.readmitted().len())]
-    fn of(readmission: &bridge::Readmission) -> Self
+    /// - witness: `tests::measure::a_component_s_schedule_waits_on_the_references_of_each_job`
+    #[spec(ensures: |ret| ret.placed.len() <= readmission.readmitted().len()
+        && (positioning == Positioning::Positioned) == matches!(ret.schedule, Maybe::Present(_)))]
+    fn of(
+        readmission: &bridge::Readmission,
+        positioning: Positioning,
+    ) -> Self
     {
         let entries = readmission.environment().entries();
-        Self(
-            readmission
+        Self {
+            placed: readmission
                 .readmitted()
                 .iter()
                 .skip(usize::from(readmission.resumed()))
@@ -1484,7 +1518,15 @@ impl ArtifactPositions
                     | bridge::Outcome::Rejected(_) => None,
                 })
                 .collect(),
-        )
+            schedule: match positioning {
+                Positioning::Positioned => Maybe::Present(CheckSchedule::of(readmission)),
+                #[cfg(feature = "instrument")]
+                Positioning::Metered => Maybe::Absent(scheduled::Absent::Untimed),
+                Positioning::Tallied | Positioning::Unpositioned => {
+                    Maybe::Absent(scheduled::Absent::Untimed)
+                },
+            },
+        }
     }
 
     /// Where the declaration at module position `constant` stands in the
@@ -1498,11 +1540,25 @@ impl ArtifactPositions
         constant: ConstantIndex,
     ) -> Maybe<Placed, placement::Absent>
     {
-        self.0
+        self.placed
             .get(&constant)
             .map_or(Maybe::Absent(placement::Absent::Uncrossed), |&placed| {
                 Maybe::Present(placed)
             })
+    }
+
+    /// The schedule that the checks of the admission can reach, when the
+    /// admission read a clock for the measure.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn schedule(&self) -> Maybe<&CheckSchedule, scheduled::Absent>
+    {
+        match self.schedule {
+            Maybe::Present(ref schedule) => Maybe::Present(schedule),
+            Maybe::Absent(why) => Maybe::Absent(why),
+        }
     }
 }
 

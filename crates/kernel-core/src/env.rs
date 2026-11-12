@@ -2031,6 +2031,32 @@ impl Entries
             .flat_map(|log| log.ranked.values().copied())
     }
 
+    /// The entries that the check of the live entry at `position` reads
+    /// first, as its support joins them: each position that its content
+    /// names, each followed by the types of words over it that rank below the
+    /// entry. Nothing for a retired entry, and nothing past the entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn waits_on(
+        &self,
+        position: ConstantIndex,
+    ) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        let presentations = self
+            .log
+            .as_deref()
+            .map_or(&crate::presented::FREE, |log| &log.presentations);
+        self.live(position).into_iter().flat_map(move |entry| {
+            entry.references.iter().flat_map(move |&root| {
+                core::iter::once(root).chain(presentations.over(root).filter(move |&words| {
+                    self.rank_of(words).is_some_and(|rank| rank < entry.rank)
+                }))
+            })
+        })
+    }
+
     /// The place of each live position in rank order, which the export of a
     /// kept environment writes for that position.
     ///

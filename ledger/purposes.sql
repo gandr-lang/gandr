@@ -288,10 +288,12 @@ INSERT INTO purpose VALUES('core-checker','worlds::Spending','enum','Whether a r
 INSERT INTO purpose VALUES('core-checker','worlds::WorldMove','enum','One move of the world register a typed run keeps: a migration''s push, with the linear zone before and after its capability was spent, and its pop.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldName','struct','The name of a world, as a host names one before any source declares it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Backward','struct','An edge whose waiting item does not come after the item that it waits on, so slice order would not be a schedule.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Bound','struct','What a schedule over its dependences can reach, read from each job''s serial cost: the serial cost, the critical path, the folded bound and the chain of the critical path.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Deferred','struct','A job the serial spawner holds until its wait.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Dependence','struct','One edge of a schedule''s dependences, by slice position: the job of the later item waits on the job of the earlier one.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Dependences','struct','The jobs that each job of a schedule waits on, by slice position.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','ItemIndex','struct','An item of a schedule, by its slice position.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run inside a fork''s scope, handed the scope''s spawner.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Spawn','trait','Starts jobs inside a fork''s scope, and waits for each job it started.','fork','fits','sound',NULL);
@@ -2352,8 +2354,11 @@ INSERT INTO purpose VALUES('surface-dispatcher','manifold::Site','struct','One p
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Stated','enum','A field a site''s, a manifold''s or a secrets model''s file states.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Translation','enum','The policy a manifold''s `translation` states for an offer read through a flow or a renaming: `Exact` when it states none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Undeployed','enum','Why a site''s or a manifold''s file deploys nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','measure::CheckSchedule','struct','The schedule that the checks of one component''s admission can reach: each admitted declaration a job, its references to earlier jobs its dependences, and the time of its admission its cost.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','measure::Measure','struct','One declaration''s sizes in its component''s kernel artifact and its admission''s tally: its segment''s bytes, the table entries the segment adds, its roots'' expanded work, the census its check charged and the time its admission took.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','measure::ScheduleRow','struct','The schedule that the checks of one source''s component can reach, beside the name of each job on its critical path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','measure::measure','function','Measure each declaration a settled source writes in its component''s kernel artifact.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','measure::schedule','function','The schedule that the checks of a source''s component can reach, for the line that `gandr check --measure` prints after the source''s rows.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','memo::Memo','struct','At most `HELD` entries under their content, by key, letting the one asked for longest ago go: the ring every process store of the surface keeps its results in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Absence','enum','Whether reconciling a held file writes it where none stands, or leaves none because the model states nothing it would record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Body','struct','The body of a file the checker wrote, below its digest header.',NULL,'fits','sound',NULL);

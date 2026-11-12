@@ -436,6 +436,7 @@ use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
 use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
+use gandr_surface_dispatcher::schedule;
 use gandr_surface_dispatcher::timed;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
@@ -4569,7 +4570,8 @@ fn run(
 }
 
 /// Print each declaration a settled source writes, measured in its
-/// component's kernel artifact and in its admission's tally.
+/// component's kernel artifact and in its admission's tally, and the schedule
+/// that the checks of its component can reach.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -4581,8 +4583,14 @@ fn run(
 ///   charged. A declaration this kernel did not check spells `admitted on a
 ///   recorded verdict` or `admitted unchecked` in their place. The time is `<n>
 ///   ns` when its admission was timed, and otherwise `untimed`, `unoffered` or
-///   `admitted in a block`. An artifact that does not decode is `gandr: <path>:
-///   <why>` on standard error. Any other step prints nothing.
+///   `admitted in a block`. Then one line for the component's schedule:
+///   `schedule: <path>: <n> jobs, <n> dependences, <n> untimed, serial <n> ns,
+///   critical path <n> ns, folded <n> ns, chain of <n>: <names>`, where the
+///   names are the structured names of the jobs of the critical path, in chain
+///   order, each apart by `, `, and `@<position>` names a job by its kernel
+///   position when its declaration has no name. An artifact that does not
+///   decode is `gandr: <path>: <why>` on standard error. Any other step prints
+///   nothing.
 /// - fails: the first write error, without writing anything after it.
 /// - panics: none.
 /// - executable: none — the lines are the streams'.
@@ -4593,9 +4601,10 @@ fn run(
 /// # Adequacy
 /// - hypothesis: L3 — two sources checked with `--measure` over a fresh store
 ///   print one line per declaration each writes and none for one imported, each
-///   with a census that charges a goal and a time. A check without the flag
-///   prints none. Measured again, each line spells the recorded verdict that
-///   admitted it in place of counts its check never charged.
+///   with a census that charges a goal and a time, and one schedule line each.
+///   A check without the flag prints none. Measured again, each line spells the
+///   recorded verdict that admitted it in place of counts its check never
+///   charged.
 /// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
 fn measured(
     step: &Step<'_>,
@@ -4643,7 +4652,37 @@ fn measured(
                     Maybe::Absent(timed::Absent::Block) => writeln!(stdout, "admitted in a block")?,
                 }
             }
-            Ok(())
+            match schedule(composed) {
+                Ok(Maybe::Present(row)) => {
+                    let checks = row.schedule();
+                    let bound = checks.bound();
+                    write!(
+                        stdout,
+                        "schedule: {}: {} jobs, {} dependences, {} untimed, serial {} ns, critical path {} ns, folded {} ns, chain of {}:",
+                        path.display(),
+                        checks.jobs().len(),
+                        checks.dependences().edges().len(),
+                        checks.untimed().len(),
+                        bound.serial().as_nanos(),
+                        bound.critical().as_nanos(),
+                        bound.folded().as_nanos(),
+                        row.chain().len(),
+                    )?;
+                    let mut separator = " ";
+                    for &(position, ref name) in row.chain() {
+                        if name.is_empty() {
+                            write!(stdout, "{separator}@{}", usize::from(position))?;
+                        }
+                        else {
+                            write!(stdout, "{separator}{name}")?;
+                        }
+                        separator = ", ";
+                    }
+                    writeln!(stdout)
+                },
+                Ok(Maybe::Absent(_)) => Ok(()),
+                Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),
+            }
         },
         Ok(Maybe::Absent(_)) => Ok(()),
         Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),
