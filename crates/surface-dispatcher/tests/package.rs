@@ -26,6 +26,7 @@ use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_storage_store::Register;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
 use gandr_storage_values::ValueError;
@@ -156,17 +157,27 @@ fn scratch(
 }
 
 /// A fresh store named for `test`, this process and this call, any stale one
-/// of the same name removed first.
+/// of the same name removed first, and its register.
 ///
 /// # Specification
 /// trivial.
-fn stored(test: &Path) -> Store
+fn registered(test: &Path) -> (Store, Register)
 {
     let directory = owned(Path::new("store"), test);
     if directory.exists() {
         std::fs::remove_dir_all(&directory).expect("a stale store is removed");
     }
     Store::open(&directory).expect("the store opens")
+}
+
+/// A fresh store named for `test`, as [`registered`] gives it, for a test
+/// that names no root.
+///
+/// # Specification
+/// trivial.
+fn stored(test: &Path) -> Store
+{
+    registered(test).0
 }
 
 /// #5204: two calls with one test name make two directories, so the cases
@@ -2583,7 +2594,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
     }
     let (export, admitted) = exported_walk(&directory, &directory.join("src"), &kept);
     let export = export.expect("every source settles");
-    let mut store = stored(Path::new("export"));
+    let (store, mut register) = registered(Path::new("export"));
     let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let address = rooted(&directory.join("src"))
         .identity(
@@ -2596,7 +2607,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
         .expect("the package addresses")
         .address;
     let pointer = export
-        .commit(&mut store, &address)
+        .commit(&store, &mut register, &address)
         .expect("the export commits");
     assert_eq!(
         store.roots().root(&Export::root(&address)),
@@ -2604,7 +2615,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
         "the package's address names the export"
     );
     assert_eq!(
-        export.commit(&mut store, &address),
+        export.commit(&store, &mut register, &address),
         Ok(pointer),
         "a second commit names the same pointer"
     );
@@ -2692,7 +2703,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
     }
     let (export, admitted) = exported_walk(&directory, &directory.join("src"), &kept);
     let export = export.expect("every source settles");
-    let mut store = stored(Path::new("readmit"));
+    let (store, mut register) = registered(Path::new("readmit"));
     let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let address = rooted(&directory.join("src"))
         .identity(
@@ -2705,7 +2716,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
         .expect("the package addresses")
         .address;
     let _pointer = export
-        .commit(&mut store, &address)
+        .commit(&store, &mut register, &address)
         .expect("the export commits");
     let Maybe::Present(pointer) = store.roots().root(&Export::root(&address))
     else {

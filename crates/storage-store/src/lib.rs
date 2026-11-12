@@ -11,13 +11,15 @@
 //! in `nodes/`, each named by its identity; the two never share a name space.
 //! [`Store::commit`] and [`Store::deref`] move a [`Stored`] value in and out
 //! by [`ContentPtr`], [`Store::closure`] reads the chunks it resides in and
-//! their bytes, [`Store::write_tree`] and [`Store::records`] a record tree,
-//! and [`Store::set_root`] and [`Store::roots`] name a pointer for a
-//! consumer to find again. The puts take `&self`: each call holds a
-//! [`NodeBatch`] or a batch over the value plane, the section of the plane
-//! that the call owns, so threads share one store with no lock. The planes'
-//! own traits verify every load, so a file changed on disk is refused by the
-//! plane's own fault, carried as [`StoreError`].
+//! their bytes, and [`Store::write_tree`] and [`Store::records`] a record
+//! tree. The puts take `&self`: each call holds a [`NodeBatch`] or a batch
+//! over the value plane, the section of the plane that the call owns, so
+//! threads share one store with no lock. [`Store::open`] also gives the
+//! [`Register`], the one writer of the roots: its owner names a pointer, and a
+//! [`Namer`] hands another thread's naming to it. [`Store::roots`] loads the
+//! register's last snapshot with no lock. The planes' own traits verify
+//! every load, so a file changed on disk is refused by the plane's own fault,
+//! carried as [`StoreError`].
 //!
 //! # Boundaries
 //!
@@ -44,17 +46,21 @@
 //!   with no codec.
 //! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single
 //!   writer plan, whose idempotent part is the planes' puts through `&self`:
-//!   two puts of one object write the same bytes, so neither waits.
+//!   two puts of one object write the same bytes, so neither waits. Its
+//!   register is the one owner of the roots.
 
 extern crate alloc;
 
 mod plane;
+mod register;
 mod roots;
 mod store;
 
 pub use gandr_storage_values::ContentPtr;
 
 pub use crate::plane::NodeBatch;
+pub use crate::register::Namer;
+pub use crate::register::Register;
 pub use crate::roots::RootName;
 pub use crate::roots::Roots;
 pub use crate::roots::unrooted;

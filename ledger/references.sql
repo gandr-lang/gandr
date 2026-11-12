@@ -727,6 +727,7 @@ INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8','surfa
 INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7c22a34adad','surface-mcp','rap::jobs','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','runtime-emitter','world','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','storage-store','','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','storage-store','register','lineage',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

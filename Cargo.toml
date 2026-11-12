@@ -212,6 +212,19 @@ rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 default-features = false
 features = ["anodized"]
 
+# The snapshot of a store's roots that its readers load with no lock: the
+# register, the one writer of the roots, swaps in a new snapshot at each
+# drain, and a reader keeps the one it loaded. The choice, its alternatives
+# and its reversal are in the `register` module of `storage-store`.
+# features:
+# - none: `weak`, `serde` and the experimental strategies stay off. The
+#   snapshot is a strong `Arc`, and nothing serialises it.
+# consumers:
+# - storage-store
+[workspace.dependencies.arc-swap]
+version = "1.9.3"
+default-features = false
+
 # BLAKE3 hashing for content and node identities, the kernel's verdict keys
 # and build identity, the site's build identity a stored stratum's key binds,
 # the engine hub's socket names, the rank a sweep's sample orders sources by,

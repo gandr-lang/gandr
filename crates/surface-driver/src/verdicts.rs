@@ -9,6 +9,12 @@
 //! directory named, it holds them in the process alone, under a key the
 //! process mints for itself.
 //!
+//! Each store's register is the one writer of its roots. A `check` keeps the
+//! registers on the thread that installs them and drains them after its walk,
+//! so each receipt and stratum that the walk's workers kept is named once. A
+//! language server or a hub gives its register to a thread of its own, which
+//! names each receipt as a session hands it over.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: §
@@ -22,8 +28,10 @@
 //!   the cache directory, the one store the storage tier opens.
 
 use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
 use core::fmt;
 use std::io;
+use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -36,6 +44,8 @@ use gandr_core_publish::publish_as;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::TrustPolicy;
+use gandr_storage_store::Register;
+use gandr_storage_store::StoreError;
 use gandr_surface_dispatcher::StoredStrata;
 use gandr_surface_dispatcher::StoredVerdicts;
 use gandr_surface_dispatcher::VerdictCache;
@@ -75,9 +85,48 @@ impl fmt::Display for Uninstalled
     }
 }
 
+/// The registers of the stores a `check` keeps its receipts and its strata
+/// in, which the thread that installs them owns. None stands when no store is
+/// installed.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct Registers(Vec<Register>);
+
+impl Registers
+{
+    /// Name, in each store, every receipt and stratum the run's workers kept
+    /// since the last drain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each register drains, as [`Register::drain`] states, even
+    ///   when an earlier one fails.
+    /// - provides: the one write of a `check`'s receipts and strata.
+    /// - fails: the first register's fault.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// [`StoreError`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second `check` over one cache recalls what the
+    ///   first recorded and replays the strata it kept.
+    /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
+    /// - witness: `tests::cli::a_second_check_replays_the_strata_the_first_kept_4034`
+    #[inline]
+    pub fn drain(&mut self) -> Result<(), StoreError>
+    {
+        self.0
+            .iter_mut()
+            .map(Register::drain)
+            .fold(Ok(()), Result::and)
+    }
+}
+
 /// Install the cache `kernel` asks for, and the stratum store beside it,
 /// unless it asks to recheck or no directory is named for the key or the
-/// store.
+/// store, and give the registers of their stores.
 ///
 /// # Specification
 /// - requires: called once, before the walk.
@@ -86,9 +135,10 @@ impl fmt::Display for Uninstalled
 ///   one signed from the store under the cache directory's `receipts`, and keep
 ///   there what they check under this installation's key; its contexts recall
 ///   the strata such a key signed from the store under the cache directory's
-///   `strata`, and keep there what they certify; otherwise nothing is installed
-///   and every declaration and stratum is checked.
-/// - fails: the key cannot be read or minted, or the store cannot be opened.
+///   `strata`, and keep there what they certify. What they keep stands once the
+///   registers drain. Otherwise nothing is installed, no register stands, and
+///   every declaration and stratum is checked.
+/// - fails: the key cannot be read or minted, or a store cannot be opened.
 /// - panics: none.
 /// - executable: none — the key, the store and the installation are external
 ///   state.
@@ -102,29 +152,35 @@ impl fmt::Display for Uninstalled
 ///   does not list recall nothing.
 /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
 /// - witness: `tests::cli::a_second_check_replays_the_strata_the_first_kept_4034`
-pub fn install(kernel: config::Kernel) -> Result<(), Uninstalled>
+pub fn install(kernel: config::Kernel) -> Result<Registers, Uninstalled>
 {
     let config::Kernel::Trusting(trusted) = kernel
     else {
-        return Ok(());
+        return Ok(Registers::default());
     };
     let (Some(key), Some(directory)) = (config::kernel_key(), config::verdicts())
     else {
-        return Ok(());
+        return Ok(Registers::default());
     };
-    let (policy, store, signer) = opened(trusted, key, &directory)?;
-    let strata = StoredStrata::new(policy.clone(), directory.join("strata"), signer.clone());
+    let (policy, (store, receipts), signer) = opened(trusted, key, &directory)?;
+    let at = directory.join("strata");
+    let (strata, kept) =
+        StoredStrata::open(policy.clone(), &at, signer.clone()).map_err(|fault| Uninstalled {
+            path: at,
+            why: fault.to_string(),
+        })?;
     install_verdict_cache(VerdictCache::new(policy, store, signer))
         .and_then(|()| install_stratum_store(strata))
         .map_err(|_installed| Uninstalled {
             path: directory,
             why: String::from("a cache is already installed"),
-        })
+        })?;
+    Ok(Registers(Vec::from([receipts, kept])))
 }
 
 /// The policy, the store and the key a cache keeps its verdicts under: this
 /// installation's key at `key`, read or minted and trusted beside `trusted`,
-/// and the store under `directory`'s `receipts`.
+/// and the store under `directory`'s `receipts` with its register.
 ///
 /// # Specification
 /// trivial.
@@ -135,7 +191,7 @@ fn opened(
     mut trusted: BTreeSet<KernelIdentity>,
     key: PathBuf,
     directory: &Path,
-) -> Result<(TrustPolicy, StoredVerdicts, KernelSigner), Uninstalled>
+) -> Result<(TrustPolicy, (StoredVerdicts, Register), KernelSigner), Uninstalled>
 {
     let signer = match signer(&key) {
         Ok(signer) => signer,
@@ -222,13 +278,15 @@ pub fn hold(kernel: config::Kernel) -> Result<(), Unheld>
 ///   process's readmissions recall from the store under the cache directory's
 ///   `receipts` what this installation's key or a listed one signed. They also
 ///   recall what an earlier readmission of the process checked. They keep what
-///   they check, under this installation's key, in the store and in the
-///   process. With `at` absent, they recall what an earlier readmission of the
-///   process checked, under a key the process mints from the operating system's
-///   entropy and trusts alone. Otherwise nothing is installed and every
-///   declaration is checked.
+///   they check, under this installation's key, in the process and in the
+///   store, through a thread that owns the store's register and names each
+///   receipt as it arrives. With `at` absent, they recall what an earlier
+///   readmission of the process checked, under a key the process mints from the
+///   operating system's entropy and trusts alone. Otherwise nothing is
+///   installed and every declaration is checked.
 /// - fails: the key cannot be read or minted, the store cannot be opened, the
-///   entropy cannot be read, or a cache is installed already.
+///   entropy cannot be read, a cache is installed already, or the register's
+///   thread cannot start.
 /// - panics: none.
 /// - executable: none — the key, the store, the entropy and the installation
 ///   are external state.
@@ -243,6 +301,13 @@ pub fn hold(kernel: config::Kernel) -> Result<(), Unheld>
 /// - witness: `verdicts::tests::a_trusting_process_holds_its_verdicts_once_6566`
 /// - witness: `verdicts::tests::a_rechecking_process_holds_no_verdicts_6566`
 /// - witness: `verdicts::tests::a_server_keeps_its_verdicts_in_the_installation_s_store_6623`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the register's thread blocks on its namers' channel and writes the roots journal for the server's life"
+    )
+)]
 fn holding(
     kernel: config::Kernel,
     at: Option<(PathBuf, PathBuf)>,
@@ -252,23 +317,39 @@ fn holding(
     else {
         return Ok(());
     };
-    let cache = if let Some((key, directory)) = at {
-        let (policy, store, signer) =
+    let (cache, register) = if let Some((key, directory)) = at {
+        let (policy, (store, register), signer) =
             opened(trusted, key, &directory).map_err(|uninstalled| Unheld {
                 why: format!("{}: {}", uninstalled.path.display(), uninstalled.why),
             })?;
-        VerdictCache::lasting(policy, store, signer)
+        (VerdictCache::lasting(policy, store, signer), Some(register))
     }
     else {
         let mut seed = [0_u8; 32];
         getrandom::fill(&mut seed).map_err(|error| Unheld {
             why: error.to_string(),
         })?;
-        VerdictCache::held(KernelSigner::from(seed))
+        (VerdictCache::held(KernelSigner::from(seed)), None)
     };
     install_verdict_cache(cache).map_err(|_installed| Unheld {
         why: String::from("a cache is already installed"),
-    })
+    })?;
+    let Some(register) = register
+    else {
+        return Ok(());
+    };
+    std::thread::Builder::new()
+        .name(String::from("gandr-register"))
+        .spawn(move || {
+            if let Err(fault) = register.serve() {
+                // Unwritable, the note is passed over as the warning it is.
+                drop(writeln!(io::stderr(), "gandr: {fault}"));
+            }
+        })
+        .map(drop)
+        .map_err(|error| Unheld {
+            why: error.to_string(),
+        })
 }
 
 /// The key at `path`, minted there when there is none.

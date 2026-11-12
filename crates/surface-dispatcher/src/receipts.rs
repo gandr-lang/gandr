@@ -10,6 +10,11 @@
 //! verdict. The next keep of that receipt writes its chunks afresh, as the
 //! store writes every object it refused.
 //!
+//! A keep commits its receipt on the caller's thread, through `&self`, and
+//! hands the root's naming to the store's register through a
+//! [`gandr_storage_store::Namer`], with no lock. The thread that opens the
+//! store owns the register, and its drain names every receipt kept since.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: §
@@ -24,7 +29,6 @@ use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::path::Path;
-use std::sync::Mutex;
 
 use anodized::spec;
 use gandr_kernel_core::verdict::KernelIdentity;
@@ -35,6 +39,8 @@ use gandr_kernel_core::verdict::VerdictImage;
 use gandr_kernel_core::verdict::VerdictKey;
 use gandr_kernel_core::verdict::VerdictRecord;
 use gandr_kernel_core::verdict::VerdictSource;
+use gandr_storage_store::Namer;
+use gandr_storage_store::Register;
 use gandr_storage_store::RootName;
 use gandr_storage_store::Store;
 use gandr_storage_store::Stored;
@@ -198,9 +204,9 @@ impl Stored for Kept
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a receipt kept by one store is answered by another opened
-///   over the same directory, two signers' receipts over the same records are
-///   both answered, and a damaged receipt is passed over until a keep writes it
-///   afresh.
+///   over the same directory once the register drains, two signers' receipts
+///   over the same records are both answered, and a damaged receipt is passed
+///   over until a keep writes it afresh.
 /// - witness: `receipts::tests::a_kept_receipt_is_answered_after_reopening`
 /// - witness: `receipts::tests::every_receipt_kept_for_a_key_is_answered`
 /// - witness: `receipts::tests::a_damaged_receipt_is_passed_over_until_it_is_kept_again`
@@ -208,7 +214,9 @@ impl Stored for Kept
 pub struct StoredVerdicts
 {
     /// The store holding the receipts.
-    store: Mutex<Store>,
+    store: Store,
+    /// The namer that hands each receipt's root to the store's register.
+    namer: Namer,
     /// Every receipt read at open, by each key its records hold.
     index: BTreeMap<VerdictKey, Vec<Arc<StoredReceipt>>>,
     /// How many receipts did not read.
@@ -217,13 +225,15 @@ pub struct StoredVerdicts
 
 impl StoredVerdicts
 {
-    /// Open or create the store at `path` and read every receipt it names.
+    /// Open or create the store at `path`, read every receipt it names, and
+    /// give the store's register, which names each receipt kept.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the store exists; the index holds every receipt a root under
     ///   `receipt/` names whose value derefs, and the damaged count every such
-    ///   root whose value does not.
+    ///   root whose value does not. The register's drain names each receipt
+    ///   that [`StoredVerdicts::keep`] commits.
     /// - fails: [`VerdictStoreError::Unopened`] when the store cannot be
     ///   opened.
     /// - panics: propagates a panic from the supplied `AsRef` implementation.
@@ -237,19 +247,20 @@ impl StoredVerdicts
     /// - witness: `receipts::tests::a_damaged_receipt_is_passed_over_until_it_is_kept_again`
     #[inline]
     #[spec(ensures: |ret| matches!(ret, Ok(_) | Err(VerdictStoreError::Unopened)))]
-    pub fn open<Location>(path: Location) -> Result<Self, VerdictStoreError>
+    pub fn open<Location>(path: Location) -> Result<(Self, Register), VerdictStoreError>
     where
         Location: AsRef<Path>,
     {
-        let store = Store::open(path.as_ref()).map_err(|_fault| VerdictStoreError::Unopened)?;
+        let (store, register) =
+            Store::open(path.as_ref()).map_err(|_fault| VerdictStoreError::Unopened)?;
         let mut index = BTreeMap::new();
         let mut damaged = 0_usize;
-        for name in store
-            .roots()
+        let roots = store.roots();
+        for name in roots
             .names()
             .filter(|name| name.as_ref().starts_with(RECEIPT_ROOTS))
         {
-            let Maybe::Present(pointer) = store.roots().root(name)
+            let Maybe::Present(pointer) = roots.root(name)
             else {
                 continue;
             };
@@ -266,22 +277,27 @@ impl StoredVerdicts
                     .push(Arc::clone(&receipt));
             }
         }
-        Ok(Self {
-            store: Mutex::new(store),
-            index,
-            damaged: DamagedCount(damaged),
-        })
+        Ok((
+            Self {
+                store,
+                namer: register.namer(),
+                index,
+                damaged: DamagedCount(damaged),
+            },
+            register,
+        ))
     }
 
-    /// Commit `stored` to the store and name it, for a store opened later to
-    /// read.
+    /// Commit `stored` to the store and hand its naming to the register, for
+    /// a store opened after the register drains to read.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the store holds `stored` under a root a store
-    ///   opened later reads it from; this store's index is unchanged.
+    /// - ensures: on success the store holds `stored`, and the register's next
+    ///   drain names it by a root that a store opened later reads it from; this
+    ///   store's index is unchanged.
     /// - fails: [`VerdictStoreError::Unwritten`] when the receipt cannot be
-    ///   committed or named.
+    ///   committed, or the register is gone.
     /// - panics: none.
     ///
     /// # Errors
@@ -298,14 +314,10 @@ impl StoredVerdicts
         stored: &StoredReceipt,
     ) -> Result<(), VerdictStoreError>
     {
-        let mut store = self
-            .store
-            .lock()
-            .map_err(|_poisoned| VerdictStoreError::Unwritten)?;
-        store
+        self.store
             .commit(&Kept(stored.clone()))
             .and_then(|pointer| {
-                store.set_root(
+                self.namer.name(
                     RootName::new(format!("{RECEIPT_ROOTS}{}", pointer.digest())),
                     pointer,
                 )
@@ -399,7 +411,7 @@ mod tests
         ));
         drop(std::fs::remove_dir_all(&directory));
         let receipt = receipt(&KernelSigner::from([3_u8; 32]));
-        let store = StoredVerdicts::open(&directory).expect("the store opens");
+        let (store, mut register) = StoredVerdicts::open(&directory).expect("the store opens");
         store.keep(&receipt).expect("the receipt is written");
         let first = receipt
             .records()
@@ -410,7 +422,13 @@ mod tests
             store.receipts(first).is_empty(),
             "a store answers only what it read at open"
         );
-        let reopened = StoredVerdicts::open(&directory).expect("the store reopens");
+        let (unnamed, _register) = StoredVerdicts::open(&directory).expect("the store reopens");
+        assert!(
+            unnamed.receipts(first).is_empty(),
+            "a store opened before the register drains reads no receipt"
+        );
+        register.drain().expect("the register names the receipt");
+        let (reopened, _register) = StoredVerdicts::open(&directory).expect("the store reopens");
         let held = [Arc::new(receipt.clone())];
         for record in receipt.records() {
             assert_eq!(
@@ -434,10 +452,11 @@ mod tests
         drop(std::fs::remove_dir_all(&directory));
         let ours = receipt(&KernelSigner::from([3_u8; 32]));
         let theirs = receipt(&KernelSigner::from([4_u8; 32]));
-        let store = StoredVerdicts::open(&directory).expect("the store opens");
+        let (store, mut register) = StoredVerdicts::open(&directory).expect("the store opens");
         store.keep(&ours).expect("our receipt is written");
         store.keep(&theirs).expect("theirs is written");
-        let reopened = StoredVerdicts::open(&directory).expect("the store reopens");
+        register.drain().expect("the register names both receipts");
+        let (reopened, _register) = StoredVerdicts::open(&directory).expect("the store reopens");
         let (ours_held, theirs_held) = (Arc::new(ours.clone()), Arc::new(theirs));
         for record in ours.records() {
             let answered = reopened.receipts(record.key());
@@ -463,12 +482,12 @@ mod tests
         ));
         drop(std::fs::remove_dir_all(&directory));
         let receipt = receipt(&KernelSigner::from([3_u8; 32]));
-        StoredVerdicts::open(&directory)
-            .expect("the store opens")
-            .keep(&receipt)
-            .expect("the receipt is written");
-        let opened = Store::open(&directory).expect("the store reopens");
-        let name = opened.roots().names().next().expect("the receipt is named");
+        let (store, mut register) = StoredVerdicts::open(&directory).expect("the store opens");
+        store.keep(&receipt).expect("the receipt is written");
+        register.drain().expect("the register names the receipt");
+        let (opened, _register) = Store::open(&directory).expect("the store reopens");
+        let roots = opened.roots();
+        let name = roots.names().next().expect("the receipt is named");
         let written = directory.join("chunks").join(
             name.as_ref()
                 .strip_prefix(RECEIPT_ROOTS)
@@ -486,7 +505,8 @@ mod tests
             (changed, "a changed chunk byte"),
         ] {
             std::fs::write(&written, &damaged).expect("the damage is written");
-            let reopened = StoredVerdicts::open(&directory).expect("the store reopens");
+            let (reopened, mut register) =
+                StoredVerdicts::open(&directory).expect("the store reopens");
             assert_eq!(usize::from(reopened.damaged()), 1, "{what}");
             for record in receipt.records() {
                 assert!(reopened.receipts(record.key()).is_empty(), "{what}");
@@ -494,7 +514,11 @@ mod tests
             reopened
                 .keep(&receipt)
                 .expect("the receipt is written again");
-            let repaired = StoredVerdicts::open(&directory).expect("the store reopens");
+            register
+                .drain()
+                .expect("the register names the receipt again");
+            let (repaired, _register) =
+                StoredVerdicts::open(&directory).expect("the store reopens");
             assert_eq!(usize::from(repaired.damaged()), 0, "{what}");
             for record in receipt.records() {
                 assert_eq!(repaired.receipts(record.key()), held, "{what}");

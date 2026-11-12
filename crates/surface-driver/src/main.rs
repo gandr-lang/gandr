@@ -353,6 +353,7 @@ use gandr_runtime_net::Binding;
 use gandr_runtime_net::Lookup;
 use gandr_runtime_net::Net;
 use gandr_runtime_net::Secret;
+use gandr_storage_store::Register;
 use gandr_storage_store::Store;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
@@ -1503,7 +1504,7 @@ struct Pass<'packages>
     /// The workspaces the walk's paths gathered.
     workspaces: &'packages [Gathered],
     /// The store the packages are locked into, when any was reached.
-    store: Option<&'packages mut Store>,
+    store: Option<&'packages mut Opened>,
     /// The rings that each job of the walk marks, when the hub folds them.
     rings: Rings<'packages>,
 }
@@ -1533,12 +1534,23 @@ enum Locking
     Refused(LockFault),
 }
 
-/// The store [`config::store`] names, opened, or the exit code a fault on
-/// standard error leaves the run at.
+/// The store a `check` or a `lock` run opens, and its register, the one
+/// writer of its roots, which the run's thread owns.
+#[derive(Debug)]
+struct Opened
+{
+    /// The store.
+    store: Store,
+    /// The store's register.
+    register: Register,
+}
+
+/// The store [`config::store`] names, opened with its register, or the exit
+/// code a fault on standard error leaves the run at.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the store [`Store::open`] opens at the directory
+/// - ensures: the store and the register [`Store::open`] opens at the directory
 ///   [`config::store`] names; when no directory is named, or the store does not
 ///   open, `gandr: <why>` on standard error and the faulted exit.
 /// - provides: the one store a `check` or a `lock` run opens.
@@ -1554,7 +1566,7 @@ enum Locking
 ///   store answers, and a homeless run with nowhere to put the store faults.
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
 /// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
-fn opened() -> Result<Store, ExitCode>
+fn opened() -> Result<Opened, ExitCode>
 {
     let fault = |why: &dyn core::fmt::Display| {
         // When standard error is unwritable too, the exit code is the one
@@ -1568,7 +1580,9 @@ fn opened() -> Result<Store, ExitCode>
             &"no directory names the store: set `XDG_DATA_HOME` or `HOME`",
         ));
     };
-    Store::open(&root).map_err(|error| fault(&error))
+    Store::open(&root)
+        .map(|(store, register)| Opened { store, register })
+        .map_err(|error| fault(&error))
 }
 
 /// Resolve `package`'s dependencies into `store` and hold its lock to them,
@@ -1666,15 +1680,15 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
             return ExitCode::from(FAULTED);
         },
     };
-    let mut store = match opened() {
-        Ok(store) => store,
+    let mut held = match opened() {
+        Ok(held) => held,
         Err(exit) => return exit,
     };
     let pool = Pool::new(Width::PerformanceCores);
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
         let path = package.lock();
-        let resolved = package.resolve(&grammar, &mut store, Revisions::Asked, &pool);
+        let resolved = package.resolve(&grammar, &mut held.store, Revisions::Asked, &pool);
         let (written, reached) = match resolved {
             Ok(lock) => match relock(package, &lock) {
                 Ok(reconciled) => (
@@ -1960,7 +1974,8 @@ fn main() -> ExitCode
     let mut workspaces: Vec<Gathered> = Vec::new();
     // The network, bindings and migrations a `run` or `host` gives its program.
     let mut hosting = Hosting::default();
-    let mut store: Option<Store> = None;
+    let mut store: Option<Opened> = None;
+    let mut registers = verdicts::Registers::default();
     let mut measuring = Measuring::Unmeasured;
     let mut listing = Listing::Unlisted;
     #[cfg(feature = "instrument")]
@@ -2005,7 +2020,7 @@ fn main() -> ExitCode
                     workspaces = gathered;
                     if !reached.is_empty() {
                         store = Some(match opened() {
-                            Ok(store) => store,
+                            Ok(held) => held,
                             Err(exit) => return exit,
                         });
                         packages = reached;
@@ -2023,10 +2038,11 @@ fn main() -> ExitCode
                         };
                     },
                 };
-                if let Err(uninstalled) = verdicts::install(kernel) {
+                match verdicts::install(kernel) {
+                    Ok(installed) => registers = installed,
                     // The check runs without the cache; standard error says
                     // why, or, unwritable, is passed over as the warning it is.
-                    drop(writeln!(std::io::stderr(), "gandr: {uninstalled}"));
+                    Err(uninstalled) => drop(writeln!(std::io::stderr(), "gandr: {uninstalled}")),
                 }
             }
             if admit == Some(AdmitPolicy::NativeConversion)
@@ -2371,6 +2387,12 @@ fn main() -> ExitCode
         &mut stdout,
         &mut stderr,
     );
+    // The run's workers handed the receipts and the strata they kept to the
+    // registers this thread owns. A naming that does not reach the store
+    // costs a later run a check, so its fault is passed over as a warning.
+    if let Err(fault) = registers.drain() {
+        drop(writeln!(stderr, "gandr: {fault}"));
+    }
     let flushed = rendered.and_then(|exit| stdout.flush().map(|()| exit));
     match flushed {
         Ok(exit) => {
@@ -3325,7 +3347,7 @@ impl HubVerbs
         }
         else {
             match opened() {
-                Ok(store) => Some(store),
+                Ok(held) => Some(held),
                 Err(_exit) => {
                     return writeln!(faulted, "gandr: the store of packages did not open");
                 },
@@ -3876,7 +3898,7 @@ fn render(
     printing: Printing,
     reached: (&[Package], &[Gathered]),
     hosting: Hosting,
-    store: Option<&mut Store>,
+    store: Option<&mut Opened>,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
@@ -4360,7 +4382,7 @@ fn run(
             .iter()
             .map(|package| Packaged {
                 package,
-                locking: locking(package, held, pool),
+                locking: locking(package, &mut held.store, pool),
             })
             .collect()
     });
@@ -4518,7 +4540,14 @@ fn run(
     if checking && let Some(held) = store.as_deref() {
         for packaged in packages {
             if let Locking::Held(_, ref lock, _) = packaged.locking {
-                let reached = depended(packaged.package, lock, held, verbosity, stdout, stderr)?;
+                let reached = depended(
+                    packaged.package,
+                    lock,
+                    &held.store,
+                    verbosity,
+                    stdout,
+                    stderr,
+                )?;
                 verdict = worse(verdict, reached);
             }
         }
@@ -5222,8 +5251,9 @@ fn file_export(
     }
 }
 
-/// Commit `package`'s export into `store` under `address`, when every source
-/// it was built from settled, and the verdict that leaves the run at.
+/// Commit `package`'s export into the store `held` holds, and name it through
+/// its register under `address`, when every source it was built from settled,
+/// and the verdict that leaves the run at.
 ///
 /// # Specification
 /// - requires: `exporting` took every step of `package`'s sources, and
@@ -5251,13 +5281,13 @@ fn exported(
     package: &Package,
     exporting: Exporting,
     address: &PackageAddress,
-    store: &mut Store,
+    held: &mut Opened,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
     let root = package.root().display();
     match exporting.finish() {
-        Ok(export) => match export.commit(store, address) {
+        Ok(export) => match export.commit(&held.store, &mut held.register, address) {
             Ok(_pointer) => Ok(RunVerdict::Settled),
             Err(fault) => {
                 writeln!(stderr, "gandr: {root}: {fault}")?;

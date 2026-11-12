@@ -12,16 +12,17 @@
 //! it resides: the chunks it reaches and the bytes of their images.
 //! [`Store::write_tree`] admits a record tree to the record plane and
 //! publishes its nodes, and [`Store::records`] is a batch over that plane, for
-//! opening a stored root. [`Store::set_root`] names a pointer under the roots
-//! lock: it reads what another store over the same directory named since,
-//! then appends its own naming to the roots journal, so a naming costs
-//! amortised constant time and loses no other store's root.
+//! opening a stored root. [`Store::open`] also gives the store's
+//! [`Register`], the one writer of its roots, and [`Store::roots`] loads the
+//! snapshot of the roots that the register last published, with no lock.
 
+use alloc::sync::Arc;
 use core::num::NonZeroU64;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
+use arc_swap::ArcSwap;
 use gandr_core_publish::Unpublished;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
@@ -47,6 +48,7 @@ use crate::plane::ChunkDirectory;
 use crate::plane::Image;
 use crate::plane::NodeBatch;
 use crate::plane::NodeDirectory;
+use crate::register::Register;
 use crate::roots::Kept;
 use crate::roots::RootName;
 use crate::roots::Roots;
@@ -62,7 +64,7 @@ const ROOTS_LOCK: &str = "roots.lock";
 
 /// How a store holds its roots lock.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Hold
+pub enum Hold
 {
     /// Beside other readers, to read the roots.
     Shared,
@@ -89,7 +91,7 @@ enum Hold
 /// # Adequacy
 /// - hypothesis: L3 — two stores over one directory keep each other's roots.
 /// - witness: `tests::store::two_stores_over_one_directory_keep_each_other_s_roots`
-fn locked(
+pub fn locked(
     root: &Path,
     hold: Hold,
 ) -> Result<std::fs::File, StoreError>
@@ -300,6 +302,9 @@ pub enum StoreError
         /// What it names instead.
         fault: RootsFault,
     },
+    /// The register that owns the roots is gone, so a naming reaches no
+    /// owner.
+    Unowned,
 }
 
 impl StoreError
@@ -359,6 +364,10 @@ impl core::fmt::Display for StoreError
                 ref path,
                 ref fault,
             } => write!(f, "the store's roots file `{}`: {fault}", path.display()),
+            Self::Unowned => write!(
+                f,
+                "the store's register is gone: keep it open while a namer names roots"
+            ),
         }
     }
 }
@@ -369,6 +378,7 @@ impl core::error::Error for StoreError
 
 /// One store: the value plane, the record plane and the named roots under one
 /// directory. Its puts take `&self`, so threads share one store with no lock.
+/// Its [`Register`] names its roots.
 #[derive(Debug)]
 pub struct Store
 {
@@ -376,11 +386,10 @@ pub struct Store
     root: PathBuf,
     /// The value plane.
     chunks: ChunkDirectory,
-    /// The record plane.
-    nodes: NodeDirectory,
-    /// The named roots, as the store last read or wrote them, and where its
-    /// reading of them stands.
-    roots: Kept,
+    /// The record plane, which the register shares.
+    nodes: Arc<NodeDirectory>,
+    /// The snapshot of the roots that the register last published.
+    roots: Arc<ArcSwap<Roots>>,
 }
 
 impl Store
@@ -396,14 +405,16 @@ impl Store
     /// codec.
     const CLASSIFICATION: BoundaryClassification = BoundaryClassification::EveryConstructor;
 
-    /// The store rooted at `root`, made where it is missing.
+    /// The store rooted at `root`, made where it is missing, and its register.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success `root`, `root/chunks` and `root/nodes` stand as
     ///   directories, every object each holds is listed, and the roots are
     ///   those the roots tree and the journal over it name, read under the
-    ///   roots lock shared, or none when no roots file stands.
+    ///   roots lock shared, or none when no roots file stands. The register is
+    ///   the one writer of the store's roots, and the store's readers load the
+    ///   snapshot it publishes.
     /// - provides: the one way a consumer reaches the storage tier on disk.
     /// - fails: [`StoreError::Io`] when a directory cannot be made or listed,
     ///   or the lock, the roots file or the journal cannot be used, and
@@ -422,19 +433,29 @@ impl Store
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
     #[inline]
-    pub fn open(root: &Path) -> Result<Self, StoreError>
+    pub fn open(root: &Path) -> Result<(Self, Register), StoreError>
     {
         let chunks = ChunkDirectory::open(root.join(CHUNKS))?;
-        let nodes = NodeDirectory::open(root.join(NODES))?;
+        let nodes = Arc::new(NodeDirectory::open(root.join(NODES))?);
         let lock = locked(root, Hold::Shared)?;
-        let roots = Kept::read(root, &nodes)?;
+        let kept = Kept::read(root, &nodes)?;
         drop(lock);
-        Ok(Self {
-            root: root.to_path_buf(),
-            chunks,
-            nodes,
-            roots,
-        })
+        let roots = Arc::new(ArcSwap::from_pointee(kept.roots().clone()));
+        let register = Register::new(
+            root.to_path_buf(),
+            Arc::clone(&nodes),
+            kept,
+            Arc::clone(&roots),
+        );
+        Ok((
+            Self {
+                root: root.to_path_buf(),
+                chunks,
+                nodes,
+                roots,
+            },
+            register,
+        ))
     }
 
     /// The directory the store is rooted at.
@@ -587,7 +608,7 @@ impl Store
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn records(&self) -> NodeBatch<'_>
+    pub fn records(&self) -> NodeBatch<'_>
     {
         NodeBatch::over(&self.nodes)
     }
@@ -624,55 +645,15 @@ impl Store
         batch.publish()
     }
 
-    /// The named roots, as the store last read or wrote them.
+    /// The named roots, as the register last published them. The snapshot
+    /// stays as it was loaded while the register publishes others.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn roots(&self) -> &Roots
+    pub fn roots(&self) -> Arc<Roots>
     {
-        self.roots.roots()
-    }
-
-    /// Name `pointer` by `name`, whatever `name` named before.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: on success the roots read again under the roots lock, with
-    ///   `name` naming `pointer`, stand on disk and are the store's roots, so
-    ///   every other root a store over the same directory set stands too.
-    /// - provides: the one way a root changes.
-    /// - fails: [`StoreError::Io`] when the lock or a file cannot be used, and
-    ///   the faults of reading and writing the roots.
-    /// - panics: none.
-    /// - executable: none — the outcome is the file system's.
-    /// - intension: the naming reads the entries other stores journaled since
-    ///   this store last read, and appends one; it builds the whole roots tree
-    ///   only after as many namings as the tree holds roots, so it costs
-    ///   amortised constant time.
-    ///
-    /// # Errors
-    /// As above.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a root set reads back after reopening, a second
-    ///   setting of one name replaces it, two stores over one directory keep
-    ///   each other's roots, and namings one at a time leave far fewer nodes
-    ///   than namings.
-    /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
-    /// - witness: `tests::store::two_stores_over_one_directory_keep_each_other_s_roots`
-    /// - witness: `tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081`
-    #[inline]
-    pub fn set_root(
-        &mut self,
-        name: RootName,
-        pointer: ContentPtr,
-    ) -> Result<(), StoreError>
-    {
-        let lock = locked(&self.root, Hold::Alone)?;
-        self.roots.name(&self.root, &self.nodes, name, pointer)?;
-        drop(lock);
-        Ok(())
+        self.roots.load_full()
     }
 }
