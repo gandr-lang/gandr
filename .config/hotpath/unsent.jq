@@ -1,17 +1,17 @@
-# The one `kind:ci` issue that holds main's hotpath reports not uploaded
-# (#2641), read by `ci:hotpath-unsent`: `{issue, run}`, where `issue` is the
-# open issue of that title, `{number, body}`, or null, and `run` the push's
-# `{commit, url, benchmarks}`. Gives `{number, title, body}`: the issue's
-# number (null to open one) and its body with the run's row added, its
-# rows in the order they were filed. A run already filed adds nothing. A new
-# issue opens with the sentence that says what it is, and its table follows
-# a one-sentence lead (#3596).
+# The one `kind:ci` issue that holds landing's hotpath reports not uploaded
+# (#2641, #6993), read by `ci:hotpath-unsent`: `{issue, run}`, where `issue`
+# is the open issue of that title, `{number, body}`, or null, and `run` the
+# push's `{commit, url, benchmarks}`. Gives `{number, title, body}`: the
+# issue's number (null to open one) and its body with the run's row added,
+# its rows in the order they were filed. A run already filed adds nothing. A
+# new issue opens with the sentence that says what it is, and its table
+# follows a one-sentence lead (#3596).
 
-def title: "ci: hotpath reports not uploaded on main";
+def title: "ci: hotpath reports not uploaded on landing";
 def header: "| Commit | Run | Benchmarks |\n| --- | --- | --- |\n";
 def prose:
-  "This issue lists the pushes to `main` whose hotpath reports fail to upload to hotpath Cloud.\n\n"
-  + "A failed upload is a report failure, never a red `main`. "
+  "This issue lists the pushes to `landing` whose hotpath reports fail to upload to hotpath Cloud.\n\n"
+  + "A failed upload is a report failure, never a red run. "
   + "The job passes with a warning and keeps the measurements in the `hotpath-<commit>` artifact of its run. "
   + "`mise run ci:hotpath-unsent` then adds the row of the run. "
   + "Remove a row once a fix for its cause lands. The issue closes with the last row.\n\n"

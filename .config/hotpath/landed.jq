@@ -1,5 +1,5 @@
 # The body of the `Hotpath: the landed deltas` ledger, which
-# `ci:hotpath-landed` writes on each push to `main` (#3596).
+# `ci:hotpath-landed` writes on each push to `landing` (#3596, #6993).
 #
 # Input: `{body, rows, states}`. `body` is the open ledger's body, or null
 # when no ledger is open. `rows` is the push's rows, each
@@ -27,7 +27,7 @@ def separator: "| --- | --- | --- | --- | --- |";
 def fresh: [
   "This issue lists the landings whose hotpath checks regress, or improve past the band of their policy.",
   "",
-  "The table gives one row for each red `hotpath / <benchmark>` check of a landing, and one row for each report that improves past its band. `mise run ci:hotpath-landed` adds the rows on the push to `main`. A red row links the issues of the functions that it regresses. A fix or a stated acceptance settles the row of the pull request there. A row reads `fixed` once each issue it links is closed, and at once when it links none."
+  "The table gives one row for each red `hotpath / <benchmark>` check of a landing, and one row for each report that improves past its band. `mise run ci:hotpath-landed` adds the rows on the push to `landing`. A red row links the issues of the functions that it regresses. A fix or a stated acceptance settles the row of the pull request there. A row reads `fixed` once each issue it links is closed, and at once when it links none."
 ];
 def key: split("|")[2:4] | join("|");
 def verdict: split("|")[4] // "";
