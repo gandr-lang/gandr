@@ -1366,7 +1366,13 @@ fn a_poisoned_type_entry_turns_admission_into_a_universe_refusal()
         &Reads::closed(),
     );
     poisoned
-        .remember(support, NodeOutcome::Formed(level(LevelConstant::from(5))))
+        .remember(
+            support,
+            NodeOutcome::Formed(
+                level(LevelConstant::from(5)),
+                gandr_kernel_core::Owed::none(),
+            ),
+        )
         .expect("the poisoned entry records");
     let (poisoned_verdict, census) =
         check_in_session(&mut arena, &declaration, &mut poisoned, &mut session);
@@ -1465,7 +1471,13 @@ fn a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed()
         &Reads::closed(),
     );
     confused
-        .remember(support, NodeOutcome::Formed(level(LevelConstant::from(9))))
+        .remember(
+            support,
+            NodeOutcome::Formed(
+                level(LevelConstant::from(9)),
+                gandr_kernel_core::Owed::none(),
+            ),
+        )
         .expect("the entry records");
     let (verdict, census) = check_in_session(&mut arena, &declaration, &mut confused, &mut session);
     assert_eq!(Ok(()), verdict, "declined rather than trusted");

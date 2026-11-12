@@ -1112,6 +1112,7 @@ INSERT INTO purpose VALUES('kernel-core','encoding::ContentTable','struct','The 
 INSERT INTO purpose VALUES('kernel-core','encoding::EncodingLength','struct','The byte length of a ContentEncoding.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::Exact','enum','The identity on content: the identification a record name is taken up to when no datum relates two records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::Identification','trait','What a record name identifies records up to, and the context its key derives under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::ObligationGoal','enum','One obligation that a formation owes the checker, by the type node that holds its inputs.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::RecordName','struct','A record''s name: BLAKE3 over its tag, its payload and its members'' names, alike in every session that holds the record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::RewriteGoal','enum','One rewrite obligation, as the key derivation names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::SupportGoal','enum','Which question one goal expansion asks, in the vocabulary the memo key is derived from.',NULL,'fits','sound',NULL);
@@ -1264,6 +1265,7 @@ INSERT INTO purpose VALUES('kernel-core','stage_order::Unminted','enum','Why a s
 INSERT INTO purpose VALUES('kernel-core','stage_order::below','function','The bound one step below stage: every stage strictly below it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::NodeOutcome','enum','What one goal expansion produced, as the memo stores it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::NodeSupport','struct','The complete support of one goal expansion: its question, the binders its judgement read, and the name of its goal record over them.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','support::Owed','struct','The keys of the obligations that a formation owes the checker, each one time.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportContext','struct','The state one checking session derives its memo keys against: the canonical content numbering, the buffer one goal''s read binders are gathered in, and the open goals'' accruals of the binders their judgements read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportPlane','enum','Which of the two machines a support belongs to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::Attestation','enum','Says whether a stratum receipt is believed: signed by a key the policy lists over the stratum''s key and bytes, or refused.',NULL,'fits','sound',NULL);

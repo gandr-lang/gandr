@@ -270,6 +270,7 @@
 //!   each refusal of a record field's value or a restriction's fixed value, for
 //!   the replay of a patched type's formation and of its meets.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -277,7 +278,9 @@ use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
+use gandr_kernel_check_memo::MemoKey as _;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
@@ -312,6 +315,7 @@ use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
 use crate::conv::pending_endpoints;
 use crate::encoding::ContentId;
+use crate::encoding::ObligationGoal;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
 use crate::env::Entries;
@@ -340,9 +344,11 @@ use crate::rewrite::substitute_comp_type_at_call;
 use crate::rewrite::substitute_value_type;
 use crate::seal;
 use crate::stage_order::StageOrder;
+use crate::support::Discharge;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
 use crate::support::Opened;
+use crate::support::Owed;
 use crate::support::Question;
 use crate::support::SupportContext;
 use crate::support::SupportPlane;
@@ -1472,6 +1478,9 @@ enum CodeObligation
     /// A universe code deferred by Element formation.
     Universe
     {
+        /// The element type that owes the check: its code and its level are
+        /// the obligation's inputs.
+        element: AnyNode,
         /// Value that must inhabit the universe.
         code: ValueId,
         /// Required universe family.
@@ -1512,6 +1521,9 @@ enum CodeObligation
     /// Endpoint checks deferred by identity formation.
     Endpoints
     {
+        /// The identity type that owes the checks: its domain and its two
+        /// endpoints are the obligation's inputs.
+        identity: ValueTypeId,
         /// The domain both endpoints inhabit.
         domain: ValueTypeId,
         /// Source endpoint.
@@ -1589,22 +1601,121 @@ impl CodeObligation
             },
         }
     }
+
+    /// The mutual block this obligation was owed inside.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn scope(&self) -> Owing
+    {
+        match *self {
+            Self::Universe { scope, .. }
+            | Self::Data { scope, .. }
+            | Self::Codata { scope, .. }
+            | Self::Endpoints { scope, .. } => scope,
+        }
+    }
+
+    /// The goal that names this obligation's verdict: its kind, over the type
+    /// node that owes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn goal(&self) -> SupportGoal
+    {
+        SupportGoal::Obligation(match *self {
+            Self::Universe { element, .. } => ObligationGoal::Universe(element),
+            Self::Data { datatype, .. } => ObligationGoal::Data(datatype),
+            Self::Codata { codata, .. } => ObligationGoal::Codata(codata),
+            Self::Endpoints { identity, .. } => ObligationGoal::Endpoints(identity),
+        })
+    }
+
+    /// The key of this obligation's verdict: its goal under the context it
+    /// was owed at, over the binders its owing node carries.
+    ///
+    /// The owing node holds every input of the check, so its carried support
+    /// holds every binder the check can read. The walk that owes it and the
+    /// drain that checks it take the key from this one resolution.
+    ///
+    /// # Specification
+    /// - requires: the obligation's nodes live in `arena`.
+    /// - ensures: two obligations take one key exactly when they are of one
+    ///   kind over owing nodes of equal content, under contexts that agree at
+    ///   every binder the owing node carries.
+    /// - provides: the key the drain records a passed check under, and the key
+    ///   a formation's entry carries.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the key is the session table's interning, which a
+    ///   predicate could restate only by interning it again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the eight pairs of declarations, each a refused
+    ///   declaration and a successor that owes the same obligation, in both
+    ///   orders.
+    /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+    #[inline]
+    fn key(
+        &self,
+        arena: &TermArena,
+        session: &mut SupportContext,
+    ) -> NodeSupport
+    {
+        let (reads, context) = match *self {
+            Self::Universe {
+                element: AnyNode::CompType(element),
+                ref context,
+                ..
+            }
+            | Self::Codata {
+                codata: element,
+                ref context,
+                ..
+            } => (arena.comp_type_support(element), context),
+            Self::Universe {
+                element: AnyNode::ValueType(element),
+                ref context,
+                ..
+            }
+            | Self::Data {
+                datatype: element,
+                ref context,
+                ..
+            }
+            | Self::Endpoints {
+                identity: element,
+                ref context,
+                ..
+            } => (arena.value_type_support(element), context),
+            Self::Universe {
+                element: AnyNode::Value(_) | AnyNode::Computation(_),
+                ref context,
+                ..
+            } => (&WIDEST, context),
+        };
+        NodeSupport::recorded(arena, session, self.goal(), context, reads)
+    }
 }
 
-/// Owe `obligation` to the driver, its nodes' carried supports joining the goal
-/// open on `session` when the memo is active.
+/// Owe `obligation` to the driver. With an active memo, its nodes' carried
+/// supports and its key join the goal open on `session`.
 ///
 /// # Specification
 /// - requires: the obligation's nodes live in `arena`.
 /// - ensures: `obligation` is owed last; with an active memo, the open goal
-///   gains what [`CodeObligation::accrue`] joins.
+///   gains what [`CodeObligation::accrue`] joins and the obligation's key.
 /// - provides: the formation walk's one way to owe.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`CodeObligation::accrue`].
+/// - hypothesis: L3 — as [`CodeObligation::accrue`] and
+///   [`CodeObligation::key`].
 /// - witness: `tests::acceptance::an_owed_code_keeps_its_binder_in_the_formation_key`
+/// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
 #[spec(captures: count = owed.len(), ensures: owed.len() == count.saturating_add(1))]
 #[inline]
 fn owe<M>(
@@ -1617,8 +1728,60 @@ fn owe<M>(
 {
     if matches!(M::ACTIVITY, MemoActivity::Active) {
         obligation.accrue(arena, session);
+        let key = obligation.key(arena, session);
+        session.owe_obligation(&key);
     }
     owed.push(obligation);
+}
+
+/// Whether each obligation of `owed` holds a checked verdict, in `memo` or
+/// kept by an earlier admission under `parameters`, or this declaration's
+/// check owes it already.
+///
+/// An obligation that this check owes is checked by its drain before the
+/// declaration is admitted. So a formation recalled in the same check is
+/// served on it, and the drain checks the obligation one time.
+///
+/// # Specification
+/// - requires: each key and `parameters` were built in `session`.
+/// - ensures: [`Discharge::Held`] exactly when each key holds a checked outcome
+///   in `memo`, holds one in the kept memo under `parameters`, or is owed by
+///   this declaration's check. A formation that owes nothing is held.
+/// - provides: the condition a recalled formation is served on.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer is a probe of two memos. A predicate could
+///   restate it only by probing them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the eight pairs of declarations, each a refused
+///   declaration and a successor that owes the same obligation, and a shared
+///   formation that one declaration recalls many times.
+/// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+#[inline]
+fn discharged<M>(
+    memo: &M,
+    session: &SupportContext,
+    owed: &Owed,
+    parameters: Option<ContentId>,
+) -> Discharge
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let held = owed.keys().iter().all(|key| {
+        session.owes(key) == Discharge::Held
+            || memo
+                .filed(key.digest())
+                .any(|hit| hit.support() == key && *hit.outcome() == NodeOutcome::Checked)
+            || parameters.is_some_and(|named| session.kept_checked(key, named) == Discharge::Held)
+    });
+    if held {
+        Discharge::Held
+    }
+    else {
+        Discharge::Open
+    }
 }
 
 /// The mutual block an obligation was owed inside, which its drain reads it
@@ -1839,22 +2002,31 @@ where
             // is shared between the two machines, and a shape disagreement
             // means the entry was not this machine's: decline it and
             // recompute, which costs one expansion and cannot fabricate a
-            // level.
+            // level. A formation is served only when each obligation it owes
+            // holds a checked verdict. Otherwise it expands and owes them
+            // again.
             if let Some(hit) = hit
-                && let NodeOutcome::Formed(ref level) = *hit.outcome()
+                && let NodeOutcome::Formed(ref level, ref owes) = *hit.outcome()
+                && (owes.keys().is_empty() || {
+                    let named = parameters.name(arena, &judgement, session);
+                    discharged(&*memo, session, owes, named) == Discharge::Held
+                })
             {
-                // The recalled goal's binders are read here, as if its walk
-                // had run.
+                // The recalled goal's binders and keys are read here, as if
+                // its walk had run.
                 session.read(hit.support().reads(), &context);
+                session.owe(owes.keys());
                 recalled = Some(level.clone());
                 answered = ExpansionKind::Recalled;
             }
-            else if let Some(NodeOutcome::Formed(level)) = parameters
-                .name(arena, &judgement, session)
-                .and_then(|named| session.recall_kept(arena, question, context.as_slice(), named))
+            else if let Some(named) = parameters.name(arena, &judgement, session)
+                && let Some(NodeOutcome::Formed(level, owes)) =
+                    session.recall_kept(arena, question, context.as_slice(), named)
+                && discharged(&*memo, session, &owes, Some(named)) == Discharge::Held
             {
                 // An earlier admission formed it under these parameters. Its
                 // binders are read here as if its walk had run.
+                session.owe(owes.keys());
                 recalled = Some(level);
                 answered = ExpansionKind::Kept;
             }
@@ -1955,6 +2127,7 @@ where
                             target: right,
                         } => {
                             owe::<M>(arena, session, owed, CodeObligation::Endpoints {
+                                identity: id,
                                 domain,
                                 left,
                                 right,
@@ -1981,6 +2154,7 @@ where
                                 domain,
                             )?;
                             owe::<M>(arena, session, owed, CodeObligation::Endpoints {
+                                identity: id,
                                 domain,
                                 left,
                                 right,
@@ -2015,6 +2189,7 @@ where
                         ValueType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
                             owe::<M>(arena, session, owed, CodeObligation::Universe {
+                                element: AnyNode::ValueType(id),
                                 code,
                                 sort: GroundSort::Value,
                                 level: target.clone(),
@@ -2119,6 +2294,7 @@ where
                         CompType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
                             owe::<M>(arena, session, owed, CodeObligation::Universe {
+                                element: AnyNode::CompType(id),
                                 code,
                                 sort: GroundSort::Computation,
                                 level: target.clone(),
@@ -2175,16 +2351,19 @@ where
             };
             match frame {
                 TypeLevelFrame::Memoize(question, opened) => {
-                    let reads = session.close(opened);
-                    let support = question.answered(arena, session, context.as_slice(), reads);
-                    // A memo at its ceiling declines to record. The check
-                    // proceeds unmemoized from there, which costs collapse and
-                    // never correctness.
-                    let outcome = NodeOutcome::Formed(produced.clone());
-                    if let Some(named) = parameters.name(arena, &judgement, session) {
-                        session.keep(&support, named, &outcome);
+                    // When the stack does not hold the accrual, its keys are
+                    // unknown, so the walk does not record the formation. A
+                    // memo at its ceiling declines to record. The check
+                    // proceeds unmemoized from there, which costs collapse
+                    // and never correctness.
+                    if let Some((reads, owes)) = session.close_owing(opened) {
+                        let support = question.answered(arena, session, context.as_slice(), reads);
+                        let outcome = NodeOutcome::Formed(produced.clone(), owes);
+                        if let Some(named) = parameters.name(arena, &judgement, session) {
+                            session.keep(&support, named, &outcome);
+                        }
+                        let _recorded = memo.remember(support, outcome);
                     }
-                    let _recorded = memo.remember(support, outcome);
                 },
                 TypeLevelFrame::MaxSecondValue(second) => {
                     frames.push(TypeLevelFrame::MaxWith(produced));
@@ -2465,7 +2644,7 @@ impl Produced
         (NodeOutcome::ValueType(_), Maybe::Present(Self::ValueType(_)))
         | (NodeOutcome::CompType(_), Maybe::Present(Self::CompType(_)))
         | (NodeOutcome::Checked, Maybe::Present(Self::Checked))
-        | (NodeOutcome::Formed(_), Maybe::Absent(term_outcome::Absent::Formation))))]
+        | (NodeOutcome::Formed(..), Maybe::Absent(term_outcome::Absent::Formation))))]
     #[inline]
     const fn of_outcome(outcome: &NodeOutcome) -> Maybe<Self, term_outcome::Absent>
     {
@@ -2473,7 +2652,7 @@ impl Produced
             NodeOutcome::ValueType(id) => Maybe::Present(Self::ValueType(id)),
             NodeOutcome::CompType(id) => Maybe::Present(Self::CompType(id)),
             NodeOutcome::Checked => Maybe::Present(Self::Checked),
-            NodeOutcome::Formed(_) => Maybe::Absent(term_outcome::Absent::Formation),
+            NodeOutcome::Formed(..) => Maybe::Absent(term_outcome::Absent::Formation),
         }
     }
 
@@ -8178,6 +8357,12 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     let mut drained: usize = 0;
+    // The keys of the obligations this drain checks, each with the parameters
+    // its verdict is kept under. A check owes obligations of its own, so its
+    // verdict holds only once the whole drain passes. The drain records the
+    // keys then. A key it checked already is not checked again.
+    let mut passed: Vec<(NodeSupport, Option<ContentId>)> = Vec::new();
+    let mut seen: BTreeSet<(ContentId, ContentId)> = BTreeSet::new();
     while let Some(obligation) = owed.pop() {
         if drained >= usize::from(MAX_CODE_OBLIGATIONS) {
             return Err(KernelError::CodeObligationCeiling {
@@ -8189,6 +8374,18 @@ where
             arith::Int::from(drained),
             arith::Int::from(1_usize),
         ));
+        if matches!(M::ACTIVITY, MemoActivity::Active) {
+            let key = obligation.key(arena, session);
+            if !seen.insert(key.names()) {
+                continue;
+            }
+            let named = KeptParameters::Unnamed.name(
+                arena,
+                &obligation.scope().reading(judgement),
+                session,
+            );
+            passed.push((key, named));
+        }
         match obligation {
             CodeObligation::Universe {
                 code,
@@ -8197,6 +8394,7 @@ where
                 context,
                 stages,
                 scope,
+                ..
             } => {
                 let universe = arena.value_type_universe(sort, level);
                 let _checked = run(
@@ -8220,6 +8418,7 @@ where
                 context,
                 stages,
                 scope,
+                ..
             } => {
                 for endpoint in [left, right] {
                     let _checked = run(
@@ -8332,6 +8531,12 @@ where
                 }
             },
         }
+    }
+    for (key, named) in passed {
+        if let Some(named) = named {
+            session.keep(&key, named, &NodeOutcome::Checked);
+        }
+        let _recorded = memo.remember(key, NodeOutcome::Checked);
     }
     Ok(())
 }
