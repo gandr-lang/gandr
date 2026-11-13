@@ -14,7 +14,9 @@
 # `landing` holds the commit). A repair that only `landing` carries, such as a
 # revert that the fixer may not make on `integration`, otherwise waits with no
 # end. The decision then carries `repaired`, and `ci:cycle` drops the mark
-# after the take.
+# after the take. A repair can come from a pull request on `landing` that
+# states the failed head (#7078, `repair.jq`). It then carries `from`, the
+# pull request, and the decision's line names it.
 # Otherwise `integration` takes the tip of `landing`. It fast-forwards when it
 # holds no commit past `landing`, and the merges API merges `landing` into it
 # when it holds the fixer's commits. A tip that moves is tested. A tip that
@@ -37,7 +39,7 @@ def short: .[0:12];
     {take: "none", dispatch: false, line: "A cycle runs on integration. The end of that run starts the next cycle."}
   elif $verdict != null and ($verdict.conclusion | failed) and ($in.compare == "ahead" or $in.compare == "diverged") then
     if $verdict.sha == $in.integration and ($in.repair.held // false) then
-      {take: (if $in.compare == "ahead" then "fast-forward" else "merge" end), dispatch: true, repaired: true, line: "Run \($verdict.id) fails on the tip of integration, \($in.integration | short), and landing, \($in.landing | short), holds its repair, \($in.repair.sha | short), so integration takes landing, and the suite starts."}
+      {take: (if $in.compare == "ahead" then "fast-forward" else "merge" end), dispatch: true, repaired: true, line: "Run \($verdict.id) fails on the tip of integration, \($in.integration | short), and landing, \($in.landing | short), holds its repair, \($in.repair.sha | short)\(if $in.repair.from then " of pull request \($in.repair.from)" else "" end), so integration takes landing, and the suite starts."}
     elif $verdict.sha == $in.integration then
       {take: "none", dispatch: false, line: "Run \($verdict.id) fails on the tip of integration, \($in.integration | short), so landing, \($in.landing | short), waits for a fix."}
     else
