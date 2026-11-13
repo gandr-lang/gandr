@@ -20,6 +20,8 @@ mod modules;
 #[cfg(test)]
 mod namespace;
 #[cfg(test)]
+mod operation;
+#[cfg(test)]
 mod recognition;
 #[cfg(test)]
 mod scopes;

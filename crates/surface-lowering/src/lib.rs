@@ -370,9 +370,12 @@
 //!   event the scope's handler settles and a diagnostic reports, never a
 //!   prohibition, so the lookup at a binder keeps the binding the binder hides
 //!   and refuses nothing.
+//! - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the seam test. The
+//!   module pass reads nothing of the lowering's context, so it compiles in the
+//!   base crate, and this crate reads it there.
 
-// Module documentation that predates the shape lint: 145 headings outside the
-// vocabulary, 79 decision records, 177 issue references and 40 budgets exceeded.
+// Module documentation that predates the shape lint: 111 headings outside the
+// vocabulary, 61 decision records, 144 issue references and 27 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -392,14 +395,9 @@ extern crate alloc;
 #[cfg(feature = "hotpath")]
 extern crate std;
 
-mod doc;
 #[cfg(test)]
 mod fixture;
-mod import;
-mod layout;
 mod lower;
-mod module;
-mod operation;
 
 // The base crate holds the lowering's tables, refusals and descriptions. The
 // public modules keep their paths here, and the private ones keep their
@@ -415,11 +413,16 @@ pub use gandr_surface_lowering_base::derive;
 pub use gandr_surface_lowering_base::desc_cells;
 pub use gandr_surface_lowering_base::described;
 pub use gandr_surface_lowering_base::description;
+use gandr_surface_lowering_base::doc;
 use gandr_surface_lowering_base::error;
 use gandr_surface_lowering_base::form;
+use gandr_surface_lowering_base::import;
 use gandr_surface_lowering_base::layered;
+use gandr_surface_lowering_base::layout;
 pub use gandr_surface_lowering_base::model;
+use gandr_surface_lowering_base::module;
 pub use gandr_surface_lowering_base::namespace;
+use gandr_surface_lowering_base::operation;
 use gandr_surface_lowering_base::origin;
 pub use gandr_surface_lowering_base::prelude;
 use gandr_surface_lowering_base::resolve;

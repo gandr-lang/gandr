@@ -96,6 +96,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::SealExtent;
 use gandr_theory_graded_posets::GradedPoset;
+use gandr_theory_levitation::WfKind;
 use gandr_theory_shapes::Boundary;
 use gandr_theory_shapes::BoundaryError;
 use gandr_theory_shapes::Membership;
@@ -124,7 +125,6 @@ use super::declaration_half;
 use super::misplaced_in;
 use super::one_in;
 use super::slot_refusal;
-use crate::WfKind;
 use crate::budget::FACE_CELLS;
 use crate::error::AscriptionForm;
 use crate::error::LoweringRefusal;
@@ -180,9 +180,9 @@ pub struct Sealed(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — a manifest component and a transparently ascribed
 ///   abstract one read their types, a sealed one its atom.
-/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeMeaning
 {
@@ -251,8 +251,8 @@ pub enum Mark
 /// # Adequacy
 /// - hypothesis: L3 — an opaque ascription's abstract slot and a transparent
 ///   ascription's kind witness each lower from their record.
-/// - witness: `tests::modules::opaque_ascription_seals`
-/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AbstractSlot
 {
@@ -288,7 +288,7 @@ impl<'source> super::Structure<'source>
     /// # Adequacy
     /// - hypothesis: L3 — an unascribed module's member and an ascribed
     ///   module's component are each named through the namespace.
-    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     #[spec(
         ensures: |ret| ret == match self.ascription {
             | Maybe::Present(_) => self.types.as_slice(),
@@ -324,7 +324,7 @@ impl<'source> super::Structure<'source>
 /// - hypothesis: L3 — a sealed counter's one abstract type carries its kind,
 ///   its representation, the extent through the module's last position and its
 ///   site.
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Sealing
 {
@@ -424,10 +424,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a telescope kind, an arrow kind and a universe kind
     ///   separate a family, an operator's kind and an abstract type, and an
     ///   arrow kind in parentheses is an operator's kind (#611).
-    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_kind_reads_through_its_grouping_parentheses`
     pub(super) fn kind_form(
         &self,
         kind: Placed,
@@ -475,7 +475,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a sealed module with one abstract component among
     ///   value components takes exactly one abstract slot, ahead of its
     ///   members.
-    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.abstracts.len()),
         ensures: |_| {
@@ -588,12 +588,12 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a read member, a repeated one and a repaired one take
     ///   their distinct outcomes, and an attributed one keeps its attributes; a
     ///   member at a source's top level is filed under the source.
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_repeated_type_member_is_refused_naming_the_first`
-    /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
-    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
-    /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_repeated_type_member_is_refused_naming_the_first`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_unread_member_keeps_its_own_report`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.top_types.len()),
         ensures: |_| {
@@ -734,7 +734,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block of two faces reads both, in order.
-    /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |faces| faces.iter().all(|&(face, ref labels)| labels.iter().all(|label| face.span.end() <= label.span.start()))))]
     fn written_faces(
         cursor: &mut Cursor<'_>
@@ -802,8 +802,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two faces over three labels are read, with their meet
     ///   as a third cell, and a face listing a fourth is refused by it.
-    /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |faces| faces.name == name && faces.faces.len() == written.len()))]
     fn record_faces(
         &self,
@@ -925,12 +925,12 @@ impl<'source> Collector<'_, 'source>
     ///   member states an identity, each asserted as the exact slot and
     ///   reading; a computation sort's member of the other ground sort is
     ///   refused by the check it files.
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
-    /// - witness: `tests::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
-    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
-    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -1120,13 +1120,13 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a sealed counter's seal reaches its members and the
     ///   witnesses its signature filed, and a declaration after the module
     ///   reads the atom outside.
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_later_seal_leaves_an_earlier_extent`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_later_seal_leaves_an_earlier_extent`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every abstract slot once to fix the module's extents; the check reads each once more"
+            reason = "parity: the body walks every abstract slot once to fix the module's extents; the check reads each once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -1168,8 +1168,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a type member and a definition member are told apart
     ///   by their first tile, an attribute block before either kept apart.
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         ensures: |ret| !ret.0 || pieces.pieces.iter().any(|piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::TYPE)),
     )]
@@ -1216,7 +1216,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a transparent component's witness and a family
     ///   component's witness each read the expectation on their member.
-    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         captures: before = self.collected.slots.get(held.0).map(|member| (member.introduced_by, member.named, member.attributes.clone())),
         ensures: |ret| match before {
@@ -1269,12 +1269,12 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an attributed member with no component reading it is
     ///   recorded, and one a component reads is not.
-    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_component_check_carries_its_members_expectation`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every structure's type members once; the check reads each once more"
+            reason = "parity: the body walks every structure's type members once; the check reads each once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -1320,7 +1320,7 @@ pub(super) struct TypeMemberForm(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — the faces `{port, tls}` and `{host, port}` meet at
 ///   `{port}`, and two faces that share no label have no meet.
-/// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+/// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
 #[spec(ensures: |ret| ret.is_sorted())]
 fn shared_points(
     left: &Subshape,
@@ -1373,10 +1373,11 @@ impl RecordFaces<'_>
     /// # Adequacy
     /// - hypothesis: L3 — the faces `secure = {port, tls}` and `addr = {host,
     ///   port}` meet at `{port}`.
-    /// - witness: `lower::patched::tests::a_system_of_faces_keeps_each_later_face_s_value_on_its_meet`
+    /// - witness: `gandr-surface-lowering::lower::patched::tests::a_system_of_faces_keeps_each_later_face_s_value_on_its_meet`
+    #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.is_none_or(|met| inclusion(met, left) == Membership::Inside && inclusion(met, right) == Membership::Inside))]
-    pub(crate) fn meet(
+    pub fn meet(
         &self,
         left: &Subshape,
         right: &Subshape,
@@ -1422,9 +1423,9 @@ impl RecordFaces<'_>
 ///   meets differ give 78 cells, past one word; 90 faces of every label but one
 ///   and the whole record give the 4,096 cells of the budget, and one face more
 ///   gives 4,097.
-/// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-/// - witness: `tests::modules::a_face_poset_past_one_word_is_admitted`
-/// - witness: `tests::modules::a_face_poset_past_its_budget_is_refused`
+/// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
+/// - witness: `gandr-surface-lowering::tests::modules::a_face_poset_past_one_word_is_admitted`
+/// - witness: `gandr-surface-lowering::tests::modules::a_face_poset_past_its_budget_is_refused`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |poset| poset.cells().len() >= faces.len()
     && poset.cells().len() <= FACE_CELLS))]
 fn face_poset(faces: &[(SurfaceName<'_>, Subshape)])

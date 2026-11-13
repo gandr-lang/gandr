@@ -21,12 +21,10 @@ path = "tests/lib.rs"
 # The pinned anodized facade supplies the executable specifications of the
 # readers and minters; logic/BigInt stays disabled in this no_std library.
 # The base crate holds the namespace engine, the per-node table, the form
-# stretches and the circuit readings. The specification combinators bound a
-# clause to what a call appended.
-# The graded posets, over finite Stone duality's orders, hold a record type's
-# faces and their meets. self_cell holds a closure's text beside its parse
-# and its suspended lowering, which borrow it. `hotpath` profiles a rule
-# block's decision and a model slot's candidates for the benchmark report.
+# stretches, the circuit readings and the module pass. self_cell holds a
+# closure's text beside its parse and its suspended lowering, which borrow it.
+# `hotpath` profiles a rule block's decision and a model slot's candidates for
+# the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
@@ -39,11 +37,8 @@ gandr-theory-cell-complexes.workspace = true
 gandr-theory-circuit-algebras.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
 gandr-theory-computads.workspace = true
-gandr-theory-graded-posets.workspace = true
 gandr-theory-levitation.workspace = true
 gandr-theory-shapes.workspace = true
-gandr-theory-spec-combinators.workspace = true
-gandr-theory-stone-duality.workspace = true
 hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
 self_cell.workspace = true
@@ -52,7 +47,8 @@ self_cell.workspace = true
 # declaration content; the univalence witnesses name the stratum they lower.
 # The collapse probes check their matchings through the Morse crate. The
 # e-graph suite closes each corpus block under congruence. The base crate's
-# `fixture` feature gives the tests its parsed and hand-built trees.
+# `fixture` feature gives the tests its parsed and hand-built trees. A module
+# case reads a record type's faces as finite Stone duality's orders.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-kernel-core.workspace = true
@@ -61,6 +57,7 @@ gandr-surface-parser.workspace = true
 gandr-theory-discrete-morse.workspace = true
 gandr-theory-e-graphs.workspace = true
 gandr-theory-sites.workspace = true
+gandr-theory-stone-duality.workspace = true
 
 [features]
 default = []

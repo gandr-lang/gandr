@@ -6,7 +6,9 @@
 //! The base holds the vocabulary the lowering states its answers in: the
 //! refusals and their classes, the forms and the names, the origins, and the
 //! description route that reads `data`, `codata` and `theory` declarations
-//! into checked descriptions and cells.
+//! into checked descriptions and cells. It also holds the module pass, which
+//! collects the declarations of a module by name before the lowering reads a
+//! body.
 //!
 //! | Module | What it holds |
 //! | --- | --- |
@@ -34,6 +36,12 @@
 //! | [`table`] | the per-node table that a resumed lowering shares with the lowering it resumes |
 //! | [`by_form`] | the stretch of each top-level form among a tree's positions |
 //! | [`circuit`] | the circuit readings of a rule's body, their spider canon and their embeddings |
+//! | [`module`] | the module pass: declarations collected by name, a module flattened to its members, and the lowered module the checker reads |
+//! | [`import`] | the imports of a module, their bindings and their scopes |
+//! | [`operation`] | an operation's rules planned as a routing tree and minted as one function |
+//! | [`doc`] | documentation comments and their links |
+//! | [`layout`] | a bracket that the layout of a block misplaces, read where it was written |
+//! | [`lower`] | the records the module pass and the lowering share: exits, runs and literals |
 //!
 //! `gandr-surface-lowering` names each module at its old path, and re-exports
 //! the modules its consumers read. Each module states its decisions, and its
@@ -45,10 +53,10 @@
 //! - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the seam test. A
 //!   crate boundary encloses a strongly connected component of the module graph
 //!   and never cuts through one, so the base takes the lowering's tables,
-//!   refusals and descriptions whole.
+//!   refusals, descriptions and module pass whole.
 
-// Module documentation that predates the shape lint: 80 headings outside the
-// vocabulary, 26 decision records, 40 issue references and 13 budgets exceeded.
+// Module documentation that predates the shape lint: 114 headings outside the
+// vocabulary, 44 decision records, 68 issue references and 26 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -79,13 +87,19 @@ pub mod derive;
 pub mod desc_cells;
 pub mod described;
 pub mod description;
+pub mod doc;
 pub mod error;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod form;
+pub mod import;
 pub mod layered;
+pub mod layout;
+pub mod lower;
 pub mod model;
+pub mod module;
 pub mod namespace;
+pub mod operation;
 pub mod origin;
 pub mod prelude;
 pub mod resolve;

@@ -289,7 +289,7 @@ impl<'source> Documentation<'source>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn link_count(&self) -> LinkCount
+    pub fn link_count(&self) -> LinkCount
     {
         LinkCount(self.links.len())
     }
@@ -300,7 +300,7 @@ impl<'source> Documentation<'source>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn links_from(
+    pub fn links_from(
         &self,
         from: LinkCount,
     ) -> &[DocLink<'source>]
@@ -320,9 +320,10 @@ impl<'source> Documentation<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name linked twice keeps one target.
-    /// - witness: `lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    #[inline]
     #[spec(ensures: self.targets.last().is_some_and(|target| target.name == name && target.constant == constant))]
-    pub(crate) fn target(
+    pub fn target(
         &mut self,
         name: SurfaceName<'source>,
         constant: ConstantIndex,

@@ -126,8 +126,8 @@ pub struct RoundTrip<'source>
 /// - hypothesis: L3 — a path declares its two functions and one round trip for
 ///   each value member of its two signatures, and a second path of one name is
 ///   refused at it.
-/// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
-/// - witness: `tests::modules::paths::a_path_named_twice_is_refused_3487`
+/// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+/// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_named_twice_is_refused_3487`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PathDeclaration<'source>
 {
@@ -152,6 +152,7 @@ impl PathDeclaration<'_>
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn body(
         &self,
         side: Side,
@@ -217,8 +218,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a path whose bodies read their domains' members by
     ///   name checks, and one whose domain names no theory is refused under its
     ///   name.
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
-    /// - witness: `tests::modules::paths::a_path_from_no_theory_is_refused_under_its_name_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_from_no_theory_is_refused_under_its_name_3487`
     #[spec(ensures: |ret| match ret {
         | Header::Path(ref path) => matches!(path.into.parameter, Maybe::Present(ref parameter) if matches!(parameter.scope, BodyScope::Path { .. }))
             && matches!(path.from.parameter, Maybe::Present(ref parameter) if matches!(parameter.scope, BodyScope::Path { .. })),
@@ -361,7 +362,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::path_header`].
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     fn path_body(
         cursor: &mut Cursor<'_>,
         keyword: TileName,
@@ -415,8 +416,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`PathDeclaration`].
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
-    /// - witness: `tests::modules::paths::a_path_named_twice_is_refused_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_named_twice_is_refused_3487`
     #[spec(
         captures: before = self.collected.paths.len(),
         ensures: |ret| ret.is_err() || self.collected.paths.len() <= before.saturating_add(1),
@@ -556,7 +557,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::path`].
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     #[spec(
         captures: before = self.collected.functors.len(),
         ensures: |ret| ret.as_ref().map_or(true, |functor| functor.0 == before),

@@ -30,8 +30,8 @@
 //! `desc_cells::tests::a_face_declared_twice_is_one_cell`,
 //! `desc_cells::tests::a_single_redex_block_reaches_the_cell_layer_behind_the_gate`,
 //! `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`,
-//! `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`,
-//! `operation::tests::an_operation_with_a_law_runs_by_its_other_rules_1510`,
+//! `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`,
+//! `gandr-surface-lowering::tests::operation::an_operation_with_a_law_runs_by_its_other_rules_1510`,
 //! `description::theory::tests::the_cat_shape_laws_are_written_faces`.
 //!
 //! `circuit::embed` reads literal port wiring into the circuit-algebra matcher.

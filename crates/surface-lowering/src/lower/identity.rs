@@ -325,6 +325,7 @@ use super::Carrier;
 use super::Code;
 use super::Former;
 use super::Function;
+use super::HERE;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
@@ -389,9 +390,6 @@ quenchant_shape::reason_enum! {
         }
     }
 }
-
-/// Reflexivity's spelling, which no pattern may take.
-pub const HERE: &str = "here";
 
 /// The inverse's spelling: of a path, and of a loop where a word's letter is
 /// written.

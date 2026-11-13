@@ -7,12 +7,12 @@
 
 use quenchant_shape::shape::Maybe;
 
-use crate::SurfaceName;
 use crate::form::Cursor;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::TileName;
+use crate::resolve::SurfaceName;
 
 /// The mode a method's receiver is written at.
 ///
@@ -27,7 +27,7 @@ use crate::form::TileName;
 /// # Adequacy
 /// - hypothesis: L3 — a method at each mode lowers to the access its mode
 ///   names.
-/// - witness: `lower::method::tests::each_mode_lowers_to_its_access`
+/// - witness: `gandr-surface-lowering::lower::method::tests::each_mode_lowers_to_its_access`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ReceiverMode
 {
@@ -63,7 +63,7 @@ pub enum ReceiverMode
 /// - hypothesis: L3 — a receiver at each mode, one behind an implicit
 ///   telescope, a mode variable, an untyped `self` and a first parameter of
 ///   another name.
-/// - witness: `lower::method::tests::a_receiver_is_a_typed_first_self`
+/// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_is_a_typed_first_self`
 pub(super) fn receiver_of<'source>(
     header: &Cursor<'_>,
     name_of: impl Fn(Placed) -> SurfaceName<'source>,

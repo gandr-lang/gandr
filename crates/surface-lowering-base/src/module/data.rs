@@ -155,7 +155,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-parameter family keeps both in telescope order.
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DataParameter
 {
@@ -202,8 +202,8 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a named and a bare field keep their binder and type; a
 ///   named index keeps its binder.
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FieldForm
 {
@@ -225,8 +225,8 @@ pub struct FieldForm
 /// # Adequacy
 /// - hypothesis: L3 — a telescoped generator, a bare one and a header's named
 ///   indices each read as their own case.
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Signature
 {
@@ -273,9 +273,9 @@ enum Signature
 /// - hypothesis: L3 — nullary, unary and three-field generators keep their
 ///   field counts and order; a vector's `Cons` states its length; a two-output
 ///   constructor is two ports over one input.
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
-/// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct GeneratorForm
 {
@@ -304,9 +304,9 @@ pub struct GeneratorForm
 /// - hypothesis: L3 — parameterless and parameterized families, and a
 ///   non-uniform generator refused, separate the read form from the refusal; a
 ///   vector's kind reads one index before its universe.
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
-/// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_non_uniform_generator_is_refused`
+/// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataForm
 {
@@ -346,8 +346,8 @@ pub struct DataForm
 /// - hypothesis: L3 — a loop at a point keeps its name and point; a cell
 ///   between distinct terms and a directed one never become a cell form; a cell
 ///   at the point's reflexivity keeps the wrapping.
-/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
-/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_mints_the_words_at_its_point`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CellForm
 {
@@ -379,7 +379,7 @@ pub struct CellForm
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`CellForm`].
-/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_mints_the_words_at_its_point`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct WordsForm
 {
@@ -409,7 +409,7 @@ pub struct WordsForm
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`CellForm`].
-/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
 #[derive(Clone, Debug)]
 struct Formed<'source>
 {
@@ -435,7 +435,7 @@ struct Formed<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a held rule reads the block before it.
-/// - witness: `tests::description::a_held_member_states_its_own_expectation_1462`
+/// - witness: `gandr-surface-lowering::tests::description::a_held_member_states_its_own_expectation_1462`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataMember
 {
@@ -461,8 +461,8 @@ pub struct DataMember
 /// # Adequacy
 /// - hypothesis: L3 — a constructor of a written family and one of `Theory`
 ///   each apply and match through their own generators.
-/// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-/// - witness: `tests::theory::a_theory_block_defines_its_presentation`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_applies_to_its_fields`
+/// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Generators
 {
@@ -489,8 +489,8 @@ pub enum Generators
 /// # Adequacy
 /// - hypothesis: L3 — two families' constructors resolve to their own family,
 ///   tag and arity; a second constructor of one name in one family is refused.
-/// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-/// - witness: `lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_applies_to_its_fields`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Constructor
 {
@@ -519,7 +519,7 @@ pub struct Constructor
 /// # Adequacy
 /// - hypothesis: L3 — a name one family declares is that family's constructor,
 ///   and a name two families declare is both.
-/// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Bare
 {
@@ -533,7 +533,7 @@ pub enum Bare
         /// The constructor of the family with the second slot.
         second: Constructor,
         /// How many families after the second declare the name.
-        more: crate::CandidateCount,
+        more: crate::resolve::CandidateCount,
     },
 }
 
@@ -550,7 +550,7 @@ pub enum Bare
 /// # Adequacy
 /// - hypothesis: L3 — a two-output constructor resolves to its two ports, and
 ///   its name is no single constructor's.
-/// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Ported
 {
@@ -588,7 +588,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a data declaration, an attribute block and a
     ///   definition each reach their own reading.
-    /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
     #[spec(ensures: |ret| ret.is_err() || self.tree.node(child.node).is_some() || ret == Ok(Maybe::Absent(root::Absent::Unformed)))]
     pub(super) fn root_former(
         &self,
@@ -631,9 +631,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a decorated family, a family named twice and a
     ///   constructor named twice in one family separate filing from refusal.
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
-    /// - witness: `lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err() || (self.collected.slots.len() >= before
@@ -667,7 +667,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::data`].
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.collected.owner_of(declaration.node), Maybe::Present(_)))]
     fn read_data(
         &mut self,
@@ -804,7 +804,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a block of two attributes decorates the family after
     ///   it, each filed under the family's content identity. The predicate
     ///   reads only the attributes this call appended.
-    /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
     #[spec(
         captures: before = attributes.len(),
         ensures: |ret| ret.is_err() || attributes.get(before ..).is_some_and(|appended| {
@@ -853,7 +853,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a block of two attributes decorates the family after
     ///   it, and a stray's unreadable block is refused where it was written.
     ///   The predicate reads only the attributes this call appended.
-    /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
     /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
     #[spec(
         captures: before = attributes.len(),
@@ -899,10 +899,10 @@ impl<'source> Collector<'_, 'source>
     ///   name, and a family that repeats a name is refused; a two-output
     ///   constructor enters its name once; a module family's constructor is
     ///   recorded as written through its module.
-    /// - witness: `lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
-    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_module_member_family_is_named_through_the_module_4298`
     #[spec(
         captures: before = (self.collected.data.len(), self.collected.constructors.len()),
         ensures: |ret| match ret {
@@ -1042,7 +1042,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a block with a loop mints its words and binds the
     ///   loop by name; a block without one mints nothing.
-    /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_mints_the_words_at_its_point`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.words.len()),
         ensures: self.collected.slots.len().saturating_sub(before.0)
@@ -1172,11 +1172,11 @@ impl<'source> Collector<'_, 'source>
     ///   pending corpus writes, pass over the description route's members,
     ///   refuse a generator off its family's parameters, read a vector's length
     ///   index and keep a cell's fault beside the form.
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
-    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
-    /// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
-    /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_non_uniform_generator_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |formed| formed.form.declaration == declaration
         && formed.form.slot == slot
         && (formed.cells.is_ok() || formed.form.cells.is_empty())))]
@@ -1402,7 +1402,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a loop, a cell between distinct terms and a cell at
     ///   an open side separate the loop from the refusals.
-    /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |cells| cells.len() == written.len()))]
     fn loops(
         &self,
@@ -1529,10 +1529,10 @@ impl<'source> Collector<'_, 'source>
     ///   their fields; an indexed result and an index left unstated each
     ///   refuse; a vector's constructors state their lengths; a two-output
     ///   constructor is two ports, and a linear one is refused by name.
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
-    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_non_uniform_generator_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |generators| !generators.is_empty() && generators.iter().all(|generator| generator.named == named && generator.indices.len() == kinds.len())))]
     fn generator(
         &self,
@@ -1639,9 +1639,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — nullary, single-port and telescoped generators read
     ///   their fields, and a header reads its named indices; a missing result
     ///   refuses; a two-output generator reads both outputs.
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| !matches!(ret, Ok(Signature::Arrow { ref entries, ref grades, .. }) if grades.len() > entries.len()))]
     fn generator_signature(
         &self,
@@ -1690,7 +1690,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::generator_signature`].
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| !matches!(ret, Ok(Signature::Bare(_))))]
     fn result(
         &self,
@@ -1742,8 +1742,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — named, bare and graded entries read in order, and a
     ///   grade past `1` refuses.
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref entries, ref grades)| grades.len() <= entries.len()))]
     fn entries(
         &self,
@@ -1803,7 +1803,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `[1]` and `[ω]` read, and `[2]` refuses by name.
-    /// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
     fn grade(
         &self,
         cursor: &mut Cursor<'_>,
@@ -1849,8 +1849,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — the family over its parameters, over a literal type
     ///   and over its parameters reordered separate uniform from non-uniform; a
     ///   vector's `Cons` states one index past its parameter.
-    /// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
-    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_non_uniform_generator_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|indices| indices.len() == kinds.len())
         || matches!(ret, Err(LoweringRefusal::UnknownMold { .. }))
         || matches!(ret, Err(LoweringRefusal::NonUniformResult { span }) if span == result.span))]
@@ -1903,7 +1903,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Nat -> Type` reads `Nat` before `Type`, and `Type`
     ///   reads none.
-    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |telescoped| telescoped.0.is_empty() || telescoped.1 != kind))]
     fn telescope(
         &self,
@@ -1945,11 +1945,11 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a two-output operation over a helper is admitted with
     ///   its helper, an operation missing a constructor is not, and an
     ///   operation calling a later one is not.
-    /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
-    /// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
-    /// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
-    /// - witness: `operation::tests::an_operation_declared_twice_in_one_family_is_routed_once`
-    /// - witness: `operation::tests::a_declined_rule_withholds_only_its_own_operation`
+    /// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    /// - witness: `gandr-surface-lowering::tests::operation::an_operation_whose_rules_miss_a_constructor_is_not_callable`
+    /// - witness: `gandr-surface-lowering::tests::operation::an_operation_calling_a_later_one_is_not_callable`
+    /// - witness: `gandr-surface-lowering::tests::operation::an_operation_declared_twice_in_one_family_is_routed_once`
+    /// - witness: `gandr-surface-lowering::tests::operation::a_declined_rule_withholds_only_its_own_operation`
     #[spec(
         captures: before = (Mark::of(&self.collected.slots), self.collected.operations.len()),
         ensures: self.collected.slots.len().saturating_sub(usize::from(before.0))
@@ -2128,7 +2128,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a family at the top level and one in a module body
     ///   each name their words and operations where they stand.
-    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_module_member_family_is_named_through_the_module_4298`
     #[must_use]
     #[spec(ensures: |ret| self.collected.slots.get(slot.0).is_none_or(|entry| entry.container == ret))]
     fn family_container(
@@ -2156,7 +2156,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::route_operations`].
-    /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    /// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
     #[spec(ensures: |ret| ret.families.len() <= self.collected.data.len() && ret.callees.len() == self.collected.operation_names.len())]
     fn route_table(&self) -> RouteTable
     {
@@ -2232,7 +2232,7 @@ impl<'source> Collector<'_, 'source>
 /// # Adequacy
 /// - hypothesis: L3 — a family with an operation and a rule member between its
 ///   generators keeps both generators.
-/// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
+/// - witness: `gandr-surface-lowering::lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
 fn pass_over_member(cursor: &mut Cursor<'_>)
 {
     loop {
@@ -2282,7 +2282,7 @@ struct WrittenCell
 /// # Adequacy
 /// - hypothesis: L3 — the invertible arrow reads, the directed one and a rule
 ///   arrow are each refused by name.
-/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |cell| cell.named == named && cell.at.node == named.node))]
 fn cell<'source>(
     named: Placed,
@@ -2347,7 +2347,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`closed_term()`].
-/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_mints_the_words_at_its_point`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClosedTerm
 {
@@ -2381,12 +2381,13 @@ pub struct ClosedTerm
 /// # Adequacy
 /// - hypothesis: L3 — a nullary point and a call at its point read, an open
 ///   side does not.
-/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
-/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_mints_the_words_at_its_point`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(ref term)) => !term.nodes.is_empty() && term.nodes.len() == term.written.len(),
     _ => true,
 })]
+#[inline]
 pub fn closed_term<'source, F>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -2478,7 +2479,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a cell at the point's reflexivity reads its point inside
 ///   the call, and any other call is no reflexivity.
-/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|operand| operand.node != at.node)))]
 fn reflexivity_operand<'source>(
     pbg: &Pbg,
@@ -2553,8 +2554,9 @@ fn reflexivity_operand<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`reflexivity_operand`].
-/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(base, ref calls)| matches!(reflexivity_operand(pbg, tree, base), Ok(None)) && calls.first().is_none_or(|&first| first == at)))]
+#[inline]
 pub fn reflexivities_around<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,

@@ -262,7 +262,7 @@ pub struct FamilyParameter
 /// # Adequacy
 /// - hypothesis: L3 — a two-parameter family expands at each reference to its
 ///   type over the arguments.
-/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FamilyMember
 {
@@ -334,12 +334,13 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a local theory, an imported one, a private one, an
     ///   undeclared one, a nested model's theory and a model type's.
-    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
-    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
-    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
-    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    #[inline]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
-    pub(crate) fn presented_theory(
+    pub fn presented_theory(
         &self,
         at: ByteOffset,
         span: ByteSpan,
@@ -422,11 +423,12 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a theory a dotted name declares, read through the
     ///   source's own module and through the standard library's, imported; a
     ///   private theory read through another source's module.
-    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
-    /// - witness: `tests::namespace::the_standard_package_theory_is_read_by_its_path_2767`
-    /// - witness: `tests::namespace::a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::the_standard_package_theory_is_read_by_its_path_2767`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687`
+    #[inline]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
-    pub(crate) fn presented_theory_in(
+    pub fn presented_theory_in(
         &self,
         at: ByteOffset,
         prefix: &[(ByteSpan, SurfaceName<'source>)],
@@ -504,7 +506,7 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a name the signature states answers through the
     ///   import and one its source exports beyond it does not.
-    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     #[spec(
         captures: before = self.imports.declarations().len(),
         ensures: self.imports.declarations().len() == before,
@@ -548,7 +550,7 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::state_signatures`].
-    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     fn stated(
         &self,
         signature: &ImportSignature<'source>,
@@ -621,8 +623,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a prelude model and a model the source declares are
     ///   found; a name no module answers is refused.
-    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
-    /// - witness: `tests::modules::models::an_include_naming_no_module_is_refused_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_include_naming_no_module_is_refused_2333`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&module| self.structures.get(module.0).is_some_and(|entry| entry.name == name)))]
     pub(crate) fn included_module(
         &self,
@@ -690,8 +692,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter manifest family beside a value
     ///   component lowers, and one applied to no arguments is refused.
-    /// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
-    /// - witness: `tests::modules::a_type_component_arity_mismatch_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_component_arity_mismatch_is_refused_by_name`
     #[spec(
         captures: before = (types.len(), self.collected.families.len()),
         ensures: types.len() == before.0.saturating_add(1)
@@ -761,10 +763,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — the `CatShape` model, a model of an imported theory
     ///   (#726), a former naming an undeclared theory and a manifest sort
     ///   (#1226), each asserted as the exact components or refusal.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
-    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
-    /// - witness: `tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
     pub(super) fn model_signature(
         &self,
         cursor: &mut Cursor<'_>,
@@ -829,8 +831,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a one-name theory and a dotted one, each read at its
     ///   last name.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
     pub(super) fn theory_path(
         &self,
         cursor: &mut Cursor<'_>,
@@ -897,14 +899,14 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::model_signature`], and a flow's domain and
     ///   codomain each derived from its theory.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
-    /// - witness: `tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body names every derived component once; the check compares each name once"
+            reason = "parity: the body names every derived component once; the check compares each name once; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -1033,7 +1035,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a nested module ascribed the theory, one ascribed
     ///   another and one unascribed.
-    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
     fn models_theory(
         &self,
         nested: StructureIndex,
@@ -1090,8 +1092,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter family is read whole, and one whose
     ///   parameter has no type is refused.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     pub(super) fn family_parameters(
         cursor: &mut Cursor<'_>
     ) -> Result<Vec<FamilyParameter>, LoweringRefusal<'source>>
@@ -1151,9 +1153,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-index kind against a one-parameter member is
     ///   refused naming both counts, whether written as a telescope or a spine.
-    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `tests::modules::a_kinded_type_component_spine_declares_its_arity`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_spine_declares_its_arity`
     fn kind_arity(
         &self,
         kind: Placed,
@@ -1230,10 +1232,10 @@ impl<'source> Collector<'_, 'source>
     ///   member, a member of the wrong count is refused naming both, and a
     ///   family into the other ground sort than its derived sort's is refused
     ///   at the member.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -1378,7 +1380,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` `Hom` binds two indices.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| matches!(model, Maybe::Present(_)) || ret == OperandCount::from(0_usize))]
     fn derived_indices(
         &self,
@@ -1438,11 +1440,11 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` operations and laws each type their
     ///   member, and a missing operation is refused naming it.
-    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::models::a_model_missing_an_operation_is_refused_naming_it`
-    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
-    /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
-    /// - witness: `tests::modules::models::an_omitted_law_is_discharged_by_the_checker_4112`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_missing_an_operation_is_refused_naming_it`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_omitted_law_is_discharged_by_the_checker_4112`
     #[spec(
         captures: before = self.member_named(Container::Module(structure), component.name),
         ensures: |ret| match ret {
@@ -1610,9 +1612,10 @@ impl<'source> Collector<'_, 'source>
 ///   binding one parameter against it is refused naming both counts, and `(Type
 ///   -> Type)` and `Type -> (Type -> Type)` read through their parentheses
 ///   (#611).
-/// - witness: `tests::modules::a_kinded_type_component_spine_declares_its_arity`
-/// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
+/// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_spine_declares_its_arity`
+/// - witness: `gandr-surface-lowering::tests::modules::a_kind_reads_through_its_grouping_parentheses`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |domains| domains.iter().all(|domain| domain.span.start() >= kind.span.start())))]
+#[inline]
 pub fn spine_domains<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -1748,8 +1751,9 @@ pub fn spine_domains<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — `(Type -> Type)` reads as an arrow of one domain and `((a
 ///   : Type) => Type)` as a family of one index (#611).
-/// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
+/// - witness: `gandr-surface-lowering::tests::modules::a_kind_reads_through_its_grouping_parentheses`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.span.start() >= kind.span.start() && inner.span.end() <= kind.span.end()))]
+#[inline]
 pub fn ungrouped<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,

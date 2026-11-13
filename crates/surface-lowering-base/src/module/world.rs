@@ -146,9 +146,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a declared world, a world declared twice and a world
     ///   named where none is declared separate filing from refusal; an offer
     ///   that reads is filed and each entry out of place refused by name.
-    /// - witness: `lower::world::tests::a_world_declaration_names_its_world`
-    /// - witness: `lower::world::tests::a_world_declared_twice_is_refused`
-    /// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::a_world_declaration_names_its_world`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::a_world_declared_twice_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err() || self.collected.slots.len() >= before,
@@ -189,7 +189,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::world`].
-    /// - witness: `lower::world::tests::a_world_declaration_names_its_world`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::a_world_declaration_names_its_world`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.collected.owner_of(declaration.node), Maybe::Present(_)))]
     fn read_world(
         &mut self,
@@ -277,8 +277,8 @@ impl<'source> Collector<'_, 'source>
     ///   name no host declares, a label written twice and a second offer are
     ///   each refused by name; a label read via a flow and one read through a
     ///   renaming keep their translations.
-    /// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
-    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.collected.offers.get(&self.collected.unit.source_at(declaration.span.start())), Some(offer) if offer.declaration == declaration))]
     fn read_offers(
         &mut self,
@@ -426,8 +426,8 @@ impl<'source> Collector<'_, 'source>
     ///   after the offer settles, and one it does not import is refused; a
     ///   label read via a flow and through a renaming settle, and a flow that
     ///   does not resolve is refused at its name.
-    /// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
-    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     #[spec(
         captures: before = strays.len(),
         ensures: |ret| ret.is_err() || strays.len() <= before.saturating_add(1),
@@ -547,7 +547,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::answered`].
-    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     fn translated(
         &self,
         source: SourceIndex,
@@ -663,7 +663,7 @@ impl<'source> Collector<'_, 'source>
 /// # Adequacy
 /// - hypothesis: L3 — a world requiring a host interface and a labelled theory
 ///   files both entries; one written with none files nothing.
-/// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
+/// - witness: `gandr-surface-lowering::lower::world::tests::a_world_s_requirement_is_a_row_3523`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.is_sorted_by_key(|entry| entry.written.start())))]
 fn read_requirement<'source>(
     pbg: &Pbg,

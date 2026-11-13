@@ -81,7 +81,7 @@ mod tests;
 /// # Adequacy
 /// - hypothesis: L3 — a use supplies an implicit by name and an explicit
 ///   parameter in the parentheses.
-/// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
+/// - witness: `gandr-surface-lowering::lower::implicit::tests::supply_by_name_is_order_free`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Plicity
 {
@@ -158,7 +158,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Collector::merged_telescope`].
-/// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+/// - witness: `gandr-surface-lowering::lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TelescopeEntry<'source>
 {
@@ -189,8 +189,8 @@ pub struct TelescopeEntry<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Collector::explicit_parameters`].
-/// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
-/// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+/// - witness: `gandr-surface-lowering::lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExplicitParameter
 {
@@ -262,7 +262,7 @@ pub struct Precedence
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-entry cycle names both entries.
-/// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
+/// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Cycle
 {
@@ -395,12 +395,12 @@ impl<'source> Collector<'_, 'source>
     ///   not; a cycle is refused naming both; a telescope of stage binders
     ///   alone merges nothing; a label of the result's row is an instance after
     ///   every parameter.
-    /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
-    /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
-    /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
-    /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
-    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
-    /// - witness: `lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_stage_telescope_merges_nothing`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |merged| match *merged {
         Maybe::Present(ref entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
         Maybe::Absent(_) => true,
@@ -529,8 +529,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::merged_telescope`].
-    /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
-    /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |merged| match *merged {
         Maybe::Present(ref entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
         Maybe::Absent(_) => true,
@@ -681,7 +681,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a signature whose implicit group stands before a list
     ///   and before one type, each called with the implicit left out.
-    /// - witness: `lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
     #[spec(captures: before = entries.len(), ensures: |ret| ret.as_ref().is_ok_and(Option::is_some) || entries.len() == before)]
     fn signature_entries(
         &self,
@@ -812,9 +812,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — as [`Self::merged_telescope`], a label naming the
     ///   telescope's region binder binds nothing, and a label after an entry
     ///   fixing a theory's sort is an instance.
-    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
-    /// - witness: `lower::implicit::tests::a_row_label_naming_a_region_binder_is_its_instance_2271`
-    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_naming_a_region_binder_is_its_instance_2271`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(captures: before = entries.len(), ensures: |ret| ret.is_err() || entries.len() >= before)]
     fn row_labels(
         &self,
@@ -947,10 +947,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a constructor argument takes its classifier from the
     ///   parameter at its place, closed or naming the one before it; a lambda
     ///   argument's binder its parameter's domain, past capitalised binders.
-    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
-    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
-    /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
-    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_clause_column_types_its_call_s_argument`
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     pub(super) fn explicit_parameters(
         &self,
         header: &Cursor<'_>,
@@ -1047,8 +1047,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a constructor argument of a call to a function of
     ///   clauses takes its column's type, naming the parameter before it.
-    /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
-    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_clause_column_types_its_call_s_argument`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     fn column_parameters(
         &self,
         mut cursor: Cursor<'_>,
@@ -1127,7 +1127,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `List(a)` names `a`; `List(Integer)` names nothing.
-    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     fn closed(
         &self,
         typed: Placed,
@@ -1176,7 +1176,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a function type's binder in an implicit's type, named
     ///   as a later parameter, orders nothing.
-    /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
     fn key(
         &self,
         node: NodeIndex,
@@ -1202,8 +1202,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::key`], and a row's label binding its
     ///   instance.
-    /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
-    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     pub(super) fn lone_name(
         &self,
         node: NodeIndex,
@@ -1243,7 +1243,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a call supplying a stage names the callee's binder,
     ///   declared after the call or before it.
-    /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
+    /// - witness: `gandr-surface-lowering::lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
     pub(super) fn stage_binders(
         &self,
         header: &Cursor<'_>,
@@ -1291,7 +1291,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an implicit whose type names a later explicit, so the
     ///   merged telescope moves it, still takes the position it is written at.
-    /// - witness: `lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
     pub(super) fn written_implicits(
         &self,
         header: &Cursor<'_>,
@@ -1337,9 +1337,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a stage binder, a region binder, a mode binder and a
     ///   type entry separate the four answers.
-    /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
-    /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
-    /// - witness: `lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_stage_telescope_merges_nothing`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |sorted| *sorted == EntrySort::Value || scratch.pieces.len() == 1))]
     fn sort_of(
         &self,

@@ -56,7 +56,7 @@ pub const TERMS: &str = "Terms";
 /// # Adequacy
 /// - hypothesis: L3 — a unital magma's terms take one slot whose generators are
 ///   its unit and its product.
-/// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TermsForm
 {
@@ -82,7 +82,7 @@ pub struct TermsForm
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`term_generators`].
-/// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TermGenerators
 {
@@ -111,9 +111,10 @@ pub struct TermGenerators
 /// # Adequacy
 /// - hypothesis: L3 — a unital magma gives its unit and its product, a
 ///   two-sorted theory and a law-bearing one are refused by their features.
-/// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
-/// - witness: `tests::modules::models::the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+/// - witness: `gandr-surface-lowering::tests::modules::models::the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |generators| generators.operations.len() == generators.arities.len()))]
+#[inline]
 pub fn term_generators(presentation: &Presentation) -> Result<TermGenerators, Unbuilt>
 {
     if !presentation.laws.is_empty() {
@@ -176,7 +177,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::terms`].
-    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
     pub(super) fn terms_types(&mut self) -> Vec<(Placed, Placed)>
     {
         // A form's mold decides its former, so each mold is classified once.
@@ -240,8 +241,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a unital magma's terms written twice take one slot; a
     ///   two-sorted theory's take none.
-    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
-    /// - witness: `tests::modules::models::the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.terms.len()),
         ensures: |ret| self.collected.slots.len().saturating_sub(before.0)

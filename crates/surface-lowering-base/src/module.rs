@@ -648,8 +648,8 @@ impl From<SlotIndex> for usize
 /// # Adequacy
 /// - hypothesis: L3 — signature witnesses occupy their own admitted positions
 ///   without exporting names.
-/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `tests::modules::signatures_attach_to_their_defs`
+/// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeclarationCount(usize);
@@ -696,7 +696,7 @@ impl From<DeclarationCount> for usize
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nested modules are recorded before their descendants.
-/// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+/// - witness: `gandr-surface-lowering::tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StructureIndex(usize);
@@ -757,9 +757,9 @@ pub enum ConstructorSpelling
 /// # Adequacy
 /// - hypothesis: L3 — nested and top-level definitions resolve under their own
 ///   containers.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Container
 {
@@ -786,8 +786,8 @@ pub enum Container
 /// # Adequacy
 /// - hypothesis: L3 — a model's inert component, a marked definition and a
 ///   content declaration are told apart.
-/// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
-/// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
+/// - witness: `gandr-surface-lowering::tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+/// - witness: `gandr-surface-lowering::tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Inertness
 {
@@ -814,7 +814,7 @@ pub enum Inertness
 /// # Adequacy
 /// - hypothesis: L3 — value and nested-module components project through
 ///   distinct member paths.
-/// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `gandr-surface-lowering::tests::modules::nested_modules_lower_as_parent_members_and_project`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Member
 {
@@ -843,11 +843,11 @@ pub enum Member
 /// # Adequacy
 /// - hypothesis: L3 — manifest, abstract, universe-kinded, family-kinded and
 ///   derived components have distinct outcomes.
-/// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
-/// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
-/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
-/// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
-/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_family_component_binds_two_parameters`
+/// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ComponentForm
 {
@@ -897,7 +897,7 @@ pub enum ComponentForm
 /// # Adequacy
 /// - hypothesis: L3 — a reordered signature retains component names while
 ///   selecting its export order.
-/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Component<'source>
 {
@@ -932,8 +932,8 @@ pub struct Component<'source>
 /// # Adequacy
 /// - hypothesis: L3 — earlier manifest components expand in later component
 ///   types, and a sealed component reads as its atom.
-/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TypeComponent<'source>
 {
@@ -967,8 +967,8 @@ pub struct TypeComponent<'source>
 /// - hypothesis: L3 — a record type's faces are read over its labels, and a
 ///   face listing a label the record lacks is refused by the label; two faces
 ///   that meet at one label give a poset of three cells.
-/// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-/// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
+/// - witness: `gandr-surface-lowering::tests::modules::a_record_type_names_its_faces_over_its_labels`
+/// - witness: `gandr-surface-lowering::tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordFaces<'source>
 {
@@ -1001,7 +1001,7 @@ pub struct RecordFaces<'source>
 /// # Adequacy
 /// - hypothesis: L3 — type component order controls which definitions later
 ///   types can name.
-/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ComponentScope
 {
@@ -1028,8 +1028,8 @@ pub struct ComponentScope
 /// # Adequacy
 /// - hypothesis: L3 — a transparent ascription hides or reorders existing
 ///   exports.
-/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-/// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+/// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Coerced(pub bool);
@@ -1052,12 +1052,12 @@ pub struct Coerced(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — nested admission order, hidden members and reordered
 ///   signatures distinguish these sequences.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-/// - witness: `tests::modules::module_signature_matching_hides_extra_members`
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Debug)]
 pub struct Structure<'source>
 {
@@ -1120,9 +1120,9 @@ pub struct Structure<'source>
 ///   through their respective operands.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
-/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `tests::modules::signatures_attach_to_their_defs`
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Operand
 {
@@ -1227,7 +1227,7 @@ pub struct Half
 /// # Adequacy
 /// - hypothesis: L3 — a concrete payload remains attached to its declaration
 ///   and span.
-/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+/// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Payload
 {
@@ -1254,7 +1254,7 @@ pub enum Payload
 /// - hypothesis: L3 — adjacent attribute blocks retain their order and concrete
 ///   payloads retain their own syntax.
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+/// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WrittenAttribute<'source>
 {
@@ -1480,9 +1480,9 @@ pub struct SlotRefused(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — nested collection and independent refusal routing
 ///   preserve the table relationships.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `module::tests::ownership_routes_refusals_without_touching_other_slots`
 #[derive(Clone, Debug)]
 pub struct Collected<'source>
@@ -1826,8 +1826,8 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a module with a theory that refuses nothing mints
 ///   `Theory` once, before the theory's own slot, and a generic program matches
 ///   on it; a later source's block takes the same code.
-/// - witness: `tests::theory::a_theory_block_defines_its_presentation`
-/// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+/// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
+/// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TheorySlot
 {
@@ -1876,7 +1876,7 @@ pub struct MutualBlock
 /// # Adequacy
 /// - hypothesis: L3 — a decorated module of two members and an undecorated
 ///   declaration after it, the attribute reaching the members only.
-/// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DecoratedModule<'source>
 {
@@ -1943,13 +1943,14 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — two integers and two strings compare and order
     ///   through the prelude's declarations, and a unit with no prelude keeps
     ///   the primitive.
-    /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
-    /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
+    #[inline]
     #[spec(ensures: |ret| ret.is_none_or(|(slot, constant)| {
         self.slots.get(usize::from(slot)).is_some_and(|entry| entry.constant == constant)
     }))]
     #[must_use]
-    pub(crate) fn prelude_declaration(
+    pub fn prelude_declaration(
         &self,
         name: SurfaceName<'source>,
     ) -> Option<(SlotIndex, ConstantIndex)>
@@ -1975,8 +1976,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a repeated member in a module and at a source's top
     ///   level is each refused naming the first of its own container.
-    /// - witness: `tests::modules::a_repeated_type_member_is_refused_naming_the_first`
-    /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_repeated_type_member_is_refused_naming_the_first`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[inline]
     pub fn type_members_in(
         &self,
@@ -2018,7 +2019,7 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — members of one block name one another in either
     ///   order, and a declaration after the block does not reach into it.
-    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     /// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
     #[inline]
     pub fn block_of(
@@ -2082,17 +2083,18 @@ impl<'source> Collected<'source>
     ///   name the prelude declares answers where nothing written does, and a
     ///   source's own declaration of it shadows it; a private declaration
     ///   answers nothing.
-    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
-    /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
-    /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
-    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `gandr-surface-lowering::tests::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((slot, _))) => self.slot_visibility(slot) == Visibility::Public
             || self.translates(slot).0,
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
+    #[inline]
     pub fn imported_slot(
         &self,
         source: SourceIndex,
@@ -2130,12 +2132,13 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a renaming binds the source's declaration, and any
     ///   other member its image.
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    #[inline]
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(slot) => usize::from(slot) < self.slots.len(),
         | Maybe::Absent(_) => true,
     })]
-    pub(crate) fn translated(
+    pub fn translated(
         &self,
         translation: &Translation<'source>,
         name: SurfaceName<'source>,
@@ -2184,12 +2187,14 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a module binding reads a renamed member as the
     ///   source's declaration, and a sealed member as its witness.
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    #[inline]
     #[spec(ensures: |ret| ret == slot
         || self.structures.get(module.0).is_some_and(|entry| entry.exported_as.get(&slot) == Some(&ret)
             || matches!(entry.stratum, Stratum::Instance(index) if self.instances.get(usize::from(index))
                 .is_some_and(|instance| instance.renamed.get(&slot) == Some(&ret)))))]
-    pub(crate) fn exported_read(
+    #[must_use]
+    pub fn exported_read(
         &self,
         module: StructureIndex,
         slot: SlotIndex,
@@ -2228,7 +2233,7 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::reads`].
-    /// - witness: `tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
     fn top_level(
         &self,
         entry: &DeclarationSlot<'source>,
@@ -2278,9 +2283,11 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a declaration read through an alias is read under it,
     ///   a flow's member and a renamed member by its name after the alias, and
     ///   a declaration read unqualified is not entered.
-    /// - witness: `tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
-    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
-    pub(crate) fn reads(&self) -> BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>>
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    #[inline]
+    #[must_use]
+    pub fn reads(&self) -> BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>>
     {
         let mut reads: BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>> =
             BTreeMap::new();
@@ -2381,6 +2388,7 @@ impl<'source> Collected<'source>
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn translates(
         &self,
         slot: SlotIndex,
@@ -2413,11 +2421,12 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::imported_slot`].
-    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present((slot, _)) => self.slot_visibility(slot) == Visibility::Private,
         Maybe::Absent(_) => true,
     })]
+    #[inline]
     pub fn private_slot(
         &self,
         source: SourceIndex,
@@ -2470,8 +2479,10 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a listed name its module lacks, and one it keeps
     ///   private, are each refused at the list.
-    /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
-    pub(crate) fn listed_in(
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
+    #[inline]
+    #[must_use]
+    pub fn listed_in(
         &self,
         target: SourceIndex,
         name: SurfaceName<'source>,
@@ -2527,15 +2538,16 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a marked signature, a marked definition and an
     ///   unmarked declaration, read through an import; the code a private block
     ///   minted, read through an import of its source.
-    /// - witness: `tests::namespace::a_pub_declaration_is_read_by_its_importer_2687`
-    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
-    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_pub_declaration_is_read_by_its_importer_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     ///
     /// # Clause cost
     /// - bound: reads one slot and makes at most three [`Self::covering`]
     ///   lookups, each logarithmic in the unit's `pub` marks; no read grows
     ///   with the source's declarations.
     #[must_use]
+    #[inline]
     pub fn slot_visibility(
         &self,
         slot: SlotIndex,
@@ -2573,6 +2585,7 @@ impl<'source> Collected<'source>
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn structure_visibility(
         &self,
         module: StructureIndex,
@@ -2627,11 +2640,12 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a source behind a block it does not import, and one
     ///   importing two sources that hold blocks, each name the one code.
-    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present(slot) => matches!(self.theory, Maybe::Present(ref theory) if theory.slot == slot),
         Maybe::Absent(_) => true,
     })]
+    #[inline]
     pub fn theory_in(
         &self,
         source: SourceIndex,
@@ -2682,9 +2696,9 @@ impl<'source> Collected<'source>
     ///   value, answered exactly; a type of a presentation constructor's name
     ///   in a source laid after the prelude, read as itself; a type of a
     ///   prelude constructor's name, read as itself.
-    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
-    /// - witness: `tests::namespace::the_prelude_offers_no_presentation_constructor_2302`
-    /// - witness: `tests::namespace::a_source_s_type_shadows_the_prelude_s_constructor_3287`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_offers_no_presentation_constructor_2302`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_source_s_type_shadows_the_prelude_s_constructor_3287`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((Bare::One(constructor), import))) => constructor.form != Generators::Presentation
             || import.start() != import.end(),
@@ -2692,6 +2706,7 @@ impl<'source> Collected<'source>
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
+    #[inline]
     pub fn imported_constructor(
         &self,
         source: SourceIndex,
@@ -2740,7 +2755,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — two families that share a name answer both, in the
     ///   order of their slots.
-    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    #[inline]
     pub fn constructors_in(
         &self,
         source: SourceIndex,
@@ -2770,8 +2786,9 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a name one family declares answers its constructor,
     ///   and a name two families declare answers both.
-    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
-    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    #[inline]
     pub fn bare_constructor<Keep>(
         &self,
         source: SourceIndex,
@@ -2788,7 +2805,7 @@ impl<'source> Collected<'source>
                 .map_or(Bare::One(first), |second| Bare::Several {
                     first,
                     second,
-                    more: crate::CandidateCount::from(kept.count()),
+                    more: crate::resolve::CandidateCount::from(kept.count()),
                 }),
         )
     }
@@ -2810,12 +2827,13 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::imported_constructor`].
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((ported, _))) => ported.count > 0,
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
+    #[inline]
     pub fn imported_ported(
         &self,
         source: SourceIndex,
@@ -2855,12 +2873,13 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a synonym each of two sources writes, read through an
     ///   import of either, through imports of both, and through an import of an
     ///   importer, each answered exactly.
-    /// - witness: `tests::namespace::an_imported_top_level_type_member_names_its_type_1834`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_imported_top_level_type_member_names_its_type_1834`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((member, _))) => member.name == name,
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
+    #[inline]
     pub fn imported_type_member(
         &self,
         source: SourceIndex,
@@ -2899,12 +2918,13 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a model one import declares applied as a functor's
     ///   argument, and a name two imports declare, each answered exactly.
-    /// - witness: `tests::namespace::a_functor_argument_reads_an_imported_module_1993`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_functor_argument_reads_an_imported_module_1993`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((module, _))) => self.structures.get(module.0).is_some_and(|entry| matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))),
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
+    #[inline]
     pub fn imported_module(
         &self,
         source: SourceIndex,
@@ -2950,10 +2970,10 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the entries above.
-    /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
-    /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    /// - witness: `gandr-surface-lowering::tests::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
@@ -3028,8 +3048,9 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`LoweredModule::reached_imports`].
-    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    /// - witness: `gandr-surface-lowering::tests::namespace::each_import_a_name_is_read_through_is_reached`
     #[must_use]
+    #[inline]
     pub fn theory_import(
         &self,
         source: SourceIndex,
@@ -3063,7 +3084,8 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`LoweredModule::reached_imports`].
-    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    /// - witness: `gandr-surface-lowering::tests::namespace::each_import_a_name_is_read_through_is_reached`
+    #[inline]
     pub fn reach(
         &mut self,
         import: ByteSpan,
@@ -3092,7 +3114,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a module member read through a direct import and
     ///   through an import of an import.
-    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    /// - witness: `gandr-surface-lowering::tests::namespace::each_import_a_name_is_read_through_is_reached`
+    #[inline]
     pub fn reach_declaring(
         &mut self,
         source: SourceIndex,
@@ -3143,7 +3166,8 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a method an imported source declares, called.
-    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    /// - witness: `gandr-surface-lowering::tests::namespace::each_import_a_name_is_read_through_is_reached`
+    #[inline]
     pub fn reach_source(
         &mut self,
         source: SourceIndex,
@@ -3319,8 +3343,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — top-level and deeply nested declarations have exact
     ///   outermost-first names, independent of witness and held slots.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     #[spec(
         ensures: |ret| {
             let mut current = container;
@@ -3341,6 +3365,7 @@ impl<'source> Collected<'source>
         },
     )]
     #[must_use]
+    #[inline]
     pub fn path(
         &self,
         container: Container,
@@ -3378,8 +3403,8 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a member of a functor's body, of a module nested in
     ///   it, of its parameter, and of an application's instance each read their
     ///   own stratum, and a top-level declaration reads a module.
-    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
-    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
     #[spec(
         ensures: |ret| {
             let mut current = container;
@@ -3398,6 +3423,7 @@ impl<'source> Collected<'source>
         },
     )]
     #[must_use]
+    #[inline]
     pub fn stratum_of(
         &self,
         container: Container,
@@ -3464,8 +3490,8 @@ enum HalfKind
 /// # Adequacy
 /// - hypothesis: L3 — a signed function supplies a derived signature checked
 ///   against either ordering of a written one.
-/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `tests::modules::signatures_attach_to_their_defs`
+/// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Signing
 {
@@ -3496,8 +3522,8 @@ enum Signing
 ///   distinct outcomes.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
-/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `tests::modules::signatures_attach_to_their_defs`
+/// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Tail<'source>
@@ -3541,12 +3567,12 @@ enum Tail<'source>
 /// # Adequacy
 /// - hypothesis: L3 — nested modules, malformed members and imports retain
 ///   their respective declarations or refusals.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 struct Collector<'run, 'source>
 {
     /// The grammar the tree was molded under.
@@ -3586,7 +3612,7 @@ struct Collector<'run, 'source>
 /// - hypothesis: L3 — the collection tests read every list it builds.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
-#[cfg(test)]
+#[cfg(any(test, feature = "fixture"))]
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
     usize::from(collected.owner.count()) == usize::from(tree.node_count())
         && collected.owner.iter().all(|(_, owner)| match *owner {
@@ -3618,6 +3644,7 @@ struct Collector<'run, 'source>
                 | Container::Module(parent) => parent.0 < index,
             })
 }))]
+#[inline]
 pub fn collect<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -3654,12 +3681,13 @@ pub fn collect<'source>(
 /// - hypothesis: L3 — every collection starts here, so every witness of
 ///   [`collect_source`] reaches it.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
     collected.slots.is_empty()
         && collected.structures.is_empty()
         && usize::from(collected.owner.count()) == usize::from(tree.node_count())
 }))]
+#[inline]
 pub fn begin_collection<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -3759,9 +3787,10 @@ impl Collected<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a document resumed after its closure collects as the
     ///   whole unit does.
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[inline]
     #[spec(ensures: self.owner.count() == tree.node_count())]
-    pub(crate) fn widen(
+    pub fn widen(
         &mut self,
         tree: &SyntaxTree<'_>,
         unit: &Unit,
@@ -3800,6 +3829,7 @@ impl Collected<'_>
 /// - hypothesis: L3 — as [`pieces_under`].
 /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
 #[spec(ensures: |ret| ret.is_err() || tree.node(tree.root()).is_some() || ret.as_ref().is_ok_and(Vec::is_empty))]
+#[inline]
 pub fn root_pieces<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -3829,8 +3859,9 @@ pub fn root_pieces<'source>(
 /// - hypothesis: L3 — a byte no label molds between two declarations is a piece
 ///   between theirs.
 /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
-/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+/// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[spec(ensures: |ret| ret.is_err() || !roots.is_empty() || ret.as_ref().is_ok_and(Vec::is_empty))]
+#[inline]
 pub fn pieces_under<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -3873,8 +3904,10 @@ pub fn pieces_under<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — a unit of two sources collects each source's forms under
 ///   its own source.
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 #[spec(ensures: |ret| ret.len() == unit.sources().len())]
+#[must_use]
+#[inline]
 pub fn source_pieces(
     unit: &Unit,
     pieces: Vec<Piece>,
@@ -3967,9 +4000,9 @@ pub fn source_pieces(
 /// - witness: `module::tests::a_lone_item_out_of_the_fragment_refuses_itself_1753`
 /// - witness: `module::tests::an_empty_module_beside_a_stray_declares`
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[spec(
     captures: before = collected.slots.len(),
     ensures: |ret| {
@@ -3978,6 +4011,7 @@ pub fn source_pieces(
                 && usize::from(collected.owner.count()) == usize::from(tree.node_count()))
     },
 )]
+#[inline]
 pub fn collect_source<'source>(
     (pbg, tree): (&Pbg, &SyntaxTree<'source>),
     collected: &mut Collected<'source>,
@@ -4427,7 +4461,7 @@ impl<'source> Stray<'source>
 ///   stray in a source declaring nothing refuses the source, and a second
 ///   import of one alias refuses that import alone.
 /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
-/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[spec(ensures: |ret| match ret {
     | Ok(Some(ref refusal)) => matches!(*refusal,
         LoweringRefusal::OutOfFragment { .. }
@@ -4540,12 +4574,12 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — declaration, nested-module, top-level type member and
     ///   import children are collected; a value at the root is refused as the
     ///   wrong sort.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
     /// - witness: `module::tests::a_torn_declaration_is_refused_where_it_stopped_2877`
-    /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -4949,8 +4983,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a decorated module of two members and an undecorated
     ///   declaration after it, the attribute reaching the members only.
-    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
-    /// - witness: `tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.decorated.len()),
         ensures: |ret| ret.is_err()
@@ -5032,7 +5066,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an attributed member at the top level is read past
     ///   its block and refused at its type, as a module body's is.
-    /// - witness: `tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err()
@@ -5082,8 +5116,8 @@ impl<'source> Collector<'_, 'source>
     ///   reaches the decoder, which refuses it at its own span, and an
     ///   attribute written before a codata family is filed under it rather than
     ///   refusing the module as a stray block.
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
-    /// - witness: `tests::description::an_attribute_block_decorates_the_codata_declaration_after_it`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::tests::description::an_attribute_block_decorates_the_codata_declaration_after_it`
     fn admit_described(
         &mut self,
         child: Placed,
@@ -5176,10 +5210,10 @@ impl<'source> Collector<'_, 'source>
     ///   whose rules rewrite one term apart is refused under its own name; a
     ///   held rule reads the attribute block before it, and a block before a
     ///   member that is not held apart refuses the family.
-    /// - witness: `tests::description::member_refusals_keep_their_spans_and_other_declarations`
-    /// - witness: `tests::description::an_unended_family_is_refused_once_at_its_close`
-    /// - witness: `tests::coincide::two_rules_rewriting_one_term_apart_refuse_the_block`
-    /// - witness: `tests::description::a_held_member_states_its_own_expectation_1462`
+    /// - witness: `gandr-surface-lowering::tests::description::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `gandr-surface-lowering::tests::description::an_unended_family_is_refused_once_at_its_close`
+    /// - witness: `gandr-surface-lowering::tests::coincide::two_rules_rewriting_one_term_apart_refuse_the_block`
+    /// - witness: `gandr-surface-lowering::tests::description::a_held_member_states_its_own_expectation_1462`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -5221,8 +5255,8 @@ impl<'source> Collector<'_, 'source>
     ///   held rule written without one reads none of the family's, and a block
     ///   before a member that is not held apart is left for the family to
     ///   refuse.
-    /// - witness: `tests::description::a_held_member_states_its_own_expectation_1462`
-    /// - witness: `tests::description::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `gandr-surface-lowering::tests::description::a_held_member_states_its_own_expectation_1462`
+    /// - witness: `gandr-surface-lowering::tests::description::member_refusals_keep_their_spans_and_other_declarations`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -5343,9 +5377,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — as [`Self::hold_described_refusals`] and
     ///   [`Self::refuse_signature`]; an unended `theory` block whose last
     ///   member the cell gate refuses is refused once, at its missing close.
-    /// - witness: `tests::description::member_refusals_keep_their_spans_and_other_declarations`
-    /// - witness: `tests::description::an_unended_family_is_refused_once_at_its_close`
-    /// - witness: `tests::description::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
+    /// - witness: `gandr-surface-lowering::tests::description::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `gandr-surface-lowering::tests::description::an_unended_family_is_refused_once_at_its_close`
+    /// - witness: `gandr-surface-lowering::tests::description::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |ret| ret.iter().all(|&(span, _)| span.start() >= child.span.start() && span.end() <= child.span.end()))]
     fn described_refusals(
         &self,
@@ -5421,8 +5455,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an exported definition is read by an importer, and a
     ///   mark before an import is refused at the mark.
-    /// - witness: `tests::namespace::a_pub_declaration_is_read_by_its_importer_2687`
-    /// - witness: `tests::namespace::a_pub_mark_before_no_declaration_is_misplaced_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_pub_declaration_is_read_by_its_importer_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_pub_mark_before_no_declaration_is_misplaced_2687`
     fn exports(
         &self,
         child: Placed,
@@ -5467,8 +5501,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a refused operation keeps its span, a decoration
     ///   before it states it, its name enters no namespace, and a decoration
     ///   out of shape refuses it at the decoration's stray material.
-    /// - witness: `tests::theory::a_refused_top_level_operation_states_its_refusal`
-    /// - witness: `tests::theory::an_unreadable_decoration_refuses_a_refused_operation_first_4113`
+    /// - witness: `gandr-surface-lowering::tests::theory::a_refused_top_level_operation_states_its_refusal`
+    /// - witness: `gandr-surface-lowering::tests::theory::an_unreadable_decoration_refuses_a_refused_operation_first_4113`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() >= before.0 && self.collected.by_name.len() == before.1,
@@ -5560,8 +5594,8 @@ impl<'source> Collector<'_, 'source>
     ///   that a program matching on `Theory` reads, and a refused block's name
     ///   is a declaration refused at its first member refusal that a decoration
     ///   before the block states.
-    /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
-    /// - witness: `tests::theory::a_refused_theory_block_states_its_refusal`
+    /// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
+    /// - witness: `gandr-surface-lowering::tests::theory::a_refused_theory_block_states_its_refusal`
     fn theory(
         &mut self,
         child: Placed,
@@ -5701,7 +5735,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an inner block leading a theory's body decorates the
     ///   theory as an outer block before it does.
-    /// - witness: `tests::theory::an_inner_attribute_decorates_its_theory_3586`
+    /// - witness: `gandr-surface-lowering::tests::theory::an_inner_attribute_decorates_its_theory_3586`
     #[spec(
         captures: before = attributes.len(),
         ensures: |ret| ret.is_err() || attributes.get(before ..).is_some_and(|appended| {
@@ -5763,8 +5797,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — two clean blocks share one `Theory`, which a program
     ///   matches on by its constructors' names; a block of a source laid after
     ///   another source's block takes its code and names it.
-    /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
-    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    /// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(
         captures: before = self.collected.theory.clone(),
         ensures: |ret| {
@@ -5943,10 +5977,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — two imports, an escaped address, an unqualified
     ///   import and two imports of one alias, each asserted as the exact import
     ///   list or refusal over the parsed source.
-    /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-    /// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
-    /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
-    /// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    /// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
+    /// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
     #[spec(
         captures: before = (
             self.collected.imports.declarations().len(),
@@ -6066,7 +6100,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a renaming of distinct names reads, and a name given
     ///   twice is refused at the second.
-    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|renaming| renaming.pairs().len() == pairs.len()))]
     pub(crate) fn renaming_of(
         &self,
@@ -6337,7 +6371,7 @@ impl<'source> Collector<'_, 'source>
     ///   declaration owner; malformed or duplicate attributes remain located by
     ///   lowering. The predicate reads only the attributes this call appended.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = attributes.len(),
         ensures: attributes.get(before ..).is_some_and(|appended| {
@@ -6381,7 +6415,7 @@ impl<'source> Collector<'_, 'source>
     ///   attach to the same declaration, preserving their source order. The
     ///   predicate reads only the attributes this call appended.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = attributes.len(),
         ensures: attributes.get(before ..).is_some_and(|appended| {
@@ -6429,8 +6463,8 @@ impl<'source> Collector<'_, 'source>
     ///   owning declaration, exact spelling and covering source span. The
     ///   predicate asks for the name tile's own bytes, by address and length.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
-    /// - witness: `lower::tests::a_named_payload_is_spelled_with_its_name_2077`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |entry| {
@@ -6524,10 +6558,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
     /// - witness: `module::tests::a_second_signature_is_refused`
     /// - witness: `module::tests::a_second_definition_is_refused`
-    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-    /// - witness: `tests::modules::signatures_attach_to_their_defs`
+    /// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
     /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
-    /// - witness: `lower::tests::a_signature_written_after_its_signed_function_is_no_duplicate`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_signature_written_after_its_signed_function_is_no_duplicate`
     /// - witness: `module::tests::a_joined_definition_files_both_halves_2228`
     #[spec(
         captures: before = (
@@ -6720,8 +6754,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
     /// - witness: `module::tests::a_second_signature_is_refused`
     /// - witness: `module::tests::a_second_definition_is_refused`
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::module_members_admit_in_source_order`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -6793,8 +6827,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a written signature before or after a signed tail
     ///   keeps the written type and checks the derived type through a separate
     ///   witness.
-    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-    /// - witness: `tests::modules::signatures_attach_to_their_defs`
+    /// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
     #[spec(
         requires: target.0 < self.collected.slots.len(),
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
@@ -6861,7 +6895,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — paired declarations and differently named nested
     ///   members retain their source spellings through collection.
     /// - witness: `module::tests::a_signature_pairs_with_its_definition`
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
     #[spec(
         ensures: |ret| {
             self.tree.fragment(tile.node).map_or_else(
@@ -6901,8 +6935,8 @@ impl<'source> Collector<'_, 'source>
     ///   declaration, in its own block and before a `pub` mark reach the
     ///   declaration, while a comment of `///` lines inside a data body does
     ///   not.
-    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
-    /// - witness: `tests::namespace::documentation_before_a_pub_mark_documents_its_declaration_2687`
+    /// - witness: `gandr-surface-lowering::lower::tests::documentation_is_filed_under_the_declaration_key`
+    /// - witness: `gandr-surface-lowering::tests::namespace::documentation_before_a_pub_mark_documents_its_declaration_2687`
     #[spec(
         captures: before_docs = self.collected.slots.get(slot.0).map_or(0, |entry| entry.docs.len()),
         ensures: self.collected.slots.get(slot.0).is_none_or(|entry| entry.docs.len() >= before_docs),
@@ -6976,7 +7010,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — documentation before a module, before a decorated one
     ///   and before a nested one reaches its module form, while a member's
     ///   stays its own.
-    /// - witness: `lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
     #[spec(
         captures: before_docs = self.collected.module_docs.len(),
         ensures: self.collected.module_docs.len() >= before_docs,
@@ -7065,11 +7099,11 @@ pub const THEORY_CODE: &str = "Theory";
 /// # Adequacy
 /// - hypothesis: L3 — readable and empty bodies stay distinct from unread
 ///   bodies, and a sealed body from a transparently ascribed one.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::modules::an_empty_module_is_not_an_unread_one`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Debug)]
 struct Opened<'source>
 {
@@ -7106,12 +7140,12 @@ struct Opened<'source>
 /// # Adequacy
 /// - hypothesis: L3 — readable and unread bodies take separate header outcomes,
 ///   and a module named in either case is read.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `tests::modules::opaque_ascription_seals`
-/// - witness: `tests::modules::a_top_level_module_is_named_in_either_case_4529`
-/// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::a_top_level_module_is_named_in_either_case_4529`
+/// - witness: `gandr-surface-lowering::tests::modules::an_unread_module_body_is_refused_not_emptied`
 #[derive(Clone, Debug)]
 enum Header<'source>
 {
@@ -7151,7 +7185,7 @@ enum Header<'source>
 /// # Adequacy
 /// - hypothesis: L3 — depth-eight traversal preserves pre-order admission and
 ///   resolves each nested level.
-/// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+/// - witness: `gandr-surface-lowering::tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
 #[derive(Clone, Debug)]
 struct Open<'source>
 {
@@ -7196,7 +7230,7 @@ struct Leading(bool);
 /// # Adequacy
 /// - hypothesis: L3 — an included model's members answer as the including
 ///   module's own.
-/// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+/// - witness: `gandr-surface-lowering::tests::modules::models::an_included_model_lends_its_members_2333`
 #[derive(Clone, Copy, Debug)]
 struct Inclusion
 {
@@ -7224,7 +7258,7 @@ struct Inclusion
 /// # Adequacy
 /// - hypothesis: L3 — a nested member signature constrains the parent binding
 ///   and hides omitted fields.
-/// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+/// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Layer
 {
@@ -7252,7 +7286,7 @@ struct Layer
 /// # Adequacy
 /// - hypothesis: L3 — nested record matching retains the named field and
 ///   applies its type.
-/// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+/// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Field<'source>
 {
@@ -7281,7 +7315,7 @@ struct Field<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a repaired container retains its readable member rather
 ///   than refusing the whole body.
-/// - witness: `tests::modules::a_repaired_container_keeps_its_member`
+/// - witness: `gandr-surface-lowering::tests::modules::a_repaired_container_keeps_its_member`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Carried(bool);
@@ -7358,20 +7392,20 @@ impl<'source> Collector<'_, 'source>
     ///   body, an empty body and a malformed member, each asserted as the exact
     ///   declaration list. The predicate reads only the structures this call
     ///   appended.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
-    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_top_level_module_is_named_in_either_case_4529`
-    /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
-    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `tests::modules::a_nested_module_declares_under_either_case_spelling`
-    /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
-    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
-    /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
-    /// - witness: `tests::modules::module_members_admit_in_source_order`
-    /// - witness: `tests::modules::computation_signed_module_member_origin_mirrors_ascription_encoding`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_empty_module_is_not_an_unread_one`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_top_level_module_is_named_in_either_case_4529`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_unread_member_keeps_its_own_report`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_nested_module_declares_under_either_case_spelling`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `gandr-surface-lowering::tests::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+    /// - witness: `gandr-surface-lowering::tests::modules::computation_signed_module_member_origin_mirrors_ascription_encoding`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -7475,7 +7509,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::module`].
-    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `gandr-surface-lowering::tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     #[spec(ensures: |ret| ret.is_err() || stack.is_empty())]
     fn drain(
         &mut self,
@@ -7533,11 +7567,11 @@ impl<'source> Collector<'_, 'source>
     ///   modules separate a readable header from a named refusal or an unnamed
     ///   form, and a sealed header from a transparent one. The predicate asks
     ///   for the name tile's own bytes, by address and length.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_top_level_module_is_named_in_either_case_4529`
-    /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_empty_module_is_not_an_unread_one`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_top_level_module_is_named_in_either_case_4529`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_repaired_container_keeps_its_member`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or_else(
@@ -7752,8 +7786,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a flow whose body reads its domain's members by name
     ///   checks, and one whose domain names no theory is refused under its
     ///   name.
-    /// - witness: `tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
-    /// - witness: `tests::modules::functors::a_flow_from_no_theory_is_refused_under_its_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_from_no_theory_is_refused_under_its_name`
     #[spec(ensures: |ret| match ret {
         | Header::Opened(ref opened) => matches!(opened.parameter, Maybe::Present(ref parameter) if matches!(parameter.scope, BodyScope::Domain { .. })) && !opened.sealed.0,
         | Header::Refused { .. } | Header::Unnamed(_) => true,
@@ -7871,9 +7905,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a one-segment and a dotted argument are read, a
     ///   flow's name heads one, and a tail out of shape is refused under the
     ///   binding's name.
-    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
-    /// - witness: `tests::modules::functors::a_flow_applies_to_a_module_3461`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_applies_to_a_module_3461`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present((_, ref argument)) => !argument.is_empty(),
         | Maybe::Absent(_) => true,
@@ -7933,9 +7967,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an unread module and a repaired member separate
     ///   container refusal from retaining readable siblings.
-    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
-    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
     #[spec(
         ensures: |ret| {
             ret.0
@@ -7998,12 +8032,12 @@ impl<'source> Collector<'_, 'source>
     ///   abstract type components retain their names and select distinct forms.
     ///   The predicate asks for each name tile's own bytes, by address and
     ///   length.
-    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
-    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
-    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
     #[spec(
         captures: starts_record = matches!(cursor.at(TileName::RECORD), Maybe::Present(_)),
         ensures: |ret| {
@@ -8124,13 +8158,13 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — nested module headers are admitted before their
     ///   bodies, duplicate names refuse without replacing the first module, and
     ///   a functor's body is admitted before its parameter.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::module_members_admit_in_source_order`
-    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `gandr-surface-lowering::tests::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -8270,7 +8304,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses of [`Self::implied_container`].
-    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
     #[spec(ensures: |ret| matches!(ret, Ok(_) | Err(LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::UnknownMold { .. })))]
     fn declared_in(
         &mut self,
@@ -8309,8 +8343,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a theory and a module declared through one dotted
     ///   prefix share its module, an exported one exports it, and a prefix
     ///   naming a written module is refused at the segment.
-    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
-    /// - witness: `tests::modules::a_dotted_prefix_naming_a_written_module_is_refused_2687`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_dotted_prefix_naming_a_written_module_is_refused_2687`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&within| prefix.is_empty() == (within == container)))]
     fn implied_container(
         &mut self,
@@ -8389,7 +8423,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-segment theory, a two-segment module and a
     ///   one-segment module are each declared under their own prefix.
-    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
     fn dotted_name(
         pieces: &Pieces,
         form: Placed,
@@ -8435,7 +8469,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a nested model under a sealed module reads its sorts
     ///   as atoms, and under a transparent one as the nested module states.
-    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
     fn seals_nested(
         &self,
         container: Container,
@@ -8503,12 +8537,12 @@ impl<'source> Collector<'_, 'source>
     ///   container; malformed members leave siblings readable and report at the
     ///   module. The predicate reads only the slots and structures this call
     ///   appended.
-    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
-    /// - witness: `tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::module_members_admit_in_source_order`
-    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -8696,7 +8730,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an inner block leading a module's body decorates the
     ///   module as an outer block before it does, and one after a definition is
     ///   refused at it.
-    /// - witness: `lower::exits::tests::an_inner_attribute_decorates_its_module`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_module`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() <= before.saturating_add(1),
@@ -8759,7 +8793,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::inner_attributes`].
-    /// - witness: `lower::exits::tests::an_inner_attribute_decorates_its_module`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_module`
     #[spec(
         captures: before = self.collected.decorated.len(),
         ensures: self.collected.decorated.len() <= before.saturating_add(1),
@@ -8824,8 +8858,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an admitted law at a primitive carrier checks, and
     ///   one at the module's own data type is refused; a body other than
     ///   `~admitted` is refused at the body.
-    /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
-    /// - witness: `tests::modules::models::a_law_member_admits_only_by_the_splice_of_admitted`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_law_member_admits_only_by_the_splice_of_admitted`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err() == (self.collected.slots.len() == before)
@@ -8912,7 +8946,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::admitted_law`].
-    /// - witness: `tests::modules::models::a_law_member_admits_only_by_the_splice_of_admitted`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_law_member_admits_only_by_the_splice_of_admitted`
     #[spec(ensures: |ret| ret.as_ref().map_or_else(
         |refusal| !matches!(*refusal, LoweringRefusal::MalformedForm { span, .. } if span == body.span)
             || *refusal == misplaced_in(FormName::MODULE, body.span),
@@ -8974,8 +9008,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an include of a model declared before it is read as
     ///   that model, and one naming no module is refused at the include.
-    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
-    /// - witness: `tests::modules::models::an_include_naming_no_module_is_refused_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_include_naming_no_module_is_refused_2333`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |inclusion| member.span.start() <= inclusion.named.span.start() && inclusion.named.span.end() <= member.span.end()))]
     fn inclusion(
         &self,
@@ -9016,7 +9050,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a transparent model lends its definitions.
-    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_included_model_lends_its_members_2333`
     #[spec(ensures: |ret| self.collected.structures.get(module.0).map_or(ret.is_empty(), |entry| ret.len() == entry.exports.len() || ret.len() == entry.members.len()))]
     fn offered(
         &self,
@@ -9065,8 +9099,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an included model's member is the including module's
     ///   component, and a member written beside an include of the same name is
     ///   refused at the include.
-    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
-    /// - witness: `tests::modules::models::a_member_an_include_also_lends_is_refused_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_member_an_include_also_lends_is_refused_2333`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -9173,10 +9207,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — unread modules, type members, missing components and
     ///   manifest types use held slots without introducing referenceable names.
-    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: |ret| {
@@ -9234,9 +9268,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — unread modules, missing components and manifest types
     ///   use held slots without introducing referenceable names.
-    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: |ret| {
@@ -9281,7 +9315,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a malformed member is refused under its module while
     ///   its well-formed sibling remains admitted.
-    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -9342,7 +9376,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — `de zero = 0 ;` in a module is refused at `de` and
     ///   held under `zero`; a member that misspells nothing is refused under
     ///   its module.
-    /// - witness: `tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
     #[spec(ensures: |ret| ret.is_none_or(|(word, named)| word.end() <= named.span.start()))]
     fn misspelt_definition(
         &self,
@@ -9399,15 +9433,15 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — closing a module retains declared members without an
     ///   ascription, and applies explicit and enclosing signatures to its
     ///   exports.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::module_members_admit_in_source_order`
-    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_included_model_lends_its_members_2333`
     #[spec(
         captures: structures = self.collected.structures.len(),
         ensures: |ret| {
@@ -9470,8 +9504,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a nested module signature is absorbed as a constraint
     ///   rather than exported as a value, while a conflicting definition is
     ///   refused. The predicate reads only the layers this call appended.
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::duplicate_module_member_definition_is_rejected`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -9598,16 +9632,16 @@ impl<'source> Collector<'_, 'source>
     ///   component; hiding by a member the signature omits; order by a
     ///   reordered signature, each asserted as the exact exports, declared
     ///   types or refusal.
-    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
-    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::a_nonempty_ascription_checks_each_component_at_its_member`
-    /// - witness: `tests::modules::a_dangling_member_signature_is_an_obligation`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_dangling_member_signature_is_an_obligation`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -9821,10 +9855,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a named value is constrained directly, a nested
     ///   module queues a record layer, and an absent component receives its own
     ///   refusal.
-    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         captures: before = (self.member_named(container, component.name), layers.len()),
         ensures: |ret| {
@@ -9928,12 +9962,12 @@ impl<'source> Collector<'_, 'source>
     ///   close alone, its parent's signature component naming it raising
     ///   nothing, while a sibling component the body never declares is still
     ///   reported.
-    /// - witness: `tests::modules::a_malformed_member_named_by_the_signature_is_reported_once`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_malformed_member_named_by_the_signature_is_reported_once`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks the slots once for the answer; the check walks them once more"
+            reason = "parity: the body walks the slots once for the answer; the check walks them once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| ret.0 == self.collected.slots.iter().any(|slot| slot.container == container && slot.name == name && matches!(slot.refusal, Maybe::Present((_, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(_), .. })))))]
@@ -9972,7 +10006,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a model body cut inside its first member is reported
     ///   at that member's repair alone, the laws it owes raising nothing.
-    /// - witness: `tests::modules::models::a_repaired_model_body_owes_no_law_beside_its_parse_error_5142`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_repaired_model_body_owes_no_law_beside_its_parse_error_5142`
     fn repaired_body(
         &self,
         container: Container,
@@ -10002,10 +10036,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — signatures resolve definition members and nested
     ///   modules within the named container, and reject a missing component.
-    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret == match self.collected.by_name.get(&(container, name)) {
@@ -10050,10 +10084,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a written member signature wins over a derived one
     ///   and an additional signature becomes a separate checking witness.
-    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-    /// - witness: `tests::modules::signatures_attach_to_their_defs`
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
+    /// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -10214,9 +10248,9 @@ impl<'source> Collector<'_, 'source>
     ///   from a member signature, the latter disagreeing with the module's own,
     ///   each asserted as the exact exports and the checker's verdict; a nested
     ///   module stated at a non-record type, the wrong sort.
-    /// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `tests::modules::a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -10362,7 +10396,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a nested record signature names the retained field
     ///   and constrains its binding rather than exposing an omitted member. The
     ///   predicate asks for each name tile's own bytes, by address and length.
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |fields| {
@@ -10433,9 +10467,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested signature matching distinguishes definition
     ///   and module names while retaining only the stated exports.
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
     #[spec(
         ensures: |ret| match member {
             | Member::Slot(slot) => self
@@ -10481,7 +10515,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested record signatures report their own malformed
     ///   form while valid records constrain the parent binding.
-    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `gandr-surface-lowering::tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret == self
@@ -10553,11 +10587,11 @@ enum WrittenType
 /// # Adequacy
 /// - hypothesis: L3 — manifest, manifest family, kinded and bare components are
 ///   distinct, and a bare one keeps its later siblings.
-/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
-/// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
-/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
-/// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_family_component_binds_two_parameters`
+/// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
 #[spec(
     captures: first = cursor.peek(),
     ensures: |ret| {
@@ -10698,8 +10732,8 @@ const fn misplaced_in<'source>(
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `module::tests::a_second_signature_is_refused`
 /// - witness: `module::tests::a_second_definition_is_refused`
-/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `tests::modules::signatures_attach_to_their_defs`
+/// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
 /// - witness: `module::tests::a_joined_definition_files_both_halves_2228`
 #[spec(
@@ -10812,8 +10846,8 @@ fn read_tail<'source>(
 /// - hypothesis: L3 — the two conditions separated by a fully typed tail, a
 ///   tail missing its result type, and a tail with one untyped parameter, each
 ///   asserted through the halves the lowered declaration reports.
-/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
-/// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `gandr-surface-lowering::lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
 #[spec(
     ensures: |ret| {
         ret != Signing::Signed
@@ -10868,8 +10902,8 @@ fn signing(mut header: Cursor<'_>) -> Signing
 /// - hypothesis: L3 — an implicit telescope before a definition is refused by
 ///   name at the declaration, while a closing tile without a tail is misplaced
 ///   at its own span.
-/// - witness: `lower::tests::an_implicit_telescope_on_no_function_is_refused_by_name`
-/// - witness: `lower::tests::a_tile_out_of_place_is_refused`
+/// - witness: `gandr-surface-lowering::lower::tests::an_implicit_telescope_on_no_function_is_refused_by_name`
+/// - witness: `gandr-surface-lowering::lower::tests::a_tile_out_of_place_is_refused`
 #[spec(
     ensures: |ret| {
         ret == if matches!(header.at(TileName::BRACKET_OPEN), Maybe::Present(_)) {
@@ -10951,9 +10985,9 @@ const fn extra_operand<'source>(
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `module::tests::a_second_signature_is_refused`
 /// - witness: `module::tests::a_second_definition_is_refused`
-/// - witness: `tests::modules::a_dangling_member_signature_is_an_obligation`
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::a_dangling_member_signature_is_an_obligation`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationOutcome<'source>
 {
@@ -11006,7 +11040,7 @@ pub enum DeclarationOutcome<'source>
 /// # Adequacy
 /// - hypothesis: L3 — two data declarations of one module take distinct,
 ///   ascending positions, each answering its own signature.
-/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DataIndex(usize);
@@ -11048,7 +11082,7 @@ impl From<DataIndex> for usize
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a codata declaration answers its own signature.
-/// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+/// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CodataIndex(usize);
@@ -11406,7 +11440,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — module members project through their admitted constants.
-/// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `gandr-surface-lowering::tests::modules::nested_modules_lower_as_parent_members_and_project`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ValueComponent<'source>
 {
@@ -11432,7 +11466,7 @@ pub struct ValueComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — manifest definitions expand in later signature
 ///   components.
-/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ManifestComponent<'source>
 {
@@ -11460,10 +11494,10 @@ pub struct ManifestComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — hidden, reordered and nested exports retain their
 ///   respective names and boundaries.
-/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
-/// - witness: `tests::modules::module_signature_matching_hides_extra_members`
-/// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
-/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `gandr-surface-lowering::tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `gandr-surface-lowering::tests::modules::module_signature_matching_hides_extra_members`
+/// - witness: `gandr-surface-lowering::tests::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredStructure<'source>
 {
@@ -11629,7 +11663,7 @@ impl<'source> LoweredStructure<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a pairing's map putting back both of its sorts records
 ///   them in the signature's order, whichever order a source writes them in.
-/// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Forgetting
 {
@@ -11665,7 +11699,7 @@ pub struct Forgetting
 /// # Adequacy
 /// - hypothesis: L3 — a counter's implicit after an explicit parameter starts
 ///   past it and writes its four components, the first a sort.
-/// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+/// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FlattenedSlot<'source>
 {
@@ -11702,7 +11736,7 @@ pub struct FlattenedSlot<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a document resumed after its closure reads each table as
 ///   the whole lowering's module does.
-/// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+/// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
 #[derive(Clone, Debug)]
 pub struct KeyedTables<'source>
 {
@@ -11742,12 +11776,12 @@ pub struct KeyedTables<'source>
 /// # Adequacy
 /// - hypothesis: L3 — real source lowering and composed metadata separate
 ///   declared exports, refusals and invalid names.
-/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-/// - witness: `tests::modules::module_members_admit_in_source_order`
-/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
+/// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredModule<'source>
@@ -11946,7 +11980,7 @@ impl<'source> LoweredModule<'source>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn with_descriptions(
+    pub fn with_descriptions(
         mut self,
         descriptions: Layered<NodeIndex, crate::description::DescribedDeclaration>,
         diagnostics: Vec<crate::description::DescriptionDiagnostic>,
@@ -12460,7 +12494,9 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn into_scope_tables(
+    #[inline]
+    #[must_use]
+    pub fn into_scope_tables(
         self
     ) -> (
         InScope,
@@ -12485,8 +12521,9 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`KeyedTables`].
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
-    pub(crate) fn take_keyed_tables(&mut self) -> KeyedTables<'source>
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+    #[inline]
+    pub fn take_keyed_tables(&mut self) -> KeyedTables<'source>
     {
         KeyedTables {
             operation_rules: core::mem::replace(
@@ -12534,8 +12571,9 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a document resumed after its closure reads its
     ///   declarations as the whole lowering's module does.
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-    pub(crate) fn take_declarations(&mut self) -> Arc<[LoweredDeclaration<'source>]>
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[inline]
+    pub fn take_declarations(&mut self) -> Arc<[LoweredDeclaration<'source>]>
     {
         core::mem::replace(&mut self.declarations, LayeredList::whole(Vec::new())).shared()
     }
@@ -12560,10 +12598,11 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`KeyedTables`]; a document resumed after its
     ///   closure reads its declarations as the whole lowering's module does.
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
-    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[inline]
     #[must_use]
-    pub(crate) fn after_closure(
+    pub fn after_closure(
         mut self,
         closure: &KeyedTables<'source>,
         declarations: &Arc<[LoweredDeclaration<'source>]>,
@@ -12617,7 +12656,7 @@ impl<'source> LoweredModule<'source>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn with_shadows(
+    pub fn with_shadows(
         mut self,
         shadows: ByForm<Shadow>,
     ) -> Self
@@ -12658,7 +12697,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a use of a marked declaration, of one marked with a
     ///   record, and of an unmarked one separate the answers.
-    /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
+    /// - witness: `gandr-surface-lowering::lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     #[spec(ensures: |ret| ret.len() <= self.resolutions.len() && ret.is_sorted_by_key(|used| used.span))]
     #[must_use]
     #[inline]
@@ -12736,7 +12775,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — an import a value, a type, a constructor, a module
     ///   member and an aliased member are each read through is reached; an
     ///   import nothing is read through is not.
-    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    /// - witness: `gandr-surface-lowering::tests::namespace::each_import_a_name_is_read_through_is_reached`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [first, second] if first < second)))]
     #[inline]
     #[must_use]
@@ -12767,7 +12806,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — nested calls under a module's attribute, a
     ///   declaration's and none, run by the checker, asserted as the exact
     ///   list.
-    /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
+    /// - witness: `gandr-surface-lowering::lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.is_sorted() && ret.windows(2_usize).all(|pair| pair.first() != pair.get(1_usize)))]
@@ -12812,7 +12851,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — two declarations answer their own signatures and an
     ///   index past the list answers nothing.
-    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(signature) => self.data.get(index.0).is_some_and(|held| Arc::ptr_eq(held, signature)),
         | Maybe::Absent(_) => index.0 >= self.data.len(),
@@ -12840,7 +12879,7 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a codata declaration answers its own signature.
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(signature) => self.codata.get(index.0).is_some_and(|held| Arc::ptr_eq(held, signature)),
         | Maybe::Absent(_) => index.0 >= self.codata.len(),
@@ -12886,7 +12925,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Theory`'s `App` beside a source's own `App` is
     ///   qualified, and the source's is bare.
-    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
     #[spec(ensures: |ret| (ret == ConstructorSpelling::Qualified) == self.shadowed.get(&family).is_some_and(|names| names.contains(<&str>::from(SourceFragment::from(name)))))]
     #[inline]
     #[must_use]
@@ -12960,7 +12999,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — two described data families each answer at their own
     ///   declaration, and a codata family written in its own observation
     ///   answers at its kind.
-    /// - witness: `tests::described::each_family_answers_at_its_own_declaration_6908`
+    /// - witness: `gandr-surface-lowering::tests::described::each_family_answers_at_its_own_declaration_6908`
     #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
         && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
     #[inline]
@@ -13019,7 +13058,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands
     ///   back the theory alone.
-    /// - witness: `tests::modules::models::a_lowered_theory_exposes_its_description_and_its_model`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_lowered_theory_exposes_its_description_and_its_model`
     #[inline]
     pub fn theories(&self) -> impl Iterator<Item = crate::model::LoweredTheory<'_>>
     {
@@ -13067,12 +13106,12 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — a family's declaration and its operation read one
     ///   call to one normal form, and a declaration outside every described one
     ///   is undescribed.
-    /// - witness: `tests::coincide::a_call_reads_its_normal_form_or_says_why_not`
+    /// - witness: `gandr-surface-lowering::tests::coincide::a_call_reads_its_normal_form_or_says_why_not`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks the cells once for the containing block; the check walks them once more"
+            reason = "parity: the body walks the cells once for the containing block; the check walks them once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| !matches!(ret, Err(crate::coincide::NormalFormFault::Undescribed))
@@ -13281,8 +13320,8 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested and top-level declarations preserve the
     ///   ordered container segments before their own name.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
     #[spec(
         ensures: |ret| {
@@ -13343,14 +13382,14 @@ impl<'source> LoweredModule<'source>
     ///   walks the declarations once from the last, so the first eligible one
     ///   met at a position is the one that wins, and compares the count of
     ///   positions met with the names returned.
-    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every declaration and files each eligible one's name in an ordered map; the check walks them once in reverse, filing each position in an ordered set"
+            reason = "parity: the body walks every declaration and files each eligible one's name in an ordered map; the check walks them once in reverse, filing each position in an ordered set; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -13539,7 +13578,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a definition naming two laws, a signature naming one
     ///   and an undecorated declaration separate the three answers.
-    /// - witness: `lower::tests::a_respects_attribute_names_its_laws_through_either_form`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_respects_attribute_names_its_laws_through_either_form`
     #[inline]
     #[must_use]
     pub fn laws(
@@ -13577,7 +13616,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — an atom whose member names three declarations, one
     ///   whose member names two and one whose member states no identity
     ///   separate the three answers.
-    /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[inline]
     #[must_use]
     pub fn interface(
@@ -13608,7 +13647,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a quantified function and a plain one separate the
     ///   two answers.
-    /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
+    /// - witness: `gandr-surface-lowering::lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     #[inline]
     #[must_use]
     pub fn stages(
@@ -13644,7 +13683,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — a definition over two regions and one over none
     ///   separate the two answers, and the two binders' order is their
     ///   ordinals'.
-    /// - witness: `lower::staged::tests::a_definition_s_region_binders_are_named_by_ordinal_2138`
+    /// - witness: `gandr-surface-lowering::lower::staged::tests::a_definition_s_region_binders_are_named_by_ordinal_2138`
     #[spec(ensures: |ret| ret.is_empty() != matches!(self.region_names.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
@@ -13676,7 +13715,7 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — a function whose implicit's type names the explicit
     ///   parameter written after it answers the explicit one first, and a
     ///   function with no telescope answers nothing.
-    /// - witness: `lower::implicit::tests::a_telescope_names_its_implicits_in_the_merged_order_2267`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_names_its_implicits_in_the_merged_order_2267`
     #[spec(ensures: |ret| ret.is_empty() != matches!(self.implicits.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
@@ -13705,7 +13744,7 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`FlattenedSlot`].
-    /// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
     #[spec(ensures: |ret| ret.is_empty() != matches!(self.model_slots.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
@@ -13736,7 +13775,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a call writing a supply files it at its head, and a
     ///   call writing none files nothing.
-    /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
+    /// - witness: `gandr-surface-lowering::lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
     #[inline]
     #[must_use]
     pub fn supplies(
@@ -13767,7 +13806,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a scope over a theory with two laws files both at its
     ///   declaration, and a scope over one with none files nothing.
-    /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
     #[inline]
     #[must_use]
     pub fn handler_laws(
@@ -13797,7 +13836,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a call omitting a counter's slot files it with each
     ///   module of its theory as a candidate.
-    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[inline]
     #[must_use]
     pub fn models(
@@ -13826,7 +13865,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — every routed operation's rules cross to the kernel,
     ///   which admits the corpus's operations and refuses a forged pair.
-    /// - witness: `operation::tests::an_operations_rules_read_in_pre_order_over_module_positions`
+    /// - witness: `gandr-surface-lowering::tests::operation::an_operations_rules_read_in_pre_order_over_module_positions`
     #[inline]
     #[must_use]
     pub fn operation_rules(
@@ -13857,7 +13896,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a decorated declaration and an undecorated one
     ///   separate the two answers.
-    /// - witness: `lower::world::tests::an_entry_names_its_home_then_its_capabilities`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_entry_names_its_home_then_its_capabilities`
     #[inline]
     #[must_use]
     pub fn worlds(
@@ -13893,7 +13932,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a marked declaration and an unmarked one separate the
     ///   two answers.
-    /// - witness: `lower::tests::a_builtin_mark_gives_its_declaration_the_role_3575`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_builtin_mark_gives_its_declaration_the_role_3575`
     #[inline]
     pub fn builtin(
         &self,
@@ -13933,7 +13972,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a documented and an undocumented declaration are
     ///   separated by presence and the exact text.
-    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
+    /// - witness: `gandr-surface-lowering::lower::tests::documentation_is_filed_under_the_declaration_key`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => self.documentation.get(&key) == Some(found),
         | Maybe::Absent(_) => !self.documentation.contains_key(&key),
@@ -13975,7 +14014,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — two sources' documentation and an undocumented source
     ///   are separated by presence and the exact text.
-    /// - witness: `lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => self.sources.get(&source) == Some(found),
         | Maybe::Absent(_) => !self.sources.contains_key(&source),
@@ -14032,7 +14071,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a definition's match crosses with its derivation and
     ///   the kernel replays it; a body holding no match carries none.
-    /// - witness: `tests::modules::a_definitions_matches_carry_their_derivations_5104`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_definitions_matches_carry_their_derivations_5104`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first().map(|first| first.0) < pair.get(1).map(|second| second.0)))]
     #[inline]
     #[must_use]
@@ -14269,40 +14308,72 @@ mod tests
         );
     }
 
+    /// A module's declarations, composed without the lowering: one position
+    /// declared twice, a dotted name at that position, and a held slot. The
+    /// last declared name wins, the dotted one is omitted, and the held slot
+    /// exports nothing. A dotted module path omits every name under it.
     #[test]
     fn structured_export_omits_invalid_segments_and_keeps_the_last_declared_name()
     {
-        let pbg = grammar();
-        let tree = parsed(
-            &pbg,
-            SourceText::from(
-                "module M where { def first = 1 ; def last = 2 ; def dotted = 3 ; def hidden = 4 ; }",
+        let at = span(ByteOffset::from(0_usize), ByteOffset::from(1_usize));
+        let key = crate::unit::UnitKey::new(
+            crate::unit::SourceIndex::from(0_usize),
+            gandr_surface_syntax::NodeKey::new(
+                gandr_surface_syntax::NodeDigest::from([0_u8; 32_usize]),
+                gandr_surface_syntax::FormRank::default(),
             ),
         );
-        let mut arena = gandr_core_term::CoreArena::new();
-        let mut lowered = crate::lower::lower_module(
-            &pbg,
-            &tree,
-            &mut arena,
-            LoweringBudget::DEFAULT,
-            crate::namespace::Recognition::default(),
-        )
-        .unwrap();
-        let mut declarations: Vec<_> = lowered.declarations().iter().copied().collect();
-        let [ref mut first, ref mut last, ref mut dotted, ref mut hidden] =
-            *declarations.as_mut_slice()
-        else {
-            panic!("four source definitions have four declarations");
+        let unwritten = || Maybe::Absent(super::declaration_half::Absent::Unwritten);
+        let declared = |name: &'static str, constant: usize, role: Role| {
+            super::LoweredDeclaration::from(super::DeclarationParts {
+                name: SurfaceName::from(name),
+                container: super::Container::Module(super::StructureIndex::from(0_usize)),
+                role,
+                constant: ConstantIndex::from(constant),
+                span: at,
+                named: at,
+                origin: crate::origin::OriginToken::from(constant),
+                signature: unwritten(),
+                definition: unwritten(),
+                refused_form: unwritten(),
+                introduced: key,
+                halves: super::Halves {
+                    signature: Maybe::Absent(super::declaration_half::Absent::Unwritten),
+                    definition: Maybe::Absent(super::declaration_half::Absent::Unwritten),
+                },
+                outcome: super::DeclarationOutcome::World,
+                inertness: super::Inertness::Content,
+                visibility: crate::slot::Visibility::Public,
+            })
         };
-        let constant = first.constant();
-        last.parts.constant = constant;
-        dotted.parts.name = SurfaceName::from("bad.name");
-        dotted.parts.constant = constant;
-        hidden.parts.role = Role::Held;
-        lowered.declarations = super::LayeredList::whole(declarations);
+        let mut lowered = super::LoweredModule::new(
+            Vec::from([
+                declared("first", 0, Role::Declared),
+                declared("last", 0, Role::Declared),
+                declared("bad.name", 0, Role::Declared),
+                declared("hidden", 3, Role::Held),
+            ]),
+            Vec::new(),
+            Vec::from([super::LoweredStructure::new(
+                Vec::from([SurfaceName::from("M")]),
+                at,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                super::Coerced(false),
+                super::Stratum::Module,
+            )]),
+            crate::attribute::AttributeTable::new(),
+            crate::origin::OriginTable::new(),
+            crate::import::ModuleImports::new(),
+            crate::namespace::Recognition::default(),
+        );
         let names = lowered.structured_names();
-        assert_eq!(names.keys().copied().collect::<Vec<_>>(), [constant]);
-        let Some(exported) = names.get(&constant)
+        assert_eq!(names.keys().copied().collect::<Vec<_>>(), [
+            ConstantIndex::from(0_usize)
+        ]);
+        let Some(exported) = names.get(&ConstantIndex::from(0_usize))
         else {
             panic!("the declared position has an exported name");
         };
@@ -14705,7 +14776,7 @@ mod tests
             LoweringRefusal::MalformedForm {
                 span: span(ByteOffset::from(22_usize), ByteOffset::from(22_usize)),
                 form: FormName::from(NamedKind("theory_declaration")),
-                fault: FormFault::Repaired(crate::Repair::GhostClose(
+                fault: FormFault::Repaired(crate::form::Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Brace,
                 )),
             },

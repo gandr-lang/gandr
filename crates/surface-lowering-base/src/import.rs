@@ -1,17 +1,18 @@
 //! Imports: `import "<path>" ;` and `import "<path>" as name ;`, kept as
 //! source-ordered declarations, resolved against the sources of the
-//! [`Unit`](crate::Unit) the importer is lowered in.
+//! [`Unit`](crate::unit::Unit) the importer is lowered in.
 //!
 //! # An import resolves a sibling source
 //!
 //! An address with no scheme is a path relative to the importing source. The
 //! dispatcher reads the importer's closure — every source it reaches through
 //! path imports, each once — and lays it out as one text, each source after
-//! every source it imports and the importer last; the [`Unit`](crate::Unit)
-//! records where each source starts and what each of its path imports, in
-//! source order, resolved to: an earlier source, a path naming nothing in the
-//! root ([`ImportTarget::Unresolved`]), or an edge of a cycle
-//! ([`ImportTarget::Cycle`]). The unit is parsed as one tree and lowered into
+//! every source it imports and the importer last; the
+//! [`Unit`](crate::unit::Unit) records where each source starts and what each
+//! of its path imports, in source order, resolved to: an earlier source, a
+//! path naming nothing in the root ([`ImportTarget::Unresolved`]), or an edge
+//! of a cycle ([`ImportTarget::Cycle`]). The unit is parsed as one tree and
+//! lowered into
 //! one arena: each top-level declaration and constructor is collected under
 //! its own source (`Container::TopLevel`), so the sibling's declarations are
 //! the prefix of the importer's constants, checked and admitted first, and a
@@ -307,8 +308,8 @@ pub struct ImportSignature<'source>
 /// # Adequacy
 /// - hypothesis: L3 — an import through a flow binds the flow's members over
 ///   its source, and one naming no flow binds none.
-/// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-/// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+/// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Translation<'source>
 {
@@ -347,7 +348,7 @@ pub struct Translation<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a renamed member reads its pair's member, and every other
 ///   member reads itself.
-/// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Renaming<Name>
@@ -636,7 +637,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a quoted URI with escapes is retained decoded beside its
 ///   exact alias and span, even when no such address exists. Raw constructors
 ///   remain able to represent caller-supplied metadata.
-/// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImportDeclaration<'source>
 {
@@ -835,10 +836,10 @@ impl<'source> ImportDeclaration<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a name the signature states answers through the
     ///   import and one its source exports beyond it does not.
-    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     #[inline]
     #[must_use]
-    pub(crate) fn states(
+    pub fn states(
         &self,
         name: SurfaceName<'_>,
     ) -> Opens
@@ -878,11 +879,11 @@ impl<'source> ImportDeclaration<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a listed name answers and an unlisted one does not; a
     ///   name an import's signature does not state does not.
-    /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
-    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     #[inline]
     #[must_use]
-    pub(crate) fn opens(
+    pub fn opens(
         &self,
         name: SurfaceName<'_>,
     ) -> Opens
@@ -965,7 +966,7 @@ quenchant_shape::reason_enum! {
 ///   positions with an empty export. Repeating the same URI and alias still
 ///   refuses, preserves the entire state and leaves the next position
 ///   available; one alias in two sources binds in each.
-/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
 /// - witness: `import::tests::each_source_binds_its_own_aliases`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1048,7 +1049,7 @@ impl<'source> ModuleImports<'source>
     ///   own import, and an alias another source binds answers nothing; a
     ///   module path answers its import and its prefix nothing.
     /// - witness: `import::tests::each_source_binds_its_own_aliases`
-    /// - witness: `tests::namespace::a_module_path_import_binds_its_module_qualified_2687`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_module_path_import_binds_its_module_qualified_2687`
     #[inline]
     #[spec(ensures: |ret| match ret {
         Maybe::Present(found) => found.source == source && matches!(found.binding, ImportBinding::Aliased(_) | ImportBinding::Qualified(_)),
@@ -1102,7 +1103,7 @@ impl<'source> ModuleImports<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ImportDeclaration::states`].
-    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     #[inline]
     #[spec(
         captures: before = self.declarations.len(),
@@ -1150,17 +1151,17 @@ impl<'source> ModuleImports<'source>
     ///   bypass refusal or consume the next position; one alias in two sources
     ///   binds in each. Witnesses check the exact bindings and the complete
     ///   rejected state.
-    /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-    /// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
-    /// - witness: `tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
-    /// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    /// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
+    /// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+    /// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
     /// - witness: `import::tests::each_source_binds_its_own_aliases`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "bounded: an accepted import is checked at the appended declaration; only a refused duplicate scans the module's imports, once, for the first binding of its alias"
+            reason = "bounded: an accepted import is checked at the appended declaration; only a refused duplicate scans the module's imports, once, for the first binding of its alias; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -1244,7 +1245,7 @@ impl<'source> ModuleImports<'source>
 ///   identical URI duplicates dispatch a refusal. These import scenarios do not
 ///   enumerate arbitrary modifier hooks, whose implementation forwards its
 ///   subject.
-/// - witness: `tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+/// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
 /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct OneSource;
@@ -1285,7 +1286,7 @@ impl NamespaceEventHandler<ImportIndex, ByteSpan> for OneSource
     ///   dispatch this callback. Enforcement checks event kind, path and
     ///   reason; the public refusal observes both source spans and unchanged
     ///   import state.
-    /// - witness: `tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+    /// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
     ///
     /// # Errors

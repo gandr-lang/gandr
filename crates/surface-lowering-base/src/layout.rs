@@ -105,7 +105,7 @@ pub enum Nesting
 /// - hypothesis: L3 — as [`misplaced()`] and the module's reading of a closer
 ///   written twice: the doubled `{`, `}` and `(` of their witnesses are each
 ///   paired by family.
-/// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+/// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
 /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
 #[spec(ensures: |ret| ClosingClass::closing(DelimSpelling::from(label.as_ref())).map_or_else(
     || match ret {
@@ -117,6 +117,8 @@ pub enum Nesting
     },
     |close| ret == Nesting::Closes(close),
 ))]
+#[must_use]
+#[inline]
 pub fn nesting(label: TileName) -> Nesting
 {
     let text = label.as_ref();
@@ -146,8 +148,10 @@ pub fn nesting(label: TileName) -> Nesting
 /// # Adequacy
 /// - hypothesis: L3 — as [`misplaced()`] and the module's reading of a closer
 ///   written twice: each names the form of the bracket it reports.
-/// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+/// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
 /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
+#[must_use]
+#[inline]
 pub fn bracket_form(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -155,7 +159,7 @@ pub fn bracket_form(
 ) -> FormName
 {
     // economy: the search runs only for a declaration the lowering refused, so
-    // an admitted tree never pays for it.
+    // an admitted tree never pays for it. A lookup without the walk is #7054.
     tree.positions()
         .find(|&position| {
             own_children(pbg, tree, position).any(|(child, _)| {
@@ -308,7 +312,7 @@ struct Pairing<'layout>
 ///   before a line that comes back to the block's indentation at the end of the
 ///   line before it; a `{` left out of a case at the end of the case's line;
 ///   and a doubled `(` at the first of the pair.
-/// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+/// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
 #[spec(ensures: |ret| match ret {
     | Maybe::Present(found) => within.start() <= found.at.start()
         && found.at.end() <= within.end()
@@ -320,6 +324,7 @@ struct Pairing<'layout>
         ),
     | Maybe::Absent(_) => true,
 })]
+#[inline]
 pub fn misplaced(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -357,7 +362,7 @@ impl Layout
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misplaced()`].
-    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     fn of(
         pbg: &Pbg,
         tree: &SyntaxTree<'_>,
@@ -459,7 +464,7 @@ impl Layout
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misplaced()`].
-    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     fn pair(
         &self,
         family: ClosingClass,
@@ -522,7 +527,7 @@ impl Pairing<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misplaced()`].
-    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     fn unwind(
         &mut self,
         before: LineAt,
@@ -554,7 +559,7 @@ impl Pairing<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misplaced()`].
-    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     fn close(
         &mut self,
         laid: Laid,
@@ -614,7 +619,7 @@ impl Pairing<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misplaced()`].
-    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     fn header(
         &self,
         here: LineAt,
@@ -655,7 +660,7 @@ impl Pairing<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misplaced()`].
-    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     fn unanswered(
         &mut self,
         waiting: Waiting,

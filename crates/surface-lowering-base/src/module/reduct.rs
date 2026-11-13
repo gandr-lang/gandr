@@ -74,7 +74,7 @@ use crate::resolve::SurfaceName;
 /// # Adequacy
 /// - hypothesis: L3 — a monoid's model restricts to its semigroup's, and a
 ///   theory including two extensions of the semigroup restricts to it once.
-/// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReductSlot
 {
@@ -102,9 +102,9 @@ pub struct ReductSlot
 ///   stand where a counter's are asked; a pairing's, one sort of two manifest,
 ///   stand where a pairing's are; a monoid's, its carrier manifest, where a
 ///   semigroup's are.
-/// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
-/// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
-/// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForgetSlot
 {
@@ -145,7 +145,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a monoid's semigroup, an extension of the monoid
     ///   reaching the semigroup through it, and two extensions of the semigroup
     ///   included together, reaching it once.
-    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before
@@ -259,7 +259,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::forget`].
-    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
     pub(super) fn manifest_types(&self) -> Vec<Placed>
     {
         // A form's mold decides its former, so each mold is classified once.
@@ -340,9 +340,9 @@ impl<'source> Collector<'_, 'source>
     ///   variable, one map between them; a pairing's sorts fixed one, the other
     ///   and both, a map each; a monoid's carrier fixed, a map to the monoids
     ///   and one to the semigroups; a theory no manifest type names, none.
-    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
-    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
-    /// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.forgets.len()),
         ensures: |ret| self.collected.slots.len().saturating_sub(before.0)
@@ -475,7 +475,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::forget`].
-    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
     fn manifest_chain(
         &self,
         at: Placed,
@@ -540,7 +540,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a counter's carrier put back by the written map,
     ///   whose slot no manifest type of the source asks for, as
     ///   [`Self::forget`].
-    /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
     fn forgetting_chain(
         &self,
         at: Placed,
@@ -645,7 +645,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a chain of two `with`s read link by link, as
     ///   [`Self::forget`].
-    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
     fn halves(
         &self,
         at: Placed,
@@ -689,8 +689,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Model(Pairing)` and `Terms(Mag)` read to their
     ///   theory's name, as [`Self::forget`] and [`Self::terms`].
-    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
-    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
     pub(super) fn applied_operand(
         &self,
         applied: Placed,

@@ -22,20 +22,19 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering_base::fixture::grammar;
+use gandr_surface_lowering_base::fixture::parsed;
+use gandr_surface_lowering_base::module::DeclarationOutcome;
+use gandr_surface_lowering_base::module::LoweredModule;
+use gandr_surface_lowering_base::namespace::Recognition;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::budget::LoweringBudget;
-use crate::fixture::grammar;
-use crate::fixture::parsed;
-use crate::lower::lower_module;
-use crate::module::DeclarationOutcome;
-use crate::module::LoweredModule;
-use crate::namespace::Recognition;
-
 /// Division with remainder over unary naturals: a two-output operation over a
 /// five-input helper, with the divisor carried twice so no rule copies it.
-const NAT_DIV: &str = include_str!("tests/unformatted/nat-div.gandr");
+const NAT_DIV: &str = include_str!("operation/unformatted/nat-div.gandr");
 
 /// The module the parser and the lowering make of `source`.
 ///
@@ -255,7 +254,7 @@ fn an_operations_rules_read_in_pre_order_over_module_positions()
 fn a_call_reaches_the_operation_before_a_builtin_of_its_name()
 {
     let source = include_str!(
-        "tests/fixtures/a-call-reaches-the-operation-before-a-builtin-of-its-name.gandr"
+        "operation/fixtures/a-call-reaches-the-operation-before-a-builtin-of-its-name.gandr"
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -283,7 +282,7 @@ fn a_call_reaches_the_operation_before_a_builtin_of_its_name()
 #[test]
 fn a_leaf_delivers_its_results_in_port_order()
 {
-    let source = include_str!("tests/fixtures/a-leaf-delivers-its-results-in-port-order.gandr");
+    let source = include_str!("operation/fixtures/a-leaf-delivers-its-results-in-port-order.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_eq!(rows(&module), ["Flag Declared", "swap Operation"]);
@@ -332,7 +331,7 @@ fn a_leaf_delivers_its_results_in_port_order()
 fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 {
     let source = include_str!(
-        "tests/fixtures/an-operation-whose-rules-miss-a-constructor-is-not-callable.gandr"
+        "operation/fixtures/an-operation-whose-rules-miss-a-constructor-is-not-callable.gandr"
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -347,7 +346,7 @@ fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 {
     let source = include_str!(
-        "tests/fixtures/a-rule-of-another-arity-than-its-operation-routes-nothing.gandr"
+        "operation/fixtures/a-rule-of-another-arity-than-its-operation-routes-nothing.gandr"
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -361,7 +360,8 @@ fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 #[test]
 fn an_operation_at_an_index_routes_nothing_2940()
 {
-    let source = include_str!("tests/fixtures/an-operation-at-an-index-routes-nothing-2940.gandr");
+    let source =
+        include_str!("operation/fixtures/an-operation-at-an-index-routes-nothing-2940.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_eq!(
@@ -375,7 +375,7 @@ fn an_operation_at_an_index_routes_nothing_2940()
 fn an_operation_calling_a_later_one_is_not_callable()
 {
     let source =
-        include_str!("tests/fixtures/an-operation-calling-a-later-one-is-not-callable.gandr");
+        include_str!("operation/fixtures/an-operation-calling-a-later-one-is-not-callable.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_eq!(
@@ -389,7 +389,7 @@ fn an_operation_calling_a_later_one_is_not_callable()
 fn an_operation_declared_twice_in_one_family_is_routed_once()
 {
     let source = include_str!(
-        "tests/fixtures/an-operation-declared-twice-in-one-family-is-routed-once.gandr"
+        "operation/fixtures/an-operation-declared-twice-in-one-family-is-routed-once.gandr"
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -404,7 +404,7 @@ fn an_operation_declared_twice_in_one_family_is_routed_once()
 fn a_declined_rule_withholds_only_its_own_operation()
 {
     let source =
-        include_str!("tests/fixtures/a-declined-rule-withholds-only-its-own-operation.gandr");
+        include_str!("operation/fixtures/a-declined-rule-withholds-only-its-own-operation.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_eq!(
@@ -420,8 +420,9 @@ fn an_operation_with_a_law_runs_by_its_other_rules_1510()
     use gandr_kernel_term::FieldCount;
     use gandr_kernel_term::OperationNode;
     use gandr_kernel_term::RuleVariable;
-    let source =
-        include_str!("tests/fixtures/an-operation-with-a-law-runs-by-its-other-rules-1510.gandr");
+    let source = include_str!(
+        "operation/fixtures/an-operation-with-a-law-runs-by-its-other-rules-1510.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_eq!(

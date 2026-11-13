@@ -52,7 +52,7 @@ use crate::form::shape_of;
 /// # Adequacy
 /// - hypothesis: L3 — a group's inverse of a product takes one slot per lemma
 ///   its proof rests on, then its own.
-/// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DerivedSlot
 {
@@ -93,7 +93,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::derive`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     pub(super) fn derives(
         &self,
         child: Placed,
@@ -138,8 +138,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a derived rule takes its slots, and a statement the
     ///   completion keeps apart is refused by name.
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
-    /// - witness: `tests::modules::models::a_rule_the_theory_does_not_derive_is_refused`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_rule_the_theory_does_not_derive_is_refused`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: |ret| ret.is_err() || (self.collected.slots.len() > before.0

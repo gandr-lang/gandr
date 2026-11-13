@@ -236,8 +236,8 @@ impl From<InstanceIndex> for usize
 /// # Adequacy
 /// - hypothesis: L3 — a functor's body and parameter enter no namespace while
 ///   its instances do.
-/// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-/// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_body_never_reaches_the_kernel`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Stratum
 {
@@ -332,7 +332,7 @@ pub struct WrittenParameter<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a functor over an abstract type and a value of it applies
 ///   to a sealed argument.
-/// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ParameterForm
 {
@@ -380,8 +380,8 @@ pub struct ParameterComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a functor's template slots yield no declaration and each
 ///   application's image mirrors its body.
-/// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
-/// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Functor<'source>
 {
@@ -425,8 +425,8 @@ pub struct Functor<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a value component of the argument at the parameter's type
 ///   checks and one at another type is refused at its witness.
-/// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-/// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Matched<'source>
 {
@@ -493,7 +493,7 @@ pub enum Argument
 /// # Adequacy
 /// - hypothesis: L3 — two applications of one functor to one argument bind two
 ///   instances, each with its own atoms.
-/// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+/// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Instance<'source>
 {
@@ -537,7 +537,7 @@ impl Instance<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Instance`].
-    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(image) => functor.body_first <= slot && slot < functor.end
             && usize::from(image).checked_sub(usize::from(self.body_first)) == usize::from(slot).checked_sub(usize::from(functor.body_first)),
@@ -617,8 +617,8 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a flow the importer declares and one its source
     ///   publishes each resolve; a name no flow bears resolves nothing; an
     ///   offer's flow resolves as an import's does.
-    /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
-    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     pub(crate) fn translation_flow(
         &self,
         source: SourceIndex,
@@ -671,8 +671,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a parameter of an abstract type and a value of it is
     ///   read by the body at its atom and its constant.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
     #[spec(
         captures: before = (self.collected.functors.len(), self.collected.structures.len()),
         ensures: self.collected.functors.len() == before.0.saturating_add(1)
@@ -862,7 +862,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::declare_parameter`].
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.0 == before && self.collected.slots.len() == before.saturating_add(1)
@@ -910,7 +910,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a family component of a parameter is refused at its
     ///   name.
-    /// - witness: `tests::modules::functors::a_parameter_reads_only_types_and_values`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_reads_only_types_and_values`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before.saturating_add(1),
@@ -948,7 +948,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a functor's template slots yield no declaration.
-    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     #[spec(
         captures: before = self.collected.functors.len(),
         ensures: self.collected.functors.len() == before,
@@ -991,8 +991,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two applications bind two instances, and an argument
     ///   missing a component refuses its binding.
-    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.slots.len()),
         ensures: self.collected.instances.len() <= before.0.saturating_add(1)
@@ -1113,8 +1113,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a flow the importer declares and one its source
     ///   publishes each translate the source; a name no flow bears translates
     ///   nothing.
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
     #[spec(ensures: |ret| (matches!(ret.instance, Maybe::Absent(_)) || matches!(ret.flow, Maybe::Present(_)))
         && (matches!(ret.lacking, Maybe::Absent(_)) || matches!((ret.flow, ret.instance), (Maybe::Present(_), Maybe::Absent(_)))))]
     pub(super) fn translate(
@@ -1224,7 +1224,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `def answer = reply ;` renames, and `def answer =
     ///   reply + 1 ;` is code.
-    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     pub(super) fn rewritten(
         &self,
         flow: FunctorIndex,
@@ -1292,11 +1292,11 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an argument naming a sealed module, one naming no
     ///   module, and one naming a model an imported source declares.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
-    /// - witness: `tests::modules::functors::an_argument_naming_a_functor_is_unresolved`
-    /// - witness: `tests::modules::functors::a_dotted_argument_reads_the_nested_module_it_names`
-    /// - witness: `tests::namespace::a_functor_argument_reads_an_imported_module_1993`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_naming_a_functor_is_unresolved`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_dotted_argument_reads_the_nested_module_it_names`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_functor_argument_reads_an_imported_module_1993`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0 < self.collected.structures.len()))]
     fn argument(
         &mut self,
@@ -1397,9 +1397,9 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an argument exporting every component and one missing
     ///   one; a source publishing a flow's domain, and one keeping a member
     ///   private.
-    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
-    /// - witness: `tests::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && slot.0 < self.collected.slots.len(),
         | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && found.name == component.name,
@@ -1477,10 +1477,10 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::apply`] and [`Self::translate`].
-    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    /// - witness: `tests::modules::functors::a_flow_applies_to_a_module_3461`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_applies_to_a_module_3461`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.structures.len()),
         ensures: |ret| match ret {
@@ -1706,7 +1706,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `def answer = reply ;` binds the source's `reply`,
     ///   and `def answer = reply + 1 ;` is the importer's own code.
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     fn renamings(
         &self,
         template: &Functor<'source>,
@@ -1776,7 +1776,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::apply`].
-    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.0 == before && self.collected.slots.len() == before.saturating_add(1),

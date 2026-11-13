@@ -70,9 +70,6 @@
 //! wins, and an operation named like a builtin (`add`) shadows the builtin for
 //! the declarations after its family.
 
-#[cfg(test)]
-mod tests;
-
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -335,7 +332,7 @@ impl OperationPlan
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn output_labels(&self) -> &[Maybe<ByteSpan, port_name::Absent>]
+    pub fn output_labels(&self) -> &[Maybe<ByteSpan, port_name::Absent>]
     {
         &self.labels
     }
@@ -400,11 +397,12 @@ struct Work<'face>
 ///   in order, an operation missing a constructor has no route, a call to a
 ///   later operation has no route, and an operation with a law runs by its
 ///   other rules and carries the law.
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
-/// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
-/// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
-/// - witness: `operation::tests::a_rule_of_another_arity_than_its_operation_routes_nothing`
-/// - witness: `operation::tests::an_operation_with_a_law_runs_by_its_other_rules_1510`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operation_whose_rules_miss_a_constructor_is_not_callable`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operation_calling_a_later_one_is_not_callable`
+/// - witness: `gandr-surface-lowering::tests::operation::a_rule_of_another_arity_than_its_operation_routes_nothing`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operation_with_a_law_runs_by_its_other_rules_1510`
+#[inline]
 pub fn plan_operation(
     operation: &OperDesc,
     faces: &[&RuleFace],
@@ -510,7 +508,7 @@ enum RuleRole
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`plan_operation`].
-/// - witness: `operation::tests::an_operation_with_a_law_runs_by_its_other_rules_1510`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operation_with_a_law_runs_by_its_other_rules_1510`
 fn role(face: &RuleFace) -> RuleRole
 {
     let mut pending: Vec<TermNode<'_>> = Vec::new();
@@ -553,7 +551,7 @@ fn role(face: &RuleFace) -> RuleRole
 /// # Adequacy
 /// - hypothesis: L3 — every routed operation's rules cross to the kernel, which
 ///   admits the corpus's operations and refuses a forged pair.
-/// - witness: `operation::tests::an_operations_rules_read_in_pre_order_over_module_positions`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operations_rules_read_in_pre_order_over_module_positions`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|rule| !rule.left().is_empty() && !rule.right().is_empty()))]
 fn read_rule(
     (lhs, rhs): (&FreeTerm, &FreeTerm),
@@ -650,8 +648,8 @@ fn read_rule(
 /// - hypothesis: L3 — each port's family is found by its sort's name, so a
 ///   two-output operation returns a two-component tuple; a port at an indexed
 ///   family's index routes nothing.
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
-/// - witness: `operation::tests::an_operation_at_an_index_routes_nothing_2940`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operation_at_an_index_routes_nothing_2940`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|found| found.len() == ports.len()))]
 fn families(
     ports: &[SortRef],
@@ -688,7 +686,7 @@ fn families(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`plan_operation`].
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
 #[spec(
     captures: before = (nodes.len(), work.len()),
     ensures: |ret| ret.is_err() || (nodes.len() >= before.0 && work.len() >= before.1),
@@ -813,7 +811,7 @@ fn switch<'face>(
 /// # Adequacy
 /// - hypothesis: L3 — each written constructor resolves to its table entry, so
 ///   the tree's cases switch on the right family.
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().ok() == table.constructors.get(name))]
 fn constructor(
     table: &RouteTable,
@@ -844,7 +842,7 @@ fn constructor(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`plan_operation`].
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
 #[spec(ensures: |ret| ret.as_ref().is_err() || matches!(ret.as_ref(), Ok(PlanNode::Leaf { depth: at, .. }) if *at == depth))]
 fn leaf(
     row: &Row<'_>,
@@ -918,8 +916,8 @@ enum Rooted
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`plan_operation`].
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
-/// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::an_operation_calling_a_later_one_is_not_callable`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|planned| matches!(planned.last(), Some(Step::Return | Step::Deliver(_) | Step::Tail { .. }))))]
 fn steps(
     rhs: TermNode<'_>,
@@ -1124,9 +1122,10 @@ impl Mint<'_>
 /// # Adequacy
 /// - hypothesis: L3 — the function checks, and a leaf returns its results in
 ///   port order, which swapped or dropped results would not.
-/// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
-/// - witness: `operation::tests::a_call_reaches_the_operation_before_a_builtin_of_its_name`
-/// - witness: `operation::tests::a_leaf_delivers_its_results_in_port_order`
+/// - witness: `gandr-surface-lowering::tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `gandr-surface-lowering::tests::operation::a_call_reaches_the_operation_before_a_builtin_of_its_name`
+/// - witness: `gandr-surface-lowering::tests::operation::a_leaf_delivers_its_results_in_port_order`
+#[inline]
 pub fn mint_operation(
     plan: &OperationPlan,
     arena: &mut CoreArena,
@@ -1259,7 +1258,7 @@ enum Ending
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`mint_operation`].
-/// - witness: `operation::tests::a_leaf_delivers_its_results_in_port_order`
+/// - witness: `gandr-surface-lowering::tests::operation::a_leaf_delivers_its_results_in_port_order`
 fn leaf_body(
     mint: &mut Mint<'_>,
     depth: Depth,
@@ -1347,7 +1346,7 @@ fn leaf_body(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`mint_operation`].
-/// - witness: `operation::tests::a_call_reaches_the_operation_before_a_builtin_of_its_name`
+/// - witness: `gandr-surface-lowering::tests::operation::a_call_reaches_the_operation_before_a_builtin_of_its_name`
 fn call(
     mint: &mut Mint<'_>,
     built: &[Built],
@@ -1387,7 +1386,7 @@ fn call(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`mint_operation`].
-/// - witness: `operation::tests::a_leaf_delivers_its_results_in_port_order`
+/// - witness: `gandr-surface-lowering::tests::operation::a_leaf_delivers_its_results_in_port_order`
 fn built_value(
     mint: &mut Mint<'_>,
     built: &[Built],

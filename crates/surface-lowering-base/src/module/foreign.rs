@@ -107,8 +107,8 @@ const WIDTHS: [IntegerWidth; 4] = [
 /// # Adequacy
 /// - hypothesis: L3 — a block of two members declares both, in order, and a
 ///   member written twice is refused at the second.
-/// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-/// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForeignInterface
 {
@@ -267,8 +267,8 @@ impl Interfaces
     /// # Adequacy
     /// - hypothesis: L3 — a block over a fresh name, and a second block over
     ///   one name.
-    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(ensures: |ref ret| ret.as_ref().ok().is_none_or(|block|
         matches!(self.named(source, &block.name), Some(&Provider::Block(ref held)) if Arc::ptr_eq(held, block))))]
     pub(super) fn declare(
@@ -309,8 +309,8 @@ impl Interfaces
     /// # Adequacy
     /// - hypothesis: L3 — a row and a call in a block's source read its
     ///   interface, and a scope handling `Proc` reads the host's.
-    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-    /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
     #[spec(ensures: |ret| ret.is_none_or(|found| match *found {
         Provider::Block(ref block) => block.name == *name,
         Provider::Host => INTERFACES.contains(&name.as_ref()),
@@ -328,7 +328,8 @@ impl Interfaces
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn blocks(
+    #[inline]
+    pub fn blocks(
         &self,
         source: SourceIndex,
     ) -> impl Iterator<Item = &Arc<ForeignInterface>>
@@ -366,13 +367,15 @@ impl Collected<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a row naming `std.io.Console.Eff` reads it in a
     ///   source importing `std.io` and reads none in a source that does not.
-    /// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
     ///
     /// # Clause cost
     /// - bound: one lookup of the source's blocks, then [`Self::reaches`]: no
     ///   more steps than the source writes imports.
+    #[inline]
     #[spec(ensures: |ret| ret.is_none_or(|found| matches!(*found, Provider::Block(_)) || self.reaches(at, name).0))]
-    pub(crate) fn interface(
+    #[must_use]
+    pub fn interface(
         &self,
         at: ByteOffset,
         name: &EffectName,
@@ -402,12 +405,14 @@ impl Collected<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a source importing `std.io` reaches the console, one
     ///   importing nothing does not, and `std.io` itself does.
-    /// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
     ///
     /// # Clause cost
     /// - bound: walks the imports the source writes once, and compares one
     ///   module path with each: no more steps than the source has imports.
-    pub(crate) fn reaches(
+    #[inline]
+    #[must_use]
+    pub fn reaches(
         &self,
         at: ByteOffset,
         name: &EffectName,
@@ -439,8 +444,9 @@ impl Collected<'_>
     /// # Adequacy
     /// - hypothesis: L3 — an import of `std.io` a row reads the console through
     ///   is among the reached imports, and an import of `std.fs` is not.
-    /// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
-    pub(crate) fn reach_host(
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    #[inline]
+    pub fn reach_host(
         &mut self,
         at: ByteOffset,
         name: &EffectName,
@@ -512,8 +518,8 @@ impl<'source> Collector<'_, 'source>
     ///   block is left to its refusal; a member taking `Integer`, a `type`
     ///   member, a member with no result and a second block of one name are
     ///   each refused at the piece.
-    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ref ret| self.collected.slots.len() == before
@@ -544,7 +550,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::foreign`].
-    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(ensures: |ref ret| match *ret {
         Foreign::Declared(ref interface) => matches!(self.collected.interface(block.span.start(), &interface.name), Some(&Provider::Block(ref held)) if Arc::ptr_eq(held, interface)),
         Foreign::Other | Foreign::Refused(_) => true,
@@ -599,7 +605,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::foreign`].
-    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|interface| interface.operations.iter().enumerate().all(|(at, operation)| interface.operations.iter().skip(at.saturating_add(1)).all(|later| later.name != operation.name))))]
     fn interface(
         &self,
@@ -682,7 +688,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::foreign`].
-    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(ensures: |ref ret| ret.as_ref().is_ok() || matches!(*ret, Err(LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::MalformedForm { .. })))]
     fn operation(
         &self,
@@ -763,7 +769,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `u32` and `u64` are read, and `Integer` is refused at
     ///   its bytes.
-    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ty| WIDTHS.contains(&ty.width)))]
     fn width(
         &self,
@@ -804,7 +810,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a block carrying `boundary` takes one slot holding
     ///   its attributes; a block carrying another attribute takes none.
-    /// - witness: `lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
+    /// - witness: `gandr-surface-lowering::lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: |ret| self.collected.by_name.len() == before.1
