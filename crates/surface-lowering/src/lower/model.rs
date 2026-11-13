@@ -108,6 +108,7 @@ use super::closed;
 use super::exhausted;
 use super::exits;
 use super::lowered;
+use super::native::Native;
 use super::native::NativeRef;
 use crate::by_form::FormStretch;
 use crate::error::AscriptionForm;
@@ -617,7 +618,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut node = defined;
         loop {
-            let Maybe::Present(form) = self.unwrapped(node)?
+            let Maybe::Present(form) = Native::new(self).unwrapped(node)?
             else {
                 return Ok(Reading::ValueType(frame));
             };

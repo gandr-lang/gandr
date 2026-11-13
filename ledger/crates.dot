@@ -86,6 +86,7 @@ digraph crates {
     "surface-layout";
     "surface-lowering";
     "surface-lowering-base";
+    "surface-lowering-native";
     "surface-lsp";
     "surface-lsp-base";
     "surface-lsp-core";
@@ -323,6 +324,7 @@ digraph crates {
   "surface-lowering" -> "kernel-term";
   "surface-lowering" -> "surface-grammar";
   "surface-lowering" -> "surface-lowering-base";
+  "surface-lowering" -> "surface-lowering-native";
   "surface-lowering" -> "surface-syntax";
   "surface-lowering" -> "theory-cell-complexes";
   "surface-lowering" -> "theory-circuit-algebras";
@@ -345,6 +347,12 @@ digraph crates {
   "surface-lowering-base" -> "theory-shapes";
   "surface-lowering-base" -> "theory-spec-combinators";
   "surface-lowering-base" -> "theory-stone-duality";
+  "surface-lowering-native" -> "core-term";
+  "surface-lowering-native" -> "kernel-strata";
+  "surface-lowering-native" -> "kernel-term";
+  "surface-lowering-native" -> "surface-lowering-base";
+  "surface-lowering-native" -> "surface-syntax";
+  "surface-lowering-native" -> "theory-levitation";
   "surface-lsp" -> "core-fork";
   "surface-lsp" -> "core-incremental";
   "surface-lsp" -> "kernel-term";

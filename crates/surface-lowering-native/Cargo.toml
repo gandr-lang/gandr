@@ -1,0 +1,32 @@
+[package]
+name = "gandr-surface-lowering-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The native family of gandr's lowering: a data family where a type is read, a constructor applied to its fields, a data declaration's signature, and a match compiled to native eliminations, over the lowering's base crate"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "lowering", "no-std", "pattern-matching"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The pinned anodized facade supplies the executable specifications. The base
+# crate holds the lowering's context, the records that the families share and
+# the `Families` trait, through which this family reads the context and calls
+# the other families. The kernel and core crates name the terms the family
+# mints, the levitation crate the theory's constructors and a declaration's
+# polarity, and the syntax crate the tree it reads.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-levitation.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

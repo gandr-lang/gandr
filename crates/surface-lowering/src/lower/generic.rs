@@ -257,6 +257,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::generic_head`].
     /// - witness: `lower::generic::tests::a_derived_law_lowers_to_its_proof_2302`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn linked_selection(
         &mut self,
         site: Site,

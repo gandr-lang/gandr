@@ -3210,6 +3210,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::mark_copies','
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::record_copies','function','Records the origin of every node minted since a mark, each its source''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::value_origin','function','Gives a value''s origin through the copies a rewrite made, or a fallback.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::value_type_origin','function','Gives a value type''s origin through the copies a rewrite made, or a fallback.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::families::Families','trait','Names the host that holds the lowering''s context and answers each call that one family makes into another.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::generic::Derivation','enum','Names what a definition written as the derivation''s call derives.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::generic::Requested','struct','Holds one definition written `Eq.generic(T)`, `Eq.generic.refl(T)` or `Eq.generic.sym(T)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::identity::BACK','constant','Holds the inverse''s spelling, of a path and of a loop''s letter.',NULL,'fits','sound',NULL);

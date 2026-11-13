@@ -119,8 +119,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax bikeshed — the row entry's spelling.
 - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: § methods-desugaring — a receiver no hold holds is a value, and an index of one holds it for its read.
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
-- `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: a decode carries no stage.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The module pass reads nothing of the lowering's context, so it compiles in the base, and this crate reads it there.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.

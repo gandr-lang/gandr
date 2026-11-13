@@ -91,7 +91,7 @@
 //!   staging is read off the written list and counted over the merged telescope
 //!   ([`Lowerer::merged_staging`]), and its recursive call omits each implicit:
 //!   one before the fixpoint is the function's own, one past it a hole the call
-//!   nominates ([`Lowerer::omitted_entries`]).
+//!   nominates (`Native::omitted_entries`).
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -512,6 +512,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::model_slot`].
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|&(_, ref slot)| !slot.components().is_empty())))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn implicit_slot(
         &mut self,
         site: Site,
@@ -533,7 +537,7 @@ impl<'source> Lowerer<'_, 'source>
     /// written parameter list, which a recursive call's arguments follow.
     ///
     /// # Specification
-    /// - requires: `written` is [`Self::staged_by_body`]'s staging over the
+    /// - requires: `written` is `Native::staged_by_body`'s staging over the
     ///   function's explicit parameters, in written order.
     /// - ensures: for a function with a merged telescope, `staged` is the place
     ///   the explicit parameter `written.staged` binds at, and `kept` the place
@@ -762,6 +766,10 @@ impl<'source> Lowerer<'_, 'source>
             Ok(arity::Planned(false)) => self.cx.operands.mark() == start,
             Err(_) => true,
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     pub(super) fn supplied_value(
         &mut self,
@@ -1443,6 +1451,10 @@ impl<'source> Lowerer<'_, 'source>
         captures: before = self.cx.operands.entries().len(),
         ensures: |ret| ret.is_err() || self.cx.operands.entries().len() == before.saturating_add(slot.components().len()),
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn pass_model(
         &mut self,
         site: Site,
@@ -1601,6 +1613,10 @@ impl<'source> Lowerer<'_, 'source>
                 && self.cx.nominations.get(&hole) == Some(&nomination),
             Err(_) => self.cx.nominations.len() == before,
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     pub(super) fn nominate(
         &mut self,

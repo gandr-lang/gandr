@@ -23,7 +23,8 @@ use super::ArmAt;
 use super::CaseForm;
 use super::CaseIndex;
 use super::Depth;
-use super::Lowerer;
+use super::Families;
+use super::Native;
 use super::Over;
 use super::ParameterAt;
 use super::PatternAt;
@@ -68,17 +69,17 @@ use crate::unbuilt::Unbuilt;
 ///   run.
 /// - ensures: one domain per column, left to right, each the type of the
 ///   parameter at the same place of `parameters`.
-/// - provides: what [`Lowerer::clauses`] compiles its rows against.
+/// - provides: what `Lowerer::clauses` compiles its rows against.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
 /// - executable: none — the parameter store is not retained; `columns` and
 ///   `clauses` interpret the coordinates.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::columns`].
-/// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
+/// - hypothesis: L3 — as `Lowerer::columns`.
+/// - witness: `gandr-surface-lowering::lower::native::tests::clauses_match_one_column_per_arrow`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct Columns
+pub struct Columns
 {
     /// The stated type, `(A, …) => C`.
     pub stated: NodeIndex,
@@ -90,7 +91,7 @@ pub(in crate::lower) struct Columns
     pub parameters: FormStretch,
 }
 
-impl<'source> Lowerer<'_, 'source>
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
 {
     /// Read a clause tail's stated type, `: (A, …) -> C where`, under `frame`,
     /// and bind one parameter per column.
@@ -99,7 +100,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `cursor` stands at the tail's `:`, after every written
     ///   parameter and the function's own name bound.
     /// - ensures: a box `(A1, …, An) -> C`, or its bridge spelling with `=>`,
-    ///   as [`Self::boxes`] reads one, gives `n` columns at `A1` to `An`, each
+    ///   as `Self::boxes` reads one, gives `n` columns at `A1` to `An`, each
     ///   read as a value type under `frame` and bound as an unnamed parameter
     ///   in a frame extending the one before it, and `C` is read as the result
     ///   under `frame`; any other type gives no column and is itself the
@@ -115,14 +116,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two columns over `Nat` lower to two lambdas whose
     ///   arrows are the stated type's.
-    /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
-    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::clauses_match_one_column_per_arrow`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(
         captures: before = self.cx().parameters.mark(),
         ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters == self.cx().parameters.since(before)
             && columns.domains.len() == self.cx().parameters.read(columns.parameters).len()),
     )]
-    pub(in crate::lower) fn columns(
+    #[inline]
+    pub fn columns(
         &mut self,
         function: Site,
         cursor: &mut Cursor<'_>,
@@ -204,13 +206,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — clauses over two columns compile to a switch on the
     ///   column their patterns test, and a clause of one pattern too many is
     ///   refused at it.
-    /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
-    /// - witness: `lower::native::tests::a_clause_of_too_many_patterns_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::clauses_match_one_column_per_arrow`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_clause_of_too_many_patterns_is_refused`
     #[spec(
         captures: before = self.cx().cases.mark(),
         ensures: |ret| ret.as_ref().map_or(true, |&index| self.cx().cases.position(index) == Some(before) && self.cx().cases.mark() == before.next()),
     )]
-    pub(in crate::lower) fn clauses(
+    #[inline]
+    pub fn clauses(
         &mut self,
         function: Site,
         cursor: &mut Cursor<'_>,
@@ -266,7 +269,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the columns are as many as the first clause's patterns; each
     ///   column takes the domain of the next arrow its position answers, and
     ///   the bodies answer what is left past the last, as a lambda's binder and
-    ///   body take them ([`Self::arrow_of`]); a column no arrow answers is read
+    ///   body take them (`Self::arrow_of`); a column no arrow answers is read
     ///   untyped. The clauses compile as [`Self::clause_tree`] reads them,
     ///   under one lambda per column the tree mints itself, and the lambda is
     ///   planned as that tree.
@@ -281,9 +284,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a matching lambda over two columns lowers to two
     ///   lambdas over its tree.
-    /// - witness: `lower::native::tests::a_matching_lambda_binds_one_lambda_per_column`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_matching_lambda_binds_one_lambda_per_column`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Case(_))))]
-    pub(in crate::lower) fn matching_lambda(
+    #[inline]
+    pub fn matching_lambda(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
@@ -352,7 +356,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::clause_tree`].
-    /// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_guard_reads_its_clause_s_variables`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |written| written.clauses.iter().all(|clause| !clause.patterns.is_empty())))]
     fn written_clauses(
         site: Site,
@@ -411,8 +415,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::clauses`] and [`Self::matching_lambda`].
-    /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
-    /// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::clauses_match_one_column_per_arrow`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_guard_reads_its_clause_s_variables`
     #[spec(
         captures: before = self.cx().cases.mark(),
         ensures: |ret| ret.as_ref().map_or(true, |&index| self.cx().cases.position(index) == Some(before) && self.cx().cases.mark() == before.next()),

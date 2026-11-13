@@ -439,13 +439,13 @@ INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surfa
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering-base','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering','lower::capability','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering','lower::native','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering-native','lower::native','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-core','check::cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-term','cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kernel-core','check::cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kernel-term','cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','kernel-core','check::guard','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','surface-lowering','lower::native','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','surface-lowering-native','lower::native','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15b47-4304-793b-a542-d12afcf732a6','surface-lowering','lower::method','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
@@ -468,6 +468,7 @@ INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','core-
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','kernel-term','literal_identity','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-base','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-native','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-56f5-7082-acef-f7c1b85fc0a2','kernel-check-memo','overlay','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7','surface-grammar','mold','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5f59-7323-a77d-6f8114cedbba','core-checker-base','fill','lineage','f5c6fcb3d6e11921354cb06ce23eed12219e5134','2026-10-30','8fab72057caf7d961aa5f6b3ba9ab565e2f15c97');
@@ -610,9 +611,9 @@ INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surfa
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-dispatcher','manifold','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-dispatcher','typed','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-grammar','surface::term','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','lower::native','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering-base','module::functor','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering-base','module::path','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering-native','lower::native','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lsp-core','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-parser','mold','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-2ecf-7893-afda-f14010a8acbe','surface-dispatcher','typed','exemplar',NULL,NULL,NULL);

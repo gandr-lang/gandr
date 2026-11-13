@@ -64,15 +64,9 @@ pub use gandr_surface_lowering_base::lower::exits::InferredExit;
 pub(super) use gandr_surface_lowering_base::lower::exits::Leaves;
 pub(super) use gandr_surface_lowering_base::lower::exits::Rest;
 pub use gandr_surface_lowering_base::lower::exits::Returned;
-pub(super) use gandr_surface_lowering_base::lower::exits::comp_type_origin;
-pub(super) use gandr_surface_lowering_base::lower::exits::computation_origin;
 pub(super) use gandr_surface_lowering_base::lower::exits::found_or;
-pub(super) use gandr_surface_lowering_base::lower::exits::keep_case;
-pub(super) use gandr_surface_lowering_base::lower::exits::label_replaced;
 pub(super) use gandr_surface_lowering_base::lower::exits::mark_copies;
 pub(super) use gandr_surface_lowering_base::lower::exits::record_copies;
-pub(super) use gandr_surface_lowering_base::lower::exits::value_origin;
-pub(super) use gandr_surface_lowering_base::lower::exits::value_type_origin;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -655,6 +649,10 @@ impl<'source> Lowerer<'_, 'source>
             && self.cx.looping.contains(&inner) == before.4
             && self.cx.framed.contains(&inner) == before.5,
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn pass_paths(
         &mut self,
         outer: NodeIndex,
@@ -706,6 +704,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
     #[spec(ensures: |ret| ret.is_err() || (self.cx.exits.contains(&body.last) && self.cx.exitable.contains(&body.last)
         && self.cx.bodies.get(&body.last) == Some(&body.last)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn open_body(
         &mut self,
         site: super::Site,

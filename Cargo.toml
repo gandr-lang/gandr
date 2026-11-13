@@ -39,6 +39,7 @@ members = [
   "crates/surface-layout",
   "crates/surface-lowering",
   "crates/surface-lowering-base",
+  "crates/surface-lowering-native",
   "crates/surface-lsp",
   "crates/surface-lsp-base",
   "crates/surface-lsp-core",
@@ -175,6 +176,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
 # - surface-parser
@@ -503,6 +505,7 @@ path = "crates/core-session"
 # - surface-format
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-native
 # - surface-pretty
 # - surface-repl
 # - surface-session
@@ -570,6 +573,7 @@ default-features = false
 # - runtime-emitter
 # - surface-dispatcher
 # - surface-lowering
+# - surface-lowering-native
 # - surface-pretty
 # - surface-session (dev)
 [workspace.dependencies.gandr-kernel-strata]
@@ -596,6 +600,7 @@ path = "crates/kernel-strata"
 # - surface-dispatcher
 # - surface-format
 # - surface-lowering
+# - surface-lowering-native
 # - surface-pretty
 # - surface-repl (dev)
 # - surface-session
@@ -826,8 +831,17 @@ path = "crates/surface-lowering"
 # form stretches and the circuit readings that the lowering's families share.
 # consumers:
 # - surface-lowering
+# - surface-lowering-native
 [workspace.dependencies.gandr-surface-lowering-base]
 path = "crates/surface-lowering-base"
+
+# The native family of the lowering: data families, constructors, a data
+# declaration's signature and a match compiled to native eliminations, over
+# the lowering's base.
+# consumers:
+# - surface-lowering
+[workspace.dependencies.gandr-surface-lowering-native]
+path = "crates/surface-lowering-native"
 
 # The language server: diagnostics and semantic tokens over the Language
 # Server Protocol, each request rechecking the whole document; the engine
@@ -954,6 +968,7 @@ path = "crates/surface-session"
 # - surface-grammar
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
 # - surface-parser
@@ -1159,6 +1174,7 @@ default-features = false
 # - surface-dispatcher (dev)
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-native
 # - surface-pretty (dev)
 # - theory-computads
 # - theory-decomposition-spaces (dev)
@@ -1667,6 +1683,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
 # - surface-pretty

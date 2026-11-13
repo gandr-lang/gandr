@@ -88,6 +88,7 @@ pub mod cells;
 pub mod conditional;
 pub mod context;
 pub mod exits;
+pub mod families;
 pub mod generic;
 pub mod identity;
 pub mod implicit;
@@ -369,6 +370,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No signature type encloses the node.
             Unscoped,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a name resolves to nothing.
+    pub mod named {
+        /// Neither scope carries the name.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No enclosing binder and no earlier declaration is named so.
+            Unresolved,
         }
     }
 }

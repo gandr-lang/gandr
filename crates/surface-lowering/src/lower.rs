@@ -598,6 +598,7 @@ use gandr_surface_lowering_base::lower::delimited_list;
 use gandr_surface_lowering_base::lower::exhausted;
 use gandr_surface_lowering_base::lower::literal;
 pub use gandr_surface_lowering_base::lower::lowered;
+pub use gandr_surface_lowering_base::lower::named;
 use gandr_surface_lowering_base::lower::parse_literal;
 pub use gandr_surface_lowering_base::lower::recursion;
 pub use gandr_surface_lowering_base::lower::scoped;
@@ -684,6 +685,7 @@ use crate::import::Opening;
 use crate::import::Translation;
 use crate::layout::bracket_form;
 use crate::layout::misplaced;
+use crate::lower::native::Native;
 use crate::lower::native::NativeRef;
 use crate::module::BodyScope;
 use crate::module::Collected;
@@ -805,6 +807,8 @@ pub use exits::Exit;
 pub use exits::Explicitness;
 pub use exits::InferredExit;
 pub use exits::Returned;
+
+mod families;
 
 mod functor;
 
@@ -1070,18 +1074,6 @@ enum HeaderAt
     Closed,
     /// After the `->` that the result type follows.
     Arrow,
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a name resolves to nothing.
-    pub mod named {
-        /// Neither scope carries the name.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No enclosing binder and no earlier declaration is named so.
-            Unresolved,
-        }
-    }
 }
 
 quenchant_shape::reason_enum! {
@@ -1920,11 +1912,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         while self.refuse_unrepresented().0 {
             self.propagate_manifests();
         }
-        self.refuse_sibling_arities();
-        self.unjoin_refused();
+        Native::new(self).refuse_sibling_arities();
+        Native::new(self).unjoin_refused();
         self.mint_foreign(sink);
         self.mint(sink)?;
-        self.mint_joints(sink);
+        Native::new(self).mint_joints(sink);
         self.mint_abstracts(sink);
         self.mint_models(sink);
         self.match_signatures(sink);
@@ -1932,7 +1924,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_requirements(sink);
         self.check_families(sink);
         self.check_sorts();
-        self.mint_data(sink);
+        Native::new(self).mint_data(sink);
         self.mint_descriptions(sink)?;
         self.mint_presentations(sink)?;
         self.mint_operations(sink);
@@ -3472,6 +3464,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. }))
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn note_binder(
         &mut self,
         binder: Placed,
@@ -3519,7 +3515,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   unread. Every written payload is marked as one, whatever its form, and
     ///   every signature type's root with the type components it sees. A
     ///   definition both of whose halves are written is signed as
-    ///   [`Self::sign_definitions`] signs it.
+    ///   `Native::sign_definitions` signs it.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -3693,14 +3689,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 seeds.push((payload.node, Reading::Value(Frame::Outermost)));
             }
         }
-        self.seed_data(&mut seeds);
+        Native::new(self).seed_data(&mut seeds);
         self.seed_families(&mut seeds)?;
         for defined in members {
             let reading = self.member_reading(defined, Frame::Outermost)?;
             seeds.push((defined, reading));
         }
         self.seed_descriptions(&mut seeds)?;
-        self.sign_definitions()?;
+        Native::new(self).sign_definitions()?;
         for (position, reading) in seeds {
             self.read(position, reading);
         }
@@ -4632,7 +4628,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Force => self.keyed(site, cursor, TileName::FORCE),
             Former::Run => self.run(site, cursor),
             Former::Call => self.call(site, cursor),
-            Former::Case => self.case(site, cursor),
+            Former::Case => Native::new(self).case(site, cursor),
             Former::If => self.conditional(site, cursor),
             Former::Telescope => self.telescope(site, cursor),
             Former::List => self.list(site, cursor),
@@ -4666,7 +4662,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::StagedType => self.staged_type(site, cursor),
             Former::ModedType => self.moded_type(site, cursor),
             Former::Scope => self.capability_scope(site, pieces),
-            Former::Instantiation => self.instantiation(site, cursor),
+            Former::Instantiation => Native::new(self).instantiation(site, cursor),
             Former::SessionType => self.session_type(site),
             Former::Action | Former::Offer => self.session_action(site, cursor),
             Former::Access => self.access_form(site, pieces),
@@ -5632,6 +5628,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn require(
         &mut self,
         site: Site,
@@ -5814,6 +5814,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | _ => true,
                 }
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     fn resolve_name(
         &mut self,
@@ -6624,13 +6628,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.cx.name_at(site.at);
-        if let Maybe::Present(constructor) = self.named_constructor(site, name)? {
+        if let Maybe::Present(constructor) = Native::new(self).named_constructor(site, name)? {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.cx.operands.entries().len(),
                 end: self.cx.operands.entries().len(),
             };
-            return self.construct(site, constructor, none);
+            return Native::new(self).construct(site, constructor, none);
         }
         if let Maybe::Present(resolved) = self.resolve_name(site, site.reading.frame(), name)? {
             self.resolved(site.at.span, resolved);
@@ -6641,7 +6645,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     start: self.cx.operands.entries().len(),
                     end: self.cx.operands.entries().len(),
                 };
-                return self.family(site, constant, arity, none);
+                return Native::new(self).family(site, constant, arity, none);
             }
             if let Resolved::Declaration { constant, .. } = resolved
                 && let Maybe::Present(arity) = NativeRef::over(&self.cx).codata_family(constant)
@@ -6650,7 +6654,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     start: self.cx.operands.entries().len(),
                     end: self.cx.operands.entries().len(),
                 };
-                return self.codata_type(site, constant, arity, none);
+                return Native::new(self).codata_type(site, constant, arity, none);
             }
             let frame = self.require(site, Produced::Value)?;
             let plan = self.resolved_term(site, frame, resolved)?;
@@ -6761,6 +6765,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn resolved_term(
         &mut self,
         site: Site,
@@ -6807,6 +6815,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — as [`LoweredModule::resolutions`].
     /// - witness: `tests::scopes::a_refused_declaration_keeps_the_names_it_resolved_836`
     #[spec(captures: before = self.cx.resolutions.len(), ensures: self.cx.resolutions.len() <= before.saturating_add(1))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn resolved(
         &mut self,
         span: ByteSpan,
@@ -6839,6 +6851,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — as [`LoweredModule::resolutions`].
     /// - witness: `tests::scopes::a_refused_declaration_keeps_the_names_it_resolved_836`
     #[spec(captures: before = self.cx.resolutions.len(), ensures: self.cx.resolutions.len() <= before.saturating_add(1))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn constructed_at(
         &mut self,
         span: ByteSpan,
@@ -6880,6 +6896,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     } else {
         ret == Telescope::Signature && bool::from(self.cx.scope.mentioned(binder))
     })]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn name_in_type(
         &mut self,
         node: NodeIndex,
@@ -7284,14 +7304,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   answer its position states passed on; a comma list is read as a pair;
     ///   a labelled group as [`Self::labelled_outputs`] reads it; `()` ending a
     ///   body of no outputs returns none; `(e : T)` is read as
-    ///   [`Self::annotated`] reads it, adopting a constructor that takes `T` as
+    ///   `Native::annotated` reads it, adopting a constructor that takes `T` as
     ///   its classifier, or the value an ascription its position makes carries,
     ///   and otherwise planned as a value ascription, an injection among them,
     ///   its label read in the sum `T` states.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the annotation's refusal as
-    ///   [`Self::annotated`] states it, the empty-list refusal for `()`, which
+    ///   `Native::annotated` states it, the empty-list refusal for `()`, which
     ///   is never the unit, and the extra-operand refusal for a juxtaposition.
     /// - panics: none.
     ///
@@ -7332,7 +7352,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.pair(site, list);
         }
         if let Maybe::Present(_) = cursor.at(TileName::COLON) {
-            return self.annotated(site, run, cursor);
+            return Native::new(self).annotated(site, run, cursor);
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         if let Run::Empty(_) = run {
@@ -7658,7 +7678,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // the answer each returns.
         let (stated, answered) = self.stated_value(site)?;
         if let Some(stated) = stated
-            && let Maybe::Present(typed) = self.unwrapped(stated)?
+            && let Maybe::Present(typed) = Native::new(self).unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
                 self.cx.former(self.cx.name_at(head)) == Maybe::Present(TypeFormer::List)
@@ -7720,7 +7740,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         match answer.over {
             native::Over::Returning => Ok(Some(answer.node)),
-            native::Over::Written => match self.unwrapped(answer.node)? {
+            native::Over::Written => match Native::new(self).unwrapped(answer.node)? {
                 Maybe::Present(returner) if returner.former == Former::ReturnerType => {
                     match *returner.operands.as_slice() {
                         [returned] => Ok(Some(returned)),
@@ -7990,7 +8010,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   parameter, its binder written untyped, records its binder in
     ///   [`Context::argued_binders`](gandr_surface_lowering_base::lower::Context::argued_binders)
     ///   with the parameter and the arrow's domain (#3921). A matching lambda,
-    ///   `fun { | … }`, is [`Self::matching_lambda`]'s, and a lambda its
+    ///   `fun { | … }`, is `Native::matching_lambda`'s, and a lambda its
     ///   position reads as a type operator ([`Self::static_at`]) is
     ///   [`Self::static_lambda`]'s.
     /// - provides: the binder of the fragment.
@@ -8030,7 +8050,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut ahead = cursor.clone();
         let _keyword = ahead.tile(TileName::FUN);
         if let Maybe::Present(_) = ahead.at(TileName::BRACE_OPEN) {
-            return self.matching_lambda(site, cursor);
+            return Native::new(self).matching_lambda(site, cursor);
         }
         // A lambda standing where a static former is read is a type operator
         // (#4508).
@@ -8150,7 +8170,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   function space is answered, as for that space's arrows past no domain;
     ///   nothing for an unanswered position, an answer over a loop or a
     ///   returner, an alias with no domain left and any other type.
-    /// - fails: as [`Self::unwrapped`] and [`Self::alias_domains`].
+    /// - fails: as `Native::unwrapped` and [`Self::alias_domains`].
     /// - panics: none.
     ///
     /// # Errors
@@ -8208,7 +8228,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `answer` answers a lambda in term position.
     /// - ensures: as [`Self::answered_arrow`] for a position `answer` answers.
-    /// - fails: as [`Self::unwrapped`] and [`Self::alias_domains`].
+    /// - fails: as `Native::unwrapped` and [`Self::alias_domains`].
     /// - panics: none.
     ///
     /// # Errors
@@ -8222,6 +8242,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn arrow_of(
         &mut self,
         answer: native::Answer,
@@ -8232,7 +8256,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             native::Over::Valued { taken } => Some(taken),
             native::Over::Loop { .. } | native::Over::Returning => return Ok(None),
         };
-        let unwrapped = self.unwrapped(answer.node)?;
+        let unwrapped = Native::new(self).unwrapped(answer.node)?;
         let Maybe::Present(native::Unwrapped {
             node: written,
             former,
@@ -8354,7 +8378,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: each parameter binds in a frame extending the one before it,
     ///   left to right, with its type, when written, read as a value type under
     ///   the frame before it and recorded on the binder; a recursive tail
-    ///   stages the parameter [`Self::staged_by_body`] reads off its body and
+    ///   stages the parameter `Native::staged_by_body` reads off its body and
     ///   binds its own name in one more frame, between that parameter and the
     ///   ones before it — after its empty list when it has none — typed by the
     ///   declaration form so no telescope counts it, records the parameters
@@ -8497,7 +8521,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let mut decoded = Vec::with_capacity(types.len());
                 for ty in types {
                     decoded.push(match ty {
-                        Some(ty) => self.decodes(site, Frame::Outermost, ty)?,
+                        Some(ty) => Native::new(self).decodes(site, Frame::Outermost, ty)?,
                         None => native::Decoded(false),
                     });
                 }
@@ -8516,7 +8540,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                 }
                 else {
-                    self.staged_by_body(own, &joint, &names, &decoded, &roots)?
+                    Native::new(self).staged_by_body(own, &joint, &names, &decoded, &roots)?
                 };
                 Some(self.merged_staging(site, written)?)
             },
@@ -8608,7 +8632,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A clause tail binds one more parameter per column of its stated
         // type, after its own name.
         let columns = match cursor.at(TileName::COLON) {
-            Maybe::Present(_) => Some(self.columns(function, &mut cursor, frame)?),
+            Maybe::Present(_) => Some(Native::new(self).columns(function, &mut cursor, frame)?),
             Maybe::Absent(_) => None,
         };
         let recursion = own.bound;
@@ -8634,7 +8658,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if receiver == Some(ReceiverMode::Exclusive) {
                 return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
             }
-            let case = self.clauses(function, &mut cursor, frame, &columns, recursion)?;
+            let case =
+                Native::new(self).clauses(function, &mut cursor, frame, &columns, recursion)?;
             self.plan(
                 site,
                 Plan::Function(Function {
@@ -9569,7 +9594,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // `(e : T)`; a family of neither classifies its constructors alone.
         // With no stated type, a family with indices and no parameters gives
         // the constructor its generator's result (#5050).
-        let applied = match self.applied_constructor(statement, bound)? {
+        let applied = match Native::new(self).applied_constructor(statement, bound)? {
             Maybe::Present(constructor)
                 if NativeRef::over(&self.cx).classifies_alone(constructor)
                     == native::Alone(false) =>
@@ -9921,7 +9946,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let operand = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         if keyword != TileName::FORCE
-            && let Some((_, classifier)) = self.annotation(operand.node)?
+            && let Some((_, classifier)) = Native::new(self).annotation(operand.node)?
         {
             let _first = self.cx.ascribed.insert(operand.node, classifier);
         }
@@ -10082,7 +10107,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a call whose head is a constructor of a data family declared
     ///   strictly earlier is that constructor applied to the arguments as its
     ///   fields; one whose head is a multi-output constructor is the record of
-    ///   its ports over the arguments, as [`Self::ports`] plans it; a call
+    ///   its ports over the arguments, as `Native::ports` plans it; a call
     ///   whose head is `here`, `back` or `cong`, a name no binder and no
     ///   earlier declaration carries, is that identity operation over the
     ///   arguments; a call whose head selects an operation off a capability is
@@ -10185,7 +10210,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         if let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(constructor) = self.constructor_head(site, head)?
+            && let Maybe::Present(constructor) = Native::new(self).constructor_head(site, head)?
         {
             self.constructed_at(head.span, constructor);
             let _head = cursor.operands();
@@ -10195,12 +10220,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start,
                 end: self.cx.operands.entries().len(),
             };
-            return self.construct(site, constructor, fields);
+            return Native::new(self).construct(site, constructor, fields);
         }
         // A multi-output constructor with no output named is the record of
         // its ports.
         if let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(ported) = self.ported_head(site, head)?
+            && let Maybe::Present(ported) = Native::new(self).ported_head(site, head)?
         {
             let _head = cursor.operands();
             let start = self.cx.operands.entries().len();
@@ -10209,7 +10234,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start,
                 end: self.cx.operands.entries().len(),
             };
-            return self.ports(site, ported, fields);
+            return Native::new(self).ports(site, ported, fields);
         }
         // A call of a function returning a group of outputs, standing as one
         // value, is the record of its outputs.
@@ -10274,7 +10299,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Reading::Value(_) = site.reading
             && let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(family) = self.family_head(site, head)?
+            && let Maybe::Present(family) = Native::new(self).family_head(site, head)?
         {
             self.resolved(head.span, family);
             let _head = cursor.operands();
@@ -10321,7 +10346,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start,
                 end: self.cx.operands.entries().len(),
             };
-            self.omitted_entries(site, frame, head, omitted)?;
+            Native::new(self).omitted_entries(site, frame, head, omitted)?;
         }
         let written = Stretch {
             start,
@@ -10332,7 +10357,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 call: site,
                 arguments: self.cx.kept(written),
             });
-            let leading = self.leading_parameters(frame, head)?.0;
+            let leading = Native::new(self).leading_parameters(frame, head)?.0;
             Stretch {
                 start: written.start.saturating_add(leading).min(written.end),
                 end: written.end,
@@ -10348,7 +10373,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // its application among them, so its parameters pair with all of
         // them, and each is read: a type a later parameter takes from a
         // leading one names it as written.
-        self.parameters_classify(site, frame, head, written)?;
+        Native::new(self).parameters_classify(site, frame, head, written)?;
         self.read(head.node, Reading::Head(frame));
         for position in written.start .. written.end {
             if self
@@ -10388,7 +10413,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`Self::static_application`] plans it: a family's type, the decode of
     ///   a static application, or the unquote of a function's call. A descent
     ///   head `f[<]` ([`Self::descent_head`]) applied to the arguments is the
-    ///   unquote of its fixpoint's call, as [`Self::staged_descent`] plans it.
+    ///   unquote of its fixpoint's call, as `Native::staged_descent` plans it.
     ///   A head spelling a type former, `Path[.A = A](x, y)`, is that former as
     ///   [`Self::applied_head`] reads it. Any other head is refused by its
     ///   sort.
@@ -10438,7 +10463,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start,
                 end: self.cx.operands.entries().len(),
             };
-            return self.staged_descent(site, named, written);
+            return Native::new(self).staged_descent(site, named, written);
         }
         // A type former the expression grammar molds as a call, `Path[.A = A](x,
         // y)`, is the former the type grammar spells (#4508).
@@ -10701,11 +10726,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   float, `-0.5f64`, lowers back to that float; the infix `then` is the
     ///   composite of two paths, or of two flows where a flow is answered, as
     ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
-    ///   [`Self::cons`] plans it; `left |> right` plugs every output of `left`
+    ///   `Native::cons` plans it; `left |> right` plugs every output of `left`
     ///   into `right`, as [`Self::plug`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
-    ///   [`Self::cons`] does.
+    ///   `Native::cons` does.
     /// - panics: none.
     ///
     /// # Errors
@@ -10743,7 +10768,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ] = pieces.pieces.as_slice()
             && label == TileName::CONS
         {
-            return self.cons(site, letter, rest);
+            return Native::new(self).cons(site, letter, rest);
         }
         if let &[
             Piece::Operand(left),
@@ -10858,8 +10883,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: a selection `Family.Constructor` naming a constructor of a
     ///   family is that constructor, applied to no field, as
-    ///   [`Self::construct`] reads it; a selection `C(a, …).l` off a
-    ///   multi-output constructor is its port `l`, as [`Self::port`] reads it;
+    ///   `Native::construct` reads it; a selection `C(a, …).l` off a
+    ///   multi-output constructor is its port `l`, as `Native::port` reads it;
     ///   a selection by position projects the entry at that place of the type
     ///   written for its operand, or of the pair the operand is when no type is
     ///   written, as [`Self::positional`] reads it; a selection read as a
@@ -10868,7 +10893,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   whose written type is a type over labels projects the entry its label
     ///   names, as [`Self::selection`] reads it; a selection off a name whose
     ///   written type is a data family without indices reads the field its
-    ///   label names off every constructor, as [`Self::data_field`] reads it; a
+    ///   label names off every constructor, as `Native::data_field` reads it; a
     ///   selection off a flattened model implicit is the parameter of the
     ///   component it names, as [`Self::flattened_member`] reads it; a
     ///   selection off a value no written type states, a chain of selections
@@ -10953,16 +10978,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.sub_record(site, pieces);
         }
         // `Family.Constructor` names a constructor of the family.
-        if let Maybe::Present(constructor) = self.selected_constructor(site, site.at)? {
+        if let Maybe::Present(constructor) =
+            Native::new(self).selected_constructor(site, site.at)?
+        {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.cx.operands.entries().len(),
                 end: self.cx.operands.entries().len(),
             };
-            return self.construct(site, constructor, none);
+            return Native::new(self).construct(site, constructor, none);
         }
         // `C(a, …).l` names the port `l` of the multi-output constructor `C`.
-        if self.port(site, pieces)? == arity::Planned(true) {
+        if Native::new(self).port(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         // `f(a, …).l` selects the output `l` of a call returning a group.
@@ -10983,7 +11010,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if self.model_member(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.data_field(site, pieces)? == arity::Planned(true) {
+        if Native::new(self).data_field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         let (head, selected) = Context::link(site, &pieces.pieces, site.at.span)?;
@@ -11004,12 +11031,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Resolved::Declaration { constant, .. } = resolved
                 && let Maybe::Present(arity) = NativeRef::over(&self.cx).data_family(constant)
             {
-                return self.family(site, constant, arity, none);
+                return Native::new(self).family(site, constant, arity, none);
             }
             if let Resolved::Declaration { constant, .. } = resolved
                 && let Maybe::Present(arity) = NativeRef::over(&self.cx).codata_family(constant)
             {
-                return self.codata_type(site, constant, arity, none);
+                return Native::new(self).codata_type(site, constant, arity, none);
             }
             let frame = self.require(site, Produced::Value)?;
             let plan = self.resolved_term(site, frame, resolved)?;
@@ -11434,14 +11461,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let name = self.cx.name_at(site.at);
         if let Reading::Value(_) = site.reading
-            && let Maybe::Present(constructor) = self.named_constructor(site, name)?
+            && let Maybe::Present(constructor) = Native::new(self).named_constructor(site, name)?
         {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.cx.operands.entries().len(),
                 end: self.cx.operands.entries().len(),
             };
-            return self.construct(site, constructor, none);
+            return Native::new(self).construct(site, constructor, none);
         }
         if let Maybe::Present(stated) = self.stated_named(site, name)? {
             return self.stated_type(site, stated);
@@ -12210,7 +12237,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `path` resolves to a module's value component; `applied` is
     ///   a stretch of the operand store when present.
     /// - ensures: the family over the arguments, none when the path writes
-    ///   none, as [`Self::family`] reads it, when the component is a data
+    ///   none, as `Native::family` reads it, when the component is a data
     ///   family declared strictly before the declaration `site` belongs to.
     ///   Where a value is read, an unapplied component that is no data family
     ///   is its value, as [`Self::component_value`] reads it (#6174).
@@ -12220,7 +12247,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declared at or after the referring declaration; the export refusal of
     ///   a component its source keeps private; the family's own refusals.
     /// - panics: none.
-    /// - executable: none — the plan is the family's, which [`Self::family`]
+    /// - executable: none — the plan is the family's, which `Native::family`
     ///   makes and its own predicate checks.
     ///
     /// # Errors
@@ -12277,7 +12304,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start: self.cx.operands.entries().len(),
             end: self.cx.operands.entries().len(),
         };
-        self.family(site, constant, arity, applied.unwrap_or(none))
+        Native::new(self).family(site, constant, arity, applied.unwrap_or(none))
     }
 
     /// Read the module component at the slot `exported`, which a path through
@@ -12778,7 +12805,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   as [`Self::carried_path`] plans it. An application standing where a
     ///   value is read — an argument of a type-position call — whose head names
     ///   a constructor of a data family declared strictly earlier stands as
-    ///   that constructor applied to the arguments, as [`Self::construct`]
+    ///   that constructor applied to the arguments, as `Native::construct`
     ///   plans it. Otherwise a head naming a type family, as a component or a
     ///   member, expands to the family's type over the arguments; a head naming
     ///   a codata family stands as that family's computation type over the
@@ -12840,7 +12867,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let name = self.cx.name_at(head);
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
-            return self.staged_unquote(site, name, cursor);
+            return Native::new(self).staged_unquote(site, name, cursor);
         }
         let start = self.cx.operands.entries().len();
         // A second list applies the call's result once more, `f(a)(b)`
@@ -12873,7 +12900,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .first()
             .map(|&(sort, _)| site.fault(sort.span, FormFault::MisplacedTile));
         if let (Ok(()), Reading::Value(_)) = (read, site.reading)
-            && let Maybe::Present(constructor) = self
+            && let Maybe::Present(constructor) = Native::new(self)
                 .named_constructor(site, name)
                 .inspect_err(|_| self.cx.operands.truncate(At::from(start)))?
         {
@@ -12881,7 +12908,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.cx.operands.truncate(At::from(start));
                 return Err(refusal);
             }
-            return self.construct(site, constructor, applied);
+            return Native::new(self).construct(site, constructor, applied);
         }
         match read.and_then(|()| self.stated_named(site, name)) {
             Ok(Maybe::Present(TypeComponent {
@@ -12954,7 +12981,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`Self::relation_of`] plans, one named `Model` and applied to one the
     ///   bundled record [`Self::model_type`] plans with its manifest sorts, one
     ///   named `Terms` and applied to one the theory's terms
-    ///   [`Self::terms_type`] plans; any other head applied to one argument
+    ///   `Native::terms_type` plans; any other head applied to one argument
     ///   resolves against the unary table, stands at the sort its former
     ///   produces, reads its argument at the sort the former takes, and is
     ///   planned over it.
@@ -13026,7 +13053,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let (Some(argument), 1_usize) = (first, count)
             && name.as_ref() == TERMS
         {
-            return self.terms_type(site, argument);
+            return Native::new(self).terms_type(site, argument);
         }
         let path_shaped = [TileName::PATH, TileName::BRIDGE, TileName::FLOW_TYPE]
             .into_iter()
@@ -13101,6 +13128,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Present(ambient) => ret == Maybe::Present(ambient),
             | Maybe::Absent(_) => true,
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     pub(crate) fn atom(
         &self,
@@ -13236,7 +13267,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if !spelled {
             return Ok(unformed);
         }
-        if let Maybe::Present(_constructor) = self.constructor_named(site, name) {
+        if let Maybe::Present(_constructor) = Native::new(self).constructor_named(site, name) {
             return Ok(unformed);
         }
         let named = Site { at: head, ..site };
@@ -13378,7 +13409,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let name = self.cx.name_at(head);
         if let Reading::Value(_) = site.reading
-            && let Maybe::Present(_) = self.constructor_named(site, name)
+            && let Maybe::Present(_) = Native::new(self).constructor_named(site, name)
         {
             return other;
         }
@@ -13527,13 +13558,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Resolved::Declaration { constant, .. } = resolved
             && let Maybe::Present(arity) = NativeRef::over(&self.cx).data_family(constant)
         {
-            return self.family(site, constant, arity, applied);
+            return Native::new(self).family(site, constant, arity, applied);
         }
         if again.is_none()
             && let Resolved::Declaration { constant, .. } = resolved
             && let Maybe::Present(arity) = NativeRef::over(&self.cx).codata_family(constant)
         {
-            return self.codata_type(site, constant, arity, applied);
+            return Native::new(self).codata_type(site, constant, arity, applied);
         }
         let from = site.reading.frame();
         let declared = match resolved {
@@ -14191,6 +14222,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::form::writes_box`].
     /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn boxes(
         &mut self,
         at: NodeIndex,
@@ -14642,6 +14677,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         captures: before = self.cx.operands.entries().len(),
         ensures: |ret| ret.is_err() || self.cx.operands.entries().len() >= before,
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn domains(
         &mut self,
         domain: Placed,
@@ -14707,7 +14746,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   parameter's written type, is a static arrow `K -> J`
     ///   ([`Self::static_arrow`]); `None` for any other lambda, one a thunked
     ///   arrow or the alias answers among them.
-    /// - fails: as [`Self::unwrapped`].
+    /// - fails: as `Native::unwrapped`.
     /// - panics: none.
     ///
     /// # Errors
@@ -14749,7 +14788,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`crate::form::writes_box`] does not read as a box; nothing for any
     ///   other form, a thunked arrow `+U (A -> -F B)` and the box `A -> B`
     ///   among them.
-    /// - fails: as [`Self::unwrapped`].
+    /// - fails: as `Native::unwrapped`.
     /// - panics: none.
     ///
     /// # Errors
@@ -14770,7 +14809,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             former: Former::ArrowType,
             ref operands,
             ..
-        }) = self.unwrapped(classifier)?
+        }) = Native::new(self).unwrapped(classifier)?
         else {
             return Ok(None);
         };
@@ -14794,17 +14833,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `arguments` holds positions of the operand store, the call's
     ///   arguments from left to right, its first list's before its second's.
     /// - ensures: an argument written as a telescope type, bare or inside
-    ///   parentheses as [`Self::written_telescope`] reads it, joins
+    ///   parentheses as `Native::written_telescope` reads it, joins
     ///   [`Context::valued_telescopes`](gandr_surface_lowering_base::lower::Context::valued_telescopes)
     ///   with the parameter's written type when that type holds a value, as
-    ///   [`Self::held_at`] reads it. The parameters are, in order, those
+    ///   `Native::held_at` reads it. The parameters are, in order, those
     ///   [`Self::listed_parameters`] reads and then the domains of each arrow
     ///   of the type after them. An argument past the parameters the walk
     ///   reads, or at a parameter written with no type, stays as it is. No walk
     ///   runs when no argument is a telescope type or a parenthesised type.
     /// - provides: the reading of a telescope type written as an argument of a
     ///   call in a type.
-    /// - fails: as [`Self::unwrapped`].
+    /// - fails: as `Native::unwrapped`.
     /// - panics: none.
     ///
     /// # Errors
@@ -14870,7 +14909,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         former: Former::ArrowType,
                         operands,
                         ..
-                    }) = self.unwrapped(arrow)?
+                    }) = Native::new(self).unwrapped(arrow)?
                     else {
                         break;
                     };
@@ -14889,9 +14928,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             if written(self, position)
                 && let Some(&argument) = self.cx.operands.entries().get(position)
-                && let Some(telescope) = self.written_telescope(argument)?
+                && let Some(telescope) = Native::new(self).written_telescope(argument)?
                 && let Some(parameter) = parameter
-                && let native::Holds::Value(stated) = self.held_at(parameter)?
+                && let native::Holds::Value(stated) = Native::new(self).held_at(parameter)?
             {
                 let _first = self.cx.valued_telescopes.insert(telescope, stated);
             }
@@ -15150,7 +15189,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of one labelled entry is the outputs, as [`Self::output_group`] reads
     ///   them; otherwise the one operand is read at the form's own reading and
     ///   adopted; where a value is read, a `:` after the operand makes the form
-    ///   the annotation of that operand, read as [`Self::annotated`] reads the
+    ///   the annotation of that operand, read as `Native::annotated` reads the
     ///   expression grammar's, so a type-valued call's argument takes the
     ///   spelling a path's endpoint takes.
     /// - provides: grouping in type position, a function's outputs, and the
@@ -15210,7 +15249,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if matches!(site.reading, Reading::Value(_))
             && let Maybe::Present(_) = cursor.at(TileName::COLON)
         {
-            return self.annotated(site, run, cursor);
+            return Native::new(self).annotated(site, run, cursor);
         }
         let inner = site.one(run)?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
@@ -15245,6 +15284,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .get(position)
                     .is_none_or(|held| *held == reading)
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     fn read(
         &mut self,
@@ -15289,6 +15332,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .is_none_or(|held| core::mem::discriminant(held) == before.1)
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn plan(
         &mut self,
         site: Site,
@@ -15325,6 +15372,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
     /// - witness: `lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
     /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn plan_applied(
         &mut self,
         site: Site,
@@ -15387,6 +15438,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             })
         })
     }))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn hole(
         &mut self,
         at: Placed,
@@ -15442,6 +15497,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     #[spec(ensures: |ret| self.cx.hole_groups.groups.len() > usize::from(block)
         && ret.0 == gandr_core_term::hole::HoleForm::from(self.cx.hole_groups.groups.get(usize::from(block)).map_or(u32::MAX, |&(number, _)| number)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn hole_group(
         &mut self,
         block: LayoutBlock,
@@ -19558,7 +19617,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     domains.get(usize::from(place)).copied()
                 },
                 (Maybe::Present(written), None) => match self.cx.value_type_at(written) {
-                    Maybe::Present(domain) => Some(Self::shared_domain(
+                    Maybe::Present(domain) => Some(Native::<Self>::shared_domain(
                         parameters.get(.. index).unwrap_or_default(),
                         parameter,
                         |named| bool::from(self.cx.scope.mentioned(named.frame)),
@@ -21743,7 +21802,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: the mint sweep has minted the annotation's type, if it
     ///   could.
     /// - ensures: `T` as minted, where `slot`'s definition is written and
-    ///   [`Self::sign_definitions`] recorded its annotation; the unminted
+    ///   `Native::sign_definitions` recorded its annotation; the unminted
     ///   absence otherwise.
     /// - fails: never.
     /// - panics: none.
