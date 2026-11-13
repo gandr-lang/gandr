@@ -273,6 +273,7 @@ pub use crate::persistence::persist;
 pub use crate::persistence::restore;
 pub use crate::persistence::restored;
 pub use crate::persistence::stored;
+pub use crate::persistence::traceless;
 pub use crate::region::Item;
 pub use crate::region::ItemKey;
 pub use crate::region::ItemSource;

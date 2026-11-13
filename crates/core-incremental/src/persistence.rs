@@ -414,6 +414,34 @@ pub trait CheckpointObserver
     )
     {
     }
+
+    /// Whether the observer holds the trace of the item whose content is
+    /// `key`: a traced pass adopts an item whose trace the observer holds,
+    /// and judges the others, so each item ends with a trace.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn held(
+        &self,
+        _key: crate::ContentKey,
+    ) -> Maybe<(), traceless::Absent>
+    {
+        Maybe::Absent(traceless::Absent::Unkept)
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an observer holds no trace of an item.
+    pub mod traceless {
+        /// The reason no trace is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The observer keeps no trace of the item's content.
+            Unkept,
+        }
+    }
 }
 
 /// Whether a checkpoint store keeps the sets it is handed.
