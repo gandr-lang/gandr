@@ -25,9 +25,14 @@
 //!   program its own source composes to, which it tells by the program's key;
 //!   one of any other program is unheld. Both hosts run one build of `gandr`,
 //!   whose focusing places each migration alike.
-//! - **A far run has no host.** A migration's body runs at the far host with no
-//!   console, network or bindings: one that performs an operation is
-//!   unanswered.
+//! - **A far run's host is the far host, attenuated to the world's row.** An
+//!   operation of a migration's body that no handler inside it answers goes to
+//!   the host that runs it, as an entry's operation goes, when its interface is
+//!   one the world's requirement row names: its console, network, reals and
+//!   entropy. Any other operation reaches no handler, and #3545 refuses it at
+//!   check. A nested migration goes where the host's own bindings bind its
+//!   world. Nothing of the caller's host crosses. A world's labels have no
+//!   handler yet (#6546).
 //! - **A far host fetches what it lacks.** A capture whose chunks it holds
 //!   whole is not fetched, and a fetch names every capture and answer the host
 //!   holds as held, so a second migration of an edited value carries only the
@@ -48,6 +53,7 @@ use alloc::vec::Vec;
 
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
+use gandr_core_term::effect::EffectRow;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_runtime_emitter::HostValues;
@@ -55,6 +61,7 @@ use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_emitter::crossing;
 use gandr_runtime_emitter::world;
+use gandr_runtime_emitter::world::Attenuated;
 use gandr_runtime_net::Answer;
 use gandr_runtime_net::Arrival;
 use gandr_runtime_net::Configuration;
@@ -67,9 +74,12 @@ use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::Worlds;
 
 use super::Machine;
+use super::entry::EntryHost;
+use super::reals::Reals;
 
 /// Decide the migration `request` offers, as a host holding `worlds` and the
 /// world names `names` decides it, shipping it on `net` when its world is
@@ -159,14 +169,19 @@ impl Machine<'_, '_>
     /// - requires: `worlds` holds the key of the text this program was composed
     ///   from.
     /// - ensures: each migration answered: run here, its captures fetched over
-    ///   its connection unless held whole, and its answer committed to `net`'s
-    ///   chunks, printing `ran a migration at <world>, fetching <n> chunks`,
-    ///   `n` the chunks its captures' fetches carried; or refused, printing
-    ///   `refused a migration at <world>: <reason>` — unheld when its code
-    ///   names no migration of this program, unserved when no binding binds its
-    ///   world to `net`'s key or the migration names another world, unfetched
-    ///   when a capture does not reach this host, unanswered when its body
-    ///   answers no value that crosses.
+    ///   its connection unless held whole, each operation its body leaves
+    ///   unhandled whose interface its world's row names served as an entry's
+    ///   is — `Console.print` on `console`, `Net` on `net`, `Reals` under
+    ///   `profile` on tables the migration owns, `Rand` from the entropy source
+    ///   — and any other declined, a nested migration sent where `worlds` binds
+    ///   its world, and its answer committed to `net`'s chunks, printing, after
+    ///   each line the body printed, `ran a migration at <world>, fetching <n>
+    ///   chunks`, `n` the chunks its captures' fetches carried; or refused,
+    ///   printing `refused a migration at <world>: <reason>` — unheld when its
+    ///   code names no migration of this program, unserved when no binding
+    ///   binds its world to `net`'s key or the migration names another world,
+    ///   unfetched when a capture does not reach this host, unanswered when its
+    ///   body answers no value that crosses.
     /// - fails: never; a network fault ends the hosting as [`Hosted::Faulted`].
     /// - panics: none.
     /// - executable: none — the migrations are the askers', across the network.
@@ -175,14 +190,16 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — a host answers two migrations over captures it made
     ///   itself, fetching nothing; the host that takes its place fetches a list
     ///   whole, then only the chunks of its edit, and each prints a line for
-    ///   each migration.
+    ///   each migration; a host prints on its own console the line a
+    ///   migration's body prints.
     /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
+    /// - witness: `gandr-surface-driver::tests::net::two_processes_print_at_the_far_site_of_offers_3546`
     #[inline]
     pub fn host(
         &self,
         worlds: Worlds<'_>,
         net: &mut Net,
-        migrations: MigrationCount,
+        (migrations, profile): (MigrationCount, RealsProfile),
         console: &mut dyn Console,
     ) -> Hosted
     {
@@ -194,7 +211,12 @@ impl Machine<'_, '_>
                 Err(_fault) => return Hosted::Faulted { answered },
             };
             let mut fetched = ChunkCount::from(0_usize);
-            let answer = self.arrived(worlds, net, &arrival, (&mut held, &mut fetched));
+            let answer = self.arrived(
+                (worlds, &mut *net),
+                &arrival,
+                (&mut held, &mut fetched),
+                (&mut *console, profile),
+            );
             let line = match answer {
                 Answer::Answered(_) => format!(
                     "ran a migration at {}, fetching {} chunks",
@@ -219,16 +241,18 @@ impl Machine<'_, '_>
 
     /// Run `arrival` here, as [`Self::host`] answers it, keeping in `held`
     /// each capture and answer this host holds whole and adding to `fetched`
-    /// the chunks its captures' fetches carry.
+    /// the chunks its captures' fetches carry; the body's operations go to an
+    /// [`EntryHost`] over `console`, `net` and `worlds`, its reals under
+    /// `profile`, attenuated to the row of the migration's world.
     ///
     /// # Specification
     /// trivial.
     fn arrived(
         &self,
-        worlds: Worlds<'_>,
-        net: &mut Net,
+        (worlds, net): (Worlds<'_>, &mut Net),
         arrival: &Arrival,
         (held, fetched): (&mut Vec<ValueManifest>, &mut ChunkCount),
+        (console, profile): (&mut dyn Console, RealsProfile),
     ) -> Answer
     {
         let configuration = &arrival.configuration;
@@ -272,11 +296,26 @@ impl Machine<'_, '_>
         else {
             return Answer::Refused(Unmigrated::Unfetched);
         };
+        let unrequired = EffectRow::default();
+        let row = match world {
+            World::Declared(constant) => self.rows.get(&constant),
+            World::Host => None,
+        };
+        let mut entry = EntryHost {
+            console,
+            net: Some(&mut *net),
+            reals: Reals::new(profile),
+            worlds: Some((worlds, self.names.as_slice())),
+        };
         let answer = match world::arrive(
             (self.arena, self.definitions),
             (at, world),
             gandr_runtime_emitter::budget::bound(),
             (&mut store, &captures),
+            &mut Attenuated {
+                host: &mut entry,
+                row: row.unwrap_or(&unrequired),
+            },
         ) {
             Ok(answer) => answer,
             Err(why) => return Answer::Refused(why),

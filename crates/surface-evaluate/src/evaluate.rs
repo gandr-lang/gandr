@@ -2359,7 +2359,7 @@ pub trait Runs<'source>
         &mut self,
         worlds: Worlds<'_>,
         net: &mut Net,
-        migrations: MigrationCount,
+        hosting: (MigrationCount, RealsProfile),
         console: &mut dyn Console,
     ) -> Hosted;
 }
@@ -2521,11 +2521,11 @@ impl<'source> Runs<'source> for Program<'source>
         &mut self,
         worlds: Worlds<'_>,
         net: &mut Net,
-        migrations: MigrationCount,
+        hosting: (MigrationCount, RealsProfile),
         console: &mut dyn Console,
     ) -> Hosted
     {
-        Machine::new(self).host(worlds, net, migrations, console)
+        Machine::new(self).host(worlds, net, hosting, console)
     }
 }
 
@@ -2618,11 +2618,11 @@ impl gandr_surface_dispatcher::Engine for Evaluator
         program: &mut Program<'_>,
         worlds: Worlds<'_>,
         net: &mut Net,
-        migrations: MigrationCount,
+        hosting: (MigrationCount, RealsProfile),
         console: &mut dyn Console,
     ) -> Hosted
     {
-        Machine::new(program).host(worlds, net, migrations, console)
+        Machine::new(program).host(worlds, net, hosting, console)
     }
 }
 

@@ -1,7 +1,8 @@
 //! Two `gandr` processes on one host: one serving the ping exemplar and one
 //! pinging it over `Net`, and one hosting the migration model's far world and
 //! one running it, bound by flags and by the site and manifold they desugar
-//! from; and a host reading its site's secret by name.
+//! from; a migration that prints at the host serving its world; and a host
+//! reading its site's secret by name.
 
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
@@ -323,6 +324,91 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
     assert!(
         code == Some(2_i32) && refusal.contains("the manifold deploys"),
         "a run of a source the manifold does not deploy never runs, naming both: {refusal}"
+    );
+}
+
+/// #3546: a migration's print runs at the host that serves its world.
+/// `gandr host --site` of the offers model hosts `far`, whose row names the
+/// console, and `gandr run --manifold` ships it the migration. The host prints
+/// `far` on its own standard output before its line for the migration. The
+/// run exits 42 and prints nothing, because its print ran at `far`. The
+/// corpus files are laid in a scratch tree as the corpus holds them, the
+/// site's socket a free one.
+#[test]
+fn two_processes_print_at_the_far_site_of_offers_3546()
+{
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let read = |relative: &str| {
+        std::fs::read_to_string(corpus.join(relative)).expect("the corpus file reads")
+    };
+    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .and_then(|probe| probe.local_addr())
+        .expect("a free loopback port");
+    let scratch = Scratch::new(Path::new("net-offers-3546"));
+    let lay = |relative: &str, text: &str| scratch.file(Path::new(relative), Text::from(text));
+    lay(
+        "library/std/src/manifold.gandr",
+        &read("library/std/src/manifold.gandr"),
+    );
+    let model = lay(
+        "corpus/model/deployments/offers.gandr",
+        &read("corpus/model/deployments/offers.gandr"),
+    );
+    let site = lay(
+        "corpus/model/deployments/offers.site.gandr",
+        &read("corpus/model/deployments/offers.site.gandr")
+            .replace("127.0.0.1:7433", &socket.to_string()),
+    );
+    let manifold = lay(
+        "corpus/model/deployments/offers.manifold.gandr",
+        &read("corpus/model/deployments/offers.manifold.gandr"),
+    );
+    let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
+    let mut hosting = Command::new(env!("CARGO_BIN_EXE_gandr"));
+    hosting
+        .arg("host")
+        .arg("--site")
+        .arg(&site)
+        .arg("--manifold")
+        .arg(&manifold)
+        .arg("--migrations")
+        .arg("1")
+        .arg(&model)
+        .env("GANDR_SECRET_FAR", HOST_SECRET)
+        .env_remove("GANDR_NET_SECRET")
+        .env("XDG_CONFIG_HOME", &unconfigured)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut host = hosting.spawn().expect("the host starts");
+    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+        .arg("run")
+        .arg("--manifold")
+        .arg(&manifold)
+        .arg(&model)
+        .env("XDG_CONFIG_HOME", &unconfigured)
+        .output()
+        .expect("the runner runs");
+    if ran.status.code() != Some(42_i32) {
+        host.kill().expect("a failed run stops the host");
+    }
+    let hosted = host.wait_with_output().expect("the host ends");
+    assert_eq!(
+        (ran.status.code(), String::from_utf8_lossy(&ran.stdout)),
+        (Some(42_i32), "".into()),
+        "the run answers 42 and prints nothing itself: {}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(
+        (
+            hosted.status.code(),
+            String::from_utf8_lossy(&hosted.stdout)
+        ),
+        (
+            Some(0_i32),
+            "far\nran a migration at far, fetching 0 chunks\n".into()
+        ),
+        "the host prints the migration's line, then its own: {}",
+        String::from_utf8_lossy(&hosted.stderr)
     );
 }
 

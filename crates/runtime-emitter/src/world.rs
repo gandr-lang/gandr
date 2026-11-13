@@ -7,7 +7,7 @@
 //! through a chunk store of that crossing alone, committed then dereferenced
 //! ([`crate::crossing`]). A host that binds the world to another process runs
 //! the migration there instead ([`crate::HostHandler::migrate`]), and
-//! [`arrive`] runs one another host shipped here.
+//! [`arrive`] runs one another host shipped here, under this host's handler.
 //!
 //! # Boundaries
 //!
@@ -18,7 +18,9 @@
 //! - **The run's host answers the body.** An operation of the body that no
 //!   handler inside the body answers goes to the host of the caller's run, as
 //!   an operation of the caller goes. So a draw at a world takes the next bit
-//!   of the run's path (#5712).
+//!   of the run's path (#5712). A migration another host shipped here goes to
+//!   the handler of the host that runs it, and nothing of the caller's host
+//!   crosses (#3546).
 //! - **The budget is the caller's.** The body runs on the jumps that the
 //!   caller's run has left, under the same origin, so a divergent body stops.
 //!   The run does not charge back what the body spends.
@@ -54,6 +56,10 @@ use gandr_core_sequent::Definitions;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
+use gandr_core_term::effect::EffectLabel;
+use gandr_core_term::effect::EffectPresence;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::row::Label;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
@@ -68,12 +74,22 @@ use crate::crossing::commit;
 use crate::crossing::deref;
 use crate::lower::Lowered;
 use crate::lower::lower_suspended;
+use crate::run::Choice;
 use crate::run::Ran;
 use crate::run::RunInputs;
 use crate::run::Tier;
-use crate::run::by_policy;
+use crate::run::lowered_on_with_host;
 use crate::run::on_tier;
+use crate::seam::HostHandler;
+use crate::seam::HostOutcome;
+use crate::seam::HostReply;
+use crate::seam::HostRequest;
+use crate::seam::HostValues;
+use crate::seam::Migrated;
+use crate::seam::MigrationRequest;
 use crate::seam::Offer;
+use crate::seam::Spawning;
+use crate::seam::TaskOrder;
 
 /// The chunker's expected boundary events per cut a crossing in this process
 /// runs under: the constant the codec's own suite reads under.
@@ -155,24 +171,27 @@ pub(crate) fn migrate(
     }
 }
 
-/// Run here a migration another host shipped to `world`.
+/// Run here a migration another host shipped to `world`, under `host`.
 ///
 /// The migration at `at` of `arena`, closed over `captures`, values of
 /// `store`, runs on the tier the policy picks, and its answer is a value of
 /// `store`. `at` is the migration's place in the program that both hosts
-/// hold, and the caller reads the shipped captures into a fresh `store`.
+/// hold, and the caller reads the shipped captures into a fresh `store`. An
+/// operation of the body that no handler inside it answers goes to `host`,
+/// the host that runs it, never to the host that shipped it.
 /// [`Unmigrated`], of `gandr-core-term`, names why a migration runs nowhere.
 ///
 /// # Specification
 /// - requires: `captures` are the values the migration's body binds, in the
 ///   order its lowering binds them, as the shipping host gathered them.
 /// - ensures: on success, the value the body halts with over `store` within
-///   `budget`; nothing runs unless `at` is a migration to `world` whose body
-///   lowers closed over as many captures as `captures` holds.
+///   `budget`, each operation it leaves unhandled offered to `host`; nothing
+///   runs unless `at` is a migration to `world` whose body lowers closed over
+///   as many captures as `captures` holds.
 /// - fails: [`Unmigrated::Unheld`] when `at` is no migration or its body does
 ///   not lower over `captures`; [`Unmigrated::Unserved`] when it migrates to
-///   another world; [`Unmigrated::Unanswered`] when the run ends stuck, aborted
-///   or declined.
+///   another world; [`Unmigrated::Unanswered`] when the run ends stuck,
+///   declined or aborted by `host`.
 /// - panics: none.
 /// - executable: none — the answer is observed by running the body.
 ///
@@ -182,15 +201,21 @@ pub(crate) fn migrate(
 /// # Adequacy
 /// - hypothesis: L3 — a migration of `(x, y)` over two captures answers their
 ///   pair; the same command named at another world, a command that is no
-///   migration, and too few captures each refuse by name before anything runs.
+///   migration, and too few captures each refuse by name before anything runs;
+///   a draw in a shipped body takes the reply of the host that runs it, and a
+///   host that declines it leaves the migration unanswered.
 /// - witness: `tests::world::a_shipped_migration_runs_here_only_as_the_migration_it_names`
+/// - witness: `tests::world::a_shipped_body_s_operation_reaches_the_host_that_runs_it_3546`
 #[inline]
-pub fn arrive(
+pub fn arrive<Host>(
     (arena, definitions): (&CommandArena, &Definitions),
     (at, world): (CommandId, World),
     budget: Budget,
     (store, captures): (&mut Store, &[HeapValueId]),
+    host: &mut Host,
 ) -> Result<HeapValueId, Unmigrated>
+where
+    Host: HostHandler,
 {
     let Some(&CommandNode::World {
         form: WorldForm::Migrate { world: to, body },
@@ -206,14 +231,97 @@ pub fn arrive(
     if lowered.captures.len() != captures.len() {
         return Err(Unmigrated::Unheld);
     }
-    match by_policy(
+    match lowered_on_with_host(
+        Choice::Policy,
         &lowered,
         (arena, definitions),
-        budget,
-        RunInputs::new(store).closed_over(captures),
+        (budget, RunInputs::new(store).closed_over(captures)),
+        host,
     ) {
-        Ok(Ran::Ended(Outcome::Halted(answer))) => Ok(answer),
-        Ok(Ran::Ended(Outcome::Stuck(_)) | Ran::Aborted) | Err(_) => Err(Unmigrated::Unanswered),
+        Ok(HostOutcome::Completed(Outcome::Halted(answer))) => Ok(answer),
+        Ok(HostOutcome::Completed(Outcome::Stuck(_)) | HostOutcome::Aborted(_)) | Err(_) => {
+            Err(Unmigrated::Unanswered)
+        },
+    }
+}
+
+/// A host attenuated to a world's row: an operation of an interface the row
+/// names goes to the host, and every other operation is declined, so the run
+/// is stuck at it. A host that runs a migration another host shipped answers
+/// the body through one, so the body reaches only the interfaces its world
+/// requires (#3546).
+#[derive(Debug)]
+pub struct Attenuated<'host, Host>
+{
+    /// The host the row attenuates.
+    pub host: &'host mut Host,
+    /// The row of the world the run stands at.
+    pub row: &'host EffectRow,
+}
+
+impl<Host> HostHandler for Attenuated<'_, Host>
+where
+    Host: HostHandler,
+{
+    type Abort = Host::Abort;
+
+    /// Hand the operation to the host when the row names its interface, and
+    /// decline it otherwise.
+    ///
+    /// # Specification
+    /// - ensures: the host's reply for an operation whose interface the row
+    ///   names as its default instance; [`HostReply::Decline`] for any other,
+    ///   which the host is never offered.
+    /// - executable: none — the reply is the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shipped draw under a row that names the entropy
+    ///   source takes the host's reply; under a row that names only the
+    ///   console, the host is never offered it and the migration answers
+    ///   nothing.
+    /// - witness: `tests::world::an_operation_outside_its_world_s_row_reaches_no_handler_3546`
+    fn handle(
+        &mut self,
+        request: HostRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> HostReply<Self::Abort>
+    {
+        let label = EffectLabel::Interface(Label::from(request.signature.name()));
+        match self.row.contains(&label) {
+            EffectPresence::Present => self.host.handle(request, values),
+            EffectPresence::Absent => HostReply::Decline,
+        }
+    }
+
+    /// Ask the host: a migration is no interface of the row.
+    ///
+    /// # Specification
+    /// trivial.
+    fn migrate(
+        &mut self,
+        request: MigrationRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> Migrated
+    {
+        self.host.migrate(request, values)
+    }
+
+    /// Ask the host.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spawning(&mut self) -> Spawning
+    {
+        self.host.spawning()
+    }
+
+    /// Ask the host.
+    ///
+    /// # Specification
+    /// trivial.
+    fn task_order(&mut self) -> TaskOrder
+    {
+        self.host.task_order()
     }
 }
 

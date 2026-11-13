@@ -224,7 +224,8 @@ where
 /// declaration of it was refused.
 ///
 /// It answers `migrations` migrations shipped to it, each as `worlds`'
-/// bindings decide, and prints a line for each on `console`.
+/// bindings decide, serves each `Reals` operation of a migration's body under
+/// `profile`, and prints a line for each on `console`.
 ///
 /// # Specification
 /// - requires: `worlds` holds the key of the text `composed` was composed from.
@@ -243,7 +244,7 @@ where
 #[inline]
 pub fn host<'source, E>(
     composed: &mut Composed<'source>,
-    (net, worlds): (&mut Net, Worlds<'_>),
+    (net, worlds, profile): (&mut Net, Worlds<'_>, RealsProfile),
     migrations: MigrationCount,
     console: &mut dyn Console,
 ) -> Ran<'source>
@@ -267,7 +268,13 @@ where
     if refused {
         return Ran::Refused;
     }
-    Ran::Hosted(E::host(program, worlds, net, migrations, console))
+    Ran::Hosted(E::host(
+        program,
+        worlds,
+        net,
+        (migrations, profile),
+        console,
+    ))
 }
 
 /// Compose `source` under the strict root, as a source at no path, and run
@@ -544,15 +551,16 @@ impl Script
         self.hosting = Some(migrations);
     }
 
-    /// This script, its entry's `Reals` operations served under the quotas of
-    /// `profile`.
+    /// This script, the `Reals` operations of its entry, or of each migration
+    /// it hosts, served under the quotas of `profile`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a later [`Self::run`] serves each `Reals` operation of its
-    ///   entry under `profile`; a script given no profile takes
-    ///   [`RealsProfile::Default`].
-    /// - provides: the profile that `gandr run` reads from `[reals] profile`.
+    ///   entry, or of a migration it hosts, under `profile`; a script given no
+    ///   profile takes [`RealsProfile::Default`].
+    /// - provides: the profile that `gandr run` and `gandr host` read from
+    ///   `[reals] profile`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — what the quotas refuse is observed by the later
@@ -681,9 +689,12 @@ impl Script
                     });
                 let net = self.net.as_deref_mut();
                 let ran = match (self.hosting, net, worlds) {
-                    (Some(migrations), Some(net), Some(worlds)) => {
-                        host::<E>(&mut composed, (net, worlds), migrations, console)
-                    },
+                    (Some(migrations), Some(net), Some(worlds)) => host::<E>(
+                        &mut composed,
+                        (net, worlds, self.reals),
+                        migrations,
+                        console,
+                    ),
                     (Some(_), ..) => Ran::Hosted(Hosted::Faulted {
                         answered: MigrationCount::default(),
                     }),

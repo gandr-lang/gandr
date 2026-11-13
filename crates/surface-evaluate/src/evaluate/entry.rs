@@ -10,7 +10,8 @@
 //! from the entropy source of the operating system, and every other operation
 //! is declined, so the run is stuck at it and reported as any stuck run is. A
 //! migration goes where the host's world bindings bind its world, or runs in
-//! this process when the host has none.
+//! this process when the host has none. A host that runs a migration another
+//! host shipped answers its body with the same host (#3546).
 
 use alloc::string::String;
 
@@ -55,22 +56,22 @@ use super::worlds;
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
 
-/// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
-/// its console, a `Net` operation goes to its network when it has one, a
-/// `Reals` operation goes to the plans and the machines it holds, a `Rand`
-/// operation draws from the entropy source of the operating system, a
-/// migration goes where its bindings bind the world when it has them, and
-/// nothing else is served.
-struct EntryHost<'host>
+/// The host of an entry run, and of each migration a host runs for another:
+/// `Proc.exit` ends it, `Console.print` writes to its console, a `Net`
+/// operation goes to its network when it has one, a `Reals` operation goes to
+/// the plans and the machines it holds, a `Rand` operation draws from the
+/// entropy source of the operating system, a migration goes where its
+/// bindings bind the world when it has them, and nothing else is served.
+pub(super) struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
-    console: &'host mut dyn Console,
+    pub(super) console: &'host mut dyn Console,
     /// The run's network, when it has one.
-    net: Option<&'host mut Net>,
+    pub(super) net: Option<&'host mut Net>,
     /// The plans and the machines of exact reals that the run holds.
-    reals: Reals,
+    pub(super) reals: Reals,
     /// The run's world bindings and the program's names, when it has them.
-    worlds: Option<(Worlds<'host>, &'host [String])>,
+    pub(super) worlds: Option<(Worlds<'host>, &'host [String])>,
 }
 
 impl HostHandler for EntryHost<'_>

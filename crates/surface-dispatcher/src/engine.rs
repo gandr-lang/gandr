@@ -145,13 +145,15 @@ pub trait Engine
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>;
 
-    /// Host the worlds of `program` on `net` for `migrations`.
+    /// Host the worlds of `program` on `net` for the migrations of `hosting`,
+    /// each migration's `Reals` operations under its profile.
     ///
     /// # Specification
     /// - requires: `worlds` binds each world that a migration of `program`
     ///   names.
-    /// - ensures: each migration hosted, up to `migrations`, with what each
-    ///   printed on `console`.
+    /// - ensures: each migration hosted, up to the count of `hosting`, with
+    ///   what each printed on `console`, and each `Reals` operation of its body
+    ///   served under the profile of `hosting`.
     /// - fails: never; a migration that cannot run is an outcome.
     /// - panics: none.
     /// - executable: none — a required trait method has no body.
@@ -163,7 +165,7 @@ pub trait Engine
         program: &mut Program<'_>,
         worlds: Worlds<'_>,
         net: &mut Net,
-        migrations: MigrationCount,
+        hosting: (MigrationCount, RealsProfile),
         console: &mut dyn Console,
     ) -> Hosted;
 }
