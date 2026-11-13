@@ -4563,11 +4563,14 @@ else
       cited: ($cites | split("\n") | map(select(. != "") | split("\t")) | group_by(.[0]) | map({key: .[0][0], value: (map(.[1]) | unique)}) | from_entries)}' \
     > "$vaultdir/vault.json"
 fi
-findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
-  --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" --argjson surface "$surface" \
-  --argjson ceilings "$ceilings" --argjson budget "$budget" --argjson comments "$comments" --slurpfile vault "$vaultdir/vault.json" \
-  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, ceilings: $ceilings, budget: $budget, comments: $comments, vault: $vault[0]}' \
-  | jq -r -L "$claims" -f "$claims/opening.jq")
+# Each reading reaches `opening.jq` through a file, never as an argument: it
+# grows with the change past the argument limit (`opening-input.bash`, #7076).
+# `vault.json` is written above.
+source "$claims/opening-input.bash"
+for reading in "${opening_readings[@]}"; do
+  if [[ $reading != vault ]]; then printf '%s\n' "${!reading}" > "$vaultdir/$reading.json"; fi
+done
+findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$claims" -f "$claims/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
   | jq -r -L "$claims" --argjson concerns "$(jq -c .rows <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$claims/../references/window.toml")" -f "$claims/signed.jq")
