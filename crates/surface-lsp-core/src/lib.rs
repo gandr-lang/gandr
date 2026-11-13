@@ -48,6 +48,7 @@ pub mod activity;
 pub mod anchor;
 pub mod build;
 pub mod complete;
+pub mod context;
 #[cfg(feature = "instrument")]
 pub mod derivation;
 pub mod files;

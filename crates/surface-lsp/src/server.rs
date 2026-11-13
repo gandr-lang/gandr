@@ -170,8 +170,6 @@ use crate::hover::hovering_laid;
 use crate::inbox::Changes;
 use crate::inbox::Inbox;
 use crate::inbox::Unread;
-use crate::inlay::hint_at;
-use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::instrument::Job;
 use crate::instrument::Subscription;
@@ -179,7 +177,6 @@ use crate::markup::Markup;
 use crate::missing::UNRESOLVED_NAME;
 use crate::missing::additions;
 use crate::notebook::Notebook;
-use crate::paste::copied;
 use crate::peer::Peer;
 use crate::position::Position;
 use crate::position::Range;
@@ -380,9 +377,7 @@ use crate::unused::unreached;
 use crate::unused::unused;
 use crate::uses::Written;
 use crate::uses::declared;
-use crate::uses::highlights;
 use crate::uses::located;
-use crate::uses::mirrored;
 use crate::uses::placed;
 use crate::view::report;
 
@@ -6819,6 +6814,61 @@ impl Server
     }
 }
 
+/// One copy of a document, as a handler of a navigation request reads it:
+/// the copy, its URI, and the copies the editors hold as the connection's
+/// imports read them.
+pub struct Viewed<'workspace>
+{
+    /// The copy.
+    document: &'workspace Document,
+    /// The URI of its document.
+    uri: &'workspace DocumentUri,
+    /// The copies the editors hold, as the connection's imports read them.
+    shadowing: Shadowing<'workspace>,
+}
+
+impl gandr_surface_lsp_core::context::Held for Viewed<'_>
+{
+    fn source(&self) -> SourceText<'_>
+    {
+        self.document.text.source()
+    }
+
+    fn reading(&self) -> &Reading
+    {
+        self.document.text.reading()
+    }
+
+    fn hovering(&self) -> Option<&Hovering>
+    {
+        self.document.hovering(self.uri, &self.shadowing).ok()
+    }
+}
+
+impl gandr_surface_lsp_core::context::Context for Workspace
+{
+    type Held<'context>
+        = Viewed<'context>
+    where
+        Self: 'context;
+
+    fn view<'context>(
+        &'context self,
+        uri: &'context DocumentUri,
+        peer: Peer,
+    ) -> Option<Viewed<'context>>
+    {
+        match Self::view(self, uri, peer) {
+            Maybe::Present(document) => Some(Viewed {
+                document,
+                uri,
+                shadowing: self.shadowing(peer),
+            }),
+            Maybe::Absent(_) => None,
+        }
+    }
+}
+
 impl Workspace
 {
     /// The copy of the document at `uri` that `peer` is answered from: its
@@ -7121,25 +7171,12 @@ impl Workspace
         (style, deferring): (gandr_surface_pretty::Style, ResolvesHintLocations),
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        let window = ByteSpan::new(
-            ByteOffset::from(usize::from(range.start.byte(&index))),
-            ByteOffset::from(usize::from(range.end.byte(&index))),
-        );
-        Answer::Hints(
-            match (document.hovering(uri, &self.shadowing(peer)), window) {
-                (Ok(hovering), Ok(window)) if window.start() < window.end() => hints(
-                    (hovering, document.text.reading().tiles()),
-                    (uri, &index),
-                    window,
-                    (style, deferring),
-                ),
-                (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
-            },
+        gandr_surface_lsp_navigation::handlers::inlay_hints(
+            self,
+            uri,
+            peer,
+            range,
+            (style, deferring),
         )
     }
 
@@ -7172,18 +7209,7 @@ impl Workspace
         style: gandr_surface_pretty::Style,
     ) -> Option<InlayHint>
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return None;
-        };
-        let hovering = document.hovering(uri, &self.shadowing(peer)).ok()?;
-        let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        hint_at(
-            (hovering, document.text.reading().tiles()),
-            (uri, &index),
-            position,
-            style,
-        )
+        gandr_surface_lsp_navigation::handlers::resolve_hint(self, uri, peer, position, style)
     }
 
     /// The sources declaring what `ranges` of the copy of the document at
@@ -7212,15 +7238,7 @@ impl Workspace
         ranges: &[Range],
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        Answer::Sources(document.hovering(uri, &self.shadowing(peer)).map_or_else(
-            |_| Vec::new(),
-            |hovering| copied(hovering, (uri, &index), ranges),
-        ))
+        gandr_surface_lsp_navigation::handlers::copied_sources(self, uri, peer, ranges)
     }
 
     /// The inline completion of the copy of the document at `uri` that `peer`
@@ -8098,15 +8116,7 @@ impl Workspace
         position: Position,
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        document
-            .hovering(uri, &self.shadowing(peer))
-            .map_or(Answer::Nothing, |hovering| {
-                highlights(document.text.source(), hovering, position)
-            })
+        gandr_surface_lsp_navigation::handlers::highlight(self, uri, peer, position)
     }
 
     /// What a linked-editing request at `position` of the copy of the document
@@ -8134,15 +8144,7 @@ impl Workspace
         position: Position,
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        document
-            .hovering(uri, &self.shadowing(peer))
-            .map_or(Answer::Nothing, |hovering| {
-                mirrored(document.text.source(), hovering, position)
-            })
+        gandr_surface_lsp_navigation::handlers::linked_editing(self, uri, peer, position)
     }
 
     /// What a reference request at `position` of the copy of the document at

@@ -37,6 +37,7 @@ use gandr_surface_lsp_core::reading;
 
 pub mod calls;
 pub mod doc;
+pub mod handlers;
 pub mod inlay;
 pub mod paste;
 pub mod rename;
