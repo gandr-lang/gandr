@@ -28,11 +28,11 @@ use crate::equiv::Vocabulary;
 use crate::fixture::integer_literal;
 use crate::fixture::text_literal;
 use crate::forward::Directed;
-use crate::module::Judged;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
+use crate::report::Judged;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A declaration position in a fixture module.
 #[repr(transparent)]

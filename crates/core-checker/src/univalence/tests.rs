@@ -23,11 +23,11 @@ use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::declaration::signature;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::ExpectedShape;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 
 /// A declaration position in a fixture module.
 #[repr(transparent)]

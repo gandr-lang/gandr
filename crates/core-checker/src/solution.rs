@@ -87,9 +87,9 @@ use gandr_core_term::hole::TermId;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
+use crate::answer::Direction;
 use crate::context::CheckingContext;
-use crate::judgement::Direction;
-use crate::judgement::Typing;
+use crate::record::Typing;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;

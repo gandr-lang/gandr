@@ -616,13 +616,13 @@ use crate::declaration::AbstractType;
 use crate::declaration::OriginToken;
 use crate::funext::Funext;
 use crate::funext::Step as FunextStep;
-use crate::module::ModuleReport;
-use crate::module::Verdict;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
 use crate::retire::Demand;
 use crate::retire::Polled;
 use crate::retire::Retirement;
@@ -2906,7 +2906,7 @@ fn block_offers<'report>(
     arena: &CoreArena,
     report: &'report ModuleReport,
     source: Source<'report>,
-    run: &'report [crate::module::Judged],
+    run: &'report [crate::report::Judged],
 ) -> Vec<(ConstantIndex, Offer<'report>)>
 {
     let Some(leader) = run.first()

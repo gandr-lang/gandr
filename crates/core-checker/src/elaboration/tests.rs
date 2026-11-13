@@ -21,8 +21,6 @@ use quenchant_shape::shape::Maybe;
 
 use super::Outcome;
 use super::Output;
-use super::ResumeError;
-use super::Session;
 use crate::CheckBudget;
 use crate::CheckRefusal;
 use crate::CheckingContext;
@@ -35,6 +33,8 @@ use crate::Verdict;
 use crate::body;
 use crate::bridge;
 use crate::check_module;
+use crate::elaborating::ResumeError;
+use crate::elaborating::Session;
 use crate::fixture::Mode;
 use crate::fixture::integer_literal;
 use crate::fixture::term_recipe;

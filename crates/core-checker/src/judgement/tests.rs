@@ -5335,7 +5335,7 @@ fn a_forged_answer_is_refused_naming_its_tactic_2762()
     use gandr_core_term::hole::NominationIndex;
     use gandr_core_term::tactic::Tactic;
 
-    use super::Direction;
+    use crate::answer::Direction;
     use crate::refusal::TacticFault;
 
     let mut arena = CoreArena::new();

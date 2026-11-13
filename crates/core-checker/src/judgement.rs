@@ -501,6 +501,9 @@ use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::answer::Checked;
+use crate::answer::Direction;
+use crate::answer::Synthesised;
 use crate::comonoid::Grade;
 use crate::comonoid::Held;
 use crate::context::Atom;
@@ -520,6 +523,7 @@ use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
 use crate::nested::Nesting;
+use crate::record::Typing;
 use crate::refusal::ArgumentPosition;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
@@ -542,8 +546,7 @@ mod elaboration;
 
 mod memo;
 
-#[cfg(feature = "instrument")]
-pub use memo::unanswered;
+use crate::answer::unanswered;
 
 mod native;
 
@@ -580,89 +583,13 @@ mod handed
 
 use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
-pub use self::elaboration::Formed;
-pub use self::elaboration::Kept;
 pub use self::elaboration::MarkEntry;
 use self::elaboration::Marking;
-pub use self::elaboration::Typing;
 pub use self::elaboration::Typings;
 pub use self::elaboration::elaborate_comp;
 pub use self::elaboration::elaborate_value;
 pub use self::elaboration::type_value;
 use self::session::Sessions;
-
-/// The direction a judgement runs in.
-///
-/// # Judgement
-/// - direction: synthesis hands the term's type out; checking takes the
-///   expected type in. A dispatch on it names both, so a rule added in one mode
-///   is a compile error in every dispatch that forgot the other.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Direction<Expected>
-{
-    /// The term's type is read off the term.
-    Synthesise,
-    /// The term is checked against the type held.
-    Check(Expected),
-}
-
-/// A type a judgement synthesised, beside the evidence of how it got there.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Synthesised<Type>
-{
-    /// The type.
-    produced: Type,
-    /// The conversions the run made.
-    conversions: ConversionCount,
-}
-
-impl<Type: Copy> Synthesised<Type>
-{
-    /// The type synthesised.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn produced(&self) -> Type
-    {
-        self.produced
-    }
-
-    /// How many times the run crossed the conversion boundary.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn conversions(&self) -> ConversionCount
-    {
-        self.conversions
-    }
-}
-
-/// The evidence a check succeeded with.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Checked
-{
-    /// The conversions the run made.
-    conversions: ConversionCount,
-}
-
-impl Checked
-{
-    /// How many times the run crossed the conversion boundary.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn conversions(&self) -> ConversionCount
-    {
-        self.conversions
-    }
-}
 
 /// Synthesise the type of `value`.
 ///
@@ -735,10 +662,10 @@ pub fn synthesise_value_with_failure(
     };
     let (produced, conversions) = Machine::run(context, goal)?;
     match produced {
-        Produced::ValueType(produced) => Ok(Synthesised {
-            produced: FormedValueType::derived(context.settle_value_type(produced)),
+        Produced::ValueType(produced) => Ok(Synthesised::new(
+            FormedValueType::derived(context.settle_value_type(produced)),
             conversions,
-        }),
+        )),
         Produced::CompType(_) | Produced::Checked => {
             Err(Failure::bare(CheckRefusal::MachineInvariant, pursued(goal)))
         },
@@ -887,10 +814,10 @@ pub fn synthesise_comp(
     })
     .map_err(|failure| failure.refusal())?;
     match produced {
-        Produced::CompType(produced) => Ok(Synthesised {
-            produced: FormedCompType::derived(produced),
+        Produced::CompType(produced) => Ok(Synthesised::new(
+            FormedCompType::derived(produced),
             conversions,
-        }),
+        )),
         Produced::ValueType(_) | Produced::Checked => Err(CheckRefusal::MachineInvariant),
     }
 }
@@ -980,7 +907,7 @@ const fn checked(
 ) -> Result<Checked, CheckRefusal>
 {
     match produced {
-        Produced::Checked => Ok(Checked { conversions }),
+        Produced::Checked => Ok(Checked::new(conversions)),
         Produced::ValueType(_) | Produced::CompType(_) => Err(CheckRefusal::MachineInvariant),
     }
 }
@@ -4565,7 +4492,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         #[cfg(feature = "instrument")]
                         self.trace_started(goal, memo);
                         #[cfg(not(feature = "instrument"))]
-                        let _: memo::unanswered::Absent = memo;
+                        let _: unanswered::Absent = memo;
                         self.owner = goal;
                         self.anchor(goal);
                         (Control::Starting(goal), self.descend(goal))
@@ -4605,13 +4532,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     fn trace_started(
         &mut self,
         goal: Goal,
-        memo: memo::unanswered::Absent,
+        memo: unanswered::Absent,
     )
     {
         let (node, against) = judged(goal);
         let cover = match memo {
-            memo::unanswered::Absent::Missed => self.cover(),
-            memo::unanswered::Absent::Closed | memo::unanswered::Absent::Unkeyed => {
+            unanswered::Absent::Missed => self.cover(),
+            unanswered::Absent::Closed | unanswered::Absent::Unkeyed => {
                 crate::trace::Cover::default()
             },
         };

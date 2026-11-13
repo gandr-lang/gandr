@@ -105,8 +105,8 @@
 //! but not defined, and [`ModuleReport::suspensions`] names the holes it
 //! waits on. A refusal wins over a wait, and a reader of a waiting
 //! declaration waits with it. The [`elaboration`] module states the fragment,
-//! the term-producing run that fills a hole and resumes what waited, and the
-//! alternatives.
+//! the term-producing run and the alternatives. The [`elaborating`] module
+//! holds the session that fills a hole and resumes what waited.
 //!
 //! **One machine, no recursion.** Every face and formation run one explicit
 //! machine of goals and frames, charged one step per transition against an
@@ -572,6 +572,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod access;
+mod answer;
 pub mod bridge;
 mod canonical;
 mod capability;
@@ -585,6 +586,7 @@ mod coverage;
 mod declaration;
 mod discharge;
 mod divergence;
+pub mod elaborating;
 pub mod elaboration;
 pub mod eliminator;
 mod equiv;
@@ -607,10 +609,12 @@ mod occurrence;
 mod product;
 pub mod program;
 mod quantified;
+mod record;
 mod recursion;
 mod refusal;
 mod regioned;
 mod relatedness;
+mod report;
 mod respect;
 mod retire;
 mod seal;
@@ -631,6 +635,9 @@ mod univalence;
 mod view;
 pub mod worlds;
 
+pub use crate::answer::Checked;
+pub use crate::answer::Direction;
+pub use crate::answer::Synthesised;
 pub use crate::capability::Grants;
 pub use crate::capability::HostGrant;
 pub use crate::code::Certificate;
@@ -689,13 +696,8 @@ pub use crate::forward::Forward;
 pub use crate::funext::Funext;
 pub use crate::funext::Step as FunextStep;
 pub use crate::handler::Handled;
-pub use crate::judgement::Checked;
-pub use crate::judgement::Direction;
 pub use crate::judgement::Elaboration;
-pub use crate::judgement::Formed;
 pub use crate::judgement::MarkEntry;
-pub use crate::judgement::Synthesised;
-pub use crate::judgement::Typing;
 pub use crate::judgement::Typings;
 pub use crate::judgement::check_comp;
 pub use crate::judgement::check_value;
@@ -708,24 +710,18 @@ pub use crate::ledger::Absence;
 pub use crate::ledger::ObligationCount;
 pub use crate::ledger::ObligationEntry;
 pub use crate::ledger::ObligationLedger;
-pub use crate::module::Judged;
 pub use crate::module::Membership;
-pub use crate::module::ModuleReport;
 pub use crate::module::ModuleRun;
 pub use crate::module::Schedule;
 pub use crate::module::TypedModule;
-pub use crate::module::Verdict;
 pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
-pub use crate::module::elaborated;
-pub use crate::module::elaborated_report;
-pub use crate::module::kept;
 pub use crate::module::type_module;
-pub use crate::module::unmarked;
-pub use crate::module::waits;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;
+pub use crate::record::Formed;
+pub use crate::record::Typing;
 pub use crate::refusal::ArgumentPosition;
 pub use crate::refusal::CheckRefusal;
 pub use crate::refusal::CheckingForm;
@@ -745,6 +741,11 @@ pub use crate::refusal::TypeNode;
 pub use crate::refusal::UnadmittedFormer;
 pub use crate::refusal::Unsolved;
 pub use crate::refusal::compared;
+pub use crate::report::Judged;
+pub use crate::report::ModuleReport;
+pub use crate::report::Verdict;
+pub use crate::report::elaborated_report;
+pub use crate::report::unmarked;
 pub use crate::retire::Demand;
 pub use crate::retire::Polled;
 pub use crate::retire::Retirement;
@@ -763,3 +764,6 @@ pub use crate::support::DataConsulted;
 pub use crate::support::Entered;
 pub use crate::support::Support;
 pub use crate::support::Supported;
+pub use crate::support::elaborated;
+pub use crate::support::kept;
+pub use crate::support::waits;
