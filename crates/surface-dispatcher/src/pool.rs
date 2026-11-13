@@ -1401,12 +1401,13 @@ where
     ///
     /// # Specification
     /// - ensures: `release` ran on every item in slice order, each first time
-    ///   once `waiting` counts no item that it waits on. A release that
-    ///   answered [`Releasing::Held`] while a released job was not committed
-    ///   ran again once every released job was committed. `commit` ran once on
-    ///   every item, with its job's result as the job returned, or with the
-    ///   result of its release. Each commit counts down the items that wait on
-    ///   the committed one. After a release holds while a job runs, the
+    ///   once `waiting` counts no item that it waits on and fewer than
+    ///   [`DEPTH`] + 1 released jobs for each lane were not committed. A
+    ///   release that answered [`Releasing::Held`] while a released job was not
+    ///   committed ran again once every released job was committed. `commit`
+    ///   ran once on every item, with its job's result as the job returned, or
+    ///   with the result of its release. Each commit counts down the items that
+    ///   wait on the committed one. After a release holds while a job runs, the
     ///   schedule runs as a chain: the calling thread keeps each job that a
     ///   release gives and runs it, and it tries a release beside a running job
     ///   once in [`CHAIN_PROBE`] releases. A release that gives a job beside a
@@ -1427,6 +1428,7 @@ where
     /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
     /// - witness: `pool::tests::a_chained_schedule_runs_its_jobs_on_the_calling_thread`
+    /// - witness: `pool::tests::a_schedule_releases_at_most_a_window_ahead_of_its_commits_7299`
     fn drive<'scope, Item, Release, Commit>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
@@ -1453,6 +1455,11 @@ where
         let mut holding = false;
         let mut chained = false;
         let mut put_off = 0_usize;
+        // Each released job holds what its run reads until its commit, a
+        // check's view of the environment among them. So the releases run
+        // ahead of the commits by at most a full lane and one more job for
+        // each lane, and what they hold stays a bound of the width (#7299).
+        let window = self.lanes.len().saturating_mul(DEPTH.saturating_add(1));
         let mut commit_one =
             |position: ItemIndex, item: &mut Item, out: Out, waiting: &mut Waiting| {
                 let place = gandr_core_fork::ItemIndex::from(position.0);
@@ -1464,7 +1471,7 @@ where
                 waiting.commit(position);
             };
         while committed < count {
-            while !holding && waiting.free(next) == Released::Free {
+            while !holding && outstanding < window && waiting.free(next) == Released::Free {
                 // A chain releases beside a running job only once in
                 // `CHAIN_PROBE` releases: each other try stages the item and
                 // then gives the staging back.
@@ -1929,6 +1936,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::CHAIN_PROBE;
+    use super::DEPTH;
     use super::Forked;
     use super::Pool;
     use super::Spin;
@@ -2755,6 +2763,50 @@ mod tests
         assert!(
             items.iter().all(|item| item.commits.len() == 1),
             "every item is committed once"
+        );
+    }
+
+    /// A schedule whose jobs run slower than its releases keeps at most a
+    /// full lane and one more job for each lane released and not committed,
+    /// so what the released jobs hold stays a bound of the width (#7299).
+    #[test]
+    fn a_schedule_releases_at_most_a_window_ahead_of_its_commits_7299()
+    {
+        let threads_count = 2_usize;
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(threads_count).unwrap(),
+        )));
+        let Ok(Forked::Pooled(threads, fork)) = pool.forked()
+        else {
+            panic!("a pool of two threads starts");
+        };
+        let outstanding = AtomicUsize::new(0);
+        let most = AtomicUsize::new(0);
+        let mut items = [(); 1_000];
+        threads.install(|| {
+            fork.schedule(
+                &mut items,
+                &Dependences::default(),
+                |_position, &mut ()| {
+                    let now = outstanding.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+                    most.fetch_max(now, Ordering::SeqCst);
+                    Releasing::<(), ()>::Run(())
+                },
+                |()| std::thread::sleep(Duration::from_micros(50)),
+                |_position, &mut (), ()| {
+                    outstanding.fetch_sub(1, Ordering::SeqCst);
+                },
+            );
+        });
+        assert_eq!(
+            outstanding.load(Ordering::SeqCst),
+            0,
+            "every released job is committed"
+        );
+        assert!(
+            most.load(Ordering::SeqCst) <= threads_count.saturating_mul(DEPTH.saturating_add(1)),
+            "at most a full lane and one more job for each lane wait for their commits, not {}",
+            most.load(Ordering::SeqCst)
         );
     }
 

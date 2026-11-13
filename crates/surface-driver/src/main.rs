@@ -3768,9 +3768,15 @@ fn render(
                     gandr_surface_dispatcher::install_readmission_pool(Arc::<Pool>::clone(&pool));
                 // A run with a pool spends its width on predictions: the
                 // speculation group on. A serial run predicts nothing, as the
-                // release in serial order (gandr #3476).
+                // release in serial order (gandr #3476). The rank stays off: a
+                // check that runs ahead on a predicted rank expands more than
+                // the serial run (#7300), and its session's layers grow with
+                // the releases ahead (#7299).
                 let _installed = gandr_surface_dispatcher::install_speculation(
-                    gandr_kernel_core::speculation::Speculation::ON,
+                    gandr_kernel_core::speculation::Speculation {
+                        rank: gandr_kernel_core::speculation::Setting::Off,
+                        ..gandr_kernel_core::speculation::Speculation::ON
+                    },
                 );
                 if walk.sources_up_to(spare) < spare {
                     let _installed = gandr_surface_dispatcher::install_obligation_fork(
