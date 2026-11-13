@@ -31,18 +31,19 @@ use gandr_core_term::Zone;
 use gandr_core_term::control::EffectClause;
 use gandr_kernel_term::DeBruijnIndex;
 pub(in crate::lower) use gandr_surface_lowering_base::lower::capability::answered::Answering;
+use gandr_surface_lowering_base::lower::families::Families;
+use gandr_surface_lowering_base::lower::model::ComponentPlace;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
+use super::CapabilityRef;
 use super::TheoryInterface;
 use super::theory::TheoryOperation;
-use crate::lower::Lowerer;
 use crate::lower::Sink;
 use crate::lower::lowered;
-use crate::lower::model::ComponentPlace;
 use crate::origin::Origin;
 
-impl Lowerer<'_, '_>
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
 {
     /// The return clause and the operation clauses of the scope over `theory`
     /// that `answering` answers.
@@ -61,7 +62,7 @@ impl Lowerer<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a scope over `State` naming a state-passing module
     ///   runs as the clauses written out run.
-    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present((_, ref clauses)) => clauses.len() == theory.operations.len(),
         | Maybe::Absent(_) => true,
@@ -164,7 +165,7 @@ impl Lowerer<'_, '_>
 /// - hypothesis: L3 — `State`'s `get` binds the state at its port and `put`
 ///   sends one and binds nothing; a clause misplacing either runs to another
 ///   value.
-/// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
 #[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
 fn clause(
     sink: &mut Sink<'_>,

@@ -596,6 +596,7 @@ use gandr_surface_lowering_base::lower::context::own_positions;
 use gandr_surface_lowering_base::lower::delimited;
 use gandr_surface_lowering_base::lower::delimited_list;
 use gandr_surface_lowering_base::lower::exhausted;
+use gandr_surface_lowering_base::lower::families::Families as _;
 use gandr_surface_lowering_base::lower::literal;
 pub use gandr_surface_lowering_base::lower::lowered;
 pub use gandr_surface_lowering_base::lower::named;
@@ -605,10 +606,7 @@ pub use gandr_surface_lowering_base::lower::scoped;
 pub use gandr_surface_lowering_base::lower::stated;
 use gandr_surface_lowering_base::lower::stretch;
 use gandr_surface_lowering_base::lower::unread_pattern;
-use gandr_surface_lowering_native::lower::native::Unwrapped;
 use gandr_surface_lowering_native::lower::native::constructed;
-use gandr_surface_lowering_native::lower::native::inherited;
-use gandr_surface_lowering_native::lower::native::unfolding;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -689,6 +687,8 @@ use crate::import::Opening;
 use crate::import::Translation;
 use crate::layout::bracket_form;
 use crate::layout::misplaced;
+use crate::lower::capability::Capability;
+use crate::lower::capability::CapabilityRef;
 use crate::lower::exits::Exits;
 use crate::lower::exits::ExitsRef;
 use crate::lower::native::Native;
@@ -1469,69 +1469,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 }
 
-/// The native family's calls that a body of another family makes through
-/// its host, while the body stands in the lowering.
-impl<'source> Lowerer<'_, 'source>
-{
-    /// The native family's `carry_value_type`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn carry_value_type(
-        &self,
-        ty: ValueTypeId,
-        from: Frame,
-        telescope: Telescope,
-        to: Frame,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ValueTypeId
-    {
-        NativeRef::over(&self.cx).carry_value_type(ty, from, telescope, to, sink, origin)
-    }
-
-    /// The native family's `constructor_named`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn constructor_named(
-        &mut self,
-        site: Site,
-        name: SurfaceName<'source>,
-    ) -> Maybe<Constructor, constructed::Absent>
-    {
-        Native::new(self).constructor_named(site, name)
-    }
-
-    /// The native family's `definition_written`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn definition_written(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<NodeIndex, unfolding::Absent>
-    {
-        NativeRef::over(&self.cx).definition_written(constant)
-    }
-
-    /// The native family's `unwrapped`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn unwrapped(
-        &mut self,
-        node: NodeIndex,
-    ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>
-    {
-        Native::new(self).unwrapped(node)
-    }
-}
-
 /// The native family's calls that a body of the identity, model or arity
 /// family makes through its host, while the body stands in the lowering.
 impl<'source> Lowerer<'_, 'source>
@@ -2205,7 +2142,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         Native::new(self).refuse_sibling_arities();
         Native::new(self).unjoin_refused();
-        self.mint_foreign(sink);
+        CapabilityRef::new(self).mint_foreign(sink);
         self.mint(sink)?;
         Native::new(self).mint_joints(sink);
         self.mint_abstracts(sink);
@@ -4345,6 +4282,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         .all(|child| matches!(self.cx.collected.owner_of(child), Maybe::Present(_))))
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn inherit_owner(
         &mut self,
         position: NodeIndex,
@@ -4863,7 +4804,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Exits::new(self).reenter(site)?;
         }
         if let Some(&assignment) = self.cx.assignments.get(&site.at.node) {
-            return self.assign(site, former, pieces, assignment);
+            return Capability::new(self).assign(site, former, pieces, assignment);
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
@@ -4954,15 +4895,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::FlowType => self.supplied_flow(site, cursor),
             Former::RelationType => self.relation_type(site, cursor),
             Former::ManifestType => self.manifest_model(site, cursor),
-            Former::CapabilityType => self.capability_type(site, cursor),
-            Former::AtType => self.at_type(site, cursor),
+            Former::CapabilityType => Capability::new(self).capability_type(site, cursor),
+            Former::AtType => Capability::new(self).at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
-            Former::ModedType => self.moded_type(site, cursor),
-            Former::Scope => self.capability_scope(site, pieces),
+            Former::ModedType => CapabilityRef::new(self).moded_type(site, cursor),
+            Former::Scope => Capability::new(self).capability_scope(site, pieces),
             Former::Instantiation => Native::new(self).instantiation(site, cursor),
-            Former::SessionType => self.session_type(site),
-            Former::Action | Former::Offer => self.session_action(site, cursor),
-            Former::Access => self.access_form(site, pieces),
+            Former::SessionType => Capability::new(self).session_type(site),
+            Former::Action | Former::Offer => Capability::new(self).session_action(site, cursor),
+            Former::Access => Capability::new(self).access_form(site, pieces),
             Former::World => self.world_form(site, pieces),
             Former::Declaration | Former::Module => self.function(site, cursor),
             Former::AttributeBlock
@@ -7262,6 +7203,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the label spelled for each, tell the two apart.
     /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
     #[spec(ensures: |ret| (ret == Telescope::Quote) == self.cx.in_quote.contains(&node))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn telescope_at(
         &self,
         node: NodeIndex,
@@ -8763,8 +8708,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let (Maybe::Absent(_), Maybe::Absent(_)) = (listing, cursor.at(TileName::COLON)) {
             return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
         }
-        let receiver = self.receiver_mode(site);
-        self.stray_modes(&cursor, receiver)?;
+        let receiver = CapabilityRef::new(self).receiver_mode(site);
+        CapabilityRef::new(self).stray_modes(&cursor, receiver)?;
         let start = self.cx.parameters.mark();
         // The mode variable a deduced receiver is written at, `self : m T`.
         let mut deduced: Option<SurfaceName<'source>> = None;
@@ -8881,13 +8826,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let mut declared = function.one(cursor.operands())?;
                     // A receiver at a mode variable, `self : m T`: the variable
                     // names a mode binder, and `T` is the receiver's type.
-                    if let Some((mode, typed)) = self.moded(declared)? {
-                        deduced = Some(self.mode_variable(site, mode)?);
+                    if let Some((mode, typed)) = CapabilityRef::new(self).moded(declared)? {
+                        deduced = Some(CapabilityRef::new(self).mode_variable(site, mode)?);
                         declared = typed;
                     }
                     // A parameter at a session type, written or named, is an
                     // endpoint its body places.
-                    endpoint = self.stands(declared, frame)?;
+                    endpoint = Capability::new(self).stands(declared, frame)?;
                     self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
                 },
@@ -8992,7 +8937,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 let result = function.one(cursor.operands())?;
                 let viewed = match deduced {
-                    Some(mode) => Some(self.view_result(result, mode, frame)?),
+                    Some(mode) => Some(Capability::new(self).view_result(result, mode, frame)?),
                     None => None,
                 };
                 self.read(result.node, Reading::Result(frame));
@@ -9009,10 +8954,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Taking::Unrestricted,
             ),
         };
-        let (placed, endpoints) = self.place_endpoints(frame, &endpoints);
+        let (placed, endpoints) = Capability::new(self).place_endpoints(frame, &endpoints);
         let (body, receiver) = match receiver {
             Some(ReceiverMode::Exclusive) => {
-                let (held, receiver) = self.hold_receiver(function, placed, parameters)?;
+                let (held, receiver) =
+                    Capability::new(self).hold_receiver(function, placed, parameters)?;
                 (held, Maybe::Present(receiver))
             },
             Some(ReceiverMode::Shared | ReceiverMode::Consumed | ReceiverMode::Deduced) | None => (
@@ -9027,7 +8973,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.block(function, &mut cursor, body)?
         };
         if let Some(element) = viewed {
-            self.view_body(function, block, element)?;
+            Capability::new(self).view_body(function, block, element)?;
         }
         let answer = match result {
             Maybe::Present(node) => {
@@ -9239,7 +9185,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
                         && access::ASSIGNING.contains(&label)
                     {
-                        run = Run::One(self.assignment(site, cursor, run, frame)?);
+                        run = Run::One(Capability::new(self).assignment(site, cursor, run, frame)?);
                     }
                     if let Maybe::Present(semicolon) = cursor.at(TileName::SEMICOLON) {
                         let first = match run {
@@ -9312,7 +9258,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         }
                     }
                     else if label == TileName::VAR {
-                        self.hold(cursor, at, frame)?
+                        Capability::new(self).hold(cursor, at, frame)?
                     }
                     else {
                         self.open(site, cursor, at)?;
@@ -9731,7 +9677,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(binder.span),
             )));
         }
-        if self.placing(statement, frame, bound)? == capability::Reply::Minted {
+        if Capability::new(self).placing(statement, frame, bound)? == capability::Reply::Minted {
             self.read(bound.node, Reading::Computation(frame));
             self.cx.statements.push(Statement {
                 origin: run.node,
@@ -9772,10 +9718,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `cursor` stands just past the statement's `let` tile `lead`;
     ///   `frame` is the frame the statement reads under.
-    /// - ensures: a receive or a fork `e` is read as [`Self::receive`] and
-    ///   [`Self::fork`] read it, binding the name the pattern spells. A name
-    ///   under `at` with no stated type, `let x at w = e ;`, opens the handle
-    ///   `e` at `w` as [`Self::opened`] reads it. A block, a match, a
+    /// - ensures: a receive or a fork `e` is read as [`Capability::receive`]
+    ///   and [`Capability::fork`] read it, binding the name the pattern spells.
+    ///   A name under `at` with no stated type, `let x at w = e ;`, opens the
+    ///   handle `e` at `w` as [`Self::opened`] reads it. A block, a match, a
     ///   conditional, a loop, an exit, a loop exit, a scope, an access, an
     ///   offer, an action, a hold or a migration `e` binds what it returns, as
     ///   [`Self::bound_statement`] binds it. Otherwise a name binder reads `e`
@@ -9839,10 +9785,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let name = self.binder_name(statement, binder)?;
             return if form == FormName::RECV_EXPRESSION {
-                self.receive(statement, (binder, name), bound, frame)
+                Capability::new(self).receive(statement, (binder, name), bound, frame)
             }
             else {
-                self.fork(statement, (binder, name), bound, frame)
+                Capability::new(self).fork(statement, (binder, name), bound, frame)
             };
         }
         // A name under `at` opens the handle `e` at the world written.
@@ -9883,7 +9829,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if runs_only
             || !matches!(self.cx.form_at(binder)?, Some((_, Former::Name)))
             || (annotation.is_none()
-                && self.placing(statement, frame, bound)? == capability::Reply::Minted)
+                && Capability::new(self).placing(statement, frame, bound)?
+                    == capability::Reply::Minted)
         {
             let _result = self.cx.results.insert(bound.node);
             return self.bound_statement(statement, (binder, annotation, bound), frame);
@@ -10416,25 +10363,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   that exercise, one whose head is a continuation — an operation
     ///   clause's, or a binder declared at `Stack(C, D)` or a member
     ///   abbreviating it — resumes it, and one whose head selects a method off
-    ///   its receiver is that method's call, as [`Self::exercise`],
-    ///   [`Self::resumption`] and [`Self::method`] read them; a call standing
-    ///   where a value is read whose head is a type former's name, free —
-    ///   `Path` over three arguments, `List(A)`, `Flow`, `Stack`, `Run` — is
-    ///   the type it spells, as [`Self::applied_head`] plans it, quoted, and
-    ///   one whose head names a data or a codata family is that family's type
-    ///   over the arguments, as [`Self::static_application`] plans it, quoted,
-    ///   so `Box(Integer)` passed for a type parameter is the type (#2512); a
-    ///   call standing where a type is read is the type application it spells,
-    ///   as [`Self::typed_call`] plans it; any other call standing as a
-    ///   computation reads its head at the head position and each argument as a
-    ///   value, all in its own frame, a model implicit's components and an
-    ///   omitted instance standing at the call itself, and is planned as the
-    ///   head applied to the arguments left to right; a call whose head is an
-    ///   instantiation, a recursive call, records every argument for the head's
-    ///   claim to check, reads each as a value so a later parameter's type can
-    ///   name a leading one, and applies those from the staged parameter's on,
-    ///   the ones its fixpoint takes; a call of no arguments is its head, whose
-    ///   force [`Self::mint_at`] marks as the call the source wrote.
+    ///   its receiver is that method's call, as [`Capability::exercise`],
+    ///   [`Capability::resumption`] and [`Capability::method`] read them; a
+    ///   call standing where a value is read whose head is a type former's
+    ///   name, free — `Path` over three arguments, `List(A)`, `Flow`, `Stack`,
+    ///   `Run` — is the type it spells, as [`Self::applied_head`] plans it,
+    ///   quoted, and one whose head names a data or a codata family is that
+    ///   family's type over the arguments, as [`Self::static_application`]
+    ///   plans it, quoted, so `Box(Integer)` passed for a type parameter is the
+    ///   type (#2512); a call standing where a type is read is the type
+    ///   application it spells, as [`Self::typed_call`] plans it; any other
+    ///   call standing as a computation reads its head at the head position and
+    ///   each argument as a value, all in its own frame, a model implicit's
+    ///   components and an omitted instance standing at the call itself, and is
+    ///   planned as the head applied to the arguments left to right; a call
+    ///   whose head is an instantiation, a recursive call, records every
+    ///   argument for the head's claim to check, reads each as a value so a
+    ///   later parameter's type can name a leading one, and applies those from
+    ///   the staged parameter's on, the ones its fixpoint takes; a call of no
+    ///   arguments is its head, whose force [`Self::mint_at`] marks as the call
+    ///   the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position
@@ -10613,16 +10561,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             return self.static_application(site, family, applied);
         }
-        if self.exercise(site, &cursor)? == arity::Planned(true) {
+        if Capability::new(self).exercise(site, &cursor)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.resumption(site, &cursor)? == arity::Planned(true) {
+        if Capability::new(self).resumption(site, &cursor)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.abandonment(site, &cursor)? == arity::Planned(true) {
+        if Capability::new(self).abandonment(site, &cursor)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.method(site, &cursor)? == arity::Planned(true) {
+        if Capability::new(self).method(site, &cursor)? == arity::Planned(true) {
             return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
@@ -11939,6 +11887,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Ok(Maybe::Absent(_)) | Err(_) => true,
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn stated_named(
         &mut self,
         site: Site,
@@ -12729,35 +12681,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.call_resolved(site, resolved, applied, again)
     }
 
-    /// Push onto `links` the link from `target` to `selected` through the
-    /// module names `modules` passes, as [`Context::type_link`] reads them,
-    /// from the outermost: the type selected from the last module, then
-    /// each module from the one before it, the first from the operand.
-    ///
-    /// # Specification
-    /// trivial.
-    fn linked(
-        links: &mut Vec<(Placed, Placed)>,
-        target: Placed,
-        modules: &[Piece],
-        selected: Placed,
-    )
-    {
-        let named = modules.iter().rev().filter_map(|piece| match *piece {
-            Piece::Tile {
-                label: TileName::TYPE_VARIABLE,
-                at,
-            } => Some(at),
-            Piece::Tile { .. } | Piece::Operand(_) => None,
-        });
-        let mut selected = selected;
-        for module in named {
-            links.push((module, selected));
-            selected = module;
-        }
-        links.push((target, selected));
-    }
-
     /// The head of the chain of type paths whose innermost operand is
     /// `target`, each link it walks pushed onto `links`, from the outermost.
     ///
@@ -12786,6 +12709,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — as [`Self::type_path`].
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `lower::session::tests::a_parameter_at_a_named_session_type_is_placed`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn path_head(
         &mut self,
         site: Site,
@@ -12847,6 +12774,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// trivial.
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn path_named(
         &self,
         head: Placed,
@@ -13661,6 +13592,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && self.cx.resolutions.len() == before.1
             && self.cx.operands.entries().len() == before.2,
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn written_stack(
         &mut self,
         at: NodeIndex,
@@ -14160,10 +14095,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(site.out(FragmentBoundary::NotAtResult));
             };
             let _open = cursor.tile(TileName::BRACKET_OPEN);
-            let row = self.returner_row(site, &mut cursor)?;
+            let row = CapabilityRef::new(self).returner_row(site, &mut cursor)?;
             let argument = site.one(cursor.operands())?;
             exhausted(site, &cursor)?;
-            return self.effectful(site, row, argument);
+            return Capability::new(self).effectful(site, row, argument);
         }
         let _keyword = cursor.tile(label);
         let name = self.cx.name_at(at);
@@ -14180,10 +14115,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             match former {
                 TypeFormer::Thunk => self.grade(site, &mut cursor)?,
                 TypeFormer::Returner => {
-                    let row = self.returner_row(site, &mut cursor)?;
+                    let row = CapabilityRef::new(self).returner_row(site, &mut cursor)?;
                     let argument = site.one(cursor.operands())?;
                     exhausted(site, &cursor)?;
-                    return self.effectful(site, row, argument);
+                    return Capability::new(self).effectful(site, row, argument);
                 },
                 TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => {
                     return Err(site.folded(
@@ -16671,7 +16606,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Plan::Scope(ref scoped) = *plan
             && let Maybe::Present(Lowered::Computation(scope)) = minted
-            && let Some((owner, laws)) = Self::scope_laws(scoped, scope, sink, origin)
+            && let Some((owner, laws)) = Capability::<Self>::scope_laws(scoped, scope, sink, origin)
         {
             self.cx.handler_laws.entry(owner).or_default().extend(laws);
         }
@@ -17183,7 +17118,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_application(head, arguments, sink, origin)
             },
             Plan::Function(function) => self.mint_function(&function, sink, origin),
-            Plan::Method(called) => self.mint_method(called, sink, origin),
+            Plan::Method(called) => CapabilityRef::new(self).mint_method(called, sink, origin),
             Plan::Data(constant, arguments) => {
                 NativeRef::over(&self.cx).mint_family(constant, arguments, sink, origin)
             },
@@ -17278,22 +17213,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_telescope_transport(transported, sink, origin)
             },
             Plan::Capability(ref authority, grade, region) => {
-                Self::mint_capability(authority, grade, region, sink, origin)
+                Capability::<Self>::mint_capability(authority, grade, region, sink, origin)
             },
-            Plan::Effectful(ref row, argument) => self.mint_effectful(row, argument, sink, origin),
-            Plan::Exercise(ref exercised) => self.mint_exercise(exercised, sink, origin),
-            Plan::Scope(ref scoped) => self.mint_scope(scoped, sink, origin),
+            Plan::Effectful(ref row, argument) => {
+                CapabilityRef::new(self).mint_effectful(row, argument, sink, origin)
+            },
+            Plan::Exercise(ref exercised) => {
+                CapabilityRef::new(self).mint_exercise(exercised, sink, origin)
+            },
+            Plan::Scope(ref scoped) => CapabilityRef::new(self).mint_scope(scoped, sink, origin),
             Plan::Resume(continuation, reply) => {
-                self.mint_resume(continuation, reply, sink, origin)
+                CapabilityRef::new(self).mint_resume(continuation, reply, sink, origin)
             },
-            Plan::Abandon(continuation) => self.mint_abandon(continuation, sink, origin),
+            Plan::Abandon(continuation) => {
+                CapabilityRef::new(self).mint_abandon(continuation, sink, origin)
+            },
             Plan::Session(ref protocol, payloads, ref written) => {
-                self.mint_session(protocol, payloads, written, sink, origin)
+                CapabilityRef::new(self).mint_session(protocol, payloads, written, sink, origin)
             },
             Plan::Action(ref action, subject, ref arms) => {
-                self.mint_action(action, (subject, arms), sink, origin)
+                CapabilityRef::new(self).mint_action(action, (subject, arms), sink, origin)
             },
-            Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
+            Plan::Access(accessed) => CapabilityRef::new(self).mint_access(accessed, sink, origin),
             Plan::World(worlded) => self.mint_world(worlded, sink, origin),
             Plan::Staged(base, stage) => self.mint_staged(base, stage, sink, origin),
             Plan::Patched {
@@ -19651,15 +19592,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   name is written, `thunk (λ … λ. fix. λ … λ. b)`, and a recursive tail
     ///   of no parameter its body, `thunk (fix. b)`, claiming structural
     ///   descent when a call claims it and partial otherwise; a written-through
-    ///   method's `b` runs under the hold of its receiver [`Self::hold_body`]
-    ///   mints, and a body whose parameters stand at a session type under their
-    ///   placements [`Self::place_body`] mints, outside the hold; its declared
-    ///   type is `+U (A1 -> … -> An -> C)`, one arrow per parameter with the
-    ///   binder tile's origin and `+U` the declaration form's, an arrow
-    ///   dependent where a later type names its parameter, and a
-    ///   written-through method's `C` the `F (T × R)` [`Self::written_result`]
-    ///   mints; a tail missing a parameter or result type mints the body alone;
-    ///   nothing is minted when the block did not lower.
+    ///   method's `b` runs under the hold of its receiver
+    ///   [`Capability::hold_body`] mints, and a body whose parameters stand at
+    ///   a session type under their placements [`CapabilityRef::place_body`]
+    ///   mints, outside the hold; its declared type is `+U (A1 -> … -> An ->
+    ///   C)`, one arrow per parameter with the binder tile's origin and `+U`
+    ///   the declaration form's, an arrow dependent where a later type names
+    ///   its parameter, and a written-through method's `C` the `F (T × R)`
+    ///   [`CapabilityRef::written_result`] mints; a tail missing a parameter or
+    ///   result type mints the body alone; nothing is minted when the block did
+    ///   not lower.
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
@@ -19714,9 +19656,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         if let Maybe::Present(receiver) = function.receiver {
-            body = Self::hold_body(receiver, body, sink, origin);
+            body = Capability::<Self>::hold_body(receiver, body, sink, origin);
         }
-        body = match self.place_body(function.endpoints, body, sink) {
+        body = match CapabilityRef::new(self).place_body(function.endpoints, body, sink) {
             Maybe::Present(placed) => placed,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -19889,7 +19831,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         if let Maybe::Present(receiver) = function.receiver {
-            declared = match self.written_result(receiver, parameters, declared, sink, origin) {
+            declared = match CapabilityRef::new(self)
+                .written_result(receiver, parameters, declared, sink, origin)
+            {
                 Maybe::Present(written) => written,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
@@ -19984,9 +19928,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   minted or absent.
     /// - ensures: `Cap {I} at r` at `origin` for the instance of `I` living at
     ///   the region binder `r`, `I` the theory at the sorts its row entry fixes
-    ///   when its label names one ([`Self::interface_signature`]); none for a
-    ///   binder binding no instance, an interface the host does not declare and
-    ///   no row entry read as a theory, or a fixed type that did not lower.
+    ///   when its label names one ([`CapabilityRef::interface_signature`]);
+    ///   none for a binder binding no instance, an interface the host does not
+    ///   declare and no row entry read as a theory, or a fixed type that did
+    ///   not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -20004,7 +19949,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let &(ref interface, region) = self.cx.instance_parameters.get(&binder)?;
         let signature = match self.cx.instance_theories.get(&binder) {
-            Some(theory) => self.interface_signature(
+            Some(theory) => CapabilityRef::new(self).interface_signature(
                 &capability::Interface::Theory(Arc::clone(theory)),
                 capability::Standing::Read,
                 sink,

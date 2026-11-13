@@ -317,6 +317,7 @@ use gandr_core_term::ua::Stratum;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_surface_lowering_base::lower::families::Families as _;
 pub(super) use gandr_surface_lowering_base::lower::identity::BACK;
 use gandr_surface_lowering_base::lower::identity::Callee;
 use gandr_surface_lowering_base::lower::identity::Codomain;

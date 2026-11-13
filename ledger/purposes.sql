@@ -3225,6 +3225,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::arguments','function'
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Arranged','enum','Names the entries of an arity-shaped form, of one kind throughout.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Dependent','struct','Holds whether a link of a type over labels binds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Entry','struct','Holds one entry of an arity-shaped form, as written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Grouped','struct','Holds whether the entries of a parenthesised type are a group of outputs.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Held','enum','Names what an entry of an arity-shaped form holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Key','enum','Names how an entry of an arity-shaped form is labelled.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Observed','struct','Holds the entry an observation selects of a lazy record, or a selection of a dependent record.',NULL,'fits','sound',NULL);
@@ -3234,6 +3235,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Projection','e
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Selected','struct','Holds one field a sub-record selects.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::Thunked','struct','Holds whether a lookup reads through a thunk type `+U X` to the `X` it holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::arrange','function','Orders the entries of an arity-shaped form by their keys, and refuses a form that mixes kinds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::clause_body','function','Reads a copattern clause as a body of its own, with no statements and the clause as its last computation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::arity::separated','function','Reads the separator after an entry: a comma, or the closer left for the loop to read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Authority','type_alias','Names the operations a capability type grants, named bare.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Clause','struct','Holds an operation clause of a capability scope, as the classification read it.',NULL,'fits','sound',NULL);
@@ -3245,6 +3247,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Mint','en
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Performer','enum','Names what performs an operation a call `x.op(v, …)` selects.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Scoped','struct','Holds a capability scope, as the classification read it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Standing','enum','Names where a theory''s signature stands, so its fixed types are read in their own context.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Stated','enum','Names what a binder''s declared type states to a call that its name heads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::Written','struct','Holds a capability scope''s written clauses, as the classification read them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::WrittenRow','struct','Holds a returner''s row as the classification reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::answered::Answering','struct','Holds the model that answers a capability scope over a theory.',NULL,'fits','sound',NULL);
@@ -3351,6 +3354,9 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Test','enum',
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::TestAt','struct','Holds a node of a decision tree, by its position in the tree''s node list.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::TreeLevel','struct','Holds a value a match''s decision tree scrutinises.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Typed','enum','Names where the type a field projection returns is read from.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Unwrapped','struct','Holds a form with its parentheses stripped.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::native::record_copied_since','function','Records the origin of each node minted since a mark, and each copy at the origin of the node that it copies.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::native::record_since','function','Records an origin for every node minted since a mark, and the root''s own origin for the root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::natural::Generator','struct','Holds a constructor as the mint reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::natural::Naturals','struct','Holds the prelude''s binary naturals.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::opening::Opened','struct','Holds a module a block statement opens, and the bytes it is open over.',NULL,'fits','sound',NULL);

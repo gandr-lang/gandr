@@ -182,7 +182,6 @@ use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
-use super::Block;
 use super::Context;
 use super::Frame;
 use super::LabelRead;
@@ -231,18 +230,8 @@ use crate::unbuilt::Unbuilt;
 #[cfg(test)]
 mod tests;
 
-/// A copattern clause read as a body of its own: no statements, the clause
-/// its last computation.
-///
-/// # Specification
-/// trivial.
-pub(super) fn clause_body(clause: NodeIndex) -> Block
-{
-    Block {
-        statements: FormStretch::default(),
-        last: clause,
-    }
-}
+pub(super) use gandr_surface_lowering_base::lower::arity::Grouped;
+pub(super) use gandr_surface_lowering_base::lower::arity::clause_body;
 
 /// What the hole-led entries of a telescope value read as.
 ///
@@ -308,15 +297,6 @@ enum Subject
     /// The family declared at the constant, the computation the operand runs.
     Family(ConstantIndex),
 }
-
-/// Whether the entries of a parenthesised type are a group of outputs. One
-/// unlabelled entry is no group: it groups one type.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Grouped(pub bool);
 
 /// Whether a written type is written as a computation type: a returner, a
 /// lazy product or a lazy record, or an arrow into one of those.
@@ -401,6 +381,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_builtin_type_s_lowercase_name_is_a_key_5561`
     /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn type_entries(
         &self,
@@ -3509,6 +3493,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::output_group`].
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.cx().form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn written_group(
         &mut self,
@@ -5631,6 +5619,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn mint_returns(
         &self,

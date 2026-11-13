@@ -78,6 +78,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_lowering_base::lower::families::Families as _;
 pub(super) use gandr_surface_lowering_base::lower::model::Bundled;
 use gandr_surface_lowering_base::lower::model::BundledTheory;
 pub(super) use gandr_surface_lowering_base::lower::model::Packed;

@@ -44,9 +44,9 @@ flowchart BT
   runtime -->|2| kernel
   runtime -->|5| core
   runtime -->|3| storage
-  surface -->|29| theory
-  surface -->|21| kernel
-  surface -->|41| core
+  surface -->|30| theory
+  surface -->|22| kernel
+  surface -->|42| core
   surface -->|11| storage
   surface -->|6| runtime
   workflow -->|1| theory

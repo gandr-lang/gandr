@@ -91,6 +91,7 @@ use super::Sink;
 use super::Site;
 use super::Statement;
 use super::StatementBinding;
+use super::capability::CapabilityRef;
 use super::capability::Interface;
 use super::capability::Standing;
 use super::closed;
@@ -191,12 +192,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Errors
-    /// None; the result is the shape [`Self::at_type`] returns.
+    /// None; the result is the shape
+    /// [`crate::lower::capability::Capability::at_type`] returns.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a handle at a declared world mints the handle type.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(ensures: |ret| ret.is_ok() && matches!(self.cx.plans.get(site.at.node), Some(&Plan::World(Worlded::At { inner, world: World::Declared(declared) })) if inner == operand.node && declared == constant))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn located_type(
         &mut self,
         site: Site,
@@ -394,9 +400,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: each world of the current source written with a requirement
     ///   holds, as a fault, the first refusal among its entries in written
     ///   order: an entry's interface resolved as a row resolves it
-    ///   ([`Self::handled`]), a label read as a row reads it, an effect theory
-    ///   under no label [`LoweringRefusal::UnlabelledRequirement`], and a label
-    ///   or an interface named whole written again
+    ///   ([`crate::lower::capability::CapabilityRef::handled`]), a label read
+    ///   as a row reads it, an effect theory under no label
+    ///   [`LoweringRefusal::UnlabelledRequirement`], and a label or an
+    ///   interface named whole written again
     ///   [`LoweringRefusal::DuplicateDefinition`] at the second. A slot already
     ///   refused, or already faulted, keeps its own.
     /// - fails: never; a refusal is carried by the world.
@@ -464,10 +471,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   source.
     /// - ensures: each world of the current source written with a requirement,
     ///   neither refused nor faulted, holds in `world_rows` the row of its
-    ///   unlabelled entries. Each entry gives its interface ([`Self::handled`])
-    ///   at its signature ([`Self::interface_signature`]), held. A labelled
-    ///   entry adds nothing: its instance waits on the label binders of #6546.
-    ///   A world with no unlabelled entry holds no row.
+    ///   unlabelled entries. Each entry gives its interface
+    ///   ([`crate::lower::capability::CapabilityRef::handled`]) at its
+    ///   signature ([`crate::lower::capability::CapabilityRef::interface_signature`]),
+    ///   held. A labelled entry adds nothing: its instance waits on the label
+    ///   binders of #6546. A world with no unlabelled entry holds no row.
     /// - fails: never; a world with an entry that mints no signature holds no
     ///   row, and the requirement check rules that out.
     /// - panics: none.
@@ -516,7 +524,7 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 }
                 let signature = match (
-                    self.handled(
+                    CapabilityRef::new(self).handled(
                         site,
                         &required.interface,
                         required.interface.last.node,
@@ -524,9 +532,8 @@ impl<'source> Lowerer<'_, 'source>
                     ),
                     self.cx.origin_at(required.interface.last.node),
                 ) {
-                    (Ok(interface), Maybe::Present(origin)) => {
-                        self.interface_signature(&interface, Standing::Read, sink, origin)
-                    },
+                    (Ok(interface), Maybe::Present(origin)) => CapabilityRef::new(self)
+                        .interface_signature(&interface, Standing::Read, sink, origin),
                     (Err(_), _) | (_, Maybe::Absent(_)) => Maybe::Absent(lowered::Absent::Unminted),
                 };
                 let Maybe::Present(signature) = signature
@@ -559,7 +566,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Errors
-    /// The refusals of [`Self::handled`] and [`Self::label_of`];
+    /// The refusals of [`crate::lower::capability::CapabilityRef::handled`] and
+    /// [`crate::lower::capability::CapabilityRef::label_of`];
     /// [`LoweringRefusal::UnlabelledRequirement`] at a theory under no label;
     /// [`LoweringRefusal::DuplicateDefinition`] at a name written again.
     ///
@@ -576,7 +584,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut labelled: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
         let mut whole: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
         for entry in entries {
-            let interface = self.handled(
+            let interface = CapabilityRef::new(self).handled(
                 site,
                 &entry.interface,
                 entry.interface.last.node,
@@ -584,7 +592,7 @@ impl<'source> Lowerer<'_, 'source>
             )?;
             let (span, name, seen) = match entry.label {
                 Maybe::Present(written) => {
-                    let named = self.label_of(site, written)?;
+                    let named = CapabilityRef::new(self).label_of(site, written)?;
                     (named.span, self.cx.name_at(named), &mut labelled)
                 },
                 Maybe::Absent(_) => {

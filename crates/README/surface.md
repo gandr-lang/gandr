@@ -17,6 +17,7 @@ crates/
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
 ├── surface-lowering/              the molded tree into core terms, over its base
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
+├── surface-lowering-capability/   the lowering's capability family
 ├── surface-lowering-exits/        the lowering's exits family
 ├── surface-lowering-native/       the lowering's native family
 ├── surface-lsp/                   the language server: its handlers and the hub

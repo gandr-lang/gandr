@@ -12,7 +12,9 @@ use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Block;
 use super::Site;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
@@ -222,6 +224,30 @@ pub enum Arranged<'source>
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Planned(pub bool);
+
+/// A copattern clause read as a body of its own: no statements, the clause
+/// its last computation.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+#[inline]
+pub fn clause_body(clause: NodeIndex) -> Block
+{
+    Block {
+        statements: FormStretch::default(),
+        last: clause,
+    }
+}
+
+/// Whether the entries of a parenthesised type are a group of outputs. One
+/// unlabelled entry is no group: it groups one type.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Grouped(pub bool);
 
 /// The place of an entry among the entries a type states, counting from
 /// zero.

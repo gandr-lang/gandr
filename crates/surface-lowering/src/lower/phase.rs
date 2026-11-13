@@ -137,6 +137,10 @@ impl<'source> Lowerer<'_, 'source>
         | Err(_) => false,
         | Ok(()) => true,
     })]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn phased(
         &self,
         site: Site,

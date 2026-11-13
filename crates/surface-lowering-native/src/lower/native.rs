@@ -436,11 +436,18 @@ use gandr_surface_lowering_base::lower::native::Test;
 use gandr_surface_lowering_base::lower::native::TestAt;
 use gandr_surface_lowering_base::lower::native::TreeLevel;
 use gandr_surface_lowering_base::lower::native::Typed;
+pub use gandr_surface_lowering_base::lower::native::Unwrapped;
 pub use gandr_surface_lowering_base::lower::native::answered;
 pub use gandr_surface_lowering_base::lower::native::bare;
+pub use gandr_surface_lowering_base::lower::native::constructed;
 pub use gandr_surface_lowering_base::lower::native::eliminated;
+pub use gandr_surface_lowering_base::lower::native::inherited;
 pub use gandr_surface_lowering_base::lower::native::passed;
+use gandr_surface_lowering_base::lower::native::record_copied_since;
+pub use gandr_surface_lowering_base::lower::native::record_since;
+pub use gandr_surface_lowering_base::lower::native::rooted;
 pub use gandr_surface_lowering_base::lower::native::settled;
+pub use gandr_surface_lowering_base::lower::native::unfolding;
 pub use gandr_surface_lowering_base::lower::native::worded;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -538,39 +545,6 @@ use crate::unbuilt::Unbuilt;
 mod clauses;
 
 quenchant_shape::reason_enum! {
-    /// Why a written type gives a field no classifier.
-    pub mod inherited {
-        /// The field's type is neither its family over its own parameters nor
-        /// a parameter a written classifier gives an argument for.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No classifier is read off the type.
-            Unclassified,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a node names no constructor.
-    pub mod constructed {
-        /// No data family declared strictly earlier has a constructor so named.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The name is no constructor's, or its family is not yet declared.
-            Unnamed,
-            /// The name stands at a place its data family declares a universe,
-            /// where it names a type.
-            TypePlace,
-            /// More than one family the site sees declares a constructor so
-            /// named, so the bare name selects none.
-            Several,
-            /// Two imports bind the name to two constructors.
-            Shadowed,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
     /// Why a name is no data family.
     pub mod family {
         /// The declaration at the constant is not a data declaration.
@@ -578,38 +552,6 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The declaration writes a value, a function or nothing.
             Undeclared,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a constant has no body a decode of it reads through.
-    pub mod unfolding {
-        /// The constant stands for itself where a type decodes it.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The constant is no top-level definition written as one form,
-            /// or its declaration refused.
-            Opaque,
-            /// The definition's body did not lower.
-            Unlowered,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why the nodes minted since a mark carry no written root.
-    pub mod rooted {
-        /// No node among them is the written form's own.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The tree did not lower, so what was minted toward it is all
-            /// inserted.
-            Unminted,
-            /// The match is its first arm's body, minted before and adopted.
-            Adopted,
-            /// The nodes carry a classifier the lowering inserted.
-            Classifier,
         }
     }
 }
@@ -906,29 +848,6 @@ impl Joint
 /// # Specification
 /// trivial.
 const UNWRITTEN: PatternAt = PatternAt(usize::MAX);
-
-/// A form with its parentheses stripped, as `Lowerer::unwrapped` reads it.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: the operands keep source order.
-/// - executable: none — the coordinates hold no tree to check them against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as `Lowerer::unwrapped`.
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Unwrapped
-{
-    /// The form's node.
-    pub node: NodeIndex,
-    /// Its former.
-    pub former: Former,
-    /// The first tile it is written with.
-    pub keyword: Option<Placed>,
-    /// Its operands, left to right.
-    pub operands: Vec<NodeIndex>,
-}
 
 /// One field of one generator of a written data family.
 ///
@@ -11000,183 +10919,6 @@ fn settle_unstated<'source>(
         }
     }
     Ok(())
-}
-
-/// Record `origin` for every node minted since `mark`, and the root's own
-/// origin for the root.
-///
-/// # Specification
-/// - requires: nothing has been recorded for a node minted since `mark`.
-/// - ensures: every node minted since `mark` carries `origin`, in ascending
-///   order in each family, except the root, which carries its own.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — every node of a compiled tree has an origin.
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
-#[spec(ensures: sink.arena.values_since(mark).all(|id| sink.origins.value(id) == Maybe::Present(origin))
-    && sink.arena.computations_since(mark).all(|id| match root {
-        | Maybe::Present((held, written)) if held == id => sink.origins.computation(id) == Maybe::Present(written),
-        | _ => sink.origins.computation(id) == Maybe::Present(origin),
-    }))]
-#[inline]
-pub fn record_since(
-    sink: &mut Sink<'_>,
-    mark: gandr_core_term::ArenaWatermark,
-    origin: Origin,
-    root: Maybe<(ComputationId, Origin), rooted::Absent>,
-)
-{
-    record_copied_since(sink, mark, origin, root, &[]);
-}
-
-/// Record, for every copy a match's leaves made of a written variable, the
-/// binder the variable was written against.
-///
-/// A leaf places an arm's body under the binders its tests opened, so each
-/// written use in the body stands in the tree as the copy the substitution
-/// minted for it. The copy keeps the use's binder, which is what names the
-/// binders a split opens for its components: a type the copy's judgement
-/// spells, a dependent split's answer at its components say, reads them by
-/// the names the arm wrote. A pattern variable that binds the whole scrutinee
-/// stands for the scrutinee's own node, which the leaf did not mint; that
-/// node keeps the binding it was written with.
-///
-/// A rewrite can copy a copy: an arm that writes a call inside another form
-/// reports the use's first copy as the source of a second. The copies are
-/// recorded in ascending order and each source is read as the loop reaches
-/// it, so the second copy finds the binder its source took earlier in the
-/// same pass; reading every source before recording any left it unbound.
-///
-/// # Specification
-/// - requires: `carried` is what the rewrites since `floor` reported, and no
-///   variable the origin table records a binding for was minted after it.
-/// - ensures: every value minted after `floor` that `carried` maps a recorded
-///   use to holds that use's binder, recorded once, in ascending order of the
-///   copies; a value from before `floor` keeps what it held.
-/// - provides: what keeps a match leaf's copy of a use naming its binder.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a leaf's copy of an arm returning its two pattern
-///   variables swapped names each at the variable that binds it, and a variable
-///   binding the whole scrutinee leaves the scrutinee bound at its parameter; a
-///   copy left without its binding, bound at the other component, or a
-///   scrutinee rebound at the pattern fails the witness. A copy the same
-///   rewrite made of a copy names the use's binder too; reading every source
-///   before recording any leaves it unbound and fails the second witness.
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_leaf_copy_keeps_each_use_naming_its_pattern_variable`
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder_451`
-#[spec(
-    requires: sink.arena.values_since(floor).next().is_none_or(|first| {
-        sink.origins.bindings().last().is_none_or(|&(held, _)| held < first)
-    }),
-    ensures: carried.iter().all(|pair| match *pair {
-        Carried::Value(held, written) => sink.arena.values_since(floor).next().is_none_or(|first| written < first)
-            || matches!(sink.origins.binding(held), Maybe::Absent(_))
-            || matches!(sink.origins.binding(written), Maybe::Present(_)),
-        Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => true,
-    }),
-)]
-fn carry_bindings(
-    sink: &mut Sink<'_>,
-    carried: &[Carried],
-    floor: gandr_core_term::ArenaWatermark,
-)
-{
-    let Some(first) = sink.arena.values_since(floor).next()
-    else {
-        return;
-    };
-    let mut copies: Vec<(ValueId, ValueId)> = carried
-        .iter()
-        .filter_map(|pair| match *pair {
-            Carried::Value(held, written) if first <= written => Some((written, held)),
-            Carried::Value(..)
-            | Carried::Computation(..)
-            | Carried::ValueType(..)
-            | Carried::CompType(..) => None,
-        })
-        .collect();
-    copies.sort_by_key(|&(written, _)| written);
-    let mut recorded = None;
-    for (written, held) in copies {
-        if recorded == Some(written) {
-            continue;
-        }
-        if let Maybe::Present(binder) = sink.origins.binding(held) {
-            sink.origins.record_binding(written, binder);
-            recorded = Some(written);
-        }
-    }
-}
-
-/// [`record_since`], each node `carried` reports as a copy at the origin of
-/// the node it was copied from, and each copy of a written use at the use's
-/// binder.
-///
-/// # Specification
-/// - requires: nothing has been recorded for a node minted since `mark`, and
-///   `carried` reports the rewrites that minted the copies among them.
-/// - ensures: every node minted since `mark` carries an origin, in ascending
-///   order in each family: the root its own; a node `carried` reports as a copy
-///   the origin of the node it was copied from, a copy of a match's root that
-///   match's record too; every other node `origin`. Each written variable the
-///   rewrite replaced by a node answering elsewhere is labelled with it, and a
-///   copy of a written use holds the use's binder, as [`carry_bindings`]
-///   states.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — every node of a compiled tree has an origin, and a leaf's
-///   copy of its arm's body answers at the body's bytes.
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_leaf_keeps_its_arm_body_written`
-/// - witness: `gandr-surface-lowering::lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_leaf_copy_keeps_each_use_naming_its_pattern_variable`
-#[spec(ensures: sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_)))
-    && sink.arena.computations_since(mark).all(|id| match root {
-        | Maybe::Present((held, written)) if held == id => sink.origins.computation(id) == Maybe::Present(written),
-        | _ => matches!(sink.origins.computation(id), Maybe::Present(_)),
-    }))]
-fn record_copied_since(
-    sink: &mut Sink<'_>,
-    mark: gandr_core_term::ArenaWatermark,
-    origin: Origin,
-    root: Maybe<(ComputationId, Origin), rooted::Absent>,
-    carried: &[Carried],
-)
-{
-    let sources = gandr_core_term::Sources::of(carried);
-    for id in sink.arena.values_since(mark) {
-        let recorded = exits::value_origin(sink, &sources, id, origin);
-        sink.origins.record_value(id, recorded);
-    }
-    for id in sink.arena.computations_since(mark) {
-        match root {
-            Maybe::Present((held, written)) if held == id => {
-                sink.origins.record_computation(id, written);
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => {
-                let recorded = exits::computation_origin(sink, &sources, id, origin);
-                sink.origins.record_computation(id, recorded);
-                exits::keep_case(sink, &sources, id);
-            },
-        }
-    }
-    for id in sink.arena.value_types_since(mark) {
-        let recorded = exits::value_type_origin(sink, &sources, id, origin);
-        sink.origins.record_value_type(id, recorded);
-    }
-    for id in sink.arena.comp_types_since(mark) {
-        let recorded = exits::comp_type_origin(sink, &sources, id, origin);
-        sink.origins.record_comp_type(id, recorded);
-    }
-    exits::label_replaced(sink, carried);
-    carry_bindings(sink, carried, mark);
 }
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
