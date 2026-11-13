@@ -11,6 +11,13 @@ check-dist = ["check", "--config=.cargo/config.dist.toml", "--profile=dist"]
 [env]
 MOLD_JOBS = "1"
 
+# Cargo fetches a Git source, such as quenchant, with the `git` command.
+# libgit2 gives a TLS fault the class `Ssl`, and Cargo does not retry that
+# class, so one fault failed a CI job (#5469). Cargo retries a failure of the
+# `git` command `net.retry` times. The CI image installs `git` for this.
+[net]
+git-fetch-with-cli = true
+
 # rustc's parallel front end compiles one crate on up to 16 threads. The
 # gain stops at 16 threads on the hosts measured. The threads take their
 # tokens from Cargo's jobserver, so a build never runs more than `-j` admits.
