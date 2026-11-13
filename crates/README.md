@@ -2,7 +2,7 @@
 
 This file is the naming authority for the workspace's crates. A crate lives at `crates/<category>-<name>` and its package is `gandr-<category>-<name>`; the driver's row names the one exception, and its README gives the reason.
 
-Three disciplines: consult this file before naming a crate; when it is silent, derive the name from the layering below and the crates beside it; add the row in the same change that adds the crate. A divergence is recorded here, not smoothed over.
+Three disciplines: consult this file before naming a crate; when it is silent, derive the name from the layering below and the crates beside it; add the row to its category's file in the same change that adds the crate. A divergence is recorded here, not smoothed over.
 
 ## Layering
 
@@ -24,102 +24,15 @@ The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and th
 
 ## Members
 
-One row per directory: the directory and what it is.
+One file for each category holds its member rows: one row for each directory, the directory and what it is. `check:crate-map` refuses a crate with no row, a row with no crate, a row in another category's file, and a count below that differs from its file.
 
-```text
-# Rows sort lexicographically by directory; the dependency order is § Layering.
-crates/
-├── core-checker/                  the checking judgement under one name
-├── core-checker-base/             the faces, module run and refusals
-├── core-checker-bridge/           kernel readmission, staging families
-├── core-fork/                     the fork a consumer hands its independent jobs to, and its serial reference
-├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
-├── core-nbe/                      evaluation, readback, conversion, native path transport
-├── core-nbe-base/                 the glued domain; the overlay, its erasure and its measure; staging
-├── core-publish/                  whole files by rename or link
-├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
-├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay, dialogue admission by logical time and certified recorded-run transport
-├── core-term/                     core syntax with native universe paths, the one unified context and the co-de Bruijn carrier
-├── core-unify/                    contextual metavariables and their unifier: most general solutions only, one store of postponed equations woken by their blockers, refutation on stable evidence
-├── kernel-check-memo/             the check-memo seam a checker consults
-├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
-├── kernel-core/                   checking, conversion, admission; native universes, recursors; stages; certificate, stage replay
-├── kernel-core-base/              the record, staging, names, support, rewrites, refusals, verdict keys
-├── kernel-strata/                 the universe-level oracle with checkable order evidence
-├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
-├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
-├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
-├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
-├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
-├── storage-chunker/               content-defined chunk boundaries and their committed parameters
-├── storage-records/               the authenticated ordered-record plane
-├── storage-schema/                the record plane as C-sets with checked equations
-├── storage-store/                 one store over both planes and named roots
-├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
-├── surface-agentic/               the agentic face of the hub: the Reactive Agent Protocol's toolset by default, the Model Context Protocol for compatibility
-├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
-├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
-├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
-├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: its verbs and their exit codes
-├── surface-evaluate/              the run stage: the dispatcher's engine
-├── surface-features/              the features ledger as data, read by the toolchain and the tools
-├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
-├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
-├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
-├── surface-lowering/              the molded tree into core terms
-├── surface-lowering-base/         the lowering's base: refusals, forms, names, the module pass
-├── surface-lowering-native/       the lowering's native family
-├── surface-lsp/                   the language server: its handlers and the hub
-├── surface-lsp-core/              the reading, hover, completion, tokens
-├── surface-lsp-diagnostics/       the recheck, kernel tiers, fixes
-├── surface-lsp-navigation/        references, rename, calls, hints
-├── surface-lsp-base/              the protocol, positions and markup
-├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
-├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
-├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
-├── surface-render-terminal/       the terminal face of the diagnostics model: a diagnostic laid out as a located source snippet, plain or styled
-├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
-├── surface-session/               the interactive session: each revision lowered, judged and checkpointed for the REPL, server and terminal
-├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
-├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
-├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
-├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
-├── theory-cellular-sheaves/       cellular sheaves: gluing and cohomology
-├── theory-circuit-algebras/       the diagram view, the spine reading, convex embedding matching and the diagram normal form
-├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
-├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed
-├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
-├── theory-deep-inference/         shift equivalence, the causal order and web, the certificate normal form and its replay plan, guarded-family prices
-├── theory-discrete-morse/         acyclic matchings: their check and the greedy matching
-├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
-├── theory-e-graphs/               a proof-producing e-graph over a Lawvere theory's term table
-├── theory-exact-reals/            canonical dyadics, outward-rounded intervals and the scoped plan DAG, outside the kernel
-├── theory-graded-posets/          graded posets with cells as data
-├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
-├── theory-levitation/             the code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
-├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
-├── theory-order-maintenance/      order maintenance with constant-time comparison
-├── theory-ordered-algebras/       one law checker for ordered semirings and rings, a counterexample per broken law, its instances, and exact Clifford+T amplitudes
-├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
-├── theory-probability/            exact finite distributions, and inference by gluing
-├── theory-shapes/                 finite shapes: decidable subshapes, inclusions, the outer pushout, and face entailment in three bands, derived or refuted
-├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
-├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
-├── theory-stone-duality/          finite Stone duality: the free distributive lattice in normal form, finite Birkhoff duality, and monotone maps as lattice homomorphisms
-├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
-├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
-├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
-├── workflow-debt-ledger/          the comment and prose gates' debt ledger
-├── workflow-github/               the workflow binaries' one `gh` runner
-├── workflow-host-tools/           the `host-tools` binary: the tools with no binary for a host's target, built once and copied to its hosts
-├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
-├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
-├── workflow-ledger-tasks/         the `ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read
-├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger
-├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
-├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly
-└── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
-```
+- [`theory`](README/theory.md): 25 crates
+- [`kernel`](README/kernel.md): 6 crates
+- [`core`](README/core.md): 12 crates
+- [`storage`](README/storage.md): 6 crates
+- [`runtime`](README/runtime.md): 3 crates
+- [`surface`](README/surface.md): 26 crates
+- [`workflow`](README/workflow.md): 12 crates
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 

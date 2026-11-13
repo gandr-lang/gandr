@@ -1276,6 +1276,7 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)README.md' \
   ':(exclude,glob)CHANGELOG.md' \
   ':(exclude,glob)crates/README.md' \
+  ':(exclude,glob)crates/README/*.md' \
   ':(exclude,glob)crates/*/README.md' \
   ':(exclude,glob)contrib/*/README.md' \
   ':(exclude,glob)library/*/README.md' \
@@ -1689,7 +1690,9 @@ run = ".github/actions/find-image/cases.bash"
 # the category graph in `ledger/README.md` § Map (#3890) are what `cargo
 # metadata` and `ledger/concerns.sql` give now, no crate lies outside the
 # layering's categories of `crates/README.md`, and no edge points to a
-# category listed after its own. Each
+# category listed after its own. Each crate has one row, in the file of its
+# category, `crates/README/<category>.md`, and § Members of
+# `crates/README.md` counts each file's rows (#7215). Each
 # case in `.config/crate-map/cases.json` holds the program's arguments, an
 # input and the raw output it must give.
 #
@@ -1750,7 +1753,10 @@ while IFS='|' read -r concern interface; do
 done < <(concerns 'SELECT id, interface FROM concern WHERE interface IS NOT NULL ORDER BY id;')
 cargo metadata --locked --no-deps --format-version 1 > "$fresh/metadata.json"
 sites=$(sqlite3 -json "$db" 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
-map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --rawfile page ledger/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq "$fresh/metadata.json"; }
+for listing in crates/README/*.md; do
+  jq -n --arg file "$listing" --rawfile text "$listing" '{file: $file, text: $text}'
+done > "$fresh/listed.json"
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --rawfile page ledger/README.md --argjson concerns "${sites:-[]}" --slurpfile listed "$fresh/listed.json" -f .config/crate-map/map.jq "$fresh/metadata.json"; }
 findings=$(map -r findings)
 if [[ -n "$findings" ]]; then
   printf '%s\n' "$findings" >&2

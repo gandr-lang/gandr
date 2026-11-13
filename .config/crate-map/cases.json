@@ -3,8 +3,22 @@
     "name": "a crate outside crates/<category>-<name> and an edge up the layering are refused",
     "args": {
       "form": "findings",
-      "readme": "# crates\n\n## Layering\n\nCategories are a layering order.\n\n```text\ntheory    t\ncore      c\nsurface   s\n```\n\n## Map\n\n<!-- crate-map:begin -->\nstale\n<!-- crate-map:end -->\n\n## Members\n",
-      "concerns": []
+      "readme": "# crates\n\n## Layering\n\nCategories are a layering order.\n\n```text\ntheory    t\ncore      c\nsurface   s\n```\n\n## Map\n\n<!-- crate-map:begin -->\nstale\n<!-- crate-map:end -->\n\n## Members\n\n- [`theory`](README/theory.md): 1 crate\n- [`core`](README/core.md): 1 crate\n- [`surface`](README/surface.md): 1 crate\n",
+      "concerns": [],
+      "listed": [
+        {
+          "file": "crates/README/theory.md",
+          "text": "```text\ncrates/\n└── theory-a/      t\n```\n"
+        },
+        {
+          "file": "crates/README/core.md",
+          "text": "```text\ncrates/\n└── core-c/        c\n```\n"
+        },
+        {
+          "file": "crates/README/surface.md",
+          "text": "```text\ncrates/\n└── surface-b/     s\n```\n"
+        }
+      ]
     },
     "input": {
       "workspace_root": "/w",
@@ -281,11 +295,25 @@
     "name": "a concern site in a crate the workspace does not have is refused",
     "args": {
       "form": "findings",
-      "readme": "# crates\n\n## Layering\n\nCategories are a layering order.\n\n```text\ntheory    t\ncore      c\nsurface   s\n```\n\n## Map\n\n<!-- crate-map:begin -->\nstale\n<!-- crate-map:end -->\n\n## Members\n",
+      "readme": "# crates\n\n## Layering\n\nCategories are a layering order.\n\n```text\ntheory    t\ncore      c\nsurface   s\n```\n\n## Map\n\n<!-- crate-map:begin -->\nstale\n<!-- crate-map:end -->\n\n## Members\n\n- [`theory`](README/theory.md): 1 crate\n- [`core`](README/core.md): 1 crate\n- [`surface`](README/surface.md): 1 crate\n",
       "concerns": [
         {
           "concern": "fork",
           "crate": "core-gone"
+        }
+      ],
+      "listed": [
+        {
+          "file": "crates/README/theory.md",
+          "text": "```text\ncrates/\n└── theory-a/      t\n```\n"
+        },
+        {
+          "file": "crates/README/core.md",
+          "text": "```text\ncrates/\n└── core-c/        c\n```\n"
+        },
+        {
+          "file": "crates/README/surface.md",
+          "text": "```text\ncrates/\n└── surface-b/     s\n```\n"
         }
       ]
     },
@@ -346,5 +374,50 @@
       ]
     },
     "output": "tools/x: not crates/<category>-<name> with a category of crates/README.md § Layering\ntheory-a -> surface-b: surface is listed after theory in crates/README.md § Layering\nfork: a site in core-gone, which is not a workspace crate"
+  },
+  {
+    "name": "#7215: each crate has one row in its category's file, the rows sort, and § Members counts each file's rows",
+    "args": {
+      "form": "findings",
+      "readme": "# crates\n\n## Layering\n\nCategories are a layering order.\n\n```text\ntheory    t\ncore      c\nsurface   s\n```\n\n## Map\n\n<!-- crate-map:begin -->\nstale\n<!-- crate-map:end -->\n\n## Members\n\n- [`theory`](README/theory.md): 2 crates\n- [`surface`](README/core.md): 1 crate\n",
+      "concerns": [],
+      "listed": [
+        {
+          "file": "crates/README/theory.md",
+          "text": "```text\ncrates/\n├── theory-b/      t\n├── theory-a/      t\n├── theory-a/      t\n└── theory-gone/   t\n```\n"
+        },
+        {
+          "file": "crates/README/core.md",
+          "text": "```text\ncrates/\n└── surface-d/     s\n```\n"
+        },
+        { "file": "crates/README/misc.md", "text": "```text\ncrates/\n```\n" }
+      ]
+    },
+    "input": {
+      "workspace_root": "/w",
+      "packages": [
+        {
+          "name": "gandr-theory-a",
+          "manifest_path": "/w/crates/theory-a/Cargo.toml",
+          "dependencies": []
+        },
+        {
+          "name": "gandr-theory-b",
+          "manifest_path": "/w/crates/theory-b/Cargo.toml",
+          "dependencies": []
+        },
+        {
+          "name": "gandr-core-c",
+          "manifest_path": "/w/crates/core-c/Cargo.toml",
+          "dependencies": []
+        },
+        {
+          "name": "gandr-surface-d",
+          "manifest_path": "/w/crates/surface-d/Cargo.toml",
+          "dependencies": []
+        }
+      ]
+    },
+    "output": "crates/README/misc.md: not crates/README/<category>.md with a category of crates/README.md § Layering\ncore-c: no row in crates/README/core.md\ncrates/README/theory.md: theory-gone is a row with no crate\ncrates/README/core.md: surface-d is a surface crate, whose row goes in crates/README/surface.md\ncrates/README/theory.md: theory-a has 2 rows\ncrates/README/theory.md: the rows do not sort by directory\ncrates/README.md § Members: theory counts 2 crates, and crates/README/theory.md holds 4 rows\ncrates/README.md § Members: no line for core\ncrates/README.md § Members: surface links crates/README/core.md"
   }
 ]
