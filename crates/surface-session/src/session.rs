@@ -3790,6 +3790,17 @@ impl<Store, Blocks> Session<Store, Blocks>
         }))
     }
 
+    /// Throwaway #7231 probe: the kept record.
+    #[cfg(feature = "instrument")]
+    pub fn record(&self) -> Maybe<&gandr_core_checker::bridge::Crossed, crossed::Absent>
+    {
+        self.kept
+            .as_deref()
+            .map_or(Maybe::Absent(crossed::Absent::Unasked), |kept| {
+                Maybe::Present(kept.crossed())
+            })
+    }
+
     /// The account of the latest judged revision: one row for each declaration
     /// of its own text, by its content key, with the checker's verdict, the
     /// kernel tier and the compile tier.

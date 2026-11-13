@@ -2164,6 +2164,12 @@ impl Crossed
         }
     }
 
+    /// Throwaway #7231 probe: the record's environment.
+    pub const fn environment(&self) -> &Environment
+    {
+        &self.environment
+    }
+
     /// The record of `built` — the environment, positions and entries of a
     /// readmission that resumed `from` entries, once it reached its boundary —
     /// when it holds one.
