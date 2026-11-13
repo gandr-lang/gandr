@@ -6,7 +6,7 @@
 # The trunk is `landing`. Each pull request opens on it, and the queue of
 # `landing` lands it. `main` stays GitHub's default branch, so the workflows
 # run from it. It takes only the integration cycle's fast-forward
-# (`.github/workflows/integration.yml`). A run that must read another trunk
+# (`.github/workflows/landing-integration-cycle.yml`). A run that must read another trunk
 # sets `GANDR_TRUNK` in its environment, outside the tree.
 trunk=${GANDR_TRUNK:-landing}
 # The branches that outlive every unit: the default branch, the landing

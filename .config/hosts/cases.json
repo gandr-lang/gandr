@@ -5,14 +5,14 @@
       "runners": null,
       "runs": [
         {
-          "name": "riscv64",
+          "name": "nightly-riscv64-tests",
           "conclusion": "failure",
           "status": "completed",
           "id": 43228633358,
           "created_at": "2026-11-12T13:34:43Z"
         },
         {
-          "name": "Nightly",
+          "name": "nightly-sweeps",
           "conclusion": "cancelled",
           "status": "completed",
           "id": 43213997123,
@@ -20,28 +20,34 @@
         }
       ],
       "owners": {
-        "CI": "fixer",
-        "Nightly": "fixer",
-        "integration": "fixer",
-        "riscv64": "fixer",
-        "triage": "fixer"
+        "landing-checks": "fixer",
+        "nightly-sweeps": "fixer",
+        "landing-integration-cycle": "fixer",
+        "nightly-riscv64-tests": "fixer",
+        "tracker-check-labels": "fixer"
       },
-      "workflows": ["CI", "Nightly", "integration", "riscv64", "triage"],
+      "workflows": [
+        "landing-checks",
+        "nightly-sweeps",
+        "landing-integration-cycle",
+        "nightly-riscv64-tests",
+        "tracker-check-labels"
+      ],
       "now": 1763000000,
       "offline": {}
     },
     "output": {
       "lines": [
         "hosts:",
-        "  integration: online unread, busy unread; run riscv64 failed 43228633358 since 13:34Z",
+        "  integration: online unread, busy unread; run nightly-riscv64-tests failed 43228633358 since 13:34Z",
         "  factory: online unread, busy unread; no scheduled run",
-        "  RISCV64: online unread, busy unread; run riscv64 failed 43228633358 since 13:34Z",
+        "  RISCV64: online unread, busy unread; run nightly-riscv64-tests failed 43228633358 since 13:34Z",
         "  unowned: none"
       ],
       "pages": [
         {
           "run": 43228633358,
-          "line": "RUN riscv64 43228633358: a scheduled run on our runners failed. Repair it ahead of your queue."
+          "line": "RUN nightly-riscv64-tests 43228633358: a scheduled run on our runners failed. Repair it ahead of your queue."
         }
       ],
       "offline": {}
@@ -53,37 +59,37 @@
       "runners": null,
       "runs": [
         {
-          "name": "riscv64",
+          "name": "nightly-riscv64-tests",
           "conclusion": "failure",
           "status": "completed",
           "id": 11,
           "created_at": "2026-11-12T13:34:43Z"
         },
         {
-          "name": "Nightly",
+          "name": "nightly-sweeps",
           "conclusion": "cancelled",
           "status": "completed",
           "id": 22,
           "created_at": "2026-11-12T18:00:00Z"
         }
       ],
-      "owners": { "riscv64": "fixer", "Nightly": "fixer" },
-      "workflows": ["riscv64", "Nightly"],
+      "owners": { "nightly-riscv64-tests": "fixer", "nightly-sweeps": "fixer" },
+      "workflows": ["nightly-riscv64-tests", "nightly-sweeps"],
       "now": 1763000000,
       "offline": {}
     },
     "output": {
       "lines": [
         "hosts:",
-        "  integration: online unread, busy unread; run Nightly cancelled 22 since 18:00Z",
+        "  integration: online unread, busy unread; run nightly-sweeps cancelled 22 since 18:00Z",
         "  factory: online unread, busy unread; no scheduled run",
-        "  RISCV64: online unread, busy unread; run Nightly cancelled 22 since 18:00Z",
+        "  RISCV64: online unread, busy unread; run nightly-sweeps cancelled 22 since 18:00Z",
         "  unowned: none"
       ],
       "pages": [
         {
           "run": 11,
-          "line": "RUN riscv64 11: a scheduled run on our runners failed. Repair it ahead of your queue."
+          "line": "RUN nightly-riscv64-tests 11: a scheduled run on our runners failed. Repair it ahead of your queue."
         }
       ],
       "offline": {}
@@ -95,30 +101,30 @@
       "runners": null,
       "runs": [
         {
-          "name": "riscv64",
+          "name": "nightly-riscv64-tests",
           "conclusion": "failure",
           "status": "completed",
           "id": 43228633358,
           "created_at": "2026-11-12T13:34:43Z"
         }
       ],
-      "owners": { "Nightly": "fixer" },
-      "workflows": ["riscv64", "Nightly"],
+      "owners": { "nightly-sweeps": "fixer" },
+      "workflows": ["nightly-riscv64-tests", "nightly-sweeps"],
       "now": 1763000000,
       "offline": {}
     },
     "output": {
       "lines": [
         "hosts:",
-        "  integration: online unread, busy unread; run riscv64 failed 43228633358 since 13:34Z",
+        "  integration: online unread, busy unread; run nightly-riscv64-tests failed 43228633358 since 13:34Z",
         "  factory: online unread, busy unread; no scheduled run",
-        "  RISCV64: online unread, busy unread; run riscv64 failed 43228633358 since 13:34Z",
-        "  unowned: riscv64"
+        "  RISCV64: online unread, busy unread; run nightly-riscv64-tests failed 43228633358 since 13:34Z",
+        "  unowned: nightly-riscv64-tests"
       ],
       "pages": [
         {
           "run": 43228633358,
-          "line": "RUN riscv64 43228633358: a scheduled run on our runners failed. Repair it ahead of your queue."
+          "line": "RUN nightly-riscv64-tests 43228633358: a scheduled run on our runners failed. Repair it ahead of your queue."
         }
       ],
       "offline": {}
@@ -140,8 +146,8 @@
         }
       ],
       "runs": [],
-      "owners": { "riscv64": "fixer" },
-      "workflows": ["riscv64"],
+      "owners": { "nightly-riscv64-tests": "fixer" },
+      "workflows": ["nightly-riscv64-tests"],
       "now": 1763010000,
       "offline": { "RISCV64": 1763000000 }
     },
@@ -168,30 +174,30 @@
       "runners": null,
       "runs": [
         {
-          "name": "riscv64",
+          "name": "nightly-riscv64-tests",
           "conclusion": null,
           "status": "queued",
           "id": 9,
           "created_at": "2026-11-13T00:00:00Z"
         }
       ],
-      "owners": { "riscv64": "fixer" },
-      "workflows": ["riscv64"],
+      "owners": { "nightly-riscv64-tests": "fixer" },
+      "workflows": ["nightly-riscv64-tests"],
       "now": 1794531600,
       "offline": {}
     },
     "output": {
       "lines": [
         "hosts:",
-        "  integration: online unread, busy unread; run riscv64 queued 9 since 00:00Z",
+        "  integration: online unread, busy unread; run nightly-riscv64-tests queued 9 since 00:00Z",
         "  factory: online unread, busy unread; no scheduled run",
-        "  RISCV64: online unread, busy unread; run riscv64 queued 9 since 00:00Z",
+        "  RISCV64: online unread, busy unread; run nightly-riscv64-tests queued 9 since 00:00Z",
         "  unowned: none"
       ],
       "pages": [
         {
           "run": 9,
-          "line": "RUN riscv64 9: a scheduled run on our runners queued. Repair it ahead of your queue."
+          "line": "RUN nightly-riscv64-tests 9: a scheduled run on our runners queued. Repair it ahead of your queue."
         }
       ],
       "offline": {}

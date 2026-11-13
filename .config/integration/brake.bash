@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # The brake's reading (#5442), which `ci:brake` and `ci:cycle` source.
 # `brake_read <runs>` prints the output of `brake.jq`. The file `runs` holds
-# the newest dispatched runs of ci.yml on `integration`, as the caller read
+# the newest dispatched runs of landing-checks.yml on `integration`, as the caller read
 # them. The lag in hours comes from git with no API call: the checkout
 # fetches the commits of the whole history, with `origin/main` and
 # `origin/landing` as they stand at the checkout. A local run reads the refs

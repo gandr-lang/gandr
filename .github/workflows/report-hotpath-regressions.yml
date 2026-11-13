@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: hotpath guard
+name: report-hotpath-regressions
 
 # A failed `hotpath / <benchmark>` check files a row on each regressed
 # function's issue, `perf: <function>` (`mise run ci:hotpath-guard`,
@@ -51,16 +51,16 @@ env:
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
   MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
   MISE_CARGO_BINSTALL_NATIVE: "true"
-  # Must match ci.yml and the image. The image checks the list at build time.
+  # Must match landing-checks.yml and the image. The image checks the list at build time.
   MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
-  # Must match ci.yml: a job's mise writes no line of `mise.lock` (#6976).
+  # Must match landing-checks.yml: a job's mise writes no line of `mise.lock` (#6976).
   MISE_LOCKFILE_MODE: merge
 
 jobs:
   file:
     name: file the concluded hotpath checks
     if: ${{ !github.event.repository.fork && (github.event_name == 'workflow_dispatch' || (startsWith(github.event.check_run.name, 'hotpath / ') && (github.event.check_run.conclusion == 'failure' || github.event.check_run.conclusion == 'success'))) }}
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     # actions: read lists and downloads each side's kept report
@@ -95,7 +95,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      # mise provides rustup under act, so it installs first, as in ci.yml.
+      # mise provides rustup under act, so it installs first, as in landing-checks.yml.
       - name: install mise-managed policy tools
         if: ${{ steps.rows.outputs.skip != 'true' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]

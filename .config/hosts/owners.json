@@ -1,10 +1,16 @@
 {
   "owners": {
-    "CI": "fixer",
-    "Nightly": "fixer",
-    "integration": "fixer",
-    "riscv64": "fixer",
-    "triage": "fixer"
+    "landing-checks": "fixer",
+    "nightly-sweeps": "fixer",
+    "landing-integration-cycle": "fixer",
+    "nightly-riscv64-tests": "fixer",
+    "tracker-check-labels": "fixer"
   },
-  "workflows": ["CI", "Nightly", "integration", "riscv64", "triage"]
+  "workflows": [
+    "landing-checks",
+    "nightly-sweeps",
+    "landing-integration-cycle",
+    "nightly-riscv64-tests",
+    "tracker-check-labels"
+  ]
 }

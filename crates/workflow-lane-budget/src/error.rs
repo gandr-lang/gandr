@@ -137,10 +137,10 @@ mod tests
             ),
             (
                 BudgetError::Summed {
-                    text: "Nightly=1200/900".into(),
+                    text: "nightly-sweeps=1200/900".into(),
                 },
-                "`Nightly=1200/900` is not a workflow name, `=`, and whole seconds of a budget \
-                 `/` a ceiling no smaller",
+                "`nightly-sweeps=1200/900` is not a workflow name, `=`, and whole seconds of a \
+                 budget `/` a ceiling no smaller",
             ),
             (
                 BudgetError::Reader {

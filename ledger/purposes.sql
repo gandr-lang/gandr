@@ -5676,7 +5676,7 @@ INSERT INTO purpose VALUES('workflow-hotpath-guard','report::Unaccepted','struct
 INSERT INTO purpose VALUES('workflow-hotpath-guard','report::Unpulled','struct','Names why a commit names no pull request, so the reason''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','report::VERDICT_MARKER','constant','Names the marker that closes the hotpath verdict''s task line, so the marker''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','budget::Budget','struct','One row of the budget table: a job, the cone it bounds, and the seconds its median may take.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-lane-budget','budget::Lane','struct','A job''s display name, as the CI workflow names it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-lane-budget','budget::Lane','struct','A job''s display name, as the landing-checks workflow names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','budget::RunCount','struct','How many of the latest runs a report reads; never zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','budget::Seconds','struct','Whole seconds of job time.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','cone::Cone','enum','The cone a landing''s changed files touch.',NULL,'fits','sound',NULL);
@@ -5700,7 +5700,7 @@ INSERT INTO purpose VALUES('workflow-lane-budget','report::RunId','struct','A wo
 INSERT INTO purpose VALUES('workflow-lane-budget','report::Sample','struct','One successful job of a sampled run: its name and how long it ran.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::SampleCount','struct','How many samples a row''s median comes from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::Standing','enum','How a lane, or the whole report, stands against its budget.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-lane-budget','report::StateClass','struct','A class of saved build state, as the nightly workflow keys it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-lane-budget','report::StateClass','struct','A class of saved build state, as the nightly-sweeps workflow keys it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::Unsampled','enum','Why a lane has no median.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','report::lower_median','function','The lower median of `samples`: the sample at position ⌊(n − 1) / 2⌋ in ascending order, a time some job actually took.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::CacheUsage','struct','What the cache usage route reports: the active caches'' bytes and count.',NULL,'fits','sound',NULL);
@@ -5807,7 +5807,7 @@ INSERT INTO purpose VALUES('workflow-sweep','corpus::Roots','struct','The corpus
 INSERT INTO purpose VALUES('workflow-sweep','corpus::Source','struct','One corpus source: where it is on disk, its name and its class.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::sources','function','Every source under the corpus''s strict and fixture roots, in name order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::Coverage','enum','How much of its inputs a sweep visits.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-sweep','coverage::NIGHTLY_PROFILE','constant','The nextest profile the nightly workflow runs: every input a sweep visits is visited whole, and a rotating sweep visits the night''s slice of its inputs (Rotation).',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','coverage::NIGHTLY_PROFILE','constant','The nextest profile the nightly-sweeps workflow runs: every input a sweep visits is visited whole, and a rotating sweep visits the night''s slice of its inputs (Rotation).',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::Profile','struct','A nextest profile''s name, as `NEXTEST_PROFILE` spells it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::SWEEPS_PROFILE','constant','The nextest profile that runs every sweep whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','error::SweepError','enum','Why a sweep could not decide what it visits.',NULL,'fits','sound',NULL);

@@ -1,7 +1,7 @@
 # The repair that a pull request on `landing` states (#7078), read by
 # `ci:cycle` on a step whose verdict fails on the tip of `integration` while
 # no tag `integration-repair` stands. The input holds `runs`, the dispatched
-# runs of ci.yml on `integration`, newest first, and `merges`, the merges of
+# runs of landing-checks.yml on `integration`, newest first, and `merges`, the merges of
 # the queue on `landing` past `integration`, newest first, each with its
 # commit, its pull request and the request's body.
 #

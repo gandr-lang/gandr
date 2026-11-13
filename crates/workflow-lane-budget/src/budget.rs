@@ -13,7 +13,7 @@ use crate::error::BudgetError;
 /// Seconds in a minute, for the report's `9m 41s`.
 const MINUTE: u64 = 60;
 
-/// A job's display name, as the CI workflow names it.
+/// A job's display name, as the landing-checks workflow names it.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Lane(String);

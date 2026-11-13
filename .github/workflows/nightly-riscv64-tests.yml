@@ -4,7 +4,7 @@
 # MUST parameterize differences; performance exceptions require measured evidence.
 # Share exceptional logic through actions; preserve parallelism, caches, and gates.
 # </critical>
-name: riscv64
+name: nightly-riscv64-tests
 
 # The riscv64 lane runs after the nightly on runners of our own. An x86-64
 # runner compiles the tests for riscv64 and packs them in a nextest archive.

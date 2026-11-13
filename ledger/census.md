@@ -1,6 +1,6 @@
 # Bootstrap census
 
-Each workspace crate with a library, measured for the first rewrite in gandr: the runtime bootstrap (#2895) rewrites one crate at a time, and this census is its first rung (#2896), the record the boundary (#2901) and the first twin read. `mise run report:bootstrap-census` writes the block between the markers; `census.yml` reports a stale block weekly on one issue. The text outside the block is written by hand.
+Each workspace crate with a library, measured for the first rewrite in gandr: the runtime bootstrap (#2895) rewrites one crate at a time, and this census is its first rung (#2896), the record the boundary (#2901) and the first twin read. `mise run report:bootstrap-census` writes the block between the markers; `report-bootstrap-census.yml` reports a stale block weekly on one issue. The text outside the block is written by hand.
 
 - **Public items:** the library's public items as `purposes:items` lists them, modules and the crate root left out.
 - **Boundary types:** the types the crate's own public items name, in a signature, a field, a variant, an alias or a constant, each counted once; a trait implementation's own items are left out, the trait fixing their signatures. A type another crate defines must cross the rewrite's boundary as it stands.

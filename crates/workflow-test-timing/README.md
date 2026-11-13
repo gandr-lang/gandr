@@ -18,7 +18,7 @@ nextest priority levels proposed from the per-test durations of recent merge-que
 
 **Why.** nextest starts higher-priority tests first, so a suite whose slowest tests start early finishes sooner on a fixed number of threads. Which tests are slowest changes with the code, and a hand-kept list goes stale. Every CI test lane already uploads a JUnit report with per-test times; this crate turns those reports into a proposal a reviewer accepts in a commit.
 
-**How.** `gh run list` names the latest successful merge-queue runs of `ci.yml`, and `gh run download` stores each run's `junit-*` artifacts once. Each test is summarised by the lower median of its samples in the lane where that median is greatest. A level table with a margin either side of each boundary turns the median and the current priority into a proposal. The current priority is the first `[[profile.default.overrides]]` table whose filter matches the test, as nextest applies it.
+**How.** `gh run list` names the latest successful merge-queue runs of `landing-checks.yml`, and `gh run download` stores each run's `junit-*` artifacts once. Each test is summarised by the lower median of its samples in the lane where that median is greatest. A level table with a margin either side of each boundary turns the median and the current priority into a proposal. The current priority is the first `[[profile.default.overrides]]` table whose filter matches the test, as nextest applies it.
 
 ## Provided features
 

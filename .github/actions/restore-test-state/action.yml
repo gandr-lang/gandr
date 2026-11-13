@@ -5,10 +5,11 @@ description: >
   commit's inputs, else the newest state of the toolchain generation, which
   Cargo's fingerprints bring up to date. Workflow anchors cannot cross files,
   so the key lives here. The caller sets `CI_BUILD_STATE`,
-  `CI_BUILD_GENERATION` and `CI_BUILD_FINGERPRINT` first (ci.yml's `identify
-  build-state inputs`); ci.yml's `ci:delete-superseded` step names the same
-  prefix. A caller that checks out another commit than the run's names it in
-  `CI_COMMIT` (nightly.yml, #6863).
+  `CI_BUILD_GENERATION` and `CI_BUILD_FINGERPRINT` first (`landing-checks.yml`'s
+  `identify build-state inputs`); the `ci:delete-superseded` step of
+  `landing-checks.yml` names the same prefix. A caller that checks out
+  another commit than the run's names it in `CI_COMMIT` (`nightly-sweeps.yml`,
+  #6863).
 inputs:
   lookup-only:
     description: "Report a match without downloading it"

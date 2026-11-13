@@ -593,7 +593,7 @@ directory = "{{ config_root }}/target/embedded-sources"
 # repository is kept under the cache directory; a cached driver, as the CI
 # image bakes, is used as it is.
 # Cargo can count a library built from another quenchant revision as fresh,
-# and then each crate's lint results too; `ci.yml` keys its policy caches on
+# and then each crate's lint results too; `landing-checks.yml` keys its policy caches on
 # the revision for this reason. So the task stamps `target/dylint` with the
 # revision it builds. A run whose pinned revision differs from the stamp
 # starts from an empty `target/dylint`. A group on `landing` starts from the
@@ -672,7 +672,7 @@ run = ".config/mise/enforcing quenchant-gates anodized --manifest-path Cargo.tom
 # The blocking set of the queue on `landing` (#5439) is Clippy's two passes
 # and the compiler policy with its specification gates, and the shared
 # formatters over the paths the group changes (#6883). The queue runs these
-# tasks in two jobs of `ci.yml`: `check Clippy wall`, which runs the
+# tasks in two jobs of `landing-checks.yml`: `check Clippy wall`, which runs the
 # formatters first, and `check quenchant compiler policy`. The gate runs
 # them over the change's packages and paths before `pr:open`.
 # `check:landing-queue` holds the two jobs to this list. Thus the two sets
@@ -838,7 +838,7 @@ echo "adequacy witness resolution (G0): every witness resolves here, in a packag
 # atoms, the dependencies and the listed aliases `resolve.jq` reads, and the
 # lines it must resolve or refuse; one holds `rustc --print cfg`'s text and
 # the atoms `atoms.jq` keeps. `.config/witnesses/shards-cases.bash` holds
-# each enforcing shard of `ci.yml` to the packages whose tests its members'
+# each enforcing shard of `landing-checks.yml` to the packages whose tests its members'
 # witnesses name (#7089).
 ["check:witness-cases"]
 description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, a witness spelled with a package resolves only where that package depends on the owner, as recorded, and each shard lists the packages its witnesses name"
@@ -1628,6 +1628,34 @@ echo 'workflow hashing check OK: no hashFiles over a tarball or a build director
 description = "The workflow hashing task names its Bash interpreter"
 run = ".config/workflow-contexts/workflow-hashing-shell-cases.bash"
 
+# Each workflow takes a name by its area and then its act (#7099). Its
+# `name:` is the stem of its file, in lower case with hyphens, and its first
+# part is an area of `.config/workflow-names/names.jq`. GitHub keys a
+# workflow on the path of its file, so a later rename leaves the old runs
+# under an old entry. The cases of `.config/workflow-names/` read as
+# recorded first. The check sits in no group of
+# `.config/gate-scope/table.json`, and a row of its `reads` scopes it, so it
+# is light.
+["check:workflow-names"]
+description = "Each workflow's name is the stem of its file, in lower case with hyphens, with its area first"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+program=.config/workflow-names/names.jq
+.config/cases/run.bash workflow-names .config/workflow-names/cases.json --program "$program" --mode r
+mapfile -t workflows < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
+refusals=$(for workflow in "${workflows[@]}"; do
+  workflow="$workflow" yq -o=json '{"path": strenv(workflow), "name": .name}' "$workflow"
+done | jq -s -r -f "$program")
+if [[ -n $refusals ]]; then
+  printf 'workflow names check FAILED: %s\n' "$refusals" >&2
+  exit 1
+fi
+echo "workflow names check OK: $(jq length .config/workflow-names/cases.json) cases read as recorded; each of ${#workflows[@]} workflows is named by its area and its act, as its file is"
+{% endraw %}'''
+
 # The title lint reads the title apart from commitlint, so a failed read
 # names itself and commitlint lints only a title that the read gives (#6774).
 ["check:pr-title"]
@@ -1772,7 +1800,7 @@ echo "crate lead check OK: ${#paths[@]} crates of the storage picture each open 
 # and holds its arguments, an input and the output it must give, raw where
 # that is text and compact where it is JSON, or `fails` where the program must
 # refuse. The census itself moves with the tree and is never held here:
-# `census.yml` reports it stale (`report:bootstrap-census`).
+# `report-bootstrap-census.yml` reports it stale (`report:bootstrap-census`).
 ["check:census"]
 description = "The bootstrap census's programs give each recorded case its output"
 tools.jq = "1.8.1"
@@ -2110,7 +2138,7 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # `.config/pr-stack/cases.json` names its program, its arguments and input,
 # and the output it must give; `prefix.jq`'s and `state.jq`'s output is its
 # raw line, the others' compact JSON. `triggers.jq` also reads
-# `.github/workflows/landing.yml`'s own `on`, refusing what it refuses.
+# `.github/workflows/landing-queue.yml`'s own `on`, refusing what it refuses.
 # `.config/pr-stack/own-commits.bash` restacks a scratch repository's stack
 # whose lower branch landed squashed, once per case in
 # `.config/pr-stack/restacks.json`: only the upper's own commit is replayed,
@@ -2229,7 +2257,7 @@ run = '''
 set -euo pipefail
 failed=0
 .config/cases/run.bash pr-stack .config/pr-stack/cases.json --programs .config/pr-stack --mode c --raw prefix.jq --raw state.jq || failed=1
-triggers=$(yq -o=json '.on' .github/workflows/landing.yml | jq -c -f .config/pr-stack/triggers.jq | jq -r '.[] | ".github/workflows/landing.yml: \(.)"')
+triggers=$(yq -o=json '.on' .github/workflows/landing-queue.yml | jq -c -f .config/pr-stack/triggers.jq | jq -r '.[] | ".github/workflows/landing-queue.yml: \(.)"')
 if [[ -n "$triggers" ]]; then
   printf '%s\n' "$triggers" >&2
   failed=1
@@ -2485,7 +2513,7 @@ run = [".config/replay/cases.bash", ".config/replay/replays.bash"]
 # `reports`, a `reports` step a failure before it would hide, a step after
 # the lane budget, and two jobs that restore one build state at one commit
 # (#6704). Each case in `.config/nightly/cases.json` gives its refusals; then
-# `.github/workflows/nightly.yml`'s own jobs, anchors expanded, give none.
+# `.github/workflows/nightly-sweeps.yml`'s own jobs, anchors expanded, give none.
 # The night's chain report (#6893): each case in `.config/nightly/chain.json`
 # gives the row that `chain.jq` reads from a build log, or the report and the
 # collector that `chain-night.jq` writes from the rows.
@@ -2498,7 +2526,7 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash nightly .config/nightly/cases.json --program .config/nightly/jobs.jq --mode c
 .config/cases/run.bash nightly .config/nightly/chain.json --programs .config/nightly --mode c
-refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/nightly.yml | jq -r -f .config/nightly/jobs.jq | jq -r '.[] | ".github/workflows/nightly.yml: \(.)"')
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/nightly-sweeps.yml | jq -r -f .config/nightly/jobs.jq | jq -r '.[] | ".github/workflows/nightly-sweeps.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
@@ -2510,7 +2538,7 @@ echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as re
 # job that runs `ci:coverage` whole, a matrix entry naming no part, and a set
 # of parts that is not every nextest slice once and the plain witness once.
 # Each case in `.config/coverage/cases.json` gives its refusals; then
-# `.github/workflows/coverage.yml`'s own jobs, anchors expanded, give none.
+# `.github/workflows/report-coverage.yml`'s own jobs, anchors expanded, give none.
 ["check:coverage"]
 description = "The coverage measure runs one part a job, its parts every slice of the enforcing suite once and the plain witness once"
 tools.jq = "1.8.1"
@@ -2519,7 +2547,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash coverage .config/coverage/cases.json --program .config/coverage/jobs.jq --mode c
-refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/coverage.yml | jq -r -f .config/coverage/jobs.jq | jq -r '.[] | ".github/workflows/coverage.yml: \(.)"')
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/report-coverage.yml | jq -r -f .config/coverage/jobs.jq | jq -r '.[] | ".github/workflows/report-coverage.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
@@ -2538,9 +2566,9 @@ echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as 
 # run, the merge group into `landing`, holds none (#6790). The sixth is a
 # job that can run on a push to `landing` outside the report lanes (#6993).
 # Each case in `.config/landing/cases.json` gives its refusals. Then the jobs
-# of `.github/workflows/ci.yml`, anchors expanded, give none against the
+# of `.github/workflows/landing-checks.yml`, anchors expanded, give none against the
 # tasks that `check:landing` depends on, the states that
-# `.github/workflows/nightly.yml` restores and the branches of its `on.push`.
+# `.github/workflows/nightly-sweeps.yml` restores and the branches of its `on.push`.
 ["check:landing-queue"]
 description = "A merge group on landing runs only the run's setup, the brake and the tasks of check:landing, a pull request on landing runs no Clippy, and a push to landing runs the report lanes alone"
 tools.jq = "1.8.1"
@@ -2550,9 +2578,9 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash landing .config/landing/cases.json --program .config/landing/jobs.jq --mode c
 landing=$(mise tasks ls --json | jq -c '[.[] | select(.name == "check:landing") | .depends[]]')
-states=$(yq -o=json 'explode(.) | [.jobs[].env.CI_BUILD_STATE | select(. != null)] | unique' .github/workflows/nightly.yml | jq -c .)
-pushes=$(yq -o=json '.on.push.branches // []' .github/workflows/ci.yml | jq -c .)
-refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/ci.yml | jq -c --argjson landing "$landing" --argjson states "$states" --argjson pushes "$pushes" '{jobs: ., landing: $landing, states: $states, pushes: $pushes}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/ci.yml: \(.)"')
+states=$(yq -o=json 'explode(.) | [.jobs[].env.CI_BUILD_STATE | select(. != null)] | unique' .github/workflows/nightly-sweeps.yml | jq -c .)
+pushes=$(yq -o=json '.on.push.branches // []' .github/workflows/landing-checks.yml | jq -c .)
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/landing-checks.yml | jq -c --argjson landing "$landing" --argjson states "$states" --argjson pushes "$pushes" '{jobs: ., landing: $landing, states: $states, pushes: $pushes}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/landing-checks.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
@@ -3500,7 +3528,7 @@ echo "follow check OK: $(jq length .config/follow/cases.json) cases read as reco
 # allocations, each case in `.config/hotpath/budgets.json` a policy and the
 # names it must give. The check then reads each `hotpath/*-policy.toml`: a
 # `-bytes-policy.toml` judges a report in bytes, and every other policy a
-# report in the metric of the `hotpath` job in `ci.yml`.
+# report in the metric of the `hotpath` job in `landing-checks.yml`.
 ["check:hotpath"]
 description = "The hotpath report reading gives each recorded case its deltas, an upload its outcome and issue, and each policy only the budgets its report can judge"
 tools.jq = "1.8.1"
@@ -3517,7 +3545,7 @@ cases r upload.jq upload.json
 cases c unsent.jq unsent.json
 cases r landed.jq landed.json
 cases c budgets.jq budgets.json
-metric=$(yq '.jobs.hotpath.env.HOTPATH_ALLOC_METRIC // "bytes"' .github/workflows/ci.yml)
+metric=$(yq '.jobs.hotpath.env.HOTPATH_ALLOC_METRIC // "bytes"' .github/workflows/landing-checks.yml)
 policies=0
 for policy in hotpath/*-policy.toml; do
   case $policy in
@@ -3629,7 +3657,7 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # (crates/workflow-prose/README.md). spaCy parses under the venv these
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
 # finding refuses, a fixed one leaves a stale line, and `--write` rewrites
-# it. The merge group runs it too (`ci.yml`'s `prose-gate`, #3082): the
+# it. The merge group runs it too (`landing-checks.yml`'s `prose-gate`, #3082): the
 # interpreter is this task's tool, installed there by the same pins. The
 # filers' templates under `.config/issues/templates/` keep the body rules
 # with no ledger (#3591): `issue:file --template` files a mechanism's body

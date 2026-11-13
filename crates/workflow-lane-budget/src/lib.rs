@@ -1,6 +1,6 @@
 //! **Lane budget**: each CI lane's median job time over the latest runs that
-//! hold it, held against a budget the nightly workflow states, and filed on
-//! one issue while a lane is over.
+//! hold it, held against a budget the nightly-sweeps workflow states, and filed
+//! on one issue while a lane is over.
 //!
 //! - [`budget`] reads the budget table: a job's display name and the whole
 //!   seconds its median may take.
@@ -24,15 +24,15 @@
 //! the slowest half of the window. Merge-queue and pull-request runs sample
 //! the landing lanes: Clippy and the compiler policy in the queue, the
 //! obligations lane on a pull request. A merge group on `landing` skips the
-//! test lanes, so an `--integration` budget samples its lane over the CI
-//! workflow's dispatches on `integration`, in a table of its own. A push to
-//! `main` builds every package and no gate waits on it, so a second table gives
-//! the same lanes over those pushes as information: no budget, and no share of
-//! the standing. A `--daily` budget samples a lane of the daily scheduled run,
-//! such as the mutation run, over those runs alone; the listing asks for them,
-//! since a day's landing runs fill any window of the newest hundred. A
-//! `--nightly` budget samples a lane of the nightly workflow over its scheduled
-//! runs; a dispatch is not a night.
+//! test lanes, so an `--integration` budget samples its lane over the
+//! landing-checks workflow's dispatches on `integration`, in a table of its
+//! own. A push to `main` builds every package and no gate waits on it, so a
+//! second table gives the same lanes over those pushes as information: no
+//! budget, and no share of the standing. A `--daily` budget samples a lane of
+//! the daily scheduled run, such as the mutation run, over those runs alone;
+//! the listing asks for them, since a day's landing runs fill any window of the
+//! newest hundred. A `--nightly` budget samples a lane of the nightly-sweeps
+//! workflow over its scheduled runs; a dispatch is not a night.
 //!
 //! A landing that touches the kernel or core stack — a file under
 //! `crates/kernel-*` or `crates/core-*`, `Cargo.lock`, `rust-toolchain.toml`

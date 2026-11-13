@@ -6,7 +6,7 @@
 # The input holds `now` and `oldest`, in seconds since the epoch. `oldest`
 # is the committer time of the oldest commit on the first-parent line of
 # `landing` that `main` lacks, or null when `main` holds `landing`. The input
-# also holds the dispatched runs of ci.yml on `integration`, newest first,
+# also holds the dispatched runs of landing-checks.yml on `integration`, newest first,
 # and the limits. The lag in cycles is the count of verdicts after the
 # newest pass. The lag in hours is the age of the oldest commit. A `main`
 # that holds `landing` lags by nothing, whatever the verdicts say.

@@ -6,29 +6,28 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: integration
+name: landing-integration-cycle
 
 # The integration cycle (#5440) of the landing model (#5438). `integration`
-# takes the tip of `landing`, and ci.yml runs the lanes of a merge group on
-# it with no fail-fast. A red run writes the known-red list and pages the
-# fixer, and the landings go on. A green run fast-forwards `main`, and a
-# rebase moves `landing` onto a fix that `main` takes (#5441). A cycle
-# starts when the one before it ends: the end of a dispatched run of the
-# suite on `integration` starts this workflow. The suite is `CI` until the
-# rename of the workflows reaches `main`, and `landing-checks` after it
-# (#7099), so the trigger names both. A push to `landing` or
+# takes the tip of `landing`, and `landing-checks.yml` runs the lanes of a
+# merge group on it with no fail-fast. A red run writes the known-red list
+# and pages the fixer, and the landings go on. A green run fast-forwards
+# `main`, and a rebase moves `landing` onto a fix that `main` takes (#5441).
+# A cycle starts when the one before it ends: the end of a dispatched run of
+# `landing-checks.yml` on `integration` starts this workflow. A push to
+# `landing` or
 # `integration` starts it too, so an idle cycle takes a new landing or a fix
 # at once. Each step reads the state of the cycle from GitHub (`ci:cycle`),
 # so a repeated event changes nothing, and the next event recovers a lost
 # one. There is no schedule: GitHub's scheduler ran this repository's
-# schedules hours late (landing.yml). The step checks out the default branch
+# schedules hours late (`landing-queue.yml`). The step checks out the default branch
 # and runs its script there. It runs none of the code on `integration`. Each
 # step also reads the brake (#5442), and a brake that takes or lets go pages
 # every lane and the coordinator.
 #
 # Every call of the step runs on the `gandr-lang` App, minted from the
 # organisation's secrets `LANDING_APP_ID` and `LANDING_APP_PRIVATE_KEY`, which
-# landing.yml reads too: the workflow's token has no room for the cycle in
+# `landing-queue.yml` reads too: the workflow's token has no room for the cycle in
 # `.config/gh/calls.toml`. The App's merge commits are signed, and its pushes
 # start this workflow again, which reads that nothing changed. Without the
 # two secrets, the step only says that it waits for them.
@@ -36,7 +35,7 @@ on:
   push:
     branches: [landing, integration]
   workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: [CI, landing-checks]
+    workflows: [landing-checks]
     types: [completed]
     branches: [integration]
   workflow_dispatch: {}
@@ -58,7 +57,7 @@ jobs:
   relay:
     name: start a cycle step on the default branch
     if: ${{ github.event_name == 'push' && github.repository_owner == 'gandr-lang' }}
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: &linux ubuntu-24.04-arm
     timeout-minutes: 5
     permissions:
@@ -74,13 +73,13 @@ jobs:
         run: |
           for wait in 0 10 30 60; do
             sleep "$wait"
-            if gh workflow run integration.yml --ref "$DEFAULT_BRANCH"; then exit 0; fi
+            if gh workflow run landing-integration-cycle.yml --ref "$DEFAULT_BRANCH"; then exit 0; fi
           done
           exit 1
 
   # The cycle's one step (`ci:cycle`): it reads the verdict, fast-forwards
   # `main` on green, takes `landing` into `integration`, keeps the known-red
-  # list and starts the suite. Only a dispatched run of ci.yml on
+  # list and starts the suite. Only a dispatched run of landing-checks.yml on
   # `integration` ends a cycle.
   cycle:
     name: take landing into integration and start the suite
@@ -121,7 +120,7 @@ jobs:
           client-id: ${{ secrets.LANDING_APP_ID }}
           private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
           # The step's needs, no more: move `integration` and `main`, merge;
-          # dispatch ci.yml and read its runs and reports; keep the issues.
+          # dispatch landing-checks.yml and read its runs and reports; keep the issues.
           permission-contents: write
           permission-actions: write
           permission-issues: write
@@ -137,7 +136,7 @@ jobs:
           client-id: ${{ secrets.LANDING_APP_ID }}
           private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
           permission-administration: read
-      # No cache, as in pr-title.yml: the shared cache holds every tool of
+      # No cache, as in landing-title-and-deletes.yml: the shared cache holds every tool of
       # CI, and this job installs none of mise.toml's.
       - name: install mise
         if: ${{ env.LANDING_APP_ID != '' }}

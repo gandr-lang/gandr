@@ -1,5 +1,5 @@
-//! Successful merge-queue runs of the CI workflow and their JUnit reports,
-//! fetched with `gh` into a store with one directory per run.
+//! Successful merge-queue runs of the landing-checks workflow and their JUnit
+//! reports, fetched with `gh` into a store with one directory per run.
 //!
 //! A run downloads into a scratch directory and is renamed into place once
 //! complete, so an interrupted fetch leaves no partial run behind, and a run
@@ -131,7 +131,8 @@ impl From<RunLimit> for usize
     }
 }
 
-/// The latest successful merge-queue runs of the CI workflow, newest first.
+/// The latest successful merge-queue runs of the landing-checks workflow,
+/// newest first.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for `repository`.
@@ -162,7 +163,7 @@ pub fn recent_runs(
         .args(["run", "list", "--repo", &repository.0])
         .args([
             "--workflow",
-            "ci.yml",
+            "landing-checks.yml",
             "--event",
             "merge_group",
             "--status",

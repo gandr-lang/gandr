@@ -140,7 +140,7 @@
     "output": ""
   },
   {
-    "name": "#5695: landing.yml's token prices the reads and the writes of its API together, against its own ceiling",
+    "name": "#5695: landing-queue.yml's token prices the reads and the writes of its API together, against its own ceiling",
     "input": {
       "sites": [
         { "file": "a.bash", "scope": "land", "verb": "api graphql" },

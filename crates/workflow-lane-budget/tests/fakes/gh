@@ -4,9 +4,9 @@ if [ "$FAKE_GH_MODE" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1
 case "$1 $2" in
   'api --method')
     case "$4" in
-      */workflows/ci.yml/runs) case "$*" in *event=schedule*) printf '9\n8\n' ;; *event=workflow_dispatch*branch=integration*) printf '19\n18\n' ;; *event=push*branch=main*) printf '29\n28\n' ;; *) printf '3\n2\n1\n' ;; esac ;;
-      */workflows/nightly.yml/runs) case "$*" in *event=schedule*) printf '6\n5\n4\n' ;; *) echo "unscheduled nightly listing: $*" >&2; exit 2 ;; esac ;;
-      */actions/workflows) printf '11\tCI\n12\tNightly\n' ;;
+      */workflows/landing-checks.yml/runs) case "$*" in *event=schedule*) printf '9\n8\n' ;; *event=workflow_dispatch*branch=integration*) printf '19\n18\n' ;; *event=push*branch=main*) printf '29\n28\n' ;; *) printf '3\n2\n1\n' ;; esac ;;
+      */workflows/nightly-sweeps.yml/runs) case "$*" in *event=schedule*) printf '6\n5\n4\n' ;; *) echo "unscheduled nightly listing: $*" >&2; exit 2 ;; esac ;;
+      */actions/workflows) printf '11\tlanding-checks\n12\tnightly-sweeps\n' ;;
       */actions/workflows/11/runs) printf '3\t900\n2\t800\n1\t700\n' ;;
       */actions/workflows/12/runs) printf '6\t700\n5\t650\n4\t600\n' ;;
       */actions/cache/usage) printf '10738220202\t144\n' ;;
