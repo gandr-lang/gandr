@@ -124,6 +124,7 @@ pub use crate::memo::MemoActivity;
 pub use crate::memo::MemoHit;
 pub use crate::memo::MemoRecord;
 pub use crate::memo::NullMemo;
+pub use crate::overlay::Disagreement;
 pub use crate::overlay::OverlaidMemo;
 pub use crate::table::HashIndex;
 pub use crate::table::Probe;

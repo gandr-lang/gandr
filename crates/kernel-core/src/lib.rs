@@ -773,6 +773,7 @@ pub use crate::error::FieldCause;
 pub use crate::error::GuardBreak;
 pub use crate::error::GuardNode;
 pub use crate::error::KeepRefusal;
+pub use crate::error::KeptOutcomes;
 pub use crate::error::KernelError;
 pub use crate::error::LevelOrderRefutation;
 pub use crate::error::NonInferableForm;

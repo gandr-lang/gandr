@@ -28,6 +28,8 @@ The check-memo seam: a statically dispatched interface through which a checker s
 - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement) — a hit hands back the support its entry was recorded under, the judgement's own output, for the consumer to hold against the context that asks.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 3) — a consumer asks by a goal's question and decides among the entries filed under it, which `filed` hands back.
 - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — an entry recorded by the context its judgement synthesized is found by its question and matched against the context that asks.
+- `vault:01a178aa-56f5-7082-acef-f7c1b85fc0a2` — anchor: the certificate algebra (§ The bracket oracle) — the bracket's support is exactly the nontrivial overlaps, so `OverlaidMemo::join` checks agreement on the supports that two children both keep.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — anchor: sharing as descent (§ sharing-rule-descent) — the memo glues by agreement on its keys, which the join computes and never asserts.
 
 ## Provided features
 
