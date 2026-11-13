@@ -40,7 +40,6 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 
-use crate::byte::ByteLimits;
 use crate::commitment::AlgorithmVersion;
 use crate::commitment::CommitmentField;
 use crate::commitment::CommitmentWriter;
@@ -88,7 +87,7 @@ const SEED_SALT_LEN: usize = 0x20_usize;
 /// A Gear table: one mixing value per byte value.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct GearTable([u64; GEAR_TABLE_LEN]);
+pub struct GearTable(pub [u64; GEAR_TABLE_LEN]);
 
 /// The `SplitMix64` seed a Gear table is built from.
 #[repr(transparent)]
@@ -180,56 +179,17 @@ impl GearTableVersion
         }
     }
 
-    /// Cuts `bytes` under `limits` with a Gear state that shifts left: the
-    /// scan of the byte profile, which [`crate::byte::chunk_bytes`] runs.
+    /// The table the byte profile's scan mixes bytes with, under a Gear state
+    /// that shifts left: the scan of [`crate::byte::ByteScanner`].
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn cut_shifted(
-        self,
-        bytes: CanonicalBytes<'_>,
-        limits: &ByteLimits,
-    ) -> Result<Vec<ByteSpan>, ChunkerError>
+    pub(crate) const fn shifted_table(self) -> &'static GearTable
     {
-        let table = match self {
-            Self::V2 => &GEAR_TABLE.0,
-        };
-        let bytes = bytes.as_ref();
-        let min = u64::from(limits.min_bytes());
-        let max = u64::from(limits.max_bytes());
-        let target = u64::from(limits.target_bytes());
-        let mask = target
-            .checked_next_power_of_two()
-            .unwrap_or(u64::MAX)
-            .saturating_sub(1_u64);
-        let estimate = bytes
-            .len()
-            .checked_div(usize::try_from(target).unwrap_or(usize::MAX))
-            .unwrap_or(0_usize);
-        let mut chunks = Vec::with_capacity(estimate.saturating_add(1_usize));
-        let mut start = BytePosition::ZERO;
-        let mut length = 0_u64;
-        let mut state = 0_u64;
-        let mut at = BytePosition::ZERO;
-
-        for byte in bytes {
-            let gear = table.get(usize::from(*byte)).copied().unwrap_or(0_u64);
-            state = (state << 1_u32).wrapping_add(gear);
-            at = at.checked_advance(ByteCount::from(1_u64), ArithmeticOperation::ByteOffset)?;
-            length = length.saturating_add(1_u64);
-            if length >= max || (length >= min && state & mask == 0_u64) {
-                chunks.push(ByteSpan::new(start, at));
-                start = at;
-                length = 0_u64;
-                state = 0_u64;
-            }
+        match self {
+            Self::V2 => &GEAR_TABLE,
         }
-        if length > 0_u64 {
-            chunks.push(ByteSpan::new(start, at));
-        }
-
-        Ok(chunks)
     }
 }
 

@@ -14,6 +14,9 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::path::PathBuf;
 
+use gandr_storage_chunker::ByteChunkerParams;
+use gandr_storage_chunker::CanonicalBytes;
+use gandr_storage_chunker::chunk_bytes;
 use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::TreeParams;
@@ -322,4 +325,47 @@ fn an_output_reads_back_with_its_references()
     let reordered = Output::new(root, vec![address(1), address(2)]);
     assert_eq!(store.commit(&reordered).expect("commits"), pointer);
     assert_eq!(store.deref::<Output>(pointer), Ok(output));
+}
+
+#[test]
+fn a_file_larger_than_the_buffer_reads_as_its_bytes_cut_whole_6719()
+{
+    let directory = scratch(Path::new("bounded"));
+    let file = directory.join("large.bin");
+    let bytes = stream(6719, 0x0030_0000);
+    fs::write(&file, &bytes).expect("a file of three buffers");
+    let store_path = directory.join("store");
+    let (store, _register) = Store::open(&store_path).expect("opens");
+    let Entry::File { blob, size, .. } = store.read_in(&file).expect("reads in")
+    else {
+        panic!("a file reads in as a file");
+    };
+    assert_eq!(size, 0x0030_0000);
+    let whole = chunk_bytes(
+        CanonicalBytes::from(bytes.as_slice()),
+        &ByteChunkerParams::blob(),
+    )
+    .expect("the whole cut");
+    assert_eq!(
+        u64::from(blob.records()),
+        u64::try_from(whole.len()).expect("in range")
+    );
+    // Each piece of the whole cut, as a file of its own, reads in as one
+    // piece. The value plane then holds it already, so it writes no chunk.
+    let pieces = directory.join("pieces");
+    fs::create_dir_all(&pieces).expect("the pieces");
+    for (index, span) in whole.iter().enumerate() {
+        let start = usize::try_from(u64::from(span.start())).expect("in range");
+        let end = usize::try_from(u64::from(span.end())).expect("in range");
+        let piece = bytes.get(start .. end).expect("the span lies in the bytes");
+        fs::write(pieces.join(index.to_string()), piece).expect("a piece");
+    }
+    let chunks = || fs::read_dir(store_path.join("chunks")).map_or(0, Iterator::count);
+    let held = chunks();
+    let _pieces = store.read_in(&pieces).expect("the pieces read in");
+    assert_eq!(
+        chunks(),
+        held,
+        "each piece of the whole cut is a piece of the read"
+    );
 }

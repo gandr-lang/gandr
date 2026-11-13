@@ -12,6 +12,7 @@
 use gandr_storage_chunker::ByteChunkerParams;
 use gandr_storage_chunker::ByteCount;
 use gandr_storage_chunker::ByteLimits;
+use gandr_storage_chunker::ByteScanner;
 use gandr_storage_chunker::ByteSpan;
 use gandr_storage_chunker::CanonicalBytes;
 use gandr_storage_chunker::ChunkerError;
@@ -227,4 +228,32 @@ fn a_stream_of_one_byte_value_is_cut_at_the_maximum()
         .collect();
     let last = 200_000_u64.checked_rem(max).expect("nonzero maximum");
     assert_eq!(lengths, vec![max, max, max, last]);
+}
+
+#[test]
+fn a_stream_fed_in_buffers_cuts_as_it_cuts_whole_6719()
+{
+    let bytes = stream(6719, 0x0010_0000 + 12_345);
+    let whole = ends(&bytes);
+    for size in [1_usize, 63, 64, 4_096, 0x0001_0001, 0x0010_0000] {
+        let mut scanner = ByteScanner::new(&ByteChunkerParams::blob());
+        let mut fed = Vec::new();
+        let mut at = 0_u64;
+        for buffer in bytes.chunks(size) {
+            let mut rest = buffer;
+            while let Some(taken) = scanner.cut(CanonicalBytes::from(rest)) {
+                at = at.checked_add(u64::from(taken)).expect("in range");
+                fed.push(at);
+                let taken = usize::try_from(u64::from(taken)).expect("in range");
+                rest = rest.get(taken ..).expect("the cut lies in the buffer");
+            }
+            at = at
+                .checked_add(u64::try_from(rest.len()).expect("in range"))
+                .expect("in range");
+        }
+        if fed.last() != Some(&at) {
+            fed.push(at);
+        }
+        assert_eq!(fed, whole, "buffers of {size} bytes cut as the whole");
+    }
 }

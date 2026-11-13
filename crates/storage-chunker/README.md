@@ -31,7 +31,7 @@
 ## Provided features
 
 - `chunk_record_slices` and `chunk_spans` partition canonical records without splitting a record.
-- `chunk_bytes` partitions one byte string under `ByteChunkerParams`; a cut depends on the 64 bytes before it alone, so a byte put before a stream moves no cut past the next chunk (#6590).
+- `chunk_bytes` partitions one byte string under `ByteChunkerParams`; a cut depends on the 64 bytes before it alone, so a byte put before a stream moves no cut past the next chunk (#6590). `ByteScanner` runs the same cut one buffer at a time and gives the cuts of the bytes cut whole (#6719).
 - `TypedChunker::on_boundary` reports a cut or continuation and identifies the cut reason.
 - Validated parameter types reject zero kappa, zero token cap, inconsistent record-safe limits and byte limits under the 64-byte Gear window.
 - `ParameterCommitment` encodes each profile for downstream root commitments.

@@ -32,12 +32,15 @@ use crate::commitment::AlgorithmVersion;
 use crate::commitment::CommitmentField;
 use crate::commitment::CommitmentWriter;
 use crate::commitment::ParameterCommitment;
+use crate::error::ArithmeticOperation;
 use crate::error::ChunkerError;
 use crate::error::InvalidParameterReason;
 use crate::gear::CanonicalBytes;
+use crate::gear::GearTable;
 use crate::gear::GearTableVersion;
 use crate::span::ByteSpan;
 use crate::units::ByteCount;
+use crate::units::BytePosition;
 
 /// The fewest bytes a chunk of the byte profile holds before the hash may cut
 /// it: the steps after which a shifted state holds none of its start.
@@ -269,6 +272,100 @@ impl ByteChunkerParams
     }
 }
 
+/// The byte profile's scan, fed one buffer at a time.
+///
+/// The scan keeps the open chunk's Gear state and length between two feeds,
+/// and reads no byte ahead. So a stream fed in buffers of any size gives the
+/// cuts of the same bytes fed whole, and a reader holds one buffer and one
+/// open chunk, never the stream.
+#[derive(Clone, Debug)]
+pub struct ByteScanner
+{
+    /// The Gear table of the profile.
+    table: &'static GearTable,
+    /// Bytes a chunk must reach before the hash may cut it.
+    min: u64,
+    /// Bytes no chunk may exceed.
+    max: u64,
+    /// The target's power-of-two mask.
+    mask: u64,
+    /// The open chunk's Gear state.
+    state: u64,
+    /// The open chunk's length.
+    length: u64,
+}
+
+impl ByteScanner
+{
+    /// A scan under `params`, with no chunk open.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(params: &ByteChunkerParams) -> Self
+    {
+        let target = u64::from(params.limits.target);
+        Self {
+            table: params.gear_table.shifted_table(),
+            min: u64::from(params.limits.min),
+            max: u64::from(params.limits.max),
+            mask: target
+                .checked_next_power_of_two()
+                .unwrap_or(u64::MAX)
+                .saturating_sub(1_u64),
+            state: 0_u64,
+            length: 0_u64,
+        }
+    }
+
+    /// Feeds `bytes` to the open chunk until the profile cuts it.
+    ///
+    /// # Specification
+    /// - requires: nothing; the bytes are arbitrary.
+    /// - ensures: `Some(n)` when the open chunk ends after the first `n` bytes:
+    ///   it reaches the maximum, or it holds at least the minimum and the
+    ///   masked state is zero. The scan then opens the next chunk from zero,
+    ///   and the bytes after the first `n` are not read. `None` when every byte
+    ///   joins the open chunk with no cut.
+    /// - provides: the cut of a stream, one buffer at a time.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: each byte read once, no lookahead.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream fed in buffers of several sizes gives the
+    ///   cuts of the same bytes cut whole.
+    /// - witness: `tests::byte::a_stream_fed_in_buffers_cuts_as_it_cuts_whole_6719`
+    #[spec(ensures: |ret| ret.is_none_or(|taken| u64::from(taken) >= 1
+        && usize::try_from(u64::from(taken)).is_ok_and(|taken| taken <= bytes.as_ref().len())))]
+    #[inline]
+    pub fn cut(
+        &mut self,
+        bytes: CanonicalBytes<'_>,
+    ) -> Option<ByteCount>
+    {
+        for (at, byte) in (1_u64 ..).zip(bytes.as_ref()) {
+            let gear = self
+                .table
+                .0
+                .get(usize::from(*byte))
+                .copied()
+                .unwrap_or(0_u64);
+            self.state = (self.state << 1_u32).wrapping_add(gear);
+            self.length = self.length.saturating_add(1_u64);
+            if self.length >= self.max
+                || (self.length >= self.min && self.state & self.mask == 0_u64)
+            {
+                self.state = 0_u64;
+                self.length = 0_u64;
+                return Some(ByteCount::from(at));
+            }
+        }
+        None
+    }
+}
+
 /// Cuts one byte string into content-defined chunks under `params`.
 ///
 /// # Specification
@@ -312,5 +409,26 @@ pub fn chunk_bytes(
     params: &ByteChunkerParams,
 ) -> Result<Vec<ByteSpan>, ChunkerError>
 {
-    params.gear_table.cut_shifted(bytes, &params.limits)
+    let mut scanner = ByteScanner::new(params);
+    let target = usize::try_from(u64::from(params.limits.target)).unwrap_or(usize::MAX);
+    let estimate = bytes.as_ref().len().checked_div(target).unwrap_or(0_usize);
+    let mut chunks = Vec::with_capacity(estimate.saturating_add(1_usize));
+    let mut start = BytePosition::ZERO;
+    let mut rest = bytes.as_ref();
+    while let Some(taken) = scanner.cut(CanonicalBytes::from(rest)) {
+        let end = start.checked_advance(taken, ArithmeticOperation::ByteOffset)?;
+        chunks.push(ByteSpan::new(start, end));
+        start = end;
+        rest = usize::try_from(u64::from(taken))
+            .ok()
+            .and_then(|taken| rest.get(taken ..))
+            .unwrap_or_default();
+    }
+    if !rest.is_empty() {
+        let length = u64::try_from(rest.len()).unwrap_or(u64::MAX);
+        let end =
+            start.checked_advance(ByteCount::from(length), ArithmeticOperation::ByteOffset)?;
+        chunks.push(ByteSpan::new(start, end));
+    }
+    Ok(chunks)
 }
