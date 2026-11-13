@@ -86,17 +86,22 @@ fi
 # The rows of the body, as the rule reads them.
 jq -n -r -L "$root/.config/claims" -L "$here" --rawfile body "$body" \
   'include "account"; $body | deletes_rows // [] | .[] | select(.act == "deleted") | .item' > "$scratch/deleted" 2> /dev/null || : > "$scratch/deleted"
-# The files of the change that name each `deleted` row's item at the base.
-files=$(while IFS= read -r item; do
+# The last segment of each `deleted` row's item: the word that names it.
+segments=$(while IFS= read -r item; do
   [[ -n $item ]] || continue
-  segment=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
+  jq -n -c --arg item "$item" --arg segment "$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")" '{($item): $segment}'
+done < "$scratch/deleted" | jq -s -c 'add // {}')
+mapfile -t named_by < <(jq -r '[.[]] | unique[]' <<< "$segments")
+# The files of the change that name each `deleted` row's item at the base.
+files=$(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$segments" | while IFS=$'\t' read -r item segment; do
   mapfile -t named < <(git grep -l -F -e "$segment" "$base" -- $(< "$scratch/changed") 2> /dev/null | sed "s|^$base:||" || :)
   jq -n -c --arg item "$item" '{($item): $ARGS.positional}' --args "${named[@]}"
-done < "$scratch/deleted" | jq -s -c 'add // {}')
+done | jq -s -c 'add // {}')
 
 # The architect's sign-offs: each comment that says `signed` on an issue the
 # body works, with the commit it names, the base that commit forks from, and
-# the files whose own patch moved since (`moved.bash`, #6852).
+# for each item the files where the words that name it moved since
+# (`moved.bash`, #6852, #7025).
 mapfile -t issues < <(jq -Rrs -L "$root/.config/claims" 'include "targets"; targets(working) | unique[]' "$body")
 signoffs=$(for issue in "${issues[@]}"; do
   gh api --paginate "repos/$repo/issues/$issue/comments?per_page=100" \
@@ -128,8 +133,11 @@ done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
     fork=$(signed_fork "$sha" "$base") || fork=
   fi
   if [[ -n $fork ]]; then
-    moved "$fork" "$sha" "$from" "$head" | jq -R . | jq -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" \
-      '$c + {sha: $sha, fork: $fork, changed: ., joined: {}, reshaped: []}'
+    moved "$fork" "$sha" "$from" "$head" "${named_by[@]}" \
+      | jq -R -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" --argjson segments "$segments" \
+        '[split("\n")[] | select(. != "") | split("\t") | {segment: .[0], file: .[1]}] as $moved
+         | $c + {sha: $sha, fork: $fork, joined: {}, reshaped: [],
+             changed: ($segments | map_values(. as $s | [$moved[] | select(.segment == $s) | .file]))}'
   else
     jq -c --arg sha "$sha" '. + {sha: (if $sha == "" then null else $sha end), fork: null, changed: null, joined: {}, reshaped: []}' <<< "$comment"
   fi

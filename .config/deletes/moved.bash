@@ -1,22 +1,44 @@
 # shellcheck shell=bash
-# The files whose own patch moved since a sign-off (#6852). `moved <fork>
-# <sha> <from> <head>` prints each file whose patch differs between the
-# change at the sign-off and the change now, one for each line. The change at
-# the sign-off runs from `<fork>`, the merge base of `<sha>` with the base, to
-# `<sha>`. The change now runs from `<from>` to `<head>`, where `<from>` is
-# `change_base`'s. `git patch-id --stable` names each patch of one file, read
-# with no context lines, so the rows that a landing below adds to a shared
-# file move no patch. A restack over such a landing then keeps the sign-off,
-# as the restack of pull request 6848 over the purpose rows of
-# `ledger/purposes.sql` did not. A sign-off with no fork in the clone binds
-# neither half, and `check.bash` reads it as stale.
+# The files where the words that name an item moved since a sign-off (#6852,
+# #7025). `moved <fork> <sha> <from> <head> <segment>…` prints `<segment>`,
+# a tab and a file, one for each line, for each file where the words that
+# hold `<segment>` differ between the change at the sign-off and the change
+# now. The change at the sign-off runs from `<fork>`, the merge base of
+# `<sha>` with the base, to `<sha>`. The change now runs from `<from>` to
+# `<head>`, where `<from>` is `change_base`'s.
+#
+# The diff has no context lines, so a line number moves nothing, and the
+# rows that a landing below adds to a shared file move no word. A restack
+# over such a landing then keeps the sign-off, as the restack of pull
+# request 6848 over the purpose rows of `ledger/purposes.sql` did not. The
+# check reads, in each added or removed line, only the words that hold the
+# segment: runs of characters other than space, quote, comma and
+# parenthesis. A common segment as `ledger` names 39 of the 45 files of
+# pull request 7017. An edit of another cell of such a line, as its `since`,
+# moves nothing. A word that the change adds, drops or renames moves the
+# sign-off. A sign-off with no fork in the clone binds neither half, and
+# `check.bash` reads it as stale.
 moved() {
-  local fork=$1 sha=$2 from=$3 head=$4 file
-  patch() { git diff --no-renames --unified=0 "$1" "$2" -- "$3" | git patch-id --stable | awk '{ print $1 }'; }
-  { git diff --no-renames --name-only "$fork" "$sha"; git diff --no-renames --name-only "$from" "$head"; } | sort -u \
-    | while IFS= read -r file; do
-      [[ $(patch "$fork" "$sha" "$file") == "$(patch "$from" "$head" "$file")" ]] || printf '%s\n' "$file"
-    done
+  local fork=$1 sha=$2 from=$3 head=$4
+  shift 4
+  words() {
+    local a=$1 b=$2
+    shift 2
+    git diff --no-renames --unified=0 "$a" "$b" \
+      | MOVED_SEGMENTS=$(printf '%s\n' "$@") awk -v q="'" '
+        BEGIN { n = split(ENVIRON["MOVED_SEGMENTS"], segment, "\n"); gap = "[[:space:]" q "\",()]+" }
+        /^diff --git / { file = $0; sub(/^diff --git a\//, "", file); sub(/ b\/.*$/, "", file); body = 0; next }
+        /^@@/ { body = 1; next }
+        !body || !/^[-+]/ { next }
+        {
+          sign = substr($0, 1, 1)
+          m = split(substr($0, 2), word, gap)
+          for (i = 1; i <= m; i++) for (j = 1; j <= n; j++)
+            if (segment[j] != "" && index(word[i], segment[j])) print segment[j] "\t" file "\t" sign word[i]
+        }' | LC_ALL=C sort
+  }
+  LC_ALL=C comm -3 <(words "$fork" "$sha" "$@") <(words "$from" "$head" "$@") \
+    | awk -F'\t' '{ if ($1 == "") print $2 "\t" $3; else print $1 "\t" $2 }' | LC_ALL=C sort -u
 }
 
 # The commit that a change runs from (#6999). `change_base <base> <head>`
