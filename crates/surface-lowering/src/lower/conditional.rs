@@ -21,11 +21,12 @@ use gandr_core_term::Value;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_computation_traced;
 use gandr_kernel_term::DeBruijnIndex;
+pub(super) use gandr_surface_lowering_base::lower::conditional::Conditional;
+use gandr_surface_lowering_base::lower::conditional::Otherwise;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
-use super::FormStretch;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
@@ -54,63 +55,6 @@ use crate::resolve::binder_site;
 
 #[cfg(test)]
 mod tests;
-
-/// A conditional as the minting reads it: the computation it tests, the block
-/// it runs when that holds, what it runs when it does not, and the answer
-/// written after its condition.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: each node and block was read by [`Lowerer::conditional`].
-/// - executable: none — the plan holds no source.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::conditional`].
-/// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Conditional
-{
-    /// The tested computation.
-    condition: NodeIndex,
-    /// The block run when the condition holds.
-    then: Block,
-    /// What runs when it does not.
-    otherwise: Otherwise,
-    /// The answer written after the condition, which the case is ascribed.
-    answer: Maybe<Answer, answered::Absent>,
-}
-
-/// What a conditional runs when its condition does not hold.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: one variant per false branch the grammar writes.
-/// - executable: none — the plan holds no source.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::conditional`].
-/// - witness: `lower::conditional::tests::an_else_if_tests_its_own_condition_in_the_false_branch`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Otherwise
-{
-    /// The block after `else`.
-    Block(Block),
-    /// One or more conditionals after `else`, with a final false branch block.
-    If
-    {
-        /// Its tested computation, read inside the outer false branch.
-        condition: NodeIndex,
-        /// The block it runs when that holds.
-        then: Block,
-        /// The remaining `else if` rungs, in source order.
-        rest: FormStretch,
-        /// The block it runs when it does not.
-        otherwise: Block,
-        /// The answer written after its condition, which its case is
-        /// ascribed.
-        answer: Maybe<Answer, answered::Absent>,
-    },
-}
 
 impl<'source> Lowerer<'_, 'source>
 {

@@ -102,6 +102,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+pub(super) use gandr_surface_lowering_base::lower::implicit::Nomination;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -160,48 +161,6 @@ enum Use<'cursor>
     Operands([NodeIndex; 2]),
     /// Standing where no call applies it, passed or returned as a value.
     Standing,
-}
-
-/// What a nominated hole stands for: an implicit a call omits, or a wildcard
-/// the text writes.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: an omitted implicit keeps the function's name and the implicit's.
-/// - provides: what the origin table records for the hole once it is minted,
-///   and a refusal of the hole names.
-/// - panics: none.
-/// - executable: none — a record of names, holding no tree to check them
-///   against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a call omitting both implicits of `first` nominates one
-///   hole per implicit, each naming it; a wildcard beside them nominates its
-///   own.
-/// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
-/// - witness: `lower::implicit::tests::a_wildcard_is_a_nominated_hole_of_its_own`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Nomination<'source>
-{
-    /// The implicit `implicit` of `function`, which a call omits.
-    Omitted
-    {
-        /// The function the call applies.
-        function: SurfaceName<'source>,
-        /// The implicit the call omits.
-        implicit: SurfaceName<'source>,
-    },
-    /// A component of the model answering a capability scope over `theory`,
-    /// which names none.
-    Answering
-    {
-        /// The theory the scope handles.
-        theory: SurfaceName<'source>,
-    },
-    /// A wildcard `_` written where a value is read.
-    Wildcard,
-    /// A splice `~t` written where a value is read, running the tactic `t`.
-    Spliced(gandr_core_term::tactic::Tactic),
 }
 
 /// The atom a resident of an instantiation slot spells. The slot molds a

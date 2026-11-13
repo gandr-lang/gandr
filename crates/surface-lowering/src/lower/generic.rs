@@ -63,7 +63,8 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::OccurrenceSite;
-use gandr_surface_syntax::ByteSpan;
+pub(super) use gandr_surface_lowering_base::lower::generic::Derivation;
+pub(super) use gandr_surface_lowering_base::lower::generic::Requested;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::CodeView;
 use gandr_theory_levitation::Name;
@@ -127,39 +128,6 @@ const HOSTED: [(&str, BaseType); 2] = [
     ("EqInteger", BaseType::Integer),
     ("EqString", BaseType::String),
 ];
-
-/// What a definition written as the derivation's call derives.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Derivation
-{
-    /// `Eq.generic(T)`: the equality.
-    Equality,
-    /// `Eq.generic.refl(T)` or `Eq.generic.sym(T)`: a law of the equality.
-    Law(Statement),
-}
-
-/// One definition written `Eq.generic(T)`, `Eq.generic.refl(T)` or
-/// `Eq.generic.sym(T)`.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Requested<'source>
-{
-    /// What it derives.
-    derivation: Derivation,
-    /// The data declaration `T` names.
-    data: ConstantIndex,
-    /// Where `T` is written.
-    named: ByteSpan,
-    /// `T` as written.
-    name: SurfaceName<'source>,
-    /// The call itself, where the derived body is located.
-    call: Placed,
-}
 
 impl<'source> Lowerer<'_, 'source>
 {

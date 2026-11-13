@@ -16,6 +16,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+pub(super) use gandr_surface_lowering_base::lower::opening::Opened;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -39,27 +40,6 @@ use crate::resolve::binder_type;
 
 #[cfg(test)]
 mod tests;
-
-/// A module a block statement opens, and the bytes it is open over.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: each value was read by [`Lowerer::open`].
-/// - executable: none — the carrier holds no collection to check the module
-///   against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::open`].
-/// - witness: `lower::opening::tests::an_opened_module_answers_the_rest_of_its_block`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Opened
-{
-    /// The bytes the module is open over: from the statement's `;` to the
-    /// end of its block.
-    scope: ByteSpan,
-    /// The module.
-    module: StructureIndex,
-}
 
 impl<'source> Lowerer<'_, 'source>
 {

@@ -107,6 +107,11 @@ use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
+pub(super) use gandr_surface_lowering_base::lower::loops::Carried;
+pub(super) use gandr_surface_lowering_base::lower::loops::Carry;
+pub(super) use gandr_surface_lowering_base::lower::loops::Reentry;
+pub(super) use gandr_surface_lowering_base::lower::loops::carried;
+pub(super) use gandr_surface_lowering_base::lower::loops::passed;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -147,20 +152,6 @@ use crate::resolve::binder_site;
 #[cfg(test)]
 mod tests;
 
-/// What a loop threads through its passes: a held slot, held again in each
-/// pass, or an endpoint, placed again in each pass.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Carry
-{
-    /// A held slot.
-    Held,
-    /// An endpoint.
-    Endpoint,
-}
-
 /// The name a loop's own binder carries: no identifier spells it, so no
 /// written name resolves to it.
 ///
@@ -179,62 +170,6 @@ fn iteration() -> SurfaceName<'static>
 fn remaining() -> SurfaceName<'static>
 {
     SurfaceName::from(" tail")
-}
-
-/// Where a pass through a loop's body runs the loop again from.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Reentry
-{
-    /// The index the loop's own binder has.
-    own: DeBruijnIndex,
-    /// The index a `for` loop's remaining tail has, which the next pass steps
-    /// through.
-    tail: Maybe<DeBruijnIndex, passed::Absent>,
-    /// The held slots the next pass takes, when the loop threads any.
-    carried: Maybe<Carried, carried::Absent>,
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a loop's next pass steps through no tail.
-    pub(super) mod passed {
-        /// The loop iterates no list.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// A `loop` or a `while` runs its next pass over nothing.
-            Unlisted,
-        }
-    }
-}
-
-/// The held slots a pass hands the loop's next pass, where the pass stands:
-/// the innermost slot's linear index and how many slots there are, each next
-/// one a linear index further out.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Carried
-{
-    /// The linear index the innermost slot has.
-    innermost: DeBruijnIndex,
-    /// How many slots the loop threads.
-    count: ComponentCount,
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a loop's next pass takes no held slot.
-    pub(super) mod carried {
-        /// The loop threads none.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No slot held around the loop is named inside it, or the loop
-            /// stands where it cannot thread one.
-            Unthreaded,
-        }
-    }
 }
 
 /// The value a threading loop's pass takes: the one slot read, or the tuple
