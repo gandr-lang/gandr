@@ -1,10 +1,11 @@
 //! What the benchmark series share: a corpus path from the driver's manifest
 //! directory, the width a series runs at, and a check that visits every step
-//! of its walk.
+//! of its walk under the policy that the driver installs for its width.
 
 use core::ops::ControlFlow;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
@@ -48,24 +49,43 @@ pub(crate) fn width() -> Width
     Width::SERIAL
 }
 
-/// Check `paths` and their closures, visiting every step of the walk.
+/// Check `paths` and their closures at the series' width, visiting every
+/// step of the walk.
 ///
 /// # Specification
 /// trivial.
 pub(crate) fn check(paths: Vec<PathBuf>)
+{
+    check_at(paths, width());
+}
+
+/// Check `paths` and their closures at `width`, visiting every step of the
+/// walk. The check installs what the driver installs for the width
+/// ([`gandr_surface_dispatcher::install_width`]), so a series measures the
+/// run that the driver makes. A process installs once, so the first check
+/// wider than one thread sets the policy for each check after it.
+///
+/// # Specification
+/// trivial.
+pub(crate) fn check_at(
+    paths: Vec<PathBuf>,
+    width: Width,
+)
 {
     let Outcome::Run { walk, width, .. } = gandr_surface_dispatcher::dispatch(Invocation::Check {
         goals: Goals::Gated,
         lints: Lints::default(),
         grant: HostGrant::UNBOUNDED,
         paths,
-        width: width(),
+        width,
     })
     else {
         panic!("check dispatches a walk");
     };
+    let pool = Arc::new(Pool::new(width));
+    gandr_surface_dispatcher::install_width(&pool, &walk);
     let ControlFlow::Continue(report) =
-        walk.visit::<Evaluator, _, _>(&Pool::new(width), |_step| ControlFlow::<()>::Continue(()))
+        walk.visit::<Evaluator, _, _>(&pool, |_step| ControlFlow::<()>::Continue(()))
     else {
         panic!("the visitor never stops the walk");
     };

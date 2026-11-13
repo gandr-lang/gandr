@@ -1784,10 +1784,12 @@ where
         let mut holding = false;
         let mut chained = false;
         let mut put_off = 0_usize;
-        // Each released job holds what its run reads until its commit, a
-        // check's view of the environment among them. So the releases run
-        // ahead of the commits by at most a full lane and one more job for
-        // each lane, and what they hold stays a bound of the width (#7299).
+        // The window is the capacity of the lanes: a full lane and one more
+        // job for each lane. A released job holds what its run reads until its
+        // commit. That is its check's support, one stamp for each position of
+        // the module, and the layers that its open fork keeps from a
+        // compaction (#7339). So what the jobs hold stays a bound of the width
+        // (#7299, #7335).
         let window = self.lanes.len().saturating_mul(DEPTH.saturating_add(1));
         let mut commit_one =
             |position: ItemIndex, item: &mut Item, out: Out, waiting: &mut Waiting| {
