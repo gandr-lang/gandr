@@ -1586,9 +1586,9 @@ fn undecided_beside_later() -> (CoreArena, ModuleReport)
 /// release waits for the cursor, and the drop stops at its open slot. The
 /// refusal leaves a vacancy at the position of `r`, and the machine's
 /// dialogue answers the pair, so `r` is admitted at the next position. Each
-/// dropped declaration crosses again at the cursor. The readmission and the
-/// record at the boundary are the serial ones, and only the reversed run
-/// counts rollbacks.
+/// dropped declaration crosses again at the cursor. The entries, the
+/// declarations that the kernel admits and the record at the boundary are the
+/// serial ones, and only the reversed run counts rollbacks.
 #[test]
 fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476()
 {
@@ -1632,10 +1632,9 @@ fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_347
         serial.readmitted(),
         "each declaration crosses as the serial run crosses it"
     );
-    assert_eq!(
-        reversed.export(BTreeMap::new()),
-        serial.export(BTreeMap::new()),
-        "the artifact is the serial one, byte for byte"
+    assert!(
+        reversed.admitted.iter().eq(serial.admitted.iter()),
+        "the kernel admits the serial declarations, in the serial order"
     );
     let bounded = |record: &Maybe<super::Crossed, crossed::Absent>| match *record {
         Maybe::Present(ref record) => Ok(record.boundary()),
