@@ -1,0 +1,3 @@
+def width(r : *{low : Integer, high : Integer}) -> Integer = r.high - r.low;
+
+def band_width : ( -> Integer = width (*{low = 2, high = 7});
