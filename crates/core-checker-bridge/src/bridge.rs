@@ -2221,28 +2221,13 @@ impl Crossed
         let mut readmitted = Vec::with_capacity(report.judged().len());
         for (entry, judged) in self.readmitted.get(.. run.0)?.iter().zip(leading) {
             let constant = judged.constant();
-            if entry.constant != constant {
+            let crossed = (constant, &entry.outcome, judged.verdict());
+            if entry.constant != constant
+                || keep::agrees(report, crossed) != keep::Agreement::Agrees
+            {
                 return None;
             }
-            let defined =
-                |body: ValueId| report.definitions().get(&constant).copied().unwrap_or(body);
-            match (&entry.outcome, judged.verdict()) {
-                (
-                    &(Outcome::Defined { .. } | Outcome::Static),
-                    Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
-                ) => definitions.define(constant, defined(body)),
-                (&Outcome::Static, Verdict::Data) if report.worlds().contains(&constant) => {},
-                (&Outcome::Data { .. }, Verdict::Data) => {
-                    if let Some(signature) = report.data_signatures().get(&constant) {
-                        definitions.present(constant, signature);
-                    }
-                },
-                (
-                    &Outcome::Assumed { .. },
-                    Verdict::Owed(_) | Verdict::Checked { .. } | Verdict::Synthesised { .. },
-                ) => {},
-                _ => return None,
-            }
+            keep::define(&mut definitions, report, crossed);
             readmitted.push(Readmitted {
                 constant,
                 origin: judged.origin(),

@@ -106,7 +106,7 @@ quenchant_shape::reason_enum! {
 
 /// Whether a verdict is of the kind a record's outcome crossed under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Agreement
+pub(super) enum Agreement
 {
     /// The kinds agree: the outcome may be kept for the verdict.
     Agrees,
@@ -286,7 +286,7 @@ pub(super) fn retire_unit(
 ///
 /// # Specification
 /// trivial.
-fn define(
+pub(super) fn define(
     definitions: &mut CodeDefinitions,
     report: &ModuleReport,
     (constant, outcome, verdict): (ConstantIndex, &Outcome, Verdict),
@@ -316,7 +316,7 @@ fn define(
 ///
 /// # Specification
 /// trivial.
-fn agrees(
+pub(super) fn agrees(
     report: &ModuleReport,
     (constant, outcome, verdict): (ConstantIndex, &Outcome, Verdict),
 ) -> Agreement
