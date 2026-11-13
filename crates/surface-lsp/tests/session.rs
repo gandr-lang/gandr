@@ -1472,9 +1472,10 @@ fn an_edit_that_changes_nothing_republishes_the_same_bytes()
     }
 }
 
-/// #776: an importer's edit to its own text offers the kernel its own
-/// declarations alone, as its synchronisation's log line counts them, where
-/// opening it offered the whole closure.
+/// #776: an importer's edit to its own text offers the kernel the reach of
+/// the edit alone, as its synchronisation's log line counts it, where opening
+/// it offered the whole closure. The edit adds `four` and leaves `three`, so
+/// the readmission keeps `three` in place and offers `four` alone (#6847).
 #[test]
 fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
 {
@@ -1534,8 +1535,8 @@ fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
         crossed(changed),
         whole
             .flatten()
-            .and_then(|of| Some((2_usize, of.checked_add(1)?))),
-        "an edit to its own text offers the document's declarations alone: {changed}"
+            .and_then(|of| Some((1_usize, of.checked_add(1)?))),
+        "an edit to its own text offers the declaration it adds alone: {changed}"
     );
 }
 
