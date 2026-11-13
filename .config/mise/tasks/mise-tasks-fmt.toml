@@ -16,8 +16,8 @@ run = "treefmt"
 # but the gandr one (#1243). A whole-tree `--ci` pass on every commit cost
 # about 21 s, most of it one rustfmt process over a batch of 1024 files, and
 # the gandr formatter rebuilt the optimized driver after any Rust change. The
-# gate (`check:format`, `check:corpus-format`) and CI (`treefmt:check-ci`)
-# still check every file.
+# gate and CI (`check:format`, `check:corpus-format`) still check every
+# file.
 ["treefmt:staged"]
 description = "Check the staged paths with every formatter but the gandr one"
 depends = ["aube:install"]
@@ -30,15 +30,6 @@ formatters=$(yq -p toml -o yaml '.formatter | keys | map(select(. != "gandr")) |
 eval "paths=(${usage_paths:?})"
 treefmt --fail-on-change --no-cache --formatters "$formatters" "${paths[@]}"
 '''
-
-# CI's pass: every formatter but the gandr one, which runs the driver. The
-# plain lane, whose state holds the driver, checks the corpus layout instead
-# (`check:corpus-format`); here the driver would build from nothing each run.
-["treefmt:check-ci"]
-description = "Run treefmt in CI mode without the gandr formatter"
-depends = ["aube:install"]
-tools.yq = "4.54.1"
-run = "treefmt --ci --formatters \"$(yq -p toml -o yaml '.formatter | keys | map(select(. != \"gandr\")) | join(\",\")' treefmt.toml)\""
 
 [changelog]
 description = "Render the root changelog only when preparing a release"

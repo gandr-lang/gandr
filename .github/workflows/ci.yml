@@ -2366,7 +2366,7 @@ jobs:
       # check gives, so one run names every red (#5440).
       - name: treefmt --ci
         if: &keep-going ${{ !cancelled() }}
-        run: mise run treefmt:check-ci
+        run: mise run check:format
       - name: markdown allowlist and budgets
         if: *keep-going
         run: mise run check:markdown
