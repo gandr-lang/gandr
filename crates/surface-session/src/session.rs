@@ -306,7 +306,9 @@ use gandr_core_checker::Retirement;
 use gandr_core_checker::Taking;
 use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::bridge::Crossed;
 use gandr_core_checker::bridge::DeclarationKey;
+use gandr_core_checker::bridge::Outgrown;
 use gandr_core_checker::bridge::Readmitted;
 #[cfg(feature = "instrument")]
 use gandr_core_checker::bridge::Spent;
@@ -366,6 +368,7 @@ use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Engine as _;
 use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Generations;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::KernelTier;
@@ -1937,6 +1940,12 @@ pub struct Session<Store, Blocks>
     /// whole made, each declaration under its content key, from which the
     /// next admission keeps what an edit leaves.
     kept: Option<Arc<ClosureAdmission>>,
+    /// The background build of a whole readmission of the kept record's live
+    /// entries, on the session's pool, made at the first record whose retired
+    /// entries reached its live ones; none before.
+    rebuilds: Option<Generations<(), Revision, Maybe<Crossed, crossed::Absent>>>,
+    /// The revision of the kept record, which a background build is keyed by.
+    revision: Revision,
     /// Whether each judgement keeps the type table of its revision.
     tables: Tables,
     /// Whether the incremental pass takes each changed item's verdict from
@@ -2076,9 +2085,30 @@ pub struct Ran
     checkpoints: Vec<ItemCheckpoint>,
     /// The record the readmission started from, when one was held.
     found: Option<Arc<ClosureAdmission>>,
+    /// A copy of the admission for a background build, when the record that
+    /// the readmission kept from had outgrown its live entries.
+    rebuild: Option<Rebuild>,
     /// The admission's sample, when its sink timed it.
     #[cfg(feature = "instrument")]
     admit: Maybe<Spent, untimed::Absent>,
+}
+
+/// The revision of a session's kept record, which a background build is
+/// keyed by: one more at each record that a whole admission keeps.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Revision(u64);
+
+/// What a background build readmits whole: a copy of an admission,
+/// and the content key of each of its declarations, so that the record the
+/// build makes holds them.
+#[derive(Debug)]
+struct Rebuild
+{
+    /// The copy of the admission.
+    admission: Admission,
+    /// The content key of each declaration, in order.
+    keys: Vec<DeclarationKey>,
 }
 
 impl Detached
@@ -2147,6 +2177,16 @@ impl Detached
                 Maybe::Absent(_) => Maybe::Absent(keyed::Absent::Opaque),
             })
             .collect();
+        // A record whose retired entries reached its live ones holds more
+        // terms than a whole readmission of its live entries: the copy is the
+        // background build's.
+        let rebuild = match found.as_deref().map(|found| found.crossed().outgrown()) {
+            Some(Outgrown::Reached) => Some(Rebuild {
+                admission: admission.clone(),
+                keys: keys.clone(),
+            }),
+            Some(Outgrown::Within) | None => None,
+        };
         #[cfg(feature = "instrument")]
         let admission = admission.positioning(sink.positioning());
         let admitted = within(sink, Phase::Admit, |_| {
@@ -2166,6 +2206,7 @@ impl Detached
                     closure,
                     checkpoints,
                     found,
+                    rebuild,
                     #[cfg(feature = "instrument")]
                     admit,
                 })
@@ -2274,6 +2315,8 @@ impl<Store, Blocks> Session<Store, Blocks>
             pool: Arc::default(),
             admission: Maybe::Absent(admission::Absent::Idle),
             kept: None,
+            rebuilds: None,
+            revision: Revision::default(),
             tables: Tables::Unkept,
             verdicts: Verdicts::Taken,
             reusing: Reusing::Decided,
@@ -2447,6 +2490,8 @@ impl<Store, Blocks> Session<Store, Blocks>
                 pool,
                 admission: Maybe::Absent(admission::Absent::Idle),
                 kept: None,
+                rebuilds: None,
+                revision: Revision::default(),
                 tables: Tables::Unkept,
                 verdicts: Verdicts::Taken,
                 reusing: Reusing::Decided,
@@ -3706,7 +3751,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   record its readmission keeps from: the session's record of the whole
     ///   revision it admitted last, or else the record that the process holds
     ///   for the closure's text under the longest run of the checkpoints, or
-    ///   none. The session holds no admission after.
+    ///   none. A background build that ended whole, keyed by the record that
+    ///   the session still keeps, first puts its record in that one's place.
+    ///   The session holds no admission after.
     /// - provides: what [`Detached::run`] runs on another thread, so the
     ///   session answers while the kernel works.
     /// - fails: never.
@@ -3728,6 +3775,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             Maybe::Present(resume) => resume.checkpoints().items().to_vec(),
             Maybe::Absent(_) => Vec::new(),
         };
+        self.swap();
         let found = match self.kept {
             Some(ref kept) => Some(Arc::clone(kept)),
             None => closures::find(SourceText::from(pending.closure.as_str()), &checkpoints),
@@ -3742,6 +3790,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// Keep what an admission that ran whole made: the record of the whole
     /// revision as the session's own, which the process shares under the
     /// closure's checkpoints, and the artifact's checkpoint in the block store.
+    /// When the record that the admission kept from had outgrown its live
+    /// entries, a whole readmission of the revision starts on the session's
+    /// pool, and its record waits for the next admission.
     ///
     /// # Specification
     /// - requires: `ran` ran an admission [`Session::admission`] took from this
@@ -3778,6 +3829,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             closure,
             checkpoints,
             found,
+            rebuild,
             #[cfg(feature = "instrument")]
             admit,
         } = ran;
@@ -3802,6 +3854,8 @@ impl<Store, Blocks> Session<Store, Blocks>
                     closures::keep(closure, leading.to_vec(), Arc::clone(&made));
                 }
                 self.kept = own;
+                self.revision = Revision(self.revision.0.saturating_add(1));
+                self.rebuild(rebuild);
                 Some(made)
             },
             Maybe::Absent(_) => found.filter(|found| {
@@ -3838,6 +3892,77 @@ impl<Store, Blocks> Session<Store, Blocks>
             crossed: offered,
             judged: DeclarationCount::from(usize::from(resumption.judged)),
         }))
+    }
+
+    /// Start a background build of `rebuild` under the session's revision,
+    /// which retires a build that runs; with none, retire a build that runs,
+    /// since a record kept after it began makes its record stale.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rebuild(
+        &mut self,
+        rebuild: Option<Rebuild>,
+    )
+    {
+        let revision = self.revision;
+        match (rebuild, self.kept.is_some()) {
+            (Some(Rebuild { admission, keys }), true) => {
+                let pool = &self.pool;
+                let rebuilds = self
+                    .rebuilds
+                    .get_or_insert_with(|| Generations::new(Arc::clone(pool)));
+                let _submitted = rebuilds.submit((), revision, move |watch| {
+                    match admission.admit_retiring(
+                        Reuse::Keeping(&keys, Maybe::Absent(crossed::Absent::Unasked)),
+                        watch,
+                    ) {
+                        Polled::Whole(resumption) => Ok(resumption.crossed),
+                        Polled::Retired(retired, _) => Err(retired),
+                    }
+                });
+            },
+            (Some(_) | None, _) => {
+                if let Some(ref mut rebuilds) = self.rebuilds {
+                    rebuilds.retire(&());
+                }
+            },
+        }
+    }
+
+    /// Put the record of a background build that ended whole in the kept
+    /// record's place, when the build is keyed by the record kept now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn swap(&mut self)
+    {
+        let Some(ref mut rebuilds) = self.rebuilds
+        else {
+            return;
+        };
+        if let Maybe::Present(delivered) = rebuilds.ready()
+            && delivered.key == self.revision
+            && let Maybe::Present(record) = delivered.output
+        {
+            self.kept = Some(Arc::new(ClosureAdmission::new(record)));
+        }
+    }
+
+    /// The record of the whole revision that the next admission keeps from,
+    /// when the session holds one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn record(&self) -> Maybe<&Crossed, crossed::Absent>
+    {
+        self.kept
+            .as_deref()
+            .map_or(Maybe::Absent(crossed::Absent::Unasked), |kept| {
+                Maybe::Present(kept.crossed())
+            })
     }
 
     /// The account of the latest judged revision: one row for each declaration

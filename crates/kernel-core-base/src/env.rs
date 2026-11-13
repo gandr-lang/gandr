@@ -1789,6 +1789,8 @@ pub struct EntryLog
     vacancies: usize,
     /// How many slots are reserved for a release whose commit has not come.
     reservations: usize,
+    /// How many slots hold a retired entry.
+    retired: usize,
 }
 
 /// The slot at one position of the entries.
@@ -1975,6 +1977,29 @@ impl Entries
                     .map_or(0, |log| log.vacancies.saturating_add(log.reservations)),
             ),
         )
+    }
+
+    /// How many retired entries there are: the slots whose entry a
+    /// readmission retired.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the count of the retired slots, read in constant time; at
+    ///   most [`Self::admitted`].
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the count walks every slot, and a clause may not
+    ///   walk the entries.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a count that misses a retire, or a truncation past a
+    ///   retired slot, differs from the count of the retired slots.
+    /// - witness: `gandr-kernel-core::environment::tests::a_retired_entry_keeps_its_position_and_frees_its_declaration_7194`
+    #[inline]
+    #[must_use]
+    pub fn retired(&self) -> gandr_kernel_term::ArenaLength
+    {
+        gandr_kernel_term::ArenaLength::from(self.log.as_deref().map_or(0, |log| log.retired))
     }
 
     /// The entry at `offset`, read through the support of the check that
@@ -2556,6 +2581,7 @@ impl Entries
         else {
             return;
         };
+        log.retired = log.retired.saturating_add(1);
         let declaration = &entry.declaration;
         // A later definition with the same fixpoint takes its row, and a
         // retire leaves that row.
@@ -2723,16 +2749,18 @@ impl Entries
         let first = ConstantIndex::from(length);
         let log = self.log_mut();
         let dropped = usize::from(log.family.len()).saturating_sub(usize::from(length));
-        let (vacant, reserved) = log.family.iter().rev().take(dropped).fold(
-            (0_usize, 0_usize),
-            |(vacant, reserved), slot| match *slot {
-                Slot::Admitted(_) | Slot::Retired => (vacant, reserved),
-                Slot::Vacant => (vacant.saturating_add(1), reserved),
-                Slot::Reserved => (vacant, reserved.saturating_add(1)),
+        let (vacant, reserved, retired) = log.family.iter().rev().take(dropped).fold(
+            (0_usize, 0_usize, 0_usize),
+            |(vacant, reserved, retired), slot| match *slot {
+                Slot::Admitted(_) => (vacant, reserved, retired),
+                Slot::Retired => (vacant, reserved, retired.saturating_add(1)),
+                Slot::Vacant => (vacant.saturating_add(1), reserved, retired),
+                Slot::Reserved => (vacant, reserved.saturating_add(1), retired),
             },
         );
         log.vacancies = log.vacancies.saturating_sub(vacant);
         log.reservations = log.reservations.saturating_sub(reserved);
+        log.retired = log.retired.saturating_sub(retired);
         log.family.truncate(length);
         log.presentations.forget_from(first);
         log.ruled.retain(|_, &position| position < first);
