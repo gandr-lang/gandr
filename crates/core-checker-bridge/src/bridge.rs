@@ -3168,7 +3168,13 @@ enum Slot<'report>
     Running(Offered<'report>, Pending),
     /// Run, in a module whose pair the kernel may leave undecided: its settle
     /// waits for the cursor, so a pair left undecided before it can drop it.
-    Ran(Offered<'report>, Pending, Ran, AdmissionCost),
+    /// The run is boxed, so every other slot keeps the size of a running one.
+    Ran(
+        Offered<'report>,
+        Pending,
+        alloc::boxed::Box<Ran>,
+        AdmissionCost,
+    ),
     /// Settled by the kernel: its record waits.
     Settled(
         Offered<'report>,
@@ -3724,7 +3730,7 @@ where
                 };
                 match core::mem::replace(slot, Slot::Open) {
                     Slot::Running(offered, pending) if self.answerable => {
-                        Slot::Ran(offered, pending, ran, took)
+                        Slot::Ran(offered, pending, alloc::boxed::Box::new(ran), took)
                     },
                     Slot::Running(offered, pending) => {
                         Slot::Settled(offered, self.environment.settle(pending, ran), took)
@@ -3809,7 +3815,7 @@ where
                     Some(self.settled_crossing(offered, settled, took))
                 },
                 Slot::Ran(offered, pending, ran, took) => {
-                    Some(self.settle_at_cursor((offered, pending), (ran, took)))
+                    Some(self.settle_at_cursor((offered, pending), (*ran, took)))
                 },
                 Slot::Dropped => self.again(ItemIndex::from(at)),
                 Slot::Crossed(crossing) => Some(crossing),
@@ -3922,7 +3928,7 @@ where
                     *slot = Slot::Open;
                     break;
                 },
-                Slot::Ran(_, _, dropped, _) => self.environment.discard(dropped),
+                Slot::Ran(_, _, dropped, _) => self.environment.discard(*dropped),
                 Slot::Running(..)
                 | Slot::Member(_)
                 | Slot::Settled(..)
