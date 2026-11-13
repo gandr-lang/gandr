@@ -110,6 +110,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a constant is a word of no words.
+    pub mod worded {
+        /// The constant names no words.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The constant is neither a loop nor the words a loop is a
+            /// letter of.
+            Unworded,
+        }
+    }
+}
+
 /// How many tree binders stand above a node of a match's decision tree; as a
 /// variable's index, how many binders stand between the variable and its
 /// binder.

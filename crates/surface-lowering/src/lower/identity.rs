@@ -356,7 +356,6 @@ use super::exhausted;
 use super::exits::record_copies;
 use super::lowered;
 use super::native::Answer;
-use super::native::NativeRef;
 use super::native::record_since;
 use super::native::rooted;
 use crate::by_form::At;
@@ -3924,7 +3923,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — `Path.ap f (Path.here c)` in a type, `c` a point of a
     ///   sphere, lowers at `Path[.A = B](f c, f c)`.
     /// - witness: `lower::identity::tests::an_action_on_a_constructor_s_reflexivity_reads_its_family_6492`
-    #[spec(ensures: |ret| ret.is_none_or(|family| matches!(NativeRef::over(self.cx()).words_at(family), Maybe::Absent(_))))]
+    #[spec(ensures: |ret| ret.is_none_or(|family| matches!(self.cx().words_at(family), Maybe::Absent(_))))]
     fn closed_point(
         &self,
         point: NodeIndex,
@@ -3937,10 +3936,7 @@ impl<'source> Lowerer<'_, 'source>
         match self.cx().plans.get(at) {
             Some(&Plan::Constructor(constructed))
                 if constructed.classifier == super::native::Classifier::Inserted
-                    && matches!(
-                        NativeRef::over(self.cx()).words_at(constructed.family),
-                        Maybe::Absent(_)
-                    ) =>
+                    && matches!(self.cx().words_at(constructed.family), Maybe::Absent(_)) =>
             {
                 Some(constructed.family)
             },
@@ -4270,19 +4266,15 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 },
                 Some(&Plan::Constant(constant)) => {
-                    matches!(
-                        NativeRef::over(self.cx()).words_at(constant),
-                        Maybe::Present(_)
-                    ) || self
-                        .shared()
-                        .stated_path(constant)
-                        .is_some_and(|callee| !self.cx().collected.refused(callee.result).0)
+                    matches!(self.cx().words_at(constant), Maybe::Present(_))
+                        || self
+                            .shared()
+                            .stated_path(constant)
+                            .is_some_and(|callee| !self.cx().collected.refused(callee.result).0)
                 },
                 Some(&Plan::Constructor(constructed)) => {
-                    matches!(
-                        NativeRef::over(self.cx()).words_at(constructed.family),
-                        Maybe::Present(_)
-                    ) || (reflexivity.is_some() && self.shared().closed_point(at).is_some())
+                    matches!(self.cx().words_at(constructed.family), Maybe::Present(_))
+                        || (reflexivity.is_some() && self.shared().closed_point(at).is_some())
                 },
                 // `Path.here(x)` at a binder of any written type stands at `Path[.A = A](
                 // x, x)`, `A` that type (#3834). At any other point, each
@@ -5100,7 +5092,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<Stood, lowered::Absent>
     {
-        let written = match NativeRef::over(self.cx()).answered_type(answer, sink) {
+        let written = match self.host_ref().answered_type(answer, sink) {
             Maybe::Present(written) => written,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -5111,7 +5103,7 @@ impl<'source> Lowerer<'_, 'source>
             .count()
             .saturating_sub(self.cx().scope.telescope_binders(answer.frame).count());
         let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
-        let answered = NativeRef::over(self.cx()).relocate(
+        let answered = self.host_ref().relocate(
             sink.arena,
             written,
             answer.frame,
@@ -5463,7 +5455,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   function's written result at its arguments, each carried to where the
     ///   operation stands; otherwise a loop, or a word of a loop's words,
     ///   stands at `Path[.A = F](x, x)`, `F` its family and `x` the point the
-    ///   words spell, minted as [`NativeRef::words_point`] mints them, a
+    ///   words spell, minted as the native family's `words_point` mints them, a
     ///   reflexivity `Path.here(x)` at `Path[.A = A](x, x)` when its point is a
     ///   binder whose written type `A` carries to where the operation stands,
     ///   at `Path[.A = D](c, c)` when its point is a constructor `c` of a
@@ -5621,7 +5613,6 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unread;
         };
-        let native = NativeRef::over(self.cx());
         let worded = match sink.arena.value(value) {
             Some(&Value::Returned(transport)) => {
                 return sink
@@ -5630,15 +5621,15 @@ impl<'source> Lowerer<'_, 'source>
                     .copied()
                     .map_or(unread, Maybe::Present);
             },
-            Some(&Value::Constant(constant)) => native.words_at(constant),
-            Some(&Value::Constructor { family, .. }) => native.words_at(family),
+            Some(&Value::Constant(constant)) => self.cx().words_at(constant),
+            Some(&Value::Constructor { family, .. }) => self.cx().words_at(family),
             _ => return unread,
         };
         let Maybe::Present(words) = worded
         else {
             return unread;
         };
-        match native.words_point(sink.arena, words) {
+        match self.host_ref().words_point(sink.arena, words) {
             Maybe::Present(based) => {
                 let (carrier, point) =
                     super::native::wrapped_point(sink.arena, based, words.reflexivities);
@@ -5726,7 +5717,7 @@ impl<'source> Lowerer<'_, 'source>
             && let Some(&(called, domain, stands)) = self.cx().argued_binders.get(&binder)
         {
             let Maybe::Present((written, environment)) =
-                NativeRef::over(self.cx()).called_environment(called, domain, sink)
+                self.host_ref().called_environment(called, domain, sink)
             else {
                 return unread;
             };
@@ -5809,14 +5800,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         let lift = between(frame, from, |_| true);
         let wrapped = sink.arena.comp_type_returner(written);
-        let relocated = NativeRef::over(self.cx()).relocate(
-            sink.arena,
-            wrapped,
-            from,
-            Telescope::Signature,
-            lift,
-            None,
-        );
+        let relocated =
+            self.host_ref()
+                .relocate(sink.arena, wrapped, from, Telescope::Signature, lift, None);
         match sink.arena.comp_type(relocated) {
             Some(&CompType::Returner { result, .. }) => Maybe::Present(result),
             _ => Maybe::Absent(synthesised::Absent::Unread),
@@ -6395,7 +6381,7 @@ impl<'source> Lowerer<'_, 'source>
         let inserted = origin.inserted(Insertion::Identity);
         let mut copies = Vec::new();
         let dependent = telescope(sink.arena, written, &mut copies);
-        let carried = NativeRef::over(self.cx()).relocate(
+        let carried = self.host_ref().relocate(
             sink.arena,
             dependent,
             transported.frame,

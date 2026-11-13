@@ -10,6 +10,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::EffectName;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::LayoutBlock;
@@ -49,7 +50,11 @@ use crate::lower::exhausted;
 use crate::lower::identity::related;
 use crate::lower::lowered;
 use crate::lower::model::bundle_dependence;
+use crate::lower::native::worded;
 use crate::module::FamilyIndex;
+use crate::module::Half;
+use crate::module::Operand;
+use crate::module::WordsForm;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
@@ -1134,5 +1139,45 @@ impl<'source> Context<'_, 'source>
                 span: written.span,
                 name,
             })
+    }
+
+    /// The words a constant is a word of: a loop's, or the words' own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry of the collection's words list whose slot or one of
+    ///   whose loops' slots `constant` is.
+    /// - fails: [`worded::Absent::Unworded`] for any other constant.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the loop and the empty word read at their words, and
+    ///   a function at none.
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(
+        self.collected.slots.get(usize::from(constant)).map(|slot| slot.definition),
+        Some(Maybe::Present(Half { operand: Operand::Loop { .. } | Operand::Words(_), .. }))
+    ))]
+    #[inline]
+    pub fn words_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<&WordsForm, worded::Absent>
+    {
+        let Some(Maybe::Present(Half {
+            operand: Operand::Loop { words, .. } | Operand::Words(words),
+            ..
+        })) = self
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .map(|slot| slot.definition)
+        else {
+            return Maybe::Absent(worded::Absent::Unworded);
+        };
+        self.collected
+            .words
+            .get(words)
+            .map_or(Maybe::Absent(worded::Absent::Unworded), Maybe::Present)
     }
 }

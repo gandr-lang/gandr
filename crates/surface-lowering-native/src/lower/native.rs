@@ -441,6 +441,7 @@ pub use gandr_surface_lowering_base::lower::native::bare;
 pub use gandr_surface_lowering_base::lower::native::eliminated;
 pub use gandr_surface_lowering_base::lower::native::passed;
 pub use gandr_surface_lowering_base::lower::native::settled;
+pub use gandr_surface_lowering_base::lower::native::worded;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
@@ -628,19 +629,6 @@ quenchant_shape::reason_enum! {
             /// The member did not lower to a fixpoint over one parameter at a
             /// plain arrow.
             Unjoined,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a constant is a word of no words.
-    pub mod worded {
-        /// The constant names no words.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The constant is neither a loop nor the words a loop is a
-            /// letter of.
-            Unworded,
         }
     }
 }
@@ -13617,48 +13605,6 @@ impl<'source> NativeRef<'_, '_, 'source>
             &mut minted,
         )
         .map(|point| (carrier, point))
-    }
-
-    /// The words a constant is a word of: a loop's, or the words' own.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the entry of the collection's words list whose slot or one of
-    ///   whose loops' slots `constant` is.
-    /// - fails: [`worded::Absent::Unworded`] for any other constant.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the loop and the empty word read at their words, and
-    ///   a function at none.
-    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(
-        self.cx.collected.slots.get(usize::from(constant)).map(|slot| slot.definition),
-        Some(Maybe::Present(Half { operand: Operand::Loop { .. } | Operand::Words(_), .. }))
-    ))]
-    #[inline]
-    pub fn words_at(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<&WordsForm, worded::Absent>
-    {
-        let Some(Maybe::Present(Half {
-            operand: Operand::Loop { words, .. } | Operand::Words(words),
-            ..
-        })) = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(constant))
-            .map(|slot| slot.definition)
-        else {
-            return Maybe::Absent(worded::Absent::Unworded);
-        };
-        self.cx
-            .collected
-            .words
-            .get(words)
-            .map_or(Maybe::Absent(worded::Absent::Unworded), Maybe::Present)
     }
 
     /// The rules a data declaration's presented reading writes over its own
