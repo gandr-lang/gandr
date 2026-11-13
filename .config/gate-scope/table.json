@@ -125,7 +125,8 @@
         "corpus/",
         "crates/",
         "ledger/concerns.sql",
-        "ledger/features.sql"
+        "ledger/features.sql",
+        "library/"
       ],
       "check:commits": [".config/commits/", ".config/pr-stack/", "commitlint.config.mjs"],
       "check:coverage": [".config/cases/", ".config/coverage/", ".github/workflows/coverage.yml"],
