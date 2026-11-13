@@ -128,6 +128,7 @@ use anodized::spec;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
+use gandr_kernel_term::ChunkedMap;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
@@ -587,10 +588,10 @@ impl Environment
         }
     }
 
-    /// Share the arena's nodes and the admitted declarations with every clone
-    /// of the environment made after: such a clone copies, and its drop
-    /// releases, only what was minted and admitted after the freeze
-    /// ([`TermArena::freeze`],
+    /// Share the arena's nodes, the admitted declarations and the reverse
+    /// index of their references with every clone of the environment made
+    /// after: such a clone copies, and its drop releases, only what was minted
+    /// and admitted after the freeze ([`TermArena::freeze`],
     /// [`Family::freeze`](gandr_kernel_term::Family::freeze)). Share the
     /// session's names and kept outcomes with every environment
     /// [`Self::handed_on`] makes after: the first check of an environment
@@ -622,6 +623,11 @@ impl Environment
     {
         self.arena.freeze();
         self.entries.freeze();
+        // A log that another environment shares stays as it is: a freeze of
+        // it here would copy the whole log first.
+        if let Some(commits) = alloc::sync::Arc::get_mut(&mut self.commits) {
+            commits.dependents.freeze();
+        }
         self.names.share();
     }
 
@@ -3945,9 +3951,9 @@ struct CommitLog
     dependents: crate::dependents::Dependents,
     /// The positions of the generative admissions, by their content key:
     /// the earlier ones with one content are what a new one's key counts.
-    generative: BTreeMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
+    generative: ChunkedMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
     /// The position of the entry that holds each rank.
-    ranked: BTreeMap<SourceRank, ConstantIndex>,
+    ranked: ChunkedMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
     order: Order,
     /// The rank the next admission staged with no rank takes, while a
@@ -4135,7 +4141,8 @@ impl CommitLog
         position: ConstantIndex,
     )
     {
-        self.generative.entry(content).or_default().push(position);
+        self.generative
+            .update_or_default(content, |positions| positions.push(position));
     }
 
     /// Take the rows of the entry admitted at `position` and `rank`, which
@@ -4376,16 +4383,13 @@ impl CommitLog
         entries: &Entries,
     )
     {
-        if self.retired == 0 || self.retired.saturating_mul(2) < self.ranked.len() {
+        if self.retired == 0 || self.retired.saturating_mul(2) < usize::from(self.ranked.len()) {
             return;
         }
         self.retired = 0;
         let live = |position: ConstantIndex| entries.live(position).is_some();
         self.dependents.retain(live);
-        self.generative.retain(|_, positions| {
-            positions.retain(|&position| live(position));
-            !positions.is_empty()
-        });
+        self.generative.retain_items(|&position| live(position));
     }
 
     /// Hold each rank of `ranks` at its position, in place of every rank held
@@ -4406,7 +4410,7 @@ impl CommitLog
     /// - hypothesis: L3 — as [`Environment::rerank`].
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235`
-    #[spec(ensures: self.ranked.len() >= ranks.len()
+    #[spec(ensures: usize::from(self.ranked.len()) >= ranks.len()
         && ranks.iter().all(|(&position, &rank)| self.ranked.get(&rank) == Some(&position)))]
     fn rerank(
         &mut self,
@@ -4483,7 +4487,7 @@ impl CommitLog
         length: gandr_kernel_term::ArenaLength,
     ) -> Order
     {
-        let positional = self.ranked.len() == usize::from(length)
+        let positional = usize::from(self.ranked.len()) == usize::from(length)
             && self
                 .ranked
                 .values()
@@ -4527,16 +4531,13 @@ impl CommitLog
             }
         }
         self.dependents.truncate(first);
-        self.generative.retain(|_, positions| {
-            positions.retain(|&position| position < first);
-            !positions.is_empty()
-        });
+        self.generative.retain_items(|&position| position < first);
         let least = self
             .ranked
             .iter()
             .find(|&(_, &position)| position >= first)
             .map(|(&rank, _)| rank);
-        self.ranked.retain(|_, &mut position| position < first);
+        self.ranked.retain(|_, &position| position < first);
         if let Some(least) = least {
             self.stale_from(least);
         }

@@ -40,6 +40,7 @@ use core::cmp::Reverse;
 use anodized::spec;
 use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Family;
 
 /// The end of a chain of rows.
 const NONE: usize = usize::MAX;
@@ -57,10 +58,12 @@ struct Row
 /// The reverse index of the direct references: for each position, the entries
 /// that name it.
 ///
-/// The rows of all positions share one vector, in admission order. Each
+/// The rows of all positions share one family, in admission order. Each
 /// position keeps its last row, and each row the row before it for the same
-/// position. So an admission appends its rows and allocates nothing else, a
-/// rollback pops them in the reverse order, and a clone copies two vectors.
+/// position. So an admission appends its rows and allocates nothing else, and
+/// a rollback drops them in the reverse order. After a [`Self::freeze`] a
+/// clone shares both families, and a write copies the chunk of 64 that it
+/// writes alone ([`Family::get_mut`]).
 ///
 /// # Specification
 /// - provides: the dependents of each position, newest first.
@@ -77,9 +80,9 @@ struct Row
 pub struct Dependents
 {
     /// The last row of each position, or [`NONE`].
-    last: Vec<usize>,
+    last: Family<usize>,
     /// Every row, in admission order.
-    rows: Vec<Row>,
+    rows: Family<Row>,
 }
 
 impl Dependents
@@ -97,7 +100,7 @@ impl Dependents
     /// # Adequacy
     /// - hypothesis: L3 — as [`Dependents`].
     /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
-    #[spec(captures: rows = self.rows.len(), ensures: self.rows.len() == rows.saturating_add(references.len()))]
+    #[spec(captures: rows = usize::from(self.rows.len()), ensures: usize::from(self.rows.len()) == rows.saturating_add(references.len()))]
     pub fn admit(
         &mut self,
         position: ConstantIndex,
@@ -108,13 +111,13 @@ impl Dependents
         // can be past the entry.
         let highest = references.iter().copied().fold(position, Ord::max);
         let length = usize::from(highest).saturating_add(1);
-        if self.last.len() < length {
-            self.last.resize(length, NONE);
+        while usize::from(self.last.len()) < length {
+            self.last.push(NONE);
         }
-        self.rows.reserve(references.len());
         for &reference in references {
+            let row = usize::from(self.rows.len());
             if let Some(last) = self.last.get_mut(usize::from(reference)) {
-                let next = core::mem::replace(last, self.rows.len());
+                let next = core::mem::replace(last, row);
                 self.rows.push(Row {
                     dependent: position,
                     next,
@@ -135,17 +138,20 @@ impl Dependents
     /// # Adequacy
     /// - hypothesis: L3 — as [`Dependents`].
     /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
-    #[spec(captures: rows = self.rows.len(), ensures: self.rows.len() == rows.saturating_sub(references.len()))]
+    #[spec(captures: rows = usize::from(self.rows.len()), ensures: usize::from(self.rows.len()) == rows.saturating_sub(references.len()))]
     pub fn forget(
         &mut self,
         references: &[ConstantIndex],
     )
     {
         for &reference in references.iter().rev() {
-            let Some(row) = self.rows.pop()
+            let Some(&row) = self.rows.last()
             else {
                 return;
             };
+            self.rows.truncate(ArenaLength::from(
+                usize::from(self.rows.len()).saturating_sub(1),
+            ));
             if let Some(last) = self.last.get_mut(usize::from(reference)) {
                 *last = row.next;
             }
@@ -161,7 +167,19 @@ impl Dependents
         first: ConstantIndex,
     )
     {
-        self.last.truncate(usize::from(first));
+        self.last.truncate(ArenaLength::from(usize::from(first)));
+    }
+
+    /// Share both families with every clone made after: such a clone copies
+    /// only the rows admitted after the freeze, and a write to a row before
+    /// it copies the chunk of the row alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn freeze(&mut self)
+    {
+        self.last.freeze();
+        self.rows.freeze();
     }
 
     /// Keep the rows that come from an entry `live` holds and name a position
@@ -169,8 +187,8 @@ impl Dependents
     /// retires entries.
     ///
     /// A row holds no position that it names, so one walk of each position's
-    /// rows finds it. The kept rows move down in place, and the vector gives
-    /// back the room of the rest.
+    /// rows finds it. The kept rows move down, and the families are built
+    /// afresh from them, so the sweep reads and writes every row once.
     ///
     /// # Specification
     /// - requires: an entry that `live` holds and that names one it does not
@@ -194,33 +212,35 @@ impl Dependents
     ) where
         Live: Fn(ConstantIndex) -> bool,
     {
+        let mut rows: Vec<Row> = self.rows.iter().copied().collect();
+        let mut last: Vec<usize> = self.last.iter().copied().collect();
         // The position whose rows hold each row.
-        let mut named = alloc::vec![NONE; self.rows.len()];
-        for (position, &last) in self.last.iter().enumerate() {
-            let mut at = last;
-            while let Some(row) = self.rows.get(at) {
+        let mut named = alloc::vec![NONE; rows.len()];
+        for (position, &first) in last.iter().enumerate() {
+            let mut at = first;
+            while let Some(row) = rows.get(at) {
                 if let Some(slot) = named.get_mut(at) {
                     *slot = position;
                 }
                 at = row.next;
             }
         }
-        self.last.fill(NONE);
+        last.fill(NONE);
         let mut kept = 0_usize;
-        for at in 0 .. self.rows.len() {
-            let (Some(&row), Some(&position)) = (self.rows.get(at), named.get(at))
+        for at in 0 .. rows.len() {
+            let (Some(&row), Some(&position)) = (rows.get(at), named.get(at))
             else {
                 continue;
             };
             if !live(row.dependent) || !live(ConstantIndex::from(position)) {
                 continue;
             }
-            let Some(last) = self.last.get_mut(position)
+            let Some(held) = last.get_mut(position)
             else {
                 continue;
             };
-            let next = core::mem::replace(last, kept);
-            if let Some(slot) = self.rows.get_mut(kept) {
+            let next = core::mem::replace(held, kept);
+            if let Some(slot) = rows.get_mut(kept) {
                 *slot = Row {
                     dependent: row.dependent,
                     next,
@@ -228,8 +248,10 @@ impl Dependents
             }
             kept = kept.saturating_add(1);
         }
-        self.rows.truncate(kept);
-        self.rows.shrink_to_fit();
+        rows.truncate(kept);
+        rows.shrink_to_fit();
+        self.last = Family::from(last);
+        self.rows = Family::from(rows);
     }
 
     /// The entries that name `position`, newest first.
