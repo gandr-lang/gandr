@@ -208,6 +208,7 @@ impl Activities
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn of(pool: Arc<Pool>) -> Self
     {
         Self(Arc::new(Shared {

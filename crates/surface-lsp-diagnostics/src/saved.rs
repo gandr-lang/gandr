@@ -55,8 +55,8 @@ use crate::recheck::DocumentSession;
 /// # Adequacy
 /// - hypothesis: L3 — a copy saved, closed and opened again adopts what the
 ///   save judged; a save prunes what another build judged.
-/// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
-/// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
+/// - witness: `gandr-surface-lsp::server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+/// - witness: `gandr-surface-lsp::server::tests::a_save_prunes_what_another_build_judged_1816`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Saved
@@ -81,6 +81,7 @@ impl fmt::Display for Unsaved
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -110,7 +111,7 @@ impl Saved
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`FileCheckpointStore::open`].
-    /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+    /// - witness: `gandr-surface-lsp::server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
     #[inline]
     pub fn at<Location>(path: Location) -> Result<Self, CheckpointStoreError>
     where
@@ -131,11 +132,12 @@ impl Saved
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Saved`].
-    /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+    /// - witness: `gandr-surface-lsp::server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
     #[spec(ensures: |ret| matches!(
         (&ret, crate::build::running()),
         (&Maybe::Present(_), Maybe::Present(_)) | (&Maybe::Absent(_), Maybe::Absent(_))
     ))]
+    #[inline]
     pub fn restorer(&self) -> Maybe<Box<dyn Restorer>, unidentified::Absent>
     {
         crate::build::running().map(|build| -> Box<dyn Restorer> {
@@ -163,9 +165,10 @@ impl Saved
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Saved`].
-    /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
-    /// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
+    /// - witness: `gandr-surface-lsp::server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+    /// - witness: `gandr-surface-lsp::server::tests::a_save_prunes_what_another_build_judged_1816`
     #[spec(ensures: |ret| !matches!(ret, Err(Unsaved::Unidentified(_))) || matches!(crate::build::running(), Maybe::Absent(_)))]
+    #[inline]
     pub fn keep(
         &self,
         session: &DocumentSession,

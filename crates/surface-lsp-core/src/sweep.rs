@@ -182,6 +182,19 @@ fn current<'reports>(
     })
 }
 
+impl Default for Sweep
+{
+    /// No report, no pass, and no pull waiting, as [`Sweep::new`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
 impl Sweep
 {
     /// No report, no pass, and no pull waiting.
@@ -277,7 +290,7 @@ impl Sweep
     /// - hypothesis: L3 — a source never judged, one judged and unchanged, and
     ///   one whose import was rewritten after the pass looked at it, each
     ///   answered as stated.
-    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    /// - witness: `gandr-surface-lsp::server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
     /// - witness: `sweep::tests::a_pass_looks_again_at_a_source_written_behind_it_1824`
     #[spec(ensures: |ret| ret.is_none() || matches!(self.pass, Pass::Running { .. }))]
     #[inline]
@@ -367,7 +380,7 @@ impl Sweep
     /// - hypothesis: L3 — a refusal reported whole, the same report named by
     ///   its id answered unchanged, and a source rewritten to check reported
     ///   whole and empty.
-    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    /// - witness: `gandr-surface-lsp::server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
     #[spec(ensures: |ret| ret.items.len() <= sources.len())]
     #[inline]
     #[must_use]

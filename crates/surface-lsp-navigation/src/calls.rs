@@ -72,9 +72,10 @@ pub struct Read<'read>
 /// - hypothesis: L3 — a function used and at its own name, and a value declared
 ///   in two halves at either, are callable; a constructor and a parameter are
 ///   not.
-/// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+/// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
 #[spec(ensures: |ret| ret.is_none_or(|site| site.source() == referent.source()))]
 #[must_use]
+#[inline]
 pub fn callable(
     table: &TypeTable,
     referent: Referent,
@@ -115,7 +116,7 @@ pub fn callable(
 /// # Adequacy
 /// - hypothesis: L3 — an item of the document and one of a sibling are each
 ///   placed in their own text.
-/// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+/// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|placed| placed.kind == SymbolKind::FUNCTION
     && (site.source() != read.hovering.table().own_source() || placed.uri == *read.uri)))]
 fn item(
@@ -160,9 +161,10 @@ fn item(
 /// # Adequacy
 /// - hypothesis: L3 — a call of a sibling's function and a function's own name
 ///   each prepare it; a constructor prepares nothing.
-/// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+/// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
 #[spec(ensures: |ret| ret.len() <= 1_usize)]
 #[must_use]
+#[inline]
 pub fn items(
     read: Read<'_>,
     position: Position,
@@ -197,9 +199,10 @@ pub fn items(
 /// # Adequacy
 /// - hypothesis: L3 — an importer's calls of a sibling's function are grouped
 ///   by the definition making them, a recursive call by its own definition.
-/// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+/// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
+#[inline]
 pub fn callers(
     read: Read<'_>,
     path: &Path,
@@ -271,9 +274,10 @@ pub fn callers(
 /// # Adequacy
 /// - hypothesis: L3 — a definition calling a sibling's function and itself
 ///   answers both, each with its uses; a constructor it applies is no call.
-/// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+/// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
+#[inline]
 pub fn callees(
     read: Read<'_>,
     position: Position,

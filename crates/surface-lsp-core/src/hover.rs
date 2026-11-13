@@ -247,11 +247,12 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// What a document copy keeps for its hovers, its definitions, its
-/// completions, its signature help and the workspace's symbols until its text
-/// changes: the type table of its text, the path of each source of the unit
-/// the table was typed in, the names the unit declares, the heads it declares
-/// them with, and, once asked, where each name is written.
+/// What a document copy keeps for its requests until its text changes.
+///
+/// Its hovers, its definitions, its completions, its signature help and the
+/// workspace's symbols read it: the type table of its text, the path of each
+/// source of the unit the table was typed in, the names the unit declares, the
+/// heads it declares them with, and, once asked, where each name is written.
 #[derive(Clone, Debug)]
 pub struct Hovering
 {
@@ -283,6 +284,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn table(&self) -> &TypeTable
     {
         &self.table
@@ -292,6 +294,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn names(&self) -> &Names
     {
         &self.names
@@ -301,6 +304,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn signatures(&self) -> &Signatures
     {
         &self.signatures
@@ -312,6 +316,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn opened(
         &self,
         referent: &Referent,
@@ -327,6 +332,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn source_path(
         &self,
         source: SourceIndex,
@@ -340,6 +346,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn opened_paths(&self) -> &[PathBuf]
     {
         &self.opened
@@ -350,6 +357,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn targets(&self) -> &[ImportTarget]
     {
         &self.targets
@@ -369,8 +377,9 @@ impl Hovering
     /// # Adequacy
     /// - hypothesis: L3 — a sibling read by an importer and by itself is found
     ///   in each.
-    /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+    /// - witness: `gandr-surface-lsp::server::tests::references_find_a_name_s_uses_in_every_open_document`
     #[spec(ensures: |ret| ret.is_none_or(|source| self.source_path(source) == Some(path)))]
+    #[inline]
     pub fn source_at(
         &self,
         path: &Path,
@@ -387,6 +396,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn found(&self) -> &Found
     {
         self.found.get_or_init(|| Found::of(&self.table))
@@ -410,6 +420,7 @@ impl Hovering
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
 #[must_use]
+#[inline]
 pub fn hovering<Store, Blocks>(
     text: SourceText<'_>,
     path: &Path,
@@ -435,9 +446,11 @@ pub fn hovering<Store, Blocks>(
 }
 
 /// What the hovers of `text`, the document at `path` that `session` judges,
-/// laid out as `laid`, read: one typed run per text, rather than one per hover,
-/// and no parse when the judgement of `text` kept its table and the heads read
-/// off its parse (`judged`).
+/// laid out as `laid`, read.
+///
+/// The text gets one typed run rather than one per hover, and no parse when the
+/// judgement of `text` kept its table and the heads read off its parse
+/// (`judged`).
 ///
 /// # Specification
 /// - requires: `laid` is the lay-out of `text` at `path` over its import
@@ -474,9 +487,10 @@ pub fn hovering<Store, Blocks>(
 ///   answer; a hover on an imported name in a corpus importer answers its type.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
-/// - witness: `server::tests::a_hover_reads_the_lay_out_its_recheck_made_1403`
-/// - witness: `recheck::tests::sweeps::a_recheck_keeps_the_table_its_hover_types_1521`
+/// - witness: `gandr-surface-lsp::server::tests::a_hover_reads_the_lay_out_its_recheck_made_1403`
+/// - witness: `gandr-surface-lsp-diagnostics::recheck::tests::sweeps::a_recheck_keeps_the_table_its_hover_types_1521`
 #[must_use]
+#[inline]
 pub fn hovering_laid<Store, Blocks>(
     text: SourceText<'_>,
     path: &Path,
@@ -558,6 +572,8 @@ impl Style
     ///
     /// # Specification
     /// trivial.
+    #[must_use]
+    #[inline]
     pub const fn printed(self) -> gandr_surface_pretty::Style
     {
         gandr_surface_pretty::Style {
@@ -662,6 +678,7 @@ impl Style
         && hover.range.start <= position && position <= hover.range.end,
     Maybe::Absent(_) => true,
 })]
+#[inline]
 pub fn hover<Store, Blocks>(
     text: SourceText<'_>,
     session: &Session<Store, Blocks>,
@@ -1527,6 +1544,8 @@ impl<'text> Quoted<'text>
     ///
     /// # Specification
     /// trivial.
+    #[must_use]
+    #[inline]
     pub const fn new(
         text: SourceText<'text>,
         index: &'text LineIndex<'text>,
@@ -1584,7 +1603,7 @@ impl<'text> Quoted<'text>
 ///   [`Locator::row`] reads them for the declaration's name, the line counted
 ///   from one, when it reads any. A document with no absolute path writes none.
 /// - provides: the declaration half of [`hover`], and each declaration's block
-///   on a documentation page ([`crate::doc::page`]).
+///   on a documentation page (`gandr_surface_lsp_navigation::doc::page`).
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1601,6 +1620,7 @@ impl<'text> Quoted<'text>
 /// - witness: `hover::tests::a_documentation_link_writes_its_reference_line_4963`
 #[spec(ensures: |ref ret| ret.range == range
     && ret.contents.value.starts_with(style.markup.opener().0))]
+#[inline]
 pub fn declared<Store, Blocks>(
     session: &Session<Store, Blocks>,
     hovering: &Hovering,

@@ -224,7 +224,7 @@ impl Snippet
     /// # Adequacy
     /// - hypothesis: L3 — a closing brace, escaped, reads back as `}`, and a
     ///   closing with a hole reads back as none.
-    /// - witness: `gandr-surface-lsp::fix::tests::a_repair_is_offered_as_the_closing_it_owes`
+    /// - witness: `gandr-surface-lsp-diagnostics::fix::tests::a_repair_is_offered_as_the_closing_it_owes`
     #[must_use]
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|plain| plain.len() <= self.0.len()))]
     #[inline]
@@ -1330,7 +1330,7 @@ impl Forms
     /// - hypothesis: L3 — an item slot offers `def` and `data`, a computation
     ///   slot `return` and `match`; offering a bracket or another sort's
     ///   keyword changes the completion witnesses.
-    /// - witness: `gandr-surface-lsp::complete::tests::each_slot_offers_its_own_names`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::each_slot_offers_its_own_names`
     #[inline]
     pub fn keywords(
         &self,
@@ -1389,7 +1389,7 @@ impl KeywordForm<'_>
     /// # Adequacy
     /// - hypothesis: L3 — `def` inserts its declaration with a tab stop per
     ///   hole, and a keyword that is its whole form inserts no snippet.
-    /// - witness: `gandr-surface-lsp::complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::a_keyword_inserts_its_form_as_a_snippet`
     #[must_use]
     #[spec(ensures: |ret| ret.is_some() == (self.material.len() > 1_usize))]
     #[inline]
@@ -1870,7 +1870,7 @@ impl Labeled<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a definition's missing `}` and missing `;` are each
     ///   closed at the point the parser reports, and a closed form offers none.
-    /// - witness: `gandr-surface-lsp::fix::tests::a_repair_is_offered_as_the_closing_it_owes`
+    /// - witness: `gandr-surface-lsp-diagnostics::fix::tests::a_repair_is_offered_as_the_closing_it_owes`
     #[must_use]
     #[spec(requires: <&str>::from(self.text).starts_with(<&str>::from(before.text)))]
     #[inline]
@@ -1915,7 +1915,7 @@ impl Labeled<'_>
     /// - hypothesis: L3 — the completion witnesses complete `de` from its start
     ///   and offer every name after an open bracket; reading the word from its
     ///   end, or a bracket as a word, changes them.
-    /// - witness: `gandr-surface-lsp::complete::tests::a_prefix_offers_only_what_starts_with_it`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::a_prefix_offers_only_what_starts_with_it`
     #[must_use]
     #[spec(ensures: |ret| usize::from(ret) <= <&str>::from(self.text).len())]
     #[inline]
@@ -1960,9 +1960,9 @@ impl Labeled<'_>
     ///   a layout body and its braced spelling offer the same names; the next
     ///   argument of a spine offers a value slot, and a statement that ends at
     ///   its brace takes none.
-    /// - witness: `gandr-surface-lsp::complete::tests::each_slot_offers_its_own_names`
-    /// - witness: `gandr-surface-lsp::complete::tests::a_layout_body_offers_as_its_braces_do_4853`
-    /// - witness: `gandr-surface-lsp::complete::tests::a_spine_offers_its_next_argument_as_a_value_slot_5197`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::each_slot_offers_its_own_names`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::a_layout_body_offers_as_its_braces_do_4853`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::a_spine_offers_its_next_argument_as_a_value_slot_5197`
     #[must_use]
     #[spec(ensures: |ret| lead(self.text, self.labeling.tokens()) == Lead::Code || ret == Slot::Filled)]
     #[inline]
@@ -2025,8 +2025,8 @@ impl Labeled<'_>
 /// - hypothesis: L3 — as [`Labeled::slot`]: a layout body after `return` and
 ///   after an operator offers the names of its braced spelling, and a cursor at
 ///   column zero after a layout source's last declaration is at the top level.
-/// - witness: `gandr-surface-lsp::complete::tests::a_layout_body_offers_as_its_braces_do_4853`
-/// - witness: `gandr-surface-lsp::complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+/// - witness: `gandr-surface-lsp-core::complete::tests::a_layout_body_offers_as_its_braces_do_4853`
+/// - witness: `gandr-surface-lsp-core::complete::tests::a_keyword_inserts_its_form_as_a_snippet`
 fn at_cursor(labeled: &Labeled<'_>) -> Vec<Token>
 {
     let text = <&str>::from(labeled.text);

@@ -93,12 +93,13 @@ const MALFORMED: &str = "MalformedForm";
 ///   elsewhere is offered nothing, and a form missing a term is offered its
 ///   hole only as a snippet.
 /// - witness: `fix::tests::a_repair_is_offered_as_the_closing_it_owes`
-/// - witness: `server::tests::a_repaired_form_is_offered_its_closing`
+/// - witness: `gandr-surface-lsp::server::tests::a_repaired_form_is_offered_its_closing`
 #[spec(ensures: |ret| ret.len() <= diagnostics.len()
     && ret.iter().all(|action| action.kind == "quickfix"
         && action.is_preferred
         && action.diagnostics.len() == 1))]
 #[must_use]
+#[inline]
 pub fn repairs(
     (grammar, forms): (&Pbg, &Forms),
     (uri, version): (&DocumentUri, DocumentVersion),
@@ -193,7 +194,7 @@ const MOST_FILLS: usize = 32;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`holes`].
-/// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+/// - witness: `gandr-surface-lsp::server::tests::a_hole_is_offered_the_names_that_settle_it`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Hole
 {
@@ -226,9 +227,10 @@ pub struct Hole
 /// - hypothesis: L3 — a hole in a declaration with a parameter is tried with
 ///   the parameter and the declared names, and a range meeting no hole is
 ///   offered no fill.
-/// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+/// - witness: `gandr-surface-lsp::server::tests::a_hole_is_offered_the_names_that_settle_it`
 #[spec(ensures: |ret| ret.iter().all(|hole| (1 ..= MOST_FILLS).contains(&hole.names.len())))]
 #[must_use]
+#[inline]
 pub fn holes(
     (grammar, forms): (&Pbg, &Forms),
     (text, spans): (SourceText<'_>, &[HlSpan]),
@@ -300,11 +302,12 @@ pub fn holes(
 /// - hypothesis: L3 — a hole of a path type is offered the parameter that
 ///   settles its declaration and a downstream one, and none of the names the
 ///   trial refuses at the hole, in the trial's order.
-/// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+/// - witness: `gandr-surface-lsp::server::tests::a_hole_is_offered_the_names_that_settle_it`
 #[spec(ensures: |ret| ret.len() <= tried.len()
     && ret.iter().all(|action| action.kind == "quickfix")
     && ret.iter().filter(|action| action.is_preferred).count() <= 1)]
 #[must_use]
+#[inline]
 pub fn fills(
     uri: &DocumentUri,
     (hole, first): (&Hole, CandidateIndex),
@@ -389,11 +392,12 @@ pub fn fills(
 /// - hypothesis: L3 — a list of two items with no `,` between them is offered
 ///   the `,`; a line that continues a `let` is offered nothing, because the
 ///   document the repair writes refuses as much.
-/// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+/// - witness: `gandr-surface-lsp::server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
 #[spec(ensures: |ret| ret.len() <= named.len()
     && ret.iter().all(|action| action.kind == "quickfix")
     && ret.iter().filter(|action| action.is_preferred).count() <= 1)]
 #[must_use]
+#[inline]
 pub fn checked(
     uri: &DocumentUri,
     named: &[&Diagnostic],

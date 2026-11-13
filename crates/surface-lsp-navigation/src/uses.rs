@@ -71,12 +71,14 @@ use crate::protocol::Location;
 /// # Adequacy
 /// - hypothesis: L3 — a use, a declaring name and a caret just past either
 ///   answer the name; a keyword answers nothing.
-/// - witness: `server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
-/// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+/// - witness: `gandr-surface-lsp::server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
+/// - witness: `gandr-surface-lsp::server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
 #[spec(ensures: |ret| ret.is_none_or(|(span, found)| span.start() <= at
     && usize::from(at) <= usize::from(span.end())
     && (found.source() == table.own_source()
         || table.uses_of(found.source(), found.named()).next().is_some())))]
+#[must_use]
+#[inline]
 pub fn found(
     table: &TypeTable,
     at: ByteOffset,
@@ -102,6 +104,8 @@ pub fn found(
 ///
 /// # Specification
 /// trivial.
+#[must_use]
+#[inline]
 pub fn named(
     table: &TypeTable,
     at: ByteOffset,
@@ -128,9 +132,10 @@ pub fn named(
 /// - hypothesis: L3 — a parameter at its binder and at a use, a recursive
 ///   declaration at its name and at its call, and a constructor in terms and in
 ///   a pattern each mark the same ranges; a keyword marks nothing.
-/// - witness: `server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
+/// - witness: `gandr-surface-lsp::server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
 #[spec(ensures: |ret| matches!(ret, Answer::Highlights(_)))]
 #[must_use]
+#[inline]
 pub fn highlights(
     text: SourceText<'_>,
     hovering: &Hovering,
@@ -183,9 +188,10 @@ pub fn highlights(
 /// # Adequacy
 /// - hypothesis: L3 — a declaration and a constructor the document writes stand
 ///   a lens each, and a sibling's names it imports stand none.
-/// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+/// - witness: `gandr-surface-lsp::server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
 #[spec(ensures: |ret| ret.is_sorted() && ret.len() <= hovering.table().declared_names().len())]
 #[must_use]
+#[inline]
 pub fn declared(
     text: SourceText<'_>,
     hovering: &Hovering,
@@ -201,10 +207,12 @@ pub fn declared(
         .collect()
 }
 
-/// What a linked-editing request at `position` of `text`, whose copy keeps
-/// `hovering`, answers: the name of a binder local to a declaration of the
-/// document and each of its uses, an edit of one applying to all; nothing for
-/// a name the unit declares, which other documents may write.
+/// What a linked-editing request at `position` of `text` answers, the copy of
+/// the text keeping `hovering`.
+///
+/// The answer is the name of a binder local to a declaration of the document
+/// and each of its uses, an edit of one applying to all. A name that the unit
+/// declares answers nothing, since other documents may write it.
 ///
 /// # Specification
 /// - requires: `hovering` holds the type table of `text`.
@@ -221,9 +229,10 @@ pub fn declared(
 /// - hypothesis: L3 — a parameter at its binder and at a use, and a pattern's
 ///   binder, answer the binder and its uses; a declaration's name and a
 ///   constructor answer nothing.
-/// - witness: `server::tests::linked_editing_mirrors_a_binder_within_its_declaration`
+/// - witness: `gandr-surface-lsp::server::tests::linked_editing_mirrors_a_binder_within_its_declaration`
 #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Mirrored(_)))]
 #[must_use]
+#[inline]
 pub fn mirrored(
     text: SourceText<'_>,
     hovering: &Hovering,
@@ -303,11 +312,12 @@ pub struct Written
 /// - hypothesis: L3 — a name the document declares and a sibling's name used in
 ///   it are each placed in their own source, and a name declared in two halves
 ///   is placed at its first with its second beside it.
-/// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
-/// - witness: `server::tests::references_leave_both_halves_out_with_the_declaration_1361`
+/// - witness: `gandr-surface-lsp::server::tests::references_find_a_name_s_uses_in_every_open_document`
+/// - witness: `gandr-surface-lsp::server::tests::references_leave_both_halves_out_with_the_declaration_1361`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|written| written.range.is_none_or(|range| range.start <= range.end)
     && written.spelled.len() == usize::from(written.named.end()).saturating_sub(usize::from(written.named.start()))))]
 #[must_use]
+#[inline]
 pub fn placed(
     text: SourceText<'_>,
     own: &Path,
@@ -349,6 +359,7 @@ pub fn placed(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn spelling(
     text: SourceText<'_>,
     span: ByteSpan,
@@ -377,9 +388,10 @@ pub fn spelling(
 /// - hypothesis: L3 — the declaring document's own uses and an importer's uses
 ///   of a sibling's name are each found, and a document that reads no such
 ///   source answers none.
-/// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+/// - witness: `gandr-surface-lsp::server::tests::references_find_a_name_s_uses_in_every_open_document`
 #[spec(ensures: |ret| ret.iter().all(|location| location.uri == *uri))]
 #[must_use]
+#[inline]
 pub fn located(
     text: SourceText<'_>,
     uri: &DocumentUri,

@@ -44,12 +44,13 @@ use crate::reading::Reading;
 /// - hypothesis: L3 — a document with a refused declaration and a hole carries
 ///   one card at the refusal's bytes, an error mark there and a hole mark at
 ///   the hole; a fault at the origin is a card with no span.
-/// - witness: `view::tests::a_report_cards_errors_and_marks_holes`
+/// - witness: `gandr-surface-lsp-diagnostics::tests::view::a_report_cards_errors_and_marks_holes`
 #[spec(ensures: |ret| ret.source == text.as_ref()
     && ret.diagnostics.len() == published.iter()
         .filter(|diagnostic| diagnostic.severity != Severity::INFORMATION).count()
     && ret.goals.is_empty())]
 #[must_use]
+#[inline]
 pub fn report(
     text: SourceText<'_>,
     reading: &Reading,

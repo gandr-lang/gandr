@@ -1,6 +1,8 @@
-//! Inlay hints: the type of each binder whose form writes none, drawn after
-//! its name as the hover over the name spells it, and each shift and exit
-//! the source leaves out, drawn where the explicit form writes it.
+//! Inlay hints.
+//!
+//! A hint draws the type of each binder whose form writes none after its name,
+//! as the hover over the name spells it. A hint also draws each shift and exit
+//! that the source leaves out, where the explicit form writes it.
 //!
 //! A binder is an entry the type table keeps as one, written in the source:
 //! a lambda's parameter, a pattern's field, a `let` or `for` binder, a
@@ -62,10 +64,13 @@ use crate::reading::Tile;
 /// writes on one line any type a line of the editor can hold.
 const HINT_WIDTH: u32 = 1_000;
 
-/// The hints over `window` of the copy of the document at `uri` whose
-/// reading's tiles are `tiles` and whose hovers `hovering` answers, each type
-/// spelled in `style`, in document order, each name a label writes for a
-/// declaration located now or, when `deferred` holds, by a resolution.
+/// The hints over `window` of the copy of the document at `uri`, in document
+/// order.
+///
+/// `tiles` are the tiles of the copy's reading, and `hovering` answers its
+/// hovers. `style` spells each type. Each name that a label writes for a
+/// declaration takes its location now or, when `deferred` holds, at a
+/// resolution.
 ///
 /// # Specification
 /// - requires: `hovering` and `tiles` were read off the same text, which
@@ -94,11 +99,12 @@ const HINT_WIDTH: u32 = 1_000;
 ///   `become` and an elided `-F` are hinted, and a written one is not.
 /// - witness: `inlay::tests::each_binder_that_writes_no_type_is_hinted`
 /// - witness: `inlay::tests::each_shift_the_source_leaves_out_is_hinted`
-/// - witness: `server::tests::an_inlay_hint_request_answers_the_binders_in_its_range`
-/// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
+/// - witness: `gandr-surface-lsp::server::tests::an_inlay_hint_request_answers_the_binders_in_its_range`
+/// - witness: `gandr-surface-lsp::server::tests::an_inlay_hint_links_the_families_its_type_names_764`
 #[spec(ensures: |ret| ret.is_sorted_by(|before, after| before.position <= after.position)
     && ret.iter().all(|hint| hint.data.is_none() || deferred.0))]
 #[must_use]
+#[inline]
 pub fn hints(
     (hovering, tiles): (&Hovering, &[Tile]),
     (uri, index): (&DocumentUri, &LineIndex<'_>),
@@ -183,9 +189,10 @@ pub fn hints(
 /// # Adequacy
 /// - hypothesis: L3 — a deferred hint resolves to the same label with each
 ///   family name located.
-/// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
+/// - witness: `gandr-surface-lsp::server::tests::an_inlay_hint_links_the_families_its_type_names_764`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|hint| hint.position == position && hint.data.is_none()))]
 #[must_use]
+#[inline]
 pub fn hint_at(
     (hovering, tiles): (&Hovering, &[Tile]),
     (uri, index): (&DocumentUri, &LineIndex<'_>),
@@ -227,7 +234,7 @@ pub fn hint_at(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`hints`].
-/// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
+/// - witness: `gandr-surface-lsp::server::tests::an_inlay_hint_links_the_families_its_type_names_764`
 fn label(
     table: &TypeTable,
     presented: &Presentation,

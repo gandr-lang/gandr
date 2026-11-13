@@ -1,7 +1,8 @@
-//! Files moving and files imported: where a rename of files and folders takes
-//! each path, the address each path import writes once the file it names, or
-//! the source writing it, has moved, and the address a source writes to import
-//! another.
+//! Files moving and files imported.
+//!
+//! The module gives where a rename of files and folders takes each path, the
+//! address each path import writes once the file it names, or the source
+//! writing it, has moved, and the address a source writes to import another.
 //!
 //! An import's address is relative to the directory of the source writing it,
 //! so a move rewrites two kinds of import: those naming a file that moves, in
@@ -71,6 +72,7 @@ impl Moves
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn of(renames: &[FileRename]) -> Self
     {
         Self(
@@ -102,6 +104,7 @@ impl Moves
     /// - witness: `relocate::tests::an_import_is_readdressed_as_its_file_and_its_source_move`
     #[spec(ensures: |ret| ret.is_none() || !self.0.is_empty())]
     #[must_use]
+    #[inline]
     pub fn moved(
         &self,
         path: &Path,
@@ -140,6 +143,7 @@ impl Moves
     /// - witness: `relocate::tests::an_import_is_readdressed_as_its_file_and_its_source_move`
     #[spec(ensures: |ret| ret.len() <= imports.len())]
     #[must_use]
+    #[inline]
     pub fn readdressed(
         &self,
         importer: &Path,
@@ -198,6 +202,7 @@ impl Moves
 /// - witness: `relocate::tests::a_dropped_source_is_imported_by_its_address_from_the_importer`
 #[spec(ensures: |ret| ret.len() <= files.len())]
 #[must_use]
+#[inline]
 pub fn added(
     importer: &Path,
     imports: &[PathImport],

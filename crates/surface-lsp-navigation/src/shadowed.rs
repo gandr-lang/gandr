@@ -136,11 +136,12 @@ enum Hiding<'seen>
 /// # Adequacy
 /// - hypothesis: L3 — a pattern binder that hides a parameter lists one lens
 ///   over its name.
-/// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
+/// - witness: `gandr-surface-lsp::server::tests::a_shadowing_binder_shows_what_it_hides_6251`
 #[spec(ensures: |ret| ret.len() <= table.shadows().len()
     && ret.iter().all(|lens| lens.command.is_none() && lens.data.as_ref().is_some_and(|data|
         &data.uri == uri && data.position == lens.range.start && data.counts == Counted::Shadowed)))]
 #[must_use]
+#[inline]
 pub fn lenses(
     uri: &DocumentUri,
     table: &TypeTable,
@@ -187,10 +188,11 @@ pub fn lenses(
 ///   parameter's line and counts its own uses, a parameter that hides an
 ///   earlier declaration names its declared line, and a `let` that hides an
 ///   opened member names the member's path.
-/// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
+/// - witness: `gandr-surface-lsp::server::tests::a_shadowing_binder_shows_what_it_hides_6251`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|command| command.name == SHOW_REFERENCES
     && command.title.starts_with("shadows ") && command.arguments.len() == 3_usize))]
 #[must_use]
+#[inline]
 pub fn resolved(
     seen: &Seen<'_>,
     offset: ByteOffset,
@@ -252,12 +254,13 @@ pub fn resolved(
 /// - hypothesis: L3 — a pattern binder that hides a parameter is published at
 ///   the severity set, with the parameter as its related location, and none is
 ///   published with the setting off.
-/// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
+/// - witness: `gandr-surface-lsp::server::tests::a_shadowing_binder_shows_what_it_hides_6251`
 #[spec(ensures: |ret| ret.len() <= seen.table.shadows().len()
     && ret.iter().all(|diagnostic| diagnostic.severity == severity
         && diagnostic.code.as_deref() == Some(SHADOWING_BINDER)
         && diagnostic.related_information.len() <= 1_usize))]
 #[must_use]
+#[inline]
 pub fn diagnostics(
     seen: &Seen<'_>,
     severity: Severity,

@@ -1,8 +1,10 @@
 //! The path table holds every source of the projects that the workspace's
-//! folders root. The table gives each path one stable id. For each source, the
-//! table keeps the files that the source imports and the names that it
-//! declares. Thus the sources that import a file are one lookup. The names that
-//! no closure of an open document reaches are one lookup too.
+//! folders root.
+//!
+//! The table gives each path one stable id. For each source, the table keeps
+//! the files that the source imports and the names that it declares. Thus the
+//! sources that import a file are one lookup. The names that no closure of an
+//! open document reaches are one lookup too.
 //!
 //! A root is a folder that a client opens. The table resolves a root once, when
 //! the client adds it. The table keeps the root while a connection holds it
@@ -155,6 +157,7 @@ impl Files
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn root(
         &mut self,
         peer: Peer,
@@ -169,6 +172,7 @@ impl Files
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn unroot(
         &mut self,
         peer: Peer,
@@ -188,6 +192,7 @@ impl Files
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn depart(
         &mut self,
         peer: Peer,
@@ -316,6 +321,7 @@ impl Files
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn root_of(
         &self,
         path: &Path,
@@ -331,6 +337,8 @@ impl Files
     ///
     /// # Specification
     /// trivial.
+    #[must_use]
+    #[inline]
     pub fn opened_by(
         &self,
         peer: Peer,
@@ -487,6 +495,7 @@ impl Files
     /// - hypothesis: L3 — a source's names, its names after it is rewritten,
     ///   and a removed source's absence each answer as the disk now reads.
     /// - witness: `files::tests::the_names_a_source_declares_follow_its_file`
+    #[inline]
     pub fn declared(
         &mut self,
         grammar: &Pbg,
@@ -525,6 +534,7 @@ impl Files
     ///   stated.
     /// - witness: `files::tests::a_file_s_importers_are_every_source_reaching_it`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
+    #[inline]
     pub fn importers(
         &mut self,
         grammar: &Pbg,
@@ -584,6 +594,7 @@ impl Files
     ///   answered as stated.
     /// - witness: `files::tests::a_move_touches_its_file_and_the_files_importing_it`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
+    #[inline]
     pub fn touching(
         &mut self,
         grammar: &Pbg,
@@ -625,8 +636,9 @@ impl Files
     /// - hypothesis: L3 — the list holds a source of the project of a root and
     ///   a source in a new folder of that project. It does not hold a removed
     ///   source.
-    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    /// - witness: `gandr-surface-lsp::server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
+    #[inline]
     pub fn sources(
         &mut self,
         grammar: &Pbg,

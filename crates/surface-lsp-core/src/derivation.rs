@@ -1,7 +1,8 @@
-//! The trace layer's faces in the hub: the derivation card of the declaration
-//! at a cursor, which the render bus sends a client of the trace layer, the
-//! whole goal of one node of it, which a client asks for, and the hover's
-//! derivation section.
+//! The trace layer's faces in the hub.
+//!
+//! The faces are the derivation card of the declaration at a cursor, which the
+//! render bus sends a client of the trace layer, the whole goal of one node of
+//! it, which a client asks for, and the hover's derivation section.
 //!
 //! A card holds one row for each judgement node of the declaration's tree,
 //! in the tree's order. A row holds the node's warrant, its direction, its
@@ -50,10 +51,12 @@ use gandr_surface_session::Lay;
 use gandr_surface_session::MemoMark;
 use quenchant_shape::shape::Maybe;
 
-/// The derivation card of `derivation`, the declaration that its account card
-/// keys `key` and that the text names `name`, whose text starts at byte
-/// `start`: its goals and types on one line each, cut to the room that a pane
-/// `columns` wide gives them.
+/// The derivation card of `derivation`, cut to the room that a pane `columns`
+/// wide gives.
+///
+/// The account card keys the declaration `key`, the text names it `name`, and
+/// its text starts at byte `start`. The card holds its goals and types on one
+/// line each.
 ///
 /// # Specification
 /// - requires: `start` is the first byte of the declaration in the text that
@@ -76,9 +79,10 @@ use quenchant_shape::shape::Maybe;
 ///   declaration at the editor's cursor, its first row the root at depth zero,
 ///   each goal written inside the declaration and each goal on one line within
 ///   its room.
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
+/// - witness: `gandr-surface-lsp::hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
 #[spec(ensures: |ret| ret.rows.len() == derivation.nodes().len() && ret.columns == columns)]
 #[must_use]
+#[inline]
 pub fn card(
     derivation: &Derivation<'_>,
     (key, declaration): (AccountKey, String),
@@ -124,9 +128,10 @@ pub fn card(
 /// # Adequacy
 /// - hypothesis: L3 — a view that opens the node at the cursor hears its whole
 ///   goal, and the row's line is that goal on one line.
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
+/// - witness: `gandr-surface-lsp::hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
 #[spec(ensures: |ret| ret.is_none() || at.0 < derivation.nodes().len())]
 #[must_use]
+#[inline]
 pub fn whole(
     derivation: &Derivation<'_>,
     at: NodeAt,
@@ -161,10 +166,11 @@ pub fn whole(
 /// # Adequacy
 /// - hypothesis: L3 — a hover inside a traced declaration's body shows the
 ///   root's line first and the line of the node at the position last.
-/// - witness: `server::tests::a_traced_hover_shows_the_node_at_the_cursor_and_its_ancestors_6295`
+/// - witness: `gandr-surface-lsp::server::tests::a_traced_hover_shows_the_node_at_the_cursor_and_its_ancestors_6295`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|text|
     text.starts_with("```text\n") && text.ends_with("```")))]
 #[must_use]
+#[inline]
 pub fn section(
     derivation: &Derivation<'_>,
     start: ByteOffset,

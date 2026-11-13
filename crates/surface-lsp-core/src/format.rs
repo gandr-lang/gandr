@@ -168,6 +168,7 @@ pub enum Scope<'ranges>
         _ => false,
     })
     && (matches!(scope, Scope::Within(_)) || edits.len() <= 1)))]
+#[inline]
 pub fn edits(
     text: SourceText<'_>,
     scope: Scope<'_>,

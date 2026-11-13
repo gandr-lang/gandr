@@ -1,5 +1,7 @@
 //! Kernel tiers: how far the kernel certifies each declaration of an open
-//! document, as a code lens above the declaration and as an entry of the
+//! document.
+//!
+//! A tier shows as a code lens above the declaration and as an entry of the
 //! `gandr/kernelTiers` notification that an editor draws a gutter glyph from.
 //!
 //! The checker answers on the keystroke. The kernel replays the document's
@@ -130,7 +132,7 @@ impl Tier
     /// # Adequacy
     /// - hypothesis: L3 — a module's declarations show their exact warrants
     ///   before and after its admission.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(Warrant::Pending) => *self == Self::Pending,
         Maybe::Present(Warrant::Replayed) => matches!(*self, Self::Settled(KernelTier::Replayed | KernelTier::Attested)),
@@ -226,13 +228,14 @@ impl Tiers
     /// - hypothesis: L3 — a module's declarations read `kernel pending` before
     ///   its first admission ends, keep their tiers across an edit to a
     ///   comment, and an edited declaration alone reads `kernel pending` again.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
-    /// - witness: `server::tests::a_comment_edit_keeps_each_kernel_tier_6286`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::a_comment_edit_keeps_each_kernel_tier_6286`
     #[spec(captures: [listed = declared.iter().map(|declared| (declared.constant, Self::held(declared))).collect::<Vec<_>>()],
         ensures: |ret| ret.each.len() <= listed.len()
         && ret.each.iter().all(|tiered| listed.iter().any(|&(constant, ref tier)|
             constant == tiered.constant && tiered.tier == *tier)))]
     #[must_use]
+    #[inline]
     pub fn judged(
         declared: Vec<Declared>,
         index: &LineIndex<'_>,
@@ -289,8 +292,9 @@ impl Tiers
     /// - hypothesis: L3 — a module that imports another, admitted after a first
     ///   admission resumed part of its closure, shows each of its own
     ///   declarations' tiers at its own line.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(captures: [count = self.each.len()], ensures: |()| self.each.len() == count)]
+    #[inline]
     pub fn settle(
         &mut self,
         settled: Vec<(ConstantIndex, Tier)>,
@@ -324,9 +328,10 @@ impl Tiers
     /// # Adequacy
     /// - hypothesis: L3 — a document rechecked at the counts layer shows each
     ///   declaration's kernel counts on its card once its admission ends.
-    /// - witness: `server::tests::a_counted_document_shows_its_counts_on_each_card_6289`
+    /// - witness: `gandr-surface-lsp::server::tests::a_counted_document_shows_its_counts_on_each_card_6289`
     #[cfg(feature = "instrument")]
     #[spec(captures: [count = self.each.len()], ensures: |()| self.each.len() == count)]
+    #[inline]
     pub fn reread(
         &mut self,
         rows: Vec<(ConstantIndex, ContentKey, AccountRow)>,
@@ -360,7 +365,7 @@ impl Tiers
     /// # Adequacy
     /// - hypothesis: L3 — a module's declarations show their exact titles
     ///   before and after its admission.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present(ref title) => title.starts_with("kernel ") && matches!(tier.warrant(), Maybe::Present(_)),
         Maybe::Absent(_) => matches!(tier.warrant(), Maybe::Absent(_)),
@@ -427,7 +432,7 @@ impl Tiers
     /// # Adequacy
     /// - hypothesis: L3 — a module's declarations each show one mark at their
     ///   own lines, with the exact title.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(ensures: |ref ret| ret.len() <= self.each.len()
         && ret.iter().all(|&(_, _, ref title)| title.starts_with("kernel "))
         && ret.windows(2).all(|pair| matches!(pair, [earlier, later]
@@ -466,11 +471,12 @@ impl Tiers
     /// # Adequacy
     /// - hypothesis: L3 — a module's declarations each show one lens at their
     ///   own lines, with the exact title.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(ensures: |ref ret| ret.len() <= self.each.len()
         && ret.iter().all(|lens| lens.data.is_none() && lens.command.as_ref().is_some_and(|command|
             command.name.is_empty() && command.arguments.is_empty() && command.title.starts_with("kernel "))))]
     #[must_use]
+    #[inline]
     pub fn lenses(&self) -> Vec<CodeLens>
     {
         self.marks()
@@ -502,11 +508,12 @@ impl Tiers
     /// # Adequacy
     /// - hypothesis: L3 — a module's admission notifies each marked
     ///   declaration's exact warrant and its glyph.
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
+    /// - witness: `gandr-surface-lsp::server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(ensures: |ref ret| ret.uri == *uri && ret.version == version
         && ret.tiers.len() <= self.each.len()
         && ret.tiers.iter().all(|mark| mark.glyph == mark.warrant.glyph()))]
     #[must_use]
+    #[inline]
     pub fn notified(
         &self,
         uri: &DocumentUri,
@@ -551,11 +558,12 @@ impl Tiers
     /// - hypothesis: L3 — a module's cards read pending before its admission
     ///   ends and each declaration's tier after it, and an edit to a comment
     ///   leaves every card as it was.
-    /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
+    /// - witness: `gandr-surface-lsp::hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
     #[spec(ensures: |ref ret| ret.len() <= self.each.len()
         && ret.iter().enumerate().all(|(at, card)| ret.iter().skip(at.saturating_add(1))
             .all(|later| later.key != card.key)))]
     #[must_use]
+    #[inline]
     pub fn cards(&self) -> Vec<AccountCard>
     {
         let mut repeats: BTreeMap<ContentKey, usize> = BTreeMap::new();
@@ -613,11 +621,12 @@ impl Tiers
     /// - hypothesis: L3 — an attached view of the trace layer hears the card of
     ///   the declaration at the editor's cursor under the key of its account
     ///   card.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
+    /// - witness: `gandr-surface-lsp::hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716_6930`
     #[cfg(feature = "instrument")]
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|at|
         at.range.start <= position && position <= at.range.end))]
     #[must_use]
+    #[inline]
     pub fn at(
         &self,
         position: Position,

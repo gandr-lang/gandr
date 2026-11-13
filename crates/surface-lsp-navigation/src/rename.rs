@@ -56,6 +56,7 @@ impl fmt::Display for Unrenamed
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -90,9 +91,10 @@ impl fmt::Display for Unrenamed
 /// # Adequacy
 /// - hypothesis: L3 — a declaring name, a use of a sibling's name and a keyword
 ///   are each prepared or not as a rename there is.
-/// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+/// - witness: `gandr-surface-lsp::server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|prepared| !prepared.placeholder.is_empty()))]
 #[must_use]
+#[inline]
 pub fn prepared(
     text: SourceText<'_>,
     hovering: &Hovering,
@@ -116,10 +118,11 @@ pub fn prepared(
     })
 }
 
-/// Where the document `text`, whose canonical path is `own` and whose copy
-/// keeps `hovering`, writes the name `written` places: its declaring name when
-/// the document is the name's source, and each use, every site narrowed to the
-/// name's spelling at its end.
+/// Where the document `text` writes the name that `written` places.
+///
+/// The canonical path of the document is `own`, and its copy keeps `hovering`.
+/// The sites are its declaring name when the document is the name's source, and
+/// each use, every site narrowed to the name's spelling at its end.
 ///
 /// # Specification
 /// - requires: `hovering` was read off `text`.
@@ -138,11 +141,12 @@ pub fn prepared(
 /// # Adequacy
 /// - hypothesis: L3 — the declaring document's name and uses, an importer's
 ///   uses and a document reading no such source answer their sites.
-/// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+/// - witness: `gandr-surface-lsp::server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |sites| sites.windows(2).all(|pair| match *pair {
     [left, right] => left.end() <= right.start(),
     _ => false,
 })))]
+#[inline]
 pub fn sites(
     text: SourceText<'_>,
     own: &Path,
@@ -195,7 +199,7 @@ pub fn sites(
 /// # Adequacy
 /// - hypothesis: L3 — a declaring name and uses written as the name narrow to
 ///   themselves; every site of a rename is one.
-/// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+/// - witness: `gandr-surface-lsp::server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|site| site.end() == span.end()
     && usize::from(site.end()).saturating_sub(usize::from(site.start())) == <&str>::from(spelled).len()) || ret.is_err())]
 fn narrowed(
@@ -232,11 +236,12 @@ fn narrowed(
 /// # Adequacy
 /// - hypothesis: L3 — a rename to a keyword and to a name already declared are
 ///   refused only when the spliced text reads as their trial reads it.
-/// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+/// - witness: `gandr-surface-lsp::server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
 #[spec(ensures: |ret| ret.len() == <&str>::from(text).len()
     .saturating_add(sites.len().saturating_mul(name.0.len()))
     .saturating_sub(sites.iter().map(|site| usize::from(site.end()).saturating_sub(usize::from(site.start()))).sum::<usize>()))]
 #[must_use]
+#[inline]
 pub fn spliced(
     text: SourceText<'_>,
     sites: &[ByteSpan],
@@ -264,6 +269,7 @@ pub fn spliced(
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn text_edits(
     text: SourceText<'_>,
     sites: &[ByteSpan],

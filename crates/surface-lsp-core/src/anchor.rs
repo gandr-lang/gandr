@@ -1,6 +1,15 @@
 //! Where a line of a corpus source stands, read off the declarations
 //! written in it, so a test's expectation over a corpus source follows an
 //! edit made elsewhere in that source (#2786).
+//!
+//! The `fixture` feature opens the module to the tests of the crates above
+//! the core. A fixture panics where the test misread its input. The module is
+//! built for a test or for the feature, and in each build it expects the
+//! panic lint.
+#![expect(
+    clippy::expect_used,
+    reason = "a fixture refuses loudly a source the test did not mean, and its specification states each panic"
+)]
 
 use alloc::format;
 use alloc::string::String;
@@ -28,6 +37,8 @@ pub struct Row(pub u32);
 ///
 /// # Specification
 /// trivial.
+#[must_use]
+#[inline]
 pub fn line_of(
     source: Source<'_>,
     held: Held<'_>,
@@ -43,14 +54,18 @@ pub fn line_of(
     Row(u32::try_from(index).expect("a source's line count fits a position"))
 }
 
-/// Line `row` of `source`, named by the declaration it stands in: the head
-/// of the nearest declaration at or above it, the words its line starts
-/// with before its parameters, type or body, then how many lines below
-/// that head it stands, as `def rec minus+5`. A line above every
-/// declaration is named from the start of the source, as `+3`.
+/// Line `row` of `source`, named by the declaration that it stands in.
+///
+/// The name starts with the head of the nearest declaration at or above the
+/// line: the words that its line starts with before its parameters, type or
+/// body. Then it gives how many lines below that head the line stands, as
+/// `def rec minus+5`. A line above every declaration takes its name from the
+/// start of the source, as `+3`.
 ///
 /// # Specification
 /// trivial.
+#[must_use]
+#[inline]
 pub fn anchored(
     source: Source<'_>,
     row: Row,

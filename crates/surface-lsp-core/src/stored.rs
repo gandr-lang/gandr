@@ -87,7 +87,8 @@ impl Stored
     /// - hypothesis: L3 — a renderer attached to a hub whose store holds two
     ///   values hears the card of both after the greeting, with each owed
     ///   cell's unit.
-    /// - witness: `hub::tests::an_attached_view_hears_the_store_6296`
+    /// - witness: `gandr-surface-lsp::hub::tests::an_attached_view_hears_the_store_6296`
+    #[inline]
     pub fn card(
         &self,
         paths: &[PathBuf],

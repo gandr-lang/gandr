@@ -80,8 +80,8 @@ static RUNNING: OnceLock<Maybe<Build, unidentified::Absent>> = OnceLock::new();
 /// # Adequacy
 /// - hypothesis: L3 — a set a save keyed by it restores in the same build, and
 ///   a record keyed by another identity is pruned.
-/// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
-/// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
+/// - witness: `gandr-surface-lsp::server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+/// - witness: `gandr-surface-lsp::server::tests::a_save_prunes_what_another_build_judged_1816`
 #[inline]
 pub fn running() -> Maybe<Build, unidentified::Absent>
 {

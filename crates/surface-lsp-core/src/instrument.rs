@@ -141,6 +141,7 @@ impl Subscription
     /// trivial.
     #[cfg(feature = "instrument")]
     #[must_use]
+    #[inline]
     pub const fn recording(rings: Arc<Activity>) -> Self
     {
         Self {
@@ -156,6 +157,7 @@ impl Subscription
     /// trivial.
     #[cfg(feature = "instrument")]
     #[must_use]
+    #[inline]
     pub fn traced(rings: Option<Arc<Activity>>) -> Self
     {
         Self {
@@ -238,7 +240,7 @@ impl Instrument for TracedRings<'_>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Subscription::run`].
-/// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
+/// - witness: `gandr-surface-lsp::server::tests::a_change_during_a_judgement_retires_it_1547`
 pub trait Job
 {
     /// What the job answers.
@@ -284,9 +286,9 @@ impl Subscription
     ///   through it, and their diagnostics and timing lines are those of a hub
     ///   built without the feature. While a watcher follows the activity, an
     ///   edit's judgement and admission each reach the watcher as one task.
-    /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
-    /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
-    /// - witness: `server::tests::a_watched_edit_marks_its_judgement_and_its_admission`
+    /// - witness: `gandr-surface-lsp::server::tests::a_change_during_a_judgement_retires_it_1547`
+    /// - witness: `gandr-surface-lsp::server::tests::a_change_during_an_admission_retires_it_1547`
+    /// - witness: `gandr-surface-lsp::server::tests::a_watched_edit_marks_its_judgement_and_its_admission`
     #[inline]
     pub fn run<Run>(
         self,
@@ -334,13 +336,9 @@ impl Subscription
     /// # Adequacy
     /// - hypothesis: L3 — each judgement and admission of the hub's suites runs
     ///   through it.
-    /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
-    /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+    /// - witness: `gandr-surface-lsp::server::tests::a_change_during_a_judgement_retires_it_1547`
+    /// - witness: `gandr-surface-lsp::server::tests::a_change_during_an_admission_retires_it_1547`
     #[inline]
-    #[expect(
-        clippy::unused_self,
-        reason = "the subscription holds nothing without the feature, and its run keeps one signature in both builds"
-    )]
     pub fn run<Run>(
         self,
         job: Run,

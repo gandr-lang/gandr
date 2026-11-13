@@ -62,10 +62,13 @@ const NAMES: [HlRole; 8] = [
     HlRole::VariableDef,
 ];
 
-/// `spans`, the highlighter's classification of the text `table` judged, with
-/// each written use classified by what `table` resolved it to, each use
-/// standing inside a name `table` records as unresolved, and the modifiers
-/// `table` reads each name with.
+/// The highlighter's spans of the text that `table` judged, each written use
+/// classified by its referent.
+///
+/// `spans` gives the classification. Each written use takes what `table`
+/// resolved it to, each use inside a name that `table` records as unresolved
+/// takes that mark, and each name takes the modifiers that `table` reads it
+/// with.
 ///
 /// # Specification
 /// - requires: `spans` are the highlighter's spans of the text `table`'s own
@@ -102,14 +105,15 @@ const NAMES: [HlRole; 8] = [
 ///   they refer to, a name no declaration answers as unresolved, and a span
 ///   that is no use keeps its role; a binder's name and a declaration's carry
 ///   `declaration`, a called name `computation` and an argument `value`.
-/// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
-/// - witness: `server::tests::a_name_is_sent_with_its_reading`
+/// - witness: `gandr-surface-lsp::server::tests::a_use_is_sent_as_what_it_refers_to`
+/// - witness: `gandr-surface-lsp::server::tests::a_name_is_sent_with_its_reading`
 #[spec(ensures: |ret| ret.spans.len() == spans.len()
     && ret.spans.iter().zip(spans).all(|(kept, written)| kept.range == written.range)
     && ret.unresolved.is_sorted()
     && ret.marks.is_sorted_by_key(|mark| mark.0)
     && ret.marks.iter().all(|mark| ret.unresolved.binary_search(&mark.0).is_err()))]
 #[must_use]
+#[inline]
 pub fn classified(
     spans: &[HlSpan],
     table: &TypeTable,
@@ -216,7 +220,7 @@ pub fn classified(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`classified`].
-/// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
+/// - witness: `gandr-surface-lsp::server::tests::a_use_is_sent_as_what_it_refers_to`
 fn referred(
     role: HlRole,
     referent: Referent,

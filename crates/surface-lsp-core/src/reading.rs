@@ -338,11 +338,11 @@ impl Reading
     ///   read off a connection's held reading equals the one a fresh connection
     ///   reads off its own, so a reading kept past a change, or read off
     ///   another text, disagrees at the keystroke that changed it.
-    /// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
-    /// - witness: `server::tests::a_path_import_links_to_the_file_it_names`
+    /// - witness: `gandr-surface-lsp-diagnostics::recheck::tests::a_definition_produces_semantic_tokens`
+    /// - witness: `gandr-surface-lsp::server::tests::a_path_import_links_to_the_file_it_names`
     /// - witness: `reading::tests::declarations_nest_as_symbols`
-    /// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
-    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    /// - witness: `gandr-surface-lsp::tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
+    /// - witness: `gandr-surface-lsp::tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(ensures: |ret| match ret.0 {
         Maybe::Present(ref readout) => readout.spans.iter().zip(readout.spans.iter().skip(1))
             .all(|(first, second)| first.range.end() <= second.range.start())
@@ -352,6 +352,7 @@ impl Reading
         Maybe::Absent(_) => true,
     })]
     #[must_use]
+    #[inline]
     pub fn of(text: SourceText<'_>) -> Self
     {
         let (Ok(grammar), Ok(roles)) = (grammar(), roles())
@@ -385,7 +386,7 @@ impl Reading
     /// # Adequacy
     /// - hypothesis: L3 — after a keystroke, the reading a copy holds off its
     ///   judgement's parse equals the reading of a fresh parse of its text.
-    /// - witness: `server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
+    /// - witness: `gandr-surface-lsp::server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
     #[spec(ensures: |ret| match ret.0 {
         Maybe::Present(ref readout) => readout.spans.iter().zip(readout.spans.iter().skip(1))
             .all(|(first, second)| first.range.end() <= second.range.start())
@@ -395,6 +396,7 @@ impl Reading
         Maybe::Absent(_) => true,
     })]
     #[must_use]
+    #[inline]
     pub fn of_tree(
         grammar: &Pbg,
         roles: &RoleTable,
@@ -487,6 +489,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn spans(&self) -> &[HlSpan]
     {
         match self.0 {
@@ -500,6 +503,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn tiles(&self) -> &[Tile]
     {
         match self.0 {
@@ -516,6 +520,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn tile_at(
         &self,
         offset: ByteOffset,
@@ -539,6 +544,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn own_documentation_at(
         &self,
         offset: ByteOffset,
@@ -561,6 +567,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn import_at(
         &self,
         offset: ByteOffset,
@@ -595,6 +602,7 @@ impl Reading
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn addresses(&self) -> impl Iterator<Item = ByteSpan> + '_
     {
         let written = match self.0 {
@@ -611,6 +619,7 @@ impl Reading
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn declarations(&self) -> Maybe<&[Declaration], unread::Absent>
     {
         match self.0 {
@@ -625,6 +634,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn symbols(&self) -> DocumentSymbols
     {
         DocumentSymbols(match self.0 {
@@ -642,6 +652,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn folds(&self) -> &[FoldingRange]
     {
         match self.0 {
@@ -658,6 +669,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn links(
         &self,
         index: &LineIndex<'_>,
@@ -690,6 +702,7 @@ impl Reading
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn readdressed(
         &self,
         index: &LineIndex<'_>,
@@ -735,10 +748,11 @@ impl Reading
     /// - hypothesis: L3 — a text with imports gains its new imports on the line
     ///   after the last; a text with none gains them at its start; a file
     ///   imported already adds nothing.
-    /// - witness: `server::tests::dropped_sources_are_imported_after_the_last_import`
+    /// - witness: `gandr-surface-lsp::server::tests::dropped_sources_are_imported_after_the_last_import`
     #[spec(ensures: |ret| ret.len() <= 1
         && ret.iter().all(|edit| edit.range.start == edit.range.end))]
     #[must_use]
+    #[inline]
     pub fn imported(
         &self,
         source: SourceText<'_>,
@@ -787,6 +801,7 @@ impl Reading
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn frames(
         &self,
         offset: ByteOffset,
@@ -818,6 +833,7 @@ impl Reading
     /// - witness: `reading::tests::a_selection_grows_from_the_innermost_form`
     #[spec(ensures: |ret| ret.len() == positions.len())]
     #[must_use]
+    #[inline]
     pub fn selections(
         &self,
         index: &LineIndex<'_>,

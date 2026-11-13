@@ -40,9 +40,10 @@ use crate::protocol::DocumentUri;
 /// - hypothesis: L3 — a copied use of a sibling's declaration answers the
 ///   sibling; of the document's own declaration outside the copy, the document;
 ///   of one the copy holds, and of a binder, nothing.
-/// - witness: `server::tests::a_copy_answers_the_sources_its_names_are_declared_in`
+/// - witness: `gandr-surface-lsp::server::tests::a_copy_answers_the_sources_its_names_are_declared_in`
 #[spec(ensures: |ret| ret.is_sorted() && ret.windows(2).all(|pair| pair.first() != pair.last()))]
 #[must_use]
+#[inline]
 pub fn copied(
     hovering: &Hovering,
     (uri, index): (&DocumentUri, &LineIndex<'_>),

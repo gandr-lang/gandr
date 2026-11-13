@@ -101,6 +101,7 @@ impl<'held, 'text> Locator<'held, 'text>
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn new(
         hovering: &'held Hovering,
         uri: &'held DocumentUri,
@@ -116,6 +117,7 @@ impl<'held, 'text> Locator<'held, 'text>
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn laid(
         (table, opened): (&'held TypeTable, &'held [PathBuf]),
         uri: &'held DocumentUri,
@@ -151,8 +153,9 @@ impl<'held, 'text> Locator<'held, 'text>
     /// # Adequacy
     /// - hypothesis: L3 — a name declared in the document and one a sibling
     ///   declares are each placed at their declaring form.
-    /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
-    /// - witness: `tests::session::a_definition_in_a_sibling_answers_the_sibling_s_path_795`
+    /// - witness: `gandr-surface-lsp::server::tests::definition_answers_what_a_use_refers_to_795`
+    /// - witness: `gandr-surface-lsp::tests::session::a_definition_in_a_sibling_answers_the_sibling_s_path_795`
+    #[inline]
     pub fn place(
         &mut self,
         referent: &Referent,
@@ -184,6 +187,7 @@ impl<'held, 'text> Locator<'held, 'text>
     /// - hypothesis: L3 — a link to a declaration of the document and a link to
     ///   one of a sibling each write their file and line.
     /// - witness: `hover::tests::a_documentation_link_writes_its_reference_line_4963`
+    #[inline]
     pub fn row(
         &mut self,
         referent: &Referent,
@@ -256,15 +260,16 @@ impl<'held, 'text> Locator<'held, 'text>
 ///   its family; a name a sibling declares answers the sibling's path; a name
 ///   declared in two halves answers its definition to a definition request and
 ///   its signature to a declaration request.
-/// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
-/// - witness: `server::tests::a_two_half_name_answers_each_half_and_renames_both_1034`
-/// - witness: `server::tests::type_definition_answers_the_family_a_use_s_type_names_795`
-/// - witness: `tests::session::a_definition_in_a_sibling_answers_the_sibling_s_path_795`
+/// - witness: `gandr-surface-lsp::server::tests::definition_answers_what_a_use_refers_to_795`
+/// - witness: `gandr-surface-lsp::server::tests::a_two_half_name_answers_each_half_and_renames_both_1034`
+/// - witness: `gandr-surface-lsp::server::tests::type_definition_answers_the_family_a_use_s_type_names_795`
+/// - witness: `gandr-surface-lsp::tests::session::a_definition_in_a_sibling_answers_the_sibling_s_path_795`
 ///
 /// [`TypeTable::half`]: gandr_surface_dispatcher::TypeTable::half
 #[spec(ensures: |ret| matches!(ret, Answer::Links(_) | Answer::Locations(_))
     && matches!(ret, Answer::Links(_)) == linked.0)]
 #[must_use]
+#[inline]
 pub fn targets(
     text: SourceText<'_>,
     uri: &DocumentUri,

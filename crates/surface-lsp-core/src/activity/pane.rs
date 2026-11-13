@@ -148,6 +148,7 @@ impl Pane
     ///   lengths.
     /// - witness: `activity::pane::tests::the_pane_shows_the_task_now_and_the_lengths_of_the_window`
     #[spec(ensures: |ret| ret.cores.len() == tick.rows.len())]
+    #[inline]
     pub fn hear(
         &mut self,
         tick: &Tick,

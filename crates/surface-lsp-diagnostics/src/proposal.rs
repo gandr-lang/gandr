@@ -1,7 +1,8 @@
 //! The check of a model's proposal: the trial of the filled document against
-//! the diagnostics the document published. The proposals themselves, and the
-//! surfaces through which an editor reads them, are in
-//! `gandr-surface-lsp-base`.
+//! the diagnostics that the document published.
+//!
+//! The proposals themselves, and the surfaces through which an editor reads
+//! them, are in `gandr-surface-lsp-base`.
 
 use alloc::vec::Vec;
 
@@ -34,11 +35,12 @@ use crate::recheck::Tried;
 /// # Adequacy
 /// - hypothesis: L3 — a fill that settles the document, one that leaves its
 ///   refusal, and one refused whole are kept, refused and refused.
-/// - witness: `server::tests::a_proposal_is_kept_only_once_it_checks`
+/// - witness: `gandr-surface-lsp::server::tests::a_proposal_is_kept_only_once_it_checks`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|kept| {
     let after = errors(kept);
     after == ErrorCount::default() || after < errors(published)
 }))]
+#[inline]
 pub fn check(
     tried: Tried,
     published: &[Diagnostic],

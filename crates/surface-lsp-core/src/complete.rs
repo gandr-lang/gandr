@@ -112,9 +112,11 @@ type Offer<'text> = (
 /// that a type a reader would write on one line stays on it.
 const DETAIL_WIDTH: u32 = 1_000;
 
-/// The names a text's import closure declares, a family's constructors
-/// included, each with where it is declared, sorted by name: what a completion
-/// cuts a prefix from and what a resolution looks an offered name up in.
+/// The names that a text's import closure declares, with the constructors of
+/// each family, sorted by name.
+///
+/// Each name keeps where it is declared. A completion cuts a prefix from them,
+/// and a resolution looks an offered name up in them.
 ///
 /// # Specification
 /// - requires: built by [`Names::of`].
@@ -153,11 +155,12 @@ impl Names
     ///   cuts exactly the names starting with it, and a constructor the text
     ///   and the prelude both declare resolves to the text's.
     /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
-    /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
+    /// - witness: `gandr-surface-lsp::tests::session::a_completion_offers_what_a_sibling_declares_806`
     /// - witness: `complete::tests::a_name_is_offered_whole_and_once_per_kind`
     /// - witness: `complete::tests::a_resolved_name_reads_its_head_and_documentation`
     #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if (&first.0, first.1) < (&second.0, second.1))))]
     #[must_use]
+    #[inline]
     pub fn of(table: &TypeTable) -> Self
     {
         let mut names: Vec<(String, NameKind, Referent)> = table
@@ -306,10 +309,11 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
     }
 }
 
-/// The completions at `position` of `text`, the document at `uri` whose copy
-/// keeps `hovering`, under `grammar` whose forms are `forms`, each type spelled
-/// in `printer`'s style and label details given when `labels` says the client
-/// shows them.
+/// The completions at `position` of `text`, the document at `uri`.
+///
+/// The copy of the document keeps `hovering`, under `grammar` whose forms are
+/// `forms`. `printer`'s style spells each type, and `labels` says whether the
+/// client shows the label details.
 ///
 /// # Specification
 /// - requires: `hovering` was read off `text`; `forms` is [`Forms::new`] of
@@ -368,7 +372,7 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 /// - witness: `complete::tests::a_binder_never_takes_the_type_of_a_term_at_its_name`
 /// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
 /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
-/// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
+/// - witness: `gandr-surface-lsp::tests::session::a_completion_offers_what_a_sibling_declares_806`
 /// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
 ///
 /// [`Signatures`]: crate::signature::Signatures
@@ -380,6 +384,7 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
     && (snippets.0 || item.insert_text_format.is_none())
     && (item.insert_text_format.is_some() || item.text_edit.new_text == item.label)))]
 #[must_use]
+#[inline]
 pub fn completions(
     grammar: &Pbg,
     forms: &Forms,
@@ -635,6 +640,7 @@ fn beside(
         && ret.sort_text == before.sort_text && ret.text_edit == before.text_edit && ret.data == before.data,
 )]
 #[must_use]
+#[inline]
 pub fn resolved(
     mut item: CompletionItem,
     hovering: &Hovering,

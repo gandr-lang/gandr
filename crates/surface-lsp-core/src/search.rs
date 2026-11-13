@@ -55,6 +55,7 @@ impl Query
     ///   where only `count` and `Nat` hold them.
     /// - witness: `search::tests::a_query_finds_the_names_holding_its_characters_in_order`
     #[must_use]
+    #[inline]
     pub fn of(text: SourceText<'_>) -> Self
     {
         Self(<&str>::from(text).to_lowercase())
@@ -97,7 +98,8 @@ impl Query
     /// # Adequacy
     /// - hypothesis: L3 — as [`Found::matching`], which matches through the
     ///   same comparison.
-    /// - witness: `server::tests::workspace_symbols_find_the_names_no_open_closure_reaches`
+    /// - witness: `gandr-surface-lsp::server::tests::workspace_symbols_find_the_names_no_open_closure_reaches`
+    #[inline]
     pub fn matching<'names>(
         &'names self,
         names: &'names [Declared],
@@ -109,12 +111,13 @@ impl Query
     }
 }
 
-/// The names `text` declares, in the order its outline reads them: one per
-/// symbol [`Reading::symbols`] reads off it, named, kinded and ranged as the
-/// symbol is, its container the name of the symbol holding it; a symbol with
-/// the holder, name and kind of one before it — a definition after its
-/// signature — left out, and so is a root form that declares nothing, which
-/// names nothing.
+/// The names that `text` declares, in the order its outline reads them.
+///
+/// One name stands for each symbol [`Reading::symbols`] reads off it, named,
+/// kinded and ranged as the symbol is, its container the name of the symbol
+/// holding it. A symbol with the holder, name and kind of one before it — a
+/// definition after its signature — is left out, and so is a root form that
+/// declares nothing, which names nothing.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -130,8 +133,9 @@ impl Query
 /// - hypothesis: L3 — a family's constructors and a theory's members with their
 ///   holder, a declaration written as a signature and a definition once, and a
 ///   stray writing a member's name not among the names.
-/// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
+/// - witness: `gandr-surface-lsp::server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
 #[must_use]
+#[inline]
 pub fn declared(text: SourceText<'_>) -> Vec<Declared>
 {
     let symbols = Reading::of(text).symbols().0;
@@ -207,9 +211,10 @@ impl Found
     ///   ranges, a family's constructors and a theory's members with their
     ///   holder, and a declaration written as a signature and a definition
     ///   once.
-    /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
+    /// - witness: `gandr-surface-lsp::server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
     #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if first < second)))]
     #[must_use]
+    #[inline]
     pub fn of(table: &TypeTable) -> Self
     {
         let mut entries = Vec::new();
@@ -242,6 +247,7 @@ impl Found
     /// - hypothesis: L3 — `nt` finds `Nat` and `count` and not `tan`; a
     ///   prefix-only or case-sensitive match changes it.
     /// - witness: `search::tests::a_query_finds_the_names_holding_its_characters_in_order`
+    #[inline]
     pub fn matching<'found, 'query>(
         &'found self,
         query: &'query Query,

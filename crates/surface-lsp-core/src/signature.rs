@@ -86,10 +86,12 @@ use crate::reading::Reading;
 // content key once the lowering has an image.
 static CLOSURE_HEADS: Mutex<Vec<(ClosureKey, Arc<[Head]>)>> = Mutex::new(Vec::new());
 
-/// The heads an import closure writes, by the source and the name tile of
-/// each declaration, constructor and binder typed by a function: those its
-/// closure writes, shared with every text laid after the same closure
-/// lowering, and those the document's own text writes.
+/// The heads that an import closure writes, by the source and the name tile of
+/// each head.
+///
+/// A head is a declaration, a constructor or a binder typed by a function. The
+/// heads of the closure are shared with every text laid after the same closure
+/// lowering, and the document's own text writes the rest.
 ///
 /// # Specification
 /// - requires: built by [`Signatures::of`] or [`Signatures::after`].
@@ -102,7 +104,7 @@ static CLOSURE_HEADS: Mutex<Vec<(ClosureKey, Arc<[Head]>)>> = Mutex::new(Vec::ne
 /// # Adequacy
 /// - hypothesis: L3 — as [`Signatures::of`] and [`Signatures::after`].
 /// - witness: `signature::tests::each_head_reads_its_parameters`
-/// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
+/// - witness: `gandr-surface-lsp-diagnostics::tests::signature::a_closure_s_heads_are_read_once_per_lowering_1403`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Signatures
 {
@@ -159,6 +161,7 @@ impl Signatures
     #[spec(ensures: |ret| ret.closure.is_empty()
         && ret.own.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
     #[must_use]
+    #[inline]
     pub fn of(
         grammar: &Pbg,
         roles: &RoleTable,
@@ -209,11 +212,12 @@ impl Signatures
     ///   read before any lowering of the closure splits the heads as the
     ///   recheck after it does; a hover after a keystroke answers from the
     ///   heads its judgement read, without the copy parsing its text.
-    /// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
-    /// - witness: `recheck::tests::a_hover_before_its_closure_is_lowered_splits_as_a_recheck_does_5198`
-    /// - witness: `server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
+    /// - witness: `gandr-surface-lsp-diagnostics::tests::signature::a_closure_s_heads_are_read_once_per_lowering_1403`
+    /// - witness: `gandr-surface-lsp-diagnostics::recheck::tests::a_hover_before_its_closure_is_lowered_splits_as_a_recheck_does_5198`
+    /// - witness: `gandr-surface-lsp::server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
     #[spec(ensures: |ret| ret.own.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
     #[must_use]
+    #[inline]
     pub fn after(
         grammar: &Pbg,
         roles: &RoleTable,
@@ -247,6 +251,7 @@ impl Signatures
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn declared(
         &self,
         referent: &Referent,
@@ -274,6 +279,7 @@ impl Signatures
     /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     /// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
     #[must_use]
+    #[inline]
     pub fn parameter(
         &self,
         source: SourceIndex,
@@ -307,7 +313,7 @@ impl Signatures
 /// # Adequacy
 /// - hypothesis: L3 — a second text laid after the same lowering takes the
 ///   first's heads without reading the closure's forms.
-/// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
+/// - witness: `gandr-surface-lsp-diagnostics::tests::signature::a_closure_s_heads_are_read_once_per_lowering_1403`
 fn closure_heads(
     key: &ClosureKey,
     read: impl FnOnce() -> Vec<Head>,
@@ -435,8 +441,8 @@ impl Spine<'_>
 ///   owes, after a saturated call, and inside a nested call, each asserted at
 ///   its exact signatures; every position of a closed and an open call agrees
 ///   with the context stack.
-/// - witness: `server::tests::a_space_opens_the_help_while_the_spine_owes_an_argument_4697`
-/// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+/// - witness: `gandr-surface-lsp::server::tests::a_space_opens_the_help_while_the_spine_owes_an_argument_4697`
+/// - witness: `gandr-surface-lsp::server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
 #[spec(ensures: |ret| ret.len() <= reading.frames(at).count().saturating_add(1))]
 fn spines<'hovering>(
     text: SourceText<'_>,
@@ -595,10 +601,11 @@ fn informed(
     signature.information(offsets, spine.filled())
 }
 
-/// What a signature-help request at `position` of `text`, whose reading is
-/// `reading` and whose copy keeps `hovering`, answers to a client that takes
-/// a parameter as its place in the label when `offsets` holds, each type
-/// spelled in `style`, asked as `opened` says.
+/// What a signature-help request at `position` of `text` answers.
+///
+/// `reading` is the reading of the text, and its copy keeps `hovering`. The
+/// client takes a parameter as its place in the label when `offsets` holds.
+/// `style` spells each type, and `opened` says what asked.
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
@@ -625,12 +632,13 @@ fn informed(
 ///   last parameter, a call of a sibling's declaration and a position in no
 ///   call are each asserted at their exact answer; a space after a head that
 ///   owes an argument opens the help, and one after a saturated call does not.
-/// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
-/// - witness: `tests::session::signature_help_reads_a_sibling_s_head`
-/// - witness: `server::tests::signature_help_sends_a_parameter_s_documentation_1116`
-/// - witness: `server::tests::a_space_opens_the_help_while_the_spine_owes_an_argument_4697`
+/// - witness: `gandr-surface-lsp::server::tests::signature_help_answers_the_declared_head_of_the_call`
+/// - witness: `gandr-surface-lsp::tests::session::signature_help_reads_a_sibling_s_head`
+/// - witness: `gandr-surface-lsp::server::tests::signature_help_sends_a_parameter_s_documentation_1116`
+/// - witness: `gandr-surface-lsp::server::tests::a_space_opens_the_help_while_the_spine_owes_an_argument_4697`
 #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_)))]
 #[must_use]
+#[inline]
 pub fn help(
     text: SourceText<'_>,
     reading: &Reading,
@@ -678,10 +686,11 @@ fn declared(
     hovering.signatures().declared(&referent)
 }
 
-/// What a `gandr/stack` request at `position` of `text`, whose reading is
-/// `reading` and whose copy keeps `hovering`, answers: each spine the position
-/// stands in, from the innermost outward, each type spelled in `style` on one
-/// line.
+/// What a `gandr/stack` request at `position` of `text` answers.
+///
+/// `reading` is the reading of the text, and its copy keeps `hovering`. The
+/// answer is each spine the position stands in, from the innermost outward,
+/// each type spelled in `style` on one line.
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
@@ -704,12 +713,13 @@ fn declared(
 /// - hypothesis: L3 — at every position of a closed call and of an open one,
 ///   each row agrees with the hover at its head, and the rows with the
 ///   signatures of the signature help.
-/// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+/// - witness: `gandr-surface-lsp::server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
 ///
 /// [`TypeTable::at_line`]: gandr_surface_dispatcher::TypeTable::at_line
 /// [`TypeTable::outermost`]: gandr_surface_dispatcher::TypeTable::outermost
 #[spec(ensures: |ret| matches!(ret, Answer::Stack(_)))]
 #[must_use]
+#[inline]
 pub fn stack(
     text: SourceText<'_>,
     reading: &Reading,
@@ -762,9 +772,10 @@ pub fn stack(
 /// - hypothesis: L3 — an attached view hears the card of the cursor the
 ///   editor's signature help names, its innermost row's run the parameter its
 ///   slot fills, and a card again once an edit changes the stack there.
-/// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
+/// - witness: `gandr-surface-lsp::hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
 #[spec(ensures: |ret| ret.rows.iter().all(|row| row.filled.is_none() || row.ty.is_some()))]
 #[must_use]
+#[inline]
 pub fn card(
     text: SourceText<'_>,
     reading: &Reading,

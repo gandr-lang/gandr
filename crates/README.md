@@ -67,8 +67,11 @@ crates/
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
 ├── surface-lowering/              the molded tree into core terms, over its base
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
-├── surface-lsp/                   the language server: diagnostics from the model, tokens from highlight roles, the hub on a Unix socket
-├── surface-lsp-base/              the server's base: the protocol, positions, markup, inline completion
+├── surface-lsp/                   the language server: its handlers and the hub
+├── surface-lsp-base/              the protocol, positions and markup
+├── surface-lsp-core/              the reading, hover, completion, tokens
+├── surface-lsp-diagnostics/       the recheck, kernel tiers, fixes
+├── surface-lsp-navigation/        references, rename, calls, hints
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
@@ -124,10 +127,7 @@ A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README
 
 _Projection_ is the compiler: it takes a _choreography_, one program over named _roles_, to an _endpoint_ per role, a closed program whose protocol and crossing data are fixed, and the endpoint is the artifact. A _recipe_ names a program's endpoints. A _deployment_ binds each role to a world key, an instance count and discovery, never entering an artifact's identity, so one artifact runs as two processes or a fleet. A _local artifact_ is a one-role choreography's endpoint: the degenerate case, and the only one built today. A runtime component no type demands is a recipe policy, off by default.
 
-- `surface-evaluate`: the run stage, a checked source's `main` as a local artifact.
-- `runtime-emitter`: an endpoint's code, native under a content cache or on the portable executor.
-- `runtime-net`: the network an endpoint holds for `std.net.Eff` and for migrations.
-- Projection and the recipe have no crate yet.
+`surface-evaluate` runs a checked source's `main` as a local artifact. `runtime-emitter` holds an endpoint's code, and `runtime-net` holds its network. Projection and the recipe have no crate yet.
 
 ## Storage and distribution
 

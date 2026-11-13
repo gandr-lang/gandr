@@ -29,10 +29,10 @@ path = "tests/lib.rs"
 # frames, so the seam's serde image is on.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a recheck for the
-# benchmark report. The documentation site renders its prose through
-# pulldown-cmark. A declaration's kernel tier is keyed by the kernel's
-# constant index, its position in the admission. With the `instrument`
-# feature, the hub folds the activity ring of the fork crate.
+# benchmark report, through the diagnostics crate. A declaration's kernel
+# tier is keyed by the kernel's constant index, its position in the
+# admission. With the `instrument` feature, the hub folds the activity ring
+# of the fork crate.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -40,11 +40,8 @@ gandr-core-fork = { workspace = true, optional = true }
 gandr-core-incremental.workspace = true
 gandr-kernel-term.workspace = true
 gandr-storage-records.workspace = true
-gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
-gandr-surface-evaluate.workspace = true
-gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-lsp-base.workspace = true
@@ -56,9 +53,6 @@ gandr-surface-pretty.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
-hotpath = { workspace = true, optional = true }
-pathdiff.workspace = true
-pulldown-cmark.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -68,11 +62,13 @@ serde_json.workspace = true
 # ranking golden is an inline snapshot; the corpus sweeps draw their samples
 # through the sweep crate, and name each corpus source by its percent-encoded
 # `file` URI. The test of the store card commits a value into a store of its
-# own, through the store and the value plane.
+# own, through the store and the value plane. The session tests compose a
+# source through the run stage's evaluator.
 [dev-dependencies]
 expect-test.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
+gandr-surface-evaluate.workspace = true
 gandr-surface-lsp = { workspace = true, features = ["client"] }
 gandr-surface-lsp-core = { workspace = true, features = ["fixture"] }
 gandr-workflow-sweep.workspace = true
@@ -86,7 +82,7 @@ default = []
 client = []
 # A document's recheck timed and its allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "gandr-surface-lsp-diagnostics/hotpath", "hotpath/hotpath"]
+hotpath = ["gandr-surface-lsp-diagnostics/hotpath"]
 # The instrument's layers: each recheck runs at the sink its client chose,
 # and the session compiles its recording sinks. While a watcher follows the
 # activity, each job of a recheck marks the activity ring, and one thread of

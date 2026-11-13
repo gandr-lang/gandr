@@ -240,10 +240,11 @@ use crate::tier::Tier;
 use crate::toolkit::grammar;
 use crate::toolkit::roles;
 
-/// The session one open document's revisions are submitted to, or the fault
-/// that kept the grammar it parses under from building. Its store keeps
-/// nothing per revision: a save keeps the latest judgement elsewhere, as the
-/// `saved` module states.
+/// The session that one open document's revisions are submitted to, or the
+/// fault that kept its grammar from building.
+///
+/// Its store keeps nothing per revision: a save keeps the latest judgement
+/// elsewhere, as the `saved` module states.
 pub type DocumentSession =
     Result<Session<DiscardingCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
 
@@ -267,9 +268,10 @@ pub type DocumentSession =
 /// # Adequacy
 /// - hypothesis: L2 — over every corpus source, a document opened through it
 ///   publishes the reports the walk renders under the same root.
-/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |session| session.root() == classify(&uri.path())))]
+#[inline]
 pub fn open(
     uri: &DocumentUri,
     pool: &Arc<Pool>,
@@ -286,10 +288,12 @@ pub fn open(
     .with_pool(Arc::clone(pool)))
 }
 
-/// What one synchronisation cost: the forms its parse molded, the items the
-/// incremental checker judged, the wall of the recheck and, once it ran, the
-/// wall of the admission after it. At the timings layer each wall is the sum
-/// of its phases' samples, so the line and the account read one source.
+/// What one synchronisation cost.
+///
+/// The cost is the forms that its parse molded, the items that the incremental
+/// checker judged, the wall of the recheck and, once it ran, the wall of the
+/// admission after it. At the timings layer each wall is the sum of its phases'
+/// samples, so the line and the account read one source.
 ///
 /// # Specification
 /// - requires: constructed by [`judge_laid`], its admission's wall added by
@@ -303,7 +307,7 @@ pub fn open(
 /// - hypothesis: L3 — an editor-shaped transcript over two thousand forms reads
 ///   one timing line per synchronisation, the open molding every form and the
 ///   edit a handful.
-/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `gandr-surface-lsp::tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Timing
 {
@@ -415,7 +419,7 @@ impl fmt::Display for Timing
     /// # Adequacy
     /// - hypothesis: L3 — the transcript reads the molded count back out of the
     ///   line it logged.
-    /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+    /// - witness: `gandr-surface-lsp::tests::session::an_edit_to_a_large_document_rechecks_its_forms`
     #[inline]
     fn fmt(
         &self,
@@ -525,24 +529,20 @@ pub struct Declared
     pub row: Maybe<(ContentKey, AccountRow), unrowed::Absent>,
 }
 
-/// What one recheck produced: the diagnostics to publish, the binders left
-/// unused, the imports nothing reads, the form under the caret it was asked
-/// about, the paths its closure named, the lay-out it judged, the imports its
-/// parse read, the type table its judgement kept with the heads read off its
-/// parse, the reading of its parse, and its timing.
+/// What one recheck produced.
+///
+/// It holds the diagnostics to publish, the binders left unused, the imports
+/// that nothing reads, the form under the caret that it was asked about, the
+/// paths that its closure named, the lay-out that it judged, the imports that
+/// its parse read, the type table that its judgement kept with the heads read
+/// off its parse, the reading of its parse, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
     /// The diagnostics, in the order `gandr check --goals` prints them.
     pub diagnostics: Vec<Diagnostic>,
-    #[cfg_attr(not(clippy), allow(unfulfilled_lint_expectations))]
-    #[cfg_attr(
-        not(test),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "The language server owns this state."
-        )
-    )]
+    /// Each declaration whose goals the recheck counts but does not report, by
+    /// its constant, with its path and place as the log line names it.
     pub deferred: Vec<(usize, String)>,
     /// Each declaration of the document's own text, by its admission position
     /// and its span in that text, with whether the checker refused it, in
@@ -600,11 +600,12 @@ impl Rechecked
     /// - hypothesis: L3 — an edit that changes the document's imports is laid
     ///   out over the ones its last judgement read, found misread, and
     ///   published as a fresh connection publishes it.
-    /// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+    /// - witness: `gandr-surface-lsp::server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(read) => matches!(self.laid, Maybe::Present(ref laid) if laid.written.as_slice() != read),
         Maybe::Absent(_) => true,
     })]
+    #[inline]
     pub fn misread(&self) -> Maybe<&[ImportPath], misread::Absent>
     {
         match (&self.laid, &self.written) {
@@ -619,12 +620,14 @@ impl Rechecked
 }
 
 /// Judge `text`, the document at `uri`, in its `session` over `laid`, the
-/// closure [`lay`] laid it out in, polling `retirement` before each declaration
-/// it checks, before their settle and before each item the incremental pass
-/// adopts or judges; read its diagnostics off the judgement at `verbosity`,
-/// their types in `spelling`, and find the form holding `caret` in the tree the
-/// judgement parsed, the wall measured from `started`, telling `sink` what the
-/// judgement does.
+/// closure that [`lay`] laid it out in.
+///
+/// The judgement polls `retirement` before each declaration that it checks,
+/// before their settle and before each item that the incremental pass adopts
+/// or judges. It reads its diagnostics off the judgement at `verbosity`, their
+/// types in `spelling`, and finds the form holding `caret` in the tree that the
+/// judgement parsed. It measures the wall from `started`, and it tells `sink`
+/// what the judgement does.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; `laid` is [`lay`] of `text`; any
@@ -682,17 +685,17 @@ impl Rechecked
 ///   opening published and counts no form molded and no item judged; L3 — a
 ///   judgement retired by a later change leaves the next one judging what it
 ///   would have with no retired one before it.
-/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
-/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
-/// - witness: `tests::session::an_edit_that_changes_nothing_republishes_the_same_bytes`
+/// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `gandr-surface-lsp::tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `gandr-surface-lsp::tests::session::an_edit_that_changes_nothing_republishes_the_same_bytes`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::related_information_is_the_annotations_then_the_located_contexts`
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
-/// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
-/// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+/// - witness: `gandr-surface-lsp::server::tests::a_change_during_a_judgement_retires_it_1547`
+/// - witness: `gandr-surface-lsp::server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
 #[spec(ensures: |ret| match ret {
     Polled::Whole(ref rechecked) => rechecked.diagnostics.iter().all(|diagnostic|
         diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
@@ -702,6 +705,7 @@ impl Rechecked
     Polled::Retired(..) => true,
 })]
 #[must_use]
+#[inline]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn judge_laid<Poll, Sink>(
     uri: &DocumentUri,
@@ -1001,10 +1005,12 @@ where
     None
 }
 
-/// The import closure `text`, the document at `uri`, is laid out in under the
-/// root its path classifies, each import read as `shadows` holds it, its root
-/// path imports read as `written` gives them when it does, or why it is judged
-/// alone.
+/// The import closure that `text`, the document at `uri`, is laid out in, or
+/// why it is judged alone.
+///
+/// The root is the one that its path classifies, each import reads as
+/// `shadows` holds it, and its root path imports read as `written` gives them
+/// when it does.
 ///
 /// # Specification
 /// - requires: a present `written` is what a parse of a revision of the
@@ -1023,8 +1029,9 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`judge_laid`].
-/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
-/// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+/// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `gandr-surface-lsp::server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+#[inline]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn lay(
     uri: &DocumentUri,
@@ -1042,6 +1049,7 @@ pub fn lay(
 /// # Specification
 /// trivial.
 #[cfg(test)]
+#[inline]
 pub fn recheck(
     uri: &DocumentUri,
     session: &mut DocumentSession,
@@ -1069,9 +1077,11 @@ pub fn recheck(
     .whole()
 }
 
-/// What admitting a rechecked document produced: the diagnostic replacing the
-/// published ones when the kernel disagreed, the synchronisation's timing
-/// with the admission's wall, and each declaration's kernel tier.
+/// What admitting a rechecked document produced.
+///
+/// It holds the diagnostic that replaces the published ones when the kernel
+/// disagreed, the synchronisation's timing with the admission's wall, and each
+/// declaration's kernel tier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Admitted
 {
@@ -1080,14 +1090,8 @@ pub struct Admitted
     pub fault: Maybe<Diagnostic, agreed::Absent>,
     /// The synchronisation's timing.
     pub timing: Timing,
-    #[cfg_attr(not(clippy), allow(unfulfilled_lint_expectations))]
-    #[cfg_attr(
-        not(test),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "The language server owns this state."
-        )
-    )]
+    /// Each declaration that the bridge declines for a former that the kernel
+    /// has no image of, in admission order.
     pub declined: Vec<Declined>,
     /// Each declaration of the document's own text with the kernel tier the
     /// admission settled in the session's account, by its admission position,
@@ -1183,6 +1187,7 @@ pub struct Finished
         && unrun.wall == timing.wall
         && !matches!(unrun.admitted, Maybe::Absent(admitted::Absent::Pending)),
 })]
+#[inline]
 pub fn admission(
     session: &mut DocumentSession,
     timing: Timing,
@@ -1243,7 +1248,7 @@ impl Admitting
     /// # Adequacy
     /// - hypothesis: L3 — a change during an admission retires it at its next
     ///   declaration, and the next admission resumes from what it crossed.
-    /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+    /// - witness: `gandr-surface-lsp::server::tests::a_change_during_an_admission_retires_it_1547`
     #[inline]
     #[spec(
         captures: [timing = self.timing],
@@ -1338,11 +1343,11 @@ where
 ///   wall after the recheck's, and a refused document's carries none; an
 ///   importer's line counts the closure's declarations at its opening and its
 ///   own alone after an edit to its own text.
-/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
-/// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
+/// - witness: `gandr-surface-lsp::tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `gandr-surface-lsp::tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
-/// - witness: `server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810`
-/// - witness: `server::tests::an_opening_after_another_admission_publishes_each_decline_of_its_loops_6810`
+/// - witness: `gandr-surface-lsp::server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810`
+/// - witness: `gandr-surface-lsp::server::tests::an_opening_after_another_admission_publishes_each_decline_of_its_loops_6810`
 #[spec(
     captures: before = finished.timing,
     ensures: |ret| ret.timing.forms == before.forms
@@ -1351,6 +1356,7 @@ where
         && matches!(ret.timing.admitted, Maybe::Present(_)),
 )]
 #[must_use]
+#[inline]
 pub fn settle(
     session: &mut DocumentSession,
     finished: Finished,
@@ -1477,6 +1483,7 @@ pub struct Tried
     && ret.is_sorted_by_key(|tried| tried.reached)
     && ret.iter().all(|tried| usize::from(tried.candidate) < candidates.len()))]
 #[must_use]
+#[inline]
 pub fn trial(
     uri: &DocumentUri,
     session: &DocumentSession,
@@ -1578,7 +1585,7 @@ pub fn trial(
 /// # Adequacy
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
-/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref()),
     Maybe::Absent(_) => true,
@@ -1613,7 +1620,7 @@ fn laid_out(
 /// # Adequacy
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
-/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(moved) => usize::from(moved.start()).saturating_add(usize::from(base)) == usize::from(span.start()),
     Maybe::Absent(_) => usize::from(span.start()) < usize::from(base) || usize::from(span.end()) < usize::from(base),
@@ -1748,7 +1755,7 @@ fn reported(step: Step<'_>) -> Step<'_>
 ///   and related labels, distinguishing omitted, misclassified or misprojected
 ///   fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
-/// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+/// - witness: `gandr-surface-lsp::server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_note_and_help`
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
@@ -1757,7 +1764,7 @@ fn reported(step: Step<'_>) -> Step<'_>
 /// - witness: `recheck::tests::a_deprecated_use_is_published_struck_through`
 /// - witness: `recheck::tests::a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199`
 /// - witness: `recheck::tests::an_unimplemented_refusal_links_its_tracking_issue`
-/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, Seriousness::Error | Seriousness::Ledger => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
