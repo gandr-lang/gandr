@@ -1363,6 +1363,24 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
+ "gandr-kernel-core-base",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-theory-dynamic-graphs",
+ "gandr-theory-graphs",
+ "proptest",
+ "quenchant-anodized",
+ "quenchant-arith",
+ "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-kernel-core-base"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "gandr-kernel-check-memo",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-dynamic-graphs",

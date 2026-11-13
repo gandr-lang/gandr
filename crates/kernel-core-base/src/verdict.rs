@@ -67,8 +67,29 @@ use crate::occurrence::Accessibility;
 use crate::occurrence::Stratification;
 use crate::occurrence::Variance;
 
-/// The kernel's build identity, which `build.rs` writes.
-const KERNEL_BUILD: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/kernel-build"));
+/// The kernel's build identity: one digest of every file of every kernel
+/// crate and of the workspace lock. The judgement's build script writes it,
+/// and the judgement passes it to each derivation of a key, so a key binds the
+/// files of the record and of the judgement both.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BuildIdentity([u8; 32]);
+
+impl From<[u8; 32]> for BuildIdentity
+{
+    /// The build identity whose digest is `bytes`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: [u8; 32]) -> Self
+    {
+        Self(bytes)
+    }
+}
 
 /// The context a verdict key's digest derives under.
 const KEY_CONTEXT: &str = "gandr kernel verdict key 2026-10-27";
@@ -141,17 +162,18 @@ impl From<VerdictKey> for [u8; 32]
 
 impl VerdictKey
 {
-    /// The key before any declaration: this kernel's build identity alone.
+    /// The key before any declaration: the kernel's build identity `build`
+    /// alone.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn start() -> Self
+    pub fn start(build: BuildIdentity) -> Self
     {
         Self(
             *blake3::Hasher::new_derive_key(KEY_CONTEXT)
-                .update(KERNEL_BUILD)
+                .update(&build.0)
                 .finalize()
                 .as_bytes(),
         )
@@ -193,12 +215,13 @@ impl VerdictKey
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn generative(
+    pub fn generative(
         self,
+        build: BuildIdentity,
         earlier: KeyedCount,
     ) -> Self
     {
-        let mut keyer = EntryKeyer::tagged(EntryTag::Generative);
+        let mut keyer = EntryKeyer::tagged(build, EntryTag::Generative);
         keyer.key(self);
         keyer.count(earlier);
         keyer.finish()
@@ -211,12 +234,13 @@ impl VerdictKey
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn member(
+    pub fn member(
         self,
+        build: BuildIdentity,
         ordinal: KeyedCount,
     ) -> Self
     {
-        let mut keyer = EntryKeyer::tagged(EntryTag::Member);
+        let mut keyer = EntryKeyer::tagged(build, EntryTag::Member);
         keyer.key(self);
         keyer.count(ordinal);
         keyer.finish()
@@ -229,7 +253,7 @@ impl VerdictKey
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct KeyedCount(usize);
+pub struct KeyedCount(usize);
 
 impl From<usize> for KeyedCount
 {
@@ -250,7 +274,7 @@ impl From<usize> for KeyedCount
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EntryTag
+pub enum EntryTag
 {
     /// The key of what one admission reads: a lone declaration, or a mutual
     /// block whole.
@@ -268,19 +292,22 @@ pub(crate) enum EntryTag
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Debug)]
-pub(crate) struct EntryKeyer(blake3::Hasher);
+pub struct EntryKeyer(blake3::Hasher);
 
 impl EntryKeyer
 {
-    /// A key under `tag`, over this kernel's build identity.
+    /// A key under `tag`, over the kernel's build identity `build`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn tagged(tag: EntryTag) -> Self
+    pub fn tagged(
+        build: BuildIdentity,
+        tag: EntryTag,
+    ) -> Self
     {
         let mut hasher = blake3::Hasher::new_derive_key(ENTRY_KEY_CONTEXT);
-        let _written = hasher.update(KERNEL_BUILD).update(&[match tag {
+        let _written = hasher.update(&build.0).update(&[match tag {
             EntryTag::Content => 0,
             EntryTag::Generative => 1,
             EntryTag::Member => 2,
@@ -293,7 +320,7 @@ impl EntryKeyer
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn count(
+    pub fn count(
         &mut self,
         count: KeyedCount,
     )
@@ -308,7 +335,7 @@ impl EntryKeyer
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn segment(
+    pub fn segment(
         &mut self,
         segment: &EncodedArtifact,
     )
@@ -322,7 +349,7 @@ impl EntryKeyer
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn key(
+    pub fn key(
         &mut self,
         key: VerdictKey,
     )
@@ -336,7 +363,7 @@ impl EntryKeyer
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn finish(&self) -> VerdictKey
+    pub fn finish(&self) -> VerdictKey
     {
         VerdictKey(*self.0.finalize().as_bytes())
     }
@@ -1313,7 +1340,7 @@ struct Chain
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug)]
-pub(crate) struct Verdicts
+pub struct Verdicts
 {
     /// The signers believed.
     trusted: BTreeSet<KernelIdentity>,
@@ -1342,7 +1369,7 @@ impl Default for Verdicts
     /// trivial.
     fn default() -> Self
     {
-        Self::under(TrustPolicy::Recheck, Arc::new(NoVerdicts))
+        Self::rechecking(Arc::new(NoVerdicts))
     }
 }
 
@@ -1351,7 +1378,7 @@ impl Default for Verdicts
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Keying
+pub enum Keying
 {
     /// The policy trusts some signers, so each admission is keyed.
     Keys,
@@ -1367,7 +1394,7 @@ impl Verdicts
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn keying(&self) -> Keying
+    pub const fn keying(&self) -> Keying
     {
         match self.chain {
             Maybe::Absent(keyed::Absent::Rechecking) => Keying::Rechecks,
@@ -1387,7 +1414,8 @@ impl Verdicts
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
+    #[must_use]
+    pub const fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
     {
         match self.chain {
             Maybe::Present(ref chain) => Maybe::Present(chain.last),
@@ -1395,36 +1423,47 @@ impl Verdicts
         }
     }
 
-    /// The state a run under `policy`, finding recorded verdicts in `source`,
-    /// starts with.
+    /// The state a run that recalls nothing starts with: no signer is
+    /// believed, and nothing is keyed.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn under(
-        policy: TrustPolicy,
-        source: Arc<dyn VerdictSource>,
-    ) -> Self
+    fn rechecking(source: Arc<dyn VerdictSource>) -> Self
     {
-        let (trusted, chain) = match policy {
-            TrustPolicy::Recheck => (BTreeSet::new(), Maybe::Absent(keyed::Absent::Rechecking)),
-            TrustPolicy::Trusted(trusted) => (
-                trusted,
-                Maybe::Present(Chain {
-                    encoder: SegmentEncoder::default(),
-                    last: VerdictKey::start(),
-                    before: VerdictKey::start(),
-                }),
-            ),
-        };
         Self {
-            trusted,
+            trusted: BTreeSet::new(),
             source,
-            chain,
+            chain: Maybe::Absent(keyed::Absent::Rechecking),
             verified: BTreeMap::new(),
             recalled: BTreeMap::new(),
             checked: Vec::new(),
             recalls: 0,
             recorded: 0,
+        }
+    }
+
+    /// The state a run under `policy`, finding recorded verdicts in `source`,
+    /// starts with, its chain keyed from the build identity `build`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn under(
+        policy: TrustPolicy,
+        source: Arc<dyn VerdictSource>,
+        build: BuildIdentity,
+    ) -> Self
+    {
+        match policy {
+            TrustPolicy::Recheck => Self::rechecking(source),
+            TrustPolicy::Trusted(trusted) => Self {
+                trusted,
+                chain: Maybe::Present(Chain {
+                    encoder: SegmentEncoder::default(),
+                    last: VerdictKey::start(build),
+                    before: VerdictKey::start(build),
+                }),
+                ..Self::rechecking(source)
+            },
         }
     }
 
@@ -1434,7 +1473,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn handed_on(&self) -> Self
+    pub fn handed_on(&self) -> Self
     {
         Self {
             trusted: self.trusted.clone(),
@@ -1454,7 +1493,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn key(
+    pub fn key(
         &mut self,
         arena: &TermArena,
         (declaration, rank): (
@@ -1491,7 +1530,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn end(&mut self)
+    pub fn end(&mut self)
     {
         if let Maybe::Present(_) = self.chain {
             self.chain = Maybe::Absent(keyed::Absent::Ended);
@@ -1505,7 +1544,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn refused(&mut self)
+    pub fn refused(&mut self)
     {
         if let Maybe::Present(ref mut chain) = self.chain {
             chain.encoder.forget();
@@ -1518,7 +1557,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn reading(
+    pub fn reading(
         &mut self,
         source: Arc<dyn VerdictSource>,
     )
@@ -1531,7 +1570,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn recall(
+    pub fn recall(
         &mut self,
         key: VerdictKey,
     ) -> Maybe<Accessibility, stored::Absent>
@@ -1582,7 +1621,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn checked(
+    pub fn checked(
         &mut self,
         entry: Maybe<VerdictKey, keyed::Absent>,
         chain: Maybe<VerdictKey, keyed::Absent>,
@@ -1609,7 +1648,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn receipt(
+    pub fn receipt(
         &self,
         signer: &KernelSigner,
     ) -> Maybe<StoredReceipt, stored::Absent>
@@ -1632,7 +1671,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn recalls(&self) -> RecallCount
+    pub fn recalls(&self) -> RecallCount
     {
         RecallCount(self.recalls)
     }
@@ -1641,7 +1680,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn recorded(&self) -> RecordCount
+    pub fn recorded(&self) -> RecordCount
     {
         RecordCount(self.recorded)
     }

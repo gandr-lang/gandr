@@ -248,7 +248,7 @@ impl ExpansionCensus
         && self.type_kept.0 == before.type_kept.0.saturating_add(
             u64::from(matches!((plane, kind), (SupportPlane::Type, ExpansionKind::Kept)))))]
     #[inline]
-    pub(crate) fn record(
+    pub fn record(
         &mut self,
         plane: SupportPlane,
         kind: ExpansionKind,
@@ -419,7 +419,7 @@ impl ExpansionCensus
         && self.type_recalled.0 == before.type_recalled.0.saturating_add(part.type_recalled.0)
         && self.type_kept.0 == before.type_kept.0.saturating_add(part.type_kept.0))]
     #[inline]
-    pub(crate) fn absorb(
+    pub fn absorb(
         &mut self,
         part: &Self,
     )

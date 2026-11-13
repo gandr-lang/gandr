@@ -2058,4 +2058,6 @@ fn converge(
 }
 
 #[cfg(test)]
+mod rewrite_tests;
+#[cfg(test)]
 mod tests;

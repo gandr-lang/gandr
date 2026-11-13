@@ -374,7 +374,7 @@ fn telescope_whole() -> WireTag
 /// every input of the judgement that its goals' supports do not carry. A memo
 /// kept across declarations names them.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Parameters<'parameters>
+pub struct Parameters<'parameters>
 {
     /// The level context's prenex parameter count.
     pub level_params: gandr_kernel_term::LevelParamCount,
@@ -398,7 +398,7 @@ pub(crate) struct Parameters<'parameters>
 /// The declaration a judgement has in scope beside the admitted prefix, as
 /// its parameters name it.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ParametersBlock<'parameters>
+pub enum ParametersBlock<'parameters>
 {
     /// No declaration. Every nominal head names an admitted declaration.
     Outside,
@@ -434,7 +434,7 @@ pub(crate) enum ParametersBlock<'parameters>
 
 /// How a table names one admitted constant when a reference reaches it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ConstantName
+pub enum ConstantName
 {
     /// By its admission position.
     Position,
@@ -459,7 +459,7 @@ pub(crate) enum ConstantName
 /// declared type and body.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct DefinitionRank(usize);
+pub struct DefinitionRank(usize);
 
 /// Which family an unreadable reference belonged to.
 ///
@@ -2520,7 +2520,7 @@ impl ContentTable
     /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len() == named_before.max(usize::from(entries.len())))]
-    pub(crate) fn name_constants(
+    pub fn name_constants(
         &mut self,
         entries: &crate::env::Entries,
     )
@@ -2548,7 +2548,7 @@ impl ContentTable
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len()
             == named_before.max(usize::from(entries.len()).min(usize::from(end))))]
-    pub(crate) fn name_constants_before(
+    pub fn name_constants_before(
         &mut self,
         entries: &crate::env::Entries,
         end: ConstantIndex,
@@ -2584,7 +2584,7 @@ impl ContentTable
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len() == named_before
             && (usize::from(index) >= named_before || self.constants.get(usize::from(index)) == Some(&name)))]
-    pub(crate) fn rename_constant(
+    pub fn rename_constant(
         &mut self,
         index: ConstantIndex,
         name: ConstantName,
@@ -2604,7 +2604,7 @@ impl ContentTable
     ///
     /// # Specification
     /// trivial.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn constant_name(
         &self,
         index: ConstantIndex,
@@ -3057,7 +3057,7 @@ impl ContentTable
     ///   dropped component merges two that differ.
     /// - witness: `encoding::tests::parameters_name_their_block_by_content`
     #[spec(ensures: |ret| ret.0 < self.records)]
-    pub(crate) fn parameters(
+    pub fn parameters(
         &mut self,
         arena: &TermArena,
         parameters: &Parameters<'_>,
@@ -4256,7 +4256,7 @@ impl ContentTable
     #[must_use]
     #[spec(ensures: |ret| ret.records == self.records && self.base == self.records
         && ret.base == self.base)]
-    pub(crate) fn fork(
+    pub fn fork(
         &mut self,
         arena: &TermArena,
     ) -> Self
@@ -4324,7 +4324,7 @@ impl ContentTable
     ///   overlap, and are folded in either order. Each node's record carries
     ///   the name a serial table gives it.
     /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
-    pub(crate) fn join(
+    pub fn join(
         &mut self,
         arena: &TermArena,
         child: Self,
@@ -4444,7 +4444,7 @@ impl ContentTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::join`].
     /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
-    pub(crate) fn settle(&mut self)
+    pub fn settle(&mut self)
     {
         while let Some(view) = self.placed.layers.pop() {
             match Arc::try_unwrap(view.layer) {
@@ -6214,7 +6214,7 @@ pub fn content_digest(
 #[must_use]
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
     if kept_declared == declared && kept_body == body))]
-pub(crate) fn name_definition(
+pub fn name_definition(
     table: &mut ContentTable,
     arena: &TermArena,
     (entries, position, below): (
@@ -6265,7 +6265,7 @@ pub(crate) fn name_definition(
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Likeness
+pub enum Likeness
 {
     /// One of the others carries the declared type and the body.
     Alike,
@@ -6293,7 +6293,7 @@ pub(crate) enum Likeness
 /// - hypothesis: L3 — twins released together hold the later one, and its name
 ///   counts the earlier one as the serial run's does.
 /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
-pub(crate) fn likeness(
+pub fn likeness(
     table: &mut ContentTable,
     arena: &TermArena,
     name: ConstantName,
@@ -6381,13 +6381,64 @@ impl<'table> MintNames<'table>
 /// Whether a fixpoint without termination evidence may recurse at a type that
 /// ends in a returner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Partiality
+pub enum Partiality
 {
     /// It may not: every call in the kernel's fragment returns.
     Refused,
     /// It may: the declaration is a ruled operation, whose rules the kernel
     /// admits only oriented, so its recursion terminates.
     Ruled,
+}
+
+/// The readings of a content table that only tests take, which the tests of
+/// the judgement call through [`crate::fixture`].
+#[cfg(any(test, feature = "fixture"))]
+pub mod fixture
+{
+    use gandr_kernel_term::AnyNode;
+    use gandr_kernel_term::TermArena;
+
+    use super::ContentEncoding;
+    use super::ContentId;
+    use super::ContentTable;
+    use super::DefinitionRank;
+
+    /// The id that `table` gives `node` of `arena`, placing the node and
+    /// its children.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn place(
+        table: &mut ContentTable,
+        arena: &TermArena,
+        node: AnyNode,
+    ) -> ContentId
+    {
+        table.place(arena, node)
+    }
+
+    /// The records that `table` holds, in the order it placed them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn stream(table: &ContentTable) -> &ContentEncoding
+    {
+        table.stream()
+    }
+
+    impl From<usize> for DefinitionRank
+    {
+        /// The rank `rank`.
+        ///
+        /// # Specification
+        /// trivial.
+        #[inline]
+        fn from(rank: usize) -> Self
+        {
+            Self(rank)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -6405,7 +6456,6 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::FractionDigits;
     use gandr_kernel_term::IntegerLiteral;
-    use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::Magnitude;
     use gandr_kernel_term::NumericLiteral;
@@ -6424,7 +6474,6 @@ mod tests
     use super::Naming;
     use super::PlacementCount;
     use super::Placements;
-    use super::RecordName;
     use super::RecordSink;
     use super::RewriteGoal;
     use super::SupportGoal;
@@ -7609,258 +7658,6 @@ mod tests
         );
     }
 
-    /// Where a naming fixture admits its referent beside the unrelated pair.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum ReferentOrder
-    {
-        /// The referent, then the pair.
-        First,
-        /// The pair, then the referent.
-        Second,
-    }
-
-    /// Whether a naming fixture's table holds a record before the goal.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum TableState
-    {
-        /// The table holds nothing before the goal.
-        Cold,
-        /// The table holds the declared type's goal before the goal.
-        Warm,
-    }
-
-    /// Admit `referent` and a pair definition in `order`, then
-    /// `c : Unit = referent`; return the environment, `c`'s body and `c`'s
-    /// declared type.
-    ///
-    /// # Specification
-    /// - requires: `referent` admits one declaration at the unit type.
-    /// - ensures: an environment that holds the referent, the pair and `c`, in
-    ///   that order or with the pair first.
-    /// - provides: the admission-order environments the constant naming cases
-    ///   and the record naming cases read.
-    /// - fails: never.
-    /// - panics: when an admission refuses.
-    /// - executable: none — the cases compare two calls' environments, which no
-    ///   single call's predicate states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a definition and an axiom referent each admitted
-    ///   before and after an unrelated definition.
-    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
-    fn reference_environment(
-        referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
-        order: ReferentOrder,
-    ) -> (crate::Environment, ValueId, ValueTypeId)
-    {
-        let mut environment = crate::Environment::new();
-        let pair = |environment: &mut crate::Environment| {
-            let mut staging = environment.stage();
-            let unit = staging.arena().value_type_unit();
-            let declared = staging.arena().value_type_product(&[unit, unit]);
-            let one = staging.arena().value_unit();
-            let body = staging.arena().value_tuple(&[one, one]);
-            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
-            environment.add_decl(staged).expect("the pair admits")
-        };
-        let reached = match order {
-            ReferentOrder::First => {
-                let reached = referent(&mut environment);
-                let _pair = pair(&mut environment);
-                reached
-            },
-            ReferentOrder::Second => {
-                let _pair = pair(&mut environment);
-                referent(&mut environment)
-            },
-        };
-        let mut staging = environment.stage();
-        let declared = staging.arena().value_type_unit();
-        let reference = staging.arena().value_constant(reached);
-        let staged = staging.def(LevelSignature::monomorphic(), declared, reference);
-        let _c = environment.add_decl(staged).expect("the reference admits");
-        (environment, reference, declared)
-    }
-
-    /// Admit `referent` and a pair definition in `order`, then
-    /// `c : Unit = referent`; return the record stream a table told the
-    /// environment's entries builds for `c`'s body.
-    ///
-    /// # Specification
-    /// - requires: `referent` admits one declaration at the unit type.
-    /// - ensures: the stream of every record `c`'s body reaches, in the order
-    ///   the walk assigns them.
-    /// - provides: the admission-order fixtures the constant naming cases
-    ///   compare.
-    /// - fails: never.
-    /// - panics: when an admission refuses.
-    /// - executable: none — the cases compare two calls' streams, which no
-    ///   single call's predicate states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a definition and an axiom referent each admitted
-    ///   before and after an unrelated definition.
-    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
-    fn reference_stream(
-        referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
-        order: ReferentOrder,
-    ) -> ContentEncoding
-    {
-        let (environment, reference, _declared) = reference_environment(referent, order);
-        let mut table = ContentTable::new();
-        table.name_constants(environment.entries());
-        let _id = table.place(environment.arena(), AnyNode::Value(reference));
-        table.stream().clone()
-    }
-
-    /// Admit `referent` and a pair definition in `order`, then
-    /// `c : Unit = referent`; key the goal that synthesises `c`'s body under
-    /// `c`'s declared type as its one binder, in a table that names its
-    /// records. A `warm` table first keys the level of `c`'s declared type,
-    /// so it numbers the goal later.
-    ///
-    /// # Specification
-    /// - requires: `referent` admits one declaration at the unit type.
-    /// - ensures: the goal's id and its name.
-    /// - provides: the admission-order fixtures the record naming cases
-    ///   compare.
-    /// - fails: never.
-    /// - panics: when an admission refuses, or when the table gives no name.
-    /// - executable: none — the cases compare two calls' names, which no single
-    ///   call's predicate states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a definition and an axiom referent each admitted
-    ///   before and after an unrelated definition, in a cold and a warm table.
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
-    /// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
-    fn goal_name(
-        referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
-        order: ReferentOrder,
-        state: TableState,
-    ) -> (ContentId, RecordName)
-    {
-        let (environment, reference, declared) = reference_environment(referent, order);
-        let mut table = ContentTable::named();
-        table.name_constants(environment.entries());
-        if state == TableState::Warm {
-            let _warmed = support_key(
-                &mut table,
-                environment.arena(),
-                SupportGoal::ValueTypeLevel(declared),
-                Telescope::Whole(&[]),
-            );
-        }
-        let id = support_key(
-            &mut table,
-            environment.arena(),
-            SupportGoal::SynthValue(reference),
-            Telescope::Whole(&[declared]),
-        );
-        match table.name(id) {
-            Maybe::Present(name) => (id, name),
-            Maybe::Absent(absent) => panic!("a named table names each goal: {absent:?}"),
-        }
-    }
-
-    /// Admit the axiom `name : Unit`.
-    ///
-    /// # Specification
-    /// - ensures: the axiom's position.
-    /// - provides: the axiom the naming cases reference.
-    /// - fails: never.
-    /// - panics: when the admission refuses.
-    /// - executable: none — the position is the environment's, which the cases
-    ///   read back through its entries.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the unit axiom admits in every environment.
-    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
-    /// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
-    fn unit_axiom(environment: &mut crate::Environment) -> ConstantIndex
-    {
-        let mut staging = environment.stage();
-        let declared = staging.arena().value_type_unit();
-        let staged = staging.axiom(LevelSignature::monomorphic(), declared);
-        environment
-            .add_decl(staged)
-            .expect("the axiom admits")
-            .position()
-    }
-
-    /// Admit `name : Unit = ()`.
-    ///
-    /// # Specification
-    /// - ensures: the definition's position.
-    /// - provides: the plain definition the naming cases reference.
-    /// - fails: never.
-    /// - panics: when the admission refuses.
-    /// - executable: none — the position is the environment's, which the cases
-    ///   read back through its entries.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the unit definition admits in every environment.
-    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
-    fn unit_definition(environment: &mut crate::Environment) -> ConstantIndex
-    {
-        let mut staging = environment.stage();
-        let declared = staging.arena().value_type_unit();
-        let body = staging.arena().value_unit();
-        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
-        environment
-            .add_decl(staged)
-            .expect("the unit definition admits")
-            .position()
-    }
-
-    #[test]
-    fn a_definition_reference_reads_alike_in_either_admission_order()
-    {
-        let first = reference_stream(&unit_definition, ReferentOrder::First);
-        let second = reference_stream(&unit_definition, ReferentOrder::Second);
-        assert_eq!(
-            first, second,
-            "a plain definition's reference reads its content, not where it was admitted"
-        );
-    }
-
-    #[test]
-    fn an_axiom_reference_keeps_its_position()
-    {
-        let first = reference_stream(&unit_axiom, ReferentOrder::First);
-        let second = reference_stream(&unit_axiom, ReferentOrder::Second);
-        assert_ne!(
-            first, second,
-            "an axiom has no body to name it by, so its reference reads its position"
-        );
-    }
-
-    #[test]
-    fn a_goal_takes_one_name_in_either_admission_order_864()
-    {
-        let (cold, first) = goal_name(&unit_definition, ReferentOrder::First, TableState::Cold);
-        let (warmed, second) = goal_name(&unit_definition, ReferentOrder::Second, TableState::Warm);
-        assert_ne!(cold, warmed, "the warm table numbers the goal later");
-        assert_eq!(
-            first, second,
-            "a goal's name reads its content and its members' names, never their ids"
-        );
-    }
-
-    #[test]
-    fn a_goal_over_an_axiom_takes_its_position_s_name_864()
-    {
-        let (_, first) = goal_name(&unit_axiom, ReferentOrder::First, TableState::Cold);
-        let (_, second) = goal_name(&unit_axiom, ReferentOrder::Second, TableState::Cold);
-        assert_ne!(
-            first, second,
-            "an axiom's reference reads its position, so its goal's name does too"
-        );
-    }
-
     #[test]
     fn a_forged_name_keeps_two_records_apart_864()
     {
@@ -7919,175 +7716,6 @@ mod tests
         assert_eq!(
             Maybe::Absent(super::record_name::Absent::Unrecorded),
             named.name(ContentId(named.records))
-        );
-    }
-
-    #[test]
-    fn each_twin_of_one_content_ranks_past_the_latest_3686()
-    {
-        let mut environment = crate::Environment::new();
-        let left = unit_definition(&mut environment);
-        let right = unit_definition(&mut environment);
-        let mut staging = environment.stage();
-        let unit = staging.arena().value_type_unit();
-        let declared = staging.arena().value_type_product(&[unit, unit]);
-        let first = staging.arena().value_unit();
-        let second = staging.arena().value_unit();
-        let pair = staging.arena().value_tuple(&[first, second]);
-        let staged = staging.def(LevelSignature::monomorphic(), declared, pair);
-        let other = environment
-            .add_decl(staged)
-            .expect("a definition of other content admits")
-            .position();
-        let third = unit_definition(&mut environment);
-        let ranks = [left, right, other, third].map(|position| {
-            match environment
-                .entries()
-                .get(usize::from(position))
-                .map(crate::env::AdmittedDeclaration::key_name)
-            {
-                Some(super::ConstantName::Definition { rank, .. }) => rank,
-                Some(super::ConstantName::Position) | None => {
-                    panic!("a plain definition is named by its content")
-                },
-            }
-        });
-        assert_eq!(
-            ranks,
-            [
-                super::DefinitionRank(0),
-                super::DefinitionRank(1),
-                super::DefinitionRank(0),
-                super::DefinitionRank(2),
-            ],
-            "each definition of one type and body is ranked behind every earlier \
-             one, past a definition of other content between them"
-        );
-        let mut staging = environment.stage();
-        let left = staging.arena().value_constant(left);
-        let right = staging.arena().value_constant(right);
-        let unit = staging.arena().value_type_unit();
-        let declared = staging.arena().value_type_product(&[unit, unit]);
-        let pair = staging.arena().value_tuple(&[left, right]);
-        let staged = staging.def(LevelSignature::monomorphic(), declared, pair);
-        let _pair = environment
-            .add_decl(staged)
-            .expect("the pair of references admits");
-        let mut table = ContentTable::new();
-        table.name_constants(environment.entries());
-        assert_ne!(
-            table.place(environment.arena(), AnyNode::Value(left)),
-            table.place(environment.arena(), AnyNode::Value(right)),
-            "two definitions keep two names however alike their content: a key \
-             never answers for one with the other"
-        );
-    }
-
-    /// The digest `name_definition` gives a definition of `declared` and
-    /// `body` through `table`, admitted first into `environment`.
-    ///
-    /// # Specification
-    /// - requires: the roots live in `arena`.
-    /// - ensures: the digest of the content name the naming gives.
-    /// - provides: the digest the naming cases compare.
-    /// - fails: never.
-    /// - panics: when the naming gives a positional name.
-    /// - executable: none — the cases compare the digest, and no predicate here
-    ///   computes it again.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the cases compare digests across tables and bodies.
-    /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
-    fn definition_digest(
-        table: &mut ContentTable,
-        (arena, environment): (&TermArena, &crate::Environment),
-        declared: ValueTypeId,
-        body: ValueId,
-    ) -> gandr_kernel_check_memo::ContentDigest
-    {
-        let first = (
-            environment.entries(),
-            ConstantIndex::from(0_usize),
-            gandr_kernel_term::SourceRank::from(0_usize),
-        );
-        match super::name_definition(table, arena, first, declared, body) {
-            super::ConstantName::Definition { digest, .. } => digest,
-            super::ConstantName::Position => panic!("a plain definition is named by its content"),
-        }
-    }
-
-    #[test]
-    fn a_definition_takes_one_digest_in_either_admission_order()
-    {
-        let environment = crate::Environment::new();
-        let mut arena = TermArena::new();
-        let unit = arena.value_type_unit();
-        let declared = arena.value_type_product(&[unit, unit]);
-        let first = arena.value_unit();
-        let body = arena.value_tuple(&[first, first]);
-        let other = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let mut cold = ContentTable::named();
-        let mut warmed = ContentTable::named();
-        let _other = warmed.place(&arena, AnyNode::Value(other));
-        let _body = warmed.place(&arena, AnyNode::Value(body));
-        assert_ne!(
-            cold.place(&arena, AnyNode::Value(body)),
-            warmed.place(&arena, AnyNode::Value(body)),
-            "the two tables number the body apart"
-        );
-        let named = definition_digest(&mut cold, (&arena, &environment), declared, body);
-        assert_eq!(
-            named,
-            definition_digest(&mut warmed, (&arena, &environment), declared, body),
-            "a definition takes one digest whatever order a table met its content in"
-        );
-        assert_ne!(
-            named,
-            definition_digest(&mut cold, (&arena, &environment), declared, other),
-            "a definition of another body takes another digest"
-        );
-    }
-
-    #[test]
-    fn a_definition_named_at_mint_is_named_with_no_walk()
-    {
-        let environment = crate::Environment::new();
-        let mut arena = TermArena::new();
-        let mut table = ContentTable::named();
-        let unit = arena.value_type_unit();
-        let declared = arena.value_type_product(&[unit, unit]);
-        let mut body = arena.value_unit();
-        let mut minted = vec![
-            AnyNode::ValueType(unit),
-            AnyNode::ValueType(declared),
-            AnyNode::Value(body),
-        ];
-        for _step in 0 .. 8_u32 {
-            body = arena.value_tuple(&[body, body]);
-            minted.push(AnyNode::Value(body));
-        }
-        let mut names = super::MintNames::new(&mut table);
-        for &image in &minted {
-            let before = names.0.placed.count();
-            names.name(&arena, image);
-            assert_eq!(
-                names.0.placed.count(),
-                PlacementCount(before.0.saturating_add(1)),
-                "an image whose children are named costs one placement"
-            );
-        }
-        let placed = table.placed.count();
-        let named = definition_digest(&mut table, (&arena, &environment), declared, body);
-        assert_eq!(
-            table.placed.count(),
-            placed,
-            "the naming of a definition named at mint places no node"
-        );
-        let mut walked = ContentTable::named();
-        assert_eq!(
-            definition_digest(&mut walked, (&arena, &environment), declared, body),
-            named,
-            "the names formed at mint give the digest a walk gives"
         );
     }
 
@@ -8324,5 +7952,133 @@ mod tests
                 "{why} is named apart"
             );
         }
+    }
+
+    /// The digest `name_definition` gives a definition of `declared` and
+    /// `body` through `table`, admitted first into `entries`.
+    ///
+    /// # Specification
+    /// - requires: the roots live in `arena`.
+    /// - ensures: the digest of the content name the naming gives.
+    /// - provides: the digest the naming cases compare.
+    /// - fails: never.
+    /// - panics: when the naming gives a positional name.
+    /// - executable: none — the cases compare the digest, and no predicate here
+    ///   computes it again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the cases compare digests across tables and bodies.
+    /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
+    fn definition_digest(
+        table: &mut ContentTable,
+        (arena, entries): (&TermArena, &crate::env::Entries),
+        declared: ValueTypeId,
+        body: ValueId,
+    ) -> gandr_kernel_check_memo::ContentDigest
+    {
+        let first = (
+            entries,
+            ConstantIndex::from(0_usize),
+            gandr_kernel_term::SourceRank::from(0_usize),
+        );
+        match crate::encoding::name_definition(table, arena, first, declared, body) {
+            crate::encoding::ConstantName::Definition { digest, .. } => digest,
+            crate::encoding::ConstantName::Position => {
+                panic!("a plain definition is named by its content")
+            },
+        }
+    }
+
+    #[test]
+    fn a_definition_takes_one_digest_in_either_admission_order()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let declared = arena.value_type_product(&[unit, unit]);
+        let first = arena.value_unit();
+        let body = arena.value_tuple(&[first, first]);
+        let other = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let mut cold = ContentTable::named();
+        let mut warmed = ContentTable::named();
+        let _other = warmed.place(&arena, AnyNode::Value(other));
+        let _body = warmed.place(&arena, AnyNode::Value(body));
+        assert_ne!(
+            cold.place(&arena, AnyNode::Value(body)),
+            warmed.place(&arena, AnyNode::Value(body)),
+            "the two tables number the body apart"
+        );
+        let named = definition_digest(&mut cold, (&arena, &crate::env::NO_ENTRIES), declared, body);
+        assert_eq!(
+            named,
+            definition_digest(
+                &mut warmed,
+                (&arena, &crate::env::NO_ENTRIES),
+                declared,
+                body
+            ),
+            "a definition takes one digest whatever order a table met its content in"
+        );
+        assert_ne!(
+            named,
+            definition_digest(
+                &mut cold,
+                (&arena, &crate::env::NO_ENTRIES),
+                declared,
+                other
+            ),
+            "a definition of another body takes another digest"
+        );
+    }
+
+    #[test]
+    fn a_definition_named_at_mint_is_named_with_no_walk()
+    {
+        let mut arena = TermArena::new();
+        let mut table = ContentTable::named();
+        let unit = arena.value_type_unit();
+        let declared = arena.value_type_product(&[unit, unit]);
+        let mut body = arena.value_unit();
+        let mut minted = vec![
+            AnyNode::ValueType(unit),
+            AnyNode::ValueType(declared),
+            AnyNode::Value(body),
+        ];
+        for _step in 0 .. 8_u32 {
+            body = arena.value_tuple(&[body, body]);
+            minted.push(AnyNode::Value(body));
+        }
+        let mut names = crate::encoding::MintNames::new(&mut table);
+        for &image in &minted {
+            let before = names.0.placed.count();
+            names.name(&arena, image);
+            assert_eq!(
+                names.0.placed.count(),
+                PlacementCount(before.0.saturating_add(1)),
+                "an image whose children are named costs one placement"
+            );
+        }
+        let placed = table.placed.count();
+        let named = definition_digest(
+            &mut table,
+            (&arena, &crate::env::NO_ENTRIES),
+            declared,
+            body,
+        );
+        assert_eq!(
+            table.placed.count(),
+            placed,
+            "the naming of a definition named at mint places no node"
+        );
+        let mut walked = ContentTable::named();
+        assert_eq!(
+            definition_digest(
+                &mut walked,
+                (&arena, &crate::env::NO_ENTRIES),
+                declared,
+                body
+            ),
+            named,
+            "the names formed at mint give the digest a walk gives"
+        );
     }
 }

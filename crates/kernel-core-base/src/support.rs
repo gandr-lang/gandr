@@ -198,7 +198,7 @@ enum Accrual
 /// Where an open accrual sits on its session's stack.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Opened(usize);
+pub struct Opened(usize);
 
 /// How many binders `context` holds, saturating at the ceiling.
 ///
@@ -302,7 +302,7 @@ fn owe_into(
 /// Whether the obligation a key names lets a recall serve: its verdict holds,
 /// or the check that recalls owes it already.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Discharge
+pub enum Discharge
 {
     /// The key holds a checked verdict, or this declaration's check owes it,
     /// so its drain checks it before the declaration is admitted.
@@ -331,7 +331,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn name_constants(
+    pub fn name_constants(
         &mut self,
         entries: &crate::env::Entries,
     )
@@ -345,7 +345,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn table_mut(&mut self) -> &mut ContentTable
+    pub const fn table_mut(&mut self) -> &mut ContentTable
     {
         &mut self.table
     }
@@ -360,7 +360,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn begin_admission(&mut self)
+    pub fn begin_admission(&mut self)
     {
         self.rewrites = RewriteMemo::new();
         self.open.clear();
@@ -379,7 +379,7 @@ impl SupportContext
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn carried(&self) -> Self
+    pub fn carried(&self) -> Self
     {
         Self {
             table: self.table.clone(),
@@ -407,7 +407,7 @@ impl SupportContext
     /// - hypothesis: L3 — as [`Self::join`].
     /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
     #[must_use]
-    pub(crate) fn fork(
+    pub fn fork(
         &mut self,
         arena: &TermArena,
     ) -> Self
@@ -450,7 +450,7 @@ impl SupportContext
     ///   recalls each outcome under the name a serial session gives it.
     /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
     /// - witness: `support::tests::two_jobs_that_keep_two_outcomes_under_one_key_do_not_glue`
-    pub(crate) fn join(
+    pub fn join(
         &mut self,
         arena: &TermArena,
         job: Self,
@@ -472,7 +472,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn name_parameters(
+    pub fn name_parameters(
         &mut self,
         arena: &TermArena,
         parameters: &crate::encoding::Parameters<'_>,
@@ -505,7 +505,7 @@ impl SupportContext
     ///   session.
     /// - witness: `environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
     /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
-    pub(crate) fn recall_kept(
+    pub fn recall_kept(
         &mut self,
         arena: &TermArena,
         question: Question,
@@ -551,7 +551,7 @@ impl SupportContext
     /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
     #[inline]
     #[must_use]
-    pub(crate) fn kept_checked(
+    pub fn kept_checked(
         &self,
         key: &NodeSupport,
         parameters: RecordName,
@@ -592,7 +592,7 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::recall_kept`].
     /// - witness: `environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
-    pub(crate) fn keep(
+    pub fn keep(
         &mut self,
         support: &NodeSupport,
         parameters: RecordName,
@@ -615,7 +615,7 @@ impl SupportContext
     ///
     /// # Specification
     /// trivial.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn constant_name(
         &self,
         index: gandr_kernel_term::ConstantIndex,
@@ -634,7 +634,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn rewrite_parts(&mut self) -> (&mut ContentTable, &mut RewriteMemo)
+    pub const fn rewrite_parts(&mut self) -> (&mut ContentTable, &mut RewriteMemo)
     {
         (&mut self.table, &mut self.rewrites)
     }
@@ -690,7 +690,7 @@ impl SupportContext
         ensures: |ret| ret.0 == count && self.open.len() == count.saturating_add(1),
     )]
     #[inline]
-    pub(crate) fn open(
+    pub fn open(
         &mut self,
         context: &[ValueTypeId],
     ) -> Opened
@@ -723,7 +723,7 @@ impl SupportContext
         ensures: |ret| ret.0 == count && self.open.len() == count.saturating_add(1),
     )]
     #[inline]
-    pub(crate) fn open_barrier(&mut self) -> Opened
+    pub fn open_barrier(&mut self) -> Opened
     {
         let at = Opened(self.open.len());
         self.open.push(Accrual::Barrier);
@@ -745,7 +745,7 @@ impl SupportContext
     /// - witness: `support::tests::a_subgoal_s_reads_join_its_goal_lowered_past_its_binders`
     #[spec(captures: count = self.open.len(), ensures: self.open.len() == count)]
     #[inline]
-    pub(crate) fn read(
+    pub fn read(
         &mut self,
         reads: &Reads,
         context: &[ValueTypeId],
@@ -768,7 +768,7 @@ impl SupportContext
     /// - witness: `support::tests::an_owed_key_passes_a_barrier_and_joins_one_time`
     #[spec(captures: count = self.open.len(), ensures: self.open.len() == count)]
     #[inline]
-    pub(crate) fn owe(
+    pub fn owe(
         &mut self,
         keys: &[NodeSupport],
     )
@@ -795,7 +795,7 @@ impl SupportContext
     /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
     #[spec(captures: count = self.open.len(), ensures: self.open.len() == count)]
     #[inline]
-    pub(crate) fn owe_obligation(
+    pub fn owe_obligation(
         &mut self,
         key: &NodeSupport,
     )
@@ -811,7 +811,7 @@ impl SupportContext
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn owes(
+    pub fn owes(
         &self,
         key: &NodeSupport,
     ) -> Discharge
@@ -851,7 +851,7 @@ impl SupportContext
         ensures: self.open.len() == core::cmp::min(count, opened.0),
     )]
     #[inline]
-    pub(crate) fn close(
+    pub fn close(
         &mut self,
         opened: Opened,
     ) -> Reads
@@ -886,7 +886,7 @@ impl SupportContext
         ensures: self.open.len() == core::cmp::min(count, opened.0),
     )]
     #[inline]
-    pub(crate) fn close_owing(
+    pub fn close_owing(
         &mut self,
         opened: Opened,
     ) -> Option<(Reads, Owed)>
@@ -927,7 +927,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn reset_accruals(&mut self)
+    pub fn reset_accruals(&mut self)
     {
         self.open.clear();
         self.owing.clear();
@@ -954,7 +954,7 @@ impl SupportContext
     Maybe::Absent(read_indices::Absent::Widest) => false,
 })]
 #[inline]
-pub(crate) fn innermost(reads: &Reads) -> BinderUse
+pub fn innermost(reads: &Reads) -> BinderUse
 {
     let Maybe::Present(mut indices) = reads.indices()
     else {
@@ -1116,7 +1116,7 @@ fn goal_name(
 /// recall walks the entries recorded under contexts that differed and serves
 /// one the asking context agrees with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Question
+pub struct Question
 {
     /// Which machine asked.
     plane: SupportPlane,
@@ -1146,7 +1146,7 @@ impl Question
     /// - witness: `support::tests::a_recorded_binder_decides_which_context_is_served`
     #[inline]
     #[must_use]
-    pub(crate) fn ask(
+    pub fn ask(
         arena: &TermArena,
         session: &mut SupportContext,
         goal: SupportGoal,
@@ -1166,7 +1166,7 @@ impl Question
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn digest(self) -> ContentDigest
+    pub fn digest(self) -> ContentDigest
     {
         ContentDigest::new(DigestWord::from(self.plane), DigestWord::from(self.asked))
     }
@@ -1197,7 +1197,7 @@ impl Question
     /// - witness: `support::tests::an_entry_reading_every_binder_is_served_its_own_context_alone`
     #[inline]
     #[must_use]
-    pub(crate) fn agreement(
+    pub fn agreement(
         self,
         arena: &TermArena,
         session: &mut SupportContext,
@@ -1235,7 +1235,7 @@ impl Question
     /// - witness: `support::tests::a_recorded_binder_decides_which_context_is_served`
     #[inline]
     #[must_use]
-    pub(crate) fn answered(
+    pub fn answered(
         self,
         arena: &TermArena,
         session: &mut SupportContext,
@@ -1326,7 +1326,7 @@ impl NodeSupport
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn reads(&self) -> &Reads
+    pub const fn reads(&self) -> &Reads
     {
         &self.reads
     }
@@ -1338,7 +1338,7 @@ impl NodeSupport
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn names(&self) -> (RecordName, RecordName)
+    pub const fn names(&self) -> (RecordName, RecordName)
     {
         (self.asked, self.goal)
     }
@@ -1596,7 +1596,7 @@ fn read_binders<'buffer>(
 
 /// What a family does with its innermost binder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BinderUse
+pub enum BinderUse
 {
     /// The family provably ignores variable zero.
     Ignored,

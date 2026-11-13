@@ -36,14 +36,14 @@ use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::ValueType;
 
 use crate::env::OutstandingCount;
-use crate::environment::UnsettledCount;
+use crate::env::UnsettledCount;
 
-pub(crate) mod flow;
-pub(crate) mod identity;
-pub(crate) mod path;
-pub(crate) mod replay;
-pub(crate) mod ruled;
-pub(crate) mod session;
+pub mod flow;
+pub mod identity;
+pub mod path;
+pub mod replay;
+pub mod ruled;
+pub mod session;
 
 /// The head former of a value type, as an error payload names it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1493,7 +1493,6 @@ mod tests
     use gandr_kernel_check_memo::ContentDigest;
     use gandr_kernel_strata::LandmarkConstraint;
     use gandr_kernel_strata::Level;
-    use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_strata::LevelVar;
     use gandr_kernel_strata::LevelVarIndex;
     use gandr_kernel_strata::PosetError;
@@ -1506,10 +1505,8 @@ mod tests
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::FieldLabel;
-    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LayerPosition;
     use gandr_kernel_term::LevelParamCount;
-    use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::OccurrenceSite;
     use gandr_kernel_term::OperationRuleFault;
     use gandr_kernel_term::OperationRuleRefusal;
@@ -1525,7 +1522,6 @@ mod tests
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::TheoryRuleFault;
     use gandr_kernel_term::TheoryRuleRefusal;
-    use gandr_kernel_term::ValueType;
     use gandr_kernel_term::session::PayloadSlot;
     use gandr_kernel_term::session::State;
     use gandr_kernel_term::session::StatePair;
@@ -1539,14 +1535,15 @@ mod tests
     use super::NonInferableForm;
     use super::RegisterFault;
     use super::ValueTypeMismatch;
-    use crate::Environment;
     use crate::env::OutstandingCount;
-    use crate::environment::UnsettledCount;
+    use crate::env::UnsettledCount;
     use crate::error::flow::Boundary;
     use crate::error::flow::Family;
     use crate::error::flow::FlowError;
     use crate::error::flow::PatternPosition as FlowPattern;
+    use crate::error::identity::Component;
     use crate::error::identity::EndpointSide;
+    use crate::error::identity::EvaluationSide;
     use crate::error::identity::IdentityError;
     use crate::error::path::Direction;
     use crate::error::path::PathError;
@@ -1554,8 +1551,6 @@ mod tests
     use crate::error::replay::KernelVerdict;
     use crate::error::ruled::OperationBodyFault;
     use crate::error::session::SessionError;
-    use crate::identity_recursion::Component;
-    use crate::identity_recursion::EvaluationSide;
     use crate::levels::LevelContext;
     use crate::witness::comp_type_witness;
     use crate::witness::value_type_witness;
@@ -1915,61 +1910,6 @@ mod tests
             assert_eq!(
                 core::fmt::write(&mut RefusingSink, format_args!("{error}")),
                 Err(core::fmt::Error)
-            );
-        }
-    }
-
-    #[test]
-    fn universe_successor_overflow_refuses_admission_without_truncating_prior_content()
-    {
-        let mut environment = Environment::new();
-        let (unit, first) = {
-            let mut staging = environment.stage();
-            let unit = staging.arena().value_type_unit();
-            (unit, staging.axiom(LevelSignature::monomorphic(), unit))
-        };
-        assert_eq!(
-            environment
-                .add_decl(first)
-                .expect("the unit type forms")
-                .position(),
-            ConstantIndex::from(0_usize)
-        );
-        for sort in [GroundSort::Value, GroundSort::Computation] {
-            let position = ConstantIndex::from(environment.entries().len());
-            let admitted = {
-                let mut staging = environment.stage();
-                let declared = staging.arena().value_type_universe(
-                    sort,
-                    Level::constant(LevelConstant::from(u64::MAX.saturating_sub(1))),
-                );
-                staging.axiom(LevelSignature::monomorphic(), declared)
-            };
-            assert_eq!(
-                environment
-                    .add_decl(admitted)
-                    .expect("the successor fits")
-                    .position(),
-                position
-            );
-            let watermark = environment.arena().watermark();
-            let entries = environment.entries().admitted();
-            let refused = {
-                let mut staging = environment.stage();
-                let declared = staging
-                    .arena()
-                    .value_type_universe(sort, Level::constant(LevelConstant::from(u64::MAX)));
-                staging.axiom(LevelSignature::monomorphic(), declared)
-            };
-            assert_eq!(
-                environment.add_decl(refused),
-                Err(KernelError::LevelArithmetic)
-            );
-            assert_eq!(environment.arena().watermark(), watermark);
-            assert_eq!(environment.entries().admitted(), entries);
-            assert_eq!(
-                environment.arena().value_type(unit),
-                Some(&ValueType::unit())
             );
         }
     }

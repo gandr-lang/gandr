@@ -1,3 +1,7 @@
+//! The tests of `theory_rules` that build their fixtures with the judgement:
+//! each one admits through `Environment` or reads through conversion, which
+//! stand above the record, so it runs in this crate.
+
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -23,18 +27,25 @@ use crate::error::KernelError;
 
 /// The presentation.
 const PRESENTS: usize = 0;
+
 /// The end of a chain.
 const END: usize = 1;
+
 /// A rule as written.
 const RULE: usize = 5;
+
 /// A variable.
 const VAR: usize = 6;
+
 /// An operation application.
 const APP: usize = 7;
+
 /// An argument.
 const ARG: usize = 10;
+
 /// A derived rule.
 const DERIVED: usize = 17;
+
 /// A rank.
 const RANK: usize = 18;
 

@@ -34,7 +34,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::encoding::ConstantName;
 use crate::environment::Hold;
-use crate::environment::UnsettledCount;
+use crate::env::UnsettledCount;
 use crate::verdict::VerdictKey;
 use crate::verdict::keyed;
 

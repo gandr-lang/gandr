@@ -165,7 +165,7 @@ impl LevelContext
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn constraints(&self) -> &[gandr_kernel_strata::LandmarkConstraint]
+    pub fn constraints(&self) -> &[gandr_kernel_strata::LandmarkConstraint]
     {
         self.poset.constraints()
     }

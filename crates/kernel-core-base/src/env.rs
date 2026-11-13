@@ -54,7 +54,7 @@ impl CheckedId
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn new(position: ConstantIndex) -> Self
+    pub const fn new(position: ConstantIndex) -> Self
     {
         Self(position)
     }
@@ -129,7 +129,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn content_start(&self) -> ArenaWatermark
+    pub const fn content_start(&self) -> ArenaWatermark
     {
         self.content_start
     }
@@ -141,7 +141,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn rank(&self) -> Option<SourceRank>
+    pub const fn rank(&self) -> Option<SourceRank>
     {
         self.rank
     }
@@ -152,7 +152,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn into_declaration(self) -> Declaration
+    pub fn into_declaration(self) -> Declaration
     {
         self.declaration
     }
@@ -164,7 +164,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         content_start: ArenaWatermark,
         rank: Option<SourceRank>,
         declaration: Declaration,
@@ -184,7 +184,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn into_parts(self) -> (ArenaWatermark, Option<SourceRank>, Declaration)
+    pub fn into_parts(self) -> (ArenaWatermark, Option<SourceRank>, Declaration)
     {
         (self.content_start, self.rank, self.declaration)
     }
@@ -586,6 +586,37 @@ impl From<OutstandingCount> for usize
     }
 }
 
+/// How many released checks of an environment are not settled.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnsettledCount(usize);
+
+impl From<usize> for UnsettledCount
+{
+    /// The count of `count` released checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<UnsettledCount> for usize
+{
+    /// How many released checks `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: UnsettledCount) -> Self
+    {
+        count.0
+    }
+}
+
 /// The content-start marks of declarations staged into the arena and not yet
 /// resolved by an admission, a bypass, or an abandonment.
 ///
@@ -594,7 +625,7 @@ impl From<OutstandingCount> for usize
 /// and resolving one occurrence must not resolve every equal occurrence.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct StagedMarks
+pub struct StagedMarks
 {
     /// The outstanding marks, in registration order.
     pub marks: Vec<ArenaWatermark>,
@@ -627,7 +658,7 @@ impl StagedMarks
             && self.marks.last() == Some(&mark)
     )]
     #[inline]
-    pub(crate) fn register(
+    pub fn register(
         &mut self,
         mark: ArenaWatermark,
     )
@@ -665,7 +696,7 @@ impl StagedMarks
         ensures: self.marks.len() == entry_len.saturating_sub(usize::from(entry_count != 0_usize))
             && self.marks.iter().filter(|&&held| held == mark).count() == entry_count.saturating_sub(1_usize)
     )]
-    pub(crate) fn resolve(
+    pub fn resolve(
         &mut self,
         mark: ArenaWatermark,
     )
@@ -709,7 +740,7 @@ impl StagedMarks
         )
     )]
     #[spec(ensures: |ret| usize::from(ret) == self.marks.iter().filter(|&&held| held.clamped_into(ArenaWatermark::default(), mark) != held).count())]
-    pub(crate) fn above(
+    pub fn above(
         &self,
         mark: ArenaWatermark,
     ) -> OutstandingCount
@@ -734,7 +765,7 @@ impl StagedMarks
 /// Dropping it removes the final entry; a finisher suppresses that destructor
 /// when ownership of the claim passes to a staged declaration.
 #[repr(transparent)]
-pub(crate) struct StagingClaim<'env>
+pub struct StagingClaim<'env>
 {
     /// The nonempty multiset whose final entry belongs to this session.
     pub outstanding: &'env mut StagedMarks,
@@ -925,7 +956,7 @@ impl<'env> Staging<'env>
             && ret.claim.outstanding.marks.last() == Some(&entry_mark)
     )]
     #[inline]
-    pub(crate) fn new(
+    pub fn new(
         arena: &'env mut TermArena,
         outstanding: &'env mut StagedMarks,
         table: &'env mut crate::encoding::ContentTable,
@@ -946,7 +977,7 @@ impl<'env> Staging<'env>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn builder(&self) -> &DeclarationBuilder<'env>
+    pub const fn builder(&self) -> &DeclarationBuilder<'env>
     {
         &self.builder
     }
@@ -957,7 +988,7 @@ impl<'env> Staging<'env>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn claim(&self) -> &StagingClaim<'env>
+    pub const fn claim(&self) -> &StagingClaim<'env>
     {
         &self.claim
     }
@@ -1283,7 +1314,7 @@ pub struct AdmittedDeclaration
 
 /// The parts of an admitted declaration that an admission hands the record:
 /// each part but its kind, since an admitted declaration enters live.
-pub(crate) struct AdmittedParts
+pub struct AdmittedParts
 {
     /// The declaration itself.
     pub declaration: Declaration,
@@ -1348,7 +1379,7 @@ pub enum EntryKind
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Unit
+pub struct Unit
 {
     /// The position of the unit's first member.
     pub first: ConstantIndex,
@@ -1364,7 +1395,7 @@ pub(crate) struct Unit
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum UnitShape
+pub enum UnitShape
 {
     /// One declaration, admitted alone.
     Lone,
@@ -1379,7 +1410,7 @@ impl Unit
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn lone(position: ConstantIndex) -> Self
+    pub fn lone(position: ConstantIndex) -> Self
     {
         Self {
             first: position,
@@ -1393,7 +1424,7 @@ impl Unit
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn holds(
+    pub fn holds(
         self,
         position: ConstantIndex,
     ) -> Membership
@@ -1412,7 +1443,7 @@ impl Unit
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Membership
+pub enum Membership
 {
     /// The position is a member of the unit.
     Member,
@@ -1450,7 +1481,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn content(&self) -> &DeclarationContent
+    pub const fn content(&self) -> &DeclarationContent
     {
         self.declaration.content()
     }
@@ -1472,7 +1503,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn block(&self) -> crate::occurrence::Block
+    pub const fn block(&self) -> crate::occurrence::Block
     {
         self.block
     }
@@ -1482,7 +1513,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn accessibility(&self) -> &crate::occurrence::Accessibility
+    pub const fn accessibility(&self) -> &crate::occurrence::Accessibility
     {
         &self.accessibility
     }
@@ -1492,7 +1523,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn key_name(&self) -> ConstantName
+    pub const fn key_name(&self) -> ConstantName
     {
         self.key_name
     }
@@ -1505,7 +1536,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn rested_on(&self) -> &BTreeSet<ConstantIndex>
+    pub const fn rested_on(&self) -> &BTreeSet<ConstantIndex>
     {
         &self.rested_on
     }
@@ -1518,7 +1549,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn references(&self) -> &[ConstantIndex]
+    pub fn references(&self) -> &[ConstantIndex]
     {
         &self.references
     }
@@ -1530,7 +1561,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn unit(&self) -> Unit
+    pub const fn unit(&self) -> Unit
     {
         self.unit
     }
@@ -1541,7 +1572,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn rest_on(
+    pub fn rest_on(
         &mut self,
         rested: &BTreeSet<ConstantIndex>,
     )
@@ -1554,7 +1585,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn close(
+    pub fn close(
         &mut self,
         extent: SealExtent,
     )
@@ -1568,7 +1599,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn live(parts: AdmittedParts) -> Self
+    pub fn live(parts: AdmittedParts) -> Self
     {
         let AdmittedParts {
             declaration,
@@ -1604,9 +1635,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn key(
-        &self
-    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    pub const fn key(&self) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
     {
         self.key
     }
@@ -1716,7 +1745,7 @@ pub struct Entries
 /// the position of that declaration. The check reads only the entries its
 /// source states before that declaration.
 #[derive(Clone, Debug)]
-pub(crate) struct Horizon
+pub struct Horizon
 {
     /// The rank of the declaration the check admits.
     rank: SourceRank,
@@ -1732,7 +1761,7 @@ pub(crate) struct Horizon
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum Order
+pub enum Order
 {
     /// No entry is retired, and each entry is admitted at a rank above the
     /// rank of each earlier entry: each position is its own place.
@@ -1746,7 +1775,7 @@ pub(crate) enum Order
 /// The admitted declarations and what a check reads beside them: the view's
 /// part of the log, which every view shares under one `Arc`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct EntryLog
+pub struct EntryLog
 {
     /// The slot at each position, in admission order.
     pub family: Family<Slot>,
@@ -1783,7 +1812,7 @@ pub(crate) struct EntryLog
     reason = "one per position, read by every check; boxing the declaration would allocate per \
               admission and add an indirection to every read to shrink the rare vacant slot"
 )]
-pub(crate) enum Slot
+pub enum Slot
 {
     /// An admitted declaration, live or retired.
     Admitted(AdmittedDeclaration),
@@ -1801,7 +1830,7 @@ impl Slot
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn admitted(&self) -> Option<&AdmittedDeclaration>
+    pub const fn admitted(&self) -> Option<&AdmittedDeclaration>
     {
         match *self {
             Self::Admitted(ref entry) => Some(entry),
@@ -1828,7 +1857,7 @@ impl Slot
 static NO_FAMILY: Family<Slot> = Family::new();
 
 /// No admitted declaration: what a judgement over an empty environment reads.
-pub(crate) static NO_ENTRIES: Entries = Entries::new();
+pub static NO_ENTRIES: Entries = Entries::new();
 
 impl Clone for Entries
 {
@@ -1893,7 +1922,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn family(&self) -> &Family<Slot>
+    pub fn family(&self) -> &Family<Slot>
     {
         self.log.as_deref().map_or(&NO_FAMILY, |log| &log.family)
     }
@@ -1904,7 +1933,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn at<Offset>(
+    pub fn at<Offset>(
         &self,
         offset: Offset,
     ) -> Option<&AdmittedDeclaration>
@@ -2022,7 +2051,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn peek<Offset>(
+    pub fn peek<Offset>(
         &self,
         offset: Offset,
     ) -> Option<&AdmittedDeclaration>
@@ -2081,7 +2110,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn key_names(&self) -> impl Iterator<Item = ConstantName> + '_
+    pub fn key_names(&self) -> impl Iterator<Item = ConstantName> + '_
     {
         self.family().iter().map(|slot| {
             slot.admitted()
@@ -2095,7 +2124,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn presentations(&self) -> &crate::presented::Presentations
+    pub fn presentations(&self) -> &crate::presented::Presentations
     {
         self.horizon.as_ref().map_or_else(
             || {
@@ -2113,7 +2142,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn horizon(&self) -> SourceRank
+    pub fn horizon(&self) -> SourceRank
     {
         self.horizon
             .as_ref()
@@ -2127,7 +2156,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn log(&self) -> Option<&EntryLog>
+    pub fn log(&self) -> Option<&EntryLog>
     {
         self.log.as_deref()
     }
@@ -2139,7 +2168,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn check_horizon(&self) -> Option<&Horizon>
+    pub const fn check_horizon(&self) -> Option<&Horizon>
     {
         self.horizon.as_ref()
     }
@@ -2150,7 +2179,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn live(
+    pub fn live(
         &self,
         position: ConstantIndex,
     ) -> Option<&AdmittedDeclaration>
@@ -2164,7 +2193,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn rank_of(
+    pub fn rank_of(
         &self,
         position: ConstantIndex,
     ) -> Option<SourceRank>
@@ -2205,7 +2234,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn key(
+    pub fn key(
         &self,
         position: ConstantIndex,
     ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
@@ -2222,7 +2251,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn ruled(
+    pub fn ruled(
         &self,
         root: ComputationId,
     ) -> Option<ConstantIndex>
@@ -2238,7 +2267,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn holder(
+    pub fn holder(
         &self,
         role: gandr_kernel_term::Builtin,
     ) -> Option<ConstantIndex>
@@ -2252,7 +2281,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn holder_below(
+    pub fn holder_below(
         &self,
         role: gandr_kernel_term::Builtin,
         below: SourceRank,
@@ -2275,7 +2304,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn digested(
+    pub fn digested(
         &self,
         digest: ContentDigest,
         below: SourceRank,
@@ -2298,7 +2327,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn reading(&self) -> Self
+    pub fn reading(&self) -> Self
     {
         Self {
             log: self.log.clone(),
@@ -2315,7 +2344,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn view(&mut self) -> Self
+    pub fn view(&mut self) -> Self
     {
         Self {
             log: self.log.clone(),
@@ -2331,7 +2360,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn restore(
+    pub fn restore(
         &mut self,
         view: Self,
     )
@@ -2364,7 +2393,7 @@ impl Entries
     /// - hypothesis: L3 — as [`Self::get`].
     /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
     #[spec(captures: entry_len = self.len(), ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1))]
-    pub(crate) fn push(
+    pub fn push(
         &mut self,
         arena: &TermArena,
         entry: AdmittedDeclaration,
@@ -2382,7 +2411,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
-    pub(crate) fn reserve(&mut self)
+    pub fn reserve(&mut self)
     {
         let log = self.log_mut();
         log.reservations = log.reservations.saturating_add(1);
@@ -2405,7 +2434,7 @@ impl Entries
     ///   each slot as the serial run admits it.
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && usize::from(self.admitted()) == usize::from(admitted).saturating_add(1))]
-    pub(crate) fn fill(
+    pub fn fill(
         &mut self,
         arena: &TermArena,
         position: ConstantIndex,
@@ -2434,7 +2463,7 @@ impl Entries
     /// - hypothesis: L3 — as `Environment::add_decl`.
     /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
-    pub(crate) fn vacate(&mut self)
+    pub fn vacate(&mut self)
     {
         let log = self.log_mut();
         log.vacancies = log.vacancies.saturating_add(1);
@@ -2447,7 +2476,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && self.admitted() == admitted)]
-    pub(crate) fn vacate_at(
+    pub fn vacate_at(
         &mut self,
         position: ConstantIndex,
     )
@@ -2479,7 +2508,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::retire`.
     /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    pub(crate) fn retire(
+    pub fn retire(
         &mut self,
         position: ConstantIndex,
     )
@@ -2518,7 +2547,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::keep`.
     /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    pub(crate) fn reinstate(
+    pub fn reinstate(
         &mut self,
         arena: &TermArena,
         (position, rank): (ConstantIndex, SourceRank),
@@ -2579,7 +2608,7 @@ impl Entries
     ///   the entries it found.
     /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(captures: entry_len = self.len(), ensures: self.len() == length.min(entry_len))]
-    pub(crate) fn truncate(
+    pub fn truncate(
         &mut self,
         length: gandr_kernel_term::ArenaLength,
     )
@@ -2618,7 +2647,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn freeze(&mut self)
+    pub fn freeze(&mut self)
     {
         if self.log.is_some() {
             self.log_mut().family.freeze();
@@ -2630,7 +2659,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn get_mut<Offset>(
+    pub fn get_mut<Offset>(
         &mut self,
         offset: Offset,
     ) -> Option<&mut AdmittedDeclaration>
@@ -2666,7 +2695,7 @@ impl Entries
     /// - hypothesis: L3 — as [`Self::get`].
     /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     /// - witness: `environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
-    pub(crate) fn open(
+    pub fn open(
         &mut self,
         roots: impl IntoIterator<Item = ConstantIndex>,
         (rank, end): (SourceRank, gandr_kernel_term::ArenaLength),
@@ -2704,7 +2733,7 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn close(&mut self) -> Option<ConstantIndex>
+    pub fn close(&mut self) -> Option<ConstantIndex>
     {
         self.horizon = None;
         alloc::sync::Arc::get_mut(self.support.as_mut()?)?.close()
@@ -2714,7 +2743,7 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn reads(&self) -> gandr_kernel_term::ArenaLength
     {
         self.support.as_deref().map_or_else(
@@ -2842,7 +2871,7 @@ impl EntryLog
 /// code there would admit provenance entries naming declarations no projection
 /// touched — a strictly more permissive gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CodeEdges
+pub enum CodeEdges
 {
     /// Follow a code into the term language and union the constants it names.
     Follow,
@@ -2904,7 +2933,7 @@ pub(crate) enum CodeEdges
         _ => true,
     },
 })]
-pub(crate) fn collect_reachable(
+pub fn collect_reachable(
     arena: &TermArena,
     root: AnyNode,
     codes: CodeEdges,
@@ -2946,7 +2975,7 @@ pub(crate) fn collect_reachable(
 ///   and one that reads past it is refused.
 /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
-pub(crate) fn references(
+pub fn references(
     arena: &TermArena,
     declaration: &Declaration,
 ) -> Box<[ConstantIndex]>
@@ -3043,7 +3072,7 @@ pub(crate) fn references(
 
 /// Whether a walk met the constant it sought.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Mention
+pub enum Mention
 {
     /// The constant is reachable from the root.
     Named,
@@ -3550,7 +3579,7 @@ fn reach(
 /// `Unnamed` for, so asking about the parts of one type walks the nodes they
 /// share once, and it stops at the first node naming the constant.
 #[derive(Debug)]
-pub(crate) struct ConstantSearch
+pub struct ConstantSearch
 {
     /// The constant sought.
     sought: ConstantIndex,
@@ -3565,7 +3594,7 @@ impl ConstantSearch
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn new(sought: ConstantIndex) -> Self
+    pub fn new(sought: ConstantIndex) -> Self
     {
         Self {
             sought,
@@ -3593,7 +3622,7 @@ impl ConstantSearch
     ///   `Named`.
     /// - witness: `env::tests::a_search_stops_at_its_constant_across_roots`
     #[spec(ensures: |ret| (ret == Mention::Named) == collect_reachable(arena, root, CodeEdges::Follow).contains(&self.sought))]
-    pub(crate) fn names(
+    pub fn names(
         &mut self,
         arena: &TermArena,
         root: AnyNode,
@@ -3650,7 +3679,7 @@ impl ConstantSearch
     _ => true,
 })]
 #[inline]
-pub(crate) fn projected_atoms(
+pub fn projected_atoms(
     arena: &TermArena,
     root: ValueTypeId,
 ) -> BTreeSet<ConstantIndex>

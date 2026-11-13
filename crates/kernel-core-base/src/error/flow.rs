@@ -186,7 +186,7 @@ impl Variance
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn reverse(self) -> Self
+    pub const fn reverse(self) -> Self
     {
         match self {
             Self::Contravariant => Self::Covariant,

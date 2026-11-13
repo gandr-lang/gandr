@@ -257,37 +257,6 @@ pub enum Hold
     Chain,
 }
 
-/// How many released checks of an environment are not settled.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UnsettledCount(usize);
-
-impl From<usize> for UnsettledCount
-{
-    /// The count of `count` released checks.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(count: usize) -> Self
-    {
-        Self(count)
-    }
-}
-
-impl From<UnsettledCount> for usize
-{
-    /// How many released checks `count` counts.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(count: UnsettledCount) -> Self
-    {
-        count.0
-    }
-}
-
 impl Check
 {
     /// Run the check on the thread that calls: answer a recorded verdict,
@@ -459,7 +428,7 @@ impl Environment
     ) -> Self
     {
         Self {
-            verdicts: crate::verdict::Verdicts::under(policy, source),
+            verdicts: crate::verdict::Verdicts::under(policy, source, crate::build_identity()),
             ..Self::default()
         }
     }
@@ -1114,9 +1083,10 @@ impl Environment
             DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
         );
         let entry_key = match content {
-            Maybe::Present(content) if generative => Maybe::Present(
-                content.generative(self.commits.generative_count(&self.entries, content, rank)),
-            ),
+            Maybe::Present(content) if generative => Maybe::Present(content.generative(
+                crate::build_identity(),
+                self.commits.generative_count(&self.entries, content, rank),
+            )),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         let generative_content = match (generative, content) {
@@ -2053,13 +2023,13 @@ impl Environment
             )
         });
         let block_key = match content {
-            Maybe::Present(content) if generative => {
-                Maybe::Present(content.generative(self.commits.generative_count(
-                    &self.entries,
-                    content,
-                    first_rank,
-                )))
-            },
+            Maybe::Present(content) if generative => Maybe::Present(
+                content.generative(
+                    crate::build_identity(),
+                    self.commits
+                        .generative_count(&self.entries, content, first_rank),
+                ),
+            ),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         self.verdicts.end();
@@ -2156,9 +2126,10 @@ impl Environment
                 key_name: ConstantName::Position,
                 census: *census,
                 key: match block_key {
-                    Maybe::Present(block_key) => {
-                        Maybe::Present(block_key.member(crate::verdict::KeyedCount::from(offset)))
-                    },
+                    Maybe::Present(block_key) => Maybe::Present(block_key.member(
+                        crate::build_identity(),
+                        crate::verdict::KeyedCount::from(offset),
+                    )),
                     Maybe::Absent(absent) => Maybe::Absent(absent),
                 },
                 rank,
@@ -2393,7 +2364,10 @@ impl Environment
             return Err(unkept(KeepRefusal::Unkeyed));
         };
         let unit_key = if generative {
-            content.generative(self.commits.generative_count(&self.entries, content, below))
+            content.generative(
+                crate::build_identity(),
+                self.commits.generative_count(&self.entries, content, below),
+            )
         }
         else {
             content
@@ -2401,7 +2375,10 @@ impl Environment
         for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
             let expected = match unit.shape {
                 UnitShape::Lone => unit_key,
-                UnitShape::Block => unit_key.member(crate::verdict::KeyedCount::from(offset)),
+                UnitShape::Block => unit_key.member(
+                    crate::build_identity(),
+                    crate::verdict::KeyedCount::from(offset),
+                ),
             };
             match self.entries.at(member).map(AdmittedDeclaration::key) {
                 Some(Maybe::Present(held)) if held == expected => {},
@@ -2750,7 +2727,10 @@ impl Environment
         let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
         let presentations = self.entries.presentations();
         let words = presentations.sorts().next().is_some();
-        let mut keyer = crate::verdict::EntryKeyer::tagged(crate::verdict::EntryTag::Content);
+        let mut keyer = crate::verdict::EntryKeyer::tagged(
+            crate::build_identity(),
+            crate::verdict::EntryTag::Content,
+        );
         keyer.count(KeyedCount::from(members.len()));
         let mut reached = Vec::new();
         let mut order = Vec::new();
@@ -4098,6 +4078,16 @@ quenchant_shape::reason_enum! {
 }
 
 #[cfg(test)]
+mod encoding_tests;
+#[cfg(test)]
+mod error_tests;
+#[cfg(test)]
+mod presented_tests;
+#[cfg(test)]
+mod seal_tests;
+#[cfg(test)]
+mod theory_rules_tests;
+#[cfg(test)]
 mod tests
 {
     use alloc::collections::BTreeSet;
@@ -4477,7 +4467,10 @@ mod tests
             .expect("a reference to the definition admits");
         assert!(
             matches!(
-                environment.names.session().constant_name(definition),
+                gandr_kernel_core_base::fixture::constant_name(
+                    environment.names.session(),
+                    definition
+                ),
                 Some(crate::encoding::ConstantName::Definition { .. })
             ),
             "the positions of the refused members stay vacant, so the \
@@ -7252,7 +7245,7 @@ mod tests
             let _admitted = environment
                 .add_decl(reading)
                 .expect("a definition naming the first admits");
-            environment.entries.reads()
+            gandr_kernel_core_base::fixture::reads(&environment.entries)
         };
         let few = reads(10);
         assert_eq!(

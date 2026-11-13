@@ -152,7 +152,7 @@ impl Support
     ///
     /// # Specification
     /// trivial.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fixture"))]
     pub fn reads(&self) -> ArenaLength
     {
         ArenaLength::from(self.reads.load(Ordering::Relaxed))

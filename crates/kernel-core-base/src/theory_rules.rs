@@ -95,6 +95,3 @@ pub fn admit(
         .and_then(|rules| rules.decide(&mut RewriteFuel::from(PRESENTATION_FUEL)))
         .map_err(KernelError::PresentationRulesRefused)
 }
-
-#[cfg(test)]
-mod tests;

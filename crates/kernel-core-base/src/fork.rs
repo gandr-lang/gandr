@@ -140,7 +140,7 @@ impl From<ForkWidth> for NonZeroUsize
 /// trivial.
 #[derive(Clone, Copy, Default)]
 #[repr(transparent)]
-pub(crate) struct Forking<'session>(Option<&'session dyn ObligationFork>);
+pub struct Forking<'session>(Option<&'session dyn ObligationFork>);
 
 impl<'session> Forking<'session>
 {
@@ -150,7 +150,7 @@ impl<'session> Forking<'session>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn new(fork: Option<&'session dyn ObligationFork>) -> Self
+    pub const fn new(fork: Option<&'session dyn ObligationFork>) -> Self
     {
         Self(fork)
     }
@@ -160,7 +160,7 @@ impl<'session> Forking<'session>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn fork(self) -> Option<&'session dyn ObligationFork>
+    pub const fn fork(self) -> Option<&'session dyn ObligationFork>
     {
         self.0
     }
@@ -222,7 +222,7 @@ impl SharedFork
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn forking(&self) -> Option<&dyn ObligationFork>
+    pub fn forking(&self) -> Option<&dyn ObligationFork>
     {
         self.0
             .as_deref()

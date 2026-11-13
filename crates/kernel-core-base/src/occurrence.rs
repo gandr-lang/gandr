@@ -47,7 +47,7 @@ impl Accessibility
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn unwalked() -> Self
+    pub const fn unwalked() -> Self
     {
         Self {
             stratification: Stratification::Stratified,
@@ -63,7 +63,7 @@ impl Accessibility
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         stratification: Stratification,
         parameters: Vec<Variance>,
         result: Maybe<StagedPosition, Unstaged>,
@@ -82,7 +82,7 @@ impl Accessibility
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn following(
+    pub fn following(
         self,
         position: StagedPosition,
     ) -> Self
@@ -99,7 +99,7 @@ impl Accessibility
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn result(&self) -> Maybe<StagedPosition, Unstaged>
+    pub const fn result(&self) -> Maybe<StagedPosition, Unstaged>
     {
         self.result
     }
@@ -121,7 +121,7 @@ impl Accessibility
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn parameters(&self) -> &[Variance]
+    pub fn parameters(&self) -> &[Variance]
     {
         &self.parameters
     }
@@ -258,7 +258,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn lone(position: ConstantIndex) -> Self
+    pub fn lone(position: ConstantIndex) -> Self
     {
         let end = ConstantIndex::from(usize::from(position).saturating_add(1));
         Self {
@@ -274,7 +274,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         first: ConstantIndex,
         families: ConstantIndex,
         end: ConstantIndex,
@@ -292,7 +292,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn first(self) -> ConstantIndex
+    pub const fn first(self) -> ConstantIndex
     {
         self.first
     }
@@ -302,7 +302,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn families(self) -> ConstantIndex
+    pub const fn families(self) -> ConstantIndex
     {
         self.families
     }
@@ -313,7 +313,7 @@ impl Block
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn end(self) -> ConstantIndex
+    pub const fn end(self) -> ConstantIndex
     {
         self.end
     }
@@ -323,7 +323,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn extend_to(
+    pub const fn extend_to(
         &mut self,
         end: ConstantIndex,
     )
@@ -337,7 +337,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn membership(
+    pub fn membership(
         self,
         position: ConstantIndex,
     ) -> Membership
