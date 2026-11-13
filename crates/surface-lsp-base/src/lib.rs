@@ -12,7 +12,8 @@
 //! edits of a held text, a notebook's cells, the syntax tree view, a session
 //! handed across builds, and the process's one grammar. The document's
 //! outline, the hints of unused names, the imports a missing name needs, and
-//! the hub's watch of the files on disk with its inbox complete it.
+//! the hub's watch of the files on disk with its inbox complete it. The heads
+//! of a text, read off its declaring forms, are here too.
 //!
 //! The server's families and its loop stay in `gandr-surface-lsp`. That crate
 //! re-exports each item of this crate that it exported before, at its old
@@ -68,6 +69,7 @@ pub mod protocol;
 pub mod quiet;
 pub mod rpc;
 pub mod session_trace;
+pub mod signature;
 pub mod syntax;
 pub mod tokens;
 pub mod toolkit;

@@ -3925,6 +3925,12 @@ INSERT INTO purpose VALUES('surface-lsp-base','session_trace::Replayed','struct'
 INSERT INTO purpose VALUES('surface-lsp-base','session_trace::SessionTrace','struct','Where a connection''s trace stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','session_trace::TraceLine','struct','A line of a trace, counted from one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','session_trace::Unwritten','struct','A trace the server stopped writing: its file, and why.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','signature::Calling','enum','How a call is written: a value''s call as a juxtaposed spine, a family''s application in its parentheses.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','signature::Head','type_alias','One head: the source holding its name and the name''s span in that source''s own text, and the head written there.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','signature::ParameterSlot','struct','The place of a parameter among the parameters of a head, counted from the first.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','signature::Signature','struct','A head: its label, each parameter''s place in the label, and the documentation written for it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','signature::heads_among','function','The heads that the forms among some top-level forms of a tree, and every form inside them, write, each keyed by the source and the name tile of its name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','signature::parameters_documented','function','The documentation of each parameter of some heads that has any, by the source and the span of its first tile.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','syntax::TREE_SCHEME','constant','The scheme of the virtual documents the syntax tree view is served under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','syntax::printed','function','The molded tree of `text`, printed: one line per node, then the parser''s obligations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','tokens::ResultId','struct','What names a full answer to a later request that holds it: for a token stream, the hexadecimal BLAKE3 digest of its integers, each in little-endian bytes; for any other answer, of its JSON text.',NULL,'fits','sound',NULL);
