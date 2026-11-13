@@ -94,6 +94,12 @@ site = [
   { file = ".config/integration/watch.bash", scope = "watch_file", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "landing:watch: each culprit whose defect is open, one comment on it; a new defect is issue:file's row, and its claim is claim:take's" },
   { file = ".config/integration/watch.bash", scope = "watch_token", api = "graphql", identity = "write", calls = 1, points = 0, measured = "free", hour = 12, trigger = "landing:watch: a new head of landing in a service with no GH_TOKEN, one gh auth token, a local read with no request (#6644)" },
 
+  # The gate on another host (#6996): the far side reads the reader's token
+  # from the far host's gh, once in each probe and once in each far gate,
+  # when the calling host hands it none.
+  { file = ".config/gate-scope/far.bash", scope = "-", api = "graphql", identity = "write", calls = 2, points = 0, measured = "free", hour = 16, trigger = "gate:remote: each probe of a host and each far gate in an ssh session with no GH_TOKEN, one gh auth token of the reader, a local read with no request" },
+  { file = ".config/gate-scope/remote.bash", scope = "-", api = "graphql", identity = "write", calls = 1, points = 0, measured = "free", hour = 8, trigger = "gate:remote: each run, one gh auth token of the reader on the calling host to hand to the far gate, a local read with no request" },
+
   # The ledger check: a gate on a host and in CI.
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "check:ledger in a seat's gate: one aliased batch of the issues rows name" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:ledger in each pull request's CI run" },

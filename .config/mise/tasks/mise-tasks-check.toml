@@ -176,6 +176,28 @@ if [[ $tree == "$(git rev-parse 'origin/main^{tree}' 2> /dev/null)" ]]; then
 fi
 {% endraw %}'''
 
+# The landing's gate on another host of ours (#6996,
+# `.config/gate-scope/remote.bash`). A gate beside the integration cycle
+# takes 298 s at p50 against 159 s with no cycle, and the wait for a slot is
+# 0 s at p90 on each host, so the load chooses the host (`choose.jq`). The
+# task runs `mise run check` on the head in a clone of the lane on the host
+# with the least load for each core and a free slot, and records the pass
+# here under the head's tree, with the host's name. `pr:open` and `pr:land`
+# read that record as a local one. The hosts are the factory's
+# configuration, `gate-hosts.json` under `$XDG_CONFIG_HOME/gandr`. Its name
+# keeps it out of the `check:*` glob, so no gate runs it.
+["gate:remote"]
+description = "The landing's gate of the branch's head on the host of ours with the least load for each core and a free gate slot, its pass recorded here"
+tools.jq = "1.8.1"
+usage = '''
+arg "[host]" help="the host, a name of the configuration's hosts; by default the host with the least load for each core and a free gate slot"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+exec .config/gate-scope/remote.bash ${usage_host:+"$usage_host"}
+{% endraw %}'''
+
 # The local gate's time against its budget (#5215). The gate on main runs
 # every check over the whole workspace, so its time compares from one run to
 # the next. The task reads the newest record of `gate:all` on the tree of
@@ -2226,6 +2248,10 @@ run = ".config/mise/host-lock-cases.bash"
 # (#6648): a `//` edit in a crate selects neither `check:doc` nor
 # `check:corpus`, a `///` edit, a blank line or one token of code beside a
 # comment selects both, and a corpus comment edit selects `check:prose`.
+# `.config/gate-scope/remote-cases.bash` runs the gate on another host
+# (#6996) through a stand-in `ssh` and `mise`: a far pass comes here with its
+# host after the push, a far red records nothing, work beyond HEAD is refused
+# and the probe counts the free slots.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group or the `landing`
 # list naming no check, fails it. So does a check that builds `GATE_SCOPE`
@@ -2240,11 +2266,12 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq --raw reads.jq
+.config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq --raw reads.jq --raw choose.jq
 .config/gate-scope/carry-cases.bash
 .config/gate-scope/select-cases.bash
 .config/gate-scope/tests-cases.bash
 .config/gate-scope/comments-cases.bash
+.config/gate-scope/remote-cases.bash
 tasks=$(mise tasks ls --json)
 mapfile -t scoped < <(jq -r '.reads.checks // {} | keys[]' .config/gate-scope/table.json)
 findings=$(
