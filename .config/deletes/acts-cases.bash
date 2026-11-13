@@ -17,7 +17,10 @@
 #     reads as deleted;
 #   - a helper of a test module whose twin is an item of a fixture module
 #     reads as `moved` (#7103), and an item whose twin is a test still reads
-#     as deleted.
+#     as deleted;
+#   - an associated function that becomes a free function of its module, and
+#     a free function that becomes an associated function, read as `moved`
+#     (#6904).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/../cases/scratch.bash"
@@ -53,6 +56,8 @@ pub fn right(&self) -> u32 { self.right }
 pub fn guarded() -> u32 { 7 }
 pub fn gated() -> u32 { 8 }
 fn seed() -> u32 { 9 }
+pub fn widen(x: u32) -> u32 { x << 1 }
+pub fn narrow(x: u32) -> u32 { x >> 1 }
 EOF
 printf 'pub fn idle() {}\n' > "$repo/crates/k/src/c.rs"
 git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m base
@@ -79,6 +84,8 @@ pub fn guarded() -> u32 { 7 }
 #[cfg(test)]
 pub fn gated() -> u32 { 8 }
 pub fn seed() -> u32 { 9 }
+pub fn widen(x: u32) -> u32 { x << 1 }
+pub fn narrow(x: u32) -> u32 { x >> 1 }
 EOF
 
 item() { jq -n -c --arg id "$1" --arg kind "$2" --arg file "$3" --argjson start "$4" --argjson end "$5" --argjson test "${6:-false}" \
@@ -96,6 +103,8 @@ item() { jq -n -c --arg id "$1" --arg kind "$2" --arg file "$3" --argjson start 
   item k::a::guarded fn crates/k/src/a.rs 15 16
   item k::a::gated fn crates/k/src/a.rs 17 17
   item k::a::tests::seed fn crates/k/src/a.rs 18 18 true
+  item k::a::Span::widen assoc-fn crates/k/src/a.rs 19 19
+  item k::a::narrow fn crates/k/src/a.rs 20 20
   item k::a::written fn '' 1 1
   item k::c::idle fn crates/k/src/c.rs 1 1
 } | jq -s -c . > "$work/base.json"
@@ -111,6 +120,8 @@ item() { jq -n -c --arg id "$1" --arg kind "$2" --arg file "$3" --argjson start 
   item k::b::guarded fn crates/k/src/b.rs 15 17
   item k::b::gated fn crates/k/src/b.rs 18 19
   item k::fixture::seed fn crates/k/src/b.rs 20 20
+  item k::b::widen fn crates/k/src/b.rs 21 21
+  item k::b::Span::narrow assoc-fn crates/k/src/b.rs 22 22
   item k::b::written fn '' 1 1
   item k::c::idle fn crates/k/src/c.rs 1 1
 } | jq -s -c . > "$work/head.json"
@@ -123,7 +134,9 @@ want=$(jq -n -S -c '{
   "k::a::tests::holds": {act: "moved", at: "k::b::tests::holds"},
   "k::a::Span::left": {act: "moved", at: "k::b::Span::left"},
   "k::a::Span::right": {act: "moved", at: "k::b::Span::right"},
-  "k::a::guarded": {act: "moved", at: "k::b::guarded"}}')
+  "k::a::guarded": {act: "moved", at: "k::b::guarded"},
+  "k::a::Span::widen": {act: "moved", at: "k::b::widen"},
+  "k::a::narrow": {act: "moved", at: "k::b::Span::narrow"}}')
 if [[ $(jq -S -c 'del(.["k::a::tests::seed"])' <<< "$got") != "$want" ]]; then
   fail "#7058: the acts of the items that leave" "$want" "$got"
 fi
@@ -135,4 +148,4 @@ if [[ $seed != '{"act":"moved","at":"k::fixture::seed"}' ]]; then
 fi
 
 (( failed == 0 )) || exit 1
-echo "deletes acts OK: a move reads as moved across the visibility, the comments, the lines, a use line and a module path; a new name reads as renamed; two getters alike take their own places; a test helper reads as moved into a fixture item; a changed body, an item that stands nowhere, a twin that is a test, a twin that the base holds and an item with no file read as deleted"
+echo "deletes acts OK: a move reads as moved across the visibility, the comments, the lines, a use line and a module path; a new name reads as renamed; two getters alike take their own places; a test helper reads as moved into a fixture item; a function that leaves its impl block or goes into one reads as moved; a changed body, an item that stands nowhere, a twin that is a test, a twin that the base holds and an item with no file read as deleted"

@@ -14,6 +14,10 @@
 # `#[inline]` to a small function. A false match needs an item of the head
 # with the same tokens, so the text stands in the head.
 #
+# An associated function and a free function compare as one kind. A
+# function that leaves its `impl` block for its module, or that goes the
+# other way, keeps its tokens, so it reads as moved (#6904).
+#
 # A body of a test at the base matches a head item of either flag (#7103):
 # the library unit holds an item of a fixture module only when the run turns
 # on the feature, so a helper that moves from a test module into a fixture
@@ -170,7 +174,8 @@ perl -e '
     my @lines = split /\n/, $text, -1;
     next if $start < 1 or $end > @lines or $start > $end;
     my $name = name_of($id);
-    my $key = join "\0", $kind, body(join("\n", @lines[$start - 1 .. $end - 1]), $name);
+    # An associated function compares as a function (#6904).
+    my $key = join "\0", ($kind eq "assoc-fn" ? "fn" : $kind), body(join("\n", @lines[$start - 1 .. $end - 1]), $name);
     if ($side eq "head") {
       push @{$added{"$test\0$key"}}, $id;
     } else {

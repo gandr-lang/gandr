@@ -566,7 +566,7 @@ impl<'source> Lowerer<'_, 'source>
             record = defined;
             held = Some(member);
         }
-        let entries = match Models::new(self).stated_form(
+        let entries = match Models::new(self.host()).stated_form(
             site,
             record,
             Former::TelescopeType,
@@ -683,7 +683,7 @@ impl<'source> Lowerer<'_, 'source>
                 name: label,
             });
         }
-        if let Maybe::Present(_) = Models::new(self).dependent_links(entries)? {
+        if let Maybe::Present(_) = Models::new(self.host()).dependent_links(entries)? {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::DependentPatch)));
         }
 
@@ -726,7 +726,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let base = match ModelsRef::new(self).mint_record_type(fields, sink, origin) {
+        let base = match ModelsRef::new(self.host_ref()).mint_record_type(fields, sink, origin) {
             Maybe::Present(Lowered::ValueType(base)) => base,
             minted @ (Maybe::Present(_) | Maybe::Absent(_)) => return minted,
         };
@@ -803,8 +803,11 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Absent(_) = cursor.at(TileName::DOT) {
             return Err(declined());
         }
-        let entries =
-            ModelsRef::new(self).dotted_entries(written, &mut cursor, TileName::EQUALS)?;
+        let entries = ModelsRef::new(self.host_ref()).dotted_entries(
+            written,
+            &mut cursor,
+            TileName::EQUALS,
+        )?;
         match arrange(written, entries)? {
             Arranged::Labelled(entries) => Ok(entries),
             Arranged::Positional(_) => Err(declined()),

@@ -194,14 +194,16 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::PATH,
             reading: Reading::ValueType(Frame::Outermost),
         };
-        let domain_bundle = ModelsRef::new(self).theory_bundle(site(domain.named), domain)?;
-        let codomain_bundle = ModelsRef::new(self).theory_bundle(site(codomain.named), codomain)?;
+        let domain_bundle =
+            ModelsRef::new(self.host_ref()).theory_bundle(site(domain.named), domain)?;
+        let codomain_bundle =
+            ModelsRef::new(self.host_ref()).theory_bundle(site(codomain.named), codomain)?;
         let (
             Maybe::Present(Lowered::ValueType(domain_type)),
             Maybe::Present(Lowered::ValueType(codomain_type)),
         ) = (
-            ModelsRef::new(self).mint_bundle_fixed(&domain_bundle, &[], sink, origin),
-            ModelsRef::new(self).mint_bundle_fixed(&codomain_bundle, &[], sink, origin),
+            ModelsRef::new(self.host_ref()).mint_bundle_fixed(&domain_bundle, &[], sink, origin),
+            ModelsRef::new(self.host_ref()).mint_bundle_fixed(&codomain_bundle, &[], sink, origin),
         )
         else {
             return Err(unminted);
@@ -744,7 +746,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let label = (bundle.dependent() == arity::Dependent(false))
             .then(|| FieldLabel::from(alloc::string::String::from(member.name.as_ref())));
-        ModelsRef::<Self>::project(
+        super::arity::project(
             held,
             arity::Observed {
                 index: usize::from(component),

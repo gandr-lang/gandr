@@ -3878,7 +3878,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// trivial.
-    const fn enter(
+    #[expect(
+        clippy::missing_const_for_fn,
+        reason = "the expression crate of #6904 reaches the context through a trait, and a trait call is not const"
+    )]
+    fn enter(
         &mut self,
         form: LayoutBlock,
     )
@@ -15021,14 +15025,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // Only a telescope type or parentheses around one write a telescope.
         let written = |lowerer: &Self, position: usize| {
             lowerer
-                .cx
+                .cx()
                 .operands
                 .entries()
                 .get(position)
-                .and_then(|&argument| lowerer.cx.tree.node(argument))
+                .and_then(|&argument| lowerer.cx().tree.node(argument))
                 .is_some_and(|node| {
                     matches!(
-                        shape_of(lowerer.cx.pbg, node),
+                        shape_of(lowerer.cx().pbg, node),
                         Ok(Shape::Form {
                             former: Former::TelescopeType | Former::ParenthesizedType,
                             ..
@@ -16260,7 +16264,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   whose exit was inferred and minted as a computation is recorded with
     ///   that exit, `return` when the bridge is the inserted one and `become`
     ///   otherwise; a `return` crossing a handler's frame is minted as the
-    ///   capture [`Exits::unwind`] writes, and that capture recorded as the
+    ///   capture [`exits::unwind`] writes, and that capture recorded as the
     ///   exit; a `break`'s returner is recorded as a break; a loop end written
     ///   without an exit is bound and its loop run again, as
     ///   [`ExitsRef::rerun`] writes it; a constructor awaiting its data
@@ -16519,7 +16523,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Plan::Scope(ref scoped) = *plan
             && let Maybe::Present(Lowered::Computation(scope)) = minted
-            && let Some((owner, laws)) = Capability::<Self>::scope_laws(scoped, scope, sink, origin)
+            && let Some((owner, laws)) = capability::scope_laws(scoped, scope, sink, origin)
         {
             self.cx_mut()
                 .handler_laws
@@ -16597,7 +16601,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Bridge::Inserted(Insertion::Nested | Insertion::Bound | Insertion::Endpoint),
                 Maybe::Present(Lowered::Computation(call)),
                 Some(labels),
-            ) => ModelsRef::<Self>::mint_record_of_outputs(call, labels, sink, origin),
+            ) => arity::mint_record_of_outputs(call, labels, sink, origin),
             (_, minted, _) => minted,
         };
         // A call of no arguments is its head's force, so that force is the
@@ -16643,9 +16647,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(Lowered::Computation(returned))
                 if self.cx().crossing.contains(&position) =>
             {
-                Maybe::Present(Lowered::Computation(Exits::<Self>::unwind(
-                    sink, returned, origin,
-                )))
+                Maybe::Present(Lowered::Computation(exits::unwind(sink, returned, origin)))
             },
             bridged @ (Maybe::Present(_) | Maybe::Absent(_)) => bridged,
         };
@@ -17075,7 +17077,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     ModelsRef::new(self.host_ref()).mint_expansion(family, arguments, sink, origin);
                 let context = |lowerer: &Self, frame| -> Vec<String> {
                     lowerer
-                        .cx
+                        .cx()
                         .scope
                         .telescope_names(frame, lowerer.telescope_at(origin.node()))
                         .into_iter()
@@ -17167,7 +17169,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::TelescopeTransport(transported) => IdentitiesRef::new(self.host_ref())
                 .mint_telescope_transport(transported, sink, origin),
             Plan::Capability(ref authority, grade, region) => {
-                Capability::<Self>::mint_capability(authority, grade, region, sink, origin)
+                capability::mint_capability(authority, grade, region, sink, origin)
             },
             Plan::Effectful(ref row, argument) => {
                 CapabilityRef::new(self.host_ref()).mint_effectful(row, argument, sink, origin)
@@ -19574,13 +19576,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   name is written, `thunk (λ … λ. fix. λ … λ. b)`, and a recursive tail
     ///   of no parameter its body, `thunk (fix. b)`, claiming structural
     ///   descent when a call claims it and partial otherwise; a written-through
-    ///   method's `b` runs under the hold of its receiver
-    ///   [`Capability::hold_body`] mints, and a body whose parameters stand at
-    ///   a session type under their placements [`CapabilityRef::place_body`]
-    ///   mints, outside the hold; its declared type is `+U (A1 -> … -> An ->
-    ///   C)`, one arrow per parameter with the binder tile's origin and `+U`
-    ///   the declaration form's, an arrow dependent where a later type names
-    ///   its parameter, and a written-through method's `C` the `F (T × R)`
+    ///   method's `b` runs under the hold of its receiver [`method::hold_body`]
+    ///   mints, and a body whose parameters stand at a session type under their
+    ///   placements [`CapabilityRef::place_body`] mints, outside the hold; its
+    ///   declared type is `+U (A1 -> … -> An -> C)`, one arrow per parameter
+    ///   with the binder tile's origin and `+U` the declaration form's, an
+    ///   arrow dependent where a later type names its parameter, and a
+    ///   written-through method's `C` the `F (T × R)`
     ///   [`CapabilityRef::written_result`] mints; a tail missing a parameter or
     ///   result type mints the body alone; nothing is minted when the block did
     ///   not lower.
@@ -19638,7 +19640,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         if let Maybe::Present(receiver) = function.receiver {
-            body = Capability::<Self>::hold_body(receiver, body, sink, origin);
+            body = method::hold_body(receiver, body, sink, origin);
         }
         body = match CapabilityRef::new(self.host_ref()).place_body(function.endpoints, body, sink)
         {

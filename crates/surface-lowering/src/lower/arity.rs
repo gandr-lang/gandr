@@ -14,6 +14,8 @@ pub(super) use gandr_surface_lowering_base::lower::arity::Thunked;
 pub(super) use gandr_surface_lowering_base::lower::arity::arrange;
 pub(super) use gandr_surface_lowering_base::lower::arity::separated;
 pub(super) use gandr_surface_lowering_model::lower::arity::Computed;
+pub(super) use gandr_surface_lowering_model::lower::arity::mint_record_of_outputs;
+pub(super) use gandr_surface_lowering_model::lower::arity::project;
 
 #[cfg(test)]
 mod tests;

@@ -1194,51 +1194,48 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
     }
 }
 
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Exits<'_, F>
+/// The `return` minted as `returned`, written in a handled subject, as the
+/// capture that leaves its body.
+///
+/// Every handler frame up to the body's delimiter is captured and
+/// discarded, and the delimiter returns the value.
+///
+/// # Specification
+/// - requires: `returned` is the returner a `return` at `origin` minted.
+/// - ensures: a shift, inserted at `origin`, over `returned` with every free
+///   index raised past the shift's own binder, which binds the captured stack
+///   the body never resumes; every node the raise minted at its source's
+///   origin.
+/// - provides: the mint half of a `return` across a handler's frame.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `return` of a parameter in a subject leaves its
+///   function with the parameter's value, the return clause not run.
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+#[spec(ensures: |ret| matches!(sink.arena.computation(ret), Some(&Computation::Shift(_))))]
+#[inline]
+pub fn unwind(
+    sink: &mut Sink<'_>,
+    returned: ComputationId,
+    origin: Origin,
+) -> ComputationId
 {
-    /// The `return` minted as `returned`, written in a handled subject, as the
-    /// capture that leaves its body.
-    ///
-    /// Every handler frame up to the body's delimiter is captured and
-    /// discarded, and the delimiter returns the value.
-    ///
-    /// # Specification
-    /// - requires: `returned` is the returner a `return` at `origin` minted.
-    /// - ensures: a shift, inserted at `origin`, over `returned` with every
-    ///   free index raised past the shift's own binder, which binds the
-    ///   captured stack the body never resumes; every node the raise minted at
-    ///   its source's origin.
-    /// - provides: the mint half of a `return` across a handler's frame.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a `return` of a parameter in a subject leaves its
-    ///   function with the parameter's value, the return clause not run.
-    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
-    #[spec(ensures: |ret| matches!(sink.arena.computation(ret), Some(&Computation::Shift(_))))]
-    #[inline]
-    pub fn unwind(
-        sink: &mut Sink<'_>,
-        returned: ComputationId,
-        origin: Origin,
-    ) -> ComputationId
-    {
-        let mark = sink.arena.watermark();
-        let mut carried = Vec::new();
-        let raised = gandr_core_term::shift_computation_under(
-            sink.arena,
-            returned,
-            Binders::NONE,
-            Binders::from(1_u32),
-        )
-        .settle_traced(sink.arena, &mut carried);
-        record_copies(sink, mark, &carried, origin);
-        let id = sink.arena.computation_shift(raised);
-        sink.origins
-            .record_computation(id, origin.inserted(Insertion::Unwind));
-        id
-    }
+    let mark = sink.arena.watermark();
+    let mut carried = Vec::new();
+    let raised = gandr_core_term::shift_computation_under(
+        sink.arena,
+        returned,
+        Binders::NONE,
+        Binders::from(1_u32),
+    )
+    .settle_traced(sink.arena, &mut carried);
+    record_copies(sink, mark, &carried, origin);
+    let id = sink.arena.computation_shift(raised);
+    sink.origins
+        .record_computation(id, origin.inserted(Insertion::Unwind));
+    id
 }
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>

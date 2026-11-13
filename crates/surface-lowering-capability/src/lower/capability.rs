@@ -2461,48 +2461,45 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     }
 }
 
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+/// Mint a capability type over `authority` at `grade`, living in `region`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the capability type whose authority restricts each host interface
+///   to the operations written of it, at `origin`.
+/// - fails: the unminted absence when an operation is no host interface's,
+///   which the classification rules out.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Capability::capability_type`].
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_type_lowers_to_its_authority`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(Lowered::ValueType(id)) => sink.origins.value_type(id) == Maybe::Present(origin),
+    | Maybe::Present(_) => false,
+    | Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn mint_capability(
+    authority: &Authority,
+    grade: CapabilityGrade,
+    region: Region,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<Lowered, lowered::Absent>
 {
-    /// Mint a capability type over `authority` at `grade`, living in `region`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the capability type whose authority restricts each host
-    ///   interface to the operations written of it, at `origin`.
-    /// - fails: the unminted absence when an operation is no host interface's,
-    ///   which the classification rules out.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Capability::capability_type`].
-    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_type_lowers_to_its_authority`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present(Lowered::ValueType(id)) => sink.origins.value_type(id) == Maybe::Present(origin),
-        | Maybe::Present(_) => false,
-        | Maybe::Absent(_) => true,
-    })]
-    #[inline]
-    pub fn mint_capability(
-        authority: &Authority,
-        grade: CapabilityGrade,
-        region: Region,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let row = match sink.host(origin) {
-            Maybe::Present(table) => table.authority(authority),
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let Ok(row) = row
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let id = sink.arena.value_type_capability(row, grade, region);
-        sink.origins.record_value_type(id, origin);
+    let row = match sink.host(origin) {
+        Maybe::Present(table) => table.authority(authority),
+        Maybe::Absent(reason) => return Maybe::Absent(reason),
+    };
+    let Ok(row) = row
+    else {
+        return Maybe::Absent(lowered::Absent::Unminted);
+    };
+    let id = sink.arena.value_type_capability(row, grade, region);
+    sink.origins.record_value_type(id, origin);
 
-        Maybe::Present(Lowered::ValueType(id))
-    }
+    Maybe::Present(Lowered::ValueType(id))
 }
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
@@ -3197,80 +3194,77 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
 {
 }
 
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+/// The laws the minted scope `scope` owes the theory `scoped` handles,
+/// each read through the scope's clauses, beside the declaration holding
+/// the scope.
+///
+/// # Specification
+/// - requires: `scope` is the scope [`CapabilityRef::mint_scope`] minted for
+///   `scoped`.
+/// - ensures: for a scope over a theory whose clauses it writes, its owner and
+///   one law per rule, then per stated law, of the theory whose operations each
+///   have a clause, in the theory's order, both sides read by
+///   [`handler::obligation`] and every node they mint at `origin`, each law's
+///   name recorded at the scope and its place; nothing for a scope over a host
+///   interface, nor for one a model answers, whose module's ascription states
+///   the laws. A law naming an operation the scope has no clause for is left to
+///   the coverage refusal the scope meets first.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a scope over a theory with two laws owes both, a scope
+///   over one with none owes nothing, a scope naming a model owes nothing, and
+///   a stated law is owed after the rules under its name.
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref laws)| laws.iter().all(|law| law.scope == scope)))]
+#[inline]
+pub fn scope_laws(
+    scoped: &Scoped,
+    scope: ComputationId,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Option<(ConstantIndex, Vec<HandlerLaw>)>
 {
-    /// The laws the minted scope `scope` owes the theory `scoped` handles,
-    /// each read through the scope's clauses, beside the declaration holding
-    /// the scope.
-    ///
-    /// # Specification
-    /// - requires: `scope` is the scope [`CapabilityRef::mint_scope`] minted
-    ///   for `scoped`.
-    /// - ensures: for a scope over a theory whose clauses it writes, its owner
-    ///   and one law per rule, then per stated law, of the theory whose
-    ///   operations each have a clause, in the theory's order, both sides read
-    ///   by [`handler::obligation`] and every node they mint at `origin`, each
-    ///   law's name recorded at the scope and its place; nothing for a scope
-    ///   over a host interface, nor for one a model answers, whose module's
-    ///   ascription states the laws. A law naming an operation the scope has no
-    ///   clause for is left to the coverage refusal the scope meets first.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a scope over a theory with two laws owes both, a
-    ///   scope over one with none owes nothing, a scope naming a model owes
-    ///   nothing, and a stated law is owed after the rules under its name.
-    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
-    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
-    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref laws)| laws.iter().all(|law| law.scope == scope)))]
-    #[inline]
-    pub fn scope_laws(
-        scoped: &Scoped,
-        scope: ComputationId,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Option<(ConstantIndex, Vec<HandlerLaw>)>
-    {
-        let (&Interface::Theory(ref theory), &Handlers::Written(_)) =
-            (&scoped.interface, &scoped.handlers)
-        else {
-            return None;
-        };
-        let Some(&Computation::Scope { ref clauses, .. }) = sink.arena.computation(scope)
-        else {
-            return None;
-        };
-        let bodies: BTreeMap<OperationName, ComputationId> = clauses
-            .iter()
-            .map(|clause| (clause.operation.clone(), clause.body))
-            .collect();
-        let mark = sink.arena.watermark();
-        let laws = theory
-            .laws
-            .iter()
-            .filter_map(|law| {
-                let left = handler::obligation(sink.arena, (&law.read, &law.read.left), &bodies)?;
-                let right = handler::obligation(sink.arena, (&law.read, &law.read.right), &bodies)?;
-                sink.origins
-                    .record_scope_law(scope, law.rule, law.name.clone());
-                Some(HandlerLaw {
-                    scope,
-                    rule: law.rule,
-                    left,
-                    right,
-                })
+    let (&Interface::Theory(ref theory), &Handlers::Written(_)) =
+        (&scoped.interface, &scoped.handlers)
+    else {
+        return None;
+    };
+    let Some(&Computation::Scope { ref clauses, .. }) = sink.arena.computation(scope)
+    else {
+        return None;
+    };
+    let bodies: BTreeMap<OperationName, ComputationId> = clauses
+        .iter()
+        .map(|clause| (clause.operation.clone(), clause.body))
+        .collect();
+    let mark = sink.arena.watermark();
+    let laws = theory
+        .laws
+        .iter()
+        .filter_map(|law| {
+            let left = handler::obligation(sink.arena, (&law.read, &law.read.left), &bodies)?;
+            let right = handler::obligation(sink.arena, (&law.read, &law.read.right), &bodies)?;
+            sink.origins
+                .record_scope_law(scope, law.rule, law.name.clone());
+            Some(HandlerLaw {
+                scope,
+                rule: law.rule,
+                left,
+                right,
             })
-            .collect();
-        native::record_since(
-            sink,
-            mark,
-            origin,
-            Maybe::Absent(native::rooted::Absent::Unminted),
-        );
-        Some((theory.owner, laws))
-    }
+        })
+        .collect();
+    native::record_since(
+        sink,
+        mark,
+        origin,
+        Maybe::Absent(native::rooted::Absent::Unminted),
+    );
+    Some((theory.owner, laws))
 }
 
 /// `subject`, the subject of a scope over a theory, normalised by `rules`,

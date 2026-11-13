@@ -4229,69 +4229,69 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
 
         Maybe::Present(sink.computation(id, origin))
     }
+}
 
-    /// Mint a call of a function returning a group of outputs as the record
-    /// of its outputs: every output bound, and the record of them returned.
-    ///
-    /// # Specification
-    /// - requires: `call` is the minted call; `labels` holds one entry per
-    ///   output, in order.
-    /// - ensures: the many-value bind of the call's outputs into the return of
-    ///   the record labelling each by its name, when every output is named, and
-    ///   of the tuple of them otherwise, the first output outermost; every node
-    ///   with the written origin.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a let of a two-output call binds the record of its
-    ///   named outputs, and of unnamed ones the tuple.
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    #[inline]
-    pub fn mint_record_of_outputs(
-        call: ComputationId,
-        labels: &[Option<FieldLabel>],
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let count = labels.len();
-        let mut values = Vec::with_capacity(count);
-        for index in 0 .. count {
-            let Some(depth) = count
-                .checked_sub(index)
-                .and_then(|after| after.checked_sub(1_usize))
-                .and_then(|depth| u32::try_from(depth).ok())
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
-            let value = sink
-                .arena
-                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
-            sink.origins.record_value(value, origin);
-            values.push(value);
-        }
-        let named: Option<BTreeMap<FieldLabel, ValueId>> = labels
-            .iter()
-            .zip(&values)
-            .map(|(label, &value)| label.clone().map(|label| (label, value)))
-            .collect();
-        let packed = match named {
-            Some(fields) => sink.arena.value_record(fields),
-            None => sink.arena.value_tuple(&values),
+/// Mint a call of a function returning a group of outputs as the record
+/// of its outputs: every output bound, and the record of them returned.
+///
+/// # Specification
+/// - requires: `call` is the minted call; `labels` holds one entry per output,
+///   in order.
+/// - ensures: the many-value bind of the call's outputs into the return of the
+///   record labelling each by its name, when every output is named, and of the
+///   tuple of them otherwise, the first output outermost; every node with the
+///   written origin.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a let of a two-output call binds the record of its named
+///   outputs, and of unnamed ones the tuple.
+/// - witness: `gandr-surface-lowering::lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+#[inline]
+pub fn mint_record_of_outputs(
+    call: ComputationId,
+    labels: &[Option<FieldLabel>],
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<Lowered, lowered::Absent>
+{
+    let count = labels.len();
+    let mut values = Vec::with_capacity(count);
+    for index in 0 .. count {
+        let Some(depth) = count
+            .checked_sub(index)
+            .and_then(|after| after.checked_sub(1_usize))
+            .and_then(|depth| u32::try_from(depth).ok())
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
         };
-        sink.origins.record_value(packed, origin);
-        let returned = sink.arena.computation_return(packed);
-        sink.origins.record_computation(returned, origin);
-        let id = sink.arena.computation_bind_all(
-            call,
-            gandr_core_term::ComponentCount::from(count),
-            returned,
-        );
-
-        Maybe::Present(sink.computation(id, origin))
+        let value = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+        sink.origins.record_value(value, origin);
+        values.push(value);
     }
+    let named: Option<BTreeMap<FieldLabel, ValueId>> = labels
+        .iter()
+        .zip(&values)
+        .map(|(label, &value)| label.clone().map(|label| (label, value)))
+        .collect();
+    let packed = match named {
+        Some(fields) => sink.arena.value_record(fields),
+        None => sink.arena.value_tuple(&values),
+    };
+    sink.origins.record_value(packed, origin);
+    let returned = sink.arena.computation_return(packed);
+    sink.origins.record_computation(returned, origin);
+    let id = sink.arena.computation_bind_all(
+        call,
+        gandr_core_term::ComponentCount::from(count),
+        returned,
+    );
+
+    Maybe::Present(sink.computation(id, origin))
 }
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
@@ -5198,7 +5198,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             return Maybe::Present(Lowered::Computation(id));
         };
         let record = self.stated_record(stated, label);
-        Self::project(held, selected, record, sink, origin).map(Lowered::Computation)
+        project(held, selected, record, sink, origin).map(Lowered::Computation)
     }
 
     /// The label to project a selection at when the type over labels at
@@ -5280,7 +5280,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             let projected = match field.projection {
                 Projection::Stated(observed, stated) => {
                     let record = self.stated_record(stated, &field.label);
-                    match Self::project(held, observed, record, sink, origin) {
+                    match project(held, observed, record, sink, origin) {
                         Maybe::Present(projected) => projected,
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     }
@@ -5309,66 +5309,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         }
 
         Maybe::Present(Lowered::Computation(body))
-    }
-
-    /// Project the entry `selected` names off the record or the dependent
-    /// record `held`.
-    ///
-    /// # Specification
-    /// - requires: `held` is minted; `record`, when present, is the label of
-    ///   the selected entry of a record no entry depends on.
-    /// - ensures: the record projection at `record`'s label when present;
-    ///   otherwise `held` projected at component one once per entry before the
-    ///   selected one, each projection but the last read as the value it
-    ///   returns, then at component zero unless the entry is the last;
-    ///   component zero of a type of one entry; every node with `origin`.
-    /// - provides: the one projection a selection and a model's carrier share.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_select`], and a model's carrier read
-    ///   off its nesting.
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
-    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
-    #[inline]
-    pub fn project(
-        mut held: ValueId,
-        selected: Observed,
-        record: Option<&FieldLabel>,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ComputationId, lowered::Absent>
-    {
-        if let Some(label) = record {
-            let id = sink
-                .arena
-                .computation_record_projection(held, label.clone());
-            sink.origins.record_computation(id, origin);
-            return Maybe::Present(id);
-        }
-        let mut sides = path(selected);
-        if sides.is_empty() {
-            sides.push(Side::Left);
-        }
-        let mut projected = None;
-        for side in sides {
-            if let Some(inner) = projected {
-                held = sink.arena.value_returned(inner);
-                sink.origins.record_value(held, origin);
-            }
-            let component = gandr_kernel_term::Component::from(match side {
-                Side::Left => 0_usize,
-                Side::Right => 1_usize,
-            });
-            let id = sink.arena.computation_tuple_projection(held, component);
-            sink.origins.record_computation(id, origin);
-            projected = Some(id);
-        }
-
-        projected.map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present)
     }
 
     /// Whether the entries of a type over labels, `binders` its written
@@ -5645,4 +5585,64 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
 
         Maybe::Present(Lowered::CompType(id))
     }
+}
+
+/// Project the entry `selected` names off the record or the dependent
+/// record `held`.
+///
+/// # Specification
+/// - requires: `held` is minted; `record`, when present, is the label of the
+///   selected entry of a record no entry depends on.
+/// - ensures: the record projection at `record`'s label when present; otherwise
+///   `held` projected at component one once per entry before the selected one,
+///   each projection but the last read as the value it returns, then at
+///   component zero unless the entry is the last; component zero of a type of
+///   one entry; every node with `origin`.
+/// - provides: the one projection a selection and a model's carrier share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ModelsRef::mint_select`], and a model's carrier read
+///   off its nesting.
+/// - witness: `gandr-surface-lowering::lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+/// - witness: `gandr-surface-lowering::lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+#[spec(ensures: |ret| matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
+#[inline]
+pub fn project(
+    mut held: ValueId,
+    selected: Observed,
+    record: Option<&FieldLabel>,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<ComputationId, lowered::Absent>
+{
+    if let Some(label) = record {
+        let id = sink
+            .arena
+            .computation_record_projection(held, label.clone());
+        sink.origins.record_computation(id, origin);
+        return Maybe::Present(id);
+    }
+    let mut sides = path(selected);
+    if sides.is_empty() {
+        sides.push(Side::Left);
+    }
+    let mut projected = None;
+    for side in sides {
+        if let Some(inner) = projected {
+            held = sink.arena.value_returned(inner);
+            sink.origins.record_value(held, origin);
+        }
+        let component = gandr_kernel_term::Component::from(match side {
+            Side::Left => 0_usize,
+            Side::Right => 1_usize,
+        });
+        let id = sink.arena.computation_tuple_projection(held, component);
+        sink.origins.record_computation(id, origin);
+        projected = Some(id);
+    }
+
+    projected.map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present)
 }

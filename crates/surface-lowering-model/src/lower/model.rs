@@ -2463,9 +2463,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - requires: `code` names the binder; `selected` and `record` place the
     ///   sort's field in its bundle as [`Models::carrier`] planned them.
     /// - ensures: the decode, in the fuss-free universe, of the value the
-    ///   projection [`ModelsRef::project`] mints off the binder's variable
-    ///   returns; the variable and the projection with the written origin, the
-    ///   returned code and the decode marked inserted.
+    ///   projection [`arity::project`] mints off the binder's variable returns;
+    ///   the variable and the projection with the written origin, the returned
+    ///   code and the decode marked inserted.
     /// - provides: the type a model binder's carrier denotes.
     /// - fails: never.
     /// - panics: none.
@@ -2501,7 +2501,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let projected = match Self::project(held, selected, record, sink, origin) {
+        let projected = match super::arity::project(held, selected, record, sink, origin) {
             Maybe::Present(projected) => projected,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
