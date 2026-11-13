@@ -23,7 +23,7 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 - The protocol's parameters, results and notifications, `DocumentUri` and `ContentChange` among them ([`protocol`](src/protocol.rs)).
 - `read_frame`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing ([`transport`](src/transport.rs)); requests, notifications and responses told apart, and the answers written ([`rpc`](src/rpc.rs)).
 - `Position`, `Range`, `Line` and `Character`: positions in UTF-16 code units, clamped past a line's end ([`position`](src/position.rs)).
-- `TokenStream`, `TokensEdit`, `ResultId`, `TOKEN_TYPES` and `TOKEN_MODIFIERS`: the token stream, its edits, the digest that names an answer, and the legend ([`tokens`](src/tokens.rs)).
+- `TokenStream`, `TokensEdit`, `ResultId`, `TOKEN_TYPES` and `TOKEN_MODIFIERS`: the token stream, its edits, the digest that names an answer, and the legend; `encode`, `overlapping`, `TokenModifiers` and `Resolved`: the highlighter's spans encoded as the stream, and the spans a range request sends ([`tokens`](src/tokens.rs)).
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole ([`inline`](src/inline.rs)).
 - The markup of a hover and the colours of a fragment of gandr text ([`markup`](src/markup.rs), [`fragment`](src/fragment.rs)).
 - `apply` and `edit_text`: a content change applied to a held text ([`edit`](src/edit.rs)); a notebook's cells as one document ([`notebook`](src/notebook.rs)).

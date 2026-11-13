@@ -3896,11 +3896,15 @@ INSERT INTO purpose VALUES('surface-lsp-base','signature::heads_among','function
 INSERT INTO purpose VALUES('surface-lsp-base','signature::parameters_documented','function','The documentation of each parameter of some heads that has any, by the source and the span of its first tile.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','syntax::TREE_SCHEME','constant','The scheme of the virtual documents the syntax tree view is served under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','syntax::printed','function','The molded tree of `text`, printed: one line per node, then the parser''s obligations.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','tokens::Resolved','struct','The spans of a judged copy, each written use classified by what it refers to, the uses that refer to nothing, and the modifiers each name is read with.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','tokens::ResultId','struct','What names a full answer to a later request that holds it: for a token stream, the hexadecimal BLAKE3 digest of its integers, each in little-endian bytes; for any other answer, of its JSON text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','tokens::TOKEN_MODIFIERS','constant','The advertised token modifiers, in the order a token''s modifier bits index.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','tokens::TOKEN_TYPES','constant','The advertised token types, in the order a token''s type integer indexes: the standard types, then `unresolvedReference`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','tokens::TokenModifiers','struct','A token''s modifier bits, over `TOKEN_MODIFIERS`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','tokens::TokenStream','struct','The protocol''s token stream: five integers per token.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','tokens::TokensEdit','struct','One edit of a token stream: `delete_count` integers from `start` replaced by `data`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','tokens::encode','function','The token stream of `spans` over the text `index` was built from, each span of `unresolved` sent as `unresolvedReference` and each of `marks` with its modifiers added.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','tokens::overlapping','function','The spans of `spans` overlapping the bytes from `start` up to `end`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','toolkit::forms','function','The forms of the process''s one grammar, read off it with it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','toolkit::grammar','function','The process''s one grammar, built on first use.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','toolkit::roles','function','The role table of the process''s one grammar, built with it.',NULL,'fits','sound',NULL);
