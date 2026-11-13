@@ -59,7 +59,7 @@ use crate::component::ParsedBytes;
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
 use crate::compose::SpellingCount;
-use crate::exercised::Exercised;
+use crate::entry::exercised::Exercised;
 use crate::root::SourceRoot;
 use crate::walk::Standing;
 
@@ -223,7 +223,7 @@ pub enum Shown
 ///   plain declaration, settled declaration with no kernel image, goal-shaped
 ///   and refusal-shaped unsettled declaration, enumerated against a pinned
 ///   table.
-/// - witness: `report::tests::each_verb_shows_its_declarations`
+/// - witness: `entry::report::tests::each_verb_shows_its_declarations`
 /// - witness: `compose::tests::an_endpoint_loop_settles_with_no_kernel_image_6047`
 #[inline]
 #[must_use]
@@ -288,8 +288,8 @@ enum Unsettled
 /// - hypothesis: L3 — real settled, owed and refused declarations are observed
 ///   through their printing and gating decisions. These cover the ordinary
 ///   checks/refusal boundary, not every malformed expectation.
-/// - witness: `report::tests::each_verb_shows_its_declarations`
-/// - witness: `report::tests::each_count_decides_its_verdict`
+/// - witness: `entry::report::tests::each_verb_shows_its_declarations`
+/// - witness: `entry::report::tests::each_count_decides_its_verdict`
 #[spec(ensures: |ret| (ret == Unsettled::Obligations)
     == matches!((declaration.stated(), declaration.outcome()),
         (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_))))]
@@ -452,8 +452,8 @@ impl SourceCounts
     /// - hypothesis: L3 — distinct root counts and a sum beyond the maximum
     ///   count distinguish omitted roots, inclusion of fault/refusal counts and
     ///   wrapping arithmetic. These are finite integer boundaries.
-    /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
-    /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
+    /// - witness: `entry::report::tests::source_counts_saturate_without_counting_refusals`
+    /// - witness: `entry::report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.0 == self.strict.0
@@ -488,7 +488,7 @@ impl fmt::Display for SourceCounts
     ///   expected numeric sequence in the rendered report. Dropped, repeated or
     ///   exchanged roles are distinguished without pinning English prose;
     ///   arbitrary formatter failures are outside the successful-write fixture.
-    /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
+    /// - witness: `entry::report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     fn fmt(
         &self,
@@ -528,8 +528,8 @@ impl SourceCount
     /// - hypothesis: L3 — consecutive fault transitions reach and remain at the
     ///   maximum count; ordinary path faults exercise an increment below the
     ///   boundary. These distinguish wraparound and premature saturation.
-    /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
-    /// - witness: `report::tests::each_count_decides_its_verdict`
+    /// - witness: `entry::report::tests::source_counts_saturate_without_counting_refusals`
+    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
     #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1_usize))]
     const fn one_more(self) -> Self
     {
@@ -701,7 +701,7 @@ impl RunReport
     /// - hypothesis: L3 — each count that decides is set alone on an otherwise
     ///   settled report and the verdict asserted under every verb, with the
     ///   goals boundary at goals equal to and one below the unsettled count.
-    /// - witness: `report::tests::each_count_decides_its_verdict`
+    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| {
@@ -758,8 +758,8 @@ impl RunReport
     ///   faults at the maximum preserve the root and refusal counts. This
     ///   distinguishes wrapping and changing an unrelated source
     ///   classification.
-    /// - witness: `report::tests::each_count_decides_its_verdict`
-    /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
+    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
+    /// - witness: `entry::report::tests::source_counts_saturate_without_counting_refusals`
     #[spec(
         captures: [sources = self.sources],
         ensures: |_| self.sources.faulted.0 == sources.faulted.0.saturating_add(1_usize)
@@ -818,8 +818,8 @@ impl RunReport
     ///   distinguish source counting from declaration/goal absorption. Existing
     ///   gating fixtures distinguish refusal and engine counts. The
     ///   observations are finite compositions, not arbitrary tally states.
-    /// - witness: `report::tests::pending_sources_do_not_contribute_declarations_or_goals`
-    /// - witness: `report::tests::each_count_decides_its_verdict`
+    /// - witness: `entry::report::tests::pending_sources_do_not_contribute_declarations_or_goals`
+    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
     #[spec(
         captures: [sources = self.sources, goals = usize::from(self.goals), lowerings = self.lowerings],
         ensures: |_| {
@@ -902,7 +902,7 @@ impl fmt::Display for RunReport
     ///   their expected line roles and the report has no trailing CR or LF.
     ///   This observes layout without pinning English sentences or the separate
     ///   tally formatter; arbitrary sink failures are outside the fixture.
-    /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
+    /// - witness: `entry::report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     fn fmt(
         &self,
@@ -946,8 +946,8 @@ mod tests
     use crate::compose::LoweringCount;
     use crate::compose::adapt;
     use crate::compose::compose;
+    use crate::entry::exercised::Exercised;
     use crate::evaluate::Program;
-    use crate::exercised::Exercised;
     use crate::root::SourceRoot;
     use crate::walk::Standing;
 
@@ -1173,7 +1173,7 @@ mod tests
             DeclarationCount::from(1_usize),
             report
                 .exercised()
-                .count(crate::exercised::Row::LambdaChecks)
+                .count(crate::entry::exercised::Row::LambdaChecks)
         );
         let before = report;
         let standing = Standing::of(SourceRoot::Pending, &pending);
@@ -1193,7 +1193,7 @@ mod tests
             DeclarationCount::from(2_usize),
             report
                 .exercised()
-                .count(crate::exercised::Row::LambdaChecks)
+                .count(crate::entry::exercised::Row::LambdaChecks)
         );
     }
 

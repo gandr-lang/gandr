@@ -193,7 +193,7 @@ impl fmt::Display for Exercised
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric counts, including the saturation ceiling,
     ///   retain their numeric positions; no failing formatter is injected.
-    /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
+    /// - witness: `entry::exercised::tests::absorption_saturates_and_preserves_other_rows`
     #[inline]
     fn fmt(
         &self,
@@ -251,7 +251,7 @@ impl Exercised
     /// - hypothesis: L3 — an empty source misses every row, while
     ///   representative settled declarations miss precisely the complement of
     ///   their rows.
-    /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
     #[spec(ensures: |ref ret| ret.iter().copied().eq(
         Row::ALL.into_iter().filter(|&row| usize::from(self.count(row)) == 0_usize)
     ))]
@@ -277,8 +277,8 @@ impl Exercised
     /// # Adequacy
     /// - hypothesis: L3 — overlapping and disjoint counts add independently;
     ///   reaching and then exceeding the ceiling never wraps another row.
-    /// - witness: `exercised::tests::absorbing_sums_every_row`
-    /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
+    /// - witness: `entry::exercised::tests::absorbing_sums_every_row`
+    /// - witness: `entry::exercised::tests::absorption_saturates_and_preserves_other_rows`
     #[spec(
         captures: [before = *self],
         ensures: |_| Row::ALL.into_iter().all(|row| usize::from(self.count(row))
@@ -324,9 +324,9 @@ impl Exercised
     ///   formers count once per declaration, unsettled declarations count
     ///   nowhere, and settled near misses cannot masquerade as refusal rows.
     ///   These cases do not exhaust core syntax or possible refusal payloads.
-    /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-    /// - witness: `exercised::tests::an_unsettled_declaration_carries_no_row`
-    /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+    /// - witness: `entry::exercised::tests::an_unsettled_declaration_carries_no_row`
+    /// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
     /// - witness: `tests::corpus::the_two_roots_exercise_every_row`
     #[spec(
         captures: [settled = report.declarations().iter()
@@ -377,7 +377,7 @@ impl Exercised
     /// # Adequacy
     /// - hypothesis: L3 — nested lambdas in one declaration mark its row once,
     ///   whereas lambdas in different declarations contribute separately.
-    /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
     #[spec(
         captures: [before = *self],
         ensures: |_| Row::ALL.into_iter().all(|candidate| self.count(candidate)
@@ -435,8 +435,8 @@ impl Exercised
 /// - hypothesis: L3 — representative checked, synthesised, owed and refused
 ///   declarations carry exact independent row counts; guarded outcomes and
 ///   every core constructor are not separately generated here.
-/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
 #[spec(ensures: |ref ret| {
     Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= 1_usize)
         && match declaration.produced() {
@@ -486,7 +486,7 @@ fn carried(
 /// # Adequacy
 /// - hypothesis: L3 — accepted conversions contribute independently of the four
 ///   direction rows; refusal-only declarations contribute no bridge.
-/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
 #[spec(
     captures: [before = *rows],
     ensures: |_| Row::ALL.into_iter().all(|row| rows.count(row)
@@ -517,8 +517,8 @@ fn bridged(
 /// # Adequacy
 /// - hypothesis: L3 — each selected refusal and settled near misses have exact
 ///   counts; the table does not enumerate every unselected refusal variant.
-/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
 #[spec(
     captures: [before = *rows],
     ensures: |_| {
@@ -577,7 +577,7 @@ fn checking_row(
 /// # Adequacy
 /// - hypothesis: L3 — actual lowered declarations distinguish unsigned body
 ///   identity from another thunk, a signed body, an owed signature and refusal.
-/// - witness: `exercised::tests::only_an_identical_unsigned_body_is_whole`
+/// - witness: `entry::exercised::tests::only_an_identical_unsigned_body_is_whole`
 #[spec(ensures: |ret| (ret == WholeBody::Whole)
     == matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk))]
 fn is_whole_unsigned_body(
@@ -612,8 +612,8 @@ fn is_whole_unsigned_body(
 /// - hypothesis: L3 — real source refusals distinguish the three selected
 ///   classes from an unadmitted form; other unselected variants are not
 ///   sampled.
-/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
 #[spec(
     captures: [before = *rows],
     ensures: |_| {
@@ -789,8 +789,8 @@ fn lowering_row(
 /// - hypothesis: L3 — admitted bodies exercise all four formers and repeated
 ///   lambdas; a missing root cannot visit stale scratch or erase prior rows.
 ///   Pair, injection, lift, bind and case wrappers are not separately sampled.
-/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `exercised::tests::a_missing_root_discards_stale_work`
+/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `entry::exercised::tests::a_missing_root_discards_stale_work`
 #[spec(
     captures: [before = *rows, missing = arena.value(body).is_none()],
     ensures: |_| worklist.is_empty() && Row::ALL.into_iter().all(|row|
@@ -1152,7 +1152,7 @@ mod tests
     /// # Adequacy
     /// - hypothesis: L3 — real empty, accepted and refused source declarations
     ///   have independent exact row expectations, not a second composition.
-    /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
     #[spec(ensures: |ref ret| !source.as_ref().is_empty()
         || Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) == 0_usize))]
     fn rows_of(source: SourceText<'_>) -> Exercised
@@ -1178,8 +1178,8 @@ mod tests
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric fixtures and a repeated row before the
     ///   saturation boundary distinguish last-write precedence from addition.
-    /// - witness: `exercised::tests::absorbing_sums_every_row`
-    /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
+    /// - witness: `entry::exercised::tests::absorbing_sums_every_row`
+    /// - witness: `entry::exercised::tests::absorption_saturates_and_preserves_other_rows`
     #[spec(ensures: |ref ret| Row::ALL.into_iter().all(|row|
         ret.count(row) == rows.iter().rev().find(|&&(candidate, _)| candidate == row)
             .map_or_else(DeclarationCount::default, |&(_, count)| count)))]

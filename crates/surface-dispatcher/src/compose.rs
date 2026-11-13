@@ -284,10 +284,10 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::component::Member;
+use crate::entry::exercised::Exercised;
 use crate::evaluate::Focused;
 use crate::evaluate::Program;
 use crate::evaluate::ScheduledRuns;
-use crate::exercised::Exercised;
 use crate::measure::CheckSchedule;
 use crate::schedule::Scheduling;
 use crate::schedule::independent;
@@ -5667,8 +5667,8 @@ mod tests
     use super::judge_module;
     use super::lower_source;
     use super::readmitted;
+    use crate::entry::exercised::Exercised;
     use crate::evaluate::Program;
-    use crate::exercised::Exercised;
 
     /// The built-in grammar.
     ///
@@ -6270,10 +6270,10 @@ mod tests
     #[test]
     fn an_endpoint_loop_settles_with_no_kernel_image_6047()
     {
-        use crate::report::Goals;
-        use crate::report::Shown;
-        use crate::report::Verb;
-        use crate::report::shown;
+        use crate::entry::report::Goals;
+        use crate::entry::report::Shown;
+        use crate::entry::report::Verb;
+        use crate::entry::report::shown;
 
         let grammar = grammar();
         let mut lowerings = LoweringCount::default();

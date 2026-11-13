@@ -124,7 +124,7 @@
 //!
 //! | Surface | Observed boundary |
 //! | ------- | ----------------- |
-//! | Reports (`report`) and exercised rows (`exercised`) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
+//! | Reports (`entry::report`) and exercised rows (`entry::exercised`) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
 //! | Corpus registration (`tests/corpus.rs`) | A directory with a source extension is traversed rather than registered as a source. |
 //!
 //! # Optional tracing
@@ -162,7 +162,6 @@ mod component;
 mod compose;
 mod entry;
 mod evaluate;
-mod exercised;
 mod format;
 mod generation;
 mod held;
@@ -176,7 +175,6 @@ mod pool;
 mod presentation;
 mod reader;
 mod receipts;
-mod report;
 mod root;
 mod schedule;
 mod script;
@@ -289,6 +287,18 @@ pub use crate::entry::Entries;
 pub use crate::entry::Refusals;
 pub use crate::entry::Repairs;
 pub use crate::entry::entries;
+pub use crate::entry::exercised::Exercised;
+pub use crate::entry::exercised::Row;
+pub use crate::entry::report::Goals;
+pub use crate::entry::report::Lints;
+pub use crate::entry::report::Reach;
+pub use crate::entry::report::RunReport;
+pub use crate::entry::report::RunVerdict;
+pub use crate::entry::report::Shown;
+pub use crate::entry::report::SourceCount;
+pub use crate::entry::report::SourceCounts;
+pub use crate::entry::report::Verb;
+pub use crate::entry::report::shown;
 pub use crate::evaluate::Captured;
 pub use crate::evaluate::Console;
 pub use crate::evaluate::Engine;
@@ -319,8 +329,6 @@ pub use crate::evaluate::declaration_name;
 pub use crate::evaluate::hole_site;
 pub use crate::evaluate::last_declared;
 pub use crate::evaluate::program_entry;
-pub use crate::exercised::Exercised;
-pub use crate::exercised::Row;
 pub use crate::format::FormatFault;
 pub use crate::format::FormatStep;
 pub use crate::format::Formatting;
@@ -419,16 +427,6 @@ pub use crate::presentation::read_presentation;
 pub use crate::receipts::DamagedCount;
 pub use crate::receipts::StoredVerdicts;
 pub use crate::receipts::VerdictStoreError;
-pub use crate::report::Goals;
-pub use crate::report::Lints;
-pub use crate::report::Reach;
-pub use crate::report::RunReport;
-pub use crate::report::RunVerdict;
-pub use crate::report::Shown;
-pub use crate::report::SourceCount;
-pub use crate::report::SourceCounts;
-pub use crate::report::Verb;
-pub use crate::report::shown;
 pub use crate::root::Descent;
 pub use crate::root::SourceRoot;
 pub use crate::root::classify;
