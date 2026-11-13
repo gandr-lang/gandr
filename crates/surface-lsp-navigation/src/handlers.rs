@@ -1,18 +1,21 @@
-//! The handlers of five navigation requests, generic over the workspace that
-//! they ask: highlights, linked editing, inlay hints, the resolution of an
-//! inlay hint and the copied sources.
+//! The handlers of five navigation requests: highlights, linked editing,
+//! inlay hints, the resolution of an inlay hint and the copied sources.
 //!
-//! Each handler asks the workspace for one copy through
-//! [`Context::view`], and reads the copy through [`Held`]. The server
-//! implements both traits and calls each handler, so each handler compiles
-//! in the server, for the server's workspace.
+//! Each handler is a thin generic shim of one statement. It asks the
+//! workspace for one copy through [`Context::view`], reads the parts of the
+//! copy that its body needs through [`Held`], and forwards them to a body
+//! with no generic parameter. So only the shims compile in the server, and
+//! each body compiles once, in this crate.
 
 use gandr_surface_lsp_base::peer::Peer;
 use gandr_surface_lsp_core::context::Context;
 use gandr_surface_lsp_core::context::Held;
+use gandr_surface_lsp_core::hover::Hovering;
+use gandr_surface_lsp_core::reading::Reading;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
 
 use crate::inlay::hint_at;
 use crate::inlay::hints;
@@ -31,9 +34,8 @@ use crate::uses::mirrored;
 ///
 /// # Specification
 /// - requires: nothing; an unknown URI and any position are admitted.
-/// - ensures: an unknown document, and one whose session holds no grammar,
-///   yields Nothing; otherwise the highlights [`highlights`] answers off the
-///   copy's text and what it keeps for its hovers.
+/// - ensures: as [`highlight_in`], over the copy's text and what it keeps for
+///   its hovers.
 /// - fails: never.
 /// - panics: none.
 #[inline]
@@ -46,12 +48,36 @@ pub fn highlight<Workspace>(
 where
     Workspace: Context,
 {
-    let Some(copy) = workspace.view(uri, peer)
+    highlight_in(
+        workspace
+            .view(uri, peer)
+            .as_ref()
+            .map(|copy| (copy.source(), copy.hovering())),
+        position,
+    )
+}
+
+/// What a highlight request at `position` answers, over `copy`: none when
+/// no copy is held, and the copy's text with what its hovers read otherwise.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: Nothing with no copy and with no hovering; otherwise the
+///   highlights [`highlights`] answers.
+/// - fails: never.
+/// - panics: none.
+#[must_use]
+pub fn highlight_in(
+    copy: Option<(SourceText<'_>, Option<&Hovering>)>,
+    position: Position,
+) -> Answer
+{
+    let Some((source, hovering)) = copy
     else {
         return Answer::Nothing;
     };
-    copy.hovering().map_or(Answer::Nothing, |hovering| {
-        highlights(copy.source(), hovering, position)
+    hovering.map_or(Answer::Nothing, |hovering| {
+        highlights(source, hovering, position)
     })
 }
 
@@ -60,9 +86,8 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an unknown URI and any position are admitted.
-/// - ensures: an unknown document, and one whose session holds no grammar,
-///   yields Nothing; otherwise what [`mirrored`] answers off the copy's text
-///   and what it keeps for its hovers.
+/// - ensures: as [`linked_editing_in`], over the copy's text and what it keeps
+///   for its hovers.
 /// - fails: never.
 /// - panics: none.
 #[inline]
@@ -75,12 +100,35 @@ pub fn linked_editing<Workspace>(
 where
     Workspace: Context,
 {
-    let Some(copy) = workspace.view(uri, peer)
+    linked_editing_in(
+        workspace
+            .view(uri, peer)
+            .as_ref()
+            .map(|copy| (copy.source(), copy.hovering())),
+        position,
+    )
+}
+
+/// What a linked-editing request at `position` answers, over `copy`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: Nothing with no copy and with no hovering; otherwise what
+///   [`mirrored`] answers.
+/// - fails: never.
+/// - panics: none.
+#[must_use]
+pub fn linked_editing_in(
+    copy: Option<(SourceText<'_>, Option<&Hovering>)>,
+    position: Position,
+) -> Answer
+{
+    let Some((source, hovering)) = copy
     else {
         return Answer::Nothing;
     };
-    copy.hovering().map_or(Answer::Nothing, |hovering| {
-        mirrored(copy.source(), hovering, position)
+    hovering.map_or(Answer::Nothing, |hovering| {
+        mirrored(source, hovering, position)
     })
 }
 
@@ -90,9 +138,8 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an unknown URI and any range are admitted.
-/// - ensures: an unknown document yields Nothing; a held document whose session
-///   did not build, and an empty or inverted range, yield no hint; otherwise
-///   the hints [`hints`] answers over the range.
+/// - ensures: as [`inlay_hints_in`], over the copy's text, what it keeps for
+///   its hovers and its reading.
 /// - fails: never.
 /// - panics: none.
 #[inline]
@@ -101,23 +148,53 @@ pub fn inlay_hints<Workspace>(
     uri: &DocumentUri,
     peer: Peer,
     range: Range,
-    (style, deferring): (gandr_surface_pretty::Style, ResolvesHintLocations),
+    shape: (gandr_surface_pretty::Style, ResolvesHintLocations),
 ) -> Answer
 where
     Workspace: Context,
 {
-    let Some(copy) = workspace.view(uri, peer)
+    inlay_hints_in(
+        workspace.view(uri, peer).as_ref().map(|copy| {
+            (
+                copy.source(),
+                copy.hovering().map(|hovering| (hovering, copy.reading())),
+            )
+        }),
+        uri,
+        range,
+        shape,
+    )
+}
+
+/// The inlay hints over `range` of `copy`, the copy of the document at
+/// `uri`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: Nothing with no copy; no hint with no hovering, and over an empty
+///   or inverted range; otherwise the hints [`hints`] answers over the range.
+/// - fails: never.
+/// - panics: none.
+#[must_use]
+pub fn inlay_hints_in(
+    copy: Option<(SourceText<'_>, Option<(&Hovering, &Reading)>)>,
+    uri: &DocumentUri,
+    range: Range,
+    (style, deferring): (gandr_surface_pretty::Style, ResolvesHintLocations),
+) -> Answer
+{
+    let Some((source, read)) = copy
     else {
         return Answer::Nothing;
     };
-    let index = LineIndex::new(<&str>::from(copy.source()).into());
+    let index = LineIndex::new(<&str>::from(source).into());
     let window = ByteSpan::new(
         ByteOffset::from(usize::from(range.start.byte(&index))),
         ByteOffset::from(usize::from(range.end.byte(&index))),
     );
-    Answer::Hints(match (copy.hovering(), window) {
-        (Some(hovering), Ok(window)) if window.start() < window.end() => hints(
-            (hovering, copy.reading().tiles()),
+    Answer::Hints(match (read, window) {
+        (Some((hovering, reading)), Ok(window)) if window.start() < window.end() => hints(
+            (hovering, reading.tiles()),
             (uri, &index),
             window,
             (style, deferring),
@@ -132,8 +209,8 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an unknown URI and any position are admitted.
-/// - ensures: none for an unknown document or one whose session did not build;
-///   otherwise what [`hint_at`] answers at `position`.
+/// - ensures: as [`resolve_hint_in`], over the copy's text, what it keeps for
+///   its hovers and its reading.
 /// - fails: never.
 /// - panics: none.
 #[inline]
@@ -147,15 +224,36 @@ pub fn resolve_hint<Workspace>(
 where
     Workspace: Context,
 {
-    let copy = workspace.view(uri, peer)?;
-    let hovering = copy.hovering()?;
-    let index = LineIndex::new(<&str>::from(copy.source()).into());
-    hint_at(
-        (hovering, copy.reading().tiles()),
-        (uri, &index),
+    resolve_hint_in(
+        workspace
+            .view(uri, peer)
+            .as_ref()
+            .and_then(|copy| Some((copy.source(), copy.hovering()?, copy.reading()))),
+        uri,
         position,
         style,
     )
+}
+
+/// The inlay hint drawn at `position` of `copy`, the copy of the document
+/// at `uri`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: none with no copy; otherwise what [`hint_at`] answers.
+/// - fails: never.
+/// - panics: none.
+#[must_use]
+pub fn resolve_hint_in(
+    copy: Option<(SourceText<'_>, &Hovering, &Reading)>,
+    uri: &DocumentUri,
+    position: Position,
+    style: gandr_surface_pretty::Style,
+) -> Option<InlayHint>
+{
+    let (source, hovering, reading) = copy?;
+    let index = LineIndex::new(<&str>::from(source).into());
+    hint_at((hovering, reading.tiles()), (uri, &index), position, style)
 }
 
 /// The sources declaring what `ranges` of the copy of the document at `uri`
@@ -163,9 +261,8 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an unknown URI and any ranges are admitted.
-/// - ensures: an unknown document yields Nothing; a held document whose session
-///   did not build yields none; otherwise the sources [`copied`] answers over
-///   the ranges.
+/// - ensures: as [`copied_sources_in`], over what the copy keeps for its
+///   hovers.
 /// - fails: never.
 /// - panics: none.
 #[inline]
@@ -178,13 +275,38 @@ pub fn copied_sources<Workspace>(
 where
     Workspace: Context,
 {
-    let Some(copy) = workspace.view(uri, peer)
+    copied_sources_in(
+        workspace
+            .view(uri, peer)
+            .as_ref()
+            .map(|copy| (copy.source(), copy.hovering())),
+        uri,
+        ranges,
+    )
+}
+
+/// The sources declaring what `ranges` of `copy`, the copy of the document
+/// at `uri`, name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: Nothing with no copy; none with no hovering; otherwise the
+///   sources [`copied`] answers over the ranges.
+/// - fails: never.
+/// - panics: none.
+#[must_use]
+pub fn copied_sources_in(
+    copy: Option<(SourceText<'_>, Option<&Hovering>)>,
+    uri: &DocumentUri,
+    ranges: &[Range],
+) -> Answer
+{
+    let Some((source, hovering)) = copy
     else {
         return Answer::Nothing;
     };
-    let index = LineIndex::new(<&str>::from(copy.source()).into());
+    let index = LineIndex::new(<&str>::from(source).into());
     Answer::Sources(
-        copy.hovering()
-            .map_or_else(Vec::new, |hovering| copied(hovering, (uri, &index), ranges)),
+        hovering.map_or_else(Vec::new, |hovering| copied(hovering, (uri, &index), ranges)),
     )
 }
