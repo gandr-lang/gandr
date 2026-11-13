@@ -3,59 +3,59 @@
 //! and what its hovers read.
 //!
 //! The workspace holds its copies in the server, above this crate. A handler
-//! below the server names the copy through this trait, and the server
-//! implements it. Each handler is generic over the trait, so each call
-//! resolves when the server compiles, with no indirection at run time.
+//! below the server carries the workspace and a copy by address, as an
+//! [`Erased`], and asks for each part through a function that the server
+//! defines and the linker binds. So each ask is a direct call, with no
+//! generic and no trait object.
 
-use gandr_surface_syntax::SourceText;
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
-use crate::hover::Hovering;
 use crate::peer::Peer;
 use crate::protocol::DocumentUri;
-use crate::reading::Reading;
 
-/// The workspace, as a handler of a navigation request reads it.
-pub trait Context
+/// The address of a value that the server holds, which a crate below the
+/// server carries without its type, for `'held`.
+#[derive(Clone, Copy, Debug)]
+pub struct Erased<'held>(NonNull<()>, PhantomData<&'held ()>);
+
+impl Erased<'_>
 {
-    /// One copy of a document.
-    type Held<'context>: Held
-    where
-        Self: 'context;
-
-    /// The copy of the document at `uri` that `peer` is answered from: its
-    /// own, or the latest when it holds none. None when no connection holds
-    /// the document.
+    /// The address `address`.
     ///
     /// # Specification
     /// trivial.
-    fn view<'context>(
-        &'context self,
-        uri: &'context DocumentUri,
-        peer: Peer,
-    ) -> Option<Self::Held<'context>>;
+    #[inline]
+    #[must_use]
+    pub const fn new(address: NonNull<()>) -> Self
+    {
+        Self(address, PhantomData)
+    }
+
+    /// The address.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn address(self) -> NonNull<()>
+    {
+        self.0
+    }
 }
 
-/// One copy of a document, as a handler of a navigation request reads it.
-pub trait Held
+/// One copy of a document, as a handler of a navigation request reads it:
+/// the workspace and the copy by address, the URI of the document and the
+/// connection that the copy answers.
+#[derive(Clone, Copy, Debug)]
+pub struct Viewed<'context>
 {
-    /// The text of the copy.
-    ///
-    /// # Specification
-    /// trivial.
-    fn source(&self) -> SourceText<'_>;
-
-    /// The reading of the text, made now when no reader made it since the
-    /// text last changed.
-    ///
-    /// # Specification
-    /// trivial.
-    fn reading(&self) -> &Reading;
-
-    /// What the hovers of the text read, made now when no hover made it
-    /// since the text or its closure last changed. None when the session of
-    /// the copy did not build.
-    ///
-    /// # Specification
-    /// trivial.
-    fn hovering(&self) -> Option<&Hovering>;
+    /// The workspace that holds the copy.
+    pub workspace: Erased<'context>,
+    /// The copy.
+    pub document: Erased<'context>,
+    /// The URI of the document.
+    pub uri: &'context DocumentUri,
+    /// The connection that the copy answers.
+    pub peer: Peer,
 }

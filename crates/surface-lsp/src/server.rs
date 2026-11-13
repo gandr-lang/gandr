@@ -57,6 +57,7 @@ use core::cell::RefCell;
 use core::convert::Infallible;
 use core::fmt;
 use core::ops::ControlFlow;
+use core::ptr::NonNull;
 use core::time::Duration;
 use std::io::BufRead;
 use std::io::Write;
@@ -117,6 +118,8 @@ use gandr_surface_lsp_base::tokens::ResultId;
 use gandr_surface_lsp_base::tokens::TokenStream;
 use gandr_surface_lsp_base::tokens::encode;
 use gandr_surface_lsp_base::tokens::overlapping;
+use gandr_surface_lsp_core::context::Erased;
+use gandr_surface_lsp_core::context::Viewed;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::AccountCard;
@@ -6814,59 +6817,65 @@ impl Server
     }
 }
 
-/// One copy of a document, as a handler of a navigation request reads it:
-/// the copy, its URI, and the copies the editors hold as the connection's
-/// imports read them.
-pub struct Viewed<'workspace>
+/// The workspace, by address, for a handler of a navigation request.
+///
+/// # Specification
+/// trivial.
+fn erased(workspace: &Workspace) -> Erased<'_>
 {
-    /// The copy.
-    document: &'workspace Document,
-    /// The URI of its document.
-    uri: &'workspace DocumentUri,
-    /// The copies the editors hold, as the connection's imports read them.
-    shadowing: Shadowing<'workspace>,
+    Erased::new(NonNull::from(workspace).cast())
 }
 
-impl gandr_surface_lsp_core::context::Held for Viewed<'_>
+/// The definition of the navigation crate's `gandr_surface_lsp_view`.
+#[unsafe(no_mangle)]
+pub fn gandr_surface_lsp_view<'context>(
+    workspace: Erased<'context>,
+    uri: &'context DocumentUri,
+    peer: Peer,
+) -> Option<Viewed<'context>>
 {
-    fn source(&self) -> SourceText<'_>
-    {
-        self.document.text.source()
-    }
-
-    fn reading(&self) -> &Reading
-    {
-        self.document.text.reading()
-    }
-
-    fn hovering(&self) -> Option<&Hovering>
-    {
-        self.document.hovering(self.uri, &self.shadowing).ok()
+    // SAFETY: the server gives a handler only its own workspace, through
+    // `erased`, for no longer than the borrow it took.
+    let held = unsafe { workspace.address().cast::<Workspace>().as_ref() };
+    match held.view(uri, peer) {
+        Maybe::Present(document) => Some(Viewed {
+            workspace,
+            document: Erased::new(NonNull::from(document).cast()),
+            uri,
+            peer,
+        }),
+        Maybe::Absent(_) => None,
     }
 }
 
-impl gandr_surface_lsp_core::context::Context for Workspace
+/// The definition of the navigation crate's `gandr_surface_lsp_source`.
+#[unsafe(no_mangle)]
+pub fn gandr_surface_lsp_source(copy: Viewed<'_>) -> SourceText<'_>
 {
-    type Held<'context>
-        = Viewed<'context>
-    where
-        Self: 'context;
+    // SAFETY: `gandr_surface_lsp_view` puts only a copy of the workspace in
+    // `document`, for no longer than the workspace's borrow.
+    let document = unsafe { copy.document.address().cast::<Document>().as_ref() };
+    document.text.source()
+}
 
-    fn view<'context>(
-        &'context self,
-        uri: &'context DocumentUri,
-        peer: Peer,
-    ) -> Option<Viewed<'context>>
-    {
-        match Self::view(self, uri, peer) {
-            Maybe::Present(document) => Some(Viewed {
-                document,
-                uri,
-                shadowing: self.shadowing(peer),
-            }),
-            Maybe::Absent(_) => None,
-        }
-    }
+/// The definition of the navigation crate's `gandr_surface_lsp_reading`.
+#[unsafe(no_mangle)]
+pub fn gandr_surface_lsp_reading(copy: Viewed<'_>) -> &Reading
+{
+    // SAFETY: as in `gandr_surface_lsp_source`.
+    let document = unsafe { copy.document.address().cast::<Document>().as_ref() };
+    document.text.reading()
+}
+
+/// The definition of the navigation crate's `gandr_surface_lsp_hovering`.
+#[unsafe(no_mangle)]
+pub fn gandr_surface_lsp_hovering(copy: Viewed<'_>) -> Option<&Hovering>
+{
+    // SAFETY: as in `gandr_surface_lsp_view`.
+    let held = unsafe { copy.workspace.address().cast::<Workspace>().as_ref() };
+    // SAFETY: as in `gandr_surface_lsp_source`.
+    let document = unsafe { copy.document.address().cast::<Document>().as_ref() };
+    document.hovering(copy.uri, &held.shadowing(copy.peer)).ok()
 }
 
 impl Workspace
@@ -7172,7 +7181,7 @@ impl Workspace
     ) -> Answer
     {
         gandr_surface_lsp_navigation::handlers::inlay_hints(
-            self,
+            erased(self),
             uri,
             peer,
             range,
@@ -7209,7 +7218,13 @@ impl Workspace
         style: gandr_surface_pretty::Style,
     ) -> Option<InlayHint>
     {
-        gandr_surface_lsp_navigation::handlers::resolve_hint(self, uri, peer, position, style)
+        gandr_surface_lsp_navigation::handlers::resolve_hint(
+            erased(self),
+            uri,
+            peer,
+            position,
+            style,
+        )
     }
 
     /// The sources declaring what `ranges` of the copy of the document at
@@ -7238,7 +7253,7 @@ impl Workspace
         ranges: &[Range],
     ) -> Answer
     {
-        gandr_surface_lsp_navigation::handlers::copied_sources(self, uri, peer, ranges)
+        gandr_surface_lsp_navigation::handlers::copied_sources(erased(self), uri, peer, ranges)
     }
 
     /// The inline completion of the copy of the document at `uri` that `peer`
@@ -8116,7 +8131,7 @@ impl Workspace
         position: Position,
     ) -> Answer
     {
-        gandr_surface_lsp_navigation::handlers::highlight(self, uri, peer, position)
+        gandr_surface_lsp_navigation::handlers::highlight(erased(self), uri, peer, position)
     }
 
     /// What a linked-editing request at `position` of the copy of the document
@@ -8144,7 +8159,7 @@ impl Workspace
         position: Position,
     ) -> Answer
     {
-        gandr_surface_lsp_navigation::handlers::linked_editing(self, uri, peer, position)
+        gandr_surface_lsp_navigation::handlers::linked_editing(erased(self), uri, peer, position)
     }
 
     /// What a reference request at `position` of the copy of the document at

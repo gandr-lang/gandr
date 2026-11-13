@@ -1,15 +1,15 @@
 //! The handlers of five navigation requests: highlights, linked editing,
 //! inlay hints, the resolution of an inlay hint and the copied sources.
 //!
-//! Each handler is a thin generic shim of one statement. It asks the
-//! workspace for one copy through [`Context::view`], reads the parts of the
-//! copy that its body needs through [`Held`], and forwards them to a body
-//! with no generic parameter. So only the shims compile in the server, and
-//! each body compiles once, in this crate.
+//! Each handler takes the workspace by address. It asks for one copy and
+//! for the parts of the copy that its body needs through functions that the
+//! server defines, and the linker binds each ask to its definition. So each
+//! handler compiles once, in this crate, with no generic and no trait
+//! object.
 
 use gandr_surface_lsp_base::peer::Peer;
-use gandr_surface_lsp_core::context::Context;
-use gandr_surface_lsp_core::context::Held;
+use gandr_surface_lsp_core::context::Erased;
+use gandr_surface_lsp_core::context::Viewed;
 use gandr_surface_lsp_core::hover::Hovering;
 use gandr_surface_lsp_core::reading::Reading;
 use gandr_surface_render_remote::LineIndex;
@@ -29,6 +29,43 @@ use crate::protocol::ResolvesHintLocations;
 use crate::uses::highlights;
 use crate::uses::mirrored;
 
+// The server defines each function (`#[unsafe(no_mangle)]`), and the linker
+// binds each ask to its definition.
+unsafe extern "Rust" {
+    /// The copy of the document at `uri` that `peer` is answered from, in
+    /// `workspace`; none when no connection holds the document. The server
+    /// defines it.
+    safe fn gandr_surface_lsp_view<'context>(
+        workspace: Erased<'context>,
+        uri: &'context DocumentUri,
+        peer: Peer,
+    ) -> Option<Viewed<'context>>;
+
+    /// The text of `copy`. The server defines it.
+    safe fn gandr_surface_lsp_source<'context>(copy: Viewed<'context>) -> SourceText<'context>;
+
+    /// The reading of the text of `copy`. The server defines it.
+    safe fn gandr_surface_lsp_reading<'context>(copy: Viewed<'context>) -> &'context Reading;
+
+    /// What the hovers of `copy` read; none when its session did not build.
+    /// The server defines it.
+    safe fn gandr_surface_lsp_hovering<'context>(
+        copy: Viewed<'context>
+    ) -> Option<&'context Hovering>;
+}
+
+/// The text of `copy` and what its hovers read.
+///
+/// # Specification
+/// trivial.
+fn read(copy: Viewed<'_>) -> (SourceText<'_>, Option<&Hovering>)
+{
+    (
+        gandr_surface_lsp_source(copy),
+        gandr_surface_lsp_hovering(copy),
+    )
+}
+
 /// What a highlight request at `position` of the copy of the document at
 /// `uri` that `peer` is answered from answers.
 ///
@@ -39,20 +76,15 @@ use crate::uses::mirrored;
 /// - fails: never.
 /// - panics: none.
 #[inline]
-pub fn highlight<Workspace>(
-    workspace: &Workspace,
+pub fn highlight(
+    workspace: Erased<'_>,
     uri: &DocumentUri,
     peer: Peer,
     position: Position,
 ) -> Answer
-where
-    Workspace: Context,
 {
     highlight_in(
-        workspace
-            .view(uri, peer)
-            .as_ref()
-            .map(|copy| (copy.source(), copy.hovering())),
+        gandr_surface_lsp_view(workspace, uri, peer).map(read),
         position,
     )
 }
@@ -91,20 +123,15 @@ pub fn highlight_in(
 /// - fails: never.
 /// - panics: none.
 #[inline]
-pub fn linked_editing<Workspace>(
-    workspace: &Workspace,
+pub fn linked_editing(
+    workspace: Erased<'_>,
     uri: &DocumentUri,
     peer: Peer,
     position: Position,
 ) -> Answer
-where
-    Workspace: Context,
 {
     linked_editing_in(
-        workspace
-            .view(uri, peer)
-            .as_ref()
-            .map(|copy| (copy.source(), copy.hovering())),
+        gandr_surface_lsp_view(workspace, uri, peer).map(read),
         position,
     )
 }
@@ -143,21 +170,20 @@ pub fn linked_editing_in(
 /// - fails: never.
 /// - panics: none.
 #[inline]
-pub fn inlay_hints<Workspace>(
-    workspace: &Workspace,
+pub fn inlay_hints(
+    workspace: Erased<'_>,
     uri: &DocumentUri,
     peer: Peer,
     range: Range,
     shape: (gandr_surface_pretty::Style, ResolvesHintLocations),
 ) -> Answer
-where
-    Workspace: Context,
 {
     inlay_hints_in(
-        workspace.view(uri, peer).as_ref().map(|copy| {
+        gandr_surface_lsp_view(workspace, uri, peer).map(|copy| {
             (
-                copy.source(),
-                copy.hovering().map(|hovering| (hovering, copy.reading())),
+                gandr_surface_lsp_source(copy),
+                gandr_surface_lsp_hovering(copy)
+                    .map(|hovering| (hovering, gandr_surface_lsp_reading(copy))),
             )
         }),
         uri,
@@ -214,21 +240,22 @@ pub fn inlay_hints_in(
 /// - fails: never.
 /// - panics: none.
 #[inline]
-pub fn resolve_hint<Workspace>(
-    workspace: &Workspace,
+pub fn resolve_hint(
+    workspace: Erased<'_>,
     uri: &DocumentUri,
     peer: Peer,
     position: Position,
     style: gandr_surface_pretty::Style,
 ) -> Option<InlayHint>
-where
-    Workspace: Context,
 {
     resolve_hint_in(
-        workspace
-            .view(uri, peer)
-            .as_ref()
-            .and_then(|copy| Some((copy.source(), copy.hovering()?, copy.reading()))),
+        gandr_surface_lsp_view(workspace, uri, peer).and_then(|copy| {
+            Some((
+                gandr_surface_lsp_source(copy),
+                gandr_surface_lsp_hovering(copy)?,
+                gandr_surface_lsp_reading(copy),
+            ))
+        }),
         uri,
         position,
         style,
@@ -266,20 +293,15 @@ pub fn resolve_hint_in(
 /// - fails: never.
 /// - panics: none.
 #[inline]
-pub fn copied_sources<Workspace>(
-    workspace: &Workspace,
+pub fn copied_sources(
+    workspace: Erased<'_>,
     uri: &DocumentUri,
     peer: Peer,
     ranges: &[Range],
 ) -> Answer
-where
-    Workspace: Context,
 {
     copied_sources_in(
-        workspace
-            .view(uri, peer)
-            .as_ref()
-            .map(|copy| (copy.source(), copy.hovering())),
+        gandr_surface_lsp_view(workspace, uri, peer).map(read),
         uri,
         ranges,
     )
