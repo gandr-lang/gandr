@@ -1,6 +1,7 @@
 # shellcheck shell=bash
-# The version of the unit frame (#7018), sourced by `unit:frame` and
-# `unit:sign`. `unit_frame <root>` prints one digest of the rows that
+# The version of the unit frame (#7018), sourced by `unit:frame`,
+# `unit:sign`, `issue:file` and `claim:take`. `unit_frame <root>` prints one
+# digest of the rows that
 # `units.md` asks of a unit: the nine axes and their questions
 # (`sections.jq`) and the concerns of `ledger/concerns.sql`. A change of a
 # row gives a new digest. The digest is the first 12 hex digits of the git
@@ -17,6 +18,19 @@ unit_frame() {
 # HTML comment, which `claim:take` reads at a claim (#7018).
 unit_frame_marker() {
   printf '<!-- signed frame=%s -->\n' "$1"
+}
+
+# The sign-off of issue `$2` at the frame now of the tree `$1`: one comment
+# that holds the frame's marker and a line that names the signer `$3`.
+# `unit:sign` writes it after it adds `shape:signed`, and `issue:file` after
+# it files a unit whole under that label, so `claim:take` takes the unit
+# (#7129). One GitHub write.
+unit_frame_signoff() {
+  local root=$1 number=$2 signer=$3 frame
+  frame=$(unit_frame "$root")
+  gh issue comment "$number" --body "$(unit_frame_marker "$frame")
+$signer signs the sections at the unit frame \`$frame\`." > /dev/null
+  printf '%s\n' "$frame"
 }
 
 # `{marker, frame}` for issue `$3` of repository `$2`: the digest of its

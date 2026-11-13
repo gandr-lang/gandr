@@ -2574,10 +2574,8 @@ issue=${usage_issue:?}
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/claims/frame.bash"
 mise run unit:check "$issue"
-frame=$(unit_frame "$root")
 gh issue edit "$issue" --add-label shape:signed > /dev/null
-gh issue comment "$issue" --body "$(unit_frame_marker "$frame")
-The coordinator signs the sections at the unit frame \`$frame\`." > /dev/null
+frame=$(unit_frame_signoff "$root" "$issue" "The coordinator")
 echo "unit:sign: #$issue signed at the frame $frame"
 {% endraw %}'''
 
@@ -3322,6 +3320,10 @@ for blocked in "${blocks[@]}"; do
 done
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
+  # A unit filed whole carries `shape:signed`, so it carries the marker of
+  # the frame its sections pass at too, or `claim:take` refuses it (#7129).
+  source "$claims/frame.bash"
+  unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
 fi
 echo "$url"
 {% endraw %}'''
