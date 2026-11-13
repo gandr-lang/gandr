@@ -554,5 +554,39 @@
       "architects": { "agent-shade": "(architect" }
     },
     "output": "the `merged` row of `v::hom::join` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`\nthe `narrowed` row of `v::hom::wide` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
+  },
+  {
+    "name": "#7105: a `narrowed` row of an item reads that item over the `moved` row of its module",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom`|#700|moved|—|—|—|`v::cat`|none|—|\n|`v::hom::wide`|#700|narrowed|—|—|—|`v::cat::wide`|`wide_holds`|—|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::join",
+          "kind": "item",
+          "names": ["v::hom::join"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": { "act": "moved", "at": "v::cat::join" }
+        },
+        {
+          "id": "v::hom::wide",
+          "kind": "item",
+          "names": ["v::hom::wide"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": null
+        }
+      ],
+      "held": ["v::cat::join", "v::cat::wide"],
+      "tests": [],
+      "features": {},
+      "lonely": [],
+      "files": { "v::hom::wide": ["crates/vd/src/hom.rs"] },
+      "signoffs": [],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the `narrowed` row of `v::hom::wide` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   }
 ]
