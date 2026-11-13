@@ -53,7 +53,7 @@ use crate::error::KernelError;
 ///   presentation forged with a second law rewriting the unit's call apart is
 ///   refused naming the pair, and a completed group readmits from the peaks its
 ///   value names.
-/// - witness: `theory_rules::tests::a_presentation_is_admitted_only_when_its_rules_converge`
+/// - witness: `gandr-kernel-core::environment::theory_rules_tests::a_presentation_is_admitted_only_when_its_rules_converge`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::PresentationRulesRefused(_))))]
 pub fn admit(
     arena: &TermArena,

@@ -2,10 +2,10 @@
 //! read backward through a reverse index of the direct references.
 //!
 //! Each entry keeps the positions that its content names, its direct
-//! references ([`crate::weakening`]). The reverse index keeps, for each
-//! position, the entries that name it. It grows by one row for each reference
-//! at an admission, and the rollback of a refused block drops the rows of its
-//! members.
+//! references ([`weakening`](gandr_kernel_core_base::weakening)). The reverse
+//! index keeps, for each position, the entries that name it. It grows by one
+//! row for each reference at an admission, and the rollback of a refused block
+//! drops the rows of its members.
 //!
 //! A check's support holds an entry in three ways, the three reads of a check.
 //! The check names the entry, directly or through the entries that it reads.
@@ -303,7 +303,7 @@ impl Walk
 ///   the entries whose support holds an edited entry, and a type of words
 ///   reaches an entry after it through its sort and no entry before it.
 /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
-/// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
+/// - witness: `environment::presented_tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| position < ConstantIndex::from(length)))]
 pub fn reach<Words, Edited>(
     dependents: &Dependents,

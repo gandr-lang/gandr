@@ -436,7 +436,7 @@ fn insert_difference(
 /// - hypothesis: L2 — every set of up to three difference constraints over
 ///   three variables, each offset 0 or 1, gets the verdict the poset's
 ///   loop-checking gives.
-/// - witness: `tests::levels::admission_agrees_with_loop_checking_on_difference_constraints`
+/// - witness: `gandr-kernel-core::tests::levels::admission_agrees_with_loop_checking_on_difference_constraints`
 #[spec(ensures: |ret| match ret {
     Proposal::Model(ref model) => constraints
         .iter()

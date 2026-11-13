@@ -862,8 +862,8 @@ impl Identification for Exact
 /// - hypothesis: L3 — a goal over a plain definition takes one name in two
 ///   environments that admitted its declarations in two orders, and a goal over
 ///   an axiom takes two.
-/// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
-/// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+/// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
+/// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RecordName<I: Identification = Exact>([u8; 32], PhantomData<I>);
@@ -918,7 +918,7 @@ impl<I: Identification> RecordName<I>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`RecordName`].
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     fn of(
         key: &NameKey,
         payload: &ContentEncoding,
@@ -1217,7 +1217,7 @@ impl Names
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`RecordName`].
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     #[spec(captures: named_before = self.column.len(),
         ensures: named_before.checked_add(1) == Some(self.column.len()))]
     fn name(
@@ -2303,7 +2303,7 @@ impl ContentTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`RecordName`]; a table made by [`Self::new`]
     ///   gives no name.
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
     #[inline]
     #[must_use]
@@ -2333,7 +2333,7 @@ impl ContentTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`RecordName`].
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
     #[inline]
     #[spec(ensures: |ret| match self.naming {
@@ -2386,7 +2386,7 @@ impl ContentTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::name`].
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match self.name(id) {
@@ -2455,7 +2455,7 @@ impl ContentTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::name`].
-    /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
     #[inline]
     #[spec(ensures: match self.naming {
@@ -2516,8 +2516,8 @@ impl ContentTable
     /// - hypothesis: L3 — the predicate checks the count named; a definition
     ///   and an axiom referent each admitted before and after another
     ///   definition separate reading by content from reading by position.
-    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::an_axiom_reference_keeps_its_position`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len() == named_before.max(usize::from(entries.len())))]
     pub fn name_constants(
@@ -2544,7 +2544,7 @@ impl ContentTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::name_constants`], and a kept unit reads as
     ///   a fresh admission of it.
-    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len()
             == named_before.max(usize::from(entries.len()).min(usize::from(end))))]
@@ -3206,9 +3206,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
     /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
-    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
-    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
+    /// - witness: `gandr-kernel-core::path_universe::tests::certificate_identity_stays_out_of_conversion`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::each_twin_of_one_content_ranks_past_the_latest_3686`
     #[spec(
         requires: match *value {
             Value::Constructor { datatype, ref fields, .. } => matches!(self.placed.get(AnyNode::ValueType(datatype)), Maybe::Present(_)) && fields.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
@@ -3883,7 +3883,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     ///   Unit/base and transposed-product fixtures separate family tags and
     ///   ordered child ids; no exhaustive graph domain is claimed.
     /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
-    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    /// - witness: `gandr-kernel-core::path_universe::tests::certificate_identity_stays_out_of_conversion`
     /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
     #[spec(
         requires: match *value_type {
@@ -4714,10 +4714,10 @@ fn constant_name(
 ///   through three children and mixed families, not every graph.
 /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
 /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
-/// - witness: `session::tests::session_relations_replay_without_search`
+/// - witness: `gandr-kernel-core::session::tests::session_relations_replay_without_search`
 /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
-/// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+/// - witness: `gandr-kernel-core::environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
 #[spec(captures: entry_len = tasks.len(), ensures: tasks.get(entry_len..).is_some_and(|added| {
     let opened = added.iter().map(|task| match *task { EncodeTask::Open(node) => Some(node), EncodeTask::Close(_) => None });
     match node {
@@ -6209,7 +6209,7 @@ pub fn content_digest(
 ///   environment, a definition of other content between them, rank 0, 1 and 2;
 ///   the predicate checks the roots kept. One definition admitted into two
 ///   environments that met its content in two orders takes one digest.
-/// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
+/// - witness: `gandr-kernel-core::environment::encoding_tests::each_twin_of_one_content_ranks_past_the_latest_3686`
 /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
 #[must_use]
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }

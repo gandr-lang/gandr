@@ -55,8 +55,8 @@ enum TableState
 /// # Adequacy
 /// - hypothesis: L3 — a definition and an axiom referent each admitted before
 ///   and after an unrelated definition.
-/// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-/// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
+/// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
+/// - witness: `environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
 fn reference_environment(
     referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
@@ -108,8 +108,8 @@ fn reference_environment(
 /// # Adequacy
 /// - hypothesis: L3 — a definition and an axiom referent each admitted before
 ///   and after an unrelated definition.
-/// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-/// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+/// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
+/// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
 fn reference_stream(
     referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
@@ -144,8 +144,8 @@ fn reference_stream(
 /// # Adequacy
 /// - hypothesis: L3 — a definition and an axiom referent each admitted before
 ///   and after an unrelated definition, in a cold and a warm table.
-/// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
-/// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+/// - witness: `environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
+/// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
 fn goal_name(
     referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
@@ -187,8 +187,8 @@ fn goal_name(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the unit axiom admits in every environment.
-/// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
-/// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+/// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
+/// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
 fn unit_axiom(environment: &mut crate::Environment) -> ConstantIndex
 {
     let mut staging = environment.stage();
@@ -212,8 +212,8 @@ fn unit_axiom(environment: &mut crate::Environment) -> ConstantIndex
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the unit definition admits in every environment.
-/// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-/// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
+/// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
+/// - witness: `environment::encoding_tests::each_twin_of_one_content_ranks_past_the_latest_3686`
 fn unit_definition(environment: &mut crate::Environment) -> ConstantIndex
 {
     let mut staging = environment.stage();

@@ -36,9 +36,9 @@ use anodized::spec;
 /// - hypothesis: L3 — a pinned table of replay inputs separates every refusal
 ///   variant; the unit witnesses distinguish both certified answers from
 ///   disagreement and budget exhaustion.
-/// - witness: `tests::replay_laws::every_replay_refusal_carries_its_pinned_class`
-/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
-/// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+/// - witness: `gandr-kernel-core::tests::replay_laws::every_replay_refusal_carries_its_pinned_class`
+/// - witness: `gandr-kernel-core::replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+/// - witness: `gandr-kernel-core::replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum KernelVerdict
 {
@@ -81,7 +81,7 @@ impl fmt::Display for ReplayDecline
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReplayRefusal`]'s display, reached through the
     ///   decline that carries it.
-    /// - witness: `tests::replay_laws::an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics`
+    /// - witness: `gandr-kernel-core::tests::replay_laws::an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics`
     #[inline]
     fn fmt(
         &self,
@@ -157,7 +157,7 @@ impl ReplayRefusal
     ///   its variant through the public replay, is classed as the table on
     ///   [`KernelVerdict`] states; moving any variant to another class changes
     ///   a row.
-    /// - witness: `tests::replay_laws::every_replay_refusal_carries_its_pinned_class`
+    /// - witness: `gandr-kernel-core::tests::replay_laws::every_replay_refusal_carries_its_pinned_class`
     #[spec(ensures: |ret| match self {
         Self::Unreadable => matches!(ret, RefusalClass::IllFormedQuery),
         Self::Inapplicable { .. } | Self::NonAuthoritative { .. } => matches!(ret, RefusalClass::ForeignAnswer),
@@ -193,7 +193,7 @@ impl fmt::Display for ReplayRefusal
     /// # Adequacy
     /// - hypothesis: L3 — an ill-formed query and a path disagreement write
     ///   different diagnostics, each led by its class.
-    /// - witness: `tests::replay_laws::an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics`
+    /// - witness: `gandr-kernel-core::tests::replay_laws::an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics`
     #[inline]
     fn fmt(
         &self,
@@ -250,8 +250,8 @@ impl From<usize> for TracePosition
     /// # Adequacy
     /// - hypothesis: L3: refusals at positions zero, one, and two retain their
     ///   exact decision index; no larger trace is claimed.
-    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
-    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `gandr-kernel-core::replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `gandr-kernel-core::replay::tests::eta_and_force_open_the_suspended_sides`
     #[spec(ensures: |ret| ret.0 == position)]
     #[inline]
     fn from(position: usize) -> Self
@@ -274,7 +274,7 @@ impl From<TracePosition> for usize
     /// # Adequacy
     /// - hypothesis: L3: consuming a decision at the position ceiling cannot
     ///   wrap its reported index; consuming the end leaves it unchanged.
-    /// - witness: `replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
+    /// - witness: `gandr-kernel-core::replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
     #[spec(ensures: |ret| ret == position.0)]
     #[inline]
     fn from(position: TracePosition) -> Self

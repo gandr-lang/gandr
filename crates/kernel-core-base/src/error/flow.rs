@@ -142,7 +142,7 @@ pub enum Family
 /// # Adequacy
 /// - hypothesis: L3 — a domain flow supplied covariantly and a codomain flow
 ///   supplied contravariantly each refuse, naming the boundary.
-/// - witness: `flow_universe::tests::function::symmetry_refusal_holds_at_a_thunk_code`
+/// - witness: `gandr-kernel-core::flow_universe::tests::function::symmetry_refusal_holds_at_a_thunk_code`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Boundary
 {

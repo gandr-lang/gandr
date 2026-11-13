@@ -15,7 +15,7 @@
 //! them. The runs read the size of the drain and the [`ForkWidth`] alone, so
 //! a check at one width forks the same jobs each time.
 //!
-//! The seam is object-safe, so a [`Judgement`](crate::Judgement) carries it
+//! The seam is object-safe, so a `Judgement` carries it
 //! without a type parameter. The kernel sits below the core crates, so it
 //! states the seam itself. The driver's pool implements it.
 //!

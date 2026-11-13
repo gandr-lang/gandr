@@ -113,7 +113,7 @@ use crate::error::KernelError;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`normal_form`].
-/// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedType
 {
@@ -160,7 +160,7 @@ impl PresentedType
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`normal_form`].
-/// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Presentations
 {
@@ -216,7 +216,7 @@ impl Presentations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`normal_form`].
-    /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+    /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
     #[spec(ensures: |ret| ret.table.as_ref().is_none_or(|table| !table.types.is_empty() && table.types.len() <= usize::from(entries.len())))]
     #[inline]
     #[must_use]
@@ -261,7 +261,7 @@ impl Presentations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`normal_form`].
-    /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+    /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
     pub fn admit(
         &mut self,
         (position, rank): (ConstantIndex, SourceRank),
@@ -474,7 +474,7 @@ impl Presentations
     ///   a case over a path reads the words' table, and a path at another point
     ///   reads as no words; the sphere's path at the reflexivity of its point
     ///   reads as the words of its 2-cell.
-    /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+    /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
     #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some())))]
     #[must_use]
     pub fn words(
@@ -508,7 +508,7 @@ impl Presentations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::words`].
-    /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+    /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
     #[spec(ensures: |ret| ret == ty || matches!(arena.value_type(ret), Some(ValueType::Data { arguments, .. }) if arguments.is_empty()))]
     #[must_use]
     pub fn identified(
@@ -572,8 +572,8 @@ impl Presentations
     ///   spell, and a wrapping no cells carry, read as no words. At a point
     ///   with a loop and a 2-cell, the loop's empty word at no wrapping reads
     ///   as the 2-cell's words.
-    /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
-    /// - witness: `replay::tests::a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741`
+    /// - witness: `gandr-kernel-core::replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+    /// - witness: `gandr-kernel-core::replay::tests::a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741`
     #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some_and(|cells| cells.reflexivities() >= wraps))))]
     #[must_use]
     pub fn emptied(
@@ -649,7 +649,7 @@ impl Presentations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentations::words`].
-/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| ret.is_none_or(|(_, levels)| unwrapped(arena, left).1 == levels && unwrapped(arena, right).1 == levels))]
 fn tower(
     arena: &TermArena,
@@ -715,7 +715,7 @@ fn tower(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentations::words`].
-/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| ret == Spelling::Apart || spells(arena, sort, unwrapped(arena, left).0, point) == Spelling::Spelled)]
 fn spelled_along(
     arena: &TermArena,
@@ -762,7 +762,7 @@ fn spelled_along(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentations::words`].
-/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| !matches!(arena.value(ret.0), Some(&Value::Here { .. })))]
 pub fn unwrapped(
     arena: &TermArena,
@@ -810,7 +810,7 @@ enum Spelling
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentations::words`].
-/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
 fn spells(
     arena: &TermArena,
@@ -878,7 +878,7 @@ fn spells(
 ///   under another type's field is refused by name, and the words of the
 ///   circle's loop admit where words with their rules dropped are refused.
 /// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
-/// - witness: `presented::tests::words_admit_only_as_their_cells_mint_them`
+/// - witness: `gandr-kernel-core::environment::presented_tests::words_admit_only_as_their_cells_mint_them`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_) | KernelError::WordsRefused(_))))]
 pub fn admit(
     arena: &TermArena,
@@ -930,7 +930,7 @@ pub fn admit(
 /// # Adequacy
 /// - hypothesis: L3 — the circle's loop admits, and its words refuse by name
 ///   with their rules dropped, at a sort admitted later, and a second time.
-/// - witness: `presented::tests::words_admit_only_as_their_cells_mint_them`
+/// - witness: `gandr-kernel-core::environment::presented_tests::words_admit_only_as_their_cells_mint_them`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CellFault::Sort | CellFault::Empty | CellFault::Endpoint(_) | CellFault::Open | CellFault::NotALoop | CellFault::Apart | CellFault::NotMinted | CellFault::Twice)))]
 fn words(
     arena: &TermArena,
@@ -1080,7 +1080,7 @@ enum Origin
 /// - hypothesis: L3 — `loop(unloop(loop(x)))` normalizes to `loop(x)` over the
 ///   very variable written inside it, a normal form comes back as its own id,
 ///   and a value of a free type is never read.
-/// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+/// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
 #[spec(captures: before = u64::from(*fuel), ensures: |ret| u64::from(*fuel) <= before
     && ret.is_ok_and(|normal| normal == value || arena.value(normal).is_some()) || ret == Err(Exhausted))]
 pub fn normal_form(
@@ -1193,7 +1193,7 @@ pub fn normal_form(
 /// - hypothesis: L3 — `S(Z)` and `Z` over the integers are apart, `S(P(Z))` and
 ///   `Z` agree, a reference to a word is read as the word, and a free type's
 ///   distinct constructors are apart.
-/// - witness: `presented::tests::endpoints_are_apart_by_their_normal_forms`
+/// - witness: `gandr-kernel-core::environment::presented_tests::endpoints_are_apart_by_their_normal_forms`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotADataType { .. })))]
 pub fn apart(
     arena: &TermArena,
@@ -1232,7 +1232,7 @@ pub fn apart(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`apart`].
-/// - witness: `presented::tests::endpoints_are_apart_by_their_normal_forms`
+/// - witness: `gandr-kernel-core::environment::presented_tests::endpoints_are_apart_by_their_normal_forms`
 #[spec(captures: before = fields.len(), ensures: |ret| matches!(ret, TermReading::Constructor(_)) || fields.len() == before)]
 fn node(
     arena: &TermArena,

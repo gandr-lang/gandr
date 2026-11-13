@@ -25,8 +25,8 @@ use quenchant_shape::shape::Maybe;
 /// # Adequacy
 /// - hypothesis: L3 — a family with a negative field below its stage is
 ///   stratified, and a list's element parameter is strictly positive.
-/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+/// - witness: `gandr-kernel-core::tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `gandr-kernel-core::tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Accessibility
 {
@@ -238,8 +238,8 @@ pub enum Variance
 /// # Adequacy
 /// - hypothesis: L3 — a lone family and a mutual block of a family and its
 ///   decoder are each walked by the block they are admitted in.
-/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
-/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `gandr-kernel-core::tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_admitted`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Block
 {

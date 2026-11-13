@@ -1211,7 +1211,7 @@ impl From<LevelError> for KernelError
     /// - hypothesis: L3 at the constant-level successor ceiling for both
     ///   universe sorts; predecessor admission and exact ceiling refusal
     ///   distinguish saturation, a wrong refusal and lost prior content.
-    /// - witness: `error::tests::universe_successor_overflow_refuses_admission_without_truncating_prior_content`
+    /// - witness: `gandr-kernel-core::environment::error_tests::universe_successor_overflow_refuses_admission_without_truncating_prior_content`
     #[spec(ensures: |ret| matches!(ret, Self::LevelArithmetic))]
     #[inline]
     fn from(_error: LevelError) -> Self

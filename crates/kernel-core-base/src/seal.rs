@@ -27,7 +27,7 @@
 //!
 //! **The boundary is the kernel's own.** A scope is a count of admissions
 //! the atom's record carries, and an open scope is closed by
-//! [`Environment::seal`] with the count the environment itself kept. No
+//! `Environment::seal` with the count the environment itself kept. No
 //! later declaration names the atoms it is inside — no provenance, no
 //! certificate — so none can claim its way in: membership is decided from the
 //! atom's own record and the environment's admission count.
@@ -57,8 +57,6 @@
 //! segment the replay demands only for the members' admissions. If codes must
 //! see through an open atom, the substitution moves into the rewrite engine as
 //! a third rewrite beside shifting and substitution.
-//!
-//! [`Environment::seal`]: crate::Environment::seal
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -125,7 +123,7 @@ impl Unsealed
     /// # Adequacy
     /// - hypothesis: L3 — every rebuild reads its children through here, so a
     ///   member checked at a nested representation exercises it.
-    /// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+    /// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
     #[spec(ensures: |ret| ret.as_ref().ok() == self.value_types.get(&id))]
     fn value_type(
         &self,
@@ -153,7 +151,7 @@ impl Unsealed
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::value_type`], on the computation plane.
-    /// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+    /// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
     #[spec(ensures: |ret| ret.as_ref().ok() == self.comp_types.get(&id))]
     fn comp_type(
         &self,
@@ -193,7 +191,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a manifest atom unfolds and a sealed one does not.
-/// - witness: `seal::tests::only_a_manifest_atom_unfolds`
+/// - witness: `gandr-kernel-core::environment::seal_tests::only_a_manifest_atom_unfolds`
 #[spec(ensures: |ret| match (manifest.binary_search(&atom).is_ok(), entries.get(usize::from(atom)).map(AdmittedDeclaration::content)) {
     (true, Some(&DeclarationContent::AbstractType { representation, .. })) => matches!(ret, quenchant_shape::shape::Maybe::Present(found) if found == representation),
     _ => matches!(ret, quenchant_shape::shape::Maybe::Absent(unfolding::Absent::Opaque)),
@@ -242,8 +240,8 @@ fn representation(
 ///   thunk, an arrow, a product and a record unseals in each; an atom whose
 ///   representation names an earlier manifest atom unseals both; a sealed atom
 ///   beside a manifest one is kept.
-/// - witness: `seal::tests::only_a_manifest_atom_unfolds`
-/// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+/// - witness: `gandr-kernel-core::environment::seal_tests::only_a_manifest_atom_unfolds`
+/// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
 #[spec(ensures: |ret| !manifest.is_empty() || ret.as_ref().ok() == Some(&root))]
 pub fn unseal(
     arena: &mut TermArena,
@@ -289,7 +287,7 @@ pub fn unseal(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
-/// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+/// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
 #[spec(captures: entry = steps.len(), ensures: |ret| ret.is_err() || steps.len() >= entry)]
 fn enter(
     arena: &TermArena,
@@ -398,7 +396,7 @@ fn enter(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
-/// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+/// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|rebuilt| arena.value_type(*rebuilt).is_some()))]
 fn exit_value_type(
     arena: &mut TermArena,
@@ -563,7 +561,7 @@ fn exit_value_type(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
-/// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+/// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|rebuilt| rebuilt.len() == parts.len()))]
 fn rebuilt_parts(
     done: &Unsealed,
@@ -589,7 +587,7 @@ fn rebuilt_parts(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
-/// - witness: `seal::tests::a_nested_atom_unseals_through_every_former`
+/// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|rebuilt| arena.comp_type(*rebuilt).is_some()))]
 fn exit_comp_type(
     arena: &mut TermArena,

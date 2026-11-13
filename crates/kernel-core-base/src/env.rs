@@ -205,7 +205,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a definition ranked below an earlier admission
     ///   orients its rules as though admitted before it.
-    /// - witness: `ruled::tests::a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621`
+    /// - witness: `gandr-kernel-core::ruled::tests::a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621`
     #[spec(ensures: |ret| ret.rank == Some(rank))]
     #[inline]
     #[must_use]
@@ -237,7 +237,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a relating definition admits by its dialogue and the
     ///   same definition without it is refused.
-    /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
+    /// - witness: `gandr-kernel-core::element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.related().len(), related.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -273,7 +273,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a fold admits on its laws and is refused without
     ///   them.
-    /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+    /// - witness: `gandr-kernel-core::tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.laws().len(), laws.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -307,7 +307,7 @@ impl StagedDeclaration
     ///
     /// # Adequacy
     /// - hypothesis: L3 — converging rules admit and a forged pair is refused.
-    /// - witness: `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
+    /// - witness: `gandr-kernel-core::ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.operation_rules().rules().len(), rules.rules().len()),
         ensures: |ret| ret.content_start == entry.0
@@ -343,7 +343,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a helper typed at a stage takes a recursion's claim
     ///   in the kernel as in the checker.
-    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `gandr-kernel-core::tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.stages().bounds().len(), stages.bounds().len()),
         ensures: |ret| ret.content_start == entry.0
@@ -379,7 +379,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a match's derivation crosses and the kernel replays
     ///   it.
-    /// - witness: `tests::cover::every_broken_derivation_is_refused_by_its_rule_5104`
+    /// - witness: `gandr-kernel-core::tests::cover::every_broken_derivation_is_refused_by_its_rule_5104`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.covers().len(), covers.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -415,7 +415,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a canonical holder admits with its role, and a
     ///   departing one is refused at its departure.
-    /// - witness: `builtin::tests::a_role_s_holder_is_admitted_in_its_canonical_form_5304`
+    /// - witness: `gandr-kernel-core::builtin::tests::a_role_s_holder_is_admitted_in_its_canonical_form_5304`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. } | DeclarationContent::Data { .. }), self.declaration.role()),
         ensures: |ret| ret.content_start == entry.0
@@ -453,7 +453,7 @@ impl StagedDeclaration
     /// - hypothesis: L3 — the delay type admits as a coinductive datatype, and
     ///   a guarded fixpoint into it admits where the same fixpoint into the
     ///   inductive datatype is refused.
-    /// - witness: `tests::guard::a_guarded_fixpoint_stands_only_at_a_coinductive_type`
+    /// - witness: `gandr-kernel-core::tests::guard::a_guarded_fixpoint_stands_only_at_a_coinductive_type`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Data { .. }), self.declaration.fixpoint()),
         ensures: |ret| ret.content_start == entry.0
@@ -487,7 +487,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — the circle admits with its rules and normalizes its
     ///   words by them.
-    /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+    /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Data { .. }), self.declaration.presentation().rules().len(), presentation.rules().len()),
         ensures: |ret| ret.content_start == entry.0
@@ -521,7 +521,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — an interfaced atom admits where its interface checks
     ///   and its bridges read the relation.
-    /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+    /// - witness: `gandr-kernel-core::element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
     #[spec(
         captures: entry = self.content_start,
         ensures: |ret| ret.content_start == entry,
@@ -791,8 +791,8 @@ impl Drop for StagingClaim<'_>
     ///   preserve an earlier staged declaration's claim and permit its later
     ///   admission. The witnesses cover ordinary scope exit, not every
     ///   unwinding context.
-    /// - witness: `environment::tests::implicit_staging_drop_releases_its_claim`
-    /// - witness: `environment::tests::an_abandoned_staging_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::an_abandoned_staging_releases_its_claim`
     #[spec(
         requires: !self.outstanding.marks.is_empty(),
         captures: [
@@ -845,7 +845,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — data admission rejects a malformed signature without
     ///   retaining its nodes.
-    /// - witness: `tests::native_formers::data_signature_formation_checks_fields_and_parameters`
+    /// - witness: `gandr-kernel-core::tests::native_formers::data_signature_formation_checks_fields_and_parameters`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -876,7 +876,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — codata admission refuses a malformed signature
     ///   without retaining its nodes.
-    /// - witness: `tests::codata::a_value_universe_is_no_codata_kind`
+    /// - witness: `gandr-kernel-core::tests::codata::a_value_universe_is_no_codata_kind`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Codata { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -909,7 +909,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — a vector admits at its stated lengths and refuses a
     ///   constructor stating an index of the wrong kind.
-    /// - witness: `tests::native_formers::an_indexed_family_states_its_result_indices`
+    /// - witness: `gandr-kernel-core::tests::native_formers::an_indexed_family_states_its_result_indices`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -948,7 +948,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — a finished definition retains its claim, while a
     ///   later implicit abandonment restores the prior arena and claim
     ///   sequence.
-    /// - witness: `environment::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::implicit_staging_drop_releases_its_claim`
     #[spec(
         captures: [entry_mark = arena.watermark(), entry_len = outstanding.marks.len()],
         ensures: |ret| ret.builder.content_start() == entry_mark
@@ -1035,8 +1035,8 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — explicit abandonment rolls back one newly minted
     ///   value and releases a later claim so an earlier declaration admits.
-    /// - witness: `environment::tests::an_abandoned_staging_leaves_the_arena_unchanged`
-    /// - witness: `environment::tests::an_abandoned_staging_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::an_abandoned_staging_leaves_the_arena_unchanged`
+    /// - witness: `gandr-kernel-core::environment::tests::an_abandoned_staging_releases_its_claim`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()))]
     #[inline]
     pub fn discard(self)
@@ -1062,7 +1062,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1105,7 +1105,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start(), entry_provenance = provenance.len()],
@@ -1149,7 +1149,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1189,7 +1189,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — a test staged at its base's type admits and one at
     ///   another type is refused.
-    /// - witness: `check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
+    /// - witness: `gandr-kernel-core::check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1238,7 +1238,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1676,7 +1676,7 @@ impl AdmittedDeclaration
     /// # Adequacy
     /// - hypothesis: L2 — a recalled or bypassed declaration whose census read
     ///   as the empty tally of a check that charged nothing.
-    /// - witness: `environment::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
+    /// - witness: `gandr-kernel-core::environment::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
     #[inline]
     #[spec(ensures: |ret| matches!(
         (self.admission, ret),
@@ -1725,8 +1725,8 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a declaration whose check reads an entry its content does
 ///   not name is refused at that position, and a check after many unrelated
 ///   entries reads as many entries as after few.
-/// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-/// - witness: `environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
+/// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `gandr-kernel-core::environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
 #[derive(Debug, Default)]
 pub struct Entries
 {
@@ -1972,7 +1972,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a count that misses a vacancy or an entry that a
     ///   refused block drops differs from the count of [`Self::iter`].
-    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    /// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_refused_whole`
     #[inline]
     #[must_use]
     pub fn admitted(&self) -> gandr_kernel_term::ArenaLength
@@ -2009,9 +2009,9 @@ impl Entries
     ///   refused at that position, and a case over a sort keeps the loop arm of
     ///   a type of words the case does not name. A reference to an entry ranked
     ///   above the declaration is unbound.
-    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-    /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
-    /// - witness: `environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `gandr-kernel-core::tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    /// - witness: `gandr-kernel-core::environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
     #[inline]
     #[must_use]
     pub fn get<Offset>(
@@ -2391,7 +2391,7 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::get`].
-    /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    /// - witness: `gandr-kernel-core::tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
     #[spec(captures: entry_len = self.len(), ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1))]
     pub fn push(
         &mut self,
@@ -2461,7 +2461,7 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::add_decl`.
-    /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    /// - witness: `gandr-kernel-core::environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
     pub fn vacate(&mut self)
     {
@@ -2507,7 +2507,7 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::retire`.
-    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
     pub fn retire(
         &mut self,
         position: ConstantIndex,
@@ -2546,7 +2546,7 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::keep`.
-    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
     pub fn reinstate(
         &mut self,
         arena: &TermArena,
@@ -2606,7 +2606,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a block refused after one member is admitted leaves
     ///   the entries it found.
-    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    /// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(captures: entry_len = self.len(), ensures: self.len() == length.min(entry_len))]
     pub fn truncate(
         &mut self,
@@ -2693,8 +2693,8 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::get`].
-    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-    /// - witness: `environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `gandr-kernel-core::environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
     pub fn open(
         &mut self,
         roots: impl IntoIterator<Item = ConstantIndex>,
@@ -2908,10 +2908,10 @@ pub enum CodeEdges
 ///   Existing admission witnesses cover finite transitive chains through codes.
 /// - witness: `env::tests::reachability_separates_references_and_code_edges`
 /// - witness: `env::tests::unreadable_roots_contribute_no_references`
-/// - witness: `environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+/// - witness: `gandr-kernel-core::environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
 ///
-/// - witness: `environment::tests::sealing_provenance_does_not_follow_codes`
-/// - witness: `environment::tests::a_type_level_atom_reference_reaches_the_audit`
+/// - witness: `gandr-kernel-core::environment::tests::sealing_provenance_does_not_follow_codes`
+/// - witness: `gandr-kernel-core::environment::tests::a_type_level_atom_reference_reaches_the_audit`
 #[spec(ensures: |ret| match root {
     AnyNode::Value(id) => match arena.value(id) {
         Some(&Value::Constant(index)) => ret.len() == 1_usize && ret.contains(&index),
@@ -2973,7 +2973,7 @@ pub fn collect_reachable(
 /// # Adequacy
 /// - hypothesis: L3 — a check that reads only what its content names admits,
 ///   and one that reads past it is refused.
-/// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
 pub fn references(
     arena: &TermArena,
@@ -3671,7 +3671,7 @@ impl ConstantSearch
 ///   verifies that a constant reachable only through a code cannot justify a
 ///   provenance entry.
 /// - witness: `env::tests::reachability_separates_references_and_code_edges`
-/// - witness: `environment::tests::sealing_provenance_does_not_follow_codes`
+/// - witness: `gandr-kernel-core::environment::tests::sealing_provenance_does_not_follow_codes`
 #[spec(ensures: |ret| match arena.value_type(root) {
     Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
     Some(&ValueType::Data { .. } | &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),

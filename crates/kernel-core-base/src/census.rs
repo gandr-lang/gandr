@@ -175,8 +175,8 @@ pub enum ExpansionKind
 ///   event choices and the saturation boundary. These finite traces distinguish
 ///   mischarging and lost counts, not universal correspondence with every
 ///   checker event.
-/// - witness: `tests::acceptance::the_collapse_is_a_closed_form_at_three_depths`
-/// - witness: `environment::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
+/// - witness: `gandr-kernel-core::tests::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `gandr-kernel-core::environment::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
 /// - witness: `census::tests::records_charge_only_the_selected_counter_through_saturation`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ExpansionCensus

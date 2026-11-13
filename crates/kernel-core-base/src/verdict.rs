@@ -8,7 +8,7 @@
 //! the whole admitted prefix. Equal keys are equal kernel inputs. A recall is
 //! integrity, never validity: the record names bytes the kernel judged, and
 //! the receipt names the kernel that judged them. The kernel signs only what
-//! it checked itself ([`Environment::receipt`](crate::Environment::receipt)),
+//! it checked itself (`Environment::receipt`),
 //! and admits a recalled declaration only when a receipt from a signer the
 //! [`TrustPolicy`] lists verifies over the record. Under
 //! [`TrustPolicy::Recheck`] nothing is keyed and nothing is recalled.
@@ -16,9 +16,9 @@
 //! A bypass, a mutual block or an open seal ends the chain. A rejected
 //! declaration enters no environment, so the chain steps back over it and
 //! keys the next declaration as if the rejected one had never been offered. A
-//! refusal is never recorded. [`Environment::handed_on`] hands the chain to a
+//! refusal is never recorded. `Environment::handed_on` hands the chain to a
 //! resumed run without its records, and the resumed run reads the source of
-//! its own readmission ([`Environment::reading`]).
+//! its own readmission (`Environment::reading`).
 //!
 //! An entry key narrows the input to what the declaration reads. It covers
 //! the declaration's segment written alone, with each position it names
@@ -38,9 +38,6 @@
 //! under the same [`TrustPolicy`] as a recorded verdict
 //! ([`TrustPolicy::believes_stratum`]), and the checker replays its structure
 //! before it uses it.
-//!
-//! [`Environment::handed_on`]: crate::Environment::handed_on
-//! [`Environment::reading`]: crate::Environment::reading
 //!
 //! # References
 //!
@@ -128,8 +125,8 @@ const VERDICT_VERSION: u8 = 1;
 /// - hypothesis: L3 — a recorded verdict is recalled under its own key and not
 ///   after one name changes; an edit re-keys only what reads the edited
 ///   declaration.
-/// - witness: `tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
-/// - witness: `tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
+/// - witness: `gandr-kernel-core::tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
+/// - witness: `gandr-kernel-core::tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct VerdictKey([u8; 32]);
@@ -629,7 +626,7 @@ struct VerdictCount(usize);
 /// # Adequacy
 /// - hypothesis: L3 — a record round-trips through its bytes and a truncated or
 ///   retagged image is refused.
-/// - witness: `tests::verdicts::a_record_reads_back_and_a_damaged_one_is_refused`
+/// - witness: `gandr-kernel-core::tests::verdicts::a_record_reads_back_and_a_damaged_one_is_refused`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerdictRecord
 {
@@ -678,7 +675,7 @@ impl VerdictRecord
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`VerdictRecord`].
-    /// - witness: `tests::verdicts::a_record_reads_back_and_a_damaged_one_is_refused`
+    /// - witness: `gandr-kernel-core::tests::verdicts::a_record_reads_back_and_a_damaged_one_is_refused`
     #[inline]
     pub fn decode(
         key: VerdictKey,
@@ -1099,7 +1096,7 @@ impl KernelSigner
     /// - hypothesis: L3 — a stratum receipt is believed under its own signer
     ///   and refused over a changed image, under an unlisted signer and under
     ///   the recheck policy.
-    /// - witness: `tests::verdicts::a_stratum_receipt_is_believed_only_as_signed_4034`
+    /// - witness: `gandr-kernel-core::tests::verdicts::a_stratum_receipt_is_believed_only_as_signed_4034`
     #[inline]
     #[must_use]
     pub fn sign_stratum(
@@ -1150,7 +1147,7 @@ impl TrustPolicy
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`KernelSigner::sign_stratum`].
-    /// - witness: `tests::verdicts::a_stratum_receipt_is_believed_only_as_signed_4034`
+    /// - witness: `gandr-kernel-core::tests::verdicts::a_stratum_receipt_is_believed_only_as_signed_4034`
     #[inline]
     #[must_use]
     pub fn believes_stratum(
@@ -1251,9 +1248,9 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a source answering a receipt of an unlisted signer, or a
 ///   tampered record, recalls nothing; one answering such a receipt beside a
 ///   trusted one, in either order, recalls under the trusted one.
-/// - witness: `tests::verdicts::an_unlisted_signer_recalls_nothing`
-/// - witness: `tests::verdicts::a_tampered_record_recalls_nothing`
-/// - witness: `tests::verdicts::a_trusted_receipt_is_found_beside_a_foreign_one`
+/// - witness: `gandr-kernel-core::tests::verdicts::an_unlisted_signer_recalls_nothing`
+/// - witness: `gandr-kernel-core::tests::verdicts::a_tampered_record_recalls_nothing`
+/// - witness: `gandr-kernel-core::tests::verdicts::a_trusted_receipt_is_found_beside_a_foreign_one`
 pub trait VerdictSource: core::fmt::Debug + Send + Sync
 {
     /// Every receipt that attests a record of `key`.

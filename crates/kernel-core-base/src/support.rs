@@ -503,8 +503,8 @@ impl SupportContext
     ///   admissions of generated environments keep. The environments reuse
     ///   refused positions. The reference checks each declaration on an empty
     ///   session.
-    /// - witness: `environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
-    /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    /// - witness: `gandr-kernel-core::environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    /// - witness: `gandr-kernel-core::environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
     pub fn recall_kept(
         &mut self,
         arena: &TermArena,
@@ -548,7 +548,7 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — a formation kept by a refused admission and recalled
     ///   by a later one, whose obligation the later one refuses.
-    /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+    /// - witness: `gandr-kernel-core::tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
     #[inline]
     #[must_use]
     pub fn kept_checked(
@@ -591,7 +591,7 @@ impl SupportContext
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::recall_kept`].
-    /// - witness: `environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    /// - witness: `gandr-kernel-core::environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
     pub fn keep(
         &mut self,
         support: &NodeSupport,
@@ -658,7 +658,7 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — the surface is the plane projection, separated by a
     ///   check that reaches both wiring sites and finds both planes non-empty.
-    /// - witness: `tests::acceptance::the_rewrite_planes_account_separately_through_a_real_check`
+    /// - witness: `gandr-kernel-core::tests::acceptance::the_rewrite_planes_account_separately_through_a_real_check`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret == self.rewrites.plane_entry_count(plane))]
@@ -792,7 +792,7 @@ impl SupportContext
     /// - hypothesis: L3 — a formation recalled twice in one declaration whose
     ///   drain refuses the obligation, and the same formation in a later
     ///   declaration.
-    /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+    /// - witness: `gandr-kernel-core::tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
     #[spec(captures: count = self.open.len(), ensures: self.open.len() == count)]
     #[inline]
     pub fn owe_obligation(
@@ -1469,7 +1469,7 @@ impl MemoKey for KeptSupport
     /// # Adequacy
     /// - hypothesis: L3 — as [`ContentTable::parameters`]. One goal kept under
     ///   two parameter sets takes two entries.
-    /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    /// - witness: `gandr-kernel-core::environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
         == (matches!(self.support.agreement(&other.support), ContentAgreement::Agree)
             && self.parameters == other.parameters))]

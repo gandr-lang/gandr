@@ -12,7 +12,7 @@
 //! open pair is derived under either policy.
 //!
 //! A check counts the answers it took. The
-//! [`Environment`](crate::Environment) records no verdict for a declaration
+//! `Environment` records no verdict for a declaration
 //! whose check took one, since a receipt attests only what the kernel checked
 //! itself, and it sums the run's answers for its report. The parts of one
 //! check that a fork runs apart count into one [`Tally`].
@@ -229,7 +229,7 @@ impl<'check> Taking<'check>
     /// # Adequacy
     /// - hypothesis: L3 — under the policy a closed pair is taken and counted
     ///   and an open one is derived; without it nothing is taken.
-    /// - witness: `element_identity::tests::an_admitted_result_is_taken_only_under_the_policy_3558`
+    /// - witness: `gandr-kernel-core::element_identity::tests::an_admitted_result_is_taken_only_under_the_policy_3558`
     #[spec(
         captures: before = self.taken(),
         ensures: |ret| {
