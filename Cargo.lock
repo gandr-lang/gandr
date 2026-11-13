@@ -2247,6 +2247,16 @@ name = "gandr-workflow-github"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-workflow-host-tools"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "quenchant-anodized",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "gandr-workflow-hotpath-guard"
 version = "0.0.0"
 dependencies = [

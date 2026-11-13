@@ -209,3 +209,34 @@ while :; do
 done
 {% endraw %}
 '''
+
+# The pin of mise: the `version` of the mise step of
+# `.github/actions/install-tools/action.yml`, which the CI image reads too
+# (#7008). Each host runs this version of mise.
+["mise:pin"]
+description = "Print the pin of mise, the version that CI installs and that each host runs"
+quiet = true
+tools.yq = "4.54.1"
+run = '''
+yq '.runs.steps[] | select(.uses // "" | test("^jdx/mise-action@")) | .with.version' .github/actions/install-tools/action.yml
+'''
+
+# The tools of `mise.toml` whose releases publish no binary for a target,
+# cross-built on this host into a directory of keys, once for each version
+# (#7008). `.config/host-tools/builds.toml` names them and how each builds,
+# and `crates/workflow-host-tools` builds them; a key that stands is kept.
+# The builder's linker, C tools and programs are its configuration,
+# `$XDG_CONFIG_HOME/gandr/host-tools.toml`, never the tree's.
+["tools:build"]
+description = "Cross-build each tool that publishes no binary for a target into a directory of keys, once for each version"
+usage = '''
+arg "<target>" help="the target triple, as riscv64gc-unknown-linux-gnu"
+arg "<into>" help="the directory of the keys, <target>/<install name>/<version>"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pin=$(mise run --quiet mise:pin)
+cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-tools -- \
+  build --target "${usage_target:?}" --into "${usage_into:?}" --mise-version "$pin"
+'''

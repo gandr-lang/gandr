@@ -74,6 +74,7 @@ members = [
   "crates/workflow-coverage-guard",
   "crates/workflow-debt-ledger",
   "crates/workflow-github",
+  "crates/workflow-host-tools",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
   "crates/workflow-ledger-tasks",
@@ -203,6 +204,7 @@ default-features = false
 # - theory-virtual-doctrines
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-ledger-tasks
@@ -280,6 +282,7 @@ default-features = false
 # - surface-driver
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-ledger-tasks
@@ -1725,8 +1728,9 @@ default-features = false
 # server's protocol messages, the diagnostics' JSON image, the
 # specification-cost ranking's reading of nextest's test list, the build
 # state's reading of Cargo's messages, the lane budget's reading of `gh`'s
-# issue listing, the coverage guard's reading of Codecov's answers and the
-# prose check's reading of its parse and glossary derive through.
+# issue listing, the coverage guard's reading of Codecov's answers, the host
+# tools' reading of their table, `mise.lock` and the builder's configuration,
+# and the prose check's reading of its parse and glossary derive through.
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
@@ -1738,6 +1742,7 @@ default-features = false
 # - surface-render-remote
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-prose
@@ -1824,7 +1829,8 @@ features = ["rt", "sync", "time"]
 # TOML, read into a table: the test-timing report reads the priority
 # overrides of `.config/nextest.toml`, the driver the user's configuration
 # file, the hotpath judge a benchmark's regression policy, the prose check its
-# glossary, and the incremental store's build script its refusal mirror's
+# glossary, the host tools their table, `mise.lock` and the builder's
+# configuration, and the incremental store's build script its refusal mirror's
 # table. `display` and `std` stay off: none writes TOML through
 # the crate.
 # features:
@@ -1834,6 +1840,7 @@ features = ["rt", "sync", "time"]
 # consumers:
 # - core-incremental (build script)
 # - surface-driver
+# - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-prose
 # - workflow-test-timing
