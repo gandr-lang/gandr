@@ -17,7 +17,7 @@
 # `<package dir>/tests/debug-traces/<test>.txt`, `::` written as `.`, the
 # workspace root and the home directory taken out of every path in it. Its
 # first lines name the test and the command that wrote it, which
-# `.config/claims/observed.jq` reads. `--features` builds the package under
+# `.config/bodies/observed.jq` reads. `--features` builds the package under
 # the features it lists, so a test that a feature gates runs too.
 #
 # Usage: trace.bash <package> <test> [--at <file>:<line>]... [--break <regex>]...

@@ -26,7 +26,7 @@
 #   the defect's observation.
 # A row's verdict reads `accepted`, `fall: #<n>` while its defect is open,
 # and `fixed: #<n>` once that defect closes. The collector reading
-# (`.config/claims/sections.jq`) settles every row but an open fall.
+# (`.config/bodies/sections.jq`) settles every row but an open fall.
 
 def two: (. * 100 | round) as $c | "\($c / 100 | floor).\($c % 100 | tostring | if length == 1 then "0" + . else . end)";
 def short: .[0:9];

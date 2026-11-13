@@ -46,8 +46,15 @@ api_read() {
   return 0
 }
 
+# The path each file that the change renames had at the base: a move adds
+# no line that it keeps, so `added_lines` reads the file against that path.
+declare -A renamed=()
+while IFS=$'\t' read -r status old new; do
+  [[ $status == R* ]] && renamed[$new]=$old
+done < <(git diff --name-status -M "$base" "$head" -- .config .github)
+
 added_lines() {
-  git diff -U0 "$base" "$head" -- "$1" | awk '
+  git diff -U0 -M "$base" "$head" -- ${renamed[$1]:+"${renamed[$1]}"} "$1" | awk '
     /^@@ / {
       if (match($0, /\+([0-9]+)/)) start = substr($0, RSTART + 1, RLENGTH - 1) + 0
       next

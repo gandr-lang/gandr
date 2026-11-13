@@ -40,9 +40,9 @@ ln -s "$here/filed-once-gh.bash" "$work/gh/gh"
 # `body:check` reads the private-names list; this one matches no case's text.
 echo '^no case writes this line$' > "$work/config/gandr/private-names"
 mise_config=${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}
-printf '## Observation\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`.config/claims/filing.jq`|two readers walk one board|\n\nfrom: #5\n' > "$work/body.md"
+printf '## Observation\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`.config/reports/filing.jq`|two readers walk one board|\n\nfrom: #5\n' > "$work/body.md"
 jq -n '{state: "MERGED", headRefName: "triage-7-filed",
-  body: "## Refactoring\n\nyes\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`.config/claims/filing.jq`|two readers walk one board|\n",
+  body: "## Refactoring\n\nyes\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`.config/reports/filing.jq`|two readers walk one board|\n",
   closingIssuesReferences: {nodes: [{number: 7, parent: {number: 4481}, labels: {nodes: [{name: "area:workflow"}]}}]}}' > "$work/pr.json"
 
 # Run `$3...` in the clone `$1`, with the host directories of `$2`.

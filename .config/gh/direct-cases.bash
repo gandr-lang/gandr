@@ -86,5 +86,11 @@ init
 commit_file .config/mise/tasks/mise-tasks-x.toml "$(printf '%s\n' '["one"]' "run = '''" 'source .config/gh/budget.bash' "$read_line" "'''" '["two"]' "run = '''" "$write_line" "'''")"
 commit_file .config/other.bash '# note'
 expect_pass "an old read of a task file after the wrapper, and a write in a task with no source"
+
+init
+commit_file .config/one/read.bash "$(printf '%s\n' '# the read' "$read_line")"
+git -C "$work/repo" mv .config/one .config/two
+git -C "$work/repo" commit -q -m move
+expect_pass "an old read of a script that the change moves"
 ((fail == 0))
 printf 'gh-direct cases OK\n'

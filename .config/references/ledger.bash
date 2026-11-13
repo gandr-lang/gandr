@@ -64,7 +64,7 @@ references_fresh() {
 # Prints the citation window's findings over the database named, which holds
 # `cite` and `work` as `references_load` builds them, under the policy file
 # named: its cutoff year and its allowlist, read by `window.jq`. The cutoff
-# `unit:check` reads from the text (`.config/claims/cutoff.jq`, #4708) is held
+# `unit:check` reads from the text (`.config/bodies/cutoff.jq`, #4708) is held
 # to the one yq reads.
 references_window() {
   local db=$1 policy=$2 dir json cutoff
@@ -74,8 +74,8 @@ references_window() {
     echo "$policy: \`cutoff\` is the year the citation window opens, a whole number" >&2
     return 1
   fi
-  if [[ $(jq -R -s -f .config/claims/cutoff.jq "$policy" 2> /dev/null) != "$cutoff" ]]; then
-    echo "$policy: \`.config/claims/cutoff.jq\` does not read the cutoff $cutoff: write it as one line, \`cutoff = <year>\`" >&2
+  if [[ $(jq -R -s -f .config/bodies/cutoff.jq "$policy" 2> /dev/null) != "$cutoff" ]]; then
+    echo "$policy: \`.config/bodies/cutoff.jq\` does not read the cutoff $cutoff: write it as one line, \`cutoff = <year>\`" >&2
     return 1
   fi
   jq -r -f .config/references/window.jq <<< "$json" > "$dir/allow.tsv"

@@ -167,7 +167,7 @@ const identityTrailers = (parsed) => {
 // keyword names when a commit carrying it reaches the default branch,
 // wherever in the message it stands, so the verb in prose shuts an issue the
 // commit only mentions. A keyword (close, fix or resolve in any tense, before
-// `#n` or `owner/name#n`, the grammar of `.config/claims/targets.jq`) is
+// `#n` or `owner/name#n`, the grammar of `.config/bodies/targets.jq`) is
 // refused anywhere but a line that is exactly `Closes #n`, `Fixes #n` or
 // `Resolves #n`, more issues after commas, quoted as code or not, as
 // `pr:open` refuses one in a pull request body.

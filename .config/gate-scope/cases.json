@@ -78,7 +78,7 @@
         "check:tests-enforcing",
         "check:typos"
       ],
-      "changed": [".config/claims/epic-deps.bash", "crates/core-term/src/lib.rs"]
+      "changed": [".config/epics/epic-deps.bash", "crates/core-term/src/lib.rs"]
     },
     "output": [
       "check:claims",

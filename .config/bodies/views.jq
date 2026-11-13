@@ -53,7 +53,7 @@ def observed_findings($labels):
         ($rows | to_entries[] | .key as $at | .value
           | (.cells[1] // "") as $reach
           | if surface_named(.cells[0]) == null then
-              "`## Observed at` row `\(.line)` names no shipped surface of `.config/claims/surfaces.json` (\($names)): name one, or add the surface to the table in the landing that ships it"
+              "`## Observed at` row `\(.line)` names no shipped surface of `.config/bodies/surfaces.json` (\($names)): name one, or add the surface to the table in the landing that ships it"
             elif $reach | set_aside then
               if $at > 0 then "`## Observed at` row `\(.line)` sets its surface aside: only the editor extension's row reads `n/a — <why>`, so remove the row"
               elif $reach | test("^n/a —\\s*\\S"; "i") then empty

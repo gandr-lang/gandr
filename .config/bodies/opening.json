@@ -1034,7 +1034,7 @@
           "text": "# `collector`, whose rows a guard keeps (#2621)."
         },
         {
-          "path": ".config/claims/opening.json",
+          "path": ".config/bodies/opening.json",
           "text": "      \"body\": \"Fixes #2621\\n\","
         }
       ]
@@ -1540,10 +1540,10 @@
     "name": "a `no` that lists a row is refused (#2884)",
     "input": {
       "branch": "workflow-2884-refactoring",
-      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nno\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `.config/claims/unit.jq` | reads sections twice |\n",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nno\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `.config/bodies/unit.jq` | reads sections twice |\n",
       "issues": []
     },
-    "output": "the body's `## Refactoring` says `no` and lists the row `| duplicate | `.config/claims/unit.jq` | reads sections twice |`: keep the rows and say `yes` or `maybe`, or `no` alone, then run `pr:open` again"
+    "output": "the body's `## Refactoring` says `no` and lists the row `| duplicate | `.config/bodies/unit.jq` | reads sections twice |`: keep the rows and say `yes` or `maybe`, or `no` alone, then run `pr:open` again"
   },
   {
     "name": "a row with an unknown kind, no `Where`, a `Where` of neither spelling, or no observation is refused (#2884)",
@@ -1567,7 +1567,7 @@
     "name": "a `maybe` with rows of item and repository paths opens, a comment above the verdict not read as content (#2884)",
     "input": {
       "branch": "workflow-2884-refactoring",
-      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\n<!-- the lane's question -->\nmaybe\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| consolidate | `gandr_core_checker::fork`, `gandr_surface_dispatcher::pool` | two pools of one concern |\n| duplicate | `.config/claims/opening.jq`, `.config/claims/unit.jq` | both read the sections' marks |\n",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\n<!-- the lane's question -->\nmaybe\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| consolidate | `gandr_core_checker::fork`, `gandr_surface_dispatcher::pool` | two pools of one concern |\n| duplicate | `.config/bodies/opening.jq`, `.config/bodies/unit.jq` | both read the sections' marks |\n",
       "issues": []
     },
     "output": ""
@@ -1942,11 +1942,11 @@
       "body": "Closes #5061\n\n## API budget\n\n- `pulls_reading` costs less now.\n- `deps_focus`: 2 requests a walk, from the call log.\n\n## Refactoring\n\nno\n",
       "budget": [
         { "file": ".config/pr-stack/stack.bash", "scope": "pulls_reading", "api": "graphql" },
-        { "file": ".config/claims/deps.bash", "scope": "deps_focus", "api": "rest" },
-        { "file": ".config/claims/deps.bash", "scope": "deps_sub_issues_kept", "api": "rest" }
+        { "file": ".config/issues/deps.bash", "scope": "deps_focus", "api": "rest" },
+        { "file": ".config/issues/deps.bash", "scope": "deps_sub_issues_kept", "api": "rest" }
       ]
     },
-    "output": "the body's `## API budget` does not price `pulls_reading` (.config/pr-stack/stack.bash, graphql): add a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again\nthe body's `## API budget` does not price `deps_sub_issues_kept` (.config/claims/deps.bash, rest): add a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again"
+    "output": "the body's `## API budget` does not price `pulls_reading` (.config/pr-stack/stack.bash, graphql): add a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again\nthe body's `## API budget` does not price `deps_sub_issues_kept` (.config/issues/deps.bash, rest): add a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again"
   },
   {
     "name": "#5061: an `## API budget` that prices every altered site opens, a top-level call named by its file",
@@ -2129,7 +2129,7 @@
         "tests": [{ "surface": "gandr view", "test": "a_card_draws_its_title", "found": false }]
       }
     },
-    "output": "the body closes #6873, a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head (none found: `gandr view` `a_card_draws_its_title`): write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/claims/surfaces.json`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
+    "output": "the body closes #6873, a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head (none found: `gandr view` `a_card_draws_its_title`): write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/bodies/surfaces.json`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
   },
   {
     "name": "#6873: a body closing a `view` unit with no `## Observed at` row is refused",
@@ -2139,7 +2139,7 @@
       "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["view"] }],
       "views": { "built": [], "tests": [] }
     },
-    "output": "the body closes #6873, a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head: write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/claims/surfaces.json`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
+    "output": "the body closes #6873, a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head: write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/bodies/surfaces.json`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
   },
   {
     "name": "#6873: a body advancing a `view` unit with no `## Observed at` row opens: its server side lands first",

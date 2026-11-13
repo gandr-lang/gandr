@@ -98,8 +98,8 @@
       "check:bench": [
         ".cargo/",
         ".config/bench/",
+        ".config/bodies/",
         ".config/cases/",
-        ".config/claims/",
         ".config/gh/budget.bash",
         ".config/issues/",
         ".config/mise/scope",
@@ -176,8 +176,8 @@
         "hotpath/"
       ],
       "check:issues": [
+        ".config/bodies/",
         ".config/cases/",
-        ".config/claims/",
         ".config/epics/",
         ".config/gh/",
         ".config/issues/",
@@ -251,7 +251,7 @@
         "crates/surface-parser/tests/"
       ],
       "check:references": [
-        ".config/claims/",
+        ".config/bodies/",
         ".config/references/",
         "README.md",
         "corpus/",
@@ -278,7 +278,7 @@
         "Cargo.toml",
         "crates/"
       ],
-      "check:stall": [".config/cases/", ".config/claims/", ".config/stall/"],
+      "check:stall": [".config/bodies/", ".config/cases/", ".config/claims/", ".config/stall/"],
       "check:syntax-ledger": [
         ".cargo/",
         ".config/ledger/",
@@ -291,8 +291,8 @@
         "ledger/"
       ],
       "check:tracking": [
+        ".config/bodies/",
         ".config/cases/",
-        ".config/claims/",
         ".config/gh/budget.bash",
         ".config/tracking/",
         "crates/core-term/",

@@ -33,7 +33,7 @@ exec "$root/.config/debug/lldb.bash" lldb --source "$root/.config/debug/lldbinit
 # carries is a transcript of the failing test under lldb, never a reading of
 # the code. `claim:next` names the command on a defect's claim, and
 # `evidence:obligations` owes the `observed` box until the change commits the
-# transcript (`.config/claims/observed.jq`).
+# transcript (`.config/bodies/observed.jq`).
 #
 # `debug:test` runs one test of a package under lldb, stopped at a panic and
 # where a function `--break` names by regular expression is entered, and

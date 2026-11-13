@@ -943,7 +943,7 @@ done
 #
 # A defect owes one more line: its observation in the running program
 # (#3758). When the body works a `kind:defect` issue, the task writes a
-# `### Observed` block after the section (`.config/claims/observed.jq`). The
+# `### Observed` block after the section (`.config/bodies/observed.jq`). The
 # box is ticked when the change adds a transcript under a crate's
 # `tests/debug-traces/` that a `debug:` task wrote, stopped at a breakpoint,
 # in a test the body names. A change whose diff touches no Rust has no test
@@ -957,7 +957,7 @@ done
 #
 # A performance fix owes one more line: whether a lint could have refused the
 # pattern it fixes (#1370). The body names the issues it works
-# (`.config/claims/targets.jq`); when one of them, or the pull request named
+# (`.config/bodies/targets.jq`); when one of them, or the pull request named
 # by `--pr`, carries `kind:performance` or `fix:performance`, the section
 # gains a `lint assessment` box whose verdict reads `could: yes — <lint>,
 # <reference>` or `could: no — <one sentence>`, open until ticked in one of
@@ -1013,7 +1013,7 @@ if [[ -n ${usage_body:-} ]]; then extra+=(--body "$usage_body"); fi
 if [[ ${usage_require_acknowledged:-false} == true ]]; then extra+=(--require-acknowledged); fi
 text=${usage_body:-${usage_previous:-}}
 if [[ -n $text ]]; then
-  numbers=$(jq -Rrs -L .config/claims 'include "targets"; targets(working) | unique[]' "$text")
+  numbers=$(jq -Rrs -L .config/bodies 'include "targets"; targets(working) | unique[]' "$text")
   if [[ -n ${usage_pr:-} ]]; then numbers+=$'\n'$usage_pr; fi
   labels=()
   for number in $numbers; do
@@ -1044,9 +1044,9 @@ if [[ -n $text ]]; then
   done
   # The block is `observed.bash`'s, whose inputs reach jq through files, so a
   # transcript of any size passes (#3871).
-  block=$(.config/claims/observed.bash "$base" "$text" "$defect")
+  block=$(.config/bodies/observed.bash "$base" "$text" "$defect")
   if [[ -n ${usage_body:-} ]]; then
-    block="$block" awk -f .config/claims/observed.awk "$usage_body" > "$usage_body.observed"
+    block="$block" awk -f .config/bodies/observed.awk "$usage_body" > "$usage_body.observed"
     mv -- "$usage_body.observed" "$usage_body"
   fi
   if [[ $block == *'- [ ] observed'* ]]; then
@@ -1453,7 +1453,7 @@ if [[ -n $findings ]]; then
       || { echo 'tracking: git could not read the history of HEAD' >&2; exit 1; }
     git log --format='%B%x1e' --extended-regexp --regexp-ignore-case "${greps[@]}" --remotes --not HEAD > "$tmp/elsewhere" \
       || { echo 'tracking: git could not read the remote branches' >&2; exit 1; }
-    jq -n -r -L .config/claims --rawfile held "$tmp/held" --rawfile elsewhere "$tmp/elsewhere" '
+    jq -n -r -L .config/bodies --rawfile held "$tmp/held" --rawfile elsewhere "$tmp/elsewhere" '
       include "targets";
       def closes($n): split("\u001e") | any(.[]; test("(?i)\\b\(closing):?\\s+#\($n)\\b"));
       $ARGS.positional[] as $n
@@ -2719,17 +2719,17 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 # issue that keeps its claim and a release that renews its age (#6954), the
 # closed and epic sweep, a label 4 hours old however fresh the issue (#3915),
 # read on a merge's run too, and an open pull
-# request that keeps a claim. Each case in `.config/claims/opening.json`
+# request that keeps a claim. Each case in `.config/bodies/opening.json`
 # holds a branch, a body, the issues it works, the tree's lines naming what
 # it supersedes, the concerns ledger and the sources the change adds, and the
 # lines `pr:open` prints for them, or none (`opening.jq`): the body must work
 # the branch's issue (#2462), answer the sources (#2499) and the reading axes
 # (#2522) its issues request, name the concerns it touches (#2523), and state
 # the facts it keeps once it drops many comment lines (#6004); each
-# in `.config/claims/signed.json` the issues a body works and the lines
+# in `.config/bodies/signed.json` the issues a body works and the lines
 # `pr:open` refuses them with until each is sectioned and carries
 # `shape:signed`, or none (`signed.jq`, #3134). Each
-# case in `.config/claims/unit.json` holds an issue body and the lines
+# case in `.config/bodies/unit.json` holds an issue body and the lines
 # `unit:check` prints for it, or none (`unit.jq`, #2532); each in
 # `.config/claims/next.json` a lane's areas, the open issues, the picks read
 # again before the claim, and the claim `claim:next` takes from them, or none,
@@ -2740,79 +2740,79 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 # (`claimed.jq`, #4660, #5531); each in `.config/claims/taken.json` a
 # branch or a lane, an issue, and the unit the branch works, the gate's
 # verdict on its claim, or what `claim:take` writes (`taken.jq`, #5146); each in
-# `.config/claims/ledger.json`
+# `.config/bodies/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
 # prints for them, or none (`ledger.jq`, #2525); each in
-# `.config/claims/reserved.json` the syntax ledger's reserved rows, their
+# `.config/ledger/reserved.json` the syntax ledger's reserved rows, their
 # status at the head and the issues they cite, and the lines
 # `ledger:reserved` prints for them, or none (`reserved.jq`, #2528). Each
-# case in `.config/claims/patched.json` runs `ledger:patched` itself on a
+# case in `.config/bodies/patched.json` runs `ledger:patched` itself on a
 # scratch repository whose head adds `padding` rows of about 500 bytes to
 # this checkout's features table, under a body naming none, and holds its
 # exit and the count of lines it prints: a table past the argument limit is
 # read, not refused by the shell (#2671). Each case in
-# `.config/claims/board.json` runs `refactor:file` itself the same way, a stub
+# `.config/reports/board.json` runs `refactor:file` itself the same way, a stub
 # `gh` answering with a board past the argument limit, and holds the decision
-# its dry run prints (#3771). Each case in `.config/claims/filed-once.json`
+# its dry run prints (#3771). Each case in `.config/issues/filed-once.json`
 # runs `issue:file` or `refactor:file` from two clones over one stub GitHub,
 # and holds the issues the board ends with (`filed-once.bash`, #5149). Each
 # case in
-# `.config/claims/shown.json` holds an issue body, the vault's pages and the
+# `.config/bodies/shown.json` holds an issue body, the vault's pages and the
 # tree's filenames, and the lines `unit:check` reads for the vault pages the
-# body names (`shown.jq`, #2793); each in `.config/claims/annotated.json` a
+# body names (`shown.jq`, #2793); each in `.config/bodies/annotated.json` a
 # body and the body `pr:open` writes back with each page's mint beside its
-# filename (`annotated.jq`). Each case in `.config/claims/deps.json` holds an
+# filename (`annotated.jq`). Each case in `.config/issues/deps.json` holds an
 # issue, the issues GitHub has it blocked by and its sub-issues, and the
 # dependencies `unit:check` sets or notes for them (`deps.jq`, #2902); each
-# in `.config/claims/chain.json` a rung's body and the body `epic:order
-# --chain` writes back (`chain.jq`); each in `.config/claims/report.json`
+# in `.config/bodies/chain.json` a rung's body and the body `epic:order
+# --chain` writes back (`chain.jq`); each in `.config/reports/report.json`
 # the open issues, their dependencies and the last report, and the report
-# `report:deps` writes (`report.jq`); each in `.config/claims/reads.json` the
+# `report:deps` writes (`report.jq`); each in `.config/reports/reads.json` the
 # open issues and the one pass's map, and the issues `report:deps` reads with
 # what GitHub records for each (`reads.jq`, #3192); each in
-# `.config/claims/filing.json` a
+# `.config/reports/filing.json` a
 # merged pull request, the refactor issues, and what `refactor:file` files
-# for them (`filing.jq`, #2885); each in `.config/claims/obligations.json`
+# for them (`filing.jq`, #2885); each in `.config/reports/obligations.json`
 # the merged pull requests of a period with their units, and the report
 # `report:obligations` writes (`obligations.jq`, #2886); each in
-# `.config/claims/period.json` a period and the days and month before it
+# `.config/reports/period.json` a period and the days and month before it
 # reads, or its refusal (`period.jq`, #3576); each in
-# `.config/claims/terms.json` a unit's title and body, term map rows, and the
+# `.config/bodies/terms.json` a unit's title and body, term map rows, and the
 # findings `unit:check` prints for its vocabulary (`terms.jq`, #3158); each in
-# `.config/claims/motivating.json` a unit's body, the epics it names, and the
+# `.config/bodies/motivating.json` a unit's body, the epics it names, and the
 # findings `unit:check` prints for their motivating sources (`motivating.jq`,
 # #5855); each in
-# `.config/claims/absorbing.json` a body, its issues and the vault's
+# `.config/bodies/absorbing.json` a body, its issues and the vault's
 # absorption statuses, and the line `pr:open` and `pr:land` refuse a design
 # page left unanswered in its `## Vault` with (`absorbing.jq`, #3161); each
-# in `.config/claims/design.json` the vault's absorption statuses, its unit
+# in `.config/reports/design.json` the vault's absorption statuses, its unit
 # tables and the open issues, and the lines `report:design` prints for the
 # design pages and the open units that no open issue names (`design.jq`,
-# #3401); each in `.config/claims/recovery.json` a cause of the night's sweep
+# #3401); each in `.config/reports/recovery.json` a cause of the night's sweep
 # and the body `ci:recovery-file` files for it (`recovery.jq`, #3596); each
-# in `.config/claims/swept.json` a night's recovery causes, the open recovery
+# in `.config/reports/swept.json` a night's recovery causes, the open recovery
 # collectors, and the rows `ci:recovery-file` marks and the collectors it
-# closes (`swept.jq`, #3326, #3732); each in `.config/claims/landed.json` a
+# closes (`swept.jq`, #3326, #3732); each in `.config/reports/landed.json` a
 # merged body, the issues it advances with the merged landings on each one's
 # timeline, and the rows the merge ticks and the collectors it closes
 # (`landed.jq`, #3732, #5583); each in
-# `.config/claims/slow.json` one run's test times, the open slow-test
+# `.config/reports/slow.json` one run's test times, the open slow-test
 # collectors, and the collectors `ci:slow-file` opens, marks and closes
 # (`slow.jq`, #3752); each in
-# `.config/claims/observed.json` a body, whether it works a defect and the
+# `.config/bodies/observed.json` a body, whether it works a defect and the
 # transcripts the change adds, and the `### Observed` block
 # `evidence:obligations` writes for them (`observed.jq`, #3758); each in
-# `.config/claims/splice.json` a body, a block of several lines, and the body
+# `.config/bodies/splice.json` a body, a block of several lines, and the body
 # the splice writes with it (`observed.awk`, #3784); each in
-# `.config/claims/hand-off.json` a transcript's size, and the block
+# `.config/bodies/hand-off.json` a transcript's size, and the block
 # `observed.bash` prints for a change adding it (#3871); each in
-# `.config/claims/comments.json` a Rust diff, and the files of it that change
-# only comments (`comments.jq`, #5498); each in `.config/claims/claim.json` a
+# `.config/bodies/comments.json` a Rust diff, and the files of it that change
+# only comments (`comments.jq`, #5498); each in `.config/bodies/claim.json` a
 # unit's body, the vault's absorption statuses and its body when the rule
 # landed, and the rows that lack a design page's claim (`claim.jq`, #6569);
-# each in `.config/claims/measured.json` a unit's body and a comment that
+# each in `.config/bodies/measured.json` a unit's body and a comment that
 # sets it aside on a probe, and the refusal of a saving left unmeasured
-# (`measured.jq`, #6569); each in `.config/claims/identifiers.json` a unit's
+# (`measured.jq`, #6569); each in `.config/bodies/identifiers.json` a unit's
 # body, the design pages that name its identifiers and its body when the rule
 # landed, and the pages that its `## Sources` owes (`identifiers.jq`, #7019).
 # The
@@ -2827,56 +2827,58 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 failed=0
+# `cases <kind> <program> <file>` runs the cases of a program. Each program
+# and its file live in the directory of the program's concern (#6252).
 cases() {
-  .config/cases/run.bash "$1" ".config/claims/$3" --program ".config/claims/$2" -L .config/issues "${@:4}" || failed=1
+  .config/cases/run.bash "$1" "$3" --program "$2" -L .config/bodies -L .config/claims -L .config/issues "${@:4}" || failed=1
 }
-cases claims decide.jq cases.json
-cases opening opening.jq opening.json
-cases signed signed.jq signed.json
-cases unit unit.jq unit.json
-cases next next.jq next.json
-cases claimed claimed.jq claimed.json --mode c
-cases taken taken.jq taken.json --mode c
-cases ledger ledger.jq ledger.json
-cases reserved reserved.jq reserved.json
-cases shown shown.jq shown.json
-cases annotated annotated.jq annotated.json
-cases deps deps.jq deps.json
-cases chain chain.jq chain.json
-cases report report.jq report.json
-cases filing filing.jq filing.json --mode c
-cases obligations obligations.jq obligations.json
-cases period period.jq period.json --mode c
-cases terms terms.jq terms.json
-cases motivating motivating.jq motivating.json
-cases absorbing absorbing.jq absorbing.json
-cases claim claim.jq claim.json
-cases identifiers identifiers.jq identifiers.json
-cases measured measured.jq measured.json
-cases design design.jq design.json
-cases reads reads.jq reads.json --mode c
-cases recovery recovery.jq recovery.json
-cases swept swept.jq swept.json --mode c
-cases landed landed.jq landed.json --mode c
-cases slow slow.jq slow.json --mode c
-cases observed observed.jq observed.json
-cases comments comments.jq comments.json --mode c
+cases claims .config/claims/decide.jq .config/claims/cases.json
+cases opening .config/bodies/opening.jq .config/bodies/opening.json
+cases signed .config/bodies/signed.jq .config/bodies/signed.json
+cases unit .config/bodies/unit.jq .config/bodies/unit.json
+cases next .config/claims/next.jq .config/claims/next.json
+cases claimed .config/claims/claimed.jq .config/claims/claimed.json --mode c
+cases taken .config/claims/taken.jq .config/claims/taken.json --mode c
+cases ledger .config/bodies/ledger.jq .config/bodies/ledger.json
+cases reserved .config/ledger/reserved.jq .config/ledger/reserved.json
+cases shown .config/bodies/shown.jq .config/bodies/shown.json
+cases annotated .config/bodies/annotated.jq .config/bodies/annotated.json
+cases deps .config/issues/deps.jq .config/issues/deps.json
+cases chain .config/bodies/chain.jq .config/bodies/chain.json
+cases report .config/reports/report.jq .config/reports/report.json
+cases filing .config/reports/filing.jq .config/reports/filing.json --mode c
+cases obligations .config/reports/obligations.jq .config/reports/obligations.json
+cases period .config/reports/period.jq .config/reports/period.json --mode c
+cases terms .config/bodies/terms.jq .config/bodies/terms.json
+cases motivating .config/bodies/motivating.jq .config/bodies/motivating.json
+cases absorbing .config/bodies/absorbing.jq .config/bodies/absorbing.json
+cases claim .config/bodies/claim.jq .config/bodies/claim.json
+cases identifiers .config/bodies/identifiers.jq .config/bodies/identifiers.json
+cases measured .config/bodies/measured.jq .config/bodies/measured.json
+cases design .config/reports/design.jq .config/reports/design.json
+cases reads .config/reports/reads.jq .config/reports/reads.json --mode c
+cases recovery .config/reports/recovery.jq .config/reports/recovery.json
+cases swept .config/reports/swept.jq .config/reports/swept.json --mode c
+cases landed .config/reports/landed.jq .config/reports/landed.json --mode c
+cases slow .config/reports/slow.jq .config/reports/slow.json --mode c
+cases observed .config/bodies/observed.jq .config/bodies/observed.json
+cases comments .config/bodies/comments.jq .config/bodies/comments.json --mode c
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 # `evidence:obligations` splices the `### Observed` block into a body
-# (`observed.awk`): for each case in `.config/claims/splice.json` a body and a
+# (`observed.awk`): for each case in `.config/bodies/splice.json` a body and a
 # block of several lines, and the body the splice writes, under every awk
 # (#3784).
 while IFS= read -r case; do
   jq -j .body <<< "$case" > "$scratch/observed.md"
   wanted=$(jq -j .output <<< "$case")
-  got=$(block=$(jq -j .block <<< "$case") awk -f .config/claims/observed.awk "$scratch/observed.md" 2>&1) || failed=1
+  got=$(block=$(jq -j .block <<< "$case") awk -f .config/bodies/observed.awk "$scratch/observed.md" 2>&1) || failed=1
   if [[ $got != "${wanted%$'\n'}" ]]; then
     printf 'splice case FAILED: %s\n  got:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/splice.json)
+done < <(jq -c '.[]' .config/bodies/splice.json)
 (( failed == 0 )) || exit 1
 printf '## Ledger\n\nNone.\n' > "$scratch/body.md"
 line=$(printf 'a padded row of the argument-limit case, %.0s' {1..11})
@@ -2900,10 +2902,10 @@ while IFS= read -r case; do
       "$(jq .exit <<< "$case")" "$(jq .lines <<< "$case")" "$(printf '%s\n' "$out" | awk 'NR <= 3')" "$(cat "$scratch/err")" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/patched.json)
+done < <(jq -c '.[]' .config/bodies/patched.json)
 (( failed == 0 )) || exit 1
 # `refactor:file` reads a board past the argument limit (#3771): for each case
-# in `.config/claims/board.json` a stub `gh` answers with a merged pull
+# in `.config/reports/board.json` a stub `gh` answers with a merged pull
 # request whose verdict is `no` and the case's count of refactor issues, 250
 # bytes of body each, and the dry run prints the case's decision. The pinned
 # `gh` is disabled for the run, so the stub answers. The tools the host
@@ -2928,7 +2930,7 @@ while IFS= read -r case; do
     printf 'board case FAILED: %s\n  gave: %s\n%s\n' "$(jq -r .name <<< "$case")" "$decision" "$(cat "$scratch/err")" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/board.json)
+done < <(jq -c '.[]' .config/reports/board.json)
 (( failed == 0 )) || exit 1
 # `refactor:file` reads the unit and the lane from each branch form (#6012):
 # a lane whose name holds a hyphen, a numbered seat and a lane of one word.
@@ -2936,10 +2938,10 @@ done < <(jq -c '.[]' .config/claims/board.json)
 # `gh` and holds the unit it reads, the lane label and the decision.
 .config/claims/branch-unit.bash || exit 1
 # A filing ends with one open issue against one GitHub (#5149): each case in
-# `.config/claims/filed-once.json` runs `issue:file --epic` over an epic at or
+# `.config/issues/filed-once.json` runs `issue:file --epic` over an epic at or
 # below GitHub's 100 sub-issues, or two `refactor:file` runs at once from two
 # clones, over the stub `filed-once-gh.bash` (`filed-once.bash`).
-.config/claims/filed-once.bash || exit 1
+.config/issues/filed-once.bash || exit 1
 # `pick-cases.bash` reads the pick `claim:next` takes from `next.jq`'s
 # answer (#5178): a held line before the pick leaves it, and held lines
 # alone give none.
@@ -2949,13 +2951,13 @@ done < <(jq -c '.[]' .config/claims/board.json)
 .config/claims/input-cases.bash || exit 1
 # `frame-cases.bash` signs a unit over a stub `gh` (#7018): the comment
 # holds the marker of the frame now and names its signer (#7129).
-.config/claims/frame-cases.bash || exit 1
+.config/bodies/frame-cases.bash || exit 1
 # `comments-cases.bash` reads the comment lines a change drops (#6004): a
 # deleted file's lines read under its own path, and a line that moves is kept
 # (#7084).
-.config/claims/comments-cases.bash || exit 1
+.config/bodies/comments-cases.bash || exit 1
 # `observed.bash` hands a transcript of any size to jq (#3871): for each case
-# in `.config/claims/hand-off.json` a scratch repository adds a transcript of
+# in `.config/bodies/hand-off.json` a scratch repository adds a transcript of
 # the case's size, stopped in a test the body names, and the script prints the
 # case's block.
 root=$PWD
@@ -2972,16 +2974,16 @@ while IFS= read -r case; do
     jq -rn --argjson bytes "$bytes" '"x" * $bytes'
   } > "$repo/crates/p/tests/debug-traces/t.txt"
   git -C "$repo" add crates && git -C "$repo" commit --quiet --no-verify -m head
-  got=$(cd "$repo" && "$root/.config/claims/observed.bash" HEAD~1 "$scratch/hand-off.md" true 2> "$scratch/err") || true
+  got=$(cd "$repo" && "$root/.config/bodies/observed.bash" HEAD~1 "$scratch/hand-off.md" true 2> "$scratch/err") || true
   wanted=$(jq -j .output <<< "$case")
   if [[ $got != "${wanted%$'\n'}" ]]; then
     printf 'hand-off case FAILED: %s\n  got:\n%s\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$(cat "$scratch/err")" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/hand-off.json)
+done < <(jq -c '.[]' .config/bodies/hand-off.json)
 (( failed == 0 )) || exit 1
 # Both readers of a defect's case read every case file kind (#4863): for each
-# case in `.config/claims/case-files.json` a scratch repository adds the case's
+# case in `.config/bodies/case-files.json` a scratch repository adds the case's
 # file, `observed.bash` prints the case's block and `regressions.bash` the
 # case's paths. A case's `rust` edits one Rust file in the same change, its
 # `base` text at the base and its `head` text at HEAD (#5498).
@@ -3003,15 +3005,15 @@ while IFS= read -r case; do
   jq -j .text <<< "$case" > "$repo/$file"
   [[ -z $rust ]] || jq -j .rust.head <<< "$case" > "$repo/$rust"
   git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m head
-  observed=$(cd "$repo" && "$root/.config/claims/observed.bash" HEAD~1 "$scratch/case-files.md" true 2> "$scratch/err") || true
-  paths=$(cd "$repo" && "$root/.config/claims/regressions.bash" HEAD~1 2>> "$scratch/err" | jq -c '[.[].path]') || true
+  observed=$(cd "$repo" && "$root/.config/bodies/observed.bash" HEAD~1 "$scratch/case-files.md" true 2> "$scratch/err") || true
+  paths=$(cd "$repo" && "$root/.config/bodies/regressions.bash" HEAD~1 2>> "$scratch/err" | jq -c '[.[].path]') || true
   if [[ $observed != "$(jq -r .observed <<< "$case")" || $paths != "$(jq -c .regressions <<< "$case")" ]]; then
     printf 'case-files case FAILED: %s\n  observed:\n%s\n  regressions: %s\n%s\n' "$(jq -r .name <<< "$case")" "$observed" "$paths" "$(cat "$scratch/err")" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/case-files.json)
+done < <(jq -c '.[]' .config/bodies/case-files.json)
 # The ceilings a change adds (#5039): for each case in
-# `.config/claims/ceilings.json` a scratch repository commits the case's
+# `.config/bodies/ceilings.json` a scratch repository commits the case's
 # `base` text, then its `head` text, at its `file`, and `ceilings.bash` lists
 # the case's `output`.
 index=0
@@ -3026,17 +3028,17 @@ while IFS= read -r case; do
   git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m base
   jq -j .head <<< "$case" > "$repo/$file"
   git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m head
-  got=$(cd "$repo" && "$root/.config/claims/ceilings.bash" HEAD~1 2> "$scratch/err" | jq -c .) || true
+  got=$(cd "$repo" && "$root/.config/bodies/ceilings.bash" HEAD~1 2> "$scratch/err" | jq -c .) || true
   if [[ $got != "$(jq -c .output <<< "$case")" ]]; then
     printf 'ceilings case FAILED: %s\n  got: %s\n  wanted: %s\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$(jq -c .output <<< "$case")" "$(cat "$scratch/err")" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/ceilings.json)
+done < <(jq -c '.[]' .config/bodies/ceilings.json)
 # The issues that a `spelling: replaces` line cites (#7138, `spelled.bash`):
 # a body with no such line gives nothing and exits 0, so `pr:open` goes on.
-.config/claims/spelled-cases.bash || failed=1
+.config/bodies/spelled-cases.bash || failed=1
 # What a change builds that a consumer sees (#6873): for each case in
-# `.config/claims/views.json` a scratch repository commits each file's `base`
+# `.config/bodies/views.json` a scratch repository commits each file's `base`
 # text, then its `head` text, a null text leaving the file out. `views.bash`
 # reads the case's body against them and prints the case's `output`.
 index=0
@@ -3054,18 +3056,18 @@ while IFS= read -r case; do
     git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify --allow-empty -m "$side"
   done
   jq -j .body <<< "$case" > "$scratch/views-$index.md"
-  got=$(cd "$repo" && "$root/.config/claims/views.bash" HEAD~1 "$scratch/views-$index.md" 2> "$scratch/err") || true
+  got=$(cd "$repo" && "$root/.config/bodies/views.bash" HEAD~1 "$scratch/views-$index.md" 2> "$scratch/err") || true
   if [[ $got != "$(jq -c .output <<< "$case")" ]]; then
     printf 'views case FAILED: %s\n  got: %s\n  wanted: %s\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$(jq -c .output <<< "$case")" "$(cat "$scratch/err")" >&2
     failed=1
   fi
-done < <(jq -c '.[]' .config/claims/views.json)
+done < <(jq -c '.[]' .config/bodies/views.json)
 # `epic:deps` over a stubbed `gh` (#4903): a dependency GitHub refuses is
 # named and the run goes on.
-.config/claims/epic-deps.bash || failed=1
+.config/epics/epic-deps.bash || failed=1
 # `pr:hold` renders each held comment through a stubbed GitHub. The cases hold
 # the lead sentence and the Markdown table.
-.config/claims/hold.bash || failed=1
+.config/pr-stack/hold.bash || failed=1
 # `claim:take` and `claim:release` over a stubbed GitHub accept the same
 # lanes (#6639): a lane of the table takes a claim and releases it, and a
 # lane the table does not hold is refused by both.
@@ -3084,7 +3086,7 @@ if [[ -n ${map//[[:space:]]/} ]]; then
   printf 'claims check FAILED: the term map is malformed:\n%s\n' "$map" >&2
   exit 1
 fi
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/claimed.json) bodies their claim marker, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/motivating.json) units their epics' motivating sources, $(jq length .config/claims/identifiers.json) units the design pages that their identifiers name, $(jq length .config/claims/recovery.json) causes their recovery body, $(jq length .config/claims/swept.json) nights their recovery rows, $(jq length .config/claims/hand-off.json) transcripts their observed block, $(jq length .config/claims/views.json) changes their views, and the term map's $(jq length <<< "$terms") rows read whole"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/bodies/opening.json) bodies their refusals, $(jq length .config/bodies/signed.json) worked issues their sign-off, $(jq length .config/bodies/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/claimed.json) bodies their claim marker, $(jq length .config/bodies/ledger.json) landings their ledger refusals, $(jq length .config/ledger/reserved.json) reserved rules their refusals, $(jq length .config/bodies/shown.json) issues their vault pages, $(jq length .config/bodies/annotated.json) bodies their vault keys, $(jq length .config/bodies/patched.json) tables their reading, $(jq length .config/issues/deps.json) issues their dependencies, $(jq length .config/bodies/chain.json) rungs their \`## After\`, $(jq length .config/reports/report.json) boards their dependency report, $(jq length .config/reports/filing.json) merged verdicts their filing, $(jq length .config/reports/obligations.json) periods their obligations report, $(jq length .config/reports/period.json) periods their days, $(jq length .config/bodies/terms.json) units their vocabulary, $(jq length .config/bodies/motivating.json) units their epics' motivating sources, $(jq length .config/bodies/identifiers.json) units the design pages that their identifiers name, $(jq length .config/reports/recovery.json) causes their recovery body, $(jq length .config/reports/swept.json) nights their recovery rows, $(jq length .config/bodies/hand-off.json) transcripts their observed block, $(jq length .config/bodies/views.json) changes their views, and the term map's $(jq length <<< "$terms") rows read whole"
 '''
 
 # The debugger tasks read an enum's variant and pick their lldb as recorded
@@ -3125,8 +3127,8 @@ echo "debug check OK: $(jq length .config/debug/variants.json) enums their varia
 # every `Where` is a tracked path, or that has none, needs no rustdoc: the JSON
 # is built only when a `Where` stays unresolved without it, so a change with
 # no Rust path builds no Rust (`evidence:obligations`). Without a body, as in
-# the gate, it runs the cases of `.config/claims/refactoring.json` through
-# `.config/claims/refactoring.jq`, each a body, the paths, names and tracked
+# the gate, it runs the cases of `.config/bodies/refactoring.json` through
+# `.config/bodies/refactoring.jq`, each a body, the paths, names and tracked
 # files, and the lines it prints.
 ["check:refactoring"]
 description = "Every Where of a body's Refactoring table names an item of the workspace's rustdoc or a tracked path; without a body, the recorded cases"
@@ -3137,10 +3139,10 @@ arg "[body]" help="the pull request body file; without it, the recorded cases ru
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
-claims=.config/claims
+config_dir=.config
 if [[ -z "${usage_body:-}" ]]; then
-  .config/cases/run.bash refactoring "$claims/refactoring.json" --program "$claims/refactoring.jq"
-  echo "refactoring check OK: $(jq length "$claims/refactoring.json") bodies their resolutions"
+  .config/cases/run.bash refactoring "$config_dir/bodies/refactoring.json" --program "$config_dir/bodies/refactoring.jq"
+  echo "refactoring check OK: $(jq length "$config_dir/bodies/refactoring.json") bodies their resolutions"
   exit 0
 fi
 scratch=$(mktemp -d)
@@ -3150,7 +3152,7 @@ git ls-files | jq -R . | jq -s . > "$scratch/tree.json"
 findings() {
   jq -n --rawfile body "$usage_body" --slurpfile workspace "$scratch/workspace.json" --slurpfile tree "$scratch/tree.json" \
     '{body: $body, paths: $workspace[0].paths, names: $workspace[0].names, tree: $tree[0]}' \
-    | jq -r -L "$claims" -f "$claims/refactoring.jq"
+    | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/refactoring.jq"
 }
 docs=(target/evidence/doc/*.json)
 if [[ ! -f "${docs[0]}" ]]; then
@@ -3237,7 +3239,7 @@ for template in .config/issues/templates/*.md; do
   templates=$((templates + 1))
   findings=$(jq -R -s -r -L .config/issues 'include "template";
       . as $t | render(placeholders | map(. as $f | {key: $f, value: (if $t | test("\\| \\{\\{\($f)\\}\\} \\|") then "no — a field" else "1" end)}) | from_entries; "## Observation\n\nx\n")' "$template" \
-    | jq -R -s -r -L .config/claims --argjson concerns "$concerns" -f .config/claims/unit.jq)
+    | jq -R -s -r -L .config/bodies --argjson concerns "$concerns" -f .config/bodies/unit.jq)
   if [[ -n $findings ]]; then
     printf 'issues template %s renders a body unit:check refuses:\n%s\n' "$template" "$findings" >&2
     failed=1
@@ -3323,7 +3325,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ -z ${usage_body:-} ]]; then
-  .config/cases/run.bash deletes .config/deletes/cases.json --program .config/deletes/deletes.jq --mode r -L .config/claims
+  .config/cases/run.bash deletes .config/deletes/cases.json --program .config/deletes/deletes.jq --mode r -L .config/bodies
   .config/deletes/policy-cases.bash
   .config/deletes/records-cases.bash
   .config/deletes/tests-cases.bash
@@ -3390,7 +3392,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq --raw decide.jq --raw observation.jq -L .config/claims
+.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq --raw decide.jq --raw observation.jq -L .config/bodies -L .config/claims
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
 '''
 

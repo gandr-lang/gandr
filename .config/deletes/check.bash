@@ -93,7 +93,7 @@ fi
 
 # The rows of the body, as the rule reads them: the items of the rows that
 # ask the architect's sign-off (#7058).
-jq -n -r -L "$root/.config/claims" -L "$here" --rawfile body "$body" \
+jq -n -r -L "$root/.config/bodies" -L "$here" --rawfile body "$body" \
   'include "account"; $body | deletes_rows // [] | .[] | select(.act | IN("deleted", "merged", "narrowed")) | .item' > "$scratch/deleted" 2> /dev/null || : > "$scratch/deleted"
 # The last segment of each such row's item: the word that names it.
 segments=$(while IFS= read -r item; do
@@ -111,7 +111,7 @@ done | jq -s -c 'add // {}')
 # body works, with the commit it names, the base that commit forks from, and
 # for each item the files where the words that name it moved since
 # (`moved.bash`, #6852, #7025).
-mapfile -t issues < <(jq -Rrs -L "$root/.config/claims" 'include "targets"; targets(working) | unique[]' "$body")
+mapfile -t issues < <(jq -Rrs -L "$root/.config/bodies" 'include "targets"; targets(working) | unique[]' "$body")
 signoffs=$(for issue in "${issues[@]}"; do
   gh api --paginate "repos/$repo/issues/$issue/comments?per_page=100" \
     --jq '.[] | select(.body | test("\\bsigned\\b")) | {author: .user.login, body}' \
@@ -304,7 +304,7 @@ signoffs=$(jq -c '.[]' <<< "$signoffs" | while IFS= read -r c; do
         reshapes=$(jq -c --arg item "$item" '. + [$item] | unique' <<< "$reshapes")
         break
       fi
-    done < <(jq -r -L "$root/.config/claims" -L "$here" --arg item "$item" \
+    done < <(jq -r -L "$root/.config/bodies" -L "$here" --arg item "$item" \
       'include "account"; .[] | select(.file != null and covers($item; {id, names: [.id]})) | [.file, .start, .end] | @tsv' "$scratch/items-base.json")
   done < "$scratch/deleted"
   jq -c --argjson j "$joins" --argjson r "$reshapes" '. + {joined: $j, reshaped: $r}' <<< "$c"
@@ -320,7 +320,7 @@ findings=$(jq -n -c --rawfile body "$body" --arg title "$title" --arg mode "$mod
   --slurpfile signoffs "$scratch/signoffs.json" --slurpfile architects "$scratch/architects.json" \
   '{body: $body, title: $title, mode: $mode, left: $left[0], held: $held[0], tests: $tests[0], features: $features[0],
     lonely: $lonely[0], files: $files[0], signoffs: $signoffs[0], architects: $architects[0]}' \
-  | jq -r -L "$root/.config/claims" -L "$here" -f "$here/deletes.jq")
+  | jq -r -L "$root/.config/bodies" -L "$here" -f "$here/deletes.jq")
 if [[ -n $findings ]]; then
   echo "$findings" >&2
   echo "check:deletes: account for each thing above in the body's \`## Deletes\` (#6817), then run the task again; ${SECONDS}s" >&2

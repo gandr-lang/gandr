@@ -30,7 +30,7 @@ stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
 stall_hold="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/hold"
 stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall.json"
 stall_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall-service"
-source "$stall_dir/../claims/deps.bash"
+source "$stall_dir/../issues/deps.bash"
 source "$stall_dir/../claims/lanes.bash"
 source "$stall_dir/../service/service.bash"
 
@@ -91,7 +91,7 @@ stall_reading() {
   table=$(lanes_file)
   areas=$(yq -p toml -o json -I 0 '.lane' "$table") || return 1
   activity=$(stall_activity "$memory")
-  jq -cs '. as $pages | $pages[0].data.repository | .refactors.nodes = [$pages[] | (.data.repository.refactors.nodes // [])[]]' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
+  jq -cs '. as $pages | $pages[0].data.repository | .refactors.nodes = [$pages[] | (.data.repository.refactors.nodes // [])[]]' <<< "$raw" | jq -c -L "$stall_dir/../bodies" -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \
       --argjson thresholds "$(stall_thresholds)" --argjson config "$(stall_configuration)" --argjson memory "$memory" \
       --argjson areas "$areas" --argjson held "$(stall_held)" --argjson activity "$activity" \

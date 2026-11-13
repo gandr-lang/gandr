@@ -1225,7 +1225,7 @@ done <<< "$landings"
 # The report's `cause:` lines name each cause with its count and families. A
 # cause is filed as `recovery: <name> marks other bytes than a <kind> tile`,
 # kind:defect, area:surface and `collector` (#2537), its body written by
-# `.config/claims/recovery.jq` (#3596, its cases held by `check:claims`): the
+# `.config/reports/recovery.jq` (#3596, its cases held by `check:claims`): the
 # sentence that says what it is, the cause's first findings, and its families
 # as a checklist collapsed under their count. A cause already filed
 # is skipped: an issue in any state whose title opens with `recovery: <name> `
@@ -1239,7 +1239,7 @@ done <<< "$landings"
 # is linked from each body.
 #
 # The task keeps the open recovery collectors' rows (#3326,
-# `.config/claims/swept.jq`, its cases held by `check:claims`): over a whole
+# `.config/reports/swept.jq`, its cases held by `check:claims`): over a whole
 # report, the one ending in its `mutants swept:` line, each family row of a
 # collector is ticked once the night's cause of its name and kind no longer
 # lists the family, and unticked when it lists it again. A night without the
@@ -1286,7 +1286,7 @@ while IFS= read -r line; do
   jq -n --arg name "$name" --arg kind "$kind" --argjson count "$count" --argjson family_count "$family_count" \
     --rawfile families <(printf '%s' "$families") --rawfile findings "$scratch/findings" --arg run "${GITHUB_RUN_URL:-}" \
     '{$name, $kind, $count, $family_count, $families, $findings, run: (if $run == "" then null else $run end)}' \
-    | jq -r -f .config/claims/recovery.jq > "$scratch/body.md"
+    | jq -r -f .config/reports/recovery.jq > "$scratch/body.md"
   if [[ -n $repo ]]; then
     filed=$(jq -r --arg key "recovery: $name " --arg tile " $kind tile" \
       '[.[] | select((.title | startswith($key)) and ((.title | contains($tile)) or ((.title | contains(" deleted tile") | not) and (.title | contains(" missed tile") | not))))] | first | .number // empty' \
@@ -1314,13 +1314,13 @@ if ! grep -q -E '^[0-9]+ mutants swept: ' "$report"; then
   exit 0
 fi
 [[ -n $repo ]] || exit 0
-claims=$(git rev-parse --show-toplevel)/.config/claims
+config_dir=$(git rev-parse --show-toplevel)/.config
 jq -R 'capture("^cause: `(?<name>[^`]+)` (?<kind>deleted|missed): [0-9]+ mutants in [0-9]+ families: (?<families>.*)$")
     | .families |= (split(",") | map(gsub("^\\s+|\\s+$"; "")))' "$report" \
   | jq -s . > "$scratch/causes.json"
 GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"recovery:" in:title' --json number,title,body > "$scratch/open.json"
 jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/open.json" '{causes: $causes[0], issues: $issues[0]}' \
-  | jq -c -L "$claims" -f "$claims/swept.jq" \
+  | jq -c -L "$config_dir/bodies" -f "$config_dir/reports/swept.jq" \
   | while IFS= read -r swept; do
       number=$(jq -r .number <<< "$swept")
       close=$(jq -r .close <<< "$swept")
@@ -1345,7 +1345,7 @@ jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/ope
 # files each slow test of one run. The run's `junit-*` artifacts sit under
 # SLOW_STORE/SLOW_RUN_ID (`target/test-timing` by default, the store
 # `test-timing` reads), and `test-timing --times` reads each test once, in the
-# lane it held longest. `.config/claims/slow.jq`, its cases held by
+# lane it held longest. `.config/reports/slow.jq`, its cases held by
 # `check:claims`, decides the rest: one `collector` per test past SLOW_BUDGET
 # seconds (30 by default), `test: <binary> <test> ran <t> s in the <lane>
 # lane, past its 30 s budget`, kind:defect, area:workflow, priority:high,
@@ -1385,11 +1385,11 @@ if [[ -n $repo ]]; then
 else
   echo '[]' > "$scratch/issues.json"
 fi
-claims=$(git rev-parse --show-toplevel)/.config/claims
+config_dir=$(git rev-parse --show-toplevel)/.config
 jq -n --argjson budget "$budget" --argjson id "$run" --arg url "$url" --arg reason "${SLOW_REASON:-}" \
   --slurpfile times "$scratch/times.json" --slurpfile issues "$scratch/issues.json" \
   '{budget: $budget, reason: (if $reason == "" then null else $reason end), run: {id: $id, url: $url}, times: $times[0], issues: $issues[0]}' \
-  | jq -c -L "$claims" -f "$claims/slow.jq" | jq -c '.[]' > "$scratch/actions"
+  | jq -c -L "$config_dir/bodies" -f "$config_dir/reports/slow.jq" | jq -c '.[]' > "$scratch/actions"
 if [[ ! -s $scratch/actions ]]; then
   echo "no test of run $run ran past its $budget s budget, and no slow-test collector changes"
   exit 0
@@ -2335,7 +2335,7 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 # A unit issue is the brief, and work starts only on one that carries its
 # sections (#2532, `units.md` § units-issue). `unit:check <n>` reads the
 # issue's body and prints each section missing, empty or malformed, exiting 1
-# on any; the rule is `.config/claims/unit.jq`, reading the sections through
+# on any; the rule is `.config/bodies/unit.jq`, reading the sections through
 # `sections.jq` as `pr:open` does, its cases held by `check:claims`. The
 # vault's dispatch script runs it on the issue a prompt names and refuses to
 # launch on a failure. The web files a unit through the form
@@ -2345,7 +2345,7 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 #
 # A `## Sources` row naming a vault page by its filename (#2793) is read
 # against the vault checkout `$XDG_CONFIG_HOME/gandr/references` names
-# (`.config/references/vault.bash`, the rule `.config/claims/vault.jq`): the
+# (`.config/references/vault.bash`, the rule `.config/bodies/vault.jq`): the
 # page's `vault:<mint>` is shown beside its name, and a filename no vault page
 # carries is refused, a wrong name being a wrong source. A filename the tree
 # carries is the tree's. Without a vault checkout, as in CI, the lines are
@@ -2354,21 +2354,21 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 # The term map (#3158): a unit whose title or prose meets a row of
 # `.config/references/terms.toml` is refused while its `## Sources` names
 # none of the vault pages, tree paths or issues that row says own the term
-# (`.config/claims/terms.jq`). A row whose role is `not read` names
+# (`.config/bodies/terms.jq`). A row whose role is `not read` names
 # it. The two listings find what a seat searches for; the map finds what it
 # did not know to search for. An epic or a `collector` is not read.
 #
 # The motivating sources (#5855): an epic may carry `## Motivating sources`,
 # the sources of the frame its units partition. A unit is refused while its
 # `## Sources` cites none of the section's keys for an epic the body names as
-# its own (`.config/claims/motivating.jq`). A key is cited as the term map
+# its own (`.config/bodies/motivating.jq`). A key is cited as the term map
 # cites an owner, so a `not read` row cites it too. An epic or a `collector`
 # is not read.
 #
 # The claim of a design page (#6569): a primary `## Sources` row naming a
 # vault page whose status is `design` or `partly` states `builds:`,
 # `saves: <what>, read by <instrument>` and `decides:` in its third cell
-# (`.config/claims/claim.jq`, the calls `.config/claims/claim.bash`). A row
+# (`.config/bodies/claim.jq`, the calls `.config/bodies/claim.bash`). A row
 # lacking a part is refused. The rule stops no unit in flight: an issue that
 # carried `shape:signed` when the rule landed gets a note for each row, and
 # no refusal, while its `## Sources` is as it was then. Without the vault's
@@ -2376,8 +2376,8 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 #
 # The identifiers (#7019): a unit is refused while its `## Sources` names
 # neither a design page that names one of its identifiers nor a design page
-# that such a page links (`.config/claims/identifiers.jq`, the reads
-# `.config/claims/identifiers.bash`). The identifiers are the unit's number,
+# that such a page links (`.config/bodies/identifiers.jq`, the reads
+# `.config/bodies/identifiers.bash`). The identifiers are the unit's number,
 # each number of its `from:` line and of its epic, each ledger row that it
 # names in backquotes and each crate that it names. A page names a number or
 # a row in a level-two section, and the links of that section count; a crate
@@ -2389,7 +2389,7 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 #
 # The dependencies (#2902): an issue is GitHub-`blocked by` each issue its
 # `## After` lists, and an epic by each open sub-issue too; the plan is
-# `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
+# `.config/issues/deps.jq`, the calls `.config/issues/deps.bash`. Each one
 # missing is refused, naming `--fix`, which sets it (idempotent) and leaves
 # the rest of the check as it was. A dependency set on GitHub that neither
 # names is printed as a note, not refused: the section is the record. An
@@ -2413,12 +2413,12 @@ set -euo pipefail
 issue=${usage_issue:?}
 [[ $issue =~ ^[0-9]+$ ]] || { echo "unit:check takes an issue number, not \`$issue\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
-claims=$root/.config/claims
+config_dir=$root/.config
 source "$root/.config/references/vault.bash"
-source "$claims/claim.bash"
-source "$claims/identifiers.bash"
+source "$config_dir/bodies/claim.bash"
+source "$config_dir/bodies/identifiers.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
-source "$claims/deps.bash"
+source "$config_dir/issues/deps.bash"
 # gh fills `{owner}` and `{repo}` from the checkout's remote, so the
 # repository's name costs no read.
 repo='{owner}/{repo}'
@@ -2430,11 +2430,11 @@ mine=$(jq -c --arg n "$issue" '.[$n] // empty' <<< "$read")
 [[ -n $mine ]] || { echo "unit:check: #$issue is no issue" >&2; exit 2; }
 issued=$(jq -c '{number, title, labels, body}' <<< "$mine")
 body=$(jq -r .body <<< "$issued")
-cutoff=$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")
-findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" --argjson number "$issue" -f "$claims/unit.jq" <<< "$body")
+cutoff=$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$root/.config/references/window.toml")
+findings=$(jq -R -s -r -L "$config_dir/bodies" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" --argjson number "$issue" -f "$config_dir/bodies/unit.jq" <<< "$body")
 if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
   terms=$(jq -n --slurpfile issued <(printf '%s\n' "$issued") --slurpfile terms <(yq -o json '.term' "$root/.config/references/terms.toml") \
-    '{title: $issued[0].title, body: $issued[0].body, terms: $terms[0]}' | jq -r -L "$claims" -f "$claims/terms.jq")
+    '{title: $issued[0].title, body: $issued[0].body, terms: $terms[0]}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/terms.jq")
   findings=$(printf '%s\n%s\n' "$findings" "$terms" | awk 'NF')
   claimed=$(claim_check "$body" null)
   if [[ -n $claimed ]] && jq -e '.labels | index("shape:signed")' <<< "$issued" > /dev/null; then
@@ -2455,20 +2455,20 @@ if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
   subs=$(jq -c .sub_issues <<< "$mine")
 fi
 plan=$(jq -n --argjson issued "$issued" --argjson blocked "$(jq -c .blocked_by <<< "$mine")" --argjson subs "$subs" \
-  '$issued + {blocked_by: $blocked, sub_issues: $subs}' | jq -r -L "$claims" -f "$claims/deps.jq")
+  '$issued + {blocked_by: $blocked, sub_issues: $subs}' | jq -r -L "$config_dir/bodies" -f "$config_dir/issues/deps.jq")
 # Each epic the body names as its own and the issue does not block yet. Each
 # operation the unit's `## Embedding owes` names (#3964) blocks the unit's
 # epic, so the epic closes on its operation set. The owed issue keeps its own
 # parent: only the `blocked by` is set.
-mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' <<< "$body" \
+mapfile -t named < <(jq -R -s -r -L "$config_dir/bodies" 'include "sections"; epic_refs[]' <<< "$body" \
   | jq -r --argjson mine "$mine" 'select(. != $mine.number and (IN($mine.blocking[].number) | not))' | sort -nu)
-owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
+owed=$(jq -R -s -r -L "$config_dir/bodies" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
 parent=$(jq -r '.parent // empty' <<< "$mine")
 # Every epic the body names as its own, for its `## Motivating sources`
 # (#5855). An epic or a `collector` owes none.
 refs=()
 if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
-  mapfile -t refs < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' <<< "$body" \
+  mapfile -t refs < <(jq -R -s -r -L "$config_dir/bodies" 'include "sections"; epic_refs[]' <<< "$body" \
     | jq -r --argjson mine "$mine" 'select(. != $mine.number)' | sort -nu)
 fi
 # The second query: the named epics, with their bodies when the unit owes
@@ -2487,7 +2487,7 @@ if (( ${#wanted[@]} > 0 )); then others=$(deps_issues "$repo" "$fields" "${wante
 if (( ${#refs[@]} > 0 )); then
   motivating=$(jq -c --rawfile body <(printf '%s' "$body") --slurpfile refs <(printf '%s\n' "${refs[@]}" | jq -s -c .) \
     '{body: $body, epics: [.[] | select((.number | IN($refs[0][])) and (.labels | index("kind:epic") != null)) | {number, body}]}' <<< "$others" \
-    | jq -r -L "$claims" -f "$claims/motivating.jq")
+    | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/motivating.jq")
   findings=$(printf '%s\n%s\n' "$findings" "$motivating" | awk 'NF')
 fi
 id_of() { jq -r --arg n "$1" '.[$n].id // empty' <<< "$others"; }
@@ -2534,7 +2534,7 @@ if [[ $pages != null ]]; then
   git -C "$root" ls-files | awk -F/ '{ print $NF }' | sort -u > "$scratch/tree"
   printf '%s\n' "$pages" > "$scratch/pages.json"
   vault=$(jq -n --rawfile body <(printf '%s' "$body") --slurpfile pages "$scratch/pages.json" --rawfile tree "$scratch/tree" '{body: $body, pages: $pages[0], tree: $tree}' \
-    | jq -r -L "$claims" -f "$claims/shown.jq")
+    | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/shown.jq")
   refused=$(awk -F'\t' '$1 == "refuse" { print $2 }' <<< "$vault")
   shown=$(awk -F'\t' '$1 == "show" { print "  " $2 }' <<< "$vault")
   findings=$(printf '%s\n%s\n' "$findings" "$refused" | awk 'NF')
@@ -2554,7 +2554,7 @@ fi
 
 # The version of the unit frame (#7018): `unit:frame` prints one digest of
 # the rows that `units.md` asks of a unit, the nine axes with their questions
-# and the concerns (`.config/claims/frame.bash`). A change of a row gives a
+# and the concerns (`.config/bodies/frame.bash`). A change of a row gives a
 # new digest.
 ["unit:frame"]
 description = "Print the digest of the unit frame: the reading axes, their questions and the concerns"
@@ -2562,7 +2562,7 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
-source "$root/.config/claims/frame.bash"
+source "$root/.config/bodies/frame.bash"
 unit_frame "$root"
 {% endraw %}'''
 
@@ -2581,7 +2581,7 @@ set -euo pipefail
 issue=${usage_issue:?}
 [[ $issue =~ ^[0-9]+$ ]] || { echo "unit:sign takes an issue number, not \`$issue\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
-source "$root/.config/claims/frame.bash"
+source "$root/.config/bodies/frame.bash"
 mise run unit:check "$issue"
 gh issue edit "$issue" --add-label shape:signed > /dev/null
 frame=$(unit_frame_signoff "$root" "$issue" "The coordinator")
@@ -2667,10 +2667,10 @@ if [[ $areas == '[]' ]]; then
   echo "claim:next: no lane \`$lane\` with an area in $table ($(lanes_keys | jq -r 'join(", ")'))" >&2
   exit 2
 fi
-claims=$root/.config/claims
-source "$claims/deps.bash"
-source "$claims/input.bash"
-source "$claims/mark.bash"
+config_dir=$root/.config
+source "$config_dir/issues/deps.bash"
+source "$config_dir/claims/input.bash"
+source "$config_dir/claims/mark.bash"
 source "$root/.config/issues/open.bash"
 # REST throughout: the GraphQL limit, shared by every seat's watches, runs out
 # within the hour, and a seat must still claim its next item. The open list
@@ -2700,7 +2700,7 @@ gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
 # its head commit's time (#3951): `next.jq` places such a claim in the lane
 # its newest branch names, and with no branch in no lane (#4504).
 lanes_keys > "$board/lanes.json"
-unmarked=$(jq -r -L "$claims" 'include "markers";
+unmarked=$(jq -r -L "$config_dir/claims" 'include "markers";
   .[] | select((.labels | index("status:claimed")) and (.body | claim_lane) == null) | .number' "$board/issues.json" | tr '\n' ' ')
 printf '[]\n' > "$board/branches.json"
 if [[ -n ${unmarked// /} ]]; then
@@ -2730,7 +2730,7 @@ printf '{}\n' > "$board/reread.json"
 claimed=false
 while :; do
   lines=$(claim_input "$board" "$lane" "$now" \
-    | jq -r -L "$claims" --argjson concerns "$concerns" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/next.jq")
+    | jq -r -L "$config_dir/claims" -L "$config_dir/bodies" --argjson concerns "$concerns" --argjson cutoff "$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$root/.config/references/window.toml")" -f "$config_dir/claims/next.jq")
   unread=$(jq -R -r --slurpfile live "$board/live.json" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[0][.] == null)' <<< "$lines")
   if [[ -n $unread ]]; then
     for number in $unread; do
@@ -2752,7 +2752,7 @@ while :; do
   [[ ${usage_dry_run:-false} == false ]] || break
   gh api "repos/$repo/issues/$number" --jq '{labels: [.labels[].name], body}' \
     | jq -c --arg lane "$lane" '{lane: $lane, step: "write", labels, body}' \
-    | jq -c -L "$claims" -f "$claims/claimed.jq" > "$board/marked.json"
+    | jq -c -L "$config_dir/claims" -f "$config_dir/claims/claimed.jq" > "$board/marked.json"
   claim_mark "$repo" "$number" "$lane" "$board/read.json" < "$board/marked.json"
   if [[ $claim_kept == true ]]; then
     claimed=true
@@ -2772,7 +2772,7 @@ awk '/^unattributed: / { print; print "claim:next: " $2 " names no lane; the lan
 # the lane's next claim (`next.jq`): the seat opens it when it can.
 awk '/^held: / { print; print "claim:next: " $2 " has no open pull request yet; open it with `pr:open` when its gate passes" }' <<< "$lines" >&2
 awk '/^collector: /' <<< "$lines" >&2
-source "$claims/design.bash"
+source "$config_dir/reports/design.bash"
 design=$(design_report "$board/issues.json")
 if [[ -n $design ]]; then
   read -r units pages < <(awk '/ unit [^ ]+: / { u++; next } { p++ } END { print u + 0, p + 0 }' <<< "$design")
@@ -2782,7 +2782,7 @@ while read -r _ issue; do
   echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' "$board/live.json")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^(observation due|sections due|restate): /' <<< "$lines"
-source "$claims/pick.bash"
+source "$config_dir/claims/pick.bash"
 pick=$(claim_pick <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $lane" >&2
@@ -2906,13 +2906,13 @@ source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_issue:?}
 [[ $number =~ ^[0-9]+$ ]] || { echo "claim:take: the issue is a number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
-claims=$root/.config/claims
-source "$claims/lanes.bash"
+config_dir=$root/.config
+source "$config_dir/claims/lanes.bash"
 lane=${usage_lane:-}
 if [[ -z $lane ]]; then
   branch=$(git branch --show-current)
   lane=$(jq -nc --arg branch "$branch" --argjson lanes "$(lanes_keys)" \
-    '{step: "branch", branch: $branch, lanes: $lanes}' | jq -r -L "$claims" -f "$claims/taken.jq" | jq -r '.lane // empty')
+    '{step: "branch", branch: $branch, lanes: $lanes}' | jq -r -L "$config_dir/claims" -f "$config_dir/claims/taken.jq" | jq -r '.lane // empty')
   [[ -n $lane ]] || { echo "claim:take: the branch \`$branch\` names no lane; name it with --lane" >&2; exit 2; }
 fi
 [[ $lane =~ ^[a-z][a-z0-9-]*$ ]] || { echo "claim:take: \`$lane\` is no lane" >&2; exit 2; }
@@ -2926,14 +2926,14 @@ read_issue() { GH_BUDGET_TTL=0 gh api "repos/$repo/issues/$number" --jq '{number
 issue=$(read_issue)
 # A signed unit's newest frame marker and the frame now (#7018), read only
 # for an issue under `shape:signed`; a failed read leaves `signed` null.
-source "$claims/frame.bash"
+source "$config_dir/bodies/frame.bash"
 signed=null
 if jq -e '.labels | index("shape:signed")' <<< "$issue" > /dev/null; then
   signed=$(unit_frame_signed "$root" "$repo" "$number") || signed=null
 fi
 decision=$(jq -c --arg lane "$lane" --argjson now "$(date +%s)" --argjson signed "$signed" \
   '{step: "take", lane: $lane, now: $now, issue: ., signed: $signed}' <<< "$issue" \
-  | jq -c -L "$claims" -f "$claims/taken.jq")
+  | jq -c -L "$config_dir/claims" -f "$config_dir/claims/taken.jq")
 case $(jq -r .verdict <<< "$decision") in
   refused)
     line=$(jq -r .line <<< "$decision")
@@ -2952,7 +2952,7 @@ case $(jq -r .verdict <<< "$decision") in
     exit 0
     ;;
 esac
-source "$claims/mark.bash"
+source "$config_dir/claims/mark.bash"
 reread=$(mktemp)
 trap 'rm -f "$reread"' EXIT
 claim_mark "$repo" "$number" "$lane" "$reread" <<< "$(jq -c '{body}' <<< "$decision")"
@@ -2967,7 +2967,7 @@ echo "claim:take: $lane claims #$number" >&2
 # `ledger:patched <body> <base> [--head <ref>] [--pr <n>]` reads the rows the
 # change from `<base>` to the head (`HEAD` by default) adds, edits or removes
 # in `ledger/features.sql`, and the rows the body's `## Ledger` names, and
-# prints one refusal per row out of step (`.config/claims/ledger.jq`): a
+# prints one refusal per row out of step (`.config/bodies/ledger.jq`): a
 # named row untouched or unknown, a touched row unnamed, a touched declined
 # row naming only issues the body closes (#2848), and with `--pr` a named row
 # whose `since` lacks `#<n>`. Exits 1 on a refusal. `pr:land` runs
@@ -3001,7 +3001,7 @@ findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null
    | (INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
    | {pr: $pr, body: $body, rows: [$head[].id],
       touched: ([$head[] | select($was[.id] != .) | {id, since, status, issue}] + [$base[] | select($now[.id] == null) | {id, since: null, status: null, issue: null}])}' \
-  | jq -r -L "$root/.config/claims" -f "$root/.config/claims/ledger.jq")
+  | jq -r -L "$root/.config/bodies" -f "$root/.config/bodies/ledger.jq")
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''
 
@@ -3010,7 +3010,7 @@ findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null
 # (`HEAD` by default), and for each rule `reserved` at the base that the head
 # makes `implemented`, the issue its row cites, through gh; it prints one
 # refusal per such rule whose issue is not open or whose body names neither
-# the rule nor its kind, with the row (`.config/claims/reserved.jq`), and
+# the rule nor its kind, with the row (`.config/ledger/reserved.jq`), and
 # exits 1. The ledger is the lowering's own reading (`check:syntax-ledger`
 # holds it to the exemplars), so a lowering that admits a reserved form moves
 # its row. `pr:land` runs it on the pull request and refuses; `pr:open` runs
@@ -3044,7 +3044,7 @@ while read -r number; do
 done < <(jq -r '.[] | select(.now == "implemented") | .issue // empty | ltrimstr("#")' "$tables/rows.json" | sort -u)
 findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: ([inputs | {key: (.number | tostring), value: {state, body}}] | from_entries)}' \
     "$tables"/issues/*.json < /dev/null \
-  | jq -r -L "$root/.config/claims" -f "$root/.config/claims/reserved.jq")
+  | jq -r -f "$root/.config/ledger/reserved.jq")
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''
 
@@ -3060,7 +3060,7 @@ findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: 
 # too (#6496, `.config/issues/title.jq`): a filer that quotes the title for
 # the shell with a JSON encoder sends the escape, and GitHub shows it as
 # text. A comment that closes or declines a unit on a probe passes
-# `--sets-aside <n>` (#6569, `.config/claims/measured.jq`): for each
+# `--sets-aside <n>` (#6569, `.config/bodies/measured.jq`): for each
 # `## Sources` row of #n whose `saves:` claims a saving, the comment needs a
 # line `measured: <value> by <instrument>`, or it is refused. One GraphQL
 # read takes the body of #n. `pr:open` runs it on the title and the body
@@ -3104,7 +3104,7 @@ if [[ -n ${usage_sets_aside:-} ]]; then
   root=$(git rev-parse --show-toplevel)
   unit_body=$(gh issue view "$usage_sets_aside" --json body --jq .body)
   unmeasured=$(jq -n --arg issue "$unit_body" --rawfile comment <(cat -- "${files[@]}") '{issue: $issue, comment: $comment}' \
-    | jq -r -L "$root/.config/claims" -f "$root/.config/claims/measured.jq")
+    | jq -r -L "$root/.config/bodies" -f "$root/.config/bodies/measured.jq")
 fi
 if [[ -s $found ]]; then
   printf 'body:check FAILED: these lines name private material (%s); rewrite them:\n' "$list" >&2
@@ -3173,7 +3173,7 @@ exit "$status"
 # issue under the epic and sets the epic `blocked by` it, and a body line
 # `Advances #n`, `Part of #n` or `from: #n` naming an open `kind:epic` sets
 # that epic `blocked by` it too (#3398): an epic is blocked by its units and
-# closes once every one is closed (`.config/claims/deps.bash`). An epic that
+# closes once every one is closed (`.config/issues/deps.bash`). An epic that
 # holds 100 sub-issues, GitHub's limit, takes no more, and GitHub refuses the
 # link only once the issue exists (#5149). So `--epic` counts the epic's
 # sub-issues before it creates the issue. At the limit it files the issue
@@ -3208,8 +3208,8 @@ run = '''
 set -euo pipefail
 body=$(realpath "${usage_body:?}")
 root=$(git rev-parse --show-toplevel)
-claims=$root/.config/claims
-source "$claims/deps.bash"
+config_dir=$root/.config
+source "$config_dir/issues/deps.bash"
 source "$root/.config/issues/labels.bash"
 epic=${usage_epic:-}
 [[ -z $epic || $epic =~ ^[0-9]+$ ]] || { echo "issue:file: --epic takes an issue number, not \`$epic\`" >&2; exit 2; }
@@ -3234,7 +3234,7 @@ mise run --quiet body:check --title "${usage_title:?}" "$body" >&2
 if [[ -z $template ]]; then
   mise run --quiet body:prose "$body" >&2
 fi
-jq -R -s -r -L "$claims" 'include "targets"; strays[]
+jq -R -s -r -L "$config_dir/bodies" 'include "targets"; strays[]
   | "issue:file: note: the line `\(.line)` carries `\(.keyword)`, a closing keyword; it does nothing here, but closes the issue it names if the words reach a pull request body"' "$body" >&2
 eval "labels=(${usage_label:-})"
 labelled() { local label; for label in "${labels[@]}"; do [[ $label != "$1" ]] || return 0; done; return 1; }
@@ -3248,13 +3248,13 @@ if labelled kind:defect && ! labelled collector && ! labelled status:unsectioned
 fi
 if [[ $unit == true || $defect == true ]]; then
   concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
-  findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" \
-    --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/unit.jq" "$body")
+  findings=$(jq -R -s -r -L "$config_dir/bodies" --argjson concerns "$concerns" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" \
+    --argjson cutoff "$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$root/.config/references/window.toml")" -f "$config_dir/bodies/unit.jq" "$body")
   if [[ $unit == true ]]; then
     # A unit filed now was signed after the claim rule landed, so it has no
     # body from before it.
     source "$root/.config/references/vault.bash"
-    source "$claims/claim.bash"
+    source "$config_dir/bodies/claim.bash"
     findings=$(printf '%s\n%s\n' "$findings" "$(claim_check "$(< "$body")" null)" | awk 'NF')
   fi
   if [[ -n $findings ]]; then
@@ -3294,7 +3294,7 @@ repo='{owner}/{repo}'
 # its own (#5709). A second query after the filing reads the new issue's
 # REST id, only when a link or a block is written. A new issue has no parent
 # and blocks nothing, so its links are written unread.
-mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' "$body" | sort -nu)
+mapfile -t named < <(jq -R -s -r -L "$config_dir/bodies" 'include "sections"; epic_refs[]' "$body" | sort -nu)
 read='{}'
 if [[ -n $epic || ${#named[@]} -gt 0 ]]; then read=$(deps_issues "$repo" - ${epic:+"$epic"} "${named[@]}"); fi
 full=false
@@ -3336,7 +3336,7 @@ if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
   # A unit filed whole carries `shape:signed`, so it carries the marker of
   # the frame its sections pass at too, or `claim:take` refuses it (#7129).
-  source "$claims/frame.bash"
+  source "$config_dir/bodies/frame.bash"
   unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
 fi
 echo "$url"
@@ -3345,7 +3345,7 @@ echo "$url"
 # A merged pull request's `## Refactoring` verdict, filed (#2885):
 # `refactor:file <pr>` reads the pull request, the area and epic of the unit
 # it closed, and every `kind:refactor` issue, and carries out what
-# `.config/claims/filing.jq` decides. A `yes` or `maybe` with rows joins the
+# `.config/reports/filing.jq` decides. A `yes` or `maybe` with rows joins the
 # one open collector of the unit's area, `refactor(<area>): verdicts`: the
 # collector gains the rows it lacks and a `from:` line. An area with no open
 # collector gets one through `issue:file` (its labels `kind:refactor`,
@@ -3380,7 +3380,7 @@ source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_pr:?}
 [[ $number =~ ^[1-9][0-9]*$ ]] || { echo "refactor:file: expected a pull request number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
-claims=$root/.config/claims
+config_dir=$root/.config
 source "$root/.config/gh/repo.bash"
 repo=$(repo_name)
 pr=$(gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$number" -f query='
@@ -3419,7 +3419,7 @@ trap 'rm -rf "$scratch"' EXIT
 # `filing.jq` decides over it.
 decide() {
   jq -n --argjson number "$number" --slurpfile pr "$scratch/pr.json" --argjson area "$area" --slurpfile issues "$1" \
-    '{pr: {number: $number, body: $pr[0].body, area: $area}, issues: $issues[0]}' | jq -c -L "$claims" -f "$claims/filing.jq"
+    '{pr: {number: $number, body: $pr[0].body, area: $area}, issues: $issues[0]}' | jq -c -L "$config_dir/bodies" -f "$config_dir/reports/filing.jq"
 }
 GH_BUDGET_TTL=0 gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/issues.json"
 printf '%s' "$pr" > "$scratch/pr.json"
@@ -3457,7 +3457,7 @@ case $(jq -r .act <<< "$decision") in
     # exist, so it closes its own issue as the earlier one's duplicate.
     GH_BUDGET_TTL=0 gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/after.json"
     title=$(jq -r .title <<< "$decision")
-    first=$(jq -r -L "$claims" --argjson pr "$number" --arg title "$title" \
+    first=$(jq -r -L "$config_dir/bodies" --argjson pr "$number" --arg title "$title" \
       'include "sections"; [.[] | select((.body | from_lines | any(.[]; . == $pr)) or (.state == "OPEN" and .title == $title)) | .number] | min // empty' "$scratch/after.json")
     if [[ -n $first && $first -lt $issue ]]; then
       gh issue close "$issue" -R "$repo" --duplicate-of "$first" > /dev/null
@@ -3560,7 +3560,7 @@ echo "issue:labels: $added issue(s) relabelled; $short problem(s) the rule canno
 # epic `blocked by` each open one, and orders them as given. A sequential
 # ladder takes `--chain`: each sub-issue is set `blocked by` the one before
 # it, and lists it in its `## After` (`with_after` in
-# `.config/claims/sections.jq`), the section being the record. An epic body's
+# `.config/bodies/sections.jq`), the section being the record. An epic body's
 # ladder table is not read; the sub-issues' `## After` is.
 ["epic:order"]
 description = "Link and order an epic's sub-issues, the epic blocked by each open one; --chain sets each blocked by the one before"
@@ -3575,8 +3575,8 @@ run = '''
 set -euo pipefail
 epic=${usage_epic:?}
 eval "issues=(${usage_issue:?})"
-claims=$(git rev-parse --show-toplevel)/.config/claims
-source "$claims/deps.bash"
+config_dir=$(git rev-parse --show-toplevel)/.config
+source "$config_dir/issues/deps.bash"
 repo=${GH_REPO:-'{owner}/{repo}'}
 for n in "$epic" "${issues[@]}"; do
   [[ $n =~ ^[0-9]+$ ]] || { echo "epic:order takes issue numbers, not \`$n\`" >&2; exit 2; }
@@ -3592,7 +3592,7 @@ for n in "${issues[@]}"; do
       deps_block "$repo" "$n" "$previous"
       body=$(gh api "repos/$repo/issues/$n" --jq '.body // ""')
       edited=$(jq -n --rawfile body <(printf '%s' "$body") --argjson after "$previous" --argjson epic "$epic" \
-        '{body: $body, after: $after, epic: $epic}' | jq -r -L "$claims" -f "$claims/chain.jq")
+        '{body: $body, after: $after, epic: $epic}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/chain.jq")
       if [[ $edited != "$body" ]]; then
         printf '%s\n' "$edited" | gh issue edit "$n" --body-file - > /dev/null
         printf 'listed #%s in #%s'"'"'s ## After\n' "$previous" "$n"
@@ -3621,8 +3621,8 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
-claims=$(git rev-parse --show-toplevel)/.config/claims
-source "$claims/deps.bash"
+config_dir=$(git rev-parse --show-toplevel)/.config
+source "$config_dir/issues/deps.bash"
 repo=${GH_REPO:-'{owner}/{repo}'}
 eval "epics=(${usage_epic:-})"
 if [[ ${usage_all:-false} == true ]]; then
@@ -3678,7 +3678,7 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
-source "$root/.config/claims/deps.bash"
+source "$root/.config/issues/deps.bash"
 repo=${GH_REPO:-'{owner}/{repo}'}
 # Every issue, 100 a page at one point, newest first as the REST list gives
 # them: REST takes a page for each 100 issues and pull requests (#5688).
@@ -3746,7 +3746,7 @@ OPEN_ISSUES='' open_issues "$repo" "${usage_file:?}"
 # `report:design` reads the vault checkout that `vault_checkout` names, and
 # prints one line for each design page whose filename no `## Sources` row of
 # an open issue names, and one for each open unit of a vault unit table that
-# no open issue cites (`.config/claims/design.jq`, its cases held by
+# no open issue cites (`.config/reports/design.jq`, its cases held by
 # `check:claims`). A unit table has a `complete` column with a box in each
 # row, and an issue cites a unit when its body names the page and writes
 # `unit <n>`, or `units` before a list or a range that holds `<n>`. Drafts
@@ -3761,7 +3761,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
-source "$root/.config/claims/design.bash"
+source "$root/.config/reports/design.bash"
 source "$root/.config/issues/open.bash"
 repo=${GH_REPO:-'{owner}/{repo}'}
 open=$(mktemp)
@@ -3783,7 +3783,7 @@ design_report "$issues"
 # them on one
 # `collector` issue, `report: dependencies`, opened by the first finding,
 # updated each night, and closed by a night with none. The rule is
-# `.config/claims/report.jq`, its cases held by `check:claims`. Only issues
+# `.config/reports/report.jq`, its cases held by `check:claims`. Only issues
 # that state a dependency, and epics, cost a dependency read. GH_REPO names
 # the repository; without REPORT_FILE set the task prints the report and
 # writes nothing. A dependency GitHub refuses `epic:deps` prints and leaves
@@ -3797,8 +3797,8 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
-claims=$root/.config/claims
-source "$claims/deps.bash"
+config_dir=$root/.config
+source "$config_dir/issues/deps.bash"
 source "$root/.config/issues/labels.bash"
 source "$root/.config/issues/keep.bash"
 source "$root/.config/ledger/owing.bash"
@@ -3817,7 +3817,7 @@ open_issues "$repo" "$scratch/all.json"
 jq '[.[] | select(.pull_request | not) | {number, title, labels, body}]' "$scratch/all.json" > "$scratch/open.json"
 deps_open_graph "$repo" > "$scratch/graph.json"
 jq -n -c --slurpfile open "$scratch/open.json" --slurpfile graph "$scratch/graph.json" '{open: $open[0], graph: $graph[0]}' \
-  | jq -c -f "$claims/reads.jq" > "$scratch/issues.jsonl"
+  | jq -c -f "$config_dir/reports/reads.jq" > "$scratch/issues.jsonl"
 issue_found "$title" > "$scratch/filed.json"
 labels_defaults > "$scratch/defaults.json"
 sqlite3 -bail "$scratch/features.db" < "$root/ledger/features.sql"
@@ -3826,7 +3826,7 @@ sqlite3 -bail "$scratch/features.db" < "$root/ledger/features.sql"
 jq -n --slurpfile open "$scratch/open.json" --slurpfile issues "$scratch/issues.jsonl" --slurpfile filed "$scratch/filed.json" \
   --slurpfile defaults "$scratch/defaults.json" --slurpfile owing "$scratch/owing.json" \
   '{issues: $issues, open: [$open[0][] | {number, labels}], owing: $owing[0], defaults: $defaults[0], previous: ($filed[0].body // "")}' \
-  | jq -c -L "$claims" -L "$root/.config/issues" -f "$claims/report.jq" > "$scratch/report.json"
+  | jq -c -L "$config_dir/bodies" -L "$root/.config/issues" -f "$config_dir/reports/report.jq" > "$scratch/report.json"
 jq -r .body "$scratch/report.json" > "$scratch/body.md"
 count=$(jq .count "$scratch/report.json")
 if [[ -z $write ]]; then
@@ -4229,7 +4229,7 @@ fi
 # the merge as the column: the unit's Concerns marked `no`, the Sources read
 # items by disposition, the Readings selected and answered at a site, the
 # Refactoring verdicts, the Ledger rows moved. The rule is
-# `.config/claims/obligations.jq`, reading the sections through
+# `.config/reports/obligations.jq`, reading the sections through
 # `sections.jq` as the checks do, its cases held by `check:claims`. No figure
 # is a gate: the coordinator reads the report, and a figure that calls for a
 # change becomes a unit.
@@ -4252,7 +4252,7 @@ run = '''
 set -euo pipefail
 source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$(git rev-parse --show-toplevel)
-claims=$root/.config/claims
+config_dir=$root/.config
 repo=${GH_REPO:-'{owner}/{repo}'}
 write=${REPORT_FILE:-}
 scratch=$(mktemp -d)
@@ -4284,12 +4284,12 @@ render() {
       | select($lane == "" or .lane == $lane)] | sort_by(.merged)' "$scratch/nodes.jsonl" > "$scratch/prs.json"
   jq -n -c --arg since "$1" --arg until "$2" --slurpfile prs "$scratch/prs.json" \
     '{since: $since, until: $until, prs: $prs[0]}' \
-    | jq -r -L "$claims" -f "$claims/obligations.jq" > "$scratch/body.md"
+    | jq -r -L "$config_dir/bodies" -f "$config_dir/reports/obligations.jq" > "$scratch/body.md"
 }
 # The period `period.jq` reads from `$1` to `$2`: its days and the month
 # before.
 period() {
-  jq -n -c --arg since "$1" --arg until "$2" '{since: $since, until: $until}' | jq -c -f "$claims/period.jq"
+  jq -n -c --arg since "$1" --arg until "$2" '{since: $since, until: $until}' | jq -c -f "$config_dir/reports/period.jq"
 }
 # The open issue titled `$1`, or nothing.
 filed() {
@@ -4572,12 +4572,12 @@ fi
 # `Where` needs it. A body answers its issues' `## Engineering` with measured
 # numbers, and a `spec_clause_traversal` waiver or an `economy:` ceiling the
 # change adds cites the open issue that removes it (#5039,
-# `.config/claims/ceilings.bash`). The rule is
-# `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
+# `.config/bodies/ceilings.bash`). The rule is
+# `.config/bodies/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
 # Each issue the body works, an epic or a `collector` aside, passes
 # `unit:check` and carries the coordinator's `shape:signed` (#3134,
-# `.config/claims/signed.jq`): the seat that sections an issue on its claim
+# `.config/bodies/signed.jq`): the seat that sections an issue on its claim
 # pages for the label and works on, and the landing waits for it. A missing
 # label is a wait (#4164): with nothing else refused, the task prints its
 # `wait:` line and an `arm:` line for `pr:await` on the issue, and exits 0. A
@@ -4623,11 +4623,11 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
-claims=$(git rev-parse --show-toplevel)/.config/claims
-issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
+config_dir=$(git rev-parse --show-toplevel)/.config
+issues=$(jq -Rrs -L "$config_dir/bodies" 'include "targets"; targets(working) | unique[]' "$body" \
   | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // ""), labels: [.labels[].name]}'; done \
   | jq -s .)
-mentions=$(jq -Rrs -L "$claims" 'include "sections"; superseded[]' "$body" \
+mentions=$(jq -Rrs -L "$config_dir/bodies" 'include "sections"; superseded[]' "$body" \
   | while IFS= read -r key; do { git grep -nIF -e "$key" || true; } | jq -R . | jq -s --arg key "$key" '{($key): .}'; done \
   | jq -s 'add // {}')
 # Measured on a fetched trunk (#3148, `measured_from`), and refused first when
@@ -4652,30 +4652,30 @@ held=$(comm -12 <(jq -r '.[]' <<< "$added" | module_paths) \
   <(git ls-tree -r --name-only "$from" -- crates | awk -F/ '$3 == "src" && /\.rs$/' | module_paths) | jq -R . | jq -s .)
 # The lines the change adds where a defect's regression is named (#2524,
 # #3538), every file kind `opening.jq`'s `regression` reads (#4863).
-regressions=$("$claims/regressions.bash" "$from")
+regressions=$("$config_dir/bodies/regressions.bash" "$from")
 # The comment lines the change removes and does not add back, per source
 # (#6004, `comments.bash`), which `opening.jq`'s `facts_kept` counts.
-comments=$("$claims/comments.bash" "$from")
+comments=$("$config_dir/bodies/comments.bash" "$from")
 # The ceilings the change adds (#5039, `ceilings.bash`), each with the issues
 # it cites that stand open: one read per issue cited.
-ceilings=$("$claims/ceilings.bash" "$from")
+ceilings=$("$config_dir/bodies/ceilings.bash" "$from")
 open=$(jq -r '[.[].cites[]] | unique[]' <<< "$ceilings" \
   | while IFS= read -r n; do gh api "repos/$repo/issues/$n" --jq 'select(.state == "open" and .pull_request == null) | .number' 2> /dev/null || :; done \
   | jq -s -c .)
 ceilings=$(jq -c --argjson open "$open" 'map(. + {open: [.cites[] | select(IN($open[]))]})' <<< "$ceilings")
 # The `gh` call sites the change alters (#5061, `.config/gh/changed.bash`),
 # each of which the body prices under `## API budget`.
-budget=$("$claims/../gh/changed.bash" "$from")
+budget=$("$config_dir/gh/changed.bash" "$from")
 # The requests and card types the change adds, and the tests of the body's
 # `## Observed at` rows found at HEAD (#6873, `views.bash`).
-views=$("$claims/views.bash" "$from" "$body")
+views=$("$config_dir/bodies/views.bash" "$from" "$body")
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
 # The issues that a `spelling: replaces` line of the body cites and that stand
 # open (#6876): one read per issue cited, as for a ceiling. A body with no
 # such line reads `[]` (`spelled.bash`, #7138).
-spelled=$("$claims/spelled.bash" "$body" \
+spelled=$("$config_dir/bodies/spelled.bash" "$body" \
   | while IFS= read -r n; do gh api "repos/$repo/issues/$n" --jq 'select(.state == "open" and .pull_request == null) | .number' 2> /dev/null || :; done \
   | jq -s -c .)
 # The vault pages the issues name, and the crates' citations of them (#2793).
@@ -4693,7 +4693,7 @@ else
   git ls-files | awk -F/ '{ print $NF }' | sort -u > "$vaultdir/tree"
   printf '%s\n' "$pages" > "$vaultdir/pages.json"
   jq -n --rawfile body "$body" --slurpfile pages "$vaultdir/pages.json" --rawfile tree "$vaultdir/tree" '{body: $body, pages: $pages[0], tree: $tree}' \
-    | jq -j -L "$claims" -f "$claims/annotated.jq" > "$vaultdir/body"
+    | jq -j -L "$config_dir/bodies" -f "$config_dir/bodies/annotated.jq" > "$vaultdir/body"
   if ! cmp -s "$vaultdir/body" "$body"; then
     cp "$vaultdir/body" "$body"
     echo "wrote each vault page's \`vault:<mint>\` beside its filename in $body's \`## Sources read\`"
@@ -4707,7 +4707,7 @@ else
       LC_ALL=C awk -f .config/references/cites.awk "${cited_sources[@]}" | awk -F'\t' '$1 == "cite" { print $3 "\t" $2 }' > "$vaultdir/cites"
     fi
   fi
-  jq -n --slurpfile pages "$vaultdir/pages.json" --rawfile tree "$vaultdir/tree" --rawfile touched "$vaultdir/touched" --rawfile cites "$vaultdir/cites" -L "$claims" \
+  jq -n --slurpfile pages "$vaultdir/pages.json" --rawfile tree "$vaultdir/tree" --rawfile touched "$vaultdir/touched" --rawfile cites "$vaultdir/cites" -L "$config_dir/bodies" \
     'include "vault"; {pages: $pages[0], tree: ($tree | vault_tree), touched: ($touched | split("\n") | map(select(. != ""))),
       cited: ($cites | split("\n") | map(select(. != "") | split("\t")) | group_by(.[0]) | map({key: .[0][0], value: (map(.[1]) | unique)}) | from_entries)}' \
     > "$vaultdir/vault.json"
@@ -4715,19 +4715,19 @@ fi
 # Each reading reaches `opening.jq` through a file, never as an argument: it
 # grows with the change past the argument limit (`opening-input.bash`, #7076).
 # `vault.json` is written above.
-source "$claims/opening-input.bash"
+source "$config_dir/bodies/opening-input.bash"
 for reading in "${opening_readings[@]}"; do
   if [[ $reading != vault ]]; then printf '%s\n' "${!reading}" > "$vaultdir/$reading.json"; fi
 done
-findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$claims" -f "$claims/opening.jq")
+findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --slurpfile issues <(printf '%s\n' "$issues") '{issues: $issues[0]}' \
-  | jq -r -L "$claims" --argjson concerns "$(jq -c .rows <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$claims/../references/window.toml")" -f "$claims/signed.jq")
+  | jq -r -L "$config_dir/bodies" --argjson concerns "$(jq -c .rows <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$config_dir/references/window.toml")" -f "$config_dir/bodies/signed.jq")
 if [[ -n $signed ]]; then findings=${findings:+$findings$'\n'}$signed; fi
 # A design page an issue builds on is absorbed in the same pair, or the body
 # says why it stays design (#3161, `absorbing.jq`).
 absorbing=$(jq -n --rawfile body "$body" --slurpfile issues <(printf '%s\n' "$issues") --slurpfile absorption <(vault_absorption) \
-  '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
+  '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/absorbing.jq")
 if [[ -n $absorbing ]]; then findings=${findings:+$findings$'\n'}$absorbing; fi
 rm -rf "$vaultdir"
 # A `wait:` line names a future event, never a refusal (#4164): with nothing
@@ -5157,12 +5157,12 @@ ledger=$(mise run --quiet ledger:patched "$ledger_body" "$ledger_from" \
 # its `## Vault` (#3161, `absorbing.jq`): the page's status may have moved
 # since `pr:open` read it.
 source "$(git rev-parse --show-toplevel)/.config/references/vault.bash"
-claims=$(git rev-parse --show-toplevel)/.config/claims
-land_issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$ledger_body" \
+config_dir=$(git rev-parse --show-toplevel)/.config
+land_issues=$(jq -Rrs -L "$config_dir/bodies" 'include "targets"; targets(working) | unique[]' "$ledger_body" \
   | while IFS= read -r issue; do gh api "repos/$repo/issues/$issue" --jq '{number, body: (.body // "")}'; done \
   | jq -s .)
 absorbing=$(jq -n --rawfile body "$ledger_body" --slurpfile issues <(printf '%s\n' "$land_issues") --slurpfile absorption <(vault_absorption) \
-  '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
+  '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/absorbing.jq")
 rm -f "$ledger_body"
 if (( status != 0 )); then
   printf 'PR #%s:\n%s\n' "$number" "${ledger:-ledger:patched failed to read the ledger}" | sed '2,$s/^/  /' >&2
