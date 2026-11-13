@@ -1346,8 +1346,9 @@ pub struct Verdicts
     trusted: BTreeSet<KernelIdentity>,
     /// Where recorded verdicts are found.
     source: Arc<dyn VerdictSource>,
-    /// The key chain; absent once an admission was not keyed.
-    chain: Maybe<Chain, keyed::Absent>,
+    /// The key chain, shared with each state handed on until one of them keys
+    /// an admission; absent once an admission was not keyed.
+    chain: Maybe<Arc<Chain>, keyed::Absent>,
     /// The receipts already verified, each with whether it attested.
     verified: BTreeMap<Receipt, Attestation>,
     /// The readings of the records a verified receipt attested, by key.
@@ -1416,7 +1417,7 @@ impl Verdicts
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
+    pub fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
     {
         match self.chain {
             Maybe::Present(ref chain) => Maybe::Present(chain.last),
@@ -1459,11 +1460,11 @@ impl Verdicts
             TrustPolicy::Recheck => Self::rechecking(source),
             TrustPolicy::Trusted(trusted) => Self {
                 trusted,
-                chain: Maybe::Present(Chain {
+                chain: Maybe::Present(Arc::new(Chain {
                     encoder: SegmentEncoder::default(),
                     last: VerdictKey::start(build),
                     before: VerdictKey::start(build),
-                }),
+                })),
                 ..Self::rechecking(source)
             },
         }
@@ -1471,7 +1472,9 @@ impl Verdicts
 
     /// This state for a later run that resumes the environment: the policy,
     /// the source, the chain and the receipts verified, without the records
-    /// checked or the recalls counted, which are this run's.
+    /// checked or the recalls counted, which are this run's. The chain is
+    /// shared by reference until either state keys an admission, so a run
+    /// that ends the chain at once copies none of it.
     ///
     /// # Specification
     /// trivial.
@@ -1507,13 +1510,16 @@ impl Verdicts
         ),
     ) -> Maybe<VerdictKey, keyed::Absent>
     {
-        let Maybe::Present(ref mut chain) = self.chain
+        let Maybe::Present(ref mut shared) = self.chain
         else {
             return match self.chain {
                 Maybe::Absent(absent) => Maybe::Absent(absent),
                 Maybe::Present(_) => Maybe::Absent(keyed::Absent::Ended),
             };
         };
+        // A state handed on shares the chain until it keys: the first key
+        // takes its own copy.
+        let chain = Arc::make_mut(shared);
         let marked = gandr_kernel_term::MarkedDeclaration::new(
             gandr_kernel_term::AdmissionMark::Checked,
             declaration.clone(),
@@ -1553,7 +1559,8 @@ impl Verdicts
     #[inline]
     pub fn refused(&mut self)
     {
-        if let Maybe::Present(ref mut chain) = self.chain {
+        if let Maybe::Present(ref mut shared) = self.chain {
+            let chain = Arc::make_mut(shared);
             chain.encoder.forget();
             chain.last = chain.before;
         }
