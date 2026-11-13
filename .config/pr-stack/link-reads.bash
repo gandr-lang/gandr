@@ -2,9 +2,10 @@
 # `stack_link` reads the entries of each server stack once, whatever the
 # number of its members in the chain (#5671), run by `check:pr-stack` over
 # the cases in `links.json`. Each case gives the chain, the server stack of
-# each member, each stack's entries and the members queued. `gh` is
-# recorded, not run. `stack_entries` counts its reads and answers from the
-# entries of the member's stack. `stack_of` answers from the servers: after
+# each member, each stack's entries with their queue flag (#7142) and the
+# members queued. `gh` is recorded, not run. `stack_entries` counts its
+# reads and answers from the entries of the member's stack. `stack_of`
+# answers from the servers: after
 # an unstack, a member that is not queued leaves its stack, unless the case
 # is `stale`, as the host's shared reading of the open pull requests is until
 # it reads again. `link.jq` runs as written. The result is one line compared

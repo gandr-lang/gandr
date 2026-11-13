@@ -526,10 +526,11 @@ stack_of() {
 }
 
 # The members of the server stack pull request `$1` belongs to, bottom to
-# top, as a JSON array of `{number, state}`; empty when it belongs to none.
+# top, as a JSON array of `{number, state, isInMergeQueue}`; empty when it
+# belongs to none.
 stack_entries() {
   gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$1" \
-    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { entries(first: 100) { nodes { pullRequest { number state } } } } } } }' \
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { entries(first: 100) { nodes { pullRequest { number state isInMergeQueue } } } } } } }' \
     --jq '[.data.repository.pullRequest.stack.entries.nodes[]?.pullRequest]'
 }
 
@@ -540,22 +541,27 @@ stack_entries() {
 # stack (#2094), so such a stack is unstacked first: GitHub leaves its queued
 # and auto-merge members stacked, and drops the rest, the closed one among
 # them. The stack's number is read again from a member it kept, if any, and
-# the open members it dropped are linked again with the chain. The entries of
-# a server stack are read once, for its first member in the chain. Every
-# member of that stack then takes the stack its first member settled, since
-# they all share its entries (#5671). A chain that takes no arguments, one
-# pull request in no stack, is linked nothing (#3817).
+# the open members it dropped are linked again with the chain. A stack that
+# holds an open member the chain leaves out, while the chain adds a member,
+# is unstacked first too: the link appends the new members above every
+# member of the stack, so the new members stand above the one left out, as
+# above a held draft that `pr:open` stacks past (#7142, `unstack.jq`). The
+# entries of a server stack are read once, for its first member in the chain.
+# Every member of that stack then takes the stack its first member settled,
+# since they all share its entries (#5671). A chain that takes no arguments,
+# one pull request in no stack, is linked nothing (#3817).
 stack_link() {
-  local number stack server entries kept stacks=() args
+  local number stack server entries kept stacks=() args chain
   local -A settled=()
-  for number in $(jq -r '.[].number' <<< "$1"); do
+  chain=$(jq -c 'map(.number)' <<< "$1")
+  for number in $(jq -r '.[]' <<< "$chain"); do
     stack=$(stack_of "$number")
     if [[ $stack != null && -n ${settled[$stack]+set} ]]; then
       stack=${settled[$stack]}
     elif [[ $stack != null ]]; then
       server=$stack
       entries=$(stack_entries "$number")
-      if [[ $(jq 'any(.[]; .state == "CLOSED")' <<< "$entries") == true ]]; then
+      if [[ $(printf '%s\n%s\n' "$chain" "$entries" | jq -s -f "$pr_stack_dir/unstack.jq") == true ]]; then
         # It exits nonzero (5) whenever it leaves a queued member stacked;
         # a stack it failed to clear fails the link below, which says so.
         gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :
