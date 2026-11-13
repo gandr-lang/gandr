@@ -47,9 +47,9 @@ use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::Bits;
 
-use super::Console;
-use super::Printed;
-use super::console::Line;
+use crate::entry::console::Console;
+use crate::entry::console::Line;
+use crate::entry::console::Printed;
 
 #[cfg(test)]
 mod tests;

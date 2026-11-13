@@ -248,7 +248,7 @@ use crate::compose::judge_lowering;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
-use crate::evaluate::Evaluation;
+use crate::entry::evaluation::Evaluation;
 use crate::evaluate::hidden_members;
 use crate::typed::referent::Referents;
 
@@ -8678,7 +8678,7 @@ mod tests
 
         use crate::component::lay_out;
         use crate::compose::Composed;
-        use crate::evaluate::Evaluation;
+        use crate::entry::evaluation::Evaluation;
         use crate::pool::Pool;
         use crate::walk::Step;
         use crate::walk::Walk;

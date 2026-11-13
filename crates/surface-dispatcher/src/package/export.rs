@@ -80,6 +80,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::PackageAddress;
 use crate::compose::Composed;
+use crate::stored::EXPORT_ROOTS;
 use crate::walk::Standing;
 use crate::walk::Step;
 
@@ -149,9 +150,6 @@ fn spelled(source: &Path) -> Option<Spelling>
     }
     Some(Spelling(spelling.into_boxed_slice()))
 }
-
-/// The prefix of every root naming the export of a package.
-pub const EXPORT_ROOTS: &str = "export/";
 
 impl Export
 {
