@@ -5,8 +5,8 @@
 //! diagnostics are the ones last published to the editor, read without a
 //! recheck; the outline, the expected syntax and a declaration's type are the
 //! language server's own answers to the requests an editor sends for them.
-//! `ledger_list` and `ledger_show` answer what `gandr-ledger list` and
-//! `gandr-ledger show` print, read from `ledger/features.sql` under a root the
+//! `ledger_list` and `ledger_show` answer what `ledger list` and
+//! `ledger show` print, read from `ledger/features.sql` under a root the
 //! call names or the server's working directory, and hold no document.
 //!
 //! # Changes ride on every tool result
@@ -950,8 +950,7 @@ fn refused(fault: &FeaturesFault) -> ToolRefusal
 /// - ensures: `features`, one object per feature of the ledger under the root
 ///   in the area and at the status named, each where named, in the ledger's
 ///   order.
-/// - provides: the `ledger_list` tool, answering what `gandr-ledger list`
-///   prints.
+/// - provides: the `ledger_list` tool, answering what `ledger list` prints.
 /// - fails: an argument that is not a string, a status of no spelling, an area
 ///   no feature is in, or a ledger that cannot be read.
 /// - panics: none.
@@ -987,7 +986,7 @@ fn ledger_listed(arguments: &Value) -> Result<Value, ToolRefusal>
 /// # Specification
 /// - requires: nothing; any arguments are admitted.
 /// - ensures: `feature`, the row's object; `exemplars`, each `{path, source}`;
-///   `corpus`, its paths — what `gandr-ledger show` prints.
+///   `corpus`, its paths — what `ledger show` prints.
 /// - provides: the `ledger_show` tool.
 /// - fails: no `id` string, an id no feature has, an exemplar that cannot be
 ///   read, or a ledger that cannot be read.

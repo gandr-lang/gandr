@@ -3,7 +3,7 @@ name = "gandr-workflow-ledger-tasks"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The ledger tasks of gandr's surface: the syntax ledger's writer, the exemplars gate, the recovery sweep, and the features ledger's list and show, run by the `gandr-ledger` binary"
+description = "The ledger tasks of gandr's surface: the syntax ledger's writer, the exemplars gate, the recovery sweep, and the features ledger's list and show, run by the `ledger` binary"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -13,7 +13,7 @@ publish.workspace = true
 autotests = false
 
 [[bin]]
-name = "gandr-ledger"
+name = "ledger"
 path = "src/main.rs"
 
 # One integration target, each area file its own `cfg(test)` module, so a

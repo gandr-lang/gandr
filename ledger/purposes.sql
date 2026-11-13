@@ -5000,7 +5000,7 @@ INSERT INTO purpose VALUES('workflow-lane-budget','workflows::WorkflowName','str
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::Workflows','struct','The workflow table: every listed workflow''s runs timed, each budgeted one held to its limits, and the cache''s usage.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerFault','enum','Why a ledger could not be generated or written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerRun','enum','What a ledger task did.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerTask','enum','Which ledger a `gandr-ledger` invocation writes, verifies or reads, and where.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerTask','enum','Which ledger a `ledger` invocation writes, verifies or reads, and where.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::SyntaxLedger','struct','The syntax ledger: every rule of the built-in grammar and every attribute of the lowering''s registry, under the grammar''s fingerprint.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFault','enum','Why one exemplar does not show what its name says.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFinding','struct','One exemplar that does not hold, by its path.',NULL,'fits','sound',NULL);

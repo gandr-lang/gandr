@@ -1205,7 +1205,7 @@ path = "crates/workflow-github"
 
 # The ledger tasks of the surface: the syntax ledger's writer, the exemplars
 # gate, the recovery sweep, and the features ledger's list and show, run by
-# the `gandr-ledger` binary.
+# the `ledger` binary.
 # consumers:
 # - surface-driver (dev)
 [workspace.dependencies.gandr-workflow-ledger-tasks]

@@ -12,7 +12,7 @@
 
 (if .kind == "deleted" then "a deleted tile" else "a tile written as its near miss" end) as $tile
 | "This issue collects the mutants of the recovery sweep whose first error, `\(.name)`, falls at other bytes than the mutation.\n\n"
-  + "The recovery sweep (`gandr-ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. "
+  + "The recovery sweep (`ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. "
   + "It finds \(.count) such \(if .count == 1 then "mutant" else "mutants" end) with \($tile).\n\n"
   + "## Findings\n\n"
   + "The first findings follow. The nightly run lists each one\(if .run == null then "" else " (\(.run))" end).\n\n"

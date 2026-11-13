@@ -11,7 +11,7 @@ This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger
 
 ## Synopsis
 
-**What.** `gandr-workflow-ledger-tasks` installs the `gandr-ledger` binary. `gandr-ledger syntax --write <directory>` writes the syntax ledger as `syntax.md` and `syntax.json`. The ledger holds every rule of the built-in grammar and every attribute of the lowering's registry under the grammar's fingerprint. `gandr-ledger exemplars <directory>` verifies one exemplar for each committed rule and attribute ([`ledger/README.md`](../../ledger/README.md)). `gandr-ledger recovery <directory>` writes each literal tile of each syntax exemplar wrong and reads the first error. `gandr-ledger list [--area <area>] [--status <status>]` prints one line for each feature of `ledger/features.sql`. `gandr-ledger show <id>` prints a feature's row, its exemplars' sources whole and its corpus paths. Before you write a form, list its area and show each feature it uses.
+**What.** `gandr-workflow-ledger-tasks` installs the `ledger` binary. `ledger syntax --write <directory>` writes the syntax ledger as `syntax.md` and `syntax.json`. The ledger holds every rule of the built-in grammar and every attribute of the lowering's registry under the grammar's fingerprint. `ledger exemplars <directory>` verifies one exemplar for each committed rule and attribute ([`ledger/README.md`](../../ledger/README.md)). `ledger recovery <directory>` writes each literal tile of each syntax exemplar wrong and reads the first error. `ledger list [--area <area>] [--status <status>]` prints one line for each feature of `ledger/features.sql`. `ledger show <id>` prints a feature's row, its exemplars' sources whole and its corpus paths. Before you write a form, list its area and show each feature it uses.
 
 **Why.** The ledger tasks are repository tooling, and no check of a source reads them. In the dispatcher, each build of the `gandr` binary compiled them. In this crate, the dispatcher and the `gandr` binary build without them, and an edit of a task builds this crate alone.
 
@@ -19,11 +19,11 @@ This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger
 
 ## Provided features
 
-- `gandr-ledger syntax --write <directory> [--exemplars <directory>]` prints the path of each file it writes. Without `--exemplars`, it reads the admissions under `<directory>/exemplars`.
-- `gandr-ledger exemplars <directory>` prints each exemplar that does not hold, `<path>: <fault>`, then the count. It exits `1` when it finds one.
-- `gandr-ledger recovery <directory>` prints the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count. It exits `1` when it finds one.
-- `gandr-ledger list` and `gandr-ledger show <id>` read `ledger/features.sql` under `--root`, the current directory by default.
-- A fault prints `gandr-ledger: <fault>` on standard error and exits `2`.
+- `ledger syntax --write <directory> [--exemplars <directory>]` prints the path of each file it writes. Without `--exemplars`, it reads the admissions under `<directory>/exemplars`.
+- `ledger exemplars <directory>` prints each exemplar that does not hold, `<path>: <fault>`, then the count. It exits `1` when it finds one.
+- `ledger recovery <directory>` prints the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count. It exits `1` when it finds one.
+- `ledger list` and `ledger show <id>` read `ledger/features.sql` under `--root`, the current directory by default.
+- A fault prints `ledger: <fault>` on standard error and exits `2`.
 
 ## Expected features
 

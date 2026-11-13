@@ -1,8 +1,7 @@
-//! The exit codes and output of `gandr-ledger`, observed by spawning the
-//! binary.
+//! The exit codes and output of `ledger`, observed by spawning the binary.
 //!
-//! Each case writes its sources into a scratch directory, runs `gandr-ledger`
-//! on them, and asserts the exit code and the lines it printed.
+//! Each case writes its sources into a scratch directory, runs `ledger` on
+//! them, and asserts the exit code and the lines it printed.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -31,8 +30,7 @@ impl Scratch
     /// trivial.
     fn new(test: Text<'_>) -> Self
     {
-        let root =
-            std::env::temp_dir().join(format!("gandr-ledger-{}-{}", test.0, std::process::id()));
+        let root = std::env::temp_dir().join(format!("ledger-{}-{}", test.0, std::process::id()));
         if root.exists() {
             std::fs::remove_dir_all(&root).expect("a stale scratch directory is removed");
         }
@@ -72,7 +70,7 @@ impl Drop for Scratch
     }
 }
 
-/// The finished run of `gandr-ledger` with `arguments`, its output captured.
+/// The finished run of `ledger` with `arguments`, its output captured.
 ///
 /// # Specification
 /// trivial.
@@ -80,7 +78,7 @@ fn ran<Argument>(arguments: &[Argument]) -> Output
 where
     Argument: AsRef<std::ffi::OsStr>,
 {
-    Command::new(env!("CARGO_BIN_EXE_gandr-ledger"))
+    Command::new(env!("CARGO_BIN_EXE_ledger"))
         .args(arguments)
         .output()
         .expect("the binary runs")
@@ -164,10 +162,7 @@ fn the_syntax_ledger_is_written_and_reproduced()
     let refused = ran(&[syntax, write, &blocked.join("ledger"), with, &committed]);
     assert_eq!(code(&refused), Code(2_i32), "{}", stdout(&refused));
     assert!(
-        stderr(&refused).starts_with(&format!(
-            "gandr-ledger: {}",
-            blocked.join("ledger").display()
-        )),
+        stderr(&refused).starts_with(&format!("ledger: {}", blocked.join("ledger").display())),
         "{}",
         stderr(&refused)
     );
@@ -176,7 +171,7 @@ fn the_syntax_ledger_is_written_and_reproduced()
     assert_eq!(code(&unshown), Code(2_i32), "{}", stdout(&unshown));
     assert!(
         stderr(&unshown).starts_with(&format!(
-            "gandr-ledger: {}",
+            "ledger: {}",
             directory.join("exemplars").join("syntax").display()
         )),
         "without `--exemplars` the admissions are read under the written directory: {}",
@@ -247,8 +242,8 @@ fn the_recovery_sweep_reports_its_table_and_count()
     );
 }
 
-/// #1827: `gandr-ledger list` and `gandr-ledger show` read the features
-/// ledger as the guide an author writes from.
+/// #1827: `ledger list` and `ledger show` read the features ledger as the
+/// guide an author writes from.
 #[test]
 fn the_features_ledger_lists_and_shows_1827()
 {
@@ -319,11 +314,11 @@ fn the_features_ledger_lists_and_shows_1827()
     assert_eq!(code(&elsewhere), Code(2_i32), "{}", stdout(&elsewhere));
     assert_eq!(
         stderr(&elsewhere),
-        "gandr-ledger: no feature is in the area `astrology`; the areas are storage, syntax\n"
+        "ledger: no feature is in the area `astrology`; the areas are storage, syntax\n"
     );
     let unknown = ran(&[Path::new("show"), Path::new("answer"), root, &scratch.0]);
     assert_eq!(code(&unknown), Code(2_i32), "{}", stdout(&unknown));
-    assert_eq!(stderr(&unknown), "gandr-ledger: no feature is `answer`\n");
+    assert_eq!(stderr(&unknown), "ledger: no feature is `answer`\n");
 
     let committed = ran(&[
         Path::new("show"),

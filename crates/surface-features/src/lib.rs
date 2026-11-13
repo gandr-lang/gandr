@@ -6,8 +6,8 @@
 //! and [`FeatureLedger::built_in`] reads the copy the binary was built with:
 //! what the running toolchain implements, which a package's constraints are
 //! checked against wherever the package stands.
-//! `gandr-ledger list` prints a line per feature, narrowed to an area and a
-//! status; `gandr-ledger show <id>` prints a feature's row, then each of its
+//! `ledger list` prints a line per feature, narrowed to an area and a
+//! status; `ledger show <id>` prints a feature's row, then each of its
 //! exemplars' sources whole, whose `///` comments explain the form, then its
 //! corpus witnesses' paths. The Model Context Protocol server's `ledger_list`
 //! and `ledger_show` answer the same as JSON. Before writing a form, an author
@@ -824,7 +824,7 @@ impl FeatureLedger
     /// - requires: nothing.
     /// - ensures: every row whose area is `area` and whose status is `status`,
     ///   each where named, and no other, in the ledger's order.
-    /// - provides: `gandr-ledger list [--area <area>] [--status <status>]`.
+    /// - provides: `ledger list [--area <area>] [--status <status>]`.
     /// - fails: an area no row is in.
     /// - panics: none.
     ///
@@ -878,7 +878,7 @@ impl FeatureLedger
     /// - ensures: the row whose id is `id`; one exemplar per path its
     ///   `exemplar` names other than `crate-tests`, each with the file's text
     ///   under the root; and its `corpus` paths, in the row's order.
-    /// - provides: `gandr-ledger show <id>`.
+    /// - provides: `ledger show <id>`.
     /// - fails: no row is `id`, or an exemplar cannot be read.
     /// - panics: none.
     ///
