@@ -14,6 +14,7 @@ use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
+use gandr_kernel_term::ChunkedMap;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
@@ -1758,12 +1759,12 @@ pub struct EntryLog
     /// The presented types, and the types of words over each sort.
     pub presentations: crate::presented::Presentations,
     /// The position of each ruled definition, by the fixpoint its body thunks.
-    ruled: BTreeMap<ComputationId, ConstantIndex>,
+    ruled: ChunkedMap<ComputationId, ConstantIndex>,
     /// The positions of each built-in role's holders, ascending.
-    roles: BTreeMap<gandr_kernel_term::Builtin, Vec<ConstantIndex>>,
+    roles: ChunkedMap<gandr_kernel_term::Builtin, Vec<ConstantIndex>>,
     /// The positions of the plain definitions named by their content, by the
     /// digest of their declared type and body, by rank ascending.
-    definitions: BTreeMap<ContentDigest, Vec<ConstantIndex>>,
+    definitions: ChunkedMap<ContentDigest, Vec<ConstantIndex>>,
     /// How many slots are vacancies.
     vacancies: usize,
     /// How many slots are reserved for a release whose commit has not come.
@@ -2583,13 +2584,23 @@ impl Entries
             ref mut definitions,
             ..
         } = *log;
-        for positions in definitions.values_mut() {
-            positions.sort_unstable_by_key(|&held| {
-                family
-                    .get(usize::from(held))
-                    .and_then(Slot::admitted)
-                    .map(|entry| entry.rank)
-            });
+        let rank_of = |held: &ConstantIndex| {
+            family
+                .get(usize::from(*held))
+                .and_then(Slot::admitted)
+                .map(|entry| entry.rank)
+        };
+        // The rewrite writes only the contents whose definitions it takes out
+        // of rank order, so it copies their chunks alone.
+        let unsorted: Vec<ContentDigest> = definitions
+            .iter()
+            .filter(|&(_, positions)| !positions.is_sorted_by_key(rank_of))
+            .map(|(&digest, _)| digest)
+            .collect();
+        for digest in unsorted {
+            if let Some(positions) = definitions.get_mut(&digest) {
+                positions.sort_unstable_by_key(rank_of);
+            }
         }
     }
 
@@ -2678,15 +2689,9 @@ impl Entries
         log.reservations = log.reservations.saturating_sub(reserved);
         log.family.truncate(length);
         log.presentations.forget_from(first);
-        log.ruled.retain(|_, &mut position| position < first);
-        log.roles.retain(|_, positions| {
-            positions.retain(|&position| position < first);
-            !positions.is_empty()
-        });
-        log.definitions.retain(|_, positions| {
-            positions.retain(|&position| position < first);
-            !positions.is_empty()
-        });
+        log.ruled.retain(|_, &position| position < first);
+        log.roles.retain_items(|&position| position < first);
+        log.definitions.retain_items(|&position| position < first);
     }
 
     /// Share every entry with every clone made after.
@@ -2834,19 +2839,20 @@ fn sort_constructors<'family>(
 /// trivial.
 fn place_definition(
     family: &Family<Slot>,
-    definitions: &mut BTreeMap<ContentDigest, Vec<ConstantIndex>>,
+    definitions: &mut ChunkedMap<ContentDigest, Vec<ConstantIndex>>,
     digest: ContentDigest,
     (position, rank): (ConstantIndex, SourceRank),
 )
 {
-    let positions = definitions.entry(digest).or_default();
-    let at = positions.partition_point(|&held| {
-        family
-            .get(usize::from(held))
-            .and_then(Slot::admitted)
-            .is_some_and(|earlier| earlier.rank < rank)
+    definitions.update_or_default(digest, |positions| {
+        let at = positions.partition_point(|&held| {
+            family
+                .get(usize::from(held))
+                .and_then(Slot::admitted)
+                .is_some_and(|earlier| earlier.rank < rank)
+        });
+        positions.insert(at, position);
     });
-    positions.insert(at, position);
 }
 
 impl EntryLog
@@ -2881,7 +2887,8 @@ impl EntryLog
         // it. Admission refuses a second holder, and only the bypass admits
         // one.
         if let Maybe::Present(role) = declaration.role() {
-            self.roles.entry(role).or_default().push(position);
+            self.roles
+                .update_or_default(role, |holders| holders.push(position));
         }
         if let ConstantName::Definition { digest, .. } = entry.key_name {
             place_definition(
