@@ -85,20 +85,43 @@ gate_niceness() {
   nice 2> /dev/null || ps -o ni= -p $$ | tr -d ' '
 }
 
+# Sets `gate_clock` to the time now in microseconds, from `EPOCHREALTIME`
+# with its point taken out (#7051). A bash older than 5 has no
+# `EPOCHREALTIME`, and the time is then `SECONDS` in microseconds.
+gate_clock() {
+  if [[ -n ${EPOCHREALTIME:-} ]]; then
+    gate_clock=${EPOCHREALTIME/[.,]/}
+  else
+    gate_clock=$(( SECONDS * 1000000 ))
+  fi
+}
+
+# Sets `gate_seconds` to the whole seconds from the time `$1` to the time
+# `$2`, both in microseconds, rounded down (#7051).
+gate_seconds() {
+  gate_seconds=$(( ($2 - $1) / 1000000 ))
+}
+
 # Takes the lane's lock and then a free slot, waiting for each unless
 # `GATE_NO_WAIT=1`, and records the holder as `$*`; sets `gate_slot` to the
 # slot's number and `gate_lane` to the lane, exports `GANDR_GATE_SLOT`, and
 # releases both from the caller's `EXIT` trap. It sets `gate_wait_lane` and
 # `gate_wait_slot` to the seconds that it waited for each (#6699): the gate
 # prints them when it holds its slot, and its record keeps them
-# (`gate_wait`). A background gate waits for no slot.
+# (`gate_wait`). A background gate waits for no slot. Each wait is read in
+# microseconds and rounded down to seconds (#7051), so a take of a few
+# milliseconds reads 0 on either side of a second's edge.
 hold_gate_slot() {
-  local wait=() start=$SECONDS
+  local wait=() start
+  gate_clock
+  start=$gate_clock
   [[ $gate_slots =~ ^[1-9][0-9]*$ ]] || { echo "check: GANDR_GATE_SLOTS is \`$gate_slots\`, not a count of slots" >&2; exit 2; }
   if [[ ${GATE_NO_WAIT:-} == 1 ]]; then wait=(--no-wait); fi
   gate_lane=$(gate_lane)
   host_lock ${wait[@]+"${wait[@]}"} --fd 8 "gate-lane-$gate_lane" 1 "$@"
-  gate_wait_lane=$(( SECONDS - start ))
+  gate_clock
+  gate_seconds "$start" "$gate_clock"
+  gate_wait_lane=$gate_seconds
   gate_wait_slot=0
   if [[ ${GANDR_GATE_BACKGROUND:-} == 1 && $(gate_niceness) == 19 ]]; then
     # The gate's checks are no background gates (#6656): a check that takes
@@ -112,9 +135,12 @@ hold_gate_slot() {
     return
   fi
   unset GANDR_GATE_BACKGROUND
-  start=$SECONDS
+  gate_clock
+  start=$gate_clock
   host_lock ${wait[@]+"${wait[@]}"} gate "$gate_slots" "$@" "(lane $gate_lane)"
-  gate_wait_slot=$(( SECONDS - start ))
+  gate_clock
+  gate_seconds "$start" "$gate_clock"
+  gate_wait_slot=$gate_seconds
   gate_slot=$host_slot
   export GANDR_GATE_SLOT=$gate_slot
   trap 'host_unlock 9; host_unlock 8' EXIT

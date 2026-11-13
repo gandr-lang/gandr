@@ -219,6 +219,14 @@ jq -e '.lane >= 1 and .slot == 0' "$scratch/lane-waiter.wait" > /dev/null 2>&1 \
   || fail "#6699: the lane's waiting gate gave no wait for its lane's lock: $(< "$scratch/lane-waiter.wait")"
 wait "$waiter" 2> /dev/null || true
 
+# A wait reads whole seconds rounded down from microseconds (#7051): a take
+# of 2 µs across a second's edge reads 0, and one whole second reads 1. So a
+# slot taken at once reads no wait under a whole gate's load.
+seconds=$(bash -c 'source "$1"; gate_seconds 999999 1000001; echo "$gate_seconds"; gate_seconds 0 1000000; echo "$gate_seconds"' _ "$gate_helper")
+[[ $seconds == $'0\n1' ]] || fail "#7051: a wait across a second's edge read whole seconds of the clock, not of the wait: $seconds"
+clock=$(bash -c 'source "$1"; gate_clock; a=$gate_clock; gate_clock; [[ $a =~ ^[0-9]+$ ]] && (( gate_clock >= a )) && echo ok' _ "$gate_helper")
+[[ $clock == ok ]] || fail "#7051: the gate's clock gave no rising count of microseconds"
+
 # The lane table names the lanes (#6699). The worktrees `lane-flex-a` and
 # `lane-flex-b` are two lanes of the table, so their gates take two slots at
 # once. The worktree of a branch, `flex-a-6699-scope`, is the lane `flex-a`,
