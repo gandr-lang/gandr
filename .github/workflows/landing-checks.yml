@@ -2031,9 +2031,12 @@ jobs:
       - name: name the reports not uploaded
         id: unsent
         run: printf 'benchmarks=%s\n' "$(ls target/hotpath/unsent | paste -sd' ')" >> "$GITHUB_OUTPUT"
+      # `compgen` is a builtin of bash alone. The image's default shell is
+      # `sh`, where the test fails and no check reaches the poster (#7277).
       - name: judge the runs against the base's
         id: judge
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+        shell: bash
         env:
           CI_BASE_SHA: ${{ github.event.before }}
         run: |
