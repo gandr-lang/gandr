@@ -56,15 +56,22 @@ cat > "$scratch/far-bin/gh" << 'EOF'
 [[ "$*" == 'auth token --user reader' ]] || exit 1
 echo read-token
 EOF
-# The stand-in `mise` of the far host: `trust` passes, and `run check` writes
-# the record of the tree as `passed.bash record` does. It fails when the
-# host's home holds `red`, or when the gate holds no reader's token. It
-# writes the token it reads with to `token` in the host's home.
+# The stand-in `mise` of the far host: `trust` passes. `run tools:check`
+# reads the host's tools: it names a lack and exits 2 when the host's home
+# holds `lacks`. `run check` touches `gated` in the host's home and writes the
+# record of the tree as `passed.bash record` does. It fails when the host's
+# home holds `red`, or when the gate holds no reader's token. It writes the
+# token it reads with to `token` in the host's home.
 cat > "$scratch/far-bin/mise" << 'EOF'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in
   trust\ *) exit 0 ;;
+  'run tools:check')
+    if [[ -e $HOME/lacks ]]; then echo 'host-tools: far lacks github:cli/cli 2.103.2' >&2; exit 2; fi
+    echo 'host-tools: far holds each tool'
+    ;;
   'run check')
+    touch "$HOME/gated"
     if [[ -e $HOME/red ]]; then echo 'check: a check is red' >&2; exit 1; fi
     case ${GH_TOKEN:-} in
       read-token | handed-token) printf '%s\n' "$GH_TOKEN" > "$HOME/token" ;;
@@ -144,6 +151,19 @@ tree=$(git rev-parse 'HEAD^{tree}')
   || fail "#6996: a far gate that fails records no pass" "exit $status, records: $(ls "$records/$tree" 2>&1)"
 rm "$scratch/home-far/red"
 
+# A far host that lacks a tool stops before its gate (#7127): the gate does
+# not run, nothing is recorded, the task gives the check's status 2, and the
+# lack stands in its lines.
+touch "$scratch/home-far/lacks"
+rm -f "$scratch/home-far/gated"
+commit file lacks lacks
+status=0
+"$here/remote.bash" far > "$scratch/out" 2>&1 || status=$?
+tree=$(git rev-parse 'HEAD^{tree}')
+[[ $status == 2 && ! -e $records/$tree && ! -e $scratch/home-far/gated && $(< "$scratch/out") == *'far lacks github:cli/cli 2.103.2'* ]] \
+  || fail "#7127: a far host that lacks a tool stops before its gate and records no pass" "exit $status, gated $([[ -e $scratch/home-far/gated ]] && echo yes || echo no): $(< "$scratch/out")"
+rm "$scratch/home-far/lacks"
+
 # Work that HEAD does not hold is refused before any push.
 printf 'more\n' >> file
 status=0
@@ -173,4 +193,4 @@ held=$(probe other)
   || fail "#6996: the probe counts the free gate slots and reads whether the host gives the reader's token" "free $free, then $held with the slot held and another reader"
 
 (( failed == 0 )) || exit 1
-echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"
+echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"
