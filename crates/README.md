@@ -102,7 +102,7 @@ crates/
 ├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
 ├── workflow-debt-ledger/          the comment and prose gates' debt ledger
 ├── workflow-github/               the workflow binaries' one `gh` runner
-├── workflow-host-tools/           the `host-tools` binary: the tools with no binary for a host's target, cross-built once for each version
+├── workflow-host-tools/           the `host-tools` binary: the tools with no binary for a host's target, built once and copied to its hosts
 ├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-ledger-tasks/         the `ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read

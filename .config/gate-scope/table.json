@@ -157,6 +157,8 @@
         ".cargo/",
         ".config/cases/",
         ".config/follow/",
+        ".config/mise/tasks/mise-tasks-toolchain.toml",
+        ".github/actions/install-tools/action.yml",
         "Cargo.lock",
         "Cargo.toml",
         "crates/"

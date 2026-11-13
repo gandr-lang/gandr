@@ -137,6 +137,17 @@ name! {
     Template
 }
 
+name! {
+    /// A host that receives keys, as ssh names it.
+    HostName
+}
+
+name! {
+    /// A path on a receiver, relative to its home directory, as
+    /// `.local/share/mise`.
+    RemotePath
+}
+
 /// Go's name of an architecture that the hosts run.
 ///
 /// # Specification
