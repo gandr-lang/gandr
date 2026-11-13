@@ -2687,7 +2687,7 @@ impl Environment
                 refusal: crate::error::KeepRefusal::Unit,
             });
         }
-        if self.answers_by_lookup(unit) {
+        if self.lookup(unit) == Lookup::Answers {
             return Ok(CheckedId::new(first));
         }
         let ranks = self.unit_ranks(unit);
@@ -2702,23 +2702,28 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
-    fn answers_by_lookup(
+    fn lookup(
         &self,
         unit: crate::env::Unit,
-    ) -> bool
+    ) -> Lookup
     {
         let members = usize::from(unit.first) .. usize::from(unit.end);
-        self.verdicts.keying() == crate::verdict::Keying::Keys
-            && members
-                .clone()
-                .filter_map(|member| self.entries.rank_of(ConstantIndex::from(member)))
-                .max()
-                .is_some_and(|top| self.commits.is_keyed(top))
-            && members.into_iter().all(|member| {
-                self.entries
-                    .live(ConstantIndex::from(member))
-                    .is_some_and(|member| matches!(member.key(), Maybe::Present(_)))
-            })
+        let covered = members
+            .clone()
+            .filter_map(|member| self.entries.rank_of(ConstantIndex::from(member)))
+            .max()
+            .is_some_and(|top| self.commits.keyed_through.is_some_and(|held| top <= held));
+        let keyed = members.into_iter().all(|member| {
+            self.entries
+                .live(ConstantIndex::from(member))
+                .is_some_and(|member| matches!(member.key(), Maybe::Present(_)))
+        });
+        if covered && keyed && self.verdicts.keying() == crate::verdict::Keying::Keys {
+            Lookup::Answers
+        }
+        else {
+            Lookup::Checks
+        }
     }
 
     /// The ranks of the members of `unit`, in the order of their positions.
@@ -3647,6 +3652,17 @@ enum Way
     Checking(Scope, Judged),
 }
 
+/// How a keep in place answers for a unit's check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Lookup
+{
+    /// The held keys answer: the watermark covers each member, and each
+    /// member holds a key under a policy that keys.
+    Answers,
+    /// The kernel computes each key again.
+    Checks,
+}
+
 /// What the committer alone reads and writes beside the entries: the
 /// committer's own part of the log. An environment holds it outside the
 /// `Arc` of [`EntryLog`](crate::env::EntryLog), and no view holds it, so a
@@ -3907,18 +3923,6 @@ impl CommitLog
     fn stale_all(&mut self)
     {
         self.keyed_through = None;
-    }
-
-    /// Whether the key of each live entry ranked at or below `rank` holds.
-    ///
-    /// # Specification
-    /// trivial.
-    fn is_keyed(
-        &self,
-        rank: SourceRank,
-    ) -> bool
-    {
-        self.keyed_through.is_some_and(|held| rank <= held)
     }
 
     /// The live entry ranked next above the watermark: the next one whose key
