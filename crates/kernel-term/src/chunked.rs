@@ -13,6 +13,8 @@ use alloc::vec::Vec;
 use core::ops::Bound;
 use core::ops::RangeBounds;
 
+use anodized::spec;
+
 /// How many entries a chunk holds at most: a write to one entry copies at most
 /// this many entries.
 const CHUNK: usize = 64;
@@ -20,6 +22,53 @@ const CHUNK: usize = 64;
 /// How few entries a chunk holds before a removal merges it with the next
 /// chunk, so that the list of chunks stays short.
 const SPARSE: usize = CHUNK >> 2;
+
+/// How many entries a [`ChunkedMap`] holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EntryCount(usize);
+
+impl From<usize> for EntryCount
+{
+    /// The count of `entries`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(entries: usize) -> Self
+    {
+        Self(entries)
+    }
+}
+
+impl From<EntryCount> for usize
+{
+    /// The number of entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: EntryCount) -> Self
+    {
+        count.0
+    }
+}
+
+/// The place of an entry in a map's list of chunks: its chunk, and its offset
+/// in the chunk.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Place
+{
+    /// The offset of the chunk in the list.
+    chunk: usize,
+    /// The offset of the entry in the chunk.
+    within: usize,
+}
+
+/// The offset of a chunk in a map's list of chunks.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct ChunkAt(usize);
 
 /// An ordered map whose clones share their entries in chunks.
 ///
@@ -120,20 +169,9 @@ impl<Key, Value> ChunkedMap<Key, Value>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn len(&self) -> usize
+    pub const fn len(&self) -> EntryCount
     {
-        self.len
-    }
-
-    /// Whether the map holds no entry.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn is_empty(&self) -> bool
-    {
-        self.len == 0
+        EntryCount(self.len)
     }
 
     /// The chunks, in key order.
@@ -225,33 +263,34 @@ impl<Key: Ord, Value> ChunkedMap<Key, Value>
     fn chunk_of(
         chunks: &[Chunk<Key, Value>],
         key: &Key,
-    ) -> usize
+    ) -> ChunkAt
     {
-        chunks
-            .partition_point(|chunk| chunk.first <= *key)
-            .saturating_sub(1)
+        ChunkAt(
+            chunks
+                .partition_point(|chunk| chunk.first <= *key)
+                .saturating_sub(1),
+        )
     }
 
-    /// The place of `key`: its chunk, and its place in the chunk when the
-    /// chunk holds it, or the place it would take there.
+    /// The place of the entry of `key`, or `None` when the map does not hold
+    /// it.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn place(
+    fn held(
         &self,
         key: &Key,
-    ) -> Option<(usize, Result<usize, usize>)>
+    ) -> Option<Place>
     {
         let chunks = self.chunks();
-        let at = Self::chunk_of(chunks, key);
-        let chunk = chunks.get(at)?;
-        Some((
-            at,
-            chunk
-                .entries
-                .binary_search_by(|&(ref held, _)| held.cmp(key)),
-        ))
+        let ChunkAt(chunk) = Self::chunk_of(chunks, key);
+        let within = chunks
+            .get(chunk)?
+            .entries
+            .binary_search_by(|&(ref held, _)| held.cmp(key))
+            .ok()?;
+        Some(Place { chunk, within })
     }
 
     /// The place of the first entry whose key is past `bound` from below: at
@@ -264,27 +303,34 @@ impl<Key: Ord, Value> ChunkedMap<Key, Value>
     fn lower(
         &self,
         bound: Bound<&Key>,
-    ) -> (usize, usize)
+    ) -> Place
     {
+        let start = Place {
+            chunk: 0,
+            within: 0,
+        };
         let chunks = self.chunks();
         let (key, above) = match bound {
-            Bound::Unbounded => return (0, 0),
+            Bound::Unbounded => return start,
             Bound::Included(key) => (key, false),
             Bound::Excluded(key) => (key, true),
         };
-        let at = Self::chunk_of(chunks, key);
+        let ChunkAt(at) = Self::chunk_of(chunks, key);
         let Some(chunk) = chunks.get(at)
         else {
-            return (0, 0);
+            return start;
         };
         let within = chunk
             .entries
             .partition_point(|&(ref held, _)| if above { held <= key } else { held < key });
         if within >= chunk.entries.len() {
-            (at.saturating_add(1), 0)
+            Place {
+                chunk: at.saturating_add(1),
+                within: 0,
+            }
         }
         else {
-            (at, within)
+            Place { chunk: at, within }
         }
     }
 
@@ -299,29 +345,12 @@ impl<Key: Ord, Value> ChunkedMap<Key, Value>
         key: &Key,
     ) -> Option<&Value>
     {
-        let (at, Ok(within)) = self.place(key)?
-        else {
-            return None;
-        };
+        let Place { chunk, within } = self.held(key)?;
         self.chunks()
-            .get(at)?
+            .get(chunk)?
             .entries
             .get(within)
             .map(|&(_, ref value)| value)
-    }
-
-    /// Whether the map holds `key`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn contains_key(
-        &self,
-        key: &Key,
-    ) -> bool
-    {
-        self.get(key).is_some()
     }
 
     /// The entries whose keys `range` holds, in key order, read from either
@@ -341,27 +370,30 @@ impl<Key: Ord, Value> ChunkedMap<Key, Value>
         // The end is the first place past the range: past an included key,
         // at or past an excluded one.
         let end = match range.end_bound() {
-            Bound::Unbounded => (self.chunks().len(), 0),
+            Bound::Unbounded => Place {
+                chunk: self.chunks().len(),
+                within: 0,
+            },
             Bound::Included(key) => self.lower(Bound::Excluded(key)),
             Bound::Excluded(key) => self.lower(Bound::Included(key)),
         };
         let end = end.max(start);
-        let last = if end.1 == 0 {
-            end.0
+        let last = if end.within == 0 {
+            end.chunk
         }
         else {
-            end.0.saturating_add(1)
+            end.chunk.saturating_add(1)
         };
         self.chunks()
-            .get(start.0 .. last)
+            .get(start.chunk .. last)
             .unwrap_or_default()
             .iter()
             .enumerate()
             .flat_map(move |(offset, chunk)| {
-                let at = start.0.saturating_add(offset);
-                let from = if at == start.0 { start.1 } else { 0 };
-                let to = if at == end.0 {
-                    end.1
+                let at = start.chunk.saturating_add(offset);
+                let from = if at == start.chunk { start.within } else { 0 };
+                let to = if at == end.chunk {
+                    end.within
                 }
                 else {
                     chunk.entries.len()
@@ -407,11 +439,8 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
         key: &Key,
     ) -> Option<&mut Value>
     {
-        let (at, Ok(within)) = self.place(key)?
-        else {
-            return None;
-        };
-        let chunk = owned(&mut self.chunks).get_mut(at)?;
+        let Place { chunk, within } = self.held(key)?;
+        let chunk = owned(&mut self.chunks).get_mut(chunk)?;
         Arc::make_mut(&mut chunk.entries)
             .get_mut(within)
             .map(|&mut (_, ref mut value)| value)
@@ -453,6 +482,10 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
     /// - witness: `chunked::tests::a_chunked_map_answers_as_an_ordered_map_beside_its_clone`
+    #[spec(
+        captures: count = usize::from(self.len()),
+        ensures: |previous| usize::from(self.len()) == count.saturating_add(usize::from(previous.is_none())),
+    )]
     #[inline]
     pub fn insert(
         &mut self,
@@ -461,7 +494,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     ) -> Option<Value>
     {
         let chunks = owned(&mut self.chunks);
-        let at = Self::chunk_of(chunks, &key);
+        let ChunkAt(at) = Self::chunk_of(chunks, &key);
         let Some(chunk) = chunks.get_mut(at)
         else {
             let mut entries = Vec::with_capacity(CHUNK);
@@ -515,16 +548,18 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
     /// - witness: `chunked::tests::a_chunked_map_answers_as_an_ordered_map_beside_its_clone`
+    #[spec(
+        captures: count = usize::from(self.len()),
+        ensures: |taken| self.get(key).is_none()
+            && usize::from(self.len()) == count.saturating_sub(usize::from(taken.is_some())),
+    )]
     #[inline]
     pub fn remove(
         &mut self,
         key: &Key,
     ) -> Option<Value>
     {
-        let (at, Ok(within)) = self.place(key)?
-        else {
-            return None;
-        };
+        let Place { chunk: at, within } = self.held(key)?;
         let chunks = owned(&mut self.chunks);
         let chunk = chunks.get_mut(at)?;
         let entries = Arc::make_mut(&mut chunk.entries);
@@ -537,7 +572,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
             let _empty = chunks.remove(at);
         }
         else if left < SPARSE {
-            Self::merge(chunks, at);
+            Self::merge(chunks, ChunkAt(at));
         }
         self.len = self.len.saturating_sub(1);
         Some(value)
@@ -550,7 +585,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     #[inline]
     fn merge(
         chunks: &mut Vec<Chunk<Key, Value>>,
-        at: usize,
+        ChunkAt(at): ChunkAt,
     )
     {
         let next = at.saturating_add(1);
@@ -582,6 +617,10 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
     /// - witness: `chunked::tests::a_chunked_map_answers_as_an_ordered_map_beside_its_clone`
+    #[spec(
+        captures: count = usize::from(self.len()),
+        ensures: usize::from(self.len()) <= count,
+    )]
     #[inline]
     pub fn retain<Keep>(
         &mut self,
@@ -640,6 +679,12 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
     /// - witness: `chunked::tests::a_chunked_map_answers_as_an_ordered_map_beside_its_clone`
+    #[spec(
+        captures: count = usize::from(self.len()),
+        ensures: |upper| self.last_key_value().is_none_or(|(last, _)| last < key)
+            && upper.first_key_value().is_none_or(|(first, _)| first >= key)
+            && usize::from(self.len()).saturating_add(usize::from(upper.len())) == count,
+    )]
     #[inline]
     #[must_use]
     pub fn split_off(
@@ -647,7 +692,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
         key: &Key,
     ) -> Self
     {
-        let (at, within) = self.lower(Bound::Included(key));
+        let Place { chunk: at, within } = self.lower(Bound::Included(key));
         if at >= self.chunks().len() {
             return Self::new();
         }
@@ -692,6 +737,10 @@ impl<Key: Ord + Clone, Item: Clone> ChunkedMap<Key, Vec<Item>>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
     /// - witness: `chunked::tests::kept_items_answer_as_an_ordered_map_beside_its_clone`
+    #[spec(
+        captures: count = usize::from(self.len()),
+        ensures: usize::from(self.len()) <= count,
+    )]
     #[inline]
     pub fn retain_items<Keep>(
         &mut self,
@@ -736,15 +785,26 @@ impl<Key: Ord + Clone, Value: Clone> FromIterator<(Key, Value)> for ChunkedMap<K
 }
 
 #[cfg(test)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        primitive_signature,
+        reason = "the tests key the map by small integers, as its ordered map oracle does"
+    )
+)]
 mod tests
 {
     use alloc::collections::BTreeMap;
     use alloc::vec::Vec;
 
     use proptest::prelude::*;
+    use proptest::test_runner::TestCaseError;
 
     use super::CHUNK;
     use super::ChunkedMap;
+
+    /// The keys a write reads lie below this.
+    const KEYS: u16 = 400;
 
     /// One write of the map under test.
     #[derive(Clone, Debug)]
@@ -760,18 +820,24 @@ mod tests
         Split(u16),
     }
 
-    /// A write over keys below `keys`.
-    fn write(keys: u16) -> impl Strategy<Value = Write>
+    /// A write over keys below [`KEYS`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn write() -> impl Strategy<Value = Write>
     {
         prop_oneof![
-            8 => (0 .. keys, any::<u32>()).prop_map(|(key, value)| Write::Insert(key, value)),
-            4 => (0 .. keys).prop_map(Write::Remove),
+            8 => (0 .. KEYS, any::<u32>()).prop_map(|(key, value)| Write::Insert(key, value)),
+            4 => (0 .. KEYS).prop_map(Write::Remove),
             1 => (2_u16 .. 5).prop_map(Write::Retain),
-            1 => (0 .. keys).prop_map(Write::Split),
+            1 => (0 .. KEYS).prop_map(Write::Split),
         ]
     }
 
     /// Apply `write` to the map and to the ordered map it should answer as.
+    ///
+    /// # Specification
+    /// trivial.
     fn apply(
         write: &Write,
         map: &mut ChunkedMap<u16, u32>,
@@ -800,42 +866,50 @@ mod tests
         }
     }
 
-    /// Whether `map` answers each read as `oracle` does.
+    /// Refuse the case unless `map` answers each read as `oracle` does.
+    ///
+    /// # Specification
+    /// trivial.
     fn agrees(
         map: &ChunkedMap<u16, u32>,
         oracle: &BTreeMap<u16, u32>,
-        keys: u16,
-    ) -> bool
+    ) -> Result<(), TestCaseError>
     {
-        map.len() == oracle.len()
-            && map
-                .iter()
+        prop_assert_eq!(usize::from(map.len()), oracle.len());
+        prop_assert!(
+            map.iter()
                 .map(|(&key, &value)| (key, value))
                 .eq(oracle.iter().map(|(&key, &value)| (key, value)))
-            && map
-                .iter()
+        );
+        prop_assert!(
+            map.iter()
                 .rev()
                 .map(|(&key, _)| key)
                 .eq(oracle.keys().rev().copied())
-            && map.last_key_value() == oracle.last_key_value()
-            && (0 .. keys).all(|key| {
-                map.get(&key) == oracle.get(&key)
-                    && map
-                        .range(key ..)
-                        .map(|(&key, _)| key)
-                        .eq(oracle.range(key ..).map(|(&key, _)| key))
-                    && map
-                        .range(.. key)
-                        .rev()
-                        .map(|(&key, _)| key)
-                        .eq(oracle.range(.. key).rev().map(|(&key, _)| key))
-                    && map
+        );
+        prop_assert_eq!(map.last_key_value(), oracle.last_key_value());
+        for key in 0 .. KEYS {
+            prop_assert_eq!(map.get(&key), oracle.get(&key));
+            prop_assert!(
+                map.range(key ..)
+                    .map(|(&key, _)| key)
+                    .eq(oracle.range(key ..).map(|(&key, _)| key))
+            );
+            prop_assert!(
+                map.range(.. key)
+                    .rev()
+                    .map(|(&key, _)| key)
+                    .eq(oracle.range(.. key).rev().map(|(&key, _)| key))
+            );
+            prop_assert!(
+                map.range(key ..= key.saturating_add(70))
+                    .map(|(&key, _)| key)
+                    .eq(oracle
                         .range(key ..= key.saturating_add(70))
-                        .map(|(&key, _)| key)
-                        .eq(oracle
-                            .range(key ..= key.saturating_add(70))
-                            .map(|(&key, _)| key))
-            })
+                        .map(|(&key, _)| key))
+            );
+        }
+        Ok(())
     }
 
     proptest! {
@@ -845,11 +919,10 @@ mod tests
         /// write, and a clone taken between writes answers as it did.
         #[test]
         fn a_chunked_map_answers_as_an_ordered_map_beside_its_clone(
-            writes in proptest::collection::vec(write(400), 0 .. 600),
+            writes in proptest::collection::vec(write(), 0 .. 600),
             cut in 0_usize .. 600,
         )
         {
-            let keys = 400;
             let mut map = ChunkedMap::new();
             let mut oracle = BTreeMap::new();
             let mut clone = None;
@@ -859,9 +932,9 @@ mod tests
                 }
                 apply(write, &mut map, &mut oracle);
             }
-            prop_assert!(agrees(&map, &oracle, keys));
+            agrees(&map, &oracle)?;
             if let Some((clone, oracle)) = clone {
-                prop_assert!(agrees(&clone, &oracle, keys));
+                agrees(&clone, &oracle)?;
             }
         }
     }
@@ -907,7 +980,7 @@ mod tests
             !held.is_empty()
         });
         assert!(map.iter().eq(oracle.iter()));
-        assert_eq!(map.len(), oracle.len());
+        assert_eq!(usize::from(map.len()), oracle.len());
         assert!(
             clone
                 .iter()

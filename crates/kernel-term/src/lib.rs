@@ -218,6 +218,7 @@ pub use crate::builtin::Holder;
 pub use crate::builtin::RoleWord;
 pub use crate::builtin::builtin_role;
 pub use crate::chunked::ChunkedMap;
+pub use crate::chunked::EntryCount;
 pub use crate::decl::AdmissionMark;
 pub use crate::decl::AtomInterface;
 pub use crate::decl::DataFixpoint;

@@ -2074,17 +2074,24 @@ impl Entries
         self.family().iter().filter_map(Slot::admitted)
     }
 
-    /// How a memo key names a reference to each position, in admission
-    /// order: as the admission of its entry named it, and a vacancy or a
-    /// retired entry by its position, which no read reaches.
+    /// How a memo key names a reference to each position from `from` on, in
+    /// admission order: as the admission of its entry named it, and a vacancy
+    /// or a retired entry by its position, which no read reaches. The walk
+    /// starts at `from`, so the positions below it cost nothing.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn key_names(&self) -> impl Iterator<Item = ConstantName> + '_
+    pub fn key_names(
+        &self,
+        from: ConstantIndex,
+    ) -> impl Iterator<Item = ConstantName> + '_
     {
-        self.family().iter().map(|slot| {
-            slot.admitted()
+        let family = self.family();
+        (usize::from(from) .. usize::from(family.len())).map(move |at| {
+            family
+                .get(at)
+                .and_then(Slot::admitted)
                 .map_or(ConstantName::Position, |entry| entry.key_name)
         })
     }

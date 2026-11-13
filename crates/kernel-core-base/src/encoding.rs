@@ -2557,7 +2557,8 @@ impl ContentTable
         if named >= usize::from(entries.len()).min(usize::from(end)) {
             return;
         }
-        for name in entries.key_names().take(usize::from(end)).skip(named) {
+        let unnamed = usize::from(end).saturating_sub(named);
+        for name in entries.key_names(ConstantIndex::from(named)).take(unnamed) {
             self.constants.push(name);
         }
         // A fork shares the frozen names, so neither table copies the names

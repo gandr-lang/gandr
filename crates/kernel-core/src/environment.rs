@@ -4383,7 +4383,7 @@ impl CommitLog
         entries: &Entries,
     )
     {
-        if self.retired == 0 || self.retired.saturating_mul(2) < self.ranked.len() {
+        if self.retired == 0 || self.retired.saturating_mul(2) < usize::from(self.ranked.len()) {
             return;
         }
         self.retired = 0;
@@ -4410,7 +4410,7 @@ impl CommitLog
     /// - hypothesis: L3 — as [`Environment::rerank`].
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235`
-    #[spec(ensures: self.ranked.len() >= ranks.len()
+    #[spec(ensures: usize::from(self.ranked.len()) >= ranks.len()
         && ranks.iter().all(|(&position, &rank)| self.ranked.get(&rank) == Some(&position)))]
     fn rerank(
         &mut self,
@@ -4487,7 +4487,7 @@ impl CommitLog
         length: gandr_kernel_term::ArenaLength,
     ) -> Order
     {
-        let positional = self.ranked.len() == usize::from(length)
+        let positional = usize::from(self.ranked.len()) == usize::from(length)
             && self
                 .ranked
                 .values()

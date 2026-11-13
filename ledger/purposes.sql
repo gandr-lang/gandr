@@ -1652,6 +1652,7 @@ INSERT INTO purpose VALUES('kernel-term','builtin::Departure','enum','The first 
 INSERT INTO purpose VALUES('kernel-term','builtin::Holder','enum','The judgement of the declaration that holds a built-in role: a data declaration or a value declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','builtin::RoleWord','struct','The word an attribute names a built-in role by, as the source spells it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','chunked::ChunkedMap','struct','An ordered map that shares its chunks of at most 64 entries with its clones, so a write copies the list of chunks and one chunk.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','chunked::EntryCount','struct','How many entries a chunked map holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::ArmCount','struct','How many arms a match holds, the bound every var step of its cover derivation stays below.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::BranchCount','struct','How many branches a split of a cover derivation holds, as its cases fix it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::Cases','enum','The cases one split of a cover derivation lists: a data family''s constructors with their field counts and the loops its case owes, a boolean, an integer literal, a tuple, a record, a sum, a list, a guard, or none.',NULL,'fits','sound',NULL);
