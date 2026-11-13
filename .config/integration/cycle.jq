@@ -19,6 +19,10 @@
 # holds no commit past `landing`, and the merges API merges `landing` into it
 # when it holds the fixer's commits. A tip that moves is tested. A tip that
 # stands is tested once, when no verdict names it yet.
+# A hollow failure that opens its head gives no verdict (#6887, `verdicts.jq`).
+# The decision's branches then rerun the suite on the tip, or take `landing` when
+# it holds new commits. The decision names each such run in `aside`, and its
+# line says that the run gives no verdict.
 include "verdicts";
 
 def short: .[0:12];
@@ -27,6 +31,7 @@ def short: .[0:12];
 | ($in.runs | verdicts
   | first
   | if . == null then null else {id: .databaseId, url, sha: .headSha, conclusion} end) as $verdict
+| ($in.runs | set_aside | map({id: .databaseId, url, sha: .headSha})) as $aside
 | ($in.runs | any(.status != "completed")) as $running
 | if $running then
     {take: "none", dispatch: false, line: "A cycle runs on integration. The end of that run starts the next cycle."}
@@ -48,3 +53,7 @@ def short: .[0:12];
     {take: "none", dispatch: false, line: "A verdict names the tip of integration, \($in.integration | short), and landing holds nothing new."}
   end
 | {verdict: $verdict} + .
+| if $aside == [] then .
+  else .aside = $aside
+    | .line = ([$aside[] | "Run \(.id) fails on \(.sha | short) with no failed job, so it gives no verdict once for its head."] + [.line] | join(" "))
+  end

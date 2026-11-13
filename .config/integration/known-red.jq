@@ -3,7 +3,9 @@
 # `landing` that does not merge into `integration`, or null, whether the
 # brake holds the landings (`brake.jq`), the run's JUnit reports as
 # `yq -p xml` reads them, each under its lane, the names of the run's failed
-# jobs, and the packages of the soundness suite (`soundness.json`).
+# jobs, and the packages of the soundness suite (`soundness.json`). It also
+# holds `aside`, the runs that the cycle sets aside as hollow failures
+# (#6887, `verdicts.jq`), or none.
 #
 # The output is the body of the one issue that holds the list, which each
 # cycle rewrites, and whether the fixer gets a page. A test that fails in
@@ -40,7 +42,9 @@ def collapsed($summary; $rows): "<details><summary>\($summary)</summary>\n\n\($r
     else
       "The cycle on `\($in.verdict.sha | short)` fails: [run \($in.verdict.id)](\($in.verdict.url))."
     end) as $verdict
+| [($in.aside // [])[] | "The cycle sets aside [run \(.id)](\(.url)) on `\(.sha | short)`: it fails with no failed job, so it gives no verdict once for its head (#6887)."] as $aside
 | (if $red | not then []
+    elif $tests == [] and $in.jobs == [] then ["No test report names a failure, and no job of the run fails. A second such run on one head gives a verdict (#6887)."]
     elif $tests == [] then ["No test report names a failure. The failed jobs hold the cause."]
     else [collapsed("Known-red tests: \($tests | length), red";
       ["|Test|Binary|Lanes|", "|---|---|---|"] + [$tests[] | "|`\(.test | cell)`|`\(.binary | cell)`|\(.lanes | join(", ") | cell)|"])]
@@ -56,5 +60,5 @@ def collapsed($summary; $rows): "<details><summary>\($summary)</summary>\n\n\($r
       ["## The brake\n\nThe brake holds the landings (#5442). `main` lags `landing` past a limit of `.config/integration/brake.json`. A passing cycle moves `main`, and then the landings go on."]
     else [] end) as $brake
 | {page: ($red or $in.conflict != null),
-   body: ([$lead, $verdict] + $list + $own + $failed + $take + $brake | join("\n\n")),
+   body: ([$lead, $verdict] + $aside + $list + $own + $failed + $take + $brake | join("\n\n")),
    soundness: (if $red then $soundness else [] end)}
