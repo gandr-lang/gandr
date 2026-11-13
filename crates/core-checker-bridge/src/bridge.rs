@@ -531,10 +531,16 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 use core::fmt;
 use core::time::Duration;
 
 use anodized::spec;
+use gandr_core_fork::Dependences;
+use gandr_core_fork::Fork;
+use gandr_core_fork::ItemIndex;
+use gandr_core_fork::Releasing;
+use gandr_core_fork::Serial;
 use gandr_core_nbe::TraceNode;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
@@ -553,13 +559,18 @@ use gandr_core_term::hole::HoleId;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::AxiomReport;
+use gandr_kernel_core::Check;
 use gandr_kernel_core::CheckedId;
+use gandr_kernel_core::EndpointSide;
 use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
+use gandr_kernel_core::Pending;
 use gandr_kernel_core::Presentations;
+use gandr_kernel_core::Ran;
+use gandr_kernel_core::Released;
 use gandr_kernel_core::ReplayBudget;
 use gandr_kernel_core::ReplayDecline;
 use gandr_kernel_core::ReplayNode;
@@ -1045,7 +1056,7 @@ impl Replayed
 
 /// One declaration's outcome, beside the position and origin the judgement
 /// echoed, the certificates its erasure replayed and how long the kernel's
-/// admission of it took.
+/// check of it took.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Readmitted
 {
@@ -1058,7 +1069,7 @@ pub struct Readmitted
     /// The certificates the kernel replayed before the declaration was
     /// offered, in the order the erasure met the unfoldings.
     certificates: Vec<Replayed>,
-    /// What the kernel's admission of it spent, or why no time was read.
+    /// What the kernel's check of it spent, or why no time was read.
     took: AdmissionCost,
 }
 
@@ -1109,9 +1120,9 @@ impl Readmitted
         &self.certificates
     }
 
-    /// What [`Environment::add_decl`] spent to admit or reject the
-    /// declaration, by the readmission's [`Stopwatch`], or why no time was
-    /// read.
+    /// What the kernel's check of the declaration spent, by the readmission's
+    /// [`Stopwatch`], or why no time was read: the run of the check, or the
+    /// release when the kernel refuses the declaration before its check.
     ///
     /// # Specification
     /// trivial.
@@ -1269,9 +1280,13 @@ pub type AdmissionCost = Maybe<Spent, timed::Absent>;
 /// The cost of a declaration the kernel was never offered.
 const UNOFFERED: AdmissionCost = Maybe::Absent(timed::Absent::Unoffered);
 
-/// How a readmission times the kernel's admission of each declaration: by a
+/// How a readmission times the kernel's check of each declaration: by a
 /// [`Clock`] the caller supplies, beside a [`Meter`] when it counts the
 /// allocations too, or not at all.
+///
+/// A check runs on any worker of the readmission's fork, so each check takes
+/// its own copy of the stopwatch, and a meter reads the thread that runs the
+/// check.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1293,7 +1308,7 @@ const UNOFFERED: AdmissionCost = Maybe::Absent(timed::Absent::Unoffered);
 ///   admits.
 /// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
 /// - witness: `bridge::tests::a_metered_readmission_counts_the_allocations_of_each_admission`
-pub trait Stopwatch
+pub trait Stopwatch: Clone + Send
 {
     /// What a start leaves for its stop to read against.
     type Started: Copy;
@@ -1366,7 +1381,7 @@ impl<C> Timed<C>
 
 impl<C> Stopwatch for Timed<C>
 where
-    C: Clock,
+    C: Clock + Clone + Send,
 {
     type Started = Duration;
 
@@ -1446,8 +1461,8 @@ impl<C, M> Metered<C, M>
 
 impl<C, M> Stopwatch for Metered<C, M>
 where
-    C: Clock,
-    M: Meter,
+    C: Clock + Clone + Send,
+    M: Meter + Clone + Send,
 {
     type Started = (Duration, AllocationCount);
 
@@ -2365,6 +2380,7 @@ pub fn readmit_resuming(
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole()
 }
@@ -2504,7 +2520,7 @@ pub type Readmitting<Retired> = Polled<
 /// declaration it crosses: retired, it stops there and answers the record of
 /// the declarations before it.
 ///
-/// It times each admission by `stopwatch`.
+/// It times each check by `stopwatch`, and runs the checks through `fork`.
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`], of `leading`'s boundary and record.
@@ -2517,10 +2533,12 @@ pub type Readmitting<Retired> = Polled<
 ///   every one was admitted or static, and no seal is open at `k`; absent
 ///   otherwise. A mutual block crosses whole, so `k` never falls inside one; a
 ///   poll is read only before a declaration, so `k` is always one of the
-///   report's. Each declaration the kernel admitted or rejected alone carries
-///   the time `stopwatch` read around its [`Environment::add_decl`], a resumed
-///   one the time the readmission that admitted it read; a member of a mutual
-///   block and one the kernel was never offered carry the reason none was read.
+///   report's. Each declaration the kernel checked or rejected alone carries
+///   the time `stopwatch` read around the run of its check, or around its
+///   release when the kernel rejected it before its check; a resumed one
+///   carries the time the readmission that admitted it read; a member of a
+///   mutual block and one the kernel was never offered carry the reason none
+///   was read. The answer is the same under each fork.
 /// - provides: an admission a newer revision overtakes stops at its next
 ///   declaration, and the next one resumes what it crossed.
 /// - fails: never.
@@ -2533,23 +2551,26 @@ pub type Readmitting<Retired> = Polled<
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
 /// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
 /// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
+/// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
 #[inline]
 #[spec(ensures: |ret| match ret {
     Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
     Polled::Retired(_, Maybe::Present(ref record)) => usize::from(record.boundary()) < report.judged().len(),
     Polled::Retired(_, Maybe::Absent(_)) => true,
 })]
-pub fn readmit_retiring<Poll, Watch>(
+pub fn readmit_retiring<Poll, Watch, Forker>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     leading: (LeadingCount, Maybe<&Crossed, crossed::Absent>),
     recall: &Recall,
     retirement: &Poll,
     stopwatch: &mut Watch,
+    fork: &Forker,
 ) -> Readmitting<Poll::Retired>
 where
     Poll: Retirement,
     Watch: Stopwatch,
+    Forker: Fork,
 {
     let (boundary, crossed) = leading;
     readmit_from(
@@ -2563,6 +2584,7 @@ where
             keys: &[],
         },
         (retirement, stopwatch),
+        fork,
     )
 }
 
@@ -2592,7 +2614,7 @@ where
 ///   declaration crosses, as a whole readmission crosses it, and the record
 ///   carries the keys. Retired, [`Polled::Retired`] with the retirement and no
 ///   record ([`crossed::Absent::Kept`]); the record given is unchanged either
-///   way.
+///   way. Each fork gives the same answer.
 /// - provides: an edit costs the kernel the reach of the edit.
 /// - fails: never.
 /// - panics: none.
@@ -2609,17 +2631,19 @@ where
     Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
     Polled::Retired(..) => true,
 })]
-pub fn readmit_keeping<Poll, Watch>(
+pub fn readmit_keeping<Poll, Watch, Forker>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     kept: (&[DeclarationKey], Maybe<&Crossed, crossed::Absent>),
     recall: &Recall,
     retirement: &Poll,
     stopwatch: &mut Watch,
+    fork: &Forker,
 ) -> Readmitting<Poll::Retired>
 where
     Poll: Retirement,
     Watch: Stopwatch,
+    Forker: Fork,
 {
     let (keys, record) = kept;
     let recall = &recall.keyed();
@@ -2641,6 +2665,7 @@ where
             },
         },
         (retirement, stopwatch),
+        fork,
     )
 }
 
@@ -2676,6 +2701,7 @@ where
         vouch,
         Resume::Whole,
         (&Unretired, &mut Untimed),
+        &Serial,
     )
     .whole()
     .0
@@ -2746,40 +2772,51 @@ enum Walked<'crossed, Retired>
 ///   each certificate vouched as [`readmit_with`] vouches it; under
 ///   [`Resume::Whole`], [`readmit_with`]'s readmission, nothing resumed, and no
 ///   record, while no poll retires it; under [`Resume::Kept`],
-///   [`readmit_keeping`]'s answer.
+///   [`readmit_keeping`]'s answer. Each fork gives the same answer.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`],
-///   [`readmit_retiring`] and [`readmit_keeping`].
+///   [`readmit_retiring`] and [`readmit_keeping`]; checks committed in the
+///   reverse of their release order give the serial readmission.
 /// - witness: `bridge::tests::every_readmission_certificate_replays`
 /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+/// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
 #[spec(ensures: |ret| match ret {
     Polled::Whole((ref readmission, ref recorded)) => readmission.readmitted().len() == report.judged().len()
         && (!matches!(resume, Resume::Whole)
             || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
     Polled::Retired(..) => true,
 })]
-fn readmit_from<Vouch, Poll, Watch>(
+fn readmit_from<Vouch, Poll, Watch, Forker>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
     resume: Resume<'_>,
     (retirement, stopwatch): (&Poll, &mut Watch),
+    fork: &Forker,
 ) -> Readmitting<Poll::Retired>
 where
     Vouch: Fn(Certificate) -> Certificate,
     Poll: Retirement,
     Watch: Stopwatch,
+    Forker: Fork,
 {
     let mut resume = resume;
     // A leading or a whole walk is never misplaced, so the second walk is
     // the last.
     loop {
-        match walk(arena, report, &vouch, resume, (retirement, &mut *stopwatch)) {
+        match walk(
+            arena,
+            report,
+            &vouch,
+            resume,
+            (retirement, &mut *stopwatch),
+            fork,
+        ) {
             Walked::Done(done) => return done,
             Walked::Misplaced { recall, keys } => {
                 resume = Resume::Leading {
@@ -2794,10 +2831,16 @@ where
 }
 
 /// [`readmit_with`] under `resume`, polling `retirement` before each
-/// declaration and timing each admission by `stopwatch`: the readmission and
-/// the record of its leading declarations [`Resume::Leading`] asks for, or what
-/// it held when retired; or, under [`Resume::Kept`], the finding that it
-/// misplaced an entry.
+/// declaration, timing each check by `stopwatch` and running the checks
+/// through `fork`: the readmission and the record of its leading declarations
+/// [`Resume::Leading`] asks for, or what it held when retired; or, under
+/// [`Resume::Kept`], the finding that it misplaced an entry.
+///
+/// The calling thread erases, stages and releases each declaration in module
+/// order, and `fork` runs each released check on any of its workers. The
+/// calling thread settles each check as the check returns, and records each
+/// declaration in module order ([`Underway`]). A walk that keeps crosses each
+/// place on the calling thread.
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`].
@@ -2812,16 +2855,19 @@ where
 ///   place. The record of every declaration carries `keys`. A crossing the
 ///   kernel rejects, or a record that keeps nothing, answers
 ///   [`Walked::Misplaced`]; a poll that retires the walk answers no record.
+///   Each fork gives the same answer.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`],
-///   [`readmit_retiring`] and [`readmit_keeping`].
+///   [`readmit_retiring`] and [`readmit_keeping`]; checks committed in the
+///   reverse of their release order give the serial readmission.
 /// - witness: `bridge::tests::every_readmission_certificate_replays`
 /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+/// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
 #[spec(ensures: |ret| match ret {
     Walked::Done(Polled::Whole((ref readmission, ref recorded))) => readmission.readmitted().len() == report.judged().len()
         && (!matches!(resume, Resume::Whole)
@@ -2830,17 +2876,19 @@ where
     Walked::Misplaced { .. } => matches!(resume, Resume::Kept { .. }),
 })]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn walk<'crossed, Vouch, Poll, Watch>(
+fn walk<'crossed, Vouch, Poll, Watch, Forker>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
     resume: Resume<'crossed>,
     (retirement, stopwatch): (&Poll, &mut Watch),
+    fork: &Forker,
 ) -> Walked<'crossed, Poll::Retired>
 where
     Vouch: Fn(Certificate) -> Certificate,
     Poll: Retirement,
     Watch: Stopwatch,
+    Forker: Fork,
 {
     let source = Source {
         lifts: report.lifts(),
@@ -2873,7 +2921,7 @@ where
         environment
     };
     let fresh = || Vec::with_capacity(judged_all.len());
-    let (boundary, keys, keeping, (environment, mut positions, mut readmitted)) = match resume {
+    let (boundary, keys, keeping, (environment, positions, readmitted)) = match resume {
         Resume::Whole => (
             None,
             &[][..],
@@ -2908,198 +2956,482 @@ where
             Maybe::Present(keep::Kept {
                 environment,
                 positions,
-                held: kept,
+                held,
                 renames,
             }) => (
                 Some(judged_all.len()),
                 keys,
-                Some((kept, renames, recall)),
+                Some(Keeping {
+                    held,
+                    renames,
+                    recall,
+                }),
                 (recalling(environment, recall), positions, fresh()),
             ),
             Maybe::Absent(_) => return Walked::Misplaced { recall, keys },
         },
     };
+
     // The kernel takes an admitted result exactly where the run that recorded
     // it ran under the policy: fresh, recalled or handed on.
-    let mut environment = environment.admitting(report.admitting());
+    let environment = environment.admitting(report.admitting());
     let from = readmitted.len();
-    let mut kept_in_place = 0_usize;
-    let misplacing = keeping.as_ref().map(|&(_, _, recall)| recall);
-    let unrenamed = BTreeMap::new();
-    let renames = keeping
-        .as_ref()
-        .map_or(&unrenamed, |&(_, ref renames, _)| renames);
-    let mut recorded = Maybe::Absent(if boundary.is_some() {
-        crossed::Absent::Unaligned
-    }
-    else {
-        crossed::Absent::Unasked
+    let count = judged_all.len().saturating_sub(from);
+    // A pair the kernel reports undecided is answered, and its declaration is
+    // offered again at the next position, which a later release would take.
+    // economy: so each declaration of such a module waits for the ones before
+    // it, and the module readmits on the calling thread; #3476 lifts this when
+    // a later release can be dropped and released again.
+    let answerable = source.reflexivities.values().any(|reflexivity| {
+        [EndpointSide::Left, EndpointSide::Right]
+            .into_iter()
+            .any(|side| reflexivity.met(side).is_some())
     });
-    let mut index = from;
-    loop {
-        if boundary == Some(index) {
-            // A record never carries the next rank of a walk that keeps.
-            environment.ranking_past();
-            recorded = Crossed::record(
-                (&mut environment, &positions, readmitted.as_slice()),
-                LeadingCount(from),
-            );
-            if let Maybe::Present(ref mut record) = recorded
-                && keys.len() == record.readmitted.len()
-            {
-                record.keys = keys.to_vec();
-            }
+    let underway = RefCell::new(Underway {
+        arena,
+        report,
+        source,
+        vouch: &vouch,
+        retirement,
+        stopwatch,
+        environment,
+        positions,
+        readmitted,
+        from,
+        boundary,
+        recorded: Maybe::Absent(if boundary.is_some() {
+            crossed::Absent::Unaligned
         }
-        let Some(judged) = judged_all.get(index)
         else {
-            break;
-        };
-        if let Demand::Retired(retired) = retirement.demand() {
-            return Walked::Done(Polled::Retired(retired, match keeping {
-                Some(_) => Maybe::Absent(crossed::Absent::Kept),
-                None => Crossed::record(
-                    (&mut environment, &positions, readmitted.as_slice()),
-                    LeadingCount(from),
-                ),
-            }));
+            crossed::Absent::Unasked
+        }),
+        retired: None,
+        slots: core::iter::repeat_with(|| Slot::Open).take(count).collect(),
+        cursor: from,
+        answerable,
+        keys,
+        keeping,
+        kept: 0,
+        misplaced: false,
+    });
+    let mut items = alloc::vec![(); count];
+    fork.schedule(
+        &mut items,
+        &Dependences::default(),
+        |item, &mut ()| underway.borrow_mut().release(item),
+        |(check, mut stopwatch): (Check, Watch)| {
+            let (ran, took) = run_check(check, &mut stopwatch);
+            Answer::Ran(ran, took)
+        },
+        |item, &mut (), answer| underway.borrow_mut().commit(item, answer),
+    );
+    underway.into_inner().finish()
+}
+
+/// Run a released check on the calling thread, timed by `stopwatch`.
+///
+/// # Specification
+/// trivial.
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn run_check<Watch>(
+    check: Check,
+    stopwatch: &mut Watch,
+) -> (Ran, AdmissionCost)
+where
+    Watch: Stopwatch,
+{
+    let started = stopwatch.start();
+    let ran = check.run();
+    (ran, stopwatch.stop(started))
+}
+
+/// What the release of one declaration of a scheduled readmission hands its
+/// commit.
+///
+/// # Specification
+/// trivial.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per declaration, moved once from its worker or its release to its commit; boxing the run would allocate at every check"
+)]
+enum Answer
+{
+    /// The run of the released check, and what the run spent.
+    Ran(Ran, AdmissionCost),
+    /// The declaration's crossing, found at its release.
+    Crossed(Crossing),
+    /// Nothing: the release came after a retirement.
+    Skipped,
+    /// Nothing yet: the release waits on a running check. The schedule
+    /// commits each running check and releases the declaration again, so no
+    /// commit takes it.
+    Waits,
+}
+
+/// A declaration's crossing, whose record waits for each declaration before
+/// it.
+///
+/// # Specification
+/// trivial.
+struct Crossing
+{
+    /// The entry that the record pushes.
+    entry: Readmitted,
+    /// What the record does beside the entry.
+    tail: Tail,
+}
+
+/// What the record of a crossing does beside the push of its entry.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Tail
+{
+    /// A lone declaration: an abstract type's atom is withheld or its seal
+    /// opens, and each seal that ends at the declaration closes.
+    Lone,
+    /// A world, a datum with no signature, or a static declaration kept from
+    /// a record: the entry alone.
+    Bare,
+    /// A member of a mutual block before its last: the entry alone.
+    Member,
+    /// The last member of a mutual block, or a declaration kept in place: each
+    /// seal that ends at it closes.
+    Last,
+}
+
+/// What the record of a declaration released to the kernel needs beside the
+/// kernel's settle.
+///
+/// # Specification
+/// trivial.
+struct Offered<'report>
+{
+    /// The declaration's module position.
+    constant: ConstantIndex,
+    /// The declaration's origin, echoed back.
+    origin: OriginToken,
+    /// What the declaration offered.
+    offer: Offer<'report>,
+    /// A definition's body image.
+    image: Maybe<gandr_kernel_term::ValueId, staged::Absent>,
+    /// The declaration as it was staged.
+    staged_as: KernelDeclaration,
+    /// The replayed verdicts of its certificates.
+    replayed: Vec<Replayed>,
+}
+
+/// Where one declaration of a scheduled readmission stands.
+///
+/// # Specification
+/// trivial.
+enum Slot<'report>
+{
+    /// Not released, or released and held.
+    Open,
+    /// Crossed with the mutual block that its leader crossed: its own release
+    /// hands the crossing on.
+    Member(Crossing),
+    /// Released to the kernel, its check running.
+    Running(Offered<'report>, Pending),
+    /// Settled by the kernel: its record waits.
+    Settled(
+        Offered<'report>,
+        Result<CheckedId, KernelError>,
+        AdmissionCost,
+    ),
+    /// Crossed at its release: its record waits.
+    Crossed(Crossing),
+    /// Released after a retirement: nothing to record.
+    Skipped,
+    /// Recorded.
+    Recorded,
+}
+
+/// What a walk that keeps holds of its record: the record's entry that each
+/// place keeps, the module position in the edited source of each kept
+/// declaration, and the recall of the whole readmission that a misplaced
+/// entry asks for.
+///
+/// # Specification
+/// trivial.
+struct Keeping<'crossed>
+{
+    /// The record's entry each place keeps, by place; none for a place that
+    /// crosses.
+    held: Vec<Option<&'crossed Readmitted>>,
+    /// The module position in the edited source of each record declaration
+    /// that the walk keeps, by its module position in the record.
+    renames: BTreeMap<ConstantIndex, ConstantIndex>,
+    /// The recall the whole readmission admits under.
+    recall: &'crossed Recall,
+}
+
+/// A readmission under way: the environment and the bridge's record of what
+/// crossed, which the releases and the commits of the schedule write on the
+/// calling thread.
+///
+/// A release erases and stages its declaration against the record of each
+/// declaration before it. A release that reads what a running check has not
+/// settled waits: the schedule settles each running check, the record
+/// catches up, and the declaration then crosses as the serial readmission
+/// crosses it. A reference to a declaration that is not recorded stops the
+/// erasure, so a staging that succeeds read the record of each declaration
+/// that it names. The record follows module order, so the exports, the
+/// entries and the seals take the order of the serial run.
+///
+/// # Specification
+/// trivial.
+struct Underway<'report, 'run, 'crossed, Vouch, Poll, Watch>
+where
+    Poll: Retirement,
+{
+    /// The core arena that the erasures read and mint into.
+    arena: &'run mut CoreArena,
+    /// The judgement's report.
+    report: &'report ModuleReport,
+    /// What every erasure reads beside the arena and the positions.
+    source: Source<'report>,
+    /// What each certificate passes through before the kernel replays it.
+    vouch: &'run Vouch,
+    /// What each release polls before its declaration crosses.
+    retirement: &'run Poll,
+    /// What times each check: each released check takes its own copy.
+    stopwatch: &'run mut Watch,
+    /// The kernel environment.
+    environment: Environment,
+    /// The kernel position of each recorded declaration, and what it unfolds
+    /// to.
+    positions: Positions,
+    /// The entry of each recorded declaration, in module order.
+    readmitted: Vec<Readmitted>,
+    /// The index of the first declaration that this readmission crosses: the
+    /// declarations before it are resumed.
+    from: usize,
+    /// The index of the boundary whose record [`Resume::Leading`] asks for,
+    /// until the record is made.
+    boundary: Option<usize>,
+    /// The record of the leading declarations.
+    recorded: Maybe<Crossed, crossed::Absent>,
+    /// The retirement that a poll answered, once one did.
+    retired: Option<Poll::Retired>,
+    /// Where each declaration from `from` on stands.
+    slots: Vec<Slot<'report>>,
+    /// The index of the first declaration that is not recorded.
+    cursor: usize,
+    /// Whether the kernel may report a pair undecided whose answer offers
+    /// the declaration again: then each declaration crosses alone.
+    answerable: bool,
+    /// The content key of each declaration, which a record of every
+    /// declaration carries.
+    keys: &'crossed [DeclarationKey],
+    /// What a walk that keeps holds of its record; none for any other walk.
+    keeping: Option<Keeping<'crossed>>,
+    /// How many declarations were kept in place.
+    kept: usize,
+    /// Whether the kernel rejected a crossing of a walk that keeps: then the
+    /// walk answers [`Walked::Misplaced`].
+    misplaced: bool,
+}
+
+impl<'report, 'crossed, Vouch, Poll, Watch> Underway<'report, '_, 'crossed, Vouch, Poll, Watch>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+    Poll: Retirement,
+    Watch: Stopwatch,
+{
+    /// Release the declaration at `item`: hand on the crossing that its
+    /// block's leader found, record the leading declarations at the boundary,
+    /// poll the retirement, close the seals that end before the declaration,
+    /// keep in place what a walk that keeps holds at its place, and cross a
+    /// mutual block that it leads; then cross the declaration, or release its
+    /// check.
+    ///
+    /// # Specification
+    /// - requires: each declaration before `item` was released.
+    /// - ensures: [`Releasing::Run`] with the check of a declaration that the
+    ///   kernel released, its slot running; [`Releasing::Held`] when the
+    ///   release reads what a running check has not settled, with nothing else
+    ///   changed; [`Releasing::Settled`] with the crossing found at the release
+    ///   otherwise, or with nothing after a retirement or a misplaced entry.
+    /// - panics: none.
+    /// - executable: none — what the release reads of the environment is the
+    ///   kernel's, which no predicate over one call restates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    fn release(
+        &mut self,
+        item: ItemIndex,
+    ) -> Releasing<(Check, Watch), Answer>
+    {
+        let at = usize::from(item);
+        let index = self.from.saturating_add(at);
+        if let Some(slot @ &mut Slot::Member(_)) = self.slots.get_mut(at)
+            && let Slot::Member(crossing) = core::mem::replace(slot, Slot::Open)
+        {
+            return Releasing::Settled(Answer::Crossed(crossing));
         }
-        let place = index;
-        index = index.saturating_add(1);
+        if self.retired.is_some() || self.misplaced {
+            return Releasing::Settled(Answer::Skipped);
+        }
+        // Each declaration before this one is recorded: the release reads the
+        // state that the serial run reads here.
+        let caught_up = self.cursor == index;
+        if self.boundary == Some(index) {
+            if !caught_up {
+                return Releasing::Held(Answer::Waits);
+            }
+            self.record_leading();
+        }
+        let report = self.report;
+        let Some(judged) = report.judged().get(index)
+        else {
+            return Releasing::Settled(Answer::Skipped);
+        };
+        if let Demand::Retired(retired) = self.retirement.demand() {
+            self.retired = Some(retired);
+            return Releasing::Settled(Answer::Skipped);
+        }
         let constant = judged.constant();
         // The positions between the last judged declaration and this one
         // were skipped and cross nothing, so a seal ending among them closes
         // before this declaration crosses.
         if let Some(skipped) = usize::from(constant).checked_sub(1) {
-            close_seals(
-                &mut environment,
-                &mut positions,
-                &mut readmitted,
-                ConstantIndex::from(skipped),
-            );
+            let reached = ConstantIndex::from(skipped);
+            if self.positions.open.iter().any(|seal| seal.end <= reached) {
+                if !caught_up {
+                    return Releasing::Held(Answer::Waits);
+                }
+                close_seals(
+                    &mut self.environment,
+                    &mut self.positions,
+                    &mut self.readmitted,
+                    reached,
+                );
+            }
         }
         // A walk that keeps crosses each declaration, and each seed it
         // reads first, at the ranks of its place.
-        let held = match keeping {
-            Some((ref kept, ..)) => {
-                environment.ranking_from(SourceRank::from(
-                    place
+        // economy: a keep, a retirement and the rank of a place each write the
+        // environment, so each place of a walk that keeps waits for the places
+        // before it; #3476 lifts this when such a place is released beside the
+        // running checks.
+        let held = match self.keeping {
+            Some(ref keeping) => {
+                if !caught_up {
+                    return Releasing::Held(Answer::Waits);
+                }
+                self.environment.ranking_from(SourceRank::from(
+                    index
                         .saturating_mul(keep::STRIDE)
                         .saturating_add(keep::CROSSING),
                 ));
-                kept.get(place).copied().flatten()
+                keeping.held.get(index).copied().flatten()
             },
             None => None,
         };
         // A data declaration whose fields name later declarations leads the
         // mutual block they reach, which crosses whole.
-        let block = block_offers(
-            arena,
-            report,
-            source,
-            judged_all
-                .get(index.saturating_sub(1) ..)
-                .unwrap_or_default(),
-        );
+        let run = report.judged().get(index ..).unwrap_or_default();
+        let block = block_offers(self.arena, report, self.source, run);
         if !block.is_empty() {
-            let members = judged_all
-                .get(place ..)
-                .unwrap_or_default()
-                .get(.. block.len())
-                .unwrap_or_default();
-            if let Some((ref kept, ..)) = keeping {
-                let held = kept
-                    .get(place .. place.saturating_add(block.len()))
+            if !caught_up {
+                return Releasing::Held(Answer::Waits);
+            }
+            if let Some(ref keeping) = self.keeping {
+                let held = keeping
+                    .held
+                    .get(index .. index.saturating_add(block.len()))
                     .unwrap_or_default();
                 if let Maybe::Present(first) = keep::unit_of(held)
-                    && environment.keep_in_place(first).is_ok()
+                    && self.environment.keep_in_place(first).is_ok()
                 {
-                    for (member, entry) in members.iter().zip(held.iter().copied().flatten()) {
-                        readmitted.push(keep::keep_entry(
-                            &mut positions,
-                            report,
-                            (entry, member),
-                            renames,
-                        ));
-                    }
-                    kept_in_place = kept_in_place.saturating_add(block.len());
-                    index = place.saturating_add(block.len());
-                    if let Some(last) = members.last() {
-                        close_seals(
-                            &mut environment,
-                            &mut positions,
-                            &mut readmitted,
-                            last.constant(),
-                        );
-                    }
-                    continue;
+                    self.kept = self.kept.saturating_add(block.len());
+                    let entries =
+                        run.iter()
+                            .zip(held.iter().copied().flatten())
+                            .map(|(member, entry)| {
+                                keep::keep_entry(
+                                    &mut self.positions,
+                                    report,
+                                    (entry, member),
+                                    &keeping.renames,
+                                )
+                            });
+                    return Releasing::Settled(lead(&mut self.slots, item, entries));
                 }
                 for entry in held.iter().copied().flatten() {
-                    keep::retire_unit(&mut environment, entry);
+                    keep::retire_unit(&mut self.environment, entry);
                 }
             }
             let crossed = cross_block(
-                &mut environment,
-                arena,
-                source,
-                &mut positions,
+                &mut self.environment,
+                self.arena,
+                self.source,
+                &mut self.positions,
                 &block,
-                &vouch,
+                self.vouch,
             );
-            for (member, (outcome, certificates)) in members.iter().zip(crossed) {
-                if let (Some(recall), &Outcome::Rejected(_)) = (misplacing, &outcome) {
-                    return Walked::Misplaced { recall, keys };
-                }
-                readmitted.push(Readmitted {
+            let entries = run
+                .iter()
+                .zip(crossed)
+                .map(|(member, (outcome, certificates))| Readmitted {
                     constant: member.constant(),
                     origin: member.origin(),
                     outcome,
                     certificates,
                     took: Maybe::Absent(timed::Absent::Block),
                 });
-            }
-            index = place.saturating_add(block.len());
-            if let Some(last) = judged_all.get(index.saturating_sub(1)) {
-                close_seals(
-                    &mut environment,
-                    &mut positions,
-                    &mut readmitted,
-                    last.constant(),
-                );
-            }
-            continue;
+            return Releasing::Settled(lead(&mut self.slots, item, entries));
         }
-        if let Some(entry) = held {
-            match keep::position_of(&entry.outcome) {
+        if let (Some(entry), Some(keeping)) = (held, self.keeping.as_ref()) {
+            let tail = match keep::position_of(&entry.outcome) {
                 Maybe::Present(position) => {
                     if !matches!(entry.took, Maybe::Absent(timed::Absent::Block))
-                        && environment.keep_in_place(position).is_ok()
+                        && self.environment.keep_in_place(position).is_ok()
                     {
-                        readmitted.push(keep::keep_entry(
-                            &mut positions,
-                            report,
-                            (entry, judged),
-                            renames,
-                        ));
-                        kept_in_place = kept_in_place.saturating_add(1);
-                        close_seals(&mut environment, &mut positions, &mut readmitted, constant);
-                        continue;
+                        Some(Tail::Last)
                     }
-                    keep::retire_unit(&mut environment, entry);
+                    else {
+                        keep::retire_unit(&mut self.environment, entry);
+                        None
+                    }
                 },
                 // A static declaration holds no kernel entry: its body is
                 // all a later declaration reads of it.
-                Maybe::Absent(_) => {
-                    readmitted.push(keep::keep_entry(
-                        &mut positions,
+                Maybe::Absent(_) => Some(Tail::Bare),
+            };
+            if let Some(tail) = tail {
+                self.kept = self.kept.saturating_add(1);
+                return Releasing::Settled(Answer::Crossed(Crossing {
+                    entry: keep::keep_entry(
+                        &mut self.positions,
                         report,
                         (entry, judged),
-                        renames,
-                    ));
-                    kept_in_place = kept_in_place.saturating_add(1);
-                    continue;
-                },
+                        &keeping.renames,
+                    ),
+                    tail,
+                }));
             }
         }
+        let source = self.source;
+        let crossed = |outcome, tail| {
+            Releasing::Settled(Answer::Crossed(Crossing {
+                entry: Readmitted {
+                    constant,
+                    origin: judged.origin(),
+                    outcome,
+                    certificates: Vec::new(),
+                    took: UNOFFERED,
+                },
+                tail,
+            }))
+        };
         // A definition quantified over stages crosses at its plain type, the
         // stage signature beside it naming the occurrences its stages refine.
         let definition = match judged.verdict() {
@@ -3107,7 +3439,7 @@ where
                 source.stage_signatures.get(&constant).map_or_else(
                     || declared.id(),
                     |signature| {
-                        crate::quantified::split(arena, declared.id(), signature.bounds())
+                        crate::quantified::split(self.arena, declared.id(), signature.bounds())
                             .map_or_else(|_refused| declared.id(), |(plain, _)| plain)
                     },
                 ),
@@ -3119,7 +3451,7 @@ where
         // A type operator — a definition whose type views as a static Pi — stays
         // on the checker's side; a type the view refuses is not one, and its
         // own erasure refuses it.
-        let (outcome, certificates, took) = match (definition, judged.verdict()) {
+        match (definition, judged.verdict()) {
             (None, Verdict::Data) => {
                 let offer = match (
                     report.data_signatures().get(&constant),
@@ -3130,144 +3462,514 @@ where
                     (None, Some(signature), _) => Offer::Codata(signature),
                     (None, None, Some(&declared)) => Offer::Abstract(declared),
                     (None, None, None) if report.worlds().contains(&constant) => {
-                        readmitted.push(Readmitted {
-                            constant,
-                            origin: judged.origin(),
-                            outcome: Outcome::Static,
-                            certificates: Vec::new(),
-                            took: UNOFFERED,
-                        });
-                        continue;
+                        return crossed(Outcome::Static, Tail::Bare);
                     },
                     (None, None, None) => {
-                        readmitted.push(Readmitted {
-                            constant,
-                            origin: judged.origin(),
-                            outcome: Outcome::Refused(Refusal::MachineInvariant),
-                            certificates: Vec::new(),
-                            took: UNOFFERED,
-                        });
-                        continue;
+                        return crossed(Outcome::Refused(Refusal::MachineInvariant), Tail::Bare);
                     },
                 };
-                cross(
-                    &mut environment,
-                    arena,
-                    source,
-                    &mut positions,
-                    constant,
-                    offer,
-                    (&vouch, &mut *stopwatch),
-                )
+                self.offer(item, judged, offer)
             },
             (Some((declared, body)), _)
                 if matches!(
-                    value_type_view(arena, declared),
+                    value_type_view(self.arena, declared),
                     Ok(ValueTypeView::StaticPi { .. })
                 ) =>
             {
                 let defined = source.definitions.get(&constant).copied().unwrap_or(body);
-                positions.definitions.define(constant, defined);
-                (Outcome::Static, Vec::new(), UNOFFERED)
+                self.positions.definitions.define(constant, defined);
+                crossed(Outcome::Static, Tail::Lone)
             },
-            (Some((declared, body)), _) => cross(
-                &mut environment,
-                arena,
-                source,
-                &mut positions,
-                constant,
-                Offer::Definition {
-                    declared,
-                    body,
-                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
-                    restated: source
-                        .restatements
-                        .get(&constant)
-                        .map_or(&[], Vec::as_slice),
-                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
-                    operation_rules: source
-                        .operation_rules
-                        .get(&constant)
-                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
-                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
-                    stages: source
-                        .stage_signatures
-                        .get(&constant)
-                        .unwrap_or(&UNQUANTIFIED),
+            (Some((declared, body)), _) => self.offer(item, judged, Offer::Definition {
+                declared,
+                body,
+                relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                restated: source
+                    .restatements
+                    .get(&constant)
+                    .map_or(&[], Vec::as_slice),
+                laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                operation_rules: source
+                    .operation_rules
+                    .get(&constant)
+                    .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
+                stages: source
+                    .stage_signatures
+                    .get(&constant)
+                    .unwrap_or(&UNQUANTIFIED),
+            }),
+            (None, Verdict::Owed(entry)) => self.offer(item, judged, Offer::Axiom {
+                declared: entry.absence().declared().id(),
+            }),
+            (None, Verdict::Refused(refusal)) => crossed(Outcome::Marked(refusal), Tail::Lone),
+            (None, Verdict::Suspended(_)) => crossed(Outcome::Suspended, Tail::Lone),
+            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+                crossed(Outcome::Refused(Refusal::MachineInvariant), Tail::Lone)
+            },
+        }
+    }
+
+    /// Cross `offer`, the offer of the declaration that `judged` judged at
+    /// `item`: release its check to the kernel, or cross it as [`cross`]
+    /// does once each declaration before it is recorded.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::release`]; `offer` is the offer of `judged`.
+    /// - ensures: [`Releasing::Run`] with the check that the kernel released,
+    ///   its slot running, when the declaration stages with no seed and the
+    ///   kernel releases it, in a walk that keeps nothing and in a module with
+    ///   no undecided pair. [`Releasing::Held`] while a declaration before it
+    ///   is not recorded, when its staging stops, when the kernel holds it, or
+    ///   when the kernel may report a pair undecided. [`Releasing::Settled`]
+    ///   with the kernel's refusal of its release, or with [`cross`]'s crossing
+    ///   once each declaration before it is recorded.
+    /// - panics: none.
+    /// - executable: none — as [`Self::release`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+    fn offer(
+        &mut self,
+        item: ItemIndex,
+        judged: &crate::report::Judged,
+        offer: Offer<'report>,
+    ) -> Releasing<(Check, Watch), Answer>
+    {
+        let at = usize::from(item);
+        let caught_up = self.cursor == self.from.saturating_add(at);
+        let constant = judged.constant();
+        let crossed = |outcome, certificates, took| {
+            Releasing::Settled(Answer::Crossed(Crossing {
+                entry: Readmitted {
+                    constant,
+                    origin: judged.origin(),
+                    outcome,
+                    certificates,
+                    took,
                 },
-                (&vouch, &mut *stopwatch),
-            ),
-            (None, Verdict::Owed(entry)) => cross(
-                &mut environment,
-                arena,
-                source,
-                &mut positions,
-                constant,
-                Offer::Axiom {
-                    declared: entry.absence().declared().id(),
-                },
-                (&vouch, &mut *stopwatch),
-            ),
-            (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new(), UNOFFERED),
-            (None, Verdict::Suspended(_)) => (Outcome::Suspended, Vec::new(), UNOFFERED),
-            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => (
-                Outcome::Refused(Refusal::MachineInvariant),
-                Vec::new(),
-                UNOFFERED,
-            ),
+                tail: Tail::Lone,
+            }))
         };
+        if self.answerable || self.keeping.is_some() {
+            // An answered pair offers the declaration again at the next
+            // position, which no later release may take. A walk that keeps
+            // crosses each declaration at the ranks of its place.
+            if !caught_up {
+                return Releasing::Held(Answer::Waits);
+            }
+        }
+        else {
+            let next = ConstantIndex::from(self.environment.entries().len());
+            let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+            let own = [(constant, next)];
+            let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+                Offer::Data(_) | Offer::Codata(_) => &own,
+                Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+            };
+            match stage(
+                &mut self.environment,
+                self.arena,
+                (self.source, &self.positions),
+                offer,
+                self.vouch,
+                (crossing, base, held(self.source, constant)),
+            ) {
+                Ok(staged) => {
+                    let staged_as = staged.declaration.declaration().clone();
+                    let started = self.stopwatch.start();
+                    return match self.environment.release(staged.declaration) {
+                        Ok(Released::Running(pending, check)) => {
+                            if let Some(slot) = self.slots.get_mut(at) {
+                                *slot = Slot::Running(
+                                    Offered {
+                                        constant,
+                                        origin: judged.origin(),
+                                        offer,
+                                        image: staged.image,
+                                        staged_as,
+                                        replayed: staged.replayed,
+                                    },
+                                    pending,
+                                );
+                            }
+                            Releasing::Run((check, self.stopwatch.clone()))
+                        },
+                        // The release reads a commit that has not come: the
+                        // staging goes back, and the declaration waits.
+                        Ok(Released::Held(declaration, _)) => {
+                            self.environment.abandon(declaration);
+                            Releasing::Held(Answer::Waits)
+                        },
+                        Err(error) => crossed(
+                            Outcome::Rejected(error),
+                            staged.replayed,
+                            self.stopwatch.stop(started),
+                        ),
+                    };
+                },
+                // A seed, an assumption and a refusal each read the record of
+                // each declaration before this one.
+                Err(_) if !caught_up => return Releasing::Held(Answer::Waits),
+                Err(_) => {},
+            }
+        }
+        let (outcome, certificates, took) = cross(
+            &mut self.environment,
+            self.arena,
+            self.source,
+            &mut self.positions,
+            constant,
+            offer,
+            (self.vouch, &mut *self.stopwatch),
+        );
+        crossed(outcome, certificates, took)
+    }
+
+    /// Commit what the release of the declaration at `item` handed on: settle
+    /// a check that ran, keep a crossing found at the release, then record
+    /// each declaration whose turn has come.
+    ///
+    /// # Specification
+    /// - requires: `answer` is what the release of `item` handed on, or the run
+    ///   of the check that the release gave.
+    /// - ensures: the slot of `item` settled by the kernel, crossed or skipped;
+    ///   then each declaration from the cursor on recorded, in module order, up
+    ///   to the first that is not.
+    /// - panics: none.
+    /// - executable: none — the settle is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    fn commit(
+        &mut self,
+        item: ItemIndex,
+        answer: Answer,
+    )
+    {
+        let at = usize::from(item);
+        let report = self.report;
+        let Some(slot) = self.slots.get_mut(at)
+        else {
+            return;
+        };
+        *slot =
+            match answer {
+                Answer::Ran(ran, took) => match core::mem::replace(slot, Slot::Open) {
+                    Slot::Running(offered, pending) => {
+                        Slot::Settled(offered, self.environment.settle(pending, ran), took)
+                    },
+                    // A run answers a running release alone.
+                    unran @ (Slot::Open
+                    | Slot::Member(_)
+                    | Slot::Settled(..)
+                    | Slot::Crossed(_)
+                    | Slot::Skipped
+                    | Slot::Recorded) => unran,
+                },
+                Answer::Crossed(crossing) => Slot::Crossed(crossing),
+                Answer::Skipped => Slot::Skipped,
+                // A release holds only while a check runs, and the schedule then
+                // releases it again, so no commit takes a hold.
+                Answer::Waits => report.judged().get(self.from.saturating_add(at)).map_or(
+                    Slot::Skipped,
+                    |judged| {
+                        Slot::Crossed(Crossing {
+                            entry: Readmitted {
+                                constant: judged.constant(),
+                                origin: judged.origin(),
+                                outcome: Outcome::Refused(Refusal::MachineInvariant),
+                                certificates: Vec::new(),
+                                took: UNOFFERED,
+                            },
+                            tail: Tail::Bare,
+                        })
+                    },
+                ),
+            };
+        self.record();
+    }
+
+    /// Record each declaration from the cursor on whose turn has come, in
+    /// module order, as the serial readmission records it.
+    ///
+    /// # Specification
+    /// - ensures: the cursor at the first declaration that is neither settled,
+    ///   crossed nor skipped; each declaration that it passed recorded.
+    /// - panics: none.
+    /// - executable: none — as [`Self::commit`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    fn record(&mut self)
+    {
+        while let Some(slot) = self.slots.get_mut(self.cursor.saturating_sub(self.from)) {
+            let crossing = match core::mem::replace(slot, Slot::Recorded) {
+                Slot::Settled(offered, settled, took) => {
+                    let Offered {
+                        constant,
+                        origin,
+                        offer,
+                        image,
+                        staged_as,
+                        replayed,
+                    } = offered;
+                    let outcome = match settled {
+                        Ok(admitted) => settle(
+                            &self.environment,
+                            self.source,
+                            &mut self.positions,
+                            (constant, offer, image),
+                            (staged_as, admitted),
+                        ),
+                        Err(error) => Outcome::Rejected(error),
+                    };
+                    Some(Crossing {
+                        entry: Readmitted {
+                            constant,
+                            origin,
+                            outcome,
+                            certificates: replayed,
+                            took,
+                        },
+                        tail: Tail::Lone,
+                    })
+                },
+                Slot::Crossed(crossing) => Some(crossing),
+                Slot::Skipped | Slot::Recorded => None,
+                unrecorded @ (Slot::Open | Slot::Member(_) | Slot::Running(..)) => {
+                    *slot = unrecorded;
+                    return;
+                },
+            };
+            if let Some(crossing) = crossing {
+                self.apply(crossing);
+            }
+            self.cursor = self.cursor.saturating_add(1);
+        }
+    }
+
+    /// Record `crossing`: push its entry, and do what its tail asks.
+    ///
+    /// # Specification
+    /// - ensures: the entry pushed. For a lone declaration, an abstract type's
+    ///   atom withheld when the judgement or the bridge refused it, or its seal
+    ///   opened when the kernel admitted it; then, for a lone declaration and
+    ///   for the last member of a mutual block, each seal that ends at the
+    ///   declaration closed. In a walk that keeps, a rejected entry marks the
+    ///   walk misplaced.
+    /// - panics: none.
+    /// - executable: none — the closes are the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+    fn apply(
+        &mut self,
+        crossing: Crossing,
+    )
+    {
+        let Crossing { entry, tail } = crossing;
         // A rejected crossing of a walk that keeps may read an entry its
         // place misplaced, so the whole readmission answers instead.
-        if let (Some(recall), &Outcome::Rejected(_)) = (misplacing, &outcome) {
-            return Walked::Misplaced { recall, keys };
+        if self.keeping.is_some() && matches!(entry.outcome, Outcome::Rejected(_)) {
+            self.misplaced = true;
         }
-        if report.abstract_types().contains_key(&constant)
-            && matches!(
-                outcome,
-                Outcome::Marked(_)
-                    | Outcome::Refused(Refusal::Withheld { .. } | Refusal::WithheldData { .. })
-            )
-        {
-            let _fresh = positions.withheld.insert(constant);
+        let constant = entry.constant;
+        let abstracted = self.report.abstract_types().get(&constant);
+        if tail == Tail::Lone {
+            if abstracted.is_some()
+                && matches!(
+                    entry.outcome,
+                    Outcome::Marked(_)
+                        | Outcome::Refused(Refusal::Withheld { .. } | Refusal::WithheldData { .. })
+                )
+            {
+                let _fresh = self.positions.withheld.insert(constant);
+            }
+            if let (&Outcome::Data { admitted, .. }, Some(declared)) = (&entry.outcome, abstracted)
+            {
+                self.positions.open.push(OpenSeal {
+                    end: ConstantIndex::from(
+                        usize::from(constant).saturating_add(usize::from(declared.extent())),
+                    ),
+                    atom: admitted,
+                    readmitted: self.readmitted.len(),
+                });
+            }
         }
-        if let (&Outcome::Data { admitted, .. }, Some(declared)) =
-            (&outcome, report.abstract_types().get(&constant))
-        {
-            positions.open.push(OpenSeal {
-                end: ConstantIndex::from(
-                    usize::from(constant).saturating_add(usize::from(declared.extent())),
-                ),
-                atom: admitted,
-                readmitted: readmitted.len(),
-            });
+        self.readmitted.push(entry);
+        if matches!(tail, Tail::Lone | Tail::Last) {
+            close_seals(
+                &mut self.environment,
+                &mut self.positions,
+                &mut self.readmitted,
+                constant,
+            );
         }
-        readmitted.push(Readmitted {
-            constant,
-            origin: judged.origin(),
-            outcome,
-            certificates,
-            took,
-        });
-        close_seals(&mut environment, &mut positions, &mut readmitted, constant);
     }
-    close_seals(
-        &mut environment,
-        &mut positions,
-        &mut readmitted,
-        ConstantIndex::from(usize::MAX),
-    );
-    let audit = ArtifactAudit::of(&readmitted);
-    Walked::Done(Polled::Whole((
-        Readmission {
-            environment,
-            readmitted,
-            audit,
-            admitted: positions.exports,
-            resumed: from,
-            kept: kept_in_place,
-        },
-        recorded,
-    )))
+
+    /// Record the leading declarations at the boundary, with the key of each
+    /// when the record holds every declaration.
+    ///
+    /// # Specification
+    /// - ensures: no boundary left; the environment ranks past each rank a walk
+    ///   that keeps set; the record [`Crossed::record`] makes, carrying `keys`
+    ///   when it holds as many entries.
+    /// - panics: none.
+    /// - executable: none — the record is [`Crossed::record`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    fn record_leading(&mut self)
+    {
+        self.boundary = None;
+        // A record never carries the next rank of a walk that keeps.
+        self.environment.ranking_past();
+        self.recorded = Crossed::record(
+            (
+                &mut self.environment,
+                &self.positions,
+                self.readmitted.as_slice(),
+            ),
+            LeadingCount(self.from),
+        );
+        if let Maybe::Present(ref mut record) = self.recorded
+            && self.keys.len() == record.readmitted.len()
+        {
+            record.keys = self.keys.to_vec();
+        }
+    }
+
+    /// The readmission once each declaration is recorded, beside the record
+    /// of its leading declarations; or the retirement that a poll answered,
+    /// beside the record of the declarations before it; or the finding that
+    /// a walk that keeps misplaced an entry.
+    ///
+    /// # Specification
+    /// - requires: each declaration from `from` on was released and committed.
+    /// - ensures: misplaced, [`Walked::Misplaced`] with the recall and the
+    ///   keys. Retired, the retirement and the record of the declarations
+    ///   recorded, or no record ([`crossed::Absent::Kept`]) in a walk that
+    ///   keeps. Whole, the record at the boundary when the boundary is the end
+    ///   of the report, each seal still open closed, and the readmission with
+    ///   the count of the declarations kept in place.
+    /// - panics: none.
+    /// - executable: none — the record is [`Crossed::record`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`readmit_from`].
+    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::a_retired_keeping_readmission_leaves_its_record_whole_6846`
+    fn finish(mut self) -> Walked<'crossed, Poll::Retired>
+    {
+        if self.misplaced
+            && let Some(ref keeping) = self.keeping
+        {
+            return Walked::Misplaced {
+                recall: keeping.recall,
+                keys: self.keys,
+            };
+        }
+        if let Some(retired) = self.retired.take() {
+            let recorded = match self.keeping {
+                Some(_) => Maybe::Absent(crossed::Absent::Kept),
+                None => Crossed::record(
+                    (
+                        &mut self.environment,
+                        &self.positions,
+                        self.readmitted.as_slice(),
+                    ),
+                    LeadingCount(self.from),
+                ),
+            };
+            return Walked::Done(Polled::Retired(retired, recorded));
+        }
+        if self.boundary == Some(self.report.judged().len()) {
+            self.record_leading();
+        }
+        let Self {
+            mut environment,
+            mut positions,
+            mut readmitted,
+            from,
+            recorded,
+            kept,
+            ..
+        } = self;
+        close_seals(
+            &mut environment,
+            &mut positions,
+            &mut readmitted,
+            ConstantIndex::from(usize::MAX),
+        );
+        let audit = ArtifactAudit::of(&readmitted);
+        Walked::Done(Polled::Whole((
+            Readmission {
+                environment,
+                readmitted,
+                audit,
+                admitted: positions.exports,
+                resumed: from,
+                kept,
+            },
+            recorded,
+        )))
+    }
+}
+
+/// Hand on the entries of the mutual block that the declaration at `item`
+/// leads: answer the leader's crossing, and leave each later member's
+/// crossing in its slot for its own release.
+///
+/// # Specification
+/// - ensures: the crossing of the first entry, or [`Answer::Skipped`] with no
+///   entry; the slot of each later entry holds its crossing. The tail of the
+///   last entry is [`Tail::Last`], and of each other [`Tail::Member`].
+/// - panics: none.
+/// - executable: none — the call takes the entries, so no predicate over the
+///   answer and the slots reads them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit_from`].
+/// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+/// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+fn lead<Entries>(
+    slots: &mut [Slot<'_>],
+    item: ItemIndex,
+    entries: Entries,
+) -> Answer
+where
+    Entries: IntoIterator<Item = Readmitted>,
+{
+    let at = usize::from(item);
+    let mut entries = entries.into_iter().enumerate().peekable();
+    let mut leader = Answer::Skipped;
+    while let Some((offset, entry)) = entries.next() {
+        let crossing = Crossing {
+            entry,
+            tail: if entries.peek().is_none() {
+                Tail::Last
+            }
+            else {
+                Tail::Member
+            },
+        };
+        if offset == 0 {
+            leader = Answer::Crossed(crossing);
+        }
+        else if let Some(slot) = slots.get_mut(at.saturating_add(offset)) {
+            *slot = Slot::Member(crossing);
+        }
+    }
+    leader
 }
 
 /// The offers of the mutual block the first of `run`, the judged declarations
@@ -3659,9 +4361,9 @@ enum Erased
 ///   one export and at least one for each such type. A formation that fails
 ///   keeps the witnesses that crossed before it. The replayed verdicts are
 ///   returned beside the outcome, and beside them the time `stopwatch` read
-///   around the kernel's admission of the offer: [`timed::Absent::Unoffered`]
-///   when the offer never reached [`Environment::add_decl`]. A native signature
-///   or a free model the kernel rejects is the declaration's
+///   around the run of the kernel's check of the offer ([`checked`]):
+///   [`timed::Absent::Unoffered`] when the offer never reached the kernel. A
+///   native signature or a free model the kernel rejects is the declaration's
 ///   [`Outcome::Rejected`], its offer never made. A pair the kernel reports
 ///   undecided ([`gandr_kernel_core::IdentityError::EndpointsUndecided`]) is
 ///   answered by its second certificate ([`answered`]), and the offer is made
@@ -3763,9 +4465,7 @@ where
             }
         };
         let staged_as = staged.declaration.declaration().clone();
-        let started = stopwatch.start();
-        let admitted = admit(environment, staged.declaration);
-        let took = stopwatch.stop(started);
+        let (admitted, took) = checked(environment, staged.declaration, stopwatch);
         let admitted = match admitted {
             Ok(admitted) => admitted,
             Err(error) => {
@@ -3897,6 +4597,53 @@ fn admit(
 ) -> Result<CheckedId, KernelError>
 {
     environment.add_decl(staged)
+}
+
+/// Admit one staged declaration as [`Environment::add_decl`] admits it, with
+/// the run of its check timed by `stopwatch`: the release, the run on the
+/// calling thread, and the settle.
+///
+/// # Specification
+/// - requires: no released check of `environment` is outstanding.
+/// - ensures: what [`Environment::add_decl`] answers for `staged`, beside the
+///   time `stopwatch` read around the run of the check, or around the release
+///   when the kernel refuses the declaration before its check.
+/// - fails: as [`Environment::add_decl`].
+/// - panics: none.
+/// - executable: none — the answer is the kernel's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readmission under a ticking clock times each check at
+///   the one tick that its run spans.
+/// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn checked<Watch>(
+    environment: &mut Environment,
+    staged: gandr_kernel_core::StagedDeclaration,
+    stopwatch: &mut Watch,
+) -> (Result<CheckedId, KernelError>, AdmissionCost)
+where
+    Watch: Stopwatch,
+{
+    let started = stopwatch.start();
+    match environment.release(staged) {
+        Ok(Released::Running(pending, check)) => {
+            let (ran, took) = run_check(check, stopwatch);
+            (environment.settle(pending, ran), took)
+        },
+        // No check is outstanding, so no release holds; a hold answers as the
+        // kernel's own admission answers it.
+        Ok(Released::Held(staged, _)) => {
+            environment.abandon(staged);
+            (
+                Err(KernelError::UnsettledReleases {
+                    unsettled: environment.unsettled(),
+                }),
+                stopwatch.stop(started),
+            )
+        },
+        Err(error) => (Err(error), stopwatch.stop(started)),
+    }
 }
 
 /// One offer erased and staged, not yet admitted.

@@ -2751,6 +2751,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','verdicts::AlreadyInstalled','st
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct','Holds the policy, store, key and counts every readmission of a process recalls and records under.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictTally','struct','Counts what a process''s verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_obligation_fork','function','Installs the fork that each kernel check of a process drains its obligations through, once.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_readmission_pool','function','Installs the pool that each readmission of a process runs its checks on, once.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_verdict_cache','function','Installs a process''s verdict cache before its walk, once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::verdict_tally','function','Reads what the installed verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Reached','enum','What the traversal reached next, at the walk''s current path.',NULL,'fits','sound',NULL);

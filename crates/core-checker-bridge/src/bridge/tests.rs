@@ -67,6 +67,7 @@ use alloc::vec::Vec;
 use core::time::Duration;
 
 use anodized::spec;
+use gandr_core_fork::Serial;
 use gandr_core_nbe::TraceNode;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
@@ -1207,6 +1208,7 @@ fn a_retired_readmission_resumes_from_its_record_1547()
         &Recall::recheck(),
         &poll,
         &mut Untimed,
+        &Serial,
     );
     let Polled::Retired((), Maybe::Present(record)) = retired
     else {
@@ -1258,11 +1260,213 @@ fn a_retired_readmission_resumes_from_its_record_1547()
                 &Recall::recheck(),
                 &at_once,
                 &mut Untimed,
+                &Serial,
             ),
             Polled::Retired((), Maybe::Absent(crossed::Absent::Unchanged))
         ),
         "retired before its first declaration, a readmission crossed nothing to record"
     );
+}
+
+/// A fork that runs each released job at the last point that the schedule's
+/// contract allows — before a held release is released again, and at the end
+/// — and that commits the jobs that it runs together in the reverse of their
+/// release order.
+struct Reversed;
+
+impl gandr_core_fork::Fork for Reversed
+{
+    /// Every item in slice order, as the serial fork runs them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn each<Item, State, Start, Job>(
+        &self,
+        items: &mut [Item],
+        start: Start,
+        job: Job,
+    ) where
+        Item: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+    {
+        Serial.each(items, start, job);
+    }
+
+    /// The left half, then the right.
+    ///
+    /// # Specification
+    /// trivial.
+    fn join<Left, Right, LeftOutput, RightOutput>(
+        &self,
+        left: Left,
+        right: Right,
+    ) -> (LeftOutput, RightOutput)
+    where
+        Left: FnOnce() -> LeftOutput + Send,
+        Right: FnOnce() -> RightOutput + Send,
+        LeftOutput: Send,
+        RightOutput: Send,
+    {
+        Serial.join(left, right)
+    }
+
+    /// Release each item in slice order. Hold each released job until a
+    /// release holds or the slice ends, then run and commit the held jobs,
+    /// the last released first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedule<Item, Job, Out, Release, Run, Commit>(
+        &self,
+        items: &mut [Item],
+        _after: &gandr_core_fork::Dependences,
+        mut release: Release,
+        run: Run,
+        mut commit: Commit,
+    ) where
+        Job: Send,
+        Out: Send,
+        Release:
+            FnMut(gandr_core_fork::ItemIndex, &mut Item) -> gandr_core_fork::Releasing<Job, Out>,
+        Run: Fn(Job) -> Out + Sync,
+        Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
+    {
+        let mut running: Vec<(gandr_core_fork::ItemIndex, Job)> = Vec::new();
+        let mut next = 0_usize;
+        loop {
+            let at = gandr_core_fork::ItemIndex::from(next);
+            let waits = items
+                .get_mut(next)
+                .is_none_or(|item| match release(at, item) {
+                    gandr_core_fork::Releasing::Run(job) => {
+                        running.push((at, job));
+                        next = next.saturating_add(1);
+                        false
+                    },
+                    gandr_core_fork::Releasing::Held(_) if !running.is_empty() => true,
+                    // A settled item commits before the running jobs: its commit
+                    // comes out of release order too.
+                    gandr_core_fork::Releasing::Settled(out)
+                    | gandr_core_fork::Releasing::Held(out) => {
+                        commit(at, item, out);
+                        next = next.saturating_add(1);
+                        false
+                    },
+                });
+            if waits {
+                while let Some((done, job)) = running.pop() {
+                    let out = run(job);
+                    if let Some(item) = items.get_mut(usize::from(done)) {
+                        commit(done, item, out);
+                    }
+                }
+                if next >= items.len() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// The numerals, with `Alias` checked and refused, and the readers of a
+/// native, each readmitted on [`Reversed`]: the entries and the artifact of
+/// the serial readmission, the record at a boundary, and a retirement whose
+/// record resumes to the whole readmission. A release that reads a running
+/// declaration holds, and the commits come out of release order.
+#[test]
+fn checks_committed_in_reverse_readmit_as_the_serial_run_3476()
+{
+    let fixtures = [
+        numerals(Padding(0), AliasBody::Num, At(4)),
+        numerals(Padding(0), AliasBody::Integer, At(4)),
+        native_readers(Second::Sub),
+        native_readers(Second::Add),
+    ];
+    for (arena, report) in fixtures {
+        let boundary = LeadingCount::from(report.judged().len().saturating_sub(1));
+        let leading = (boundary, Maybe::Absent(crossed::Absent::Unasked));
+        let (mut serial_arena, mut reversed_arena) = (arena.clone(), arena.clone());
+        let (serial, serial_record) = readmit_retiring(
+            &mut serial_arena,
+            &report,
+            leading,
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        let (reversed, reversed_record) = readmit_retiring(
+            &mut reversed_arena,
+            &report,
+            leading,
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Reversed,
+        )
+        .whole();
+        assert_eq!(
+            reversed.readmitted(),
+            serial.readmitted(),
+            "each declaration crosses as the serial run crosses it"
+        );
+        assert_eq!(
+            reversed.export(BTreeMap::new()),
+            serial.export(BTreeMap::new()),
+            "the artifact is the serial one, byte for byte"
+        );
+        let bounded = |record: &Maybe<super::Crossed, crossed::Absent>| match *record {
+            Maybe::Present(ref record) => Ok(record.boundary()),
+            Maybe::Absent(absent) => Err(absent),
+        };
+        assert_eq!(
+            bounded(&reversed_record),
+            bounded(&serial_record),
+            "the record at the boundary is the serial one"
+        );
+
+        let poll = RetireAt {
+            at: 3,
+            readings: core::cell::Cell::new(0),
+        };
+        let mut retired_arena = arena.clone();
+        let retired = readmit_retiring(
+            &mut retired_arena,
+            &report,
+            (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+            &Recall::recheck(),
+            &poll,
+            &mut Untimed,
+            &Reversed,
+        );
+        let record = match retired {
+            Polled::Retired((), Maybe::Present(record)) => Maybe::Present(record),
+            Polled::Retired((), Maybe::Absent(absent)) => Maybe::Absent(absent),
+            Polled::Whole(_) => continue,
+        };
+        let mut resumed_arena = arena.clone();
+        let (resumed, _) = readmit_resuming(
+            &mut resumed_arena,
+            &report,
+            LeadingCount::NONE,
+            match record {
+                Maybe::Present(ref record) => Maybe::Present(record),
+                Maybe::Absent(absent) => Maybe::Absent(absent),
+            },
+        );
+        assert_eq!(
+            resumed.readmitted(),
+            serial.readmitted(),
+            "a readmission retired on the reversed fork resumes to the serial one"
+        );
+        assert_eq!(
+            resumed.export(BTreeMap::new()),
+            serial.export(BTreeMap::new()),
+            "the resumed artifact is the serial one, byte for byte"
+        );
+    }
 }
 
 /// A clock one microsecond past its last reading at each reading.
@@ -1305,6 +1509,7 @@ fn a_timed_readmission_times_each_admission_it_makes()
         &Recall::recheck(),
         &Unretired,
         &mut Timed::by(Ticking::default()),
+        &Serial,
     )
     .whole()
     .0;
@@ -1361,6 +1566,7 @@ fn a_timed_readmission_times_each_admission_it_makes()
         &Recall::recheck(),
         &Unretired,
         &mut Timed::by(Ticking::default()),
+        &Serial,
     )
     else {
         panic!("the first two declarations are recorded");
@@ -1426,6 +1632,7 @@ fn a_metered_readmission_counts_the_allocations_of_each_admission()
         &Recall::recheck(),
         &Unretired,
         &mut Metered::by(Ticking::default(), Allocating::default()),
+        &Serial,
     )
     .whole()
     .0;
@@ -1486,6 +1693,7 @@ fn readmitted_under(recall: &Recall) -> Readmission
         recall,
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole()
     .0
@@ -1548,6 +1756,7 @@ fn a_resumed_readmission_recalls_from_its_own_source_6566()
         &Recall::trusting(trusting.clone(), Arc::new(NoVerdicts)),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     let Maybe::Present(record) = record
@@ -1565,6 +1774,7 @@ fn a_resumed_readmission_recalls_from_its_own_source_6566()
         &Recall::trusting(trusting, Arc::new(Held(Arc::new(receipt)))),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     assert_eq!(
@@ -4706,6 +4916,7 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
         ),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole()
     .0;
@@ -10175,9 +10386,10 @@ fn held(record: &Maybe<super::Crossed, crossed::Absent>)
 }
 
 /// Readmit the module `draws` give, then each module `edits` make of it in
-/// turn, keeping from the record of the readmission before: each answers as
-/// a whole readmission of its module answers, entry by entry and to the
-/// bytes of its export, and an unedited one keeps every declaration.
+/// turn, keeping from the record of the readmission before under a fork that
+/// commits its checks in reverse: each answers as a whole serial readmission
+/// of its module answers, entry by entry and to the bytes of its export, and
+/// an unedited one keeps every declaration.
 ///
 /// # Specification
 /// trivial.
@@ -10196,6 +10408,7 @@ fn keeps_as_whole(
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     for &edit in edits {
@@ -10209,6 +10422,7 @@ fn keeps_as_whole(
             &Recall::recheck(),
             &Unretired,
             &mut Untimed,
+            &Reversed,
         )
         .whole();
         let (mut whole_arena, whole_report, _) = keyed_module(&module);
@@ -10312,6 +10526,7 @@ fn a_kept_readmission_retires_no_suffix_6846()
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     let after = crossed_at(&whole, At(3));
@@ -10325,6 +10540,7 @@ fn a_kept_readmission_retires_no_suffix_6846()
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     assert_eq!(
@@ -10431,6 +10647,7 @@ fn a_seed_whose_first_reader_leaves_retires_6846()
             &Recall::recheck(),
             &Unretired,
             &mut Untimed,
+            &Serial,
         )
         .whole();
         let seeded = usize::from(crossed_at(&first, At(0)))
@@ -10444,6 +10661,7 @@ fn a_seed_whose_first_reader_leaves_retires_6846()
             &Recall::recheck(),
             &Unretired,
             &mut Untimed,
+            &Serial,
         )
         .whole();
         let (mut whole_arena, whole_report, _) = native_module(after);
@@ -10498,6 +10716,7 @@ fn a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196()
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     for (after, kept, entries) in [
@@ -10516,6 +10735,7 @@ fn a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196()
             &Recall::recheck(),
             &Unretired,
             &mut Untimed,
+            &Serial,
         )
         .whole();
         let (mut whole_arena, whole_report, _) = native_module(after);
@@ -10563,6 +10783,7 @@ fn a_retired_keeping_readmission_leaves_its_record_whole_6846()
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     let Maybe::Present(ref recorded) = record
@@ -10599,6 +10820,7 @@ fn a_retired_keeping_readmission_leaves_its_record_whole_6846()
             readings: core::cell::Cell::new(0),
         },
         &mut Untimed,
+        &Serial,
     );
     assert!(
         matches!(
@@ -10619,6 +10841,7 @@ fn a_retired_keeping_readmission_leaves_its_record_whole_6846()
         &Recall::recheck(),
         &Unretired,
         &mut Untimed,
+        &Serial,
     )
     .whole();
     let (mut whole_arena, whole_report, _) = keyed_module(&second);
