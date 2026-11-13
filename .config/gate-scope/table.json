@@ -101,6 +101,7 @@
         ".config/bench/",
         ".config/cases/",
         ".config/claims/",
+        ".config/gh/budget.bash",
         ".config/issues/",
         ".config/mise/scope",
         ".config/mise/tasks/mise-tasks-ci.toml",
@@ -259,7 +260,12 @@
         "ledger/references.sql",
         "library/"
       ],
-      "check:replay": [".config/cases/", ".config/pr-stack/", ".config/replay/"],
+      "check:replay": [
+        ".config/cases/",
+        ".config/gh/budget.bash",
+        ".config/pr-stack/",
+        ".config/replay/"
+      ],
       "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
       "check:service": [".config/cases/", ".config/service/"],
       "check:sites": ["crates/theory-sites/"],
@@ -288,6 +294,7 @@
       "check:tracking": [
         ".config/cases/",
         ".config/claims/",
+        ".config/gh/budget.bash",
         ".config/tracking/",
         "crates/core-term/",
         "ledger/features.sql"

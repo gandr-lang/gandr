@@ -16,10 +16,12 @@ arg "[version]" help="stable release for a local library producer, e.g. 1.98.0"
 flag "--workflow-rev <revision>" help="reviewed full 40-hex commit for an external workflow consumer"
 '''
 tools.jq = "1.8.1"
-# Preserve shell parameter length syntax through template rendering.
+# Preserve shell parameter length syntax through template rendering. The task
+# runs under bash, which sources the GitHub wrapper (`budget.bash`, #6253).
 run = '''
-{% raw %}#!/usr/bin/env sh
+{% raw %}#!/usr/bin/env bash
 set -eu
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 
 version=${usage_version:-}
 revision=${usage_workflow_rev:-}

@@ -892,6 +892,7 @@ description = "Print the revision the checked-out change is measured against"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 source .config/pr-stack/trunk.bash
 base=$(git merge-base "origin/$trunk" HEAD)
 own=${GITHUB_HEAD_REF:-$(git branch --show-current)}
@@ -999,6 +1000,7 @@ env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 base=${usage_base:-$(mise run --quiet evidence:base)}
 # The specification obligations come from the Rust evidence: the Dylint
 # records and the rustdoc JSON. A change the gate's selection gives no Rust
@@ -1424,6 +1426,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 .config/cases/run.bash tracking .config/tracking/cases.json --program .config/tracking/tracking.jq
@@ -2311,14 +2314,17 @@ fi
 echo "gh-budget check OK: $(jq length <<< "$sites") calls in $(jq '[.[] | [.file, .scope]] | unique | length' <<< "$sites") sites priced, each identity within its ceiling"
 '''
 
-# A read the change adds sources the wrapper before the call (#6253).
-# `.config/gh/direct.bash` reads the diff against the merge base. A read
-# is a call the wrapper would cache. The file sources the wrapper when a
-# line above the call sources budget.bash, or stack.bash, deps.bash or
-# stall.bash. In a task file the source stands in the same task.
-# `.config/gh/direct-cases.bash` holds the cases.
+# Every GitHub read of a task file goes through the wrapper, and so does a
+# read that the change adds to another workflow script (#6253).
+# `.config/gh/direct.bash` reads each task file at the head, and the diff of
+# each other script against the merge base. A read is a call the wrapper
+# would cache. The file sources the wrapper when a line above the call
+# sources budget.bash, or stack.bash, deps.bash or stall.bash. In a task file
+# the source stands in the same task. A read whose answer decides a write
+# sets `GH_BUDGET_TTL=0` on its call. `.config/gh/direct-cases.bash` holds
+# the cases.
 ["check:gh-direct"]
-description = "A read the change adds sources the wrapper before the call"
+description = "Every read of a task file, and each read the change adds to another script, sources the wrapper before the call"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail

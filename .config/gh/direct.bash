@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# A read the change adds is direct when its file does not source the wrapper
-# before the call (#6253).
+# Every GitHub read of a task file goes through the wrapper, and so does a
+# read that the change adds to another workflow script (#6253).
 #
 # Usage: direct.bash <base> [head]
 #
 # A read is a call the wrapper would cache. A file sources the wrapper when
 # a line above the call sources budget.bash, or stack.bash, deps.bash or
 # stall.bash, which source it. In a task file the source must stand in the
-# same task. The wrapper's own file is not direct.
+# same task. The check reads each line of each task file under
+# `.config/mise/tasks/` at the head, changed or not, and the lines that the
+# change adds to each other script. The wrapper's own file is not direct.
 set -euo pipefail
 base=${1:?usage: direct.bash <base> [head]}
 head=${2:-HEAD}
@@ -69,18 +71,39 @@ sourced_before() {
   '
 }
 
-failed=0
-while IFS= read -r file; do
-  [[ -n $file ]] || continue
-  [[ $file == */budget.bash || $file == */calls.toml ]] && continue
+# The lines of the task file `$1` at the head above which no line of the same
+# task sources the wrapper, numbered: one pass over the file.
+unsourced_lines() {
+  git show "$head:$1" | awk '
+    /^\[(tasks\.)?"[^"]+"\]/ { found = 0 }
+    !found { printf "%d\t%s\n", NR, $0 }
+    $0 !~ /^[ \t]*#/ && /source/ && /(budget|stack|deps|stall)\.bash/ { found = 1 }
+  '
+}
+
+# Each read of the numbered lines on stdin that no source of the wrapper
+# stands above, refused as `$2` with its file `$1` and its line. With `$3`
+# set, each read's source is looked up above it in the file.
+judge() {
+  local file=$1 what=$2 lookup=${3:-} n text
   while IFS=$'\t' read -r n text; do
     [[ $text =~ ^[[:space:]]*# ]] && continue
     [[ $text =~ ^[[:space:]]*description[[:space:]]*= ]] && continue
     is_read "$text" || continue
-    if ! sourced_before "$file" "$n"; then
-      printf '%s:%s: a read the change adds does not source the wrapper before the call\n' "$file" "$n" >&2
-      failed=1
-    fi
-  done < <(added_lines "$file")
+    if [[ -n $lookup ]] && sourced_before "$file" "$n"; then continue; fi
+    printf '%s:%s: %s does not source the wrapper before the call\n' "$file" "$n" "$what" >&2
+    failed=1
+  done
+}
+
+failed=0
+while IFS= read -r file; do
+  [[ -n $file ]] || continue
+  judge "$file" 'a read of a task file' < <(unsourced_lines "$file")
+done < <(git ls-tree -r --name-only "$head" -- .config/mise/tasks | grep -E '\.toml$' || true)
+while IFS= read -r file; do
+  [[ -n $file ]] || continue
+  [[ $file == */budget.bash || $file == */calls.toml || $file == .config/mise/tasks/*.toml ]] && continue
+  judge "$file" 'a read the change adds' lookup < <(added_lines "$file")
 done < <(git diff --name-only --diff-filter=ACMR "$base" "$head" -- .config .github | grep -E '\.(bash|sh|toml|ya?ml)$' || true)
 exit "$failed"

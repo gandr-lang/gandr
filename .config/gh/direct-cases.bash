@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cases for a read the change adds (#6253).
+# Cases for a read of a task file, and for a read the change adds (#6253).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 check=$here/direct.bash
@@ -77,5 +77,14 @@ init
 commit_file .config/tasks.toml "$(printf '%s\n' '["one"]' "run = '''" 'source .config/pr-stack/stack.bash' "$pr_line" "'''")"
 expect_pass "a read after stack.bash in the same task"
 
+init
+commit_file .config/mise/tasks/mise-tasks-x.toml "$(printf '%s\n' '["one"]' "run = '''" "$read_line" "'''")"
+commit_file .config/other.bash '# note'
+expect_fail "an old read of a task file that the change does not touch"
+
+init
+commit_file .config/mise/tasks/mise-tasks-x.toml "$(printf '%s\n' '["one"]' "run = '''" 'source .config/gh/budget.bash' "$read_line" "'''" '["two"]' "run = '''" "$write_line" "'''")"
+commit_file .config/other.bash '# note'
+expect_pass "an old read of a task file after the wrapper, and a write in a task with no source"
 ((fail == 0))
 printf 'gh-direct cases OK\n'
