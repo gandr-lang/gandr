@@ -1,0 +1,1013 @@
+//! Element identity in the evaluator: the recursion that says, carrier by
+//! carrier, what the paths of `Path[.A = A](a, b)` are, and the comparison of
+//! two transport motives.
+//!
+//! # The recursion
+//!
+//! [`clause`] reads a carrier's head and [`fibre`] reads it against two
+//! evaluated endpoints, clause for clause with the kernel's identity
+//! recursion:
+//!
+//! | carrier | endpoints | the paths |
+//! |---|---|---|
+//! | unit | any | [`Fibre::Unit`]: reflexivity alone |
+//! | base | equal literals | [`Fibre::Unit`] |
+//! | base | different literals | [`Fibre::Empty`] |
+//! | base | a stuck endpoint | [`Fibre::Discrete`]: residual discrete equality |
+//! | sum | one summand | [`Fibre::Payload`]: the payloads' paths |
+//! | sum | two summands | [`Fibre::Empty`]: the cross-injection case |
+//! | product | two tuples | [`Fibre::Components`]: each coordinate's paths |
+//! | list | two empties / two cells / one of each | unit / head and tail / empty |
+//! | `U(A → C)` | any | [`Fibre::Related`]: related inputs to related results |
+//! | value universe | any | [`Fibre::Universe`]: the certified equivalences |
+//! | abstract, decode of an open code, unknown | any | [`Fibre::Open`] |
+//!
+//! A stuck endpoint at a sum, a product or a list leaves the path type the
+//! relation it names, [`Fibre::Suspended`]; every other former is
+//! [`Fibre::Unclassified`].
+//!
+//! # Identity at an open type
+//!
+//! A sealed atom, a decode of a code no quote reaches and the unknown type
+//! expose no structure, so the recursion has nothing to unfold: [`Fibre::Open`]
+//! says the path type is its own neutral fibre there. The checker forms it,
+//! reflexivity checks at it by endpoint conversion, and transport along it is
+//! stuck except on reflexivity, where it reduces whatever the carrier.
+//!
+//! # Flows
+//!
+//! A flow evaluates to its former over its evaluated parts and reads back as
+//! itself, and two flows convert when their formers agree and their parts
+//! convert in order. A ride along one computes by the kernel's directed table
+//! row for row, so a ride the checker admits computes the same here, in the
+//! kernel and at runtime; along a stuck flow it stacks on the flow's spine.
+//!
+//! # Decisions
+//!
+//! - **The recursion classifies; it does not rewrite.** `Path[.A = A](a, b)`
+//!   stays a type of its own in conversion and in checking, and the recursion
+//!   is read where a rule needs it. The alternative, unfolding the path type
+//!   into the type it names during conversion, needs reflexivity to compute
+//!   into each fibre's canonical inhabitant and transport to compute by the
+//!   motive's structure at every former, the whole of a higher observational
+//!   theory at once. Reversal: when transport computes at every former, the
+//!   classification becomes the unfolding.
+//! - **Funext covers first-order arguments.** The thunk clause relates inputs
+//!   of a function's domain; a domain that is itself a function is the same
+//!   clause one level up, and the clause does not yet descend into it.
+//! - **Two motives compare by capture.** A stuck transport's motive is a type
+//!   under a binder — a value type under one, or a telescope transport's
+//!   computation type under the two its arrows bind — so two of them agree when
+//!   they are one type over captures whose bindings agree, and wait for a
+//!   binder otherwise.
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
+use gandr_core_term::Value;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GroundSort;
+
+use crate::arena::DomainArena;
+use crate::arena::DomainFault;
+use crate::arena::DomainValueId;
+use crate::arena::ValueClosureId;
+use crate::domain::DomainValue;
+use crate::free::CoreTerm;
+use crate::free::FreeFault;
+use crate::free::FreeIndices;
+use crate::free::Membership;
+
+/// Why the recursion could not read its operands.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IdentityFault
+{
+    /// A core id named no node of the arena read.
+    DanglingTerm,
+    /// The domain arena refused, in its own vocabulary.
+    Domain(DomainFault),
+}
+
+/// Which clause of the recursion a carrier's head selects.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Clause
+{
+    /// The unit type.
+    Unit,
+    /// A base type: discrete equality of literals.
+    Discrete,
+    /// A sum: matching injections recurse, different ones are apart.
+    Sum,
+    /// A product: coordinates independently.
+    Product,
+    /// A native list: constructor by constructor.
+    List,
+    /// A thunk of a function: related inputs give related results.
+    Function,
+    /// The value universe: certified equivalences.
+    Universe,
+    /// An open carrier: the path type is its own neutral fibre.
+    Open,
+    /// A former the recursion has no clause for.
+    Unclassified,
+}
+
+/// One coordinate the recursion reached: a carrier and the two endpoints it
+/// relates there.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Coordinate
+{
+    /// The coordinate's carrier.
+    carrier: ValueTypeId,
+    /// The left endpoint's coordinate.
+    left: DomainValueId,
+    /// The right endpoint's coordinate.
+    right: DomainValueId,
+}
+
+impl Coordinate
+{
+    /// The coordinate's carrier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn carrier(&self) -> ValueTypeId
+    {
+        self.carrier
+    }
+
+    /// The left endpoint's coordinate.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn left(&self) -> DomainValueId
+    {
+        self.left
+    }
+
+    /// The right endpoint's coordinate.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn right(&self) -> DomainValueId
+    {
+        self.right
+    }
+}
+
+/// What the paths of one path type are, by the recursion over its carrier.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Fibre
+{
+    /// Exactly one path, reflexivity.
+    Unit,
+    /// No path at all.
+    Empty,
+    /// Discrete equality of a base type with a stuck endpoint.
+    Discrete,
+    /// The paths of the one coordinate two matching injections carry.
+    Payload(Coordinate),
+    /// The paths of each coordinate, independently.
+    Components(Vec<Coordinate>),
+    /// Paths between related inputs taken to paths between the results.
+    Related
+    {
+        /// The function's domain, where the inputs are related.
+        domain: ValueTypeId,
+        /// The function's codomain, where the results are related.
+        codomain: CompTypeId,
+    },
+    /// The universe's certified equivalences.
+    Universe,
+    /// A stuck endpoint: the path type stays the relation it names.
+    Suspended,
+    /// An open carrier: the path type is its own neutral fibre.
+    Open,
+    /// A former the recursion has no clause for.
+    Unclassified,
+}
+
+/// The clause a carrier's head selects.
+///
+/// # Specification
+/// - requires: `carrier` is in weak head form: a decode of a quote has been
+///   read through, so a remaining decode reads an open code.
+/// - ensures: [`Clause::Unit`] for the empty product, [`Clause::Product`] for
+///   any other product, [`Clause::Discrete`] for a base type, [`Clause::Sum`],
+///   [`Clause::List`], [`Clause::Function`] for a thunk of an arrow,
+///   [`Clause::Universe`] for the value universe, [`Clause::Open`] for an
+///   abstract type, a decode and the unknown type, and [`Clause::Unclassified`]
+///   for every other former.
+/// - provides: the head reading [`fibre`] selects its row by.
+/// - fails: [`IdentityFault::DanglingTerm`] for a carrier, or a thunk's body,
+///   the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// - [`IdentityFault::DanglingTerm`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one carrier per clause, an abstract atom and a decode of
+///   a variable both open, a record unclassified; moving a former to another
+///   clause changes its answer.
+/// - witness: `identity::tests::every_carrier_selects_its_clause`
+#[spec(ensures: |ret| core.value_type(carrier).is_some() || ret == Err(IdentityFault::DanglingTerm))]
+#[inline]
+pub fn clause(
+    core: &CoreArena,
+    carrier: ValueTypeId,
+) -> Result<Clause, IdentityFault>
+{
+    Ok(
+        match *core
+            .value_type(carrier)
+            .ok_or(IdentityFault::DanglingTerm)?
+        {
+            ValueType::Product(ref components) if components.is_empty() => Clause::Unit,
+            ValueType::Product(_) => Clause::Product,
+            ValueType::Base(_) => Clause::Discrete,
+            ValueType::Sum(_) => Clause::Sum,
+            ValueType::List(_) => Clause::List,
+            ValueType::Thunk(body) => {
+                match *core.comp_type(body).ok_or(IdentityFault::DanglingTerm)? {
+                    CompType::Arrow { .. } => Clause::Function,
+                    CompType::Returner { .. }
+                    | CompType::Returns { .. }
+                    | CompType::Pi { .. }
+                    | CompType::LinearArrow { .. }
+                    | CompType::With(..)
+                    | CompType::Codata { .. }
+                    | CompType::Element { .. }
+                    | CompType::Unknown => Clause::Unclassified,
+                }
+            },
+            ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Value),
+                ..
+            } => Clause::Universe,
+            ValueType::Abstract(_) | ValueType::Element { .. } | ValueType::Unknown => Clause::Open,
+            ValueType::Universe { .. }
+            | ValueType::Data { .. }
+            | ValueType::Record(_)
+            | ValueType::Patched { .. }
+            | ValueType::PathUniverse(..)
+            | ValueType::Path { .. }
+            | ValueType::Bridge { .. }
+            | ValueType::Stack { .. }
+            | ValueType::Capability { .. }
+            | ValueType::Buffer
+            | ValueType::Qubit
+            | ValueType::Lift { .. }
+            | ValueType::StaticPi { .. }
+            | ValueType::Sigma { .. }
+            | ValueType::Session(_)
+            | ValueType::Flow { .. }
+            | ValueType::Run(_)
+            | ValueType::Prefix(_)
+            | ValueType::Dialogue(_)
+            | ValueType::Web
+            | ValueType::Staged { .. }
+            | ValueType::Kept { .. }
+            | ValueType::World(_)
+            | ValueType::Row
+            | ValueType::RowTail(_) => Clause::Unclassified,
+        },
+    )
+}
+
+/// What the paths of `Path[.A = carrier](left, right)` are.
+///
+/// # Specification
+/// - requires: `carrier` is in weak head form, and `left` and `right` are
+///   evaluated inhabitants of it.
+/// - ensures: the row of the recursion's table the carrier and the two
+///   endpoints select, as this module's table states it.
+/// - provides: the identity recursion over evaluated endpoints.
+/// - fails: [`IdentityFault::DanglingTerm`] for a carrier the arena does not
+///   hold; [`IdentityFault::Domain`] for an endpoint or a field the domain does
+///   not hold.
+/// - panics: none.
+///
+/// # Errors
+/// - [`IdentityFault::DanglingTerm`], [`IdentityFault::Domain`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each clause is witnessed at its own carrier, the
+///   cross-injection emptiness and the distinct literals separately from the
+///   matching cases, and a stuck endpoint separately from a canonical one;
+///   pairing the wrong coordinates, conflating the two emptiness cases with the
+///   matching ones, or classifying an open carrier changes an answer.
+/// - witness: `identity::tests::unit_and_discrete_carriers_unfold_by_their_endpoints`
+/// - witness: `identity::tests::different_injections_have_no_path`
+/// - witness: `identity::tests::matching_injections_recurse_into_the_payload`
+/// - witness: `identity::tests::product_paths_are_componentwise`
+/// - witness: `identity::tests::list_paths_follow_the_constructors`
+/// - witness: `identity::tests::function_paths_relate_inputs_to_results`
+/// - witness: `identity::tests::open_carriers_unfold_to_nothing`
+/// - witness: `identity::tests::a_product_endpoint_of_another_width_is_refused_on_either_side`
+#[spec(ensures: |ret| core.value_type(carrier).is_some() || ret == Err(IdentityFault::DanglingTerm))]
+#[inline]
+pub fn fibre(
+    core: &CoreArena,
+    domain: &DomainArena,
+    carrier: ValueTypeId,
+    left: DomainValueId,
+    right: DomainValueId,
+) -> Result<Fibre, IdentityFault>
+{
+    let selected = clause(core, carrier)?;
+    let dangling = IdentityFault::Domain(DomainFault::Dangling);
+    let ends = (
+        *domain.value(left).ok_or(dangling)?,
+        *domain.value(right).ok_or(dangling)?,
+    );
+    let node = core
+        .value_type(carrier)
+        .ok_or(IdentityFault::DanglingTerm)?;
+    Ok(match (selected, node) {
+        (Clause::Unit, _) => Fibre::Unit,
+        (Clause::Discrete, _) => match ends {
+            (
+                DomainValue::Literal { literal: one, .. },
+                DomainValue::Literal { literal: other, .. },
+            ) => match (core.value(one), core.value(other)) {
+                (Some(&Value::Literal(ref one)), Some(&Value::Literal(ref other))) => {
+                    if one == other {
+                        Fibre::Unit
+                    }
+                    else {
+                        Fibre::Empty
+                    }
+                },
+                _ => return Err(IdentityFault::DanglingTerm),
+            },
+            _ => Fibre::Discrete,
+        },
+        (Clause::Sum, &ValueType::Sum(ref summands)) => match ends {
+            (
+                DomainValue::Injection {
+                    summand: one,
+                    body: first,
+                    ..
+                },
+                DomainValue::Injection {
+                    summand: other,
+                    body: second,
+                    ..
+                },
+            ) => {
+                if one == other {
+                    let carrier = *summands
+                        .get(usize::from(one))
+                        .ok_or(IdentityFault::DanglingTerm)?;
+                    Fibre::Payload(Coordinate {
+                        carrier,
+                        left: first,
+                        right: second,
+                    })
+                }
+                else {
+                    Fibre::Empty
+                }
+            },
+            _ => Fibre::Suspended,
+        },
+        (Clause::Product, &ValueType::Product(ref components)) => match ends {
+            (DomainValue::Tuple { fields: one, .. }, DomainValue::Tuple { fields: other, .. }) => {
+                let one = domain.fields(one).map_err(IdentityFault::Domain)?;
+                let other = domain.fields(other).map_err(IdentityFault::Domain)?;
+                if one.len() != components.len() || other.len() != components.len() {
+                    return Err(IdentityFault::Domain(DomainFault::Dangling));
+                }
+                Fibre::Components(
+                    components
+                        .iter()
+                        .zip(one.iter().zip(other))
+                        .map(|(&carrier, (&left, &right))| Coordinate {
+                            carrier,
+                            left,
+                            right,
+                        })
+                        .collect(),
+                )
+            },
+            _ => Fibre::Suspended,
+        },
+        (Clause::List, &ValueType::List(element)) => match ends {
+            (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Fibre::Unit,
+            (
+                DomainValue::ListCons {
+                    first: head,
+                    second: tail,
+                    ..
+                },
+                DomainValue::ListCons {
+                    first: other_head,
+                    second: other_tail,
+                    ..
+                },
+            ) => Fibre::Components(Vec::from([
+                Coordinate {
+                    carrier: element,
+                    left: head,
+                    right: other_head,
+                },
+                Coordinate {
+                    carrier,
+                    left: tail,
+                    right: other_tail,
+                },
+            ])),
+            (DomainValue::ListNil { .. }, DomainValue::ListCons { .. })
+            | (DomainValue::ListCons { .. }, DomainValue::ListNil { .. }) => Fibre::Empty,
+            _ => Fibre::Suspended,
+        },
+        (Clause::Function, &ValueType::Thunk(body)) => {
+            match *core.comp_type(body).ok_or(IdentityFault::DanglingTerm)? {
+                CompType::Arrow {
+                    domain: input,
+                    codomain,
+                } => Fibre::Related {
+                    domain: input,
+                    codomain,
+                },
+                CompType::Returner { .. }
+                | CompType::Returns { .. }
+                | CompType::Pi { .. }
+                | CompType::LinearArrow { .. }
+                | CompType::Element { .. }
+                | CompType::Unknown
+                | CompType::With(..)
+                | CompType::Codata { .. } => return Err(IdentityFault::DanglingTerm),
+            }
+        },
+        (Clause::Universe, _) => Fibre::Universe,
+        (Clause::Open, _) => Fibre::Open,
+        (Clause::Unclassified, _) => Fibre::Unclassified,
+        (Clause::Sum | Clause::Product | Clause::List | Clause::Function, _) => {
+            return Err(IdentityFault::DanglingTerm);
+        },
+    })
+}
+
+/// How two stuck transports' motives compare without opening their binder.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Motives
+{
+    /// One motive type over captures of one shape: the bindings to compare,
+    /// pairwise, intuitionistic zone first.
+    Alike(Vec<(DomainValueId, DomainValueId)>),
+    /// Different motive types, or captures of different shapes: a binder must
+    /// be opened to tell, or the two read through their captures, as the
+    /// structural walk then does.
+    Unlike,
+}
+
+/// Compare two transport motives by their body and their captures.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Motives::Alike`] with every binding pair when both closures
+///   hold one body, a one-binder transport's value type or a telescope
+///   transport's computation type, over environments of one depth per zone;
+///   [`Motives::Unlike`] otherwise. Two bodies are one when they are one node,
+///   or two quoted types of one written syntax: two definitions over one fill
+///   write one motive at two nodes (#4180).
+/// - provides: the congruence two stuck transports' motives settle by in the
+///   structural walk, which never opens a binder.
+/// - fails: [`DomainFault::Dangling`] for a closure the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// - [`DomainFault::Dangling`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two evaluations of one transport give alike motives whose
+///   bindings pair up, two telescope motives written apart in one syntax are
+///   alike, and transports at two different motives give unlike ones; comparing
+///   ids instead of bodies, or dropping the bindings, changes the answer.
+/// - witness: `identity::tests::stuck_transports_compare_by_motive_and_operand`
+/// - witness: `identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
+#[spec(ensures: |ret| match (domain.value_closure(left), domain.value_closure(right)) {
+    | (Some(one), Some(other)) => ret.as_ref().is_ok_and(|motives| matches!(motives, Motives::Alike(_)) == (one_body(core, one.body(), other.body()) == CertificateEquality::Equal
+        && [Zone::Intuitionistic, Zone::Linear].iter().all(|&zone| one.environment().depth(zone) == other.environment().depth(zone)))),
+    | _ => ret == Err(DomainFault::Dangling),
+})]
+#[inline]
+pub fn motives(
+    core: &CoreArena,
+    domain: &DomainArena,
+    left: ValueClosureId,
+    right: ValueClosureId,
+) -> Result<Motives, DomainFault>
+{
+    let (Some(one), Some(other)) = (domain.value_closure(left), domain.value_closure(right))
+    else {
+        return Err(DomainFault::Dangling);
+    };
+    let zones = [Zone::Intuitionistic, Zone::Linear];
+    let shaped = zones
+        .iter()
+        .all(|&zone| one.environment().depth(zone) == other.environment().depth(zone));
+    if one_body(core, one.body(), other.body()) != CertificateEquality::Equal || !shaped {
+        return Ok(Motives::Unlike);
+    }
+    let mut bindings = Vec::new();
+    for zone in zones {
+        bindings.extend(
+            one.environment()
+                .bindings(zone)
+                .iter()
+                .copied()
+                .zip(other.environment().bindings(zone).iter().copied()),
+        );
+    }
+    Ok(Motives::Alike(bindings))
+}
+
+/// Whether two motive bodies are one: one node, or two quoted types of one
+/// written syntax.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] for equal bodies; the syntax
+///   comparison's answer for two value types or two computation types;
+///   [`CertificateEquality::Different`] for any other pair.
+/// - executable: none — the answer is the syntax comparison's, which a
+///   predicate would run again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one telescope motive written at two nodes is one body,
+///   and a motive at another endpoint is not; comparing the nodes alone changes
+///   the first answer.
+/// - witness: `identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
+fn one_body(
+    core: &CoreArena,
+    one: crate::ValueBody,
+    other: crate::ValueBody,
+) -> CertificateEquality
+{
+    if one == other {
+        return CertificateEquality::Equal;
+    }
+    match (one, other) {
+        (crate::ValueBody::ValueType(one), crate::ValueBody::ValueType(other)) => {
+            gandr_core_term::equal_type_syntax(core, one, other)
+        },
+        (crate::ValueBody::CompType(one), crate::ValueBody::CompType(other)) => {
+            gandr_core_term::equal_comp_type_syntax(core, one, other)
+        },
+        (
+            crate::ValueBody::Source(_)
+            | crate::ValueBody::ValueType(_)
+            | crate::ValueBody::CompType(_),
+            _,
+        ) => CertificateEquality::Different,
+    }
+}
+
+/// How a one-binder transport's or ride's family reads at its operand.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TransportFamily
+{
+    /// The singleton `y. Path[.A = D](l, y)` or `y. Flow[.A = D](l, y)`: its
+    /// right endpoint is the binder, and its carrier and left endpoint
+    /// never read it.
+    Singleton,
+    /// The reversed singleton `y. Path[.A = D](y, r)`: its left endpoint is the
+    /// binder, and its carrier and right endpoint never read it.
+    Reversed,
+    /// Any other family.
+    Other,
+}
+
+/// Read a one-binder transport's or ride's family as a singleton or not.
+///
+/// # Specification
+/// - requires: `family` is a transport or ride motive's value type, read under
+///   its one binder.
+/// - ensures: [`TransportFamily::Singleton`] exactly when `family` is a path or
+///   flow type whose right endpoint is the binder and whose carrier and left
+///   endpoint read no index the binder binds; [`TransportFamily::Reversed`]
+///   exactly when it is a path type whose right endpoint is not the binder,
+///   whose left endpoint is, and whose carrier and right endpoint read no index
+///   the binder binds; [`TransportFamily::Other`] otherwise.
+/// - provides: the guard of the singleton row, the kernel's own clause:
+///   transport in `y. Path[.A = D](l, y)` carries `here(l)` to the path itself,
+///   which is what lets `J` check its identity over the path, and a ride in `y.
+///   Flow[.A = D](l, y)` composes the ridden flow with the flow it rides along;
+///   and the guard of the rows that hold `back(p)` and `q then p` along a
+///   universe path as the transports that form them.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the singleton returns the path, a ride in the flow
+///   singleton composes, `back` along `ua(e)` is held, and a family whose
+///   moving endpoint's partner reads the binder keeps the transport stuck.
+/// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
+/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
+/// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+#[spec(ensures: |ret| match ret {
+    Ok(TransportFamily::Singleton) => matches!(
+        core.value_type(family),
+        Some(&(ValueType::Path { right, .. } | ValueType::Flow { target: right, .. }))
+            if matches!(core.value(right), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
+    ),
+    Ok(TransportFamily::Reversed) => matches!(
+        core.value_type(family),
+        Some(&ValueType::Path { left, .. })
+            if matches!(core.value(left), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
+    ),
+    Ok(TransportFamily::Other) | Err(_) => true,
+})]
+pub fn transport_family(
+    core: &CoreArena,
+    family: ValueTypeId,
+) -> Result<TransportFamily, FreeFault>
+{
+    let Some(
+        &(ValueType::Path {
+            carrier,
+            left,
+            right,
+        }
+        | ValueType::Flow {
+            carrier,
+            source: left,
+            target: right,
+        }),
+    ) = core.value_type(family)
+    else {
+        return Ok(TransportFamily::Other);
+    };
+    let bound = DeBruijnIndex::from(0_u32);
+    let binder = |endpoint| {
+        matches!(
+            core.value(endpoint),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) if index == bound
+        )
+    };
+    let path = matches!(core.value_type(family), Some(&ValueType::Path { .. }));
+    let (fixed, shape) = if binder(right) {
+        (left, TransportFamily::Singleton)
+    }
+    else if path && binder(left) {
+        (right, TransportFamily::Reversed)
+    }
+    else {
+        return Ok(TransportFamily::Other);
+    };
+    let mut free = FreeIndices::default();
+    if free.of_type(core, carrier)?.intuitionistic().holds(bound) == Membership::Held {
+        return Ok(TransportFamily::Other);
+    }
+    Ok(
+        match free
+            .of(core, CoreTerm::Value(fixed))?
+            .intuitionistic()
+            .holds(bound)
+        {
+            Membership::Held => TransportFamily::Other,
+            Membership::Absent => shape,
+        },
+    )
+}
+
+/// Whether a one-binder motive never reads its binder: the constant motive,
+/// along which every ride returns its value unchanged.
+///
+/// # Specification
+/// - requires: `family` is a ride motive's value type, read under its one
+///   binder.
+/// - ensures: [`Membership::Absent`] exactly when no node of `family` reads the
+///   index its binder binds.
+/// - provides: the guard of the kernel's constant-motive row.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+/// - executable: none — the free-index walk is the only reading of the clause,
+///   so a predicate would restate the body.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ride along a stuck flow in a constant motive returns
+///   its value, and in the identity motive stays stuck.
+/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
+pub fn binder_read(
+    core: &CoreArena,
+    family: ValueTypeId,
+) -> Result<Membership, FreeFault>
+{
+    let mut free = FreeIndices::default();
+    Ok(free
+        .of_type(core, family)?
+        .intuitionistic()
+        .holds(DeBruijnIndex::from(0_u32)))
+}
+
+/// The point a path family carries along a cell of the universe: `y` when the
+/// family is the lifted family `z. Path[.A = C](l, ⟨tr(X. X, z, y)⟩)`.
+///
+/// The family's binder `z` is a path in `Type`, so a path it moves along is a
+/// 2-cell there, and `ua(h)` is such a cell for a homotopy `h`. The transport
+/// of reflexivity along `ua(h)` in this family is the path `h y`: `uaBeta`
+/// one dimension up.
+///
+/// # Specification
+/// - requires: `family` is a transport motive's value type, read under its one
+///   binder.
+/// - ensures: `Some(y)` exactly when `family` is a path type whose right
+///   endpoint returns the transport of `y` along the binder in the motive that
+///   decodes its own binder, and whose carrier, left endpoint and `y` never
+///   read the binder; `None` otherwise.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Path.ap` of the transport of a point along its argument
+///   is the lifted family, and a family whose fixed endpoint moves is no such
+///   family.
+/// - witness: `identity::tests::transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|point| core.value(point).is_some())))]
+pub fn universe_cell(
+    core: &CoreArena,
+    family: ValueTypeId,
+) -> Result<Option<gandr_core_term::ValueId>, FreeFault>
+{
+    let bound = DeBruijnIndex::from(0_u32);
+    let binder = |value| {
+        matches!(
+            core.value(value),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) if index == bound
+        )
+    };
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = core.value_type(family)
+    else {
+        return Ok(None);
+    };
+    let Some(&Value::Returned(call)) = core.value(right)
+    else {
+        return Ok(None);
+    };
+    let Some(&gandr_core_term::Computation::PathTransport {
+        motive,
+        path,
+        value: point,
+    }) = core.computation(call)
+    else {
+        return Ok(None);
+    };
+    let decoded =
+        matches!(core.value_type(motive), Some(&ValueType::Element { code, .. }) if binder(code));
+    if !decoded || !binder(path) {
+        return Ok(None);
+    }
+    let mut free = FreeIndices::default();
+    if free.of_type(core, carrier)?.intuitionistic().holds(bound) == Membership::Held {
+        return Ok(None);
+    }
+    for fixed in [left, point] {
+        if free
+            .of(core, CoreTerm::Value(fixed))?
+            .intuitionistic()
+            .holds(bound)
+            == Membership::Held
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(point))
+}
+
+/// Whether a map or a cell of `ua` is the identity, read by its syntax.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CellIdentity
+{
+    /// The identity map, or the identity cell.
+    Identity,
+    /// Any other map or cell.
+    Other,
+}
+
+/// Whether `cell` is the identity cell, which `ua` reads as the empty word of
+/// the universe's paths: reflexivity.
+///
+/// The identity cell at dimension one is the identity equivalence `#{id,
+/// #{#{id, refl}, #{id, refl}}}`, and at dimension two the homotopy `λy.
+/// here(y)`: the reflexivity at the identity equivalence. The cell is read by
+/// its syntax, each map `λy. return y` and each law `λy. return here(y)`.
+///
+/// # Specification
+/// - requires: `cell` is the cell a domain univalence holds.
+/// - ensures: [`CellIdentity::Identity`] exactly when `cell` is a thunk of `λy.
+///   return here(y)`, or a pair of a thunk of `λy. return y` with a pair of two
+///   pairs, each a thunk of `λy. return y` beside a thunk of `λy. return
+///   here(y)`.
+/// - fails: [`DomainFault::Dangling`] for a node the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `ua` of the identity record converts with reflexivity,
+///   and `ua` of the record of negation does not.
+/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
+pub fn identity_cell(
+    core: &CoreArena,
+    domain: &DomainArena,
+    cell: DomainValueId,
+) -> Result<CellIdentity, DomainFault>
+{
+    let other = Ok(CellIdentity::Other);
+    let held = domain.value(cell).ok_or(DomainFault::Dangling)?;
+    if matches!(*held, DomainValue::Thunk { .. }) {
+        return identity_map(core, domain, cell, Returns::Reflexivity);
+    }
+    let DomainValue::Tuple { fields, .. } = *held
+    else {
+        return other;
+    };
+    let &[map, inverses] = domain.fields(fields)?
+    else {
+        return other;
+    };
+    let Some(&DomainValue::Tuple { fields: pair, .. }) = domain.value(inverses)
+    else {
+        return other;
+    };
+    let &[left, right] = domain.fields(pair)?
+    else {
+        return other;
+    };
+    if identity_map(core, domain, map, Returns::Point)? == CellIdentity::Other {
+        return other;
+    }
+    for inverse in [left, right] {
+        let Some(&DomainValue::Tuple { fields: halves, .. }) = domain.value(inverse)
+        else {
+            return other;
+        };
+        let &[back, law] = domain.fields(halves)?
+        else {
+            return other;
+        };
+        if identity_map(core, domain, back, Returns::Point)? == CellIdentity::Other
+            || identity_map(core, domain, law, Returns::Reflexivity)? == CellIdentity::Other
+        {
+            return other;
+        }
+    }
+    Ok(CellIdentity::Identity)
+}
+
+/// What a map of the identity cell returns at its bound point.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Returns
+{
+    /// The point itself: `λy. return y`.
+    Point,
+    /// Reflexivity at the point: `λy. return here(y)`.
+    Reflexivity,
+}
+
+/// Whether `map` is a thunk of the abstraction that returns what `returns`
+/// names at its bound point.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`CellIdentity::Identity`] exactly when `map` is a thunk over a
+///   source computation `λy. return v`, `v` the bound point or `here` of it as
+///   `returns` names.
+/// - fails: [`DomainFault::Dangling`] for a closure the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identity_cell`].
+/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
+fn identity_map(
+    core: &CoreArena,
+    domain: &DomainArena,
+    map: DomainValueId,
+    returns: Returns,
+) -> Result<CellIdentity, DomainFault>
+{
+    let other = Ok(CellIdentity::Other);
+    let Some(&DomainValue::Thunk { body, .. }) = domain.value(map)
+    else {
+        return other;
+    };
+    let closure = domain.comp_closure(body).ok_or(DomainFault::Dangling)?;
+    let crate::closure::CompBody::Source(lambda) = closure.body()
+    else {
+        return other;
+    };
+    let Some(&gandr_core_term::Computation::Lambda(inner)) = core.computation(lambda)
+    else {
+        return other;
+    };
+    let Some(&gandr_core_term::Computation::Return(returned)) = core.computation(inner)
+    else {
+        return other;
+    };
+    let point = match (returns, core.value(returned)) {
+        (Returns::Point, _) => returned,
+        (Returns::Reflexivity, Some(&Value::Here(point))) => point,
+        (Returns::Reflexivity, _) => return other,
+    };
+    let bound = matches!(
+        core.value(point),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) if index == DeBruijnIndex::from(0_u32)
+    );
+    Ok(if bound {
+        CellIdentity::Identity
+    }
+    else {
+        CellIdentity::Other
+    })
+}
+
+/// Whether a telescope motive's returned type reads either of its two
+/// entries: the path's endpoint `y` or the identity over it `z`.
+///
+/// # Specification
+/// - requires: `body` is the returned type `C` of a telescope motive `Π (y :
+///   A). Π (z : B). F C`, read under both entries, `z` innermost.
+/// - ensures: [`Membership::Absent`] exactly when no node of `body` reads the
+///   index either entry binds.
+/// - provides: the guard of the telescope transport's constant-motive row.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+/// - executable: none — the free-index walk is the only reading of the clause,
+///   so a predicate would restate the body.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned type naming neither entry, one naming only the
+///   endpoint and one naming only the identity over it separate the answers.
+/// - witness: `identity::tests::a_telescope_motive_reads_an_entry_when_its_returned_type_names_one`
+pub fn telescope_read(
+    core: &CoreArena,
+    body: ValueTypeId,
+) -> Result<Membership, FreeFault>
+{
+    let mut free = FreeIndices::default();
+    let held = free.of_type(core, body)?.intuitionistic();
+    Ok(
+        if held.holds(DeBruijnIndex::from(0_u32)) == Membership::Held
+            || held.holds(DeBruijnIndex::from(1_u32)) == Membership::Held
+        {
+            Membership::Held
+        }
+        else {
+            Membership::Absent
+        },
+    )
+}

@@ -1377,7 +1377,7 @@ impl Overlay
          OverlayId::CompType(id) => self.comp_type(id).map(CompTypeNode::shape),
         }.ok_or(OverlayRefusal::Unresolved{node})
     )]
-    pub(crate) fn shape(
+    pub fn shape(
         &self,
         node: OverlayId,
     ) -> Result<Shape, OverlayRefusal>
@@ -2358,7 +2358,7 @@ impl Erased
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn root(&self) -> CoreId
+    pub const fn root(&self) -> CoreId
     {
         self.root
     }
@@ -2367,7 +2367,7 @@ impl Erased
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn legs(&self) -> &[CoreId]
+    pub fn legs(&self) -> &[CoreId]
     {
         &self.legs
     }

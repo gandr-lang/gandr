@@ -1138,7 +1138,7 @@ impl DomainArena
         self.comp_closures.len().checked_sub(1) == Some(entry_length)
             && self.comp_closure(ret).is_some_and(|closure| closure.body() == body
                 && [gandr_core_term::Zone::Intuitionistic, gandr_core_term::Zone::Linear].iter().all(|&zone| closure.environment().bindings(zone).is_empty())))]
-    pub(crate) fn native_continuation(
+    pub fn native_continuation(
         &mut self,
         body: crate::closure::CompBody,
     ) -> CompClosureId
@@ -1172,7 +1172,7 @@ impl DomainArena
         self.comp_closures.len().checked_sub(1) == Some(entry_length)
             && self.comp_closure(ret).is_some_and(|closure| closure.body() == body
                 && closure.environment().depth(gandr_core_term::Zone::Intuitionistic) == depth))]
-    pub(crate) fn native_continuation_over(
+    pub fn native_continuation_over(
         &mut self,
         body: crate::closure::CompBody,
         environment: Environment,

@@ -274,7 +274,7 @@ impl Environment
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn bindings(
+    pub fn bindings(
         &self,
         zone: Zone,
     ) -> &[DomainValueId]
