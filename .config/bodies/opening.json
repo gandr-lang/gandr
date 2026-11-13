@@ -1924,10 +1924,10 @@
     "output": "`crates/surface-parser/src/label.rs:1518` adds a `spec_clause_traversal` waiver that cites #4800, #4801, and none is open: cite the open issue that removes the ceiling in its `reason`, then run `pr:open` again"
   },
   {
-    "name": "#6881: a `parallelism` answer naming its two commits, with the wide host's output for each at 1, 16, 32 and 64 threads, opens",
+    "name": "#6881: a `parallelism` answer with a warm time before and after on the lane's own host opens, with no curve of the wide host",
     "input": {
       "branch": "triage-9999-engineering",
-      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | the curve at 1, 16, 32 and 64 threads, before `3f2a9c1e5` and after `8e1c4a7f2` |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n### parallelism\n\n```text\nmeasure: commit 3f2a9c1e5b7d0f4a6c8e2b1d3f5a7c9e0b2d4f6a, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|3.00 3.00 3.00|3.00|2.00|\n|32|0-1|2.00 2.00 2.00|2.00|3.00|\n|64|0-3|1.50 1.50 1.50|1.50|4.00|\n```\n\n```text\nmeasure: commit 8e1c4a7f2b5d9e0c3a6f8b1d4e7a0c2f5b8d1e4a, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|2.50 2.50 2.50|2.50|2.40|\n|32|0-1|1.50 1.50 1.50|1.50|4.00|\n|64|0-3|1.00 1.00 1.00|1.00|6.00|\n```\n\n## Refactoring\n\nno\n",
+      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | 0.94 s before, 0.41 s after, warm, on the lane's own host at 16 threads |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1939,10 +1939,10 @@
     "output": ""
   },
   {
-    "name": "#6881: a `parallelism` answer with no `### parallelism` is refused",
+    "name": "#6881: an answer with no time after is refused by the side it lacks",
     "input": {
       "branch": "triage-9999-engineering",
-      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | the curve at 1, 16, 32 and 64 threads, before `3f2a9c1e5` and after `8e1c4a7f2` |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n## Refactoring\n\nno\n",
+      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | 0.94 s before, warm, on the lane's own host |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1951,13 +1951,13 @@
         }
       ]
     },
-    "output": "the body's `## Engineering` answers `parallelism` with no `### parallelism`: put there the wide host's output for the commit before and for the commit after, as the measure prints it (`units.md` § units-engineering), then run `pr:open` again"
+    "output": "the body's `## Engineering` answers `parallelism` with no warm time after: write the warm time before and after on the lane's own host, as `0.94 s before, 0.41 s after`; the wide host's curve is no refusal, and `watch-measures` gives it when the lane asks (`units.md` § units-engineering), then run `pr:open` again"
   },
   {
-    "name": "#6881: an answer that names no commit after is refused by the side it lacks",
+    "name": "#6881: a number with no unit is no time, so each side is refused",
     "input": {
       "branch": "triage-9999-engineering",
-      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | the curve at 1, 16, 32 and 64 threads, before `3f2a9c1e5` |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n### parallelism\n\n```text\nmeasure: commit 3f2a9c1e5b7d0f4a6c8e2b1d3f5a7c9e0b2d4f6a, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|3.00 3.00 3.00|3.00|2.00|\n|32|0-1|2.00 2.00 2.00|2.00|3.00|\n|64|0-3|1.50 1.50 1.50|1.50|4.00|\n```\n\n## Refactoring\n\nno\n",
+      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | before 94 and after 41 at 16 threads |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1966,37 +1966,7 @@
         }
       ]
     },
-    "output": "the body's `## Engineering` answers `parallelism` with no commit after: name it as `after <sha>`, the commit that the wide host measured (`units.md` § units-engineering), then run `pr:open` again"
-  },
-  {
-    "name": "#6881: an output of another commit stands for no named one",
-    "input": {
-      "branch": "triage-9999-engineering",
-      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | the curve at 1, 16, 32 and 64 threads, before `3f2a9c1e5` and after `8e1c4a7f2` |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n### parallelism\n\n```text\nmeasure: commit 3f2a9c1e5b7d0f4a6c8e2b1d3f5a7c9e0b2d4f6a, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|3.00 3.00 3.00|3.00|2.00|\n|32|0-1|2.00 2.00 2.00|2.00|3.00|\n|64|0-3|1.50 1.50 1.50|1.50|4.00|\n```\n\n```text\nmeasure: commit 0000000000000000000000000000000000000000, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|2.50 2.50 2.50|2.50|2.40|\n|32|0-1|1.50 1.50 1.50|1.50|4.00|\n|64|0-3|1.00 1.00 1.00|1.00|6.00|\n```\n\n## Refactoring\n\nno\n",
-      "issues": [
-        {
-          "number": 9999,
-          "body": "Text.\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | an edit re-lays-out the edited declaration |\n| complexity | linear in the declaration |\n| latency | a keystroke under 16 ms at p99 |\n| parallelism | the check's width at 1, 16, 32 and 64 threads |\n| memory | no allocation per token |\n| failure | a crash loses the edit's layout, and the next edit replays it |\n",
-          "labels": ["kind:feature", "area:surface"]
-        }
-      ]
-    },
-    "output": "`### parallelism` holds no output of the wide host's measure at commit `8e1c4a7f2`, which the `parallelism` answer names after: put that output there, as the measure prints it (`units.md` § units-engineering), then run `pr:open` again"
-  },
-  {
-    "name": "#6881: an output with no point at 64 threads is refused by the threads it lacks",
-    "input": {
-      "branch": "triage-9999-engineering",
-      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | the curve at 1, 16, 32 and 64 threads, before `3f2a9c1e5` and after `8e1c4a7f2` |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n\n### parallelism\n\n```text\nmeasure: commit 3f2a9c1e5b7d0f4a6c8e2b1d3f5a7c9e0b2d4f6a, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|3.00 3.00 3.00|3.00|2.00|\n|32|0-1|2.00 2.00 2.00|2.00|3.00|\n|64|0-3|1.50 1.50 1.50|1.50|4.00|\n```\n\n```text\nmeasure: commit 8e1c4a7f2b5d9e0c3a6f8b1d4e7a0c2f5b8d1e4a, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|6.00 6.00 6.00|6.00|1.00|\n|16|0|2.50 2.50 2.50|2.50|2.40|\n|32|0-1|1.50 1.50 1.50|1.50|4.00|\n```\n\n## Refactoring\n\nno\n",
-      "issues": [
-        {
-          "number": 9999,
-          "body": "Text.\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | an edit re-lays-out the edited declaration |\n| complexity | linear in the declaration |\n| latency | a keystroke under 16 ms at p99 |\n| parallelism | the check's width at 1, 16, 32 and 64 threads |\n| memory | no allocation per token |\n| failure | a crash loses the edit's layout, and the next edit replays it |\n",
-          "labels": ["kind:feature", "area:surface"]
-        }
-      ]
-    },
-    "output": "the wide host's output at commit `8e1c4a7f2` gives no point at 64 threads: measure the curve at 1, 16, 32, 64 threads (`units.md` § units-engineering), then run `pr:open` again"
+    "output": "the body's `## Engineering` answers `parallelism` with no warm time before: write the warm time before and after on the lane's own host, as `0.94 s before, 0.41 s after`; the wide host's curve is no refusal, and `watch-measures` gives it when the lane asks (`units.md` § units-engineering), then run `pr:open` again\nthe body's `## Engineering` answers `parallelism` with no warm time after: write the warm time before and after on the lane's own host, as `0.94 s before, 0.41 s after`; the wide host's curve is no refusal, and `watch-measures` gives it when the lane asks (`units.md` § units-engineering), then run `pr:open` again"
   },
   {
     "name": "#6881: a bare `n/a` answer is refused for the reason it lacks, where the issue states the row `n/a`",

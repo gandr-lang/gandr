@@ -133,14 +133,14 @@
 # the measurement, or the issue naming the serial step. A row the issue marks
 # `n/a — <reason>` may answer `n/a`, or stay out.
 #
-# A `parallelism` answer reports the thread curve from the widest host
-# (#6881, `units.md` § units-engineering). An answer that is not `n/a` names
-# the commit that the wide host measured before the change and the commit
-# after it, as `before <sha>` and `after <sha>`. `### parallelism` under
-# `## Engineering` holds the measure's output for each commit, as
-# `.config/bench/measure.jq` reads it, with a point at 1, 16, 32 and 64
-# threads. An `n/a` answer states its reason, `n/a — <reason>`, which the
-# coordinator reads at the signature.
+# A `parallelism` answer gives one number for each side (#6881, `units.md`
+# § units-engineering): the warm time before the change and the warm time
+# after it, on the lane's own host, each with its unit, as `0.94 s before,
+# 0.41 s after`. A measurement stays light (owner, 2026-11-13), so no
+# measure holds a landing: the thread curve of the wide host is no refusal,
+# and it follows the landing as a comment when the lane asks
+# `watch-measures`. An `n/a` answer states its reason, `n/a — <reason>`,
+# which the coordinator reads at the signature.
 #
 # A ceiling the change adds cites the open issue that removes it (#5039): a
 # `spec_clause_traversal` waiver or an `economy:` comment carries `#<n>` in
@@ -166,7 +166,6 @@
 
 include "targets";
 include "sections";
-include "measure";
 include "vault";
 
 def vocabulary: "`taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>`, `read: <what it informed>` or `n/a: <reason>`";
@@ -522,14 +521,12 @@ def engineering_answers:
       end
     end;
 
-# The threads at which a `parallelism` answer's curve is measured (#6881,
-# `units.md` § units-engineering).
-def curve_threads: [1, 16, 32, 64];
+# A warm time: a number and its unit.
+def warm_time: "[0-9][0-9.,]*\\s*(?:ns|µs|us|ms|s|min)\\b";
 
 # The refusals of the body's `parallelism` answer (#6881): an `n/a` with no
-# reason; an answer that names no commit before or after; no subsection
-# `### parallelism` in the body; no output of the wide host's measure there for
-# a named commit; or an output with no point at one of `curve_threads`.
+# reason, or an answer that gives no time before or no time after the
+# change.
 def curve_answers:
   (.body // "" | section("Engineering")) as $section
   | select($section != null)
@@ -541,22 +538,9 @@ def curve_answers:
       else "the body's `## Engineering` answers `parallelism` with `\($answer)` and no reason: write `n/a — <reason>`, which the coordinator reads at the signature \($then)"
       end
     else
-      (.body | subsection("parallelism")) as $curve
-      | ($curve // [] | measure_outputs) as $outputs
-      | ("before", "after") as $side
-      | ([$answer | capture("\\b\($side)\\s+`?(?<sha>[0-9a-f]{7,40})`?")] | first | .sha) as $sha
-      | if $sha == null then
-          "the body's `## Engineering` answers `parallelism` with no commit \($side): name it as `\($side) <sha>`, the commit that the wide host measured \($then)"
-        elif $curve == null then
-          if $side == "before" then "the body's `## Engineering` answers `parallelism` with no `### parallelism`: put there the wide host's output for the commit before and for the commit after, as the measure prints it \($then)" else empty end
-        else ([$outputs[] | select(.commit | startswith($sha))] | first) as $output
-          | if $output == null then
-              "`### parallelism` holds no output of the wide host's measure at commit `\($sha)`, which the `parallelism` answer names \($side): put that output there, as the measure prints it \($then)"
-            else (curve_threads - [$output.points[].threads]) as $missing
-              | select($missing | length > 0)
-              | "the wide host's output at commit `\($sha)` gives no point at \($missing | map(tostring) | join(", ")) threads: measure the curve at \(curve_threads | map(tostring) | join(", ")) threads \($then)"
-            end
-        end
+      ("before", "after") as $side
+      | select($answer | test("\(warm_time)\\s+(?:warm\\s+)?\($side)\\b|\\b\($side)\\b[^0-9;]*\(warm_time)") | not)
+      | "the body's `## Engineering` answers `parallelism` with no warm time \($side): write the warm time before and after on the lane's own host, as `0.94 s before, 0.41 s after`; the wide host's curve is no refusal, and `watch-measures` gives it when the lane asks \($then)"
     end;
 
 # The refusals of a ceiling the change adds without an open issue that
