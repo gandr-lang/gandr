@@ -116,6 +116,7 @@
 --argjson brake
 --argjson bytes
 --argjson cap
+--argjson concerns
 --argjson count
 --argjson cutoff
 --argjson dirty
@@ -137,6 +138,7 @@
 --argjson idle
 --argjson interval
 --argjson issue
+--argjson labels
 --argjson limit
 --argjson n
 --argjson now

@@ -9,7 +9,7 @@
 unit_frame() {
   local root=$1 concerns
   concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;')
-  jq -n -S -c -L "$root/.config/claims" --argjson concerns "$concerns" \
+  jq -n -S -c -L "$root/.config/bodies" --argjson concerns "$concerns" \
     'include "sections"; {axes: axes, questions: questions, concerns: [$concerns[].id]}' \
     | git hash-object --stdin | awk '{ print substr($1, 1, 12) }'
 }

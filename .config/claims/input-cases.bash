@@ -5,7 +5,7 @@
 # argument, and the input carries each reading whole.
 set -euo pipefail
 source "$(cd "${BASH_SOURCE[0]%/*}" && pwd)/input.bash"
-source "$(cd "${BASH_SOURCE[0]%/*}" && pwd)/opening-input.bash"
+source "$(cd "${BASH_SOURCE[0]%/*}" && pwd)/../bodies/opening-input.bash"
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 failed=0

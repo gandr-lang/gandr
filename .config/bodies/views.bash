@@ -16,7 +16,7 @@
 # `test(…)` call, the cell's text quoted in it.
 set -euo pipefail
 export LC_ALL=C
-claims=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 base=${1:?usage: views.bash <base> <body>}
 body=${2:?usage: views.bash <base> <body>}
 
@@ -57,11 +57,11 @@ stands() {
     || { (( ${#crates[@]} > 0 )) && git grep -q "$@" HEAD:crates/ -- "${crates[@]}"; }
 }
 
-tests=$(jq -R -s -c -L "$claims" 'include "views"; observed_tests' "$body" \
+tests=$(jq -R -s -c -L "$here" 'include "views"; observed_tests' "$body" \
   | while IFS= read -r row; do
     surface=$(jq -r .surface <<< "$row")
     cell=$(jq -r .test <<< "$row")
-    mapfile -t paths < <(jq -r --arg surface "$surface" '.[] | select(.surface == $surface) | .paths[]' "$claims/surfaces.json")
+    mapfile -t paths < <(jq -r --arg surface "$surface" '.[] | select(.surface == $surface) | .paths[]' "$here/surfaces.json")
     name=${cell##*::}
     found=false
     if [[ $name =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && stands -E "fn ${name}[[:space:]]*[(<]"; then

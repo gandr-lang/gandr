@@ -8,7 +8,7 @@
 # A body the unit form wrote is first made a unit's body, its kind and areas
 # set as labels (`form.jq`), and `needs:triage` settled on them
 # (`triage.sh`): the workflow's own edits start no run. Then `unit:check`'s
-# reading of the body (`.config/claims/unit.jq`, the sections alone: the
+# reading of the body (`.config/bodies/unit.jq`, the sections alone: the
 # dependencies and vault names are `unit:check`'s) decides, through
 # `unsectioned.jq`, whether `status:unsectioned` goes on or comes off and how
 # the one `<!-- unit:check -->` comment reads. It reads the issue as it
@@ -38,9 +38,9 @@ if [[ $form != null ]]; then
 fi
 concerns=$(jq -R -s -c -f "$here/concerns.jq" "$root/ledger/concerns.sql")
 findings=$(jq -r '.body // ""' <<< "$issued" \
-  | jq -R -s -r -L "$root/.config/claims" --argjson concerns "$concerns" --argjson labels "$(jq -c '[.labels[].name]' <<< "$issued")" \
-    --argjson number "$(jq .number <<< "$issued")" --argjson cutoff "$(jq -R -s -f "$root/.config/claims/cutoff.jq" "$root/.config/references/window.toml")" \
-    -f "$root/.config/claims/unit.jq" \
+  | jq -R -s -r -L "$root/.config/bodies" --argjson concerns "$concerns" --argjson labels "$(jq -c '[.labels[].name]' <<< "$issued")" \
+    --argjson number "$(jq .number <<< "$issued")" --argjson cutoff "$(jq -R -s -f "$root/.config/bodies/cutoff.jq" "$root/.config/references/window.toml")" \
+    -f "$root/.config/bodies/unit.jq" \
   | jq -R -s -c 'split("\n") | map(select(length > 0))')
 # A body that passes, on an open issue no flag or exemption marks, has no
 # comment to write: a pass that took the flag off rewrote the comment then.

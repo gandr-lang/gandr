@@ -12,19 +12,20 @@
 # issue did not carry `shape:signed` when the rule landed. `<rule>` is the
 # rule's jq file in this directory, `claim.jq` (#6569) or `identifiers.jq`
 # (#7019). The rule lands with the first commit on the first-parent line
-# that adds its file. One GraphQL read takes the body's edits, the first of
-# them its text at creation, and the issue's label events.
+# that adds its file, read across its renames, so a move of the file is no
+# new landing. One GraphQL read takes the body's edits, the first of them its
+# text at creation, and the issue's label events.
 
 claim_check() {
-  local claims=${BASH_SOURCE[0]%/*}
+  local here=${BASH_SOURCE[0]%/*}
   jq -n --rawfile body <(printf '%s' "$1") --slurpfile absorption <(vault_absorption) --slurpfile before <(printf '%s\n' "$2") \
     '{body: $body, absorption: $absorption[0], before: $before[0]}' \
-    | jq -r -L "$claims" -f "$claims/claim.jq"
+    | jq -r -L "$here" -f "$here/claim.jq"
 }
 
 claim_before() {
-  local claims=${BASH_SOURCE[0]%/*} since
-  since=$(git -C "$claims" log -1 --first-parent --diff-filter=A --format=%ct -- "${2:?claim_before takes the rule}")
+  local here=${BASH_SOURCE[0]%/*} since
+  since=$(git -C "$here" log -1 --first-parent --follow --diff-filter=A --format=%ct -- "${2:?claim_before takes the rule}")
   # A checkout whose history holds no commit adding the rule (a shallow
   # clone) reads the rule as landing now, so no signed unit is refused.
   [[ -n $since ]] || since=$(date +%s)

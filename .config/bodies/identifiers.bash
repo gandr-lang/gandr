@@ -12,9 +12,9 @@
 # with no vault prints one `note:` and refuses nothing.
 
 identifiers_check() {
-  local claims=${BASH_SOURCE[0]%/*} root vault rows crates design mark manifest
+  local here=${BASH_SOURCE[0]%/*} root vault rows crates design mark manifest
   local -a marks=() args=() found=()
-  root=$(cd "$claims/../.." && pwd)
+  root=$(cd "$here/../.." && pwd)
   vault=$(vault_checkout)
   if [[ -z $vault ]]; then
     echo "note: no vault checkout is configured, so unit:check reads no design page for the unit's identifiers"
@@ -31,7 +31,7 @@ identifiers_check() {
   design=$(git -C "$vault" -c core.quotePath=false ls-files -- 'docs/programme/*.md' 'plans/*.md')
   # The body and the lists have no bound on their size, so jq reads them
   # from files, and only the numbers go on its command line.
-  mapfile -t marks < <(jq -n -r -L "$claims" --rawfile body <(printf '%s' "$1") --argjson number "$2" --argjson parent "$3" \
+  mapfile -t marks < <(jq -n -r -L "$here" --rawfile body <(printf '%s' "$1") --argjson number "$2" --argjson parent "$3" \
     --rawfile rows <(printf '%s' "$rows") --rawfile crates <(printf '%s' "$crates") \
     'include "sections"; $body | unit_identifiers($number; $parent; $rows | split("\n"); $crates | split("\n")) | identifier_marks[] | .grep')
   if (( ${#marks[@]} > 0 )); then
@@ -47,5 +47,5 @@ identifiers_check() {
     '(reduce inputs as $line ({}; .[input_filename] += $line + "\n")) as $texts
     | {number: $number, parent: $parent, body: $body, rows: ($rows | split("\n")), crates: ($crates | split("\n")),
        design: ($design | split("\n")), texts: $texts, before: $before[0]}' "${found[@]:-/dev/null}") \
-    | jq -r -L "$claims" -f "$claims/identifiers.jq"
+    | jq -r -L "$here" -f "$here/identifiers.jq"
 }

@@ -454,7 +454,7 @@ def viewed:
       | .number as $n
       | select(any($views.tests[]; .found) | not)
       | ($views.tests | map("`\(.surface)` `\(.test)`") | join(", ")) as $read
-      | "the body closes #\($n), a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head\(if $read == "" then "" else " (none found: \($read))" end): write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/claims/surfaces.json`, or write `Advances #\($n)` while the view stands on its server side alone, then run `pr:open` again");
+      | "the body closes #\($n), a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head\(if $read == "" then "" else " (none found: \($read))" end): write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/bodies/surfaces.json`, or write `Advances #\($n)` while the view stands on its server side alone, then run `pr:open` again");
 
 # The refusals of `## Refactoring` (#2884): the section present, its first
 # line one verdict, `yes`, `maybe` or `no`, and a `yes` or `maybe` answered

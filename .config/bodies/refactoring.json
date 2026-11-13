@@ -9,11 +9,11 @@
       ],
       "names": ["gandr_surface_corpus#ledger", "gandr_surface_corpus#settle"],
       "tree": [
-        ".config/claims/opening.jq",
-        ".config/claims/unit.jq",
+        ".config/bodies/opening.jq",
+        ".config/bodies/unit.jq",
         "crates/surface-corpus/Cargo.toml"
       ],
-      "body": "Closes #2884\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| consolidate | `gandr_surface_corpus::settle::settle`, `gandr_surface_corpus::report::Tally::ledger` | two tallies |\n| duplicate | `gandr_surface_corpus`, `.config/claims/opening.jq`, `.config/claims/` | the sections read twice |\n"
+      "body": "Closes #2884\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| consolidate | `gandr_surface_corpus::settle::settle`, `gandr_surface_corpus::report::Tally::ledger` | two tallies |\n| duplicate | `gandr_surface_corpus`, `.config/bodies/opening.jq`, `.config/bodies/` | the sections read twice |\n"
     },
     "output": ""
   },
@@ -27,8 +27,8 @@
       ],
       "names": ["gandr_surface_corpus#ledger", "gandr_surface_corpus#settle"],
       "tree": [
-        ".config/claims/opening.jq",
-        ".config/claims/unit.jq",
+        ".config/bodies/opening.jq",
+        ".config/bodies/unit.jq",
         "crates/surface-corpus/Cargo.toml"
       ],
       "body": "Closes #2884\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| split | `gandr_surface_corpus::settle::walk`, `gandr_surface_corpus::Report::ledger`, `gandr_nowhere`, `.config/pr-stack/sections.jq` | the walk does two things |\n"
@@ -45,8 +45,8 @@
       ],
       "names": ["gandr_surface_corpus#ledger", "gandr_surface_corpus#settle"],
       "tree": [
-        ".config/claims/opening.jq",
-        ".config/claims/unit.jq",
+        ".config/bodies/opening.jq",
+        ".config/bodies/unit.jq",
         "crates/surface-corpus/Cargo.toml"
       ],
       "body": "Closes #2884\n\n## Refactoring\n\nmaybe\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| delete | `the old walk` | dead |\n"
@@ -63,8 +63,8 @@
       ],
       "names": ["gandr_surface_corpus#ledger", "gandr_surface_corpus#settle"],
       "tree": [
-        ".config/claims/opening.jq",
-        ".config/claims/unit.jq",
+        ".config/bodies/opening.jq",
+        ".config/bodies/unit.jq",
         "crates/surface-corpus/Cargo.toml"
       ],
       "body": "Closes #2884\n"

@@ -22,7 +22,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../gh/repo.bash"
 repo=$(repo_name)
 here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source=/dev/null
-source "$here/../claims/deps.bash"
+source "$here/../issues/deps.bash"
 api=https://api.github.com/
 shape='{number, repository: (.repository_url | ltrimstr("'"$api"'repos/")), state, labels: [.labels[].name]}'
 

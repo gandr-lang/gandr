@@ -26,6 +26,10 @@ dry=${2:-}
 source "$(dirname "${BASH_SOURCE[0]}")/../gh/repo.bash"
 repo=$(repo_name)
 here=$(dirname "${BASH_SOURCE[0]}")
+# The body rules (`targets`) and the report of a landing (`landed.jq`) live
+# beside the claims, in `.config/bodies/` and `.config/reports/` (#6252).
+bodies=$here/../bodies
+reports=$here/../reports
 label=status:claimed
 
 case "$mode" in
@@ -40,7 +44,7 @@ esac
 # here, as GitHub would. The run then reads the issue as closed.
 base=${CLAIMS_MERGED_BASE:-}
 if [[ $mode == merged && -n $base && $base != "${CLAIMS_DEFAULT_BRANCH:-main}" ]]; then
-  for number in $(jq -rn -L "$here" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets(closing) | unique[]'); do
+  for number in $(jq -rn -L "$bodies" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets(closing) | unique[]'); do
     if [[ "$dry" == --dry-run ]]; then
       printf 'would close #%s\n' "$number"
       continue
@@ -72,7 +76,7 @@ declare -A aged=()
 if [[ $mode == sweep ]]; then
   while IFS= read -r number; do
     [[ -n $number ]] && aged[$number]=1
-  done < <(jq -r -L "$here" --argjson now "$(date +%s)" --slurpfile prs <(printf '%s\n' "$open_prs") 'include "targets";
+  done < <(jq -r -L "$bodies" --argjson now "$(date +%s)" --slurpfile prs <(printf '%s\n' "$open_prs") 'include "targets";
     .[] | . as $issue
     | select(.state == "open" and (.labels | index("kind:epic") | not)
         and ([$prs[0][] | names($issue.number)] | any | not) and ($now - (.updated_at | fromdateiso8601)) < 14400)
@@ -93,7 +97,7 @@ done | jq -s .)
 
 removals=$(jq -rn --argjson now "$(date +%s)" --slurpfile claimed <(printf '%s\n' "$claimed") \
   --slurpfile open_prs <(printf '%s\n' "$open_prs") --slurpfile merged <(printf '%s\n' "$merged") \
-  '{now: $now, claimed: $claimed[0], open_prs: $open_prs[0], merged_body: $merged[0]}' | jq -r -L "$here" -f "$here/decide.jq")
+  '{now: $now, claimed: $claimed[0], open_prs: $open_prs[0], merged_body: $merged[0]}' | jq -r -L "$bodies" -f "$here/decide.jq")
 
 # unmark <number>: takes the claim marker of the lane whose silent claim
 # lapsed off the body, after its label comes off (#5531). The lane is the one
@@ -158,7 +162,7 @@ lane=$(lanes_keys | jq -r --arg head "$head" '[.[] | select(. as $l | $head == $
 if [[ -n $lane ]]; then
   at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   # Each claimed issue the body advances, which keeps its claim (#6954).
-  for number in $(jq -r -L "$here" --slurpfile claimed <(printf '%s\n' "$claimed") 'include "targets";
+  for number in $(jq -r -L "$bodies" --slurpfile claimed <(printf '%s\n' "$claimed") 'include "targets";
     (env.CLAIMS_MERGED_BODY // "" | targets("advances")) as $advanced
     | $claimed[0][] | select(.number as $n | $advanced | index($n)) | .number' -n); do
     issue=$(gh api "repos/$repo/issues/$number" --jq '{state, body: (.body // "")}')
@@ -179,7 +183,7 @@ fi
 # Two landings that advance one collector and merge at once read the same
 # body, so each merge also ticks the rows of the merged landings on the
 # collector's timeline, and the later write keeps the earlier's ticks (#5583).
-advanced=$(jq -rn -L "$here" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets("advances") | unique[]')
+advanced=$(jq -rn -L "$bodies" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets("advances") | unique[]')
 [[ -n $advanced ]] || exit 0
 landing=${CLAIMS_MERGED_NUMBER:-}
 scratch=$(mktemp -d)
@@ -211,7 +215,7 @@ issues=$(for number in $advanced; do
   fi
 done | jq -s .)
 jq -c '{body: (env.CLAIMS_MERGED_BODY // ""), issues: .}' <<< "$issues" \
-  | jq -c -L "$here" -f "$here/landed.jq" \
+  | jq -c -L "$bodies" -f "$reports/landed.jq" \
   | while IFS= read -r landed; do
       number=$(jq -r .number <<< "$landed")
       close=$(jq -r .close <<< "$landed")
