@@ -37,10 +37,10 @@
 //! **On the driver's pool.** The checker names no thread: it forks through
 //! `gandr_core_fork::Fork`, and the dispatcher's fork runs on the
 //! driver's pool (the `pool` module, which records the choice of `rayon`),
-//! entered once per program. Each forked stage spawns one task per worker, at
-//! most one per item; the tasks take items from one shared cursor, and each
-//! makes its worker state — an arena snapshot, a drafter — on its first item,
-//! so a stage clones no more snapshots than it has busy workers. The
+//! entered once per program. Each forked stage hands one share of its items,
+//! one slice, to each of at most one task per worker and one per item. Each
+//! task makes its worker state — an arena snapshot, a drafter — on its first
+//! item, so a stage clones no more snapshots than it has busy workers. The
 //! readmissions and the family admissions are the two halves of one
 //! `rayon::join`, and each half forks per item inside it. At one thread no
 //! pool is built, and the checker's serial fork is the reference every width

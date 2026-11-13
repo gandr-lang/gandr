@@ -1652,8 +1652,8 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
+ "allocation-counter",
  "blake3",
- "crossbeam-queue",
  "gandr-core-checker",
  "gandr-core-fork",
  "gandr-core-incremental",
@@ -1696,6 +1696,7 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "rayon",
+ "rtrb",
  "self_cell",
  "serde",
  "serde_json",

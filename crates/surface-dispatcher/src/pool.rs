@@ -17,18 +17,29 @@
 //! implements [`Fork`] itself, so a session's molding and its trials fork on
 //! the same threads, and a scope's jobs spawn there too.
 //!
-//! **A schedule counts readiness on the pool, with no rings.** The calling
-//! thread releases each item of a [`Fork::schedule`] in slice order, once each
-//! item that it waits on is committed, and queues the job that the release
-//! gives. It commits each job as the job returns, and each commit counts down
-//! the items that wait on the committed one. At most one task for each pool
-//! thread takes queued jobs, and a task ends when the queue is empty. While the
-//! calling thread can neither release nor commit, it runs a queued job itself,
-//! and it blocks only when no job is queued. The measurements of the
-//! dependence schedule found that the pool's hand-off costs at most 1.4 % of a
-//! replay node while the pool is busy, so a ring at this grain pays for
-//! nothing. The choice reverses on a measurement where a ring beats the pool
-//! at this grain.
+//! **A schedule hands its jobs over rings.** The calling thread releases each
+//! item of a [`Fork::schedule`] in slice order, once each item that it waits
+//! on is committed. Each task beside it owns a lane: one ring of jobs from the
+//! calling thread and one ring of results back, each with one producer and
+//! one consumer. The calling thread hands each job that a release gives to a
+//! lane with room, and keeps the rest. It commits each job as its result
+//! comes back, and each commit counts down the items that wait on the
+//! committed one. While it can neither release nor commit, it runs a job that
+//! it keeps, or a job of a lane whose task does not run. A task that finds its
+//! lane empty spins up to the pool's [`Spin`] budget, then leaves the lane and
+//! ends, so that its worker goes back to the pool. The calling thread starts a
+//! task again for a lane that it hands a job while no task attends the lane.
+//! The calling thread with no result to commit spins up to the budget, then
+//! parks. The default budget stops each party at once, so an idle party holds
+//! no core. No hand-off takes a lock. The schedule allocates its lanes once,
+//! and each task that it starts again costs one spawn on the pool. A task
+//! never parks on its worker, because a fork inside a job waits for the
+//! pool's workers.
+//!
+//! **An `each` hands each task its share as one slice.** A fork's items are
+//! all known before it starts, so each task takes one slice of them, at most
+//! one item longer than any other share, and no task takes a lock or touches
+//! a shared counter. The share is the ring's one batch.
 //!
 //! **One pool, not one per verb.** Before, the walk started scoped threads for
 //! each visit and the staging built a `rayon` pool for each run. A process
@@ -67,24 +78,22 @@
 //! pool's threads keep the host's default. The choice reverses on a
 //! measurement that shows a class pays on a verb.
 
+mod lane;
 #[cfg(feature = "instrument")]
 pub mod recording;
 mod spawning;
 
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
 use core::fmt;
 use core::num::NonZeroUsize;
 use core::panic::AssertUnwindSafe;
 use core::sync::atomic::AtomicBool;
-use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
-use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::sync::mpsc;
 
 use anodized::spec;
-use crossbeam_queue::ArrayQueue;
 use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
@@ -96,6 +105,12 @@ use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
 use quenchant_shape::shape::Maybe;
 
+use self::lane::Attendance;
+use self::lane::DEPTH;
+use self::lane::Feed;
+use self::lane::Lane;
+use self::lane::Sleeper;
+use self::lane::Tending;
 use self::spawning::Spawning;
 use crate::width::Threads;
 use crate::width::Width;
@@ -134,8 +149,45 @@ pub struct Pool
 {
     /// How many threads the pool runs.
     width: Width,
+    /// How many empty polls a party of a schedule makes before it stops.
+    spin: Spin,
     /// The threads, once a fork asked for them.
     started: OnceLock<Result<Started, PoolFault>>,
+}
+
+/// How many empty polls a waiting party of a schedule makes before it stops:
+/// a task whose lane holds no job leaves the lane and ends, and the calling
+/// thread with no result to commit parks.
+///
+/// The default, [`Spin::PARK`], stops at once, so an idle party holds no core.
+/// A park and its unpark cost about 26 µs at the median on the `riscv64` host,
+/// and about 540 ns under a budget of 10,000 polls, which holds about 0.9 of a
+/// core for each idle party. The policy group of the speculative readmission
+/// sets the budget by the kind of run.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Spin(u32);
+
+impl Spin
+{
+    /// No poll: a party stops as soon as it finds no work.
+    pub const PARK: Self = Self(0);
+}
+
+impl From<u32> for Spin
+{
+    /// A budget of `polls` empty polls before a party stops.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(polls: u32) -> Self
+    {
+        Self(polls)
+    }
 }
 
 /// A pool's threads, as its width resolved on the host.
@@ -150,7 +202,8 @@ struct Started
 
 impl Pool
 {
-    /// A pool of `width` threads, none of them started yet.
+    /// A pool of `width` threads, none of them started yet, whose schedules
+    /// park at once.
     ///
     /// # Specification
     /// trivial.
@@ -160,8 +213,25 @@ impl Pool
     {
         Self {
             width,
+            spin: Spin::PARK,
             started: OnceLock::new(),
         }
+    }
+
+    /// The pool, whose schedules poll up to `spin` times before a party
+    /// parks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn spinning(
+        mut self,
+        spin: Spin,
+    ) -> Self
+    {
+        self.spin = spin;
+        self
     }
 
     /// The width the pool was made at.
@@ -293,7 +363,10 @@ impl Pool
             Ok(Started {
                 threads,
                 pool: Maybe::Present(ref pool),
-            }) => Ok(Forked::Pooled(pool, Pooled(threads))),
+            }) => Ok(Forked::Pooled(pool, Pooled {
+                threads,
+                spin: self.spin,
+            })),
             Ok(Started {
                 pool: Maybe::Absent(_),
                 ..
@@ -404,8 +477,8 @@ impl Helped for Pool
 /// own threads, or on the calling thread when the fork cannot use them.
 impl Fork for Pool
 {
-    /// Run `job` on every item on the pool's threads, each task taking items
-    /// from a shared cursor.
+    /// Run `job` on every item on the pool's threads, each task running one
+    /// share of the items.
     ///
     /// # Specification
     /// - ensures: `job` runs once per item. One item or none, a pool of one
@@ -558,9 +631,9 @@ impl Fork for Pool
             return;
         }
         match self.forked() {
-            Ok(Forked::Pooled(threads, Pooled(workers))) => schedule_indexed(
+            Ok(Forked::Pooled(threads, fork)) => schedule_indexed(
                 Some(threads),
-                workers,
+                fork,
                 items,
                 after,
                 release,
@@ -633,9 +706,9 @@ pub enum Forked<'pool>
     Pooled(&'pool rayon::ThreadPool, Pooled),
 }
 
-/// The pool as the checker's fork: each forked stage spawns one task per
-/// worker, at most one per item, and each task takes items from one shared
-/// cursor until none is left.
+/// The pool as the checker's fork: each forked stage hands one share of its
+/// items to each of at most one task per worker, and a schedule hands its
+/// jobs over one lane for each task.
 ///
 /// # Specification
 /// - provides: a [`Fork`] whose every task makes its worker state once, on its
@@ -650,13 +723,18 @@ pub enum Forked<'pool>
 ///   print the serial run, digest and verdict.
 /// - witness: `stage::tests::every_width_stages_the_serial_run`
 #[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-pub struct Pooled(Threads);
+pub struct Pooled
+{
+    /// The pool's threads.
+    threads: Threads,
+    /// How many empty polls a party of a schedule makes before it parks.
+    spin: Spin,
+}
 
 impl Fork for Pooled
 {
-    /// Run `job` on every item from one task per worker, each taking items
-    /// from a shared cursor.
+    /// Run `job` on every item from one task per worker, each running one
+    /// share of the items.
     ///
     /// # Specification
     /// - ensures: `job` runs once per item; each task makes its state on its
@@ -682,7 +760,9 @@ impl Fork for Pooled
         Start: Fn() -> State + Sync,
         Job: Fn(&mut State, &mut Item) + Sync,
     {
-        each_indexed(self.0, items, start, |state, _index, item| job(state, item));
+        each_indexed(self.threads, items, start, |state, _index, item| {
+            job(state, item);
+        });
     }
 
     /// Run both halves through `rayon::join`, which runs the left half on the
@@ -752,16 +832,17 @@ impl Fork for Pooled
     /// - ensures: as [`Fork::schedule`]. Each item holds a count of the items
     ///   that it waits on and that are not committed. The calling thread
     ///   releases the next item in slice order once its count is zero and no
-    ///   release holds. It queues each job that a release gives. At most one
-    ///   task for each pool thread takes queued jobs, and a task ends when the
-    ///   queue is empty. After a release that queues a job, the calling thread
-    ///   starts tasks while fewer run than jobs wait. It commits each job as
-    ///   the job returns, and each commit counts down the items that wait on
-    ///   the committed one. A held release waits until each queued or running
-    ///   job is committed. While the calling thread can neither release nor
-    ///   commit, it runs a queued job itself, and it blocks only when no job is
-    ///   queued. A schedule of one item, or a pool of one worker, runs on the
-    ///   calling thread.
+    ///   release holds. One task for each other pool thread owns a lane: a ring
+    ///   of jobs and a ring of results. After each release that gives a job,
+    ///   the calling thread hands the jobs that it keeps to lanes with room, a
+    ///   lane with no job first, and keeps the rest in release order. It
+    ///   commits each job as its result comes back, and each commit counts down
+    ///   the items that wait on the committed one. A held release waits until
+    ///   each job that it keeps or that a lane holds is committed. While the
+    ///   calling thread can neither release nor commit, it runs the oldest job
+    ///   that it keeps, or else a job of a lane whose task does not run, and it
+    ///   parks only when neither is left. A schedule of one item, or a pool of
+    ///   one worker, runs on the calling thread.
     /// - panics: a panic of `release`, `run` or `commit`, resumed on the
     ///   calling thread once it has returned; no queued job starts after it.
     /// - executable: none — the schedule is the pool's.
@@ -794,7 +875,7 @@ impl Fork for Pooled
     {
         schedule_indexed(
             None,
-            self.0,
+            *self,
             items,
             after,
             release,
@@ -825,13 +906,16 @@ impl From<ItemIndex> for usize
     }
 }
 
-/// Run `job` on every item and its index from one task per worker, at most
-/// `workers` and one per item, each taking items from a shared cursor. At one
-/// worker the items run on the calling thread in slice order, from one state.
+/// Run `job` on every item and its index, each task on one share of the
+/// items: at most `workers` shares, each of one item or more. At one worker
+/// the items run on the calling thread in slice order, from one state.
 ///
 /// # Specification
-/// - ensures: `job` runs once per item with the item's place in `items`; each
-///   task makes its state on its first item and keeps it for the rest.
+/// - ensures: `job` runs once per item with the item's place in `items`. Each
+///   share is one slice, at most one item longer than any other share. Its task
+///   runs it in slice order, makes its state on its first item and keeps it for
+///   the rest. No task takes a lock or touches a counter that another task
+///   writes.
 /// - panics: a job's panic, at the end of the scope.
 /// - executable: none — the schedule is the pool's.
 ///
@@ -856,47 +940,56 @@ fn each_indexed<Item, State, Start, Job>(
     Start: Fn() -> State + Sync,
     Job: Fn(&mut State, ItemIndex, &mut Item) + Sync,
 {
-    let workers = NonZeroUsize::from(workers).get().min(items.len());
-    if workers <= 1 {
+    let count = items.len();
+    let workers = NonZeroUsize::from(workers).get().min(count);
+    let share = |first: usize, part: &mut [Item]| {
         let mut state = None;
-        for (index, item) in items.iter_mut().enumerate() {
-            job(state.get_or_insert_with(&start), ItemIndex(index), item);
+        for (offset, item) in part.iter_mut().enumerate() {
+            job(
+                state.get_or_insert_with(&start),
+                ItemIndex(first.saturating_add(offset)),
+                item,
+            );
         }
+    };
+    if workers <= 1 {
+        share(0, items);
         return;
     }
-    let cursor = Mutex::new(items.iter_mut().enumerate());
+    // Each share holds `whole` items, and the first `longer` shares hold one
+    // more. The calling thread runs the last share.
+    let whole = count.checked_div(workers).unwrap_or_default();
+    let longer = count.checked_rem(workers).unwrap_or_default();
     rayon::scope(|scope| {
-        for _ in 0 .. workers {
-            scope.spawn(|_| {
-                let mut state = None;
-                loop {
-                    // A poisoned cursor only means another task's job
-                    // panicked; the panic resumes when the scope ends.
-                    let next = match cursor.lock() {
-                        Ok(mut items) => items.next(),
-                        Err(poisoned) => poisoned.into_inner().next(),
-                    };
-                    let Some((index, item)) = next
-                    else {
-                        break;
-                    };
-                    job(state.get_or_insert_with(&start), ItemIndex(index), item);
-                }
-            });
+        let share = &share;
+        let mut rest = items;
+        let mut first = 0_usize;
+        for task in 1 .. workers {
+            let length = whole
+                .saturating_add(usize::from(task <= longer))
+                .min(rest.len());
+            let (part, after) = core::mem::take(&mut rest).split_at_mut(length);
+            rest = after;
+            scope.spawn(move |_scope| share(first, part));
+            first = first.saturating_add(length);
         }
+        share(first, rest);
     });
 }
 
 /// Release each item on the calling thread in slice order, run each job that
 /// a release gives with its item's place, on `pool` or on the pool that the
-/// calling thread runs in, with at most `workers` tasks beside the calling
-/// thread, and commit each item on the calling thread as its job returns. At
-/// one worker, or one item, each item is released, run and committed on the
+/// calling thread runs in, and commit each item on the calling thread as its
+/// job returns. Each task beside the calling thread owns one lane. At one
+/// worker, or one item, each item is released, run and committed on the
 /// calling thread in slice order.
 ///
 /// # Specification
 /// - ensures: as [`Pooled`]'s `schedule`, with the item's place handed to each
-///   job.
+///   job. A calling thread outside the pool has one task for each pool thread
+///   beside it, and one inside the pool one for each other pool thread; no
+///   schedule has more tasks than items. Each party that waits polls up to
+///   `fork`'s spin budget before it parks.
 /// - panics: a panic of `release`, `run` or `commit`, resumed on the calling
 ///   thread once it has returned.
 /// - executable: none — the schedule is the pool's.
@@ -906,6 +999,7 @@ fn each_indexed<Item, State, Start, Job>(
 /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
 /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
 /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
+/// - witness: `pool::tests::a_schedule_inside_a_scheduled_job_ends`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -915,7 +1009,7 @@ fn each_indexed<Item, State, Start, Job>(
 )]
 fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
     pool: Option<&rayon::ThreadPool>,
-    workers: Threads,
+    fork: Pooled,
     items: &mut [Item],
     after: &Dependences,
     mut release: Release,
@@ -929,7 +1023,8 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
     Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
 {
     let count = items.len();
-    if NonZeroUsize::from(workers).get().min(count) <= 1 {
+    let threads = NonZeroUsize::from(fork.threads).get();
+    if threads.min(count) <= 1 {
         for (index, item) in items.iter_mut().enumerate() {
             let position = gandr_core_fork::ItemIndex::from(index);
             let out = match release(position, item) {
@@ -942,18 +1037,23 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
         }
         return;
     }
-    // Each job reports once, so a buffer of one slot for each item never
-    // fills, and no report allocates.
-    let (returned, arrivals) = mpsc::sync_channel(count);
-    let schedule = Scheduled::new(items, workers, run, returned);
+    // A calling thread inside the pool takes one of the pool's threads.
+    let tasks = match pool {
+        Some(_) => threads,
+        None => threads.saturating_sub(1),
+    }
+    .min(count);
+    // Both counts are at least two here, so `tasks` is at least one.
+    let tasks = NonZeroUsize::new(tasks).map_or(Threads::ONE, Threads::from);
+    let (schedule, ledger) = Scheduled::new(tasks, items, run, fork.spin);
     let waiting = Waiting::new(after, items);
     let calls = (&mut release, &mut commit);
     match pool {
         Some(pool) => {
-            pool.in_place_scope(|scope| schedule.drive(scope, items, waiting, &arrivals, calls));
+            pool.in_place_scope(|scope| schedule.drive(scope, ledger, items, waiting, calls));
         },
         None => {
-            rayon::in_place_scope(|scope| schedule.drive(scope, items, waiting, &arrivals, calls));
+            rayon::in_place_scope(|scope| schedule.drive(scope, ledger, items, waiting, calls));
         },
     }
 }
@@ -965,47 +1065,87 @@ type Returned<Out> = Result<(ItemIndex, Out), Box<dyn Any + Send>>;
 /// A job that may run: its item's place and the job that the release gave.
 type Ready<Job> = (ItemIndex, Job);
 
-/// Whether a schedule counted in one more task.
+/// Whether the calling thread ran a job of a lane.
 ///
 /// # Specification
-/// - provides: the answer of one try to count in a task.
+/// - provides: the answer of [`Scheduled::take`].
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Place
+enum Taken
 {
-    /// Fewer tasks ran than the pool has threads, so the count rose by one.
-    Taken,
-    /// As many tasks run as the pool has threads.
-    Full,
+    /// It ran one job of a lane whose task did not run it.
+    Ran,
+    /// No lane held a job that no task runs.
+    Idle,
 }
 
-/// One schedule's shared state, read by every task of its scope.
+/// One schedule's state that its tasks share.
 ///
 /// # Specification
-/// - provides: the bounded queue of the released jobs, which the calling thread
-///   alone pushes and every task pops with no lock; the count of the tasks that
-///   pop it; the jobs' channel back to the calling thread.
+/// - provides: one lane for each task, the calling thread's sleeper, the run of
+///   a job, the spin budget, and the end of the schedule.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
 struct Scheduled<Job, Out, Run>
 {
-    /// The most tasks that run at once: one for each pool thread.
-    threads: usize,
-    /// The released jobs that no thread runs yet, in release order, with room
-    /// for a job of every item.
-    ready: ArrayQueue<Ready<Job>>,
-    /// How many tasks pop `ready` now: at most `threads`.
-    running: AtomicUsize,
+    /// One lane for each task beside the calling thread.
+    lanes: Vec<Lane<Ready<Job>, Returned<Out>>>,
+    /// The calling thread, which parks while it waits for a result.
+    caller: Sleeper,
     /// Runs a released job.
     run: Run,
-    /// Where every job that a task runs reports.
-    returned: mpsc::SyncSender<Returned<Out>>,
-    /// Set once the calling thread resumes a panic, so that no task starts
-    /// another job.
-    stopped: AtomicBool,
+    /// How many empty polls a party makes before a task leaves its lane or
+    /// the calling thread parks.
+    spin: Spin,
+    /// Set once the schedule ends or the calling thread resumes a panic, so
+    /// that no task starts another job.
+    ended: AtomicBool,
+}
+
+/// What the calling thread alone holds of a schedule's lanes.
+///
+/// # Specification
+/// - provides: the calling thread's end of each lane, the lanes that hold a job
+///   not yet committed, the count of lanes with room, the released jobs that no
+///   lane holds, and the lane that the next hand-off tries first.
+/// - panics: none.
+/// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
+///   obligations.
+struct Ledger<Job, Out>
+{
+    /// The calling thread's end of each lane.
+    feeds: Vec<Feed<Ready<Job>, Returned<Out>>>,
+    /// The lanes that hold a job not yet committed, in no order.
+    busy: Vec<usize>,
+    /// How many lanes hold fewer than [`DEPTH`] jobs.
+    room: usize,
+    /// The released jobs that no lane holds, in release order.
+    kept: VecDeque<Ready<Job>>,
+    /// The lane that the next hand-off tries first.
+    turn: usize,
+}
+
+/// The end of a schedule: when the calling thread leaves the schedule, by its
+/// return or by a panic, each task ends.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct Ending<'schedule, Job, Out, Run>(&'schedule Scheduled<Job, Out, Run>);
+
+impl<Job, Out, Run> Drop for Ending<'_, Job, Out, Run>
+{
+    /// End the schedule.
+    ///
+    /// # Specification
+    /// trivial.
+    fn drop(&mut self)
+    {
+        self.0.end();
+    }
 }
 
 /// What the calling thread alone holds of a schedule: each item's successors
@@ -1143,43 +1283,112 @@ enum Released
     Past,
 }
 
+/// Whether a schedule runs.
+///
+/// # Specification
+/// - provides: the answer of [`Scheduled::phase`].
+/// - panics: none.
+/// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
+///   obligations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Phase
+{
+    /// Its tasks take its jobs.
+    Running,
+    /// Its calling thread left it, so no task starts another job.
+    Ended,
+}
+
+impl<Job, Out, Run> Scheduled<Job, Out, Run>
+{
+    /// End the schedule, so that each task ends at its next poll and none
+    /// starts another job.
+    ///
+    /// # Specification
+    /// - ensures: the end is set.
+    /// - panics: none.
+    /// - executable: none — each task reads the end on its own thread, after
+    ///   the call returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
+    fn end(&self)
+    {
+        self.ended.store(true, Ordering::Release);
+    }
+
+    /// Whether the schedule runs or has ended.
+    ///
+    /// # Specification
+    /// trivial.
+    fn phase(&self) -> Phase
+    {
+        if self.ended.load(Ordering::Acquire) {
+            Phase::Ended
+        }
+        else {
+            Phase::Running
+        }
+    }
+}
+
 impl<Job, Out, Run> Scheduled<Job, Out, Run>
 where
     Job: Send,
     Out: Send,
     Run: Fn(ItemIndex, Job) -> Out + Sync,
 {
-    /// A schedule of `items` with at most `workers` tasks, whose jobs `run`
-    /// runs and report on `returned`.
+    /// A schedule on one lane for each of `tasks` threads, whose jobs `run`
+    /// runs, and the calling thread's ledger of it, with room for a job of
+    /// each of `items`.
     ///
     /// # Specification
-    /// - ensures: the queue is empty and holds room for a job of every item, so
-    ///   no later push allocates. No task runs yet.
+    /// - ensures: one lane and one feed for each task, each lane empty and its
+    ///   claim free, and room kept for a job of every item, so no later
+    ///   hand-off allocates. No task runs yet.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
     /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
-    #[spec(ensures: |ret| ret.ready.is_empty() && ret.ready.capacity() == items.len().max(1))]
+    #[spec(ensures: |ret| ret.0.lanes.len() == NonZeroUsize::from(tasks).get()
+        && ret.1.feeds.len() == NonZeroUsize::from(tasks).get()
+        && ret.1.room == NonZeroUsize::from(tasks).get()
+        && ret.1.kept.capacity() >= items.len())]
     fn new<Item>(
+        tasks: Threads,
         items: &[Item],
-        workers: Threads,
         run: Run,
-        returned: mpsc::SyncSender<Returned<Out>>,
-    ) -> Self
+        spin: Spin,
+    ) -> (Self, Ledger<Job, Out>)
     {
-        Self {
-            threads: NonZeroUsize::from(workers).get(),
-            ready: ArrayQueue::new(items.len().max(1)),
-            running: AtomicUsize::new(0),
-            run,
-            returned,
-            stopped: AtomicBool::new(false),
-        }
+        let lanes_count = NonZeroUsize::from(tasks).get();
+        let (lanes, feeds) = core::iter::repeat_with(lane::open)
+            .take(lanes_count)
+            .unzip();
+        (
+            Self {
+                lanes,
+                caller: Sleeper::of(std::thread::current()),
+                run,
+                spin,
+                ended: AtomicBool::new(false),
+            },
+            Ledger {
+                feeds,
+                busy: Vec::with_capacity(lanes_count),
+                room: lanes_count,
+                kept: VecDeque::with_capacity(items.len()),
+                turn: 0,
+            },
+        )
     }
 
-    /// Release each item of `items` in slice order, and commit each item as
-    /// its job returns, both on the calling thread.
+    /// Start one task for each lane, then release each item of `items` in
+    /// slice order and commit each item as its job returns, both on the
+    /// calling thread.
     ///
     /// # Specification
     /// - ensures: `release` ran on every item in slice order, each first time
@@ -1188,26 +1397,29 @@ where
     ///   ran again once every released job was committed. `commit` ran once on
     ///   every item, with its job's result as the job returned, or with the
     ///   result of its release. Each commit counts down the items that wait on
-    ///   the committed one. After a release that queues a job, the calling
-    ///   thread starts tasks while fewer run than jobs wait and than the pool
-    ///   has threads. While it can neither release nor commit, it runs a queued
-    ///   job, or blocks until a job reports when none is queued.
+    ///   the committed one. After each release that gives a job, and after each
+    ///   result, the calling thread hands kept jobs to lanes with room. While
+    ///   it can neither release nor commit, it runs its oldest kept job, or
+    ///   else a job of a lane whose task does not run, or else it waits for a
+    ///   result. Once the call returns, each task ends.
     /// - panics: the first panic of `release`, of a job or of `commit`, after
-    ///   it sets the stop so that no queued job starts.
+    ///   it ends the schedule so that no task starts another job.
     /// - executable: none — each release and commit is a call of the caller's
     ///   closure, and the call returns nothing for a postcondition to compare.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
     /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_job_that_returns_first_commits_first`
     /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
+    /// - witness: `pool::tests::a_schedule_inside_a_scheduled_job_ends`
     fn drive<'scope, Item, Release, Commit>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
+        mut ledger: Ledger<Job, Out>,
         items: &mut [Item],
         mut waiting: Waiting,
-        arrivals: &mpsc::Receiver<Returned<Out>>,
         (release, commit): (&mut Release, &mut Commit),
     ) where
         Job: 'scope,
@@ -1216,6 +1428,10 @@ where
         Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
         Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
     {
+        for lane in &self.lanes {
+            scope.spawn(move |_scope| self.work(lane));
+        }
+        let _ending = Ending(self);
         let count = items.len();
         // The next item to release, the released jobs that are not committed,
         // the items committed, and whether a release holds.
@@ -1245,13 +1461,10 @@ where
                         .unwrap_or_else(|panic| self.stop(panic));
                 match released {
                     Releasing::Run(job) => {
-                        // `ready` holds room for a job of every item, and an
-                        // item releases one job, so no push is refused.
-                        let refused = self.ready.push((next, job)).is_err();
-                        debug_assert!(!refused, "a schedule's queue holds room for every item");
+                        ledger.kept.push_back((next, job));
                         outstanding = outstanding.saturating_add(1);
                         next = ItemIndex(next.0.saturating_add(1));
-                        self.start_tasks(scope);
+                        self.hand(scope, &mut ledger);
                     },
                     Releasing::Held(_) if outstanding > 0 => holding = true,
                     Releasing::Settled(out) | Releasing::Held(out) => {
@@ -1264,35 +1477,333 @@ where
             if committed >= count {
                 break;
             }
-            let returning = if let Ok(returning) = arrivals.try_recv() {
-                returning
-            }
-            else if let Some((position, job)) = self.take() {
-                self.run(position, job)
-            }
-            else {
-                // A release or a held release waits on a released job, so a
-                // job runs on a task, and it reports.
-                match arrivals.recv() {
-                    Ok(returning) => returning,
-                    // The schedule holds the sender until the scope ends, so
-                    // the channel never closes here.
-                    Err(mpsc::RecvError) => return,
+            // Commit each result that has come back, lane by lane.
+            let mut returned = 0_usize;
+            let mut at = 0_usize;
+            while let Some(&lane) = ledger.busy.get(at) {
+                let mut held = 0_usize;
+                if let Some(feed) = ledger.feeds.get_mut(lane) {
+                    while let Ok(returning) = feed.results.pop() {
+                        if feed.held == DEPTH {
+                            ledger.room = ledger.room.saturating_add(1);
+                        }
+                        feed.held = feed.held.saturating_sub(1);
+                        let (position, out) = returning.unwrap_or_else(|panic| self.stop(panic));
+                        if let Some(item) = items.get_mut(position.0) {
+                            commit_one(position, item, out, &mut waiting);
+                        }
+                        returned = returned.saturating_add(1);
+                    }
+                    held = feed.held;
                 }
-            };
-            let (position, out) = returning.unwrap_or_else(|panic| self.stop(panic));
-            if let Some(item) = items.get_mut(position.0) {
-                commit_one(position, item, out, &mut waiting);
+                if held == 0 {
+                    ledger.busy.swap_remove(at);
+                }
+                else {
+                    at = at.saturating_add(1);
+                }
             }
-            committed = committed.saturating_add(1);
-            outstanding = outstanding.saturating_sub(1);
-            if outstanding == 0 {
-                holding = false;
+            if returned > 0 {
+                committed = committed.saturating_add(returned);
+                outstanding = outstanding.saturating_sub(returned);
+                if outstanding == 0 {
+                    holding = false;
+                }
+                self.hand(scope, &mut ledger);
+                continue;
+            }
+            // Neither a release nor a commit is possible: run a job here, or
+            // wait for one to return.
+            if let Some((position, job)) = ledger.kept.pop_front() {
+                let (position, out) = self
+                    .run(position, job)
+                    .unwrap_or_else(|panic| self.stop(panic));
+                if let Some(item) = items.get_mut(position.0) {
+                    commit_one(position, item, out, &mut waiting);
+                }
+                committed = committed.saturating_add(1);
+                outstanding = outstanding.saturating_sub(1);
+                if outstanding == 0 {
+                    holding = false;
+                }
+            }
+            else if self.take(scope, &ledger) == Taken::Idle {
+                self.wait(&ledger);
             }
         }
     }
 
-    /// Stop every task from starting a queued job, then resume `panic`.
+    /// Hand the jobs that the calling thread keeps to lanes with room: first
+    /// one job to each lane that holds none, then more to each lane up to
+    /// [`DEPTH`], each try from the lane after the last one tried.
+    ///
+    /// # Specification
+    /// - ensures: the oldest kept jobs move to lanes in release order, and no
+    ///   lane holds more than [`DEPTH`] jobs, so no push is refused. Each lane
+    ///   handed a job while no task attends it gets a task, so a job runs while
+    ///   the calling thread releases.
+    /// - panics: none.
+    /// - executable: none — a task may take a handed job before a postcondition
+    ///   reads its lane.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_job_that_returns_first_commits_first`
+    fn hand<'scope>(
+        &'scope self,
+        scope: &rayon::Scope<'scope>,
+        ledger: &mut Ledger<Job, Out>,
+    ) where
+        Job: 'scope,
+        Out: 'scope,
+        Run: 'scope,
+    {
+        let lanes = ledger.feeds.len();
+        for depth in 1 ..= DEPTH {
+            let mut tried = 0_usize;
+            while tried < lanes
+                && ledger.room > 0
+                && (depth > 1 || ledger.busy.len() < lanes)
+                && !ledger.kept.is_empty()
+            {
+                let lane = ledger.turn;
+                ledger.turn = lane
+                    .checked_add(1)
+                    .filter(|&after| after < lanes)
+                    .unwrap_or_default();
+                tried = tried.saturating_add(1);
+                let Some(feed) = ledger.feeds.get_mut(lane).filter(|feed| feed.held < depth)
+                else {
+                    continue;
+                };
+                let Some(ready) = ledger.kept.pop_front()
+                else {
+                    break;
+                };
+                if let Err(rtrb::PushError::Full(ready)) = feed.jobs.push(ready) {
+                    ledger.kept.push_front(ready);
+                    continue;
+                }
+                tried = 0;
+                if feed.held == 0 {
+                    ledger.busy.push(lane);
+                }
+                feed.held = feed.held.saturating_add(1);
+                if feed.held == DEPTH {
+                    ledger.room = ledger.room.saturating_sub(1);
+                }
+                if let Some(shared) = self.lanes.get(lane)
+                    && shared.attendance() == Attendance::Unattended
+                {
+                    self.start(scope, shared);
+                }
+            }
+        }
+    }
+
+    /// Start a task for `lane`, unless a task attends it already.
+    ///
+    /// # Specification
+    /// - ensures: when no task attended the lane, the lane is attended and one
+    ///   task for it is spawned on `scope`.
+    /// - panics: none.
+    /// - executable: none — the task may leave the lane before a postcondition
+    ///   reads it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a schedule whose tasks leave their empty lanes and
+    ///   start again when the calling thread hands them jobs ends with each job
+    ///   committed once.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_schedule_whose_jobs_fork_again_ends`
+    fn start<'scope>(
+        &'scope self,
+        scope: &rayon::Scope<'scope>,
+        lane: &'scope Lane<Ready<Job>, Returned<Out>>,
+    ) where
+        Job: 'scope,
+        Out: 'scope,
+        Run: 'scope,
+    {
+        if lane.attend() == Attendance::Unattended {
+            scope.spawn(move |_scope| self.work(lane));
+        }
+    }
+
+    /// Run one job of a lane whose task does not run it, on the calling
+    /// thread, and hand its result back on the lane. When more than one lane
+    /// holds such a job, first start a task for each of the others.
+    ///
+    /// # Specification
+    /// - ensures: [`Taken::Ran`] exactly when the calling thread took a free
+    ///   claim of a lane, ran its oldest job, and pushed the result onto the
+    ///   lane's ring of results.
+    /// - panics: none; a panic of the job is the result.
+    /// - executable: none — the lane's task may take the claim back as soon as
+    ///   the call returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a schedule inside a scheduled job, whose tasks no
+    ///   pool thread starts, ends with each job run on the calling thread.
+    /// - witness: `pool::tests::a_schedule_inside_a_scheduled_job_ends`
+    /// - witness: `pool::tests::a_job_that_returns_first_commits_first`
+    fn take<'scope>(
+        &'scope self,
+        scope: &rayon::Scope<'scope>,
+        ledger: &Ledger<Job, Out>,
+    ) -> Taken
+    where
+        Job: 'scope,
+        Out: 'scope,
+        Run: 'scope,
+    {
+        let mut first = None;
+        for &lane in &ledger.busy {
+            let (Some(feed), Some(shared)) = (ledger.feeds.get(lane), self.lanes.get(lane))
+            else {
+                continue;
+            };
+            if shared.tending(feed) == Tending::Tended {
+                continue;
+            }
+            match first {
+                None => first = Some(shared),
+                Some(_) => self.start(scope, shared),
+            }
+        }
+        let Some(mut claim) = first.and_then(Lane::claim)
+        else {
+            return Taken::Idle;
+        };
+        let runner = claim.runner();
+        let Ok((position, job)) = runner.jobs.pop()
+        else {
+            return Taken::Idle;
+        };
+        let returning = self.run(position, job);
+        let refused = runner.results.push(returning).is_err();
+        debug_assert!(
+            !refused,
+            "a lane's ring of results holds a slot for each job that the lane holds"
+        );
+        Taken::Ran
+    }
+
+    /// Wait until a result comes back, or until a lane holds a job that no
+    /// task runs: poll up to the spin budget, then park.
+    ///
+    /// # Specification
+    /// - ensures: returns once a busy lane's ring of results holds a result, or
+    ///   a busy lane holds a job with its claim free. A task that pushes a
+    ///   result wakes the calling thread if it parks.
+    /// - panics: none.
+    /// - executable: none — the condition is the tasks' writes, which may
+    ///   change before a postcondition reads them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
+    fn wait(
+        &self,
+        ledger: &Ledger<Job, Out>,
+    )
+    {
+        let ready = || {
+            ledger.busy.iter().any(|&lane| {
+                ledger.feeds.get(lane).is_some_and(|feed| {
+                    !feed.results.is_empty()
+                        || self
+                            .lanes
+                            .get(lane)
+                            .is_some_and(|shared| shared.tending(feed) == Tending::Stranded)
+                })
+            })
+        };
+        let mut polls = 0_u32;
+        while polls < self.spin.0 {
+            if ready() {
+                return;
+            }
+            polls = polls.saturating_add(1);
+            core::hint::spin_loop();
+        }
+        self.caller.sleep(ready);
+    }
+
+    /// The task of `lane`: run the lane's jobs while it holds the lane's
+    /// claim and hand each result back, and poll up to the spin budget when
+    /// the lane is empty. Then give the claim back, leave the lane and end,
+    /// so that the worker goes back to the pool.
+    ///
+    /// # Specification
+    /// - ensures: each job that the task takes runs once, and its result goes
+    ///   back on the lane, with a wake of the calling thread if it parks. The
+    ///   task holds the claim only while it runs or polls, starts no job once
+    ///   the end is set, and never parks. When it ends, either the lane is
+    ///   unattended, or another task attends it. A job that the calling thread
+    ///   hands after the last poll either shows to the task, which takes the
+    ///   lane back, or the calling thread reads the lane unattended. A task
+    ///   that ends wakes the calling thread after it gives its last claim back,
+    ///   so a calling thread that read the claim held reads it again.
+    /// - panics: none; a panic of a job is its result.
+    /// - executable: none — the task runs after the spawn returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`, and a schedule whose jobs
+    ///   fork again on the same pool.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_commits_on_the_caller`
+    /// - witness: `pool::tests::a_schedule_whose_jobs_fork_again_ends`
+    fn work(
+        &self,
+        lane: &Lane<Ready<Job>, Returned<Out>>,
+    )
+    {
+        loop {
+            if let Some(mut claim) = lane.claim() {
+                let mut polls = 0_u32;
+                while self.phase() == Phase::Running {
+                    let runner = claim.runner();
+                    if let Ok((position, job)) = runner.jobs.pop() {
+                        let returning = self.run(position, job);
+                        let refused = runner.results.push(returning).is_err();
+                        debug_assert!(
+                            !refused,
+                            "a lane's ring of results holds a slot for each job that the lane holds"
+                        );
+                        self.caller.wake();
+                        polls = 0;
+                    }
+                    else if polls < self.spin.0 {
+                        polls = polls.saturating_add(1);
+                        core::hint::spin_loop();
+                    }
+                    else {
+                        break;
+                    }
+                }
+            }
+            lane.leave();
+            // A job that the calling thread handed after the last poll shows
+            // here, or the calling thread reads the lane unattended and runs
+            // the job or starts a task for it.
+            let handed = self.phase() == Phase::Running
+                && lane
+                    .claim()
+                    .is_some_and(|mut claim| !claim.runner().jobs.is_empty());
+            if !handed || lane.attend() == Attendance::Attended {
+                // The calling thread may have read the lane claimed and
+                // parked: it reads the lane again, and runs a job that waits
+                // there.
+                self.caller.wake();
+                return;
+            }
+        }
+    }
+
+    /// End the schedule, then resume `panic`.
     ///
     /// # Specification
     /// - ensures: never returns.
@@ -1307,125 +1818,8 @@ where
         panic: Box<dyn Any + Send>,
     ) -> !
     {
-        self.stopped.store(true, Ordering::Release);
+        self.end();
         std::panic::resume_unwind(panic)
-    }
-
-    /// Take the next queued job, unless the stop is set.
-    ///
-    /// # Specification
-    /// - ensures: the job taken, if any.
-    /// - panics: none.
-    /// - executable: none — the queue is shared with the tasks that run beside
-    ///   this call, so no postcondition reads it at one instant.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
-    /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
-    fn take(&self) -> Option<Ready<Job>>
-    {
-        if self.stopped.load(Ordering::Acquire) {
-            return None;
-        }
-        self.ready.pop()
-    }
-
-    /// Start tasks while fewer run than jobs wait and than the pool has
-    /// threads.
-    ///
-    /// # Specification
-    /// - ensures: the count of tasks stays at most `threads`; each task counted
-    ///   in is spawned.
-    /// - panics: none.
-    /// - executable: none — the spawned tasks run after the call returns.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
-    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_commits_on_the_caller`
-    fn start_tasks<'scope>(
-        &'scope self,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        Job: 'scope,
-        Out: 'scope,
-        Run: 'scope,
-    {
-        while self.running.load(Ordering::SeqCst) < self.ready.len()
-            && self.count_in() == Place::Taken
-        {
-            self.spawn(scope);
-        }
-    }
-
-    /// Count in one more task when fewer tasks run than the pool has threads.
-    ///
-    /// # Specification
-    /// - ensures: [`Place::Taken`] exactly when the count rose by one, to at
-    ///   most `threads`.
-    /// - panics: none.
-    /// - executable: none — the count is shared with the tasks that run beside
-    ///   this call, so no postcondition reads it at one instant.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
-    fn count_in(&self) -> Place
-    {
-        match self
-            .running
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |running| {
-                (running < self.threads).then(|| running.saturating_add(1))
-            }) {
-            Ok(_) => Place::Taken,
-            Err(_) => Place::Full,
-        }
-    }
-
-    /// Spawn one counted-in task, which takes queued jobs and reports each to
-    /// the calling thread until the queue is empty.
-    ///
-    /// # Specification
-    /// - ensures: one task spawned on `scope`. A task that finds the queue
-    ///   empty, or the stop set, counts itself out and ends. It first looks at
-    ///   the queue once more. A job that the calling thread queued while the
-    ///   count still held this task started no task, so the task counts itself
-    ///   in again and takes that job.
-    /// - panics: none.
-    /// - executable: none — the spawned task runs after the call returns.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
-    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_commits_on_the_caller`
-    fn spawn<'scope>(
-        &'scope self,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        Job: 'scope,
-        Out: 'scope,
-        Run: 'scope,
-    {
-        scope.spawn(move |_scope| {
-            loop {
-                while let Some((position, job)) = self.take() {
-                    // The calling thread holds the receiver until the scope
-                    // ends, and the buffer holds a slot for each job, so the
-                    // report never waits and is never refused.
-                    self.returned
-                        .send(self.run(position, job))
-                        .unwrap_or_default();
-                }
-                self.running.fetch_sub(1, Ordering::SeqCst);
-                if self.stopped.load(Ordering::Acquire)
-                    || self.ready.is_empty()
-                    || self.count_in() == Place::Full
-                {
-                    return;
-                }
-            }
-        });
     }
 
     /// Run the job of the item at `position`.
@@ -1502,6 +1896,7 @@ mod tests
 
     use super::Forked;
     use super::Pool;
+    use super::Spin;
     use super::alone;
     use crate::width::Threads;
     use crate::width::Width;
@@ -1992,13 +2387,11 @@ mod tests
     #[test]
     fn a_schedule_releases_in_order_and_commits_each_job_as_it_returns()
     {
-        let pool = Pool::new(Width::Threads(Threads::from(
-            NonZeroUsize::new(4_usize).unwrap(),
-        )));
-        let Ok(Forked::Pooled(threads, fork)) = pool.forked()
-        else {
-            panic!("a pool of four threads starts");
-        };
+        let width = Width::Threads(Threads::from(NonZeroUsize::new(4_usize).unwrap()));
+        let pools = [
+            ("parking", Pool::new(width)),
+            ("spinning", Pool::new(width).spinning(Spin::from(10_000))),
+        ];
         // The edges of a chain and of a scattered fan over `count` items. The
         // fan also holds one edge past the slice.
         let graphs = |count: usize| {
@@ -2037,7 +2430,14 @@ mod tests
                 ("a scattered fan", Dependences::new(fan).unwrap()),
             ]
         };
-        for count in [0_usize, 1, 2, 7, 64] {
+        for (count, &(budget, ref pool)) in [0_usize, 1, 2, 7, 64]
+            .into_iter()
+            .flat_map(|count| pools.iter().map(move |pool| (count, pool)))
+        {
+            let Ok(Forked::Pooled(threads, fork)) = pool.forked()
+            else {
+                panic!("a pool of four threads starts");
+            };
             for (graph, after) in graphs(count) {
                 let clock = AtomicUsize::new(0);
                 let tick = || clock.fetch_add(1, Ordering::SeqCst);
@@ -2068,7 +2468,7 @@ mod tests
                     );
                     std::thread::current().id()
                 });
-                let case = format!("{graph} over {count} items");
+                let case = format!("{graph} over {count} items, {budget}");
                 for (position, item) in items.iter().enumerate() {
                     assert_eq!(
                         runs[position].load(Ordering::SeqCst),
@@ -2114,6 +2514,85 @@ mod tests
                     );
                 }
             }
+        }
+    }
+
+    /// A scheduled job that schedules again on the same pool: the tasks of
+    /// the inner schedule wait behind the tasks that the outer schedule
+    /// holds, so the inner calling thread runs their jobs, and both schedules
+    /// end.
+    #[test]
+    fn a_schedule_inside_a_scheduled_job_ends()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let Ok(Forked::Pooled(_threads, fork)) = pool.forked()
+        else {
+            panic!("a pool of four threads starts");
+        };
+        let release = |position: gandr_core_fork::ItemIndex, _item: &mut usize| {
+            Releasing::<usize, usize>::Run(usize::from(position))
+        };
+        let mut outer = [0_usize; 8];
+        pool.schedule(
+            &mut outer,
+            &Dependences::default(),
+            release,
+            |job| {
+                let mut inner = [0_usize; 16];
+                fork.schedule(
+                    &mut inner,
+                    &Dependences::default(),
+                    release,
+                    |inner_job| inner_job,
+                    |_position, item, out| *item = out,
+                );
+                inner.iter().sum::<usize>().checked_add(job).unwrap()
+            },
+            |_position, item, out| *item = out,
+        );
+        let inner = (0 .. 16_usize).sum::<usize>();
+        let expected: [usize; 8] = core::array::from_fn(|job| inner.checked_add(job).unwrap());
+        assert_eq!(
+            outer, expected,
+            "each outer job runs its inner schedule to its end"
+        );
+    }
+
+    /// A scheduled job that forks again on the same pool: no task parks on its
+    /// worker, so the share of the inner fork finds a worker, and every round
+    /// ends.
+    #[test]
+    fn a_schedule_whose_jobs_fork_again_ends()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let expected: [usize; 16] = core::array::from_fn(|job| job.checked_add(8).unwrap());
+        for _round in 0 .. 200_usize {
+            let mut outer = [0_usize; 16];
+            pool.schedule(
+                &mut outer,
+                &Dependences::default(),
+                |position: gandr_core_fork::ItemIndex, _item: &mut usize| {
+                    Releasing::<usize, usize>::Run(usize::from(position))
+                },
+                |job| {
+                    let mut inner = [0_usize; 8];
+                    pool.each(
+                        &mut inner,
+                        || (),
+                        |_state: &mut (), item: &mut usize| *item = 1,
+                    );
+                    inner.iter().sum::<usize>().checked_add(job).unwrap()
+                },
+                |_position, item, out| *item = out,
+            );
+            assert_eq!(
+                outer, expected,
+                "each job's inner fork visits each of its items once"
+            );
         }
     }
 

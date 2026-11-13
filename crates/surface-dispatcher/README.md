@@ -51,7 +51,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Expected features
 
-- **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
+- **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor ([`entry`](src/entry.rs) states what a diagnostic carries).
 - **A file system.** `Walk::visit` lists directories and reads sources, `Formatting::step` reads them and writes a changed layout back, and `Census::step` reads them; every failure to do so is a fault step, never a panic.
 - **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs). `Pool::recording` marks its jobs.
 
@@ -132,6 +132,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
+- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the rings.
+- `vault:01a12791-4fa7-7d23-852e-a50c09a02144` — dependency: § admission-strategies-findings, the rings.
 - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — a row's bound as a semiring product.
 - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — a fresh name for each internal wire.
 

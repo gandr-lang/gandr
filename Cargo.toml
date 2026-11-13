@@ -117,6 +117,7 @@ publish = false
 # consumers:
 # - core-checker (dev)
 # - core-fork (dev)
+# - surface-dispatcher (dev)
 # - surface-session (dev)
 # - theory-exact-reals (dev)
 # - theory-probability (dev)
@@ -333,14 +334,11 @@ features = ["std"]
 # The activity ring: each worker of the pool writes its events into a bounded
 # lock-free queue, and a full queue drops its oldest event. Chosen over
 # `ringbuf` and `rtrb`, whose single-producer rings drop no oldest event while
-# a consumer reads, and over a ring of our own. The pool's dependence schedule
-# queues the jobs that may run in the same bounded queue: the calling thread
-# pushes, and every task pops with no lock.
+# a consumer reads, and over a ring of our own.
 # features:
 # - alloc: `ArrayQueue` in the `no_std` fork crate
 # consumers:
 # - core-fork
-# - surface-dispatcher
 [workspace.dependencies.crossbeam-queue]
 version = "0.3.14"
 default-features = false
@@ -1838,11 +1836,17 @@ features = ["alloc"]
 version = "0.21.2"
 default-features = false
 
-# Wait-free per-worker observer queues.
+# Wait-free rings of one producer and one consumer: the per-worker observer
+# queues, and the lanes of the pool's dependence schedule, one ring of jobs
+# and one ring of results for each task. Chosen over `ringbuf` for a push and
+# a pop of one value with no lock, which is all a lane needs, and over a ring
+# of our own. Reversal: an advisory against rtrb, or a lane that a
+# measurement finds slower than a shared queue.
 # features:
 # - none: allocation works without the optional standard-library facade.
 # consumers:
 # - core-checker (dev)
+# - surface-dispatcher
 [workspace.dependencies.rtrb]
 version = "0.4.1"
 default-features = false

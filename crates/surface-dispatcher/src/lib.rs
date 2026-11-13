@@ -410,6 +410,7 @@ pub use crate::package::toolchain::asking;
 pub use crate::pool::ItemIndex;
 pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;
+pub use crate::pool::Spin;
 #[cfg(feature = "instrument")]
 pub use crate::pool::recording::ActivityFork;
 #[cfg(feature = "instrument")]
