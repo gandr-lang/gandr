@@ -60,8 +60,8 @@ crates/
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
-├── surface-lowering/              the molded tree into core terms: module collection, declaration lowering
-├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits
+├── surface-lowering/              the molded tree into core terms, over its base
+├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
 ├── surface-lsp/                   the language server: diagnostics from the model, tokens from highlight roles, the hub on a Unix socket
 ├── surface-lsp-base/              the server's base: the protocol, positions, markup, inline completion
 ├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources

@@ -14,7 +14,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Synopsis
 
-**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration`, whose `DeclarationOutcome` ([`module`](src/module.rs)) names what became of it. The crate rustdoc's _Side tables_ holds the attributes, the origins and the imports. `FailureClass` sorts every refusal into the class a consumer acts on.
+**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration`, whose `DeclarationOutcome` ([`module`](../surface-lowering-base/src/module.rs)) names what became of it. The crate rustdoc's _Side tables_ holds the attributes, the origins and the imports. `FailureClass` sorts every refusal into the class a consumer acts on.
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and the class of each failure, which [`classify`](../surface-lowering-base/src/classify.rs) states.
 
@@ -36,20 +36,20 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
 - `LoweringRefusal::classify` and `FailureClass`, re-exported from `gandr-core-term`: the classifier every producer of refusals in the core pipeline classifies into.
 - The closed attribute registry, its five diagnostics and the side table, filed for refused declarations too; [`attribute`](../surface-lowering-base/src/attribute.rs) names its types.
-- `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's, a module's or a source's documentation as one text, its links resolved ([`doc`](src/doc.rs)).
+- `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's, a module's or a source's documentation as one text, its links resolved ([`doc`](../surface-lowering-base/src/doc.rs)).
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
 - Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
 - `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit each tail written without `return` or `become` takes.
-- `InferredRun`, `LoweredModule::inferred_runs` and the types [`lower::runs`](src/lower/runs.rs) names: each run inferred where a value is read.
-- The tables, the refusals and the descriptions, from `gandr-surface-lowering-base` and named at their old paths: `namespace`, `circuit`, `description`, `desc_cells`, `coincide`, `described`, `model` and the rest of the base's modules.
+- `InferredRun`, `LoweredModule::inferred_runs` and the types [`lower::runs`](../surface-lowering-base/src/lower/runs.rs) names: each run inferred where a value is read.
+- The tables, the refusals, the descriptions and the module pass, from `gandr-surface-lowering-base` and named at their old paths: `namespace`, `description`, `model`, `module` and the rest of the base's modules.
 - `lower_unit` and the types [`unit`](../surface-lowering-base/src/unit.rs) names: sources lowered into one arena; `ClosureLowering` and the calls [`lower::closure`](src/lower/closure.rs) names: a closure lowered once.
-- `LoweredStructure` and `LoweredModule::structures`: modules flattened to named members, their stratum items and their structured names, read through the types [`module`](src/module.rs) names.
+- `LoweredStructure` and `LoweredModule::structures`: modules flattened to named members, their stratum items and their structured names, read through the types [`module`](../surface-lowering-base/src/module.rs) names.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>`, its abstract types and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived, checked and packed, type members with parameters, and a `path`'s functions and round trips.
 - Binary sessions: session types, actions and the statements binding them, lowered to core session actions ([`lower::session`](src/lower/session.rs)).
-- Worlds: `world`, `requires`, `offers`, `at`, `hold`, `migrate`, `mobile` and `@[ entry(…) ]` ([`module::world`](src/module/world.rs)).
+- Worlds: `world`, `requires`, `offers`, `at`, `hold`, `migrate`, `mobile` and `@[ entry(…) ]` ([`module::world`](../surface-lowering-base/src/module/world.rs)).
 
 ## Expected features
 
@@ -96,20 +96,19 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The named-kind dispatch | [`form`](../surface-lowering-base/src/form.rs) |
 | Repairs refused in place, the four boundaries out of the fragment | [`error`](../surface-lowering-base/src/error.rs) |
 | Name resolution through tables | [`resolve`](../surface-lowering-base/src/resolve.rs) |
-| Module collection, one refusal per declaration, module declarations | [`module`](src/module.rs) |
-| Type members, abstract components and opaque ascription | [`module::sealing`](src/module/sealing.rs), [`lower::sealing`](src/lower/sealing.rs) |
-| `Model(S)`: the derivation, sort inference over index terms, type families, and the instance check | [`model`](../surface-lowering-base/src/model.rs), [`module::model`](src/module/model.rs), [`lower::model`](src/lower/model.rs) |
+| The module pass: collection, one refusal per declaration, module declarations, imports, documentation, and the collected halves of sealing, `Model(S)` and worlds | the base's [README](../surface-lowering-base/README.md) |
+| Type members, abstract components and opaque ascription | [`lower::sealing`](src/lower/sealing.rs) |
+| `Model(S)`: the derivation, sort inference over index terms, type families, and the instance check | [`model`](../surface-lowering-base/src/model.rs), [`lower::model`](src/lower/model.rs) |
 | Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](../surface-lowering-base/src/description.rs), [`description::theory`](../surface-lowering-base/src/description/theory.rs), [`desc_cells`](../surface-lowering-base/src/desc_cells.rs) |
 | The namespace engine, the per-node table, the form stretches and the circuit readings | `gandr-surface-lowering-base` |
-| Imports | [`import`](src/import.rs) |
 | Sorts, function tails, blocks, insertions, universes, type operators, products, literals, the two sweeps | [`lower`](src/lower.rs) |
 | Native data, the match and recursive functions | [`lower::native`](src/lower/native.rs) |
 | Early exits and loops: the survey, the commuting, the cut, inferred exits and a loop's fixpoint | [`lower::exits`](src/lower/exits.rs), [`lower::loops`](src/lower/loops.rs), [`src/lib.rs`](src/lib.rs), [`lower`](src/lower.rs) |
-| Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](src/lower/runs.rs), [`lower`](src/lower.rs) |
+| Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](../surface-lowering-base/src/lower/runs.rs), [`lower`](src/lower.rs) |
 | Binary sessions: protocols, endpoints, actions and the statements binding them | [`lower::session`](src/lower/session.rs) |
-| Worlds | [`module::world`](src/module/world.rs), [`lower::world`](src/lower/world.rs) |
+| Worlds | [`lower::world`](src/lower/world.rs) |
 | The failure classifier | [`classify`](../surface-lowering-base/src/classify.rs) |
-| Attributes and documentation | [`attribute`](../surface-lowering-base/src/attribute.rs), [`doc`](src/doc.rs) |
+| Attributes | [`attribute`](../surface-lowering-base/src/attribute.rs) |
 | Origins | [`origin`](../surface-lowering-base/src/origin.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
 
@@ -120,14 +119,11 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design — what `with sort x = A` fixes.
 - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax bikeshed — the row entry's spelling.
 - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: § methods-desugaring — a receiver no hold holds is a value, and an index of one holds it for its read.
-- `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
 - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: a decode carries no stage.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The module pass reads nothing of the lowering's context, so it compiles in the base, and this crate reads it there.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell.
 

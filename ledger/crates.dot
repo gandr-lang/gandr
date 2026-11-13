@@ -278,11 +278,8 @@ digraph crates {
   "surface-lowering" -> "theory-circuit-algebras";
   "surface-lowering" -> "theory-coherent-resolutions";
   "surface-lowering" -> "theory-computads";
-  "surface-lowering" -> "theory-graded-posets";
   "surface-lowering" -> "theory-levitation";
   "surface-lowering" -> "theory-shapes";
-  "surface-lowering" -> "theory-spec-combinators";
-  "surface-lowering" -> "theory-stone-duality";
   "surface-lowering-base" -> "core-term";
   "surface-lowering-base" -> "kernel-strata";
   "surface-lowering-base" -> "kernel-term";
@@ -293,8 +290,11 @@ digraph crates {
   "surface-lowering-base" -> "theory-circuit-algebras";
   "surface-lowering-base" -> "theory-coherent-resolutions";
   "surface-lowering-base" -> "theory-computads";
+  "surface-lowering-base" -> "theory-graded-posets";
   "surface-lowering-base" -> "theory-levitation";
   "surface-lowering-base" -> "theory-shapes";
+  "surface-lowering-base" -> "theory-spec-combinators";
+  "surface-lowering-base" -> "theory-stone-duality";
   "surface-lsp" -> "core-fork";
   "surface-lsp" -> "core-incremental";
   "surface-lsp" -> "kernel-term";

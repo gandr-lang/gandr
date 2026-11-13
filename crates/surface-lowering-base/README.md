@@ -13,11 +13,11 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 
 ## Synopsis
 
-**What.** The vocabulary the lowering states its answers in, and the description route. The refusals, their classes and the features not yet built; the forms, the names and the binder scope; the origin table, the attributes, the units, the prelude and the written imports; the description of `data`, `codata` and `theory` declarations, their cells, the coincidence of their rules, the rule certificate, the derived equations, `Model(S)` and the described types. Also the namespace engine, the per-node table, the form stretches of a tree and the circuit readings of a rule's body. `gandr-surface-lowering` names each module at its old path.
+**What.** The vocabulary the lowering states its answers in, the description route and the module pass. The refusals, their classes and the features not yet built; the forms, the names and the binder scope; the origin table, the attributes, the units, the prelude and the written imports; the description of `data`, `codata` and `theory` declarations, their cells, the coincidence of their rules, the rule certificate, the derived equations, `Model(S)` and the described types. Also the namespace engine, the per-node table, the form stretches of a tree and the circuit readings of a rule's body. The module pass collects the declarations of a module by name, reads its imports, plans its operations and reads its documentation, and the lowered module it fills is the record the checker reads. `gandr-surface-lowering` names each module at its old path.
 
 **Why.** The lowering is the longest crate in the build of the driver. A part that reads nothing of the lowering compiles in a crate of its own, before the lowering and beside its code generation. Each later split of the lowering adds its parts here or in a family crate over this one.
 
-**How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate. The integration target takes `gandr-surface-lowering` as a dev-dependency, so a case can lower a unit over this crate's items. The `fixture` feature opens the test fixtures to the tests of `gandr-surface-lowering`.
+**How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate. The integration target takes `gandr-surface-lowering` as a dev-dependency, its `fixture` feature on, so a case can lower a unit over this crate's items. A case that witnesses an item of each crate has a copy in each crate. The `fixture` feature opens the test fixtures to the tests of `gandr-surface-lowering`.
 
 ## Provided features
 
@@ -31,6 +31,8 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 - `NodeTable`: a per-node table whose cells a suspended lowering shares with each lowering resumed from it ([`table`](src/table.rs)).
 - `ByForm`, `FormStretch`, `FormPlace` and `At`: the stretch of each top-level form among a tree's positions ([`by_form`](src/by_form.rs)).
 - `CircuitReading`, `circuit_wiring`, `circuit_canon` and `embed_circuit_rule`: a rule's body as a wiring diagram, its spider canon and its embeddings ([`circuit::embed`](src/circuit/embed.rs)).
+- `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and the collection pass that fills them ([`module`](src/module.rs)); `ModuleImports` and `ImportDeclaration` ([`import`](src/import.rs)); `plan_operation` and `mint_operation` ([`operation`](src/operation.rs)); `Documentation` and `read_doc` ([`doc`](src/doc.rs)); the brackets a block's layout misplaces ([`layout`](src/layout.rs)).
+- `Exit`, `InferredExit`, `InferredRun` and the other records the module pass and the lowering share, and `parse_literal` ([`lower`](src/lower.rs)).
 - With the `fixture` feature, the test fixtures: parsed and hand-built trees over the built-in grammar ([`fixture`](src/fixture.rs)).
 
 ## Expected features
@@ -53,16 +55,23 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 | The per-node table and its shared cells | [`table`](src/table.rs) |
 | The form stretches | [`by_form`](src/by_form.rs) |
 | Circuit bodies as wiring diagrams | [`circuit`](src/circuit.rs), [`circuit::embed`](src/circuit/embed.rs) |
+| The module pass: collection by name, module declarations, sealing, `Model(S)` members, worlds and foreign blocks | [`module`](src/module.rs), [`module::sealing`](src/module/sealing.rs), [`module::model`](src/module/model.rs), [`module::world`](src/module/world.rs), [`module::foreign`](src/module/foreign.rs) |
+| Imports, operations, documentation and layout | [`import`](src/import.rs), [`operation`](src/operation.rs), [`doc`](src/doc.rs), [`layout`](src/layout.rs) |
+| The records the module pass and the lowering share | [`lower::exits`](src/lower/exits.rs), [`lower::runs`](src/lower/runs.rs) |
 
 ## References
 
-- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. A crate boundary encloses a strongly connected component of the module graph, so the base takes the lowering's tables, refusals and descriptions whole.
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. A crate boundary encloses a strongly connected component of the module graph, so the base takes the lowering's tables, refusals, descriptions and module pass whole.
 - `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
 - `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: the ornaments design — a mutual block reads as one description.
 - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
+- `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
 
 ## License
