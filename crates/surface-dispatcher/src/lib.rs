@@ -268,6 +268,7 @@ pub use crate::compose::judge_member_after;
 pub use crate::compose::judge_member_after_retiring;
 pub use crate::compose::judge_member_tabled;
 pub use crate::compose::judge_member_tabled_retiring;
+pub use crate::compose::judge_member_taking;
 pub use crate::compose::judge_module;
 pub use crate::compose::kept;
 pub use crate::compose::lower_closure;

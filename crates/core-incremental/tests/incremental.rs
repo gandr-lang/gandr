@@ -14,9 +14,11 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ModuleRun;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::Unretired;
+use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Answer;
@@ -197,6 +199,72 @@ fn body_edit_adopts_the_type_stable_dependent()
         step.resumed.adoptions(),
         [Judged, Adopted],
         "the edited definition is judged; its type-stable reader is adopted"
+    );
+}
+
+/// A revision's judgement takes from the last pass each item whose checkpoint
+/// stands (#6620): after a body edit it takes the reader of the edited
+/// definition and decides the definition. Each verdict is of the kind that
+/// the whole judgement gives, with as many definitions and failures.
+#[test]
+fn a_judgement_takes_each_standing_item_from_the_last_pass_6620()
+{
+    let mut session = IncrementalSession::new(
+        MemoryCheckpointStore::default(),
+        BackendArtifact::from(b"core-checker".as_slice()),
+        CheckBudget::DEFAULT,
+    );
+    let _base = session
+        .submit(
+            &mut lower(&[
+                def(Name("target"), Body::Int(1)),
+                def(Name("d"), read(Name("target"))),
+            ]),
+            &mut Quiet,
+        )
+        .expect("the order builds");
+    let program = lower(&[
+        def(Name("target"), Body::Int(2)),
+        def(Name("d"), read(Name("target"))),
+    ]);
+    let shape = |report: &ModuleReport| {
+        (
+            report
+                .judged()
+                .iter()
+                .map(|judged| core::mem::discriminant(&judged.verdict()))
+                .collect::<Vec<_>>(),
+            report.definitions().len(),
+            report.failures().len(),
+        )
+    };
+    let (taken, reused) = {
+        let mut reuse = session.reuse(&program, None);
+        let mut arena = program.arena().clone();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut run = ModuleRun::new();
+        run.judge_taking(
+            &mut context,
+            &program.declarations(),
+            |_, _, _| {},
+            (&Unretired, &mut reuse),
+        )
+        .whole();
+        let report = run.finish(&mut context);
+        (reuse.taken(), shape(&report))
+    };
+    let mut arena = program.arena().clone();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let whole = check_module(&mut context, &program.declarations());
+    assert_eq!(
+        taken,
+        ItemCount::from(1_usize),
+        "the reader is taken; the edited definition is decided"
+    );
+    assert_eq!(
+        reused,
+        shape(&whole),
+        "the judgement that takes reports the whole judgement's verdicts"
     );
 }
 
