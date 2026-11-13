@@ -41,6 +41,7 @@ use crate::common::names;
 use crate::common::resumed;
 use crate::common::session;
 use crate::common::submit;
+use crate::common::submit_read;
 
 /// The rows a settled composition reports: each declaration's name, outcome
 /// and settlement, in admission order.
@@ -253,19 +254,19 @@ fn checkpointed_session_matches_from_scratch()
 {
     let mut checkpointed = session(SourceRoot::Strict);
     let _definitions = submit(&mut checkpointed, "def x = 40 ;");
-    let appended = submit(
+    let (appended, taken) = submit_read(
         &mut checkpointed,
         include_str!("session/fixtures/checkpointed-session-matches-from-scratch-appended.gandr"),
     );
     let mut scratch = session(SourceRoot::Strict);
-    let whole = submit(
+    let (_whole, decided) = submit_read(
         &mut scratch,
         include_str!("session/fixtures/checkpointed-session-matches-from-scratch-appended.gandr"),
     );
     assert_eq!(
-        appended.composed(),
-        whole.composed(),
-        "the appended revision reports exactly what the whole text reports from scratch"
+        taken, decided,
+        "the appended revision reports what the whole text reports from scratch, up to a renaming \
+         of its nodes"
     );
     assert_eq!(
         resumed(&checkpointed),

@@ -274,7 +274,6 @@ pub use crate::session::Persistence;
 pub use crate::session::Ran;
 pub use crate::session::Reopened;
 pub use crate::session::Resumed;
-pub use crate::session::Reusing;
 pub use crate::session::Session;
 pub use crate::session::SessionFault;
 pub use crate::session::Submission;
