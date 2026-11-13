@@ -180,25 +180,27 @@ fn a_nested_serial_spawn_sums_the_leaves()
     );
 }
 
-/// An item of a schedule: the running count when its job ran and when it was
-/// folded.
+/// An item of a schedule: the running count at each release and commit of
+/// it, with the result that each commit takes.
 #[derive(Debug, Default)]
 struct Stamped
 {
-    /// The count at each run of the item's job.
-    jobs: Vec<usize>,
-    /// The count at each fold of the item.
-    folds: Vec<usize>,
+    /// The count at each release of the item.
+    releases: Vec<usize>,
+    /// The count and the result at each commit of the item.
+    commits: Vec<(usize, usize)>,
 }
 
 #[test]
-fn serial_runs_each_job_then_its_fold_in_order()
+fn serial_releases_runs_and_commits_each_item_in_order()
 {
     for count in [0_usize, 1, 5] {
-        let made = AtomicUsize::new(0);
         let clock = AtomicUsize::new(0);
         let tick = || clock.fetch_add(1, Ordering::Relaxed);
         let mut items: Vec<Stamped> = core::iter::repeat_with(Stamped::default)
+            .take(count)
+            .collect();
+        let jobs: Vec<AtomicUsize> = core::iter::repeat_with(|| AtomicUsize::new(usize::MAX))
             .take(count)
             .collect();
         let chain = Dependences::new((1 .. count).map(|after| Dependence {
@@ -206,27 +208,58 @@ fn serial_runs_each_job_then_its_fold_in_order()
             after,
         }))
         .unwrap();
+        // Item 1 settles at its release, and item 3 holds with no job
+        // running, so neither runs a job.
         Serial.schedule(
             &mut items,
             &chain,
-            || {
-                made.fetch_add(1, Ordering::Relaxed);
+            |position, item| {
+                item.releases.push(tick());
+                match usize::from(position) {
+                    1 => Releasing::Settled(100),
+                    3 => Releasing::Held(300),
+                    other => Releasing::Run(other),
+                }
             },
-            |_state, item| item.jobs.push(tick()),
-            |item| item.folds.push(tick()),
+            |job| {
+                jobs[job].store(tick(), Ordering::Relaxed);
+                job
+            },
+            |_position, item, out| item.commits.push((tick(), out)),
         );
-        assert_eq!(
-            made.load(Ordering::Relaxed),
-            usize::from(count > 0),
-            "states made for {count} items"
-        );
+        let mut expected = 0_usize;
         for (position, item) in items.iter().enumerate() {
-            let job = position.checked_mul(2).unwrap();
-            assert_eq!(item.jobs, [job], "item {position}'s job, once, in order");
             assert_eq!(
-                item.folds,
-                [job.checked_add(1).unwrap()],
-                "item {position}'s fold, once, right after its job"
+                item.releases,
+                [expected],
+                "item {position} released once, in order"
+            );
+            expected = expected.checked_add(1).unwrap();
+            let out = match position {
+                1 => 100,
+                3 => 300,
+                _ => {
+                    assert_eq!(
+                        jobs[position].load(Ordering::Relaxed),
+                        expected,
+                        "item {position}'s job, right after its release"
+                    );
+                    expected = expected.checked_add(1).unwrap();
+                    position
+                },
+            };
+            assert_eq!(
+                item.commits,
+                [(expected, out)],
+                "item {position}'s commit, once, right after its job or its release"
+            );
+            expected = expected.checked_add(1).unwrap();
+        }
+        for (position, ran) in jobs.iter().enumerate() {
+            assert_eq!(
+                ran.load(Ordering::Relaxed) == usize::MAX,
+                matches!(position, 1 | 3),
+                "item {position} runs a job unless its release settles or holds"
             );
         }
     }
@@ -281,9 +314,9 @@ fn the_bound_of_jobs_with_no_edge_is_the_costliest_job()
         "no job waits, so the costliest one is the critical path"
     );
     assert_eq!(
-        bound.folded(),
+        bound.released(),
         Duration::from_micros(4),
-        "every job starts at once, and the last fold waits for the costliest"
+        "every job is released at once, and the last commit waits for the costliest"
     );
     assert_eq!(
         bound.chain(),
@@ -316,7 +349,7 @@ fn the_bound_of_a_chain_is_its_whole_cost()
         Duration::from_micros(10),
         "each job waits on the one before, so the chain costs the whole"
     );
-    assert_eq!(bound.folded(), Duration::from_micros(10));
+    assert_eq!(bound.released(), Duration::from_micros(10));
     assert_eq!(
         bound.chain(),
         [0, 1, 2, 3].map(ItemIndex::from),
@@ -331,26 +364,24 @@ fn the_bound_of_a_chain_is_its_whole_cost()
 }
 
 #[test]
-fn a_fold_in_slice_order_waits_behind_a_costly_item()
+fn a_release_in_slice_order_waits_behind_a_costly_item()
 {
-    // The costly item 0 waits on nothing. Item 2 waits on the cheap item 1,
-    // whose fold comes after the fold of item 0.
-    let bound = Dependences::new([Dependence {
-        before: 1,
-        after: 2,
-    }])
-    .unwrap()
-    .bound(&[5, 1, 1].map(Duration::from_micros));
-    assert_eq!(bound.serial(), Duration::from_micros(7));
+    // Item 2 waits on the costly item 1. Item 3 waits on the cheap item 0
+    // alone, but its release comes after the release of item 2.
+    let bound =
+        Dependences::new([(1, 2), (0, 3)].map(|(before, after)| Dependence { before, after }))
+            .unwrap()
+            .bound(&[1, 5, 1, 4].map(Duration::from_micros));
+    assert_eq!(bound.serial(), Duration::from_micros(11));
     assert_eq!(
         bound.critical(),
-        Duration::from_micros(5),
-        "item 2 can start once item 1 returns, at 1"
-    );
-    assert_eq!(bound.chain(), [ItemIndex::from(0)]);
-    assert_eq!(
-        bound.folded(),
         Duration::from_micros(6),
-        "item 2 starts at the fold of item 1, which waits for the fold of item 0 at 5"
+        "item 2 can start once item 1 returns, at 5"
+    );
+    assert_eq!(bound.chain(), [1, 2].map(ItemIndex::from));
+    assert_eq!(
+        bound.released(),
+        Duration::from_micros(9),
+        "item 3 is released after item 2, at the commit of item 1 at 5"
     );
 }

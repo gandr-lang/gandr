@@ -25,8 +25,9 @@
 //! Each declaration that the kernel admitted is one job. Its references to
 //! the entries that the same admission added are its dependences, and the
 //! time of its admission is its cost. [`CheckSchedule`] reads from them the
-//! critical path that no width beats, the bound of a release at the fold and
-//! the chain of the critical path ([`gandr_core_fork::Dependences::bound`]).
+//! critical path that no width beats, the bound of a release in slice order
+//! and the chain of the critical path
+//! ([`gandr_core_fork::Dependences::bound`]).
 //! An entry that the admission resumed or that the prelude holds is committed
 //! before the first job, so no job waits on it.
 //!
@@ -348,7 +349,7 @@ impl CheckSchedule
     }
 
     /// What a schedule of the jobs can reach: the serial cost, the critical
-    /// path and the bound of the release at the fold.
+    /// path and the bound of the release in slice order.
     ///
     /// # Specification
     /// trivial.

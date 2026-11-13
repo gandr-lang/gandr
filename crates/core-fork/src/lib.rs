@@ -57,7 +57,8 @@ pub mod activity;
 /// - provides: the four shapes a program forks by: one job per item, each
 ///   worker carrying state of its own; two independent halves run beside each
 ///   other; a scope whose jobs start apart from their waits; and jobs in
-///   dependence order, each item folded on the calling thread in slice order.
+///   dependence order, each released in slice order and committed as it
+///   returns, both on the calling thread.
 /// - panics: none of its own; a job's panic is the job's.
 /// - executable: none — the trait states obligations its implementations carry;
 ///   [`Serial`] carries them on the calling thread.
@@ -149,68 +150,95 @@ pub trait Fork: Sync
         body.run(&Serial)
     }
 
-    /// Run `job` once on every item, each once `fold` has run on every item
-    /// that it waits on, and `fold` on every item on the calling thread, in
-    /// slice order.
+    /// Release each item on the calling thread in slice order, run each job
+    /// that a release gives on any worker, and commit each item on the
+    /// calling thread as its job returns.
     ///
     /// # Specification
-    /// - requires: nothing; an edge of `after` that names an item past the
-    ///   slice is ignored.
-    /// - ensures: on return `job` has run exactly once on every item, after
-    ///   `fold` has run on every item that `after` names before it, from a
-    ///   state handed as [`Fork::each`] hands it; `fold` has run exactly once
-    ///   on every item, on the calling thread, in slice order, each after the
-    ///   item's own job has returned.
-    /// - provides: by default the serial schedule, which runs each item's job
-    ///   and then its fold, in slice order, from one state; a fork over threads
-    ///   overrides it.
-    /// - panics: a panic of `start`, `job` or `fold`, wherever it ran.
-    /// - executable: none — when each job and each fold ran is a property of
-    ///   the implementation's schedule, which a postcondition over the items
+    /// - requires: an edge of `after` that names an item past the slice is
+    ///   ignored.
+    /// - ensures: on return `release` ran on every item, on the calling thread,
+    ///   in slice order. An item's first release came after `commit` ran on
+    ///   every item that `after` names before it. A release that answered
+    ///   [`Releasing::Held`] while a job ran ran again once each job then
+    ///   running was committed. `run` ran exactly once on each job that a
+    ///   release gave. `commit` ran exactly once on every item, on the calling
+    ///   thread: with its job's result once the job returned, or with the
+    ///   result that its release gave.
+    /// - provides: by default the serial schedule, which releases each item,
+    ///   runs its job and commits it, in slice order. No job runs at a release,
+    ///   so a held release commits the result that it holds. A fork over
+    ///   threads overrides it.
+    /// - panics: a panic of `release`, `run` or `commit`, wherever it ran.
+    /// - executable: none — when each release, job and commit ran is a property
+    ///   of the implementation's schedule, which a postcondition over the items
     ///   cannot observe.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — no item, one item and several items under a chain,
-    ///   each stamping its job and its fold, distinguish a state made for
-    ///   nothing, a fold before its job and a reordered item. Each fork over
-    ///   threads stamps every job's start and end and every fold, over graphs
-    ///   with no edge, a chain and a scattered fan.
-    /// - witness: `tests::serial_runs_each_job_then_its_fold_in_order`
+    ///   each stamping its release, its job and its commit, distinguish a job
+    ///   run before its release, a commit before its job and a reordered item.
+    ///   A settled and a held release distinguish a job run for a result found
+    ///   at the release. Each fork over threads stamps every release, job and
+    ///   commit over graphs with no edge, a chain and a scattered fan.
+    /// - witness: `tests::serial_releases_runs_and_commits_each_item_in_order`
     #[inline]
-    fn schedule<Item, State, Start, Job, Fold>(
+    fn schedule<Item, Job, Out, Release, Run, Commit>(
         &self,
         items: &mut [Item],
         _after: &Dependences,
-        start: Start,
-        job: Job,
-        mut fold: Fold,
+        mut release: Release,
+        run: Run,
+        mut commit: Commit,
     ) where
-        Item: Send,
-        State: Send,
-        Start: Fn() -> State + Sync,
-        Job: Fn(&mut State, &mut Item) + Sync,
-        Fold: FnMut(&mut Item),
+        Job: Send,
+        Out: Send,
+        Release: FnMut(ItemIndex, &mut Item) -> Releasing<Job, Out>,
+        Run: Fn(Job) -> Out + Sync,
+        Commit: FnMut(ItemIndex, &mut Item, Out),
     {
         // Every edge goes from an earlier item to a later one, so slice order
-        // waits on each of them, and the serial schedule reads no edge.
-        if items.is_empty() {
-            return;
-        }
-        let mut state = start();
-        for item in items {
-            job(&mut state, item);
-            fold(item);
+        // commits each item that a release waits on, and the serial schedule
+        // reads no edge.
+        for (position, item) in items.iter_mut().enumerate() {
+            let position = ItemIndex(position);
+            let out = match release(position, item) {
+                Releasing::Run(job) => run(job),
+                Releasing::Settled(out) | Releasing::Held(out) => out,
+            };
+            commit(position, item, out);
         }
     }
 }
 
-/// The jobs that each job of a [`Fork::schedule`] waits on, by slice
-/// position.
+/// What the release of one item of [`Fork::schedule`] answers.
+///
+/// # Specification
+/// - provides: a job to run, a result found at the release, or a release that
+///   waits on a running job, with the result to commit when no job runs.
+/// - panics: none.
+/// - executable: none — a type-level block: a plain record that the caller's
+///   release makes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Releasing<Job, Out>
+{
+    /// A job to run on any worker. Its result goes to the item's commit.
+    Run(Job),
+    /// The result, found at the release with no job to run.
+    Settled(Out),
+    /// The release reads the commit of a job that runs. The schedule commits
+    /// each running job, then releases the item again. When no job runs, the
+    /// schedule commits the result held here.
+    Held(Out),
+}
+
+/// The items that the release of each item of a [`Fork::schedule`] waits on,
+/// by slice position.
 ///
 /// # Specification
 /// - provides: edges `(before, after)`, each from an earlier item to a later
-///   one, sorted and without repeats. The job of the item at `after` waits on
-///   the job of the item at `before`. The default has no edge.
+///   one, sorted and without repeats. The release of the item at `after` waits
+///   on the commit of the item at `before`. The default has no edge.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Dependences::new`] states the
 ///   order that it keeps.
@@ -285,26 +313,26 @@ impl Dependences
     ///   as [`Fork::schedule`] ignores it.
     /// - ensures: the serial cost is the sum of the costs. The critical path is
     ///   the longest chain of dependences, each item weighted by its cost: a
-    ///   job starts when the jobs that it waits on return. The folded bound is
-    ///   the end of the last fold when a job starts at the fold of the items
-    ///   that it waits on, the folds run in slice order and a fold costs
-    ///   nothing. The chain holds the items of the critical path in slice
-    ///   order, and its costs sum to the critical path. The critical path is at
-    ///   most the folded bound, and the folded bound is at most the serial
-    ///   cost.
-    /// - provides: the bound that no width beats, the bound of the release at
-    ///   the fold, and the chain that names the first.
+    ///   job starts when the jobs that it waits on return. The released bound
+    ///   is the last commit of [`Fork::schedule`]. There each release comes in
+    ///   slice order, once the items that it waits on are committed, and each
+    ///   commit comes at its job's return. A release and a commit cost nothing.
+    ///   The chain holds the items of the critical path in slice order, and its
+    ///   costs sum to the critical path. The critical path is at most the
+    ///   released bound, and the released bound is at most the serial cost.
+    /// - provides: the bound that no width beats, the bound of the release in
+    ///   slice order, and the chain that names the first.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — jobs with no edge, a chain, an edge past the costs
     ///   and a cheap dependence behind a costly item distinguish a sum for the
-    ///   critical path, a release at the return for the fold and a chain read
-    ///   from the wrong end.
+    ///   critical path, a release out of slice order and a chain read from the
+    ///   wrong end.
     /// - witness: `tests::the_bound_of_jobs_with_no_edge_is_the_costliest_job`
     /// - witness: `tests::the_bound_of_a_chain_is_its_whole_cost`
-    /// - witness: `tests::a_fold_in_slice_order_waits_behind_a_costly_item`
-    #[spec(ensures: |ret| ret.critical <= ret.folded && ret.folded <= ret.serial
+    /// - witness: `tests::a_release_in_slice_order_waits_behind_a_costly_item`
+    #[spec(ensures: |ret| ret.critical <= ret.released && ret.released <= ret.serial
         && ret.chain.len() <= costs.len())]
     #[inline]
     #[must_use]
@@ -317,21 +345,25 @@ impl Dependences
         // The latest return among the jobs that each item waits on, and the
         // item whose return that is.
         let mut ready = alloc::vec![(Duration::ZERO, None::<usize>); count];
-        // The latest fold among the items that each item waits on.
-        let mut released = alloc::vec![Duration::ZERO; count];
+        // The latest commit among the items that each item waits on.
+        let mut waits = alloc::vec![Duration::ZERO; count];
         let mut serial = Duration::ZERO;
-        let mut folded = Duration::ZERO;
+        // The release of the item before, since the releases come in slice
+        // order.
+        let mut release = Duration::ZERO;
+        let mut released = Duration::ZERO;
         let mut last = (Duration::ZERO, None::<usize>);
         let mut edges = self.edges.iter().peekable();
         for (item, &cost) in costs.iter().enumerate() {
             let start = ready.get(item).map_or(Duration::ZERO, |&(start, _)| start);
-            let release = released.get(item).copied().unwrap_or_default();
+            release = release.max(waits.get(item).copied().unwrap_or_default());
             serial = serial.saturating_add(cost);
             let end = start.saturating_add(cost);
             if end > last.0 || last.1.is_none() {
                 last = (end, Some(item));
             }
-            folded = folded.max(release.saturating_add(cost));
+            let commit = release.saturating_add(cost);
+            released = released.max(commit);
             // The edges are sorted by the item waited on, so the edges out of
             // this item come next.
             while let Some(edge) = edges.next_if(|edge| edge.before == item) {
@@ -340,8 +372,8 @@ impl Dependences
                 {
                     *waiting = (end, Some(item));
                 }
-                if let Some(waiting) = released.get_mut(edge.after) {
-                    *waiting = (*waiting).max(folded);
+                if let Some(waiting) = waits.get_mut(edge.after) {
+                    *waiting = (*waiting).max(commit);
                 }
             }
         }
@@ -355,7 +387,7 @@ impl Dependences
         Bound {
             serial,
             critical: last.0,
-            folded,
+            released,
             chain,
         }
     }
@@ -365,7 +397,7 @@ impl Dependences
 /// serial cost.
 ///
 /// # Specification
-/// - provides: the serial cost, the critical path, the folded bound and the
+/// - provides: the serial cost, the critical path, the released bound and the
 ///   chain of the critical path, as [`Dependences::bound`] states them.
 /// - panics: none.
 /// - executable: none — a plain record; [`Dependences::bound`] states what it
@@ -377,9 +409,9 @@ pub struct Bound
     serial: Duration,
     /// The longest chain of dependences, weighted by cost.
     critical: Duration,
-    /// The end of the last fold when each job starts at the fold of the items
-    /// that it waits on.
-    folded: Duration,
+    /// The last commit when each release comes in slice order, once the items
+    /// that it waits on are committed.
+    released: Duration,
     /// The items of the critical path, in slice order.
     chain: Vec<ItemIndex>,
 }
@@ -409,17 +441,17 @@ impl Bound
         self.critical
     }
 
-    /// The end of the last fold when each job starts at the fold of the items
-    /// that it waits on and the folds run in slice order: the bound of
-    /// [`Fork::schedule`] at any width.
+    /// The last commit when each release comes in slice order, once the items
+    /// that it waits on are committed, and each commit comes at its job's
+    /// return: the bound of [`Fork::schedule`] at any width.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn folded(&self) -> Duration
+    pub const fn released(&self) -> Duration
     {
-        self.folded
+        self.released
     }
 
     /// The items of the critical path, in slice order.
@@ -471,8 +503,8 @@ impl From<usize> for ItemIndex
     }
 }
 
-/// One edge of [`Dependences`], by slice position: the job of the item at
-/// `after` waits on the job of the item at `before`.
+/// One edge of [`Dependences`], by slice position: the release of the item at
+/// `after` waits on the commit of the item at `before`.
 ///
 /// # Specification
 /// - provides: the two positions as given; the order is by `before`, then by
@@ -548,7 +580,7 @@ impl core::error::Error for Backward
 /// - witness: `tests::serial_runs_each_item_in_order_from_one_state`
 /// - witness: `tests::serial_runs_the_left_half_before_the_right`
 /// - witness: `tests::serial_runs_a_spawned_job_at_its_wait`
-/// - witness: `tests::serial_runs_each_job_then_its_fold_in_order`
+/// - witness: `tests::serial_releases_runs_and_commits_each_item_in_order`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Serial;
 

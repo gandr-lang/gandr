@@ -449,12 +449,13 @@ INSERT INTO purpose VALUES('core-checker-bridge','template::memo::Unheld','enum'
 INSERT INTO purpose VALUES('core-checker-bridge','template::produce','function','Prepares a family and emits it only under the selected price and inheritance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','template::readmit','function','Replays a complete certificate, exercising paying equation templates first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Backward','struct','An edge whose waiting item does not come after the item that it waits on, so slice order would not be a schedule.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-fork','Bound','struct','What a schedule over its dependences can reach, read from each job''s serial cost: the serial cost, the critical path, the folded bound and the chain of the critical path.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Bound','struct','What a schedule over its dependences can reach, read from each job''s serial cost: the serial cost, the critical path, the released bound and the chain of the critical path.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Deferred','struct','A job the serial spawner holds until its wait.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-fork','Dependence','struct','One edge of a schedule''s dependences, by slice position: the job of the later item waits on the job of the earlier one.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-fork','Dependences','struct','The jobs that each job of a schedule waits on, by slice position.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Dependence','struct','One edge of a schedule''s dependences, by slice position: the release of the later item waits on the commit of the earlier one.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Dependences','struct','The items that the release of each item of a schedule waits on, by slice position.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','ItemIndex','struct','An item of a schedule, by its slice position.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Releasing','enum','What the release of one item of a schedule answers: a job to run, a result found at the release, or a hold on a running job with the result to commit when no job runs.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run inside a fork''s scope, handed the scope''s spawner.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Spawn','trait','Starts jobs inside a fork''s scope, and waits for each job it started.','fork','fits','sound',NULL);

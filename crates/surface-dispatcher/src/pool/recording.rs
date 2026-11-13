@@ -31,6 +31,7 @@ use std::time::Instant;
 
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
+use gandr_core_fork::Releasing;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Spawn;
 use gandr_core_fork::activity::Activity;
@@ -380,38 +381,37 @@ where
         })
     }
 
-    /// Run `job` on every item as the pool's schedule runs it, each between a
-    /// start mark and an end mark that name the item's declaration, and fold
-    /// each item on the calling thread in slice order.
+    /// Release and commit every item as the pool's schedule does, and run
+    /// each job between a start mark and an end mark that name the item's
+    /// declaration.
     ///
     /// # Specification
     /// - ensures: as [`Pool`]'s `schedule`; each job is marked once on the ring
-    ///   of the thread that runs it, and no fold is marked.
-    /// - panics: a panic of `start`, `job` or `fold`, on the calling thread.
+    ///   of the thread that runs it, and no release or commit is marked.
+    /// - panics: a panic of `release`, `run` or `commit`, on the calling
+    ///   thread.
     /// - executable: none — the schedule is the pool's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pool::recording`].
     /// - witness: `pool::recording::tests::a_recorded_schedule_marks_each_job_with_its_declaration`
     #[inline]
-    fn schedule<Item, State, Start, Job, Fold>(
+    fn schedule<Item, Job, Out, Release, Run, Commit>(
         &self,
         items: &mut [Item],
         after: &Dependences,
-        start: Start,
-        job: Job,
-        fold: Fold,
+        release: Release,
+        run: Run,
+        commit: Commit,
     ) where
-        Item: Send,
-        State: Send,
-        Start: Fn() -> State + Sync,
-        Job: Fn(&mut State, &mut Item) + Sync,
-        Fold: FnMut(&mut Item),
+        Job: Send,
+        Out: Send,
+        Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
+        Run: Fn(Job) -> Out + Sync,
+        Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
     {
         let (marks, declared) = (self.marks, &self.declared);
-        let marked = |state: &mut State, index: ItemIndex, item: &mut Item| {
-            marks.around(declared(index), || job(state, item));
-        };
+        let marked = |index: ItemIndex, job: Job| marks.around(declared(index), || run(job));
         let forked = if items.len() <= 1 {
             Ok(Forked::Serial)
         }
@@ -420,10 +420,18 @@ where
         };
         match forked {
             Ok(Forked::Pooled(threads, Pooled(workers))) => {
-                schedule_indexed(Some(threads), workers, items, after, start, marked, fold);
+                schedule_indexed(
+                    Some(threads),
+                    workers,
+                    items,
+                    after,
+                    release,
+                    marked,
+                    commit,
+                );
             },
             Ok(Forked::Serial) | Err(_) => {
-                schedule_indexed(None, Threads::ONE, items, after, start, marked, fold);
+                schedule_indexed(None, Threads::ONE, items, after, release, marked, commit);
             },
         }
     }
