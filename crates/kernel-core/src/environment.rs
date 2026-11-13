@@ -2001,6 +2001,9 @@ impl Environment
                 for _member in &members {
                     self.vacate();
                 }
+                if self.manifest != manifest {
+                    alloc::sync::Arc::make_mut(&mut self.commits).stale_all();
+                }
                 self.manifest = manifest;
                 self.arena.truncate_to(rejected);
                 Err(error)
@@ -2616,6 +2619,14 @@ impl Environment
     /// fresh admission at its rank gives, since a twin of its content may have
     /// left or joined below it.
     ///
+    /// The kernel computes no key again for a unit that its own watermark
+    /// covers. Each entry ranked at or below the watermark reads what it read
+    /// when the kernel last checked its key, so the held key answers by
+    /// lookup. Each commit, retire, rank rewrite, move and change of the
+    /// manifest lowers the watermark. A check of the next key above it raises
+    /// it, after the kernel checks each unit in the gap that the walk does not
+    /// keep, as a seed.
+    ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success, the unit stays live at its ranks with its keys,
@@ -2624,7 +2635,8 @@ impl Environment
     ///   caller retires the unit and offers its declaration. Either way the
     ///   entries keep their number, and the arena mints nothing.
     /// - provides: the key check in place of a readmission that keeps each
-    ///   entry outside the reach of an edit live.
+    ///   entry outside the reach of an edit live, and a lookup in place of the
+    ///   check while nothing the check reads changed.
     /// - fails: [`KernelError::UnboundConstant`] at `first` when it holds no
     ///   entry, or at a position the unit names that is not live or not ranked
     ///   below the unit; [`KernelError::Retired`] when the entry at `first` is
@@ -2641,10 +2653,12 @@ impl Environment
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::rerank`]; an entry that reads a retired
     ///   one is refused in place, and so is one whose precedence changed; a
-    ///   twin kept after an appended one reads as after it.
+    ///   twin kept after an appended one reads as after it; a lookup after a
+    ///   second rank rewrite answers as the check does.
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::an_entry_that_reads_a_retired_one_is_refused_in_place_6846`
     /// - witness: `environment::tests::an_entry_kept_in_place_after_an_appended_twin_reads_as_after_it_6846`
+    /// - witness: `environment::tests::a_held_key_answers_until_an_admission_below_it_7197`
     /// - witness: `ruled::tests::a_keep_whose_precedence_changed_is_refused_6621`
     /// - witness: `ruled::tests::an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
@@ -2673,13 +2687,92 @@ impl Environment
                 refusal: crate::error::KeepRefusal::Unit,
             });
         }
-        let ranks: Vec<SourceRank> = (usize::from(unit.first) .. usize::from(unit.end))
+        if self.lookup(unit) == Lookup::Answers {
+            return Ok(CheckedId::new(first));
+        }
+        let ranks = self.unit_ranks(unit);
+        self.check_in_place(first, &ranks)?;
+        self.key_through(unit, &ranks);
+        Ok(CheckedId::new(first))
+    }
+
+    /// Whether the held keys of `unit` answer for its check by lookup: the
+    /// watermark covers each member, and each member holds a key under a
+    /// policy that keys.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lookup(
+        &self,
+        unit: crate::env::Unit,
+    ) -> Lookup
+    {
+        let members = usize::from(unit.first) .. usize::from(unit.end);
+        let covered = members
+            .clone()
             .filter_map(|member| self.entries.rank_of(ConstantIndex::from(member)))
-            .collect();
-        self.holds_its_key(entry, (first, &ranks))?;
+            .max()
+            .is_some_and(|top| self.commits.keyed_through.is_some_and(|held| top <= held));
+        let keyed = members.into_iter().all(|member| {
+            self.entries
+                .live(ConstantIndex::from(member))
+                .is_some_and(|member| matches!(member.key(), Maybe::Present(_)))
+        });
+        if covered && keyed && self.verdicts.keying() == crate::verdict::Keying::Keys {
+            Lookup::Answers
+        }
+        else {
+            Lookup::Checks
+        }
+    }
+
+    /// The ranks of the members of `unit`, in the order of their positions.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unit_ranks(
+        &self,
+        unit: crate::env::Unit,
+    ) -> Vec<SourceRank>
+    {
+        (usize::from(unit.first) .. usize::from(unit.end))
+            .filter_map(|member| self.entries.rank_of(ConstantIndex::from(member)))
+            .collect()
+    }
+
+    /// Check the unit whose first member stands at `first` in place, at its
+    /// `ranks`, and give a plain definition kept alone the name a fresh
+    /// admission at its rank gives.
+    ///
+    /// # Specification
+    /// - requires: `first` holds the first member of a live unit, and `ranks`
+    ///   names each member, ascending.
+    /// - ensures: as [`Self::keep_in_place`] with no lookup.
+    /// - fails: as [`Self::holds_its_key`].
+    /// - panics: none.
+    /// - executable: none — the clauses state the environment before and after
+    ///   the change, which a predicate may not capture whole.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::keep_in_place`].
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    fn check_in_place(
+        &mut self,
+        first: ConstantIndex,
+        ranks: &[SourceRank],
+    ) -> Result<(), KernelError>
+    {
+        let Some(entry) = self.entries.live(first)
+        else {
+            return Err(KernelError::UnboundConstant { index: first });
+        };
+        self.holds_its_key(entry, (first, ranks))?;
         // A twin's order among the plain definitions of its content is in its
         // name: the kept twin takes the order of its rank among those live now.
-        if matches!(unit.shape, UnitShape::Lone)
+        if matches!(entry.unit().shape, UnitShape::Lone)
             && let ConstantName::Definition { declared, body, .. } = entry.key_name()
             && let Some(&rank) = ranks.first()
         {
@@ -2695,7 +2788,52 @@ impl Environment
                 self.entries.rename(first, named);
             }
         }
-        Ok(CheckedId::new(first))
+        Ok(())
+    }
+
+    /// Raise the watermark through `unit`, whose key holds at `ranks`. Each
+    /// unit that stands in the gap below it is checked in place first: a
+    /// walk in rank order passes such a unit and does not keep it, as a seed.
+    /// The watermark stops below the first unit in the gap whose check fails.
+    ///
+    /// # Specification
+    /// trivial.
+    fn key_through(
+        &mut self,
+        unit: crate::env::Unit,
+        ranks: &[SourceRank],
+    )
+    {
+        let Some(&through) = ranks.last()
+        else {
+            return;
+        };
+        while let Some((rank, position)) = self.commits.next_stale()
+            && rank <= through
+        {
+            if unit.holds(position) == Membership::Member {
+                let commits = alloc::sync::Arc::make_mut(&mut self.commits);
+                for &member in ranks {
+                    commits.keyed(member);
+                }
+                return;
+            }
+            let Some(gap) = self.entries.live(position).map(AdmittedDeclaration::unit)
+            else {
+                return;
+            };
+            let gap_ranks = self.unit_ranks(gap);
+            if gap.first != position
+                || gap_ranks.last().is_none_or(|&last| last > through)
+                || self.check_in_place(position, &gap_ranks).is_err()
+            {
+                return;
+            }
+            let commits = alloc::sync::Arc::make_mut(&mut self.commits);
+            for &member in &gap_ranks {
+                commits.keyed(member);
+            }
+        }
     }
 
     /// Close the admission that minted `atom`: from the next admission on, the
@@ -2769,6 +2907,8 @@ impl Environment
         };
         entry.close(extent);
         let _closed = self.manifest.remove(held);
+        // Each key reads the manifest whole.
+        alloc::sync::Arc::make_mut(&mut self.commits).stale_all();
         Ok(extent)
     }
 
@@ -2919,8 +3059,10 @@ impl Environment
         let Self {
             ref entries,
             ref mut manifest,
+            ref mut commits,
             ..
         } = *self;
+        let before = manifest.len();
         manifest.retain(|&atom| {
             match entries
                 .get(usize::from(atom))
@@ -2937,6 +3079,7 @@ impl Environment
                 Some(_) | None => false,
             }
         });
+        let mut changed = manifest.len() != before;
         match entries
             .get(usize::from(position))
             .map(AdmittedDeclaration::content)
@@ -2944,12 +3087,22 @@ impl Environment
             Some(&DeclarationContent::AbstractType {
                 scope: SealScope::Open,
                 ..
-            }) => manifest.push(position),
+            }) => {
+                manifest.push(position);
+                changed = true;
+            },
             Some(&DeclarationContent::AbstractType {
                 scope: SealScope::Closed(extent),
                 ..
-            }) if reaches_past(position, extent) => manifest.push(position),
+            }) if reaches_past(position, extent) => {
+                manifest.push(position);
+                changed = true;
+            },
             Some(_) | None => {},
+        }
+        // Each key reads the manifest whole.
+        if changed {
+            alloc::sync::Arc::make_mut(commits).stale_all();
         }
     }
 
@@ -3499,6 +3652,17 @@ enum Way
     Checking(Scope, Judged),
 }
 
+/// How a keep in place answers for a unit's check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Lookup
+{
+    /// The held keys answer: the watermark covers each member, and each
+    /// member holds a key under a policy that keys.
+    Answers,
+    /// The kernel computes each key again.
+    Checks,
+}
+
 /// What the committer alone reads and writes beside the entries: the
 /// committer's own part of the log. An environment holds it outside the
 /// `Arc` of [`EntryLog`](crate::env::EntryLog), and no view holds it, so a
@@ -3524,6 +3688,12 @@ struct CommitLog
     /// How many entries a readmission retired since the indexes last dropped
     /// the rows of the retired entries.
     retired: usize,
+    /// The rank through which each live entry's held key answers for the
+    /// environment as it stands: each live entry ranked at or below it reads
+    /// what it read when the kernel last checked its key. Each commit, retire,
+    /// rank rewrite, move and change of the manifest lowers it, and a check of
+    /// the next key above it raises it. None while no entry is known to hold.
+    keyed_through: Option<SourceRank>,
 }
 
 impl CommitLog
@@ -3685,7 +3855,9 @@ impl CommitLog
         self.fold((position, rank), references);
     }
 
-    /// Hold `rank` at `position`, for the entry committed there.
+    /// Hold `rank` at `position`, for the entry committed there. Its key
+    /// reads the environment as it stands, so it holds; each live entry
+    /// ranked above it may read it, so their keys may not.
     ///
     /// # Specification
     /// trivial.
@@ -3695,6 +3867,99 @@ impl CommitLog
     )
     {
         let _previous = self.ranked.insert(rank, position);
+        if self
+            .ranked
+            .range((
+                core::ops::Bound::Excluded(rank),
+                core::ops::Bound::Unbounded,
+            ))
+            .next()
+            .is_some()
+        {
+            self.stale_above(rank);
+        }
+        self.keyed(rank);
+    }
+
+    /// Mark the key of each live entry ranked above `rank` as one that may
+    /// read otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stale_above(
+        &mut self,
+        rank: SourceRank,
+    )
+    {
+        if self.keyed_through.is_some_and(|held| held > rank) {
+            self.keyed_through = Some(rank);
+        }
+    }
+
+    /// Mark the key of each live entry ranked at or above `rank` as one that
+    /// may read otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stale_from(
+        &mut self,
+        rank: SourceRank,
+    )
+    {
+        if self.keyed_through.is_some_and(|held| held >= rank) {
+            self.keyed_through = self
+                .ranked
+                .range(.. rank)
+                .next_back()
+                .map(|(&below, _)| below);
+        }
+    }
+
+    /// Mark the key of each live entry as one that may read otherwise: the
+    /// manifest, which each key reads whole, changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stale_all(&mut self)
+    {
+        self.keyed_through = None;
+    }
+
+    /// The live entry ranked next above the watermark: the next one whose key
+    /// the kernel checks, with its rank.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_stale(&self) -> Option<(SourceRank, ConstantIndex)>
+    {
+        self.keyed_through
+            .map_or_else(
+                || self.ranked.iter().next(),
+                |held| {
+                    self.ranked
+                        .range((
+                            core::ops::Bound::Excluded(held),
+                            core::ops::Bound::Unbounded,
+                        ))
+                        .next()
+                },
+            )
+            .map(|(&rank, &position)| (rank, position))
+    }
+
+    /// Raise the watermark to `rank` when the entry there is the next one
+    /// above it and its key holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keyed(
+        &mut self,
+        rank: SourceRank,
+    )
+    {
+        if self.next_stale().is_some_and(|(next, _)| next == rank) {
+            self.keyed_through = Some(rank);
+        }
     }
 
     /// Fold the entry at `position` and `rank`, which names `references`,
@@ -3766,6 +4031,7 @@ impl CommitLog
         if self.ranked.get(&rank) == Some(&position) {
             let _freed = self.ranked.remove(&rank);
         }
+        self.stale_above(rank);
     }
 
     /// Drop the rows of the retired entries from the reverse index and the
@@ -3819,10 +4085,23 @@ impl CommitLog
         length: gandr_kernel_term::ArenaLength,
     )
     {
-        self.ranked = ranks
+        let ranked: BTreeMap<SourceRank, ConstantIndex> = ranks
             .iter()
             .map(|(&position, &rank)| (rank, position))
             .collect();
+        // The keys below the watermark hold through the longest run of
+        // entries that keeps its order, from the lowest rank on.
+        let mut keyed_through = None;
+        if let Some(held) = self.keyed_through {
+            for ((_, &before), (&rank, &after)) in self.ranked.range(..= held).zip(&ranked) {
+                if before != after {
+                    break;
+                }
+                keyed_through = Some(rank);
+            }
+        }
+        self.ranked = ranked;
+        self.keyed_through = keyed_through;
         self.order = self.order_over(length);
     }
 
@@ -3854,6 +4133,7 @@ impl CommitLog
         let _to = self.ranked.insert(to, position);
         self.next = Some(SourceRank::from(usize::from(to).saturating_add(1)));
         self.order = self.order_over(length);
+        self.stale_from(from.min(to));
     }
 
     /// The order of the rank index among `length` slots: positional exactly
@@ -3914,7 +4194,15 @@ impl CommitLog
             positions.retain(|&position| position < first);
             !positions.is_empty()
         });
+        let least = self
+            .ranked
+            .iter()
+            .find(|&(_, &position)| position >= first)
+            .map(|(&rank, _)| rank);
         self.ranked.retain(|_, &mut position| position < first);
+        if let Some(least) = least {
+            self.stale_from(least);
+        }
     }
 
     /// The reach of an edit to the entries of `entries` at `edited`, as
@@ -6389,6 +6677,63 @@ mod tests
             order(&readmitted, usize::from(old)),
             order(&fresh, 1),
             "the kept twin takes the second order, as after it"
+        );
+    }
+
+    /// #7197: a held key answers for a keep in place until a commit below
+    /// its entry changes what the check reads. `a` and `b` are equal data
+    /// declarations, so the key of each counts the ones ranked below it. A
+    /// rank rewrite that keeps their order keeps both on their held keys. An
+    /// equal declaration `c` committed between them changes the count that
+    /// the check of `b` reads, so the keep of `b` is refused, as the check
+    /// refuses it. `a`, ranked below `c`, is kept.
+    #[test]
+    fn a_held_key_answers_until_an_admission_below_it_7197()
+    {
+        let data = Generated::Lone(Member::Data(LevelConstant::from(0_u64), vec![]));
+        let mut environment = keyed();
+        let [a, b] = [(); 2].map(|()| {
+            match admit_generated(&mut environment, &data, &[], None)
+                .expect("an equal declaration admits")
+                .as_slice()
+            {
+                &[position] => position,
+                _ => panic!("a lone declaration takes one position"),
+            }
+        });
+        assert_eq!(
+            environment.rerank(&[
+                (a, SourceRank::from(2_usize)),
+                (b, SourceRank::from(4_usize))
+            ]),
+            Ok(()),
+            "`a` takes the rank 2 and `b` the rank 4"
+        );
+        for position in [a, b] {
+            assert_eq!(
+                environment.keep_in_place(position).map(CheckedId::position),
+                Ok(position),
+                "the entry at {position:?} keeps its order, so it is kept"
+            );
+        }
+        let _c = admit_generated(
+            &mut environment,
+            &data,
+            &[],
+            Some(SourceRank::from(3_usize)),
+        )
+        .expect("`c` admits between them");
+        assert_eq!(
+            environment.keep_in_place(a).map(CheckedId::position),
+            Ok(a),
+            "`a`, ranked below `c`, reads what it read"
+        );
+        assert!(
+            matches!(
+                environment.keep_in_place(b),
+                Err(KernelError::Unkept { position, .. }) if position == b
+            ),
+            "`b` counts `c` now, so its held key is refused"
         );
     }
 
