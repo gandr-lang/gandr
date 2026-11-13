@@ -831,4 +831,24 @@ impl Account
                 derived.read(row.kernel)
             })
     }
+
+    /// Whether a traced judgement of the content of `key` built a tree that
+    /// the account holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub(crate) fn holds_tree(
+        &self,
+        key: ContentKey,
+    ) -> Maybe<(), gandr_core_incremental::traceless::Absent>
+    {
+        if self.derived.contains_key(&key) {
+            Maybe::Present(())
+        }
+        else {
+            Maybe::Absent(gandr_core_incremental::traceless::Absent::Unkept)
+        }
+    }
 }

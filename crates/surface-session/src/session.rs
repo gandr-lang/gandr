@@ -568,6 +568,8 @@ struct Observed<'sink, Sink>
     sink: &'sink mut Sink,
     /// The arena's watermark before this revision's lowering minted its nodes.
     fresh: ArenaWatermark,
+    /// The document's account, whose trees a traced pass keeps by adoption.
+    account: &'sink Account,
 }
 
 #[cfg(feature = "instrument")]
@@ -648,6 +650,19 @@ where
         if let Maybe::Present(column) = self.sink.trace() {
             column.restore(buffer);
         }
+    }
+
+    /// Whether the account holds the tree of the content of `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn held(
+        &self,
+        key: gandr_core_incremental::ContentKey,
+    ) -> Maybe<(), gandr_core_incremental::traceless::Absent>
+    {
+        self.account.holds_tree(key)
     }
 }
 
@@ -3278,6 +3293,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             let mut observer = Observed {
                 sink: &mut *sink,
                 fresh,
+                account: &self.account,
             };
             #[cfg(not(feature = "instrument"))]
             let mut observer = {
