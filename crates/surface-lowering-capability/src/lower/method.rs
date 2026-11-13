@@ -1600,60 +1600,57 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
 {
 }
 
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+/// Wrap the body `body` of a written-through method in the hold of its
+/// receiver, returning the receiver's last value beside the body's
+/// answer.
+///
+/// # Specification
+/// - requires: `body` was minted under the receiver's linear binder past every
+///   parameter.
+/// - ensures: `var self = x ; r <- body ; pure (self, r)`, `x` the receiver
+///   parameter, every node marked as inserted for the method at `origin`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`HeldReceiver`].
+/// - witness: `gandr-surface-lowering::lower::method::tests::a_written_through_body_returns_its_receiver`
+#[spec(ensures: |ret| sink.origins.computation(ret) == Maybe::Present(origin.inserted(Insertion::Method)))]
+#[inline]
+pub fn hold_body(
+    receiver: HeldReceiver,
+    body: ComputationId,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> ComputationId
 {
-    /// Wrap the body `body` of a written-through method in the hold of its
-    /// receiver, returning the receiver's last value beside the body's
-    /// answer.
-    ///
-    /// # Specification
-    /// - requires: `body` was minted under the receiver's linear binder past
-    ///   every parameter.
-    /// - ensures: `var self = x ; r <- body ; pure (self, r)`, `x` the receiver
-    ///   parameter, every node marked as inserted for the method at `origin`.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`HeldReceiver`].
-    /// - witness: `gandr-surface-lowering::lower::method::tests::a_written_through_body_returns_its_receiver`
-    #[spec(ensures: |ret| sink.origins.computation(ret) == Maybe::Present(origin.inserted(Insertion::Method)))]
-    #[inline]
-    pub fn hold_body(
-        receiver: HeldReceiver,
-        body: ComputationId,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ComputationId
-    {
-        let inner = origin.inserted(Insertion::Method);
-        let value = sink
-            .arena
-            .value_variable(Zone::Intuitionistic, receiver.index);
-        sink.origins.record_value(value, inner);
-        let slot = sink
-            .arena
-            .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
-        sink.origins.record_value(slot, inner);
-        let answer = sink
-            .arena
-            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        sink.origins.record_value(answer, inner);
-        let pair = sink.arena.value_tuple(&[slot, answer]);
-        sink.origins.record_value(pair, inner);
-        let returned = sink.arena.computation_return(pair);
-        sink.origins.record_computation(returned, inner);
-        let bound = sink.arena.computation_bind(body, returned);
-        sink.origins.record_computation(bound, inner);
-        let held = sink.arena.computation_memory(MemoryForm::Hold {
-            value,
-            body: bound,
-            grade: HoldGrade::Many,
-        });
-        sink.origins.record_computation(held, inner);
+    let inner = origin.inserted(Insertion::Method);
+    let value = sink
+        .arena
+        .value_variable(Zone::Intuitionistic, receiver.index);
+    sink.origins.record_value(value, inner);
+    let slot = sink
+        .arena
+        .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    sink.origins.record_value(slot, inner);
+    let answer = sink
+        .arena
+        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    sink.origins.record_value(answer, inner);
+    let pair = sink.arena.value_tuple(&[slot, answer]);
+    sink.origins.record_value(pair, inner);
+    let returned = sink.arena.computation_return(pair);
+    sink.origins.record_computation(returned, inner);
+    let bound = sink.arena.computation_bind(body, returned);
+    sink.origins.record_computation(bound, inner);
+    let held = sink.arena.computation_memory(MemoryForm::Hold {
+        value,
+        body: bound,
+        grade: HoldGrade::Many,
+    });
+    sink.origins.record_computation(held, inner);
 
-        held
-    }
+    held
 }
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>

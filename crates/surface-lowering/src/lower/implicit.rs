@@ -437,11 +437,10 @@ impl<'source> Lowerer<'_, 'source>
         own: &mut super::OwnName,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        let Maybe::Present(entries) = self.shared().merged_at(site.at.node)
+        let Maybe::Present(entries) = self.shared().merged_at(site.at.node).map(<[_]>::to_vec)
         else {
             return Ok(frame);
         };
-        let entries = entries.to_vec();
         let owner = self.cx().collected.owner_of(site.at.node);
         let mut frame = frame;
         for (written, entry) in entries.into_iter().enumerate() {
@@ -451,9 +450,10 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
-                frame = Models::new(self).flatten_implicit(entry, declared, &slot, frame)?;
+                frame = Models::new(self.host()).flatten_implicit(entry, declared, &slot, frame)?;
                 if let Maybe::Present(owner) = owner {
-                    let spelled = ModelsRef::new(self).written_slot(entry, declared, &slot);
+                    let spelled =
+                        ModelsRef::new(self.host_ref()).written_slot(entry, declared, &slot);
                     let held = self.cx_mut().written_slots.entry(owner).or_default();
                     if !held.iter().any(|&(at, _)| at == written) {
                         held.push((written, spelled));
@@ -536,7 +536,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        Ok(Models::new(self)
+        Ok(Models::new(self.host())
             .model_slot(site, declared)?
             .filter(|slot| !slot.components().is_empty())
             .map(|slot| (declared, slot)))
@@ -575,11 +575,10 @@ impl<'source> Lowerer<'_, 'source>
         written: super::native::Staging,
     ) -> Result<super::native::Staging, LoweringRefusal<'source>>
     {
-        let Maybe::Present(entries) = self.shared().merged_at(site.at.node)
+        let Maybe::Present(entries) = self.shared().merged_at(site.at.node).map(<[_]>::to_vec)
         else {
             return Ok(written);
         };
-        let entries = entries.to_vec();
         let mut bound = 0_usize;
         let mut explicit = 0_usize;
         let mut kept = None;
@@ -1495,7 +1494,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let supplied = match value {
-            Some(value) => Some(Arc::new(Models::new(self).supply_model(
+            Some(value) => Some(Arc::new(Models::new(self.host()).supply_model(
                 site,
                 frame,
                 (implicit, slot),
@@ -1578,7 +1577,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
-        let candidates = Models::new(self).model_candidates(site, slot)?;
+        let candidates = Models::new(self.host()).model_candidates(site, slot)?;
         let names: Vec<String> = candidates
             .iter()
             .map(|&(name, _)| String::from(name.as_ref()))
