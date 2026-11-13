@@ -51,6 +51,12 @@ Run the crate's tests from the repository root:
 mise exec -- cargo test -p gandr-storage-store
 ```
 
+Measure the load of many files into one store at once. The bench prints one row for each width, with the rate of its puts beside the rate of the fold of one writer:
+
+```sh
+mise exec -- cargo bench -p gandr-storage-store --bench load
+```
+
 ## Where the detail lives
 
 Mechanism and witnesses live in the rustdoc beside the code:

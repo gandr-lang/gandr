@@ -18,6 +18,14 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
+# The load of many files into one store at once, its rate of puts beside the
+# fold of one writer. `cargo bench` prints one row for each width; `cargo
+# test` runs one short pass.
+[[bench]]
+harness = false
+name = "load"
+path = "benches/load.rs"
+
 # The pinned anodized facade supplies the specification attributes; arc-swap
 # holds the snapshot of the roots that readers load with no lock; blake3
 # digests each roots journal entry; the publisher writes each file through a
