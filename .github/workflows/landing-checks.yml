@@ -998,6 +998,11 @@ jobs:
       - name: run the corpus roots
         if: &plain-gate ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
         run: mise run check:corpus
+      # The differential of the scheduled replay (#7286) runs the driver that
+      # the corpus roots built, at each width against the serial run.
+      - name: run the differential of the replay
+        if: *plain-gate
+        run: mise run check:differential
       # The corpus roots built the driver the formatter check runs, and the
       # plain state holds the comments suite: the format gate would build both
       # from nothing.

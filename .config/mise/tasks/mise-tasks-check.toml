@@ -1500,6 +1500,76 @@ run = [
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std",
 ]
 
+# The differential of the scheduled replay against the serial run (#7286,
+# #3476): the strict root of `check:corpus` under `gandr check --recheck
+# --measure`, at one job, the serial run, and then at 2, 4 and 16 jobs and at
+# the host's width. Each width keeps the lines of the serial run as the ruling
+# on #7286 sets it (`.config/differential/differential.bash`): each verdict,
+# each refusal and its kind, and the sharing of each declaration exactly, and
+# the census as a bound. Above one job the driver sets the speculation group
+# on. The group off above one job waits on the surface of the group (#7303).
+# Each run reads configuration, cache, data and state directories of its own,
+# so no verdict that the host keeps admits a declaration.
+["check:differential"]
+description = "The strict root at 2, 4 and 16 jobs and at the host's width keeps the serial run's verdicts, refusals and sharing, and expands at least as much"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/differential/differential.bash
+.config/differential/cases.bash
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+roots=(crates/surface-corpus/strict library/std)
+mapfile -t widths < <(printf '%s\n' 2 4 16 "$(nproc)" | sort -nu)
+gandr=$(.config/mise/scope cargo build --locked --quiet --profile test --package gandr-lang --bin gandr \
+  --message-format=json-render-diagnostics \
+  | jq -r 'select(.reason == "compiler-artifact" and .target.name == "gandr") | .executable // empty')
+# Run the roots at `$1` jobs into `$scratch/<jobs>.out`, `.err` and `.status`.
+measured() {
+  local jobs=$1 home="$scratch/home-$1" status=0
+  env -u GANDR_JOBS XDG_CONFIG_HOME="$home/config" XDG_CACHE_HOME="$home/cache" \
+    XDG_DATA_HOME="$home/data" XDG_STATE_HOME="$home/state" \
+    "$gandr" --run-budget 16777216 check --recheck --measure --jobs "$jobs" "${roots[@]}" \
+    > "$scratch/$jobs.out" 2> "$scratch/$jobs.err" || status=$?
+  echo "$status" > "$scratch/$jobs.status"
+  differential_lines < "$scratch/$jobs.out" > "$scratch/$jobs.lines"
+}
+measured 1
+serial=$(< "$scratch/1.status")
+failed=0
+read_widths=()
+for jobs in "${widths[@]}"; do
+  measured "$jobs"
+  group=$(awk -F': ' '/^speculation: / { print $3; exit }' "$scratch/$jobs.out")
+  if [[ $(< "$scratch/$jobs.status") != "$serial" ]]; then
+    printf 'check:differential: at --jobs %s the run exits %s, and the serial run exits %s\n' \
+      "$jobs" "$(< "$scratch/$jobs.status")" "$serial" >&2
+    failed=1
+  fi
+  if ! cmp -s "$scratch/1.err" "$scratch/$jobs.err"; then
+    printf 'check:differential: at --jobs %s the standard error departs from the serial run:\n' "$jobs" >&2
+    diff "$scratch/1.err" "$scratch/$jobs.err" >&2 || true
+    failed=1
+  fi
+  if ! differential_compare "$scratch/1.lines" "$scratch/$jobs.lines" > "$scratch/$jobs.why"; then
+    printf 'check:differential: at --jobs %s, under the group %s, these lines depart from the serial run:\n' \
+      "$jobs" "$group" >&2
+    cat "$scratch/$jobs.why" >&2
+    failed=1
+  fi
+  read_widths+=("$jobs: $group")
+  rm -f "$scratch/$jobs.out" "$scratch/$jobs.lines" "$scratch/$jobs.err"
+done
+if (( failed )); then
+  echo 'differential check FAILED: each width keeps the lines of the serial run (#7286)' >&2
+  exit 1
+fi
+printf 'differential check OK: %s measure lines and the summary of the serial run at each width, the census as a bound\n' \
+  "$(awk '/^measure: /' "$scratch/1.lines" | wc -l)"
+printf '  --jobs %s\n' "${read_widths[@]}"
+'''
+
 # The renderers' goldens of the corpus (#6489): each renderer that renders
 # every refusing source holds the test in its `tests/corpus.rs`, under the
 # module `corpus`, and this gate runs that module. A new renderer joins by

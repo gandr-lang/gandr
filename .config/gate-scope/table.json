@@ -21,6 +21,7 @@
       "check:corpus-comments",
       "check:corpus-format",
       "check:corpus-goldens",
+      "check:differential",
       "check:exemplars",
       "check:gandr-doc",
       "check:syntax-exemplars"
