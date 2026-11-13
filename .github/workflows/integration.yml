@@ -13,8 +13,10 @@ name: integration
 # it with no fail-fast. A red run writes the known-red list and pages the
 # fixer, and the landings go on. A green run fast-forwards `main`, and a
 # rebase moves `landing` onto a fix that `main` takes (#5441). A cycle
-# starts when the one before it ends: the end of a dispatched run of ci.yml
-# on `integration` starts this workflow. A push to `landing` or
+# starts when the one before it ends: the end of a dispatched run of the
+# suite on `integration` starts this workflow. The suite is `CI` until the
+# rename of the workflows reaches `main`, and `landing-checks` after it
+# (#7099), so the trigger names both. A push to `landing` or
 # `integration` starts it too, so an idle cycle takes a new landing or a fix
 # at once. Each step reads the state of the cycle from GitHub (`ci:cycle`),
 # so a repeated event changes nothing, and the next event recovers a lost
@@ -34,7 +36,7 @@ on:
   push:
     branches: [landing, integration]
   workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: [CI]
+    workflows: [CI, landing-checks]
     types: [completed]
     branches: [integration]
   workflow_dispatch: {}

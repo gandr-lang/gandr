@@ -1421,7 +1421,7 @@ done < "$scratch/actions"
 # `gandr-lang` App in the workflow, because the workflow's token has no
 # room for the cycle (`.config/gh/calls.toml`). `.config/integration/
 # cycle.jq` decides the step from the tips of `landing` and `integration` and
-# from the dispatched runs of ci.yml on `integration`. A passing verdict
+# from the dispatched runs of the suite's file on `integration`. A passing verdict
 # fast-forwards `main` to the commit it tested. Until `main`'s ruleset admits
 # the App (#5443), GitHub refuses that, and the step says so. A `main` that
 # moves to a fix whose patch `landing` lacks (#6683, `.config/landing/
@@ -1443,7 +1443,7 @@ done < "$scratch/actions"
 # holds the section `## The brake` while the brake holds the landings. A
 # change of that state sets the step output `brake` to `on` or `off` and the
 # output `list` to the list's issue, and the workflow pages every lane and
-# the coordinator. Last, the step dispatches ci.yml on `integration`
+# the coordinator. Last, the step dispatches the suite's file on `integration`
 # with the input `cycle` when the tip needs a verdict. It reads the
 # self-hosted runners first with RUNNERS_TOKEN, and
 # `.config/integration/runner.jq` gives the input `runner`: `integration`
@@ -1488,8 +1488,23 @@ dispatch() {
   return 1
 }
 merged_main=false
+# The file of the cycle's suite at a commit of `integration` (#7099):
+# `landing-checks.yml` once the commit holds it, and `ci.yml` before. The
+# rename of the workflows reaches `integration` before it reaches `main`, and
+# the step runs the copy of `main`, so the step reads the file at the commit.
+# One read lists the names of the commit's workflow directory, about 12 KB,
+# and no file's content. A failed read stops the step.
+suite() {
+  local held
+  held=$(gh api "repos/$repo/contents/.github/workflows?ref=$1" --jq 'any(.[]; .name == "landing-checks.yml")') || return 1
+  if [[ $held == true ]]; then
+    echo landing-checks.yml
+  else
+    echo ci.yml
+  fi
+}
 running() {
-  gh run list --repo "$repo" --workflow ci.yml --branch integration --event workflow_dispatch --limit 100 \
+  gh run list --repo "$repo" --workflow "$1" --branch integration --event workflow_dispatch --limit 100 \
     --json databaseId,status,conclusion,headSha,url
 }
 landing=$(tip landing)
@@ -1511,7 +1526,8 @@ if [[ -n $repair ]]; then
     ahead | identical) held_repair=true ;;
   esac
 fi
-running > "$scratch/runs.json"
+read_suite=$(suite "$integration")
+running "$read_suite" > "$scratch/runs.json"
 # Each failure that could be hollow, newest first: its jobs read, the run
 # marked, and the next asked for. A read that fails stops the marks, so the
 # run stays a verdict.
@@ -1776,12 +1792,13 @@ if [[ $start == true ]]; then
   choice=$(runners | jq -c -s '{runners: .[0]}' | jq -c -f "$here/runner.jq")
   say "$(jq -r .line <<< "$choice")"
   runner=$(jq -r .runner <<< "$choice")
+  file=$(suite "$(tip integration)")
   if [[ -z $write ]]; then
-    say "would dispatch ci.yml on integration with the input cycle on the $runner runner"
+    say "would dispatch $file on integration with the input cycle on the $runner runner"
     exit 0
   fi
-  dispatch ci.yml --repo "$repo" --ref integration -f cycle=true -f runner="$runner"
-  say "The cycle dispatches ci.yml on integration on the $runner runner."
+  dispatch "$file" --repo "$repo" --ref integration -f cycle=true -f runner="$runner"
+  say "The cycle dispatches $file on integration on the $runner runner."
 fi
 {% endraw %}'''
 
