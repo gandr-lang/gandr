@@ -240,6 +240,33 @@ set -euo pipefail
 exec .config/gate-rows/report.bash ${usage_since:+"$usage_since"}
 {% endraw %}'''
 
+# The hosts block (#6880). `report:hosts` prints one row for each runner
+# label class and pages the fixer once for a red scheduled run on our
+# runners. The seat token cannot list runners, so the counts read unread
+# until RUNNERS_TOKEN is set. The check holds the reading's cases.
+["report:hosts"]
+description = "Print the hosts block and page the fixer once for a red scheduled run on our runners"
+tools.jq = "1.8.1"
+usage = '''
+flag "--dry-run" help="print the block and the pages, and write nothing"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+exec .config/hosts/hosts.bash ${usage_dry_run:+--dry-run}
+{% endraw %}'''
+
+["check:hosts"]
+description = "The hosts block names each runner class and pages a red scheduled run once"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash hosts .config/hosts/cases.json --program .config/hosts/hosts.jq --mode c
+.config/hosts/page-cases.bash
+echo "hosts check OK: $(jq length .config/hosts/cases.json) cases read as recorded"
+'''
+
 # The local gate's time against its budget (#5215). The gate on main runs
 # every check over the whole workspace, so its time compares from one run to
 # the next. The task reads the newest record of `gate:all` on the tree of
