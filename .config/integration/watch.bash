@@ -175,8 +175,9 @@ watch_run() {
     (cd "$watch_tree" \
       && GATE_SCOPE=$(.config/gate-scope/scope.bash 2> /dev/null) \
       && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
+      && GATE_WITNESS_LISTED=$(.config/gate-scope/scope.bash --listed 2> /dev/null) \
       && GATE_TEST_SCOPE=$(GATE_TEST_EVERY_RED=1 .config/gate-scope/test-scope.bash 2> /dev/null) \
-      && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_TEST_SCOPE \
+      && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_WITNESS_LISTED GATE_TEST_SCOPE \
       && GANDR_GATE_SLOT=background nice -n 19 mise run "$check") > "$log" 2>&1
   fi
 }

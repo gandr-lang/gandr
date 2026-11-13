@@ -103,8 +103,9 @@ source .config/pr-stack/trunk.bash
 if GATE_BASE=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then export GATE_BASE; else unset GATE_BASE; fi
 if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:tests-enforcing "* ]]; then
   GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
+  GATE_WITNESS_LISTED=$(.config/gate-scope/scope.bash --listed 2> /dev/null)
   GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash)
-  export GATE_WITNESS_SCOPE GATE_TEST_SCOPE
+  export GATE_WITNESS_SCOPE GATE_WITNESS_LISTED GATE_TEST_SCOPE
   # A test that the known-red list names below the branch's base is the
   # fixer's, and it holds no lane's gate (#7061). The head watcher reads
   # every test, so the cycle's reading stays whole.
@@ -748,8 +749,10 @@ run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo nextes
 # packages those cargo flags select: a member's witnesses name its own tests,
 # so each enforcing shard resolves its members against its own listing.
 # `mise run check` sets `GATE_WITNESS_SCOPE` to the packages its change
-# touches (#6433). The gate then lists those packages as a shard does, with
-# the same features as the integration cycle, and resolves their witnesses.
+# touches (#6433), and `GATE_WITNESS_LISTED` to those and their direct
+# dependents, whose tests a witness can name (#7039, #7195). The gate lists
+# the second set as a shard does, with the same features as the integration
+# cycle, and resolves the witnesses of the first.
 # With neither, the task lists the shard's members, or the workspace, first,
 # so the gate and `resolve.jq` read one listing.
 # A listing holds the tests this host builds, so a witness whose test's own
@@ -790,7 +793,7 @@ if [[ -n ${CI_WITNESS_LISTINGS:-} ]]; then
   fi
 else
   [[ -z ${GATE_WITNESS_SCOPE:-} ]] || shard=$GATE_WITNESS_SCOPE
-  CI_SHARD_ARGS=${shard:---workspace} CI_WITNESS_LISTING=$listed mise run ci:witness-listing
+  CI_SHARD_ARGS=${GATE_WITNESS_LISTED:-${shard:---workspace}} CI_WITNESS_LISTING=$listed mise run ci:witness-listing
   listings+=(--inventory "$listed")
   files+=("$listed")
 fi
@@ -2541,8 +2544,12 @@ echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as re
 # of parts that is not every nextest slice once and the plain witness once.
 # Each case in `.config/coverage/cases.json` gives its refusals; then
 # `.github/workflows/report-coverage.yml`'s own jobs, anchors expanded, give none.
+# `.config/coverage/targets.jq` refuses an integration target whose file holds
+# no item (#7195): its binary has no coverage map, and `cargo llvm-cov report`
+# stops on it. Each case in `.config/coverage/targets.json` gives its
+# refusals; then the tree's targets (`targets.bash`) give none.
 ["check:coverage"]
-description = "The coverage measure runs one part a job, its parts every slice of the enforcing suite once and the plain witness once"
+description = "The coverage measure runs one part a job, its parts every slice of the enforcing suite once and the plain witness once, and every integration target holds an item"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -2554,7 +2561,9 @@ if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
 fi
-echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as recorded; the measure runs in parts that make up the whole"
+.config/cases/run.bash coverage .config/coverage/targets.json --program .config/coverage/targets.jq --mode c
+.config/coverage/targets.bash
+echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as recorded; the measure runs in parts that make up the whole; $(jq length .config/coverage/targets.json) target cases read as recorded, and every integration target holds an item"
 '''
 
 # The queue on `landing` runs the blocking set alone (#5439).

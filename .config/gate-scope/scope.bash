@@ -14,6 +14,9 @@
 # Rust check, and its scope is the whole workspace too, so a Rust check run by
 # hand never excludes every package. With `--touched`, the set is the
 # packages the change touches alone, for `check:witnesses` (#6433). With
+# `--listed`, the set holds the touched packages and each package that
+# depends on one of them directly: a witness can name a test of such a
+# package (#7039), so `check:witnesses` lists its tests (#7195). With
 # `--readers`, the set holds the packages whose tests read the corpus and the
 # whole pipeline too (`table.json`'s `readers`), for a lane's enforcing suite
 # (#6812). With `--lints`, a change of a lint's configuration reads the whole
@@ -25,20 +28,22 @@
 # same rule reads as three packages outside the queue, and its log named no
 # path.
 #
-# Usage: scope.bash [--touched] [--readers] [--lints]
+# Usage: scope.bash [--touched] [--listed] [--readers] [--lints]
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
 source "$here/../pr-stack/trunk.bash"
 touched=false
+listed=false
 readers=false
 lints=false
 for arg in "$@"; do
   case $arg in
     --touched) touched=true ;;
+    --listed) touched=true listed=true ;;
     --readers) readers=true ;;
     --lints) lints=true ;;
-    *) echo "scope: unknown argument $arg; usage: scope.bash [--touched] [--readers] [--lints]" >&2; exit 2 ;;
+    *) echo "scope: unknown argument $arg; usage: scope.bash [--touched] [--listed] [--readers] [--lints]" >&2; exit 2 ;;
   esac
 done
 if [[ -n ${GATE_BASE:-} ]]; then
@@ -63,6 +68,10 @@ set=$(jq -nR --slurpfile packages <(printf '%s\n' "$packages") --argjson touched
   | jq -c -L "$here" -f "$here/packages.jq")
 if [[ $readers == true ]]; then
   set=$(jq -c --slurpfile table "$here/table.json" 'if . == "workspace" then . else . + $table[0].readers | unique end' <<< "$set")
+fi
+if [[ $listed == true ]]; then
+  set=$(jq -c --slurpfile packages <(printf '%s\n' "$packages") \
+    'if . == "workspace" then . else . as $set | $set + [$packages[0][] | select(any(.deps[]; IN($set[]))) | .name] | unique end' <<< "$set")
 fi
 # The paths in no package go to `jq` as a file, as the change does.
 jq -nR --slurpfile packages <(printf '%s\n' "$packages") '{changed: [inputs | select(length > 0)], packages: $packages[0]}' < "$change" \

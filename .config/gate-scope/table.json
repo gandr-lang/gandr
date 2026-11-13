@@ -131,9 +131,13 @@
       ],
       "check:commits": [".config/commits/", ".config/pr-stack/", "commitlint.config.mjs"],
       "check:coverage": [
+        ".cargo/",
         ".config/cases/",
         ".config/coverage/",
-        ".github/workflows/report-coverage.yml"
+        ".github/workflows/report-coverage.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
       ],
       "check:crate-lead": [".config/cases/", ".config/crate-lead/", "crates/"],
       "check:crate-map": [
