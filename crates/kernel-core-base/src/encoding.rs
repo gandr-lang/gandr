@@ -1480,14 +1480,11 @@ pub struct ContentTable
     /// The placement walk's task stack.
     tasks: Vec<EncodeTask>,
     /// How each admitted constant is named, by admission position; a position
-    /// past the end is named by itself. An overlay shares it with the table
-    /// below until one of them names one more.
-    #[expect(
-        clippy::rc_buffer,
-        reason = "an overlay shares the names with the table below, and `Arc::make_mut` grows them \
-                  in place while no overlay reads them"
-    )]
-    constants: Arc<Vec<ConstantName>>,
+    /// past the end is named by itself. The names stay frozen, so an overlay
+    /// shares them with the table below, and a naming copies at most the 63
+    /// last names that another table shares
+    /// ([`Family::freeze`](gandr_kernel_term::Family::freeze)).
+    constants: gandr_kernel_term::Family<ConstantName>,
     /// Whether the table names its records, and the names when it does.
     naming: Naming,
 }
@@ -2518,8 +2515,8 @@ impl ContentTable
     ///   definition separate reading by content from reading by position.
     /// - witness: `gandr-kernel-core::environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
     /// - witness: `gandr-kernel-core::environment::encoding_tests::an_axiom_reference_keeps_its_position`
-    #[spec(captures: named_before = self.constants.len(),
-        ensures: self.constants.len() == named_before.max(usize::from(entries.len())))]
+    #[spec(captures: named_before = usize::from(self.constants.len()),
+        ensures: usize::from(self.constants.len()) == named_before.max(usize::from(entries.len())))]
     #[inline]
     pub fn name_constants(
         &mut self,
@@ -2546,8 +2543,8 @@ impl ContentTable
     /// - hypothesis: L3 — as [`Self::name_constants`], and a unit kept in place
     ///   reads as a fresh admission of it.
     /// - witness: `gandr-kernel-core::environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
-    #[spec(captures: named_before = self.constants.len(),
-        ensures: self.constants.len()
+    #[spec(captures: named_before = usize::from(self.constants.len()),
+        ensures: usize::from(self.constants.len())
             == named_before.max(usize::from(entries.len()).min(usize::from(end))))]
     #[inline]
     pub fn name_constants_before(
@@ -2556,15 +2553,16 @@ impl ContentTable
         end: ConstantIndex,
     )
     {
-        let named = self.constants.len();
+        let named = usize::from(self.constants.len());
         if named >= usize::from(entries.len()).min(usize::from(end)) {
             return;
         }
-        // An overlay that names one more constant copies the names it shares
-        // with the table below: a fork names the constants first, so its jobs
-        // name none.
-        Arc::make_mut(&mut self.constants)
-            .extend(entries.key_names().take(usize::from(end)).skip(named));
+        for name in entries.key_names().take(usize::from(end)).skip(named) {
+            self.constants.push(name);
+        }
+        // A fork shares the frozen names, so neither table copies the names
+        // that the other names next.
+        self.constants.freeze();
     }
 
     /// Name the constant at `index` as `name`, when the table named it
@@ -2583,8 +2581,8 @@ impl ContentTable
     /// - hypothesis: L3 — a definition committed after a later release named
     ///   its position reads by its content to the checks after it.
     /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
-    #[spec(captures: named_before = self.constants.len(),
-        ensures: self.constants.len() == named_before
+    #[spec(captures: named_before = usize::from(self.constants.len()),
+        ensures: usize::from(self.constants.len()) == named_before
             && (usize::from(index) >= named_before || self.constants.get(usize::from(index)) == Some(&name)))]
     #[inline]
     pub fn rename_constant(
@@ -2594,11 +2592,11 @@ impl ContentTable
     )
     {
         if self.constants.get(usize::from(index)) == Some(&name)
-            || usize::from(index) >= self.constants.len()
+            || usize::from(index) >= usize::from(self.constants.len())
         {
             return;
         }
-        if let Some(held) = Arc::make_mut(&mut self.constants).get_mut(usize::from(index)) {
+        if let Some(held) = self.constants.get_mut(usize::from(index)) {
             *held = name;
         }
     }
@@ -4283,7 +4281,7 @@ impl ContentTable
             seen: self.seen,
             forked: self.seen,
             forked_at: arena.watermark(),
-            constants: Arc::clone(&self.constants),
+            constants: self.constants.clone(),
             naming: match self.naming {
                 Naming::On(ref names) => Naming::On(Names::under(names.key.clone())),
                 Naming::Off => Naming::Off,
@@ -4691,7 +4689,7 @@ fn read_id(
 /// # Specification
 /// trivial.
 fn constant_name(
-    constants: &[ConstantName],
+    constants: &gandr_kernel_term::Family<ConstantName>,
     index: ConstantIndex,
 ) -> ConstantName
 {
@@ -4800,7 +4798,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
 }))]
 fn push_children(
     arena: &TermArena,
-    constants: &[ConstantName],
+    constants: &gandr_kernel_term::Family<ConstantName>,
     node: AnyNode,
     tasks: &mut Vec<EncodeTask>,
 )
