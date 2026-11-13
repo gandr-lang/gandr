@@ -16,6 +16,7 @@ members = [
   "crates/kernel-check-memo",
   "crates/kernel-conversion-trace",
   "crates/kernel-core",
+  "crates/kernel-core-base",
   "crates/kernel-strata",
   "crates/kernel-term",
   "crates/runtime-emitter",
@@ -558,6 +559,14 @@ path = "crates/kernel-conversion-trace"
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
 default-features = false
+
+# The kernel's record and its rewriting: admitted entries and their staging,
+# content encoding, check support, term rewriting, the kernel's refusals, and
+# verdict keys and receipts.
+# consumers:
+# - kernel-core
+[workspace.dependencies.gandr-kernel-core-base]
+path = "crates/kernel-core-base"
 
 # The certified kernel's universe-level oracle.
 # consumers:

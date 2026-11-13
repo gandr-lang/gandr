@@ -65,7 +65,7 @@ INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstrac
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells::fusion','exemplar','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_laplacian','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
-INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-core','levels','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','b4d5d86272f0c379e8626491b800d6a720394e35');
+INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-core-base','levels','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','b4d5d86272f0c379e8626491b800d6a720394e35');
 INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-strata','poset','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','63cf51119ea5e8cbfa160672f287983114665a83');
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','basis','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere','exemplar',NULL,NULL,NULL);
@@ -426,10 +426,10 @@ INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','surfa
 INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','surface-driver','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','surface-session','session','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-core','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-core-base','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core-base','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-checker-base','judgement::native','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','form','anchor',NULL,NULL,NULL);
@@ -479,7 +479,7 @@ INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runti
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering-base','circuit::embed','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering-base','description::theory','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-core','encoding','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-core-base','encoding','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-dispatcher','measure','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-driver','','background',NULL,NULL,NULL);
@@ -492,14 +492,14 @@ INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-check-memo','overlay','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','census','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','dependents','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','descent','lineage','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','f69d6a7559364f8975c6703d516f594e90adc0e7');
-INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','encoding','lineage','e3bd8a29b81963ea819568013096a8d0070ad1c8','2026-11-12','9e4842118bebc103791a4b10401ad604db34ff4a');
-INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','fork','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','replay','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','support','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','weakening','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','census','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','encoding','lineage','e3bd8a29b81963ea819568013096a8d0070ad1c8','2026-11-12','9e4842118bebc103791a4b10401ad604db34ff4a');
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','fork','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','weakening','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','compose','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','measure','newest',NULL,NULL,NULL);
@@ -565,7 +565,7 @@ INSERT INTO reference VALUES('vault:01a178aa-b725-7820-9a4c-074e3f6d79b0','core-
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker-base','ua::strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker-bridge','bridge','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','record','lineage','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
-INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-core','verdict','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-core-base','verdict','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-term','encode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','runtime-emitter','seam','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','runtime-net','chunks','lineage',NULL,NULL,NULL);
@@ -592,7 +592,7 @@ INSERT INTO reference VALUES('vault:01a178aa-f8ad-73d0-bbe7-c395c922e4f9','theor
 INSERT INTO reference VALUES('vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb','core-nbe','traced','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb','kernel-core','replay','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-081c-74a0-bd58-f8db4f9573c8','kernel-core','dependents','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178ab-081c-74a0-bd58-f8db4f9573c8','kernel-core','weakening','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178ab-081c-74a0-bd58-f8db4f9573c8','kernel-core-base','weakening','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','5630fb4598d9bfdaafb4ddf50a51da4d99bc1bb6','2026-10-27','e18d7dd7526358fee7a1b74909f23cbf4c6580e3');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
@@ -664,7 +664,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-term','compose','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-unify','solve','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','kernel-core','replay','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','kernel-core','verdict','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','kernel-core-base','verdict','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-corpus','refusal','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-diagnostics','message','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-dispatcher','strata','lineage',NULL,NULL,NULL);

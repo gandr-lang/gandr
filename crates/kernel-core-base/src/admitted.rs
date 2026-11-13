@@ -12,7 +12,7 @@
 //! open pair is derived under either policy.
 //!
 //! A check counts the answers it took. The
-//! [`Environment`](crate::Environment) records no verdict for a declaration
+//! `Environment` records no verdict for a declaration
 //! whose check took one, since a receipt attests only what the kernel checked
 //! itself, and it sums the run's answers for its report. The parts of one
 //! check that a fork runs apart count into one [`Tally`].
@@ -87,7 +87,7 @@ impl From<AdmittedCount> for u32
 /// trivial.
 #[derive(Debug, Default)]
 #[repr(transparent)]
-pub(crate) struct Tally(AtomicU32);
+pub struct Tally(AtomicU32);
 
 impl Tally
 {
@@ -96,7 +96,8 @@ impl Tally
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn new() -> Self
+    #[must_use]
+    pub const fn new() -> Self
     {
         Self(AtomicU32::new(0))
     }
@@ -106,7 +107,7 @@ impl Tally
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn get(&self) -> AdmittedCount
+    pub fn get(&self) -> AdmittedCount
     {
         AdmittedCount(self.0.load(Ordering::Relaxed))
     }
@@ -117,7 +118,7 @@ impl Tally
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn reset(
+    pub fn reset(
         &self,
         count: AdmittedCount,
     )
@@ -147,7 +148,7 @@ impl Tally
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Taking<'check>
+pub enum Taking<'check>
 {
     /// Derive every admitted result.
     Deriving,
@@ -160,7 +161,7 @@ pub(crate) enum Taking<'check>
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Took
+pub enum Took
 {
     /// The kernel took the answer and counted it.
     Taken,
@@ -176,7 +177,7 @@ impl<'check> Taking<'check>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn under(
+    pub const fn under(
         policy: AdmissionPolicy,
         taken: &'check Tally,
     ) -> Self
@@ -192,7 +193,8 @@ impl<'check> Taking<'check>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn taken(self) -> AdmittedCount
+    #[must_use]
+    pub fn taken(self) -> AdmittedCount
     {
         match self {
             Self::Deriving => AdmittedCount::NONE,
@@ -206,7 +208,7 @@ impl<'check> Taking<'check>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn reset(
+    pub fn reset(
         self,
         count: AdmittedCount,
     )
@@ -229,7 +231,7 @@ impl<'check> Taking<'check>
     /// # Adequacy
     /// - hypothesis: L3 — under the policy a closed pair is taken and counted
     ///   and an open one is derived; without it nothing is taken.
-    /// - witness: `element_identity::tests::an_admitted_result_is_taken_only_under_the_policy_3558`
+    /// - witness: `gandr-kernel-core::element_identity::tests::an_admitted_result_is_taken_only_under_the_policy_3558`
     #[spec(
         captures: before = self.taken(),
         ensures: |ret| {
@@ -239,7 +241,9 @@ impl<'check> Taking<'check>
                 && self.taken() == if ret == Took::Taken { before.and(AdmittedCount(1)) } else { before }
         },
     )]
-    pub(crate) fn take(
+    #[inline]
+    #[must_use]
+    pub fn take(
         self,
         arena: &TermArena,
         point: ValueId,

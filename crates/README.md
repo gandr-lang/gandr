@@ -43,7 +43,8 @@ crates/
 ├── core-unify/                    contextual metavariables and their unifier: most general solutions only, one store of postponed equations woken by their blockers, refutation on stable evidence
 ├── kernel-check-memo/             the check-memo seam a checker consults
 ├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
-├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay
+├── kernel-core/                   checking, conversion, admission; native universes, recursors; stages; certificate, stage replay
+├── kernel-core-base/              the record, staging, names, support, rewrites, refusals, verdict keys
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor

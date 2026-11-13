@@ -23,10 +23,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
-- **Recorded verdicts.** `Environment::recalling` admits a key that a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself ([`verdict`](src/verdict.rs)).
-- **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
-- **The forked drain.** `Environment::forking`: a check's long last drain runs apart through a `SharedFork` ([`fork`](src/fork.rs)).
-- **Sealing.** An abstract type carries its representation and the extent of its minting admission; [`seal`](src/seal.rs) states what reads the atom as its representation.
+- **The record.** `Environment` reads and writes the record of [`gandr-kernel-core-base`](../kernel-core-base/README.md): its verdicts, admitted results, forked drain, seals, content key, rewrites, census and errors.
 - **The checking machine.** `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`; only `Environment` admits.
 - **Type formation.** An iterative walk computing a type's universe level; [`check`](src/check.rs) tables its gates.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms over `Convertibility`; [`conv`](src/conv.rs) states the comparison.
@@ -34,10 +31,6 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **The descent skeleton.** `Descent` and `descent::replay`: one replay for a conversion trace and a guarded family with its rows.
 - **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`), whose certificates replay on readmission, all through ordinary admission.
 - **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
-- **The content key.** `ContentTable`, `MintNames`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, mint names, memo keys and content digests ([`encoding`](src/encoding.rs)).
-- **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
-- **Accounting.** `ExpansionCensus`: each goal expanded, recalled or answered by a kept outcome, per plane, kept on its entry ([`census`](src/census.rs)).
-- **Errors.** `KernelError`, whose payloads are content; [`error`](src/error.rs) states why.
 
 ## Expected features
 
@@ -66,13 +59,10 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The four decisions, the memo's binding conditions and collapse law, arithmetic and absence, specification boundaries | [`src/lib.rs`](src/lib.rs) |
 | The checking machine, its correspondence table, universes and the lift, static operators, the native List | [`src/check.rs`](src/check.rs) |
 | Nominal data and records; accessibility under the stage order; the structural fixpoint typed by stages | [`src/check/former.rs`](src/check/former.rs), [`src/check/occurrence.rs`](src/check/occurrence.rs), [`src/check/recursion.rs`](src/check/recursion.rs), [`src/stage_order.rs`](src/stage_order.rs) |
-| Admission, staging order, the audit, replay; each role's holder | [`src/env.rs`](src/env.rs), [`src/builtin.rs`](src/builtin.rs) |
-| The seal rule: a manifest atom read as its representation | [`src/seal.rs`](src/seal.rs) |
+| Admission, the audit, replay; each role's holder | [`src/environment.rs`](src/environment.rs), [`src/builtin.rs`](src/builtin.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |
 | Conversion replay, its decisions and laws | [`src/replay.rs`](src/replay.rs) |
 | The descent skeleton and its two instances | [`src/descent.rs`](src/descent.rs) |
-| The content table, the memo key and the binders a goal reads | [`src/encoding.rs`](src/encoding.rs), [`src/support.rs`](src/support.rs) |
-| Shifting and substitution | [`src/rewrite.rs`](src/rewrite.rs) |
 | Universe paths | [`src/path_universe.rs`](src/path_universe.rs) |
 | The directed family: formation, `stay`, `then`, `ride` and its telescope form, the covariance gate, certificate admission and the permanent refusals | [`src/flow_universe.rs`](src/flow_universe.rs) |
 | Element and function identity: formation, `here`, transport and its telescope over a dependent motive, higher fields, higher and quantified evaluation; the bridge's formation and fibre, and its refusal at a sealed atom | [`src/element_identity.rs`](src/element_identity.rs) |
@@ -85,16 +75,11 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 
 ## References
 
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `encoding`, `support`, `replay` and `descent` name the items each takes.
-- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: content addressing as strictified descent (§ storage-conjecture-chunk-descent) — a record's name is its key up to an identification, with the identification as a parameter; `RecordName` takes `Exact`, the identity on content.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `replay` and `descent` name the items each takes.
 - `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
 - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as descent (§ sharing-rule-descent, § sharing-rule-probe) — a cover glued once and replayed.
-- `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement, § codebruijn-carrier, § footprint-from-support) — the judgement returns the binders it read as its output.
-- `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.
-- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
 - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
-- `Grodin-2026-potential_functions_types` — background: Grodin and coauthors, 2026 — amortised cost.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
 - `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — § 5's `var`, `split` and `compose`, which the replay walks.
 - `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design (§ coverage-evidence-form) — the derivation that the kernel replays step by step.

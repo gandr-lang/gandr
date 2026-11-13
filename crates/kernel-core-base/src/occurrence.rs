@@ -1,7 +1,9 @@
-//! The results of the occurrence check: how a declaration's recursion
-//! stands, whether a family's own occurrences stand strictly positive, and
-//! the block that a data declaration is admitted in. `check::occurrence`
-//! computes them, and the record keeps them.
+//! The results of the occurrence check.
+//!
+//! They state how a declaration's recursion stands, whether a family's own
+//! occurrences stand strictly positive, and the block that a data declaration
+//! is admitted in. `check::occurrence` computes them, and the record keeps
+//! them.
 
 use alloc::vec::Vec;
 
@@ -25,8 +27,8 @@ use quenchant_shape::shape::Maybe;
 /// # Adequacy
 /// - hypothesis: L3 — a family with a negative field below its stage is
 ///   stratified, and a list's element parameter is strictly positive.
-/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+/// - witness: `gandr-kernel-core::tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `gandr-kernel-core::tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Accessibility
 {
@@ -47,7 +49,8 @@ impl Accessibility
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn unwalked() -> Self
+    #[inline]
+    pub const fn unwalked() -> Self
     {
         Self {
             stratification: Stratification::Stratified,
@@ -63,7 +66,7 @@ impl Accessibility
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         stratification: Stratification,
         parameters: Vec<Variance>,
         result: Maybe<StagedPosition, Unstaged>,
@@ -82,7 +85,8 @@ impl Accessibility
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn following(
+    #[inline]
+    pub fn following(
         self,
         position: StagedPosition,
     ) -> Self
@@ -99,7 +103,7 @@ impl Accessibility
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn result(&self) -> Maybe<StagedPosition, Unstaged>
+    pub const fn result(&self) -> Maybe<StagedPosition, Unstaged>
     {
         self.result
     }
@@ -121,7 +125,7 @@ impl Accessibility
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn parameters(&self) -> &[Variance]
+    pub fn parameters(&self) -> &[Variance]
     {
         &self.parameters
     }
@@ -225,9 +229,11 @@ pub enum Variance
     NotStrictlyPositive,
 }
 
-/// The block a data declaration is admitted in: its families, a run of data
-/// declarations from the first member, the declaration among them, then the
-/// block's definitions up to the position past its last member.
+/// The block a data declaration is admitted in.
+///
+/// It holds its families, a run of data declarations from the first member,
+/// the declaration among them, then the block's definitions up to the position
+/// past its last member.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -238,8 +244,8 @@ pub enum Variance
 /// # Adequacy
 /// - hypothesis: L3 — a lone family and a mutual block of a family and its
 ///   decoder are each walked by the block they are admitted in.
-/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
-/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `gandr-kernel-core::tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_admitted`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Block
 {
@@ -258,7 +264,8 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn lone(position: ConstantIndex) -> Self
+    #[inline]
+    pub fn lone(position: ConstantIndex) -> Self
     {
         let end = ConstantIndex::from(usize::from(position).saturating_add(1));
         Self {
@@ -274,7 +281,8 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn new(
+    #[inline]
+    pub const fn new(
         first: ConstantIndex,
         families: ConstantIndex,
         end: ConstantIndex,
@@ -292,7 +300,8 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn first(self) -> ConstantIndex
+    #[inline]
+    pub const fn first(self) -> ConstantIndex
     {
         self.first
     }
@@ -302,7 +311,8 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) const fn families(self) -> ConstantIndex
+    #[inline]
+    pub const fn families(self) -> ConstantIndex
     {
         self.families
     }
@@ -313,7 +323,7 @@ impl Block
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn end(self) -> ConstantIndex
+    pub const fn end(self) -> ConstantIndex
     {
         self.end
     }
@@ -323,7 +333,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn extend_to(
+    pub const fn extend_to(
         &mut self,
         end: ConstantIndex,
     )
@@ -337,7 +347,8 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn membership(
+    #[inline]
+    pub fn membership(
         self,
         position: ConstantIndex,
     ) -> Membership

@@ -1,0 +1,45 @@
+[package]
+name = "gandr-kernel-core-base"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel's record and its rewriting: admitted entries and their staging, content encoding, check support, term rewriting, the kernel's refusals, and verdict keys and receipts"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "kernel", "rewriting"]
+categories = ["compilers"]
+publish.workspace = true
+
+# The record is built over the kernel's term crates and core/alloc, as the
+# judgement above it is. Pinned arithmetic and absence types add no runtime
+# allocation or std dependency. The anodized facade supplies core-only
+# specification helpers. BLAKE3 keys a recalled verdict and names a record by
+# its content, and Ed25519 signs and verifies the receipt that attests it. The
+# level context asks the dynamic-graph crate for a model over the graph
+# crate's ids, which the landmark poset validates before it admits.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-dynamic-graphs.workspace = true
+gandr-theory-graphs.workspace = true
+proptest = { workspace = true, optional = true }
+quenchant-arith.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[features]
+default = []
+# The generators of the tests: the terms that the tests of the record and of
+# the judgement build on. Off, nothing of them compiles outside this crate's
+# own unit tests.
+fixture = ["dep:proptest"]
+
+[lints]
+workspace = true

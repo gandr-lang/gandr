@@ -688,42 +688,52 @@
 extern crate alloc;
 
 pub mod admission;
-pub mod admitted;
+pub use gandr_kernel_core_base::admitted;
 mod builtin;
-pub mod census;
+pub use gandr_kernel_core_base::census;
 pub mod check;
 pub mod conv;
 mod dependents;
 pub mod descent;
 pub mod element_identity;
-pub mod encoding;
-pub mod env;
+pub use gandr_kernel_core_base::encoding;
+pub use gandr_kernel_core_base::env;
 mod environment;
-pub mod error;
+pub use gandr_kernel_core_base::error;
 pub mod flow_universe;
-pub mod fork;
+pub use gandr_kernel_core_base::fork;
 #[cfg(test)]
-mod generated;
-mod hashed;
+use gandr_kernel_core_base::generated;
 pub mod higher_field;
 pub mod identity_recursion;
-pub mod levels;
-pub(crate) mod occurrence;
+pub use gandr_kernel_core_base::levels;
+use gandr_kernel_core_base::occurrence;
 pub mod path_universe;
-pub mod presented;
+pub use gandr_kernel_core_base::presented;
 mod releases;
 pub mod replay;
-pub mod rewrite;
+pub use gandr_kernel_core_base::rewrite;
 mod ruled;
-pub mod seal;
+pub use gandr_kernel_core_base::seal;
 pub mod stage;
 pub mod stage_order;
-pub mod support;
-mod theory_rules;
-pub mod verdict;
-mod weakening;
-mod witness;
+pub use gandr_kernel_core_base::support;
+use gandr_kernel_core_base::theory_rules;
+pub use gandr_kernel_core_base::verdict;
+use gandr_kernel_core_base::witness;
 mod words;
+
+/// The kernel's build identity, which `build.rs` writes: one digest of every
+/// file of every kernel crate and of the workspace lock. Each derivation of a
+/// verdict key takes it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub(crate) fn build_identity() -> crate::verdict::BuildIdentity
+{
+    crate::verdict::BuildIdentity::from(*include_bytes!(concat!(env!("OUT_DIR"), "/kernel-build")))
+}
 
 pub use crate::admitted::AdmissionPolicy;
 pub use crate::admitted::AdmittedCount;
@@ -763,13 +773,13 @@ pub use crate::env::OutstandingContent;
 pub use crate::env::OutstandingCount;
 pub use crate::env::StagedDeclaration;
 pub use crate::env::Staging;
+pub use crate::env::UnsettledCount;
 pub use crate::env::tallied;
 pub use crate::environment::ArtifactRefusal;
 pub use crate::environment::AxiomReport;
 pub use crate::environment::Environment;
 pub use crate::environment::Hold;
 pub use crate::environment::Released;
-pub use crate::environment::UnsettledCount;
 pub use crate::environment::places;
 pub use crate::error::CompTypeHead;
 pub use crate::error::CompTypeMismatch;

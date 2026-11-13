@@ -39,6 +39,7 @@ digraph crates {
     "kernel-check-memo";
     "kernel-conversion-trace";
     "kernel-core";
+    "kernel-core-base";
     "kernel-strata";
     "kernel-term";
   }
@@ -184,10 +185,16 @@ digraph crates {
   "core-unify" -> "kernel-term";
   "kernel-core" -> "kernel-check-memo";
   "kernel-core" -> "kernel-conversion-trace";
+  "kernel-core" -> "kernel-core-base";
   "kernel-core" -> "kernel-strata";
   "kernel-core" -> "kernel-term";
   "kernel-core" -> "theory-dynamic-graphs";
   "kernel-core" -> "theory-graphs";
+  "kernel-core-base" -> "kernel-check-memo";
+  "kernel-core-base" -> "kernel-strata";
+  "kernel-core-base" -> "kernel-term";
+  "kernel-core-base" -> "theory-dynamic-graphs";
+  "kernel-core-base" -> "theory-graphs";
   "kernel-term" -> "kernel-check-memo";
   "kernel-term" -> "kernel-conversion-trace";
   "kernel-term" -> "kernel-strata";
@@ -538,7 +545,8 @@ digraph crates {
   "theory-discrete-morse" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-exact-reals" -> "theory-graded-posets" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "core-fork" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
-  "kernel-core" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
+  "kernel-core" -> "kernel-core-base" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
+  "kernel-core-base" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-session" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
@@ -552,7 +560,8 @@ digraph crates {
   "theory-nominal-automata" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "nominal"];
   "theory-probability" -> "theory-shapes" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "nominal"];
   "core-checker-base" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
-  "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "kernel-core" -> "kernel-core-base" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "kernel-core-base" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "surface-dispatcher" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "theory-coherent-resolutions" -> "theory-computads" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
@@ -568,7 +577,8 @@ digraph crates {
   "core-term" -> "kernel-check-memo" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "kernel-check-memo" -> "kernel-conversion-trace" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "kernel-conversion-trace" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
-  "kernel-core" -> "kernel-term" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "kernel-core" -> "kernel-core-base" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "kernel-core-base" -> "kernel-term" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "kernel-term" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "runtime-emitter" -> "runtime-net" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "runtime-net" -> "storage-artifact" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];

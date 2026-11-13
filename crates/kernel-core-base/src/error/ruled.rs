@@ -13,7 +13,7 @@ use gandr_kernel_term::RuleIndex;
 /// - hypothesis: L3 — a body whose leaf returns another constructor than its
 ///   rule is refused naming that rule, and one that is no fixpoint is refused
 ///   for its shape.
-/// - witness: `ruled::tests::a_body_is_admitted_only_as_its_rules_decision_tree`
+/// - witness: `gandr-kernel-core::ruled::tests::a_body_is_admitted_only_as_its_rules_decision_tree`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum OperationBodyFault
 {

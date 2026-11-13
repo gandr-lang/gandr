@@ -257,37 +257,6 @@ pub enum Hold
     Chain,
 }
 
-/// How many released checks of an environment are not settled.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UnsettledCount(usize);
-
-impl From<usize> for UnsettledCount
-{
-    /// The count of `count` released checks.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(count: usize) -> Self
-    {
-        Self(count)
-    }
-}
-
-impl From<UnsettledCount> for usize
-{
-    /// How many released checks `count` counts.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(count: UnsettledCount) -> Self
-    {
-        count.0
-    }
-}
-
 impl Check
 {
     /// Run the check on the thread that calls: answer a recorded verdict,
@@ -459,7 +428,7 @@ impl Environment
     ) -> Self
     {
         Self {
-            verdicts: crate::verdict::Verdicts::under(policy, source),
+            verdicts: crate::verdict::Verdicts::under(policy, source, crate::build_identity()),
             ..Self::default()
         }
     }
@@ -677,7 +646,7 @@ impl Environment
     ///   blocks roll back, and a type of words reaches an entry after it
     ///   through its sort and no entry before it.
     /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
-    /// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
+    /// - witness: `environment::presented_tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| usize::from(position) < usize::from(self.entries.len())))]
     #[inline]
     #[must_use]
@@ -869,11 +838,10 @@ impl Environment
     /// # Adequacy
     /// - hypothesis: L3 — later outstanding content refuses an earlier
     ///   admission; abandoning that later content removes the obstruction.
-    ///   Equal and lower marks are separated by the componentwise-count
-    ///   witness.
+    ///   Equal and lower marks are separated by the componentwise count `above`
+    ///   in `gandr-kernel-core-base`, which carries its own witness.
     /// - witness: `environment::tests::outstanding_later_staged_content_refuses_admission`
     /// - witness: `environment::tests::abandoning_a_staged_declaration_releases_its_claim`
-    /// - witness: `env::tests::marks_above_are_counted_componentwise`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1114,9 +1082,10 @@ impl Environment
             DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
         );
         let entry_key = match content {
-            Maybe::Present(content) if generative => Maybe::Present(
-                content.generative(self.commits.generative_count(&self.entries, content, rank)),
-            ),
+            Maybe::Present(content) if generative => Maybe::Present(content.generative(
+                crate::build_identity(),
+                self.commits.generative_count(&self.entries, content, rank),
+            )),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         let generative_content = match (generative, content) {
@@ -2053,13 +2022,13 @@ impl Environment
             )
         });
         let block_key = match content {
-            Maybe::Present(content) if generative => {
-                Maybe::Present(content.generative(self.commits.generative_count(
-                    &self.entries,
-                    content,
-                    first_rank,
-                )))
-            },
+            Maybe::Present(content) if generative => Maybe::Present(
+                content.generative(
+                    crate::build_identity(),
+                    self.commits
+                        .generative_count(&self.entries, content, first_rank),
+                ),
+            ),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         self.verdicts.end();
@@ -2156,9 +2125,10 @@ impl Environment
                 key_name: ConstantName::Position,
                 census: *census,
                 key: match block_key {
-                    Maybe::Present(block_key) => {
-                        Maybe::Present(block_key.member(crate::verdict::KeyedCount::from(offset)))
-                    },
+                    Maybe::Present(block_key) => Maybe::Present(block_key.member(
+                        crate::build_identity(),
+                        crate::verdict::KeyedCount::from(offset),
+                    )),
                     Maybe::Absent(absent) => Maybe::Absent(absent),
                 },
                 rank,
@@ -2393,7 +2363,10 @@ impl Environment
             return Err(unkept(KeepRefusal::Unkeyed));
         };
         let unit_key = if generative {
-            content.generative(self.commits.generative_count(&self.entries, content, below))
+            content.generative(
+                crate::build_identity(),
+                self.commits.generative_count(&self.entries, content, below),
+            )
         }
         else {
             content
@@ -2401,7 +2374,10 @@ impl Environment
         for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
             let expected = match unit.shape {
                 UnitShape::Lone => unit_key,
-                UnitShape::Block => unit_key.member(crate::verdict::KeyedCount::from(offset)),
+                UnitShape::Block => unit_key.member(
+                    crate::build_identity(),
+                    crate::verdict::KeyedCount::from(offset),
+                ),
             };
             match self.entries.at(member).map(AdmittedDeclaration::key) {
                 Some(Maybe::Present(held)) if held == expected => {},
@@ -2750,7 +2726,10 @@ impl Environment
         let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
         let presentations = self.entries.presentations();
         let words = presentations.sorts().next().is_some();
-        let mut keyer = crate::verdict::EntryKeyer::tagged(crate::verdict::EntryTag::Content);
+        let mut keyer = crate::verdict::EntryKeyer::tagged(
+            crate::build_identity(),
+            crate::verdict::EntryTag::Content,
+        );
         keyer.count(KeyedCount::from(members.len()));
         let mut reached = Vec::new();
         let mut order = Vec::new();
@@ -3173,9 +3152,9 @@ impl Environment
     /// - hypothesis: L3 — a plain definition reads alike under either admission
     ///   order, an axiom keeps its position, and definitions of one type and
     ///   body keep a name each.
-    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
-    /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
+    /// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
+    /// - witness: `environment::encoding_tests::each_twin_of_one_content_ranks_past_the_latest_3686`
     #[spec(ensures: |ret| match ret {
         ConstantName::Definition { declared, body, .. } => self.manifest.is_empty()
             && *declaration.content() == DeclarationContent::Def { declared, body },
@@ -4098,6 +4077,16 @@ quenchant_shape::reason_enum! {
 }
 
 #[cfg(test)]
+mod encoding_tests;
+#[cfg(test)]
+mod error_tests;
+#[cfg(test)]
+mod presented_tests;
+#[cfg(test)]
+mod seal_tests;
+#[cfg(test)]
+mod theory_rules_tests;
+#[cfg(test)]
 mod tests
 {
     use alloc::collections::BTreeSet;
@@ -4477,7 +4466,10 @@ mod tests
             .expect("a reference to the definition admits");
         assert!(
             matches!(
-                environment.names.session().constant_name(definition),
+                gandr_kernel_core_base::fixture::constant_name(
+                    environment.names.session(),
+                    definition
+                ),
                 Some(crate::encoding::ConstantName::Definition { .. })
             ),
             "the positions of the refused members stay vacant, so the \
@@ -7252,7 +7244,7 @@ mod tests
             let _admitted = environment
                 .add_decl(reading)
                 .expect("a definition naming the first admits");
-            environment.entries.reads()
+            gandr_kernel_core_base::fixture::reads(&environment.entries)
         };
         let few = reads(10);
         assert_eq!(

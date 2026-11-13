@@ -185,7 +185,8 @@ impl BinderDepth
     /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
     #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     #[inline]
-    pub(crate) fn deeper(self) -> Self
+    #[must_use]
+    pub fn deeper(self) -> Self
     {
         // reason: binder depth uses u32::MAX as its conservative ceiling.
         Self(u32::from(arith::saturating_add(
@@ -211,7 +212,8 @@ impl BinderDepth
     /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
     #[spec(ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(u64::try_from(usize::from(binders)).unwrap_or(u64::MAX)).min(u64::from(u32::MAX)))]
     #[inline]
-    pub(crate) fn deeper_by(
+    #[must_use]
+    pub fn deeper_by(
         self,
         binders: gandr_kernel_term::ResultCount,
     ) -> Self
@@ -725,7 +727,7 @@ enum RewriteTask
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
-/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+/// - witness: `gandr-kernel-core::tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
 #[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
     && if arena.value_type(subject).is_some() {
         arena.value_type(ret).is_some()
@@ -781,7 +783,8 @@ where
         ret == subject
     })]
 #[must_use]
-pub(crate) fn shift_value<M>(
+#[inline]
+pub fn shift_value<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -827,7 +830,7 @@ where
     })]
 #[inline]
 #[must_use]
-pub(crate) fn shift_computation<M>(
+pub fn shift_computation<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -867,8 +870,8 @@ where
 /// - hypothesis: L3 — as [`shift_value_type`]; the residue is the dependent
 ///   arrow, whose codomain steps the depth in by one and whose domain does not,
 ///   observed through the check rules that weaken by it.
-/// - witness: `check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
-/// - witness: `check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+/// - witness: `gandr-kernel-core::check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
+/// - witness: `gandr-kernel-core::check::tests::a_bind_reads_its_expected_type_outside_its_binder`
 #[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
     && if arena.comp_type(subject).is_some() {
         arena.comp_type(ret).is_some()
@@ -877,7 +880,7 @@ where
     })]
 #[inline]
 #[must_use]
-pub(crate) fn shift_comp_type<M>(
+pub fn shift_comp_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -918,7 +921,7 @@ where
 /// - hypothesis: L3 — a case on a binder past an unread one reads its goal at
 ///   each injection only through the rotation; a goal kept in place reads the
 ///   unread binder for the scrutinee.
-/// - witness: `check::tests::a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110`
+/// - witness: `gandr-kernel-core::check::tests::a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110`
 #[spec(ensures: |ret| (band.0 != 0 || ret == subject)
     && if arena.comp_type(subject).is_some() {
         arena.comp_type(ret).is_some()
@@ -927,7 +930,7 @@ where
     })]
 #[inline]
 #[must_use]
-pub(crate) fn rotate_comp_type<M>(
+pub fn rotate_comp_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1085,7 +1088,8 @@ where
     arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
-pub(crate) fn abstract_constant_value_type<M>(
+#[inline]
+pub fn abstract_constant_value_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1132,7 +1136,8 @@ where
     arena.computation(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
-pub(crate) fn share_endpoint<M>(
+#[inline]
+pub fn share_endpoint<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1173,7 +1178,8 @@ where
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
-pub(crate) fn substitute_value_type<M>(
+#[inline]
+pub fn substitute_value_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1212,12 +1218,13 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a list's tail instantiated past the head's binder reads
 ///   the element argument; a wrong depth reads the head instead.
-/// - witness: `tests::recursive_data::dependent_fields_are_admitted`
+/// - witness: `gandr-kernel-core::tests::recursive_data::dependent_fields_are_admitted`
 #[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
-pub(crate) fn substitute_value_type_at<M>(
+#[inline]
+pub fn substitute_value_type_at<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1259,7 +1266,8 @@ where
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
-pub(crate) fn substitute_value<M>(
+#[inline]
+pub fn substitute_value<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1297,12 +1305,13 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — `Cons`'s `S(n)` keeps its field binder while its
 ///   parameters are instantiated.
-/// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
+/// - witness: `gandr-kernel-core::tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
 #[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
-pub(crate) fn substitute_value_at<M>(
+#[inline]
+pub fn substitute_value_at<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1340,13 +1349,13 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`substitute_comp_type`]; the residue is the entry,
 ///   carried by the replay's reduction witnesses.
-/// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+/// - witness: `gandr-kernel-core::replay::tests::the_replay_reduces_before_it_reads_a_decision`
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
 #[must_use]
-pub(crate) fn substitute_computation<M>(
+pub fn substitute_computation<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1385,10 +1394,11 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — the loop obligation over `a` held at `b = Base` leaves
 ///   the obligation over `a` alone; a wrong index holds `a` instead.
-/// - witness: `tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+/// - witness: `gandr-kernel-core::tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
-pub(crate) fn substitute_computation_at<M>(
+#[inline]
+pub fn substitute_computation_at<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1410,8 +1420,10 @@ where
 }
 
 /// The computation `subject` with the `width` binders outside its `depth`
-/// innermost ones replaced by `environment`'s components, the binder `k`
-/// places out by component `k`, and every index past them lowered by `width`.
+/// innermost ones replaced by `environment`'s components.
+///
+/// The binder `k` places out takes component `k`, and every index past them
+/// is lowered by `width`.
 ///
 /// One walk substitutes the whole environment: the unload an
 /// environment-carrying reduction runs at the weak head it stops at.
@@ -1436,7 +1448,8 @@ where
 /// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
-pub(crate) fn unload_computation<M>(
+#[inline]
+pub fn unload_computation<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1474,7 +1487,8 @@ where
 #[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
-pub(crate) fn unload_value<M>(
+#[inline]
+pub fn unload_value<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1512,11 +1526,12 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a telescope transport's motive instantiated at both
 ///   endpoints separates the kept binder from the substituted one.
-/// - witness: `element_identity::tests::a_dependent_motive_replays_its_substitution_law`
+/// - witness: `gandr-kernel-core::element_identity::tests::a_dependent_motive_replays_its_substitution_law`
 #[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
-pub(crate) fn substitute_outer_value_type<M>(
+#[inline]
+pub fn substitute_outer_value_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
@@ -1595,9 +1610,9 @@ where
 ///   a failing seed shrinks to: the values an unload mints, bounded far below
 ///   the sixteen million an occurrence-expanding walk mints.
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
-/// - witness: `replay::tests::an_unload_mints_each_shared_node_once_3859`
+/// - witness: `gandr-kernel-core::replay::tests::an_unload_mints_each_shared_node_once_3859`
 /// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
-/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+/// - witness: `gandr-kernel-core::tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
 /// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
@@ -2277,7 +2292,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::bind_and_case_rewrites_distinguish_binding_positions`
 /// - witness: `rewrite::tests::a_dependent_pair_and_its_split_bind_where_they_scope`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
-/// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
+/// - witness: `gandr-kernel-core::conv::rewrite_tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
     AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Restrict { ref fixed, .. } => fixed.len().saturating_add(1), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
@@ -2968,7 +2983,7 @@ fn popped(
 /// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
-/// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
+/// - witness: `gandr-kernel-core::conv::rewrite_tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(
     captures: [before = results.len(), arity = arena.value(id).map_or(0, |matched_native_node| match *matched_native_node {
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
@@ -4056,9 +4071,9 @@ fn close_computation(
 ///   nodes retain their identities, while substituting a quote fires decoding.
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
-/// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
-/// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
-/// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
+/// - witness: `gandr-kernel-core::path_universe::tests::universe_fold_tests::universe_clause_is_native`
+/// - witness: `gandr-kernel-core::replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+/// - witness: `gandr-kernel-core::conv::rewrite_tests::session_rewrites_preserve_graph_evidence_and_native_children`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 #[spec(
     captures: [before = results.len(), arity = arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {

@@ -174,7 +174,7 @@ pub(crate) enum ConversionGoal
 /// - witness: `conv::tests::related_pairs_set_aside_path_endpoints`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
-/// - witness: `presented::tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
+/// - witness: `environment::presented_tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SetAside
 {
@@ -515,13 +515,13 @@ pub(crate) fn convert_values(
 ///   order, and two neutrals separate.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
-/// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
+/// - witness: `environment::presented_tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 /// - witness: `conv::tests::a_presented_constructor_is_set_aside_on_either_side`
 /// - witness: `conv::tests::a_unit_against_a_neutral_is_set_aside_6110`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `conv::tests::a_thunk_pair_forcing_a_thunk_is_set_aside_3733`
-/// - witness: `presented::tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
+/// - witness: `environment::presented_tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
     && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
         SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. }))))
@@ -2057,5 +2057,7 @@ fn converge(
     Convertibility::Convertible
 }
 
+#[cfg(test)]
+mod rewrite_tests;
 #[cfg(test)]
 mod tests;

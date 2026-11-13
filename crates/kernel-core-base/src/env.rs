@@ -54,7 +54,8 @@ impl CheckedId
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn new(position: ConstantIndex) -> Self
+    #[must_use]
+    pub const fn new(position: ConstantIndex) -> Self
     {
         Self(position)
     }
@@ -129,7 +130,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn content_start(&self) -> ArenaWatermark
+    pub const fn content_start(&self) -> ArenaWatermark
     {
         self.content_start
     }
@@ -141,7 +142,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn rank(&self) -> Option<SourceRank>
+    pub const fn rank(&self) -> Option<SourceRank>
     {
         self.rank
     }
@@ -152,7 +153,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn into_declaration(self) -> Declaration
+    pub fn into_declaration(self) -> Declaration
     {
         self.declaration
     }
@@ -164,7 +165,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         content_start: ArenaWatermark,
         rank: Option<SourceRank>,
         declaration: Declaration,
@@ -184,7 +185,7 @@ impl StagedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn into_parts(self) -> (ArenaWatermark, Option<SourceRank>, Declaration)
+    pub fn into_parts(self) -> (ArenaWatermark, Option<SourceRank>, Declaration)
     {
         (self.content_start, self.rank, self.declaration)
     }
@@ -205,7 +206,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a definition ranked below an earlier admission
     ///   orients its rules as though admitted before it.
-    /// - witness: `ruled::tests::a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621`
+    /// - witness: `gandr-kernel-core::ruled::tests::a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621`
     #[spec(ensures: |ret| ret.rank == Some(rank))]
     #[inline]
     #[must_use]
@@ -237,7 +238,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a relating definition admits by its dialogue and the
     ///   same definition without it is refused.
-    /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
+    /// - witness: `gandr-kernel-core::element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.related().len(), related.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -273,7 +274,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a fold admits on its laws and is refused without
     ///   them.
-    /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+    /// - witness: `gandr-kernel-core::tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.laws().len(), laws.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -307,7 +308,7 @@ impl StagedDeclaration
     ///
     /// # Adequacy
     /// - hypothesis: L3 — converging rules admit and a forged pair is refused.
-    /// - witness: `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
+    /// - witness: `gandr-kernel-core::ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.operation_rules().rules().len(), rules.rules().len()),
         ensures: |ret| ret.content_start == entry.0
@@ -343,7 +344,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a helper typed at a stage takes a recursion's claim
     ///   in the kernel as in the checker.
-    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `gandr-kernel-core::tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.stages().bounds().len(), stages.bounds().len()),
         ensures: |ret| ret.content_start == entry.0
@@ -379,7 +380,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a match's derivation crosses and the kernel replays
     ///   it.
-    /// - witness: `tests::cover::every_broken_derivation_is_refused_by_its_rule_5104`
+    /// - witness: `gandr-kernel-core::tests::cover::every_broken_derivation_is_refused_by_its_rule_5104`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.covers().len(), covers.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -415,7 +416,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a canonical holder admits with its role, and a
     ///   departing one is refused at its departure.
-    /// - witness: `builtin::tests::a_role_s_holder_is_admitted_in_its_canonical_form_5304`
+    /// - witness: `gandr-kernel-core::builtin::tests::a_role_s_holder_is_admitted_in_its_canonical_form_5304`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. } | DeclarationContent::Data { .. }), self.declaration.role()),
         ensures: |ret| ret.content_start == entry.0
@@ -453,7 +454,7 @@ impl StagedDeclaration
     /// - hypothesis: L3 — the delay type admits as a coinductive datatype, and
     ///   a guarded fixpoint into it admits where the same fixpoint into the
     ///   inductive datatype is refused.
-    /// - witness: `tests::guard::a_guarded_fixpoint_stands_only_at_a_coinductive_type`
+    /// - witness: `gandr-kernel-core::tests::guard::a_guarded_fixpoint_stands_only_at_a_coinductive_type`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Data { .. }), self.declaration.fixpoint()),
         ensures: |ret| ret.content_start == entry.0
@@ -487,7 +488,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — the circle admits with its rules and normalizes its
     ///   words by them.
-    /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+    /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Data { .. }), self.declaration.presentation().rules().len(), presentation.rules().len()),
         ensures: |ret| ret.content_start == entry.0
@@ -521,7 +522,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — an interfaced atom admits where its interface checks
     ///   and its bridges read the relation.
-    /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+    /// - witness: `gandr-kernel-core::element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
     #[spec(
         captures: entry = self.content_start,
         ensures: |ret| ret.content_start == entry,
@@ -586,6 +587,37 @@ impl From<OutstandingCount> for usize
     }
 }
 
+/// How many released checks of an environment are not settled.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnsettledCount(usize);
+
+impl From<usize> for UnsettledCount
+{
+    /// The count of `count` released checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<UnsettledCount> for usize
+{
+    /// How many released checks `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: UnsettledCount) -> Self
+    {
+        count.0
+    }
+}
+
 /// The content-start marks of declarations staged into the arena and not yet
 /// resolved by an admission, a bypass, or an abandonment.
 ///
@@ -594,7 +626,7 @@ impl From<OutstandingCount> for usize
 /// and resolving one occurrence must not resolve every equal occurrence.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct StagedMarks
+pub struct StagedMarks
 {
     /// The outstanding marks, in registration order.
     pub marks: Vec<ArenaWatermark>,
@@ -627,7 +659,7 @@ impl StagedMarks
             && self.marks.last() == Some(&mark)
     )]
     #[inline]
-    pub(crate) fn register(
+    pub fn register(
         &mut self,
         mark: ArenaWatermark,
     )
@@ -665,7 +697,7 @@ impl StagedMarks
         ensures: self.marks.len() == entry_len.saturating_sub(usize::from(entry_count != 0_usize))
             && self.marks.iter().filter(|&&held| held == mark).count() == entry_count.saturating_sub(1_usize)
     )]
-    pub(crate) fn resolve(
+    pub fn resolve(
         &mut self,
         mark: ArenaWatermark,
     )
@@ -709,7 +741,8 @@ impl StagedMarks
         )
     )]
     #[spec(ensures: |ret| usize::from(ret) == self.marks.iter().filter(|&&held| held.clamped_into(ArenaWatermark::default(), mark) != held).count())]
-    pub(crate) fn above(
+    #[must_use]
+    pub fn above(
         &self,
         mark: ArenaWatermark,
     ) -> OutstandingCount
@@ -734,7 +767,7 @@ impl StagedMarks
 /// Dropping it removes the final entry; a finisher suppresses that destructor
 /// when ownership of the claim passes to a staged declaration.
 #[repr(transparent)]
-pub(crate) struct StagingClaim<'env>
+pub struct StagingClaim<'env>
 {
     /// The nonempty multiset whose final entry belongs to this session.
     pub outstanding: &'env mut StagedMarks,
@@ -760,8 +793,8 @@ impl Drop for StagingClaim<'_>
     ///   preserve an earlier staged declaration's claim and permit its later
     ///   admission. The witnesses cover ordinary scope exit, not every
     ///   unwinding context.
-    /// - witness: `environment::tests::implicit_staging_drop_releases_its_claim`
-    /// - witness: `environment::tests::an_abandoned_staging_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::an_abandoned_staging_releases_its_claim`
     #[spec(
         requires: !self.outstanding.marks.is_empty(),
         captures: [
@@ -772,6 +805,7 @@ impl Drop for StagingClaim<'_>
         ensures: self.outstanding.marks.len() == entry_len.saturating_sub(1_usize)
             && self.outstanding.marks.last().copied() == prefix_last
     )]
+    #[inline]
     fn drop(&mut self)
     {
         let _released = self.outstanding.marks.pop();
@@ -814,7 +848,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — data admission rejects a malformed signature without
     ///   retaining its nodes.
-    /// - witness: `tests::native_formers::data_signature_formation_checks_fields_and_parameters`
+    /// - witness: `gandr-kernel-core::tests::native_formers::data_signature_formation_checks_fields_and_parameters`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -845,7 +879,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — codata admission refuses a malformed signature
     ///   without retaining its nodes.
-    /// - witness: `tests::codata::a_value_universe_is_no_codata_kind`
+    /// - witness: `gandr-kernel-core::tests::codata::a_value_universe_is_no_codata_kind`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Codata { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -878,7 +912,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — a vector admits at its stated lengths and refuses a
     ///   constructor stating an index of the wrong kind.
-    /// - witness: `tests::native_formers::an_indexed_family_states_its_result_indices`
+    /// - witness: `gandr-kernel-core::tests::native_formers::an_indexed_family_states_its_result_indices`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -917,7 +951,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — a finished definition retains its claim, while a
     ///   later implicit abandonment restores the prior arena and claim
     ///   sequence.
-    /// - witness: `environment::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::implicit_staging_drop_releases_its_claim`
     #[spec(
         captures: [entry_mark = arena.watermark(), entry_len = outstanding.marks.len()],
         ensures: |ret| ret.builder.content_start() == entry_mark
@@ -925,7 +959,7 @@ impl<'env> Staging<'env>
             && ret.claim.outstanding.marks.last() == Some(&entry_mark)
     )]
     #[inline]
-    pub(crate) fn new(
+    pub fn new(
         arena: &'env mut TermArena,
         outstanding: &'env mut StagedMarks,
         table: &'env mut crate::encoding::ContentTable,
@@ -946,7 +980,7 @@ impl<'env> Staging<'env>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn builder(&self) -> &DeclarationBuilder<'env>
+    pub const fn builder(&self) -> &DeclarationBuilder<'env>
     {
         &self.builder
     }
@@ -957,7 +991,7 @@ impl<'env> Staging<'env>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn claim(&self) -> &StagingClaim<'env>
+    pub const fn claim(&self) -> &StagingClaim<'env>
     {
         &self.claim
     }
@@ -1004,8 +1038,8 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — explicit abandonment rolls back one newly minted
     ///   value and releases a later claim so an earlier declaration admits.
-    /// - witness: `environment::tests::an_abandoned_staging_leaves_the_arena_unchanged`
-    /// - witness: `environment::tests::an_abandoned_staging_releases_its_claim`
+    /// - witness: `gandr-kernel-core::environment::tests::an_abandoned_staging_leaves_the_arena_unchanged`
+    /// - witness: `gandr-kernel-core::environment::tests::an_abandoned_staging_releases_its_claim`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()))]
     #[inline]
     pub fn discard(self)
@@ -1031,7 +1065,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1074,7 +1108,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start(), entry_provenance = provenance.len()],
@@ -1118,7 +1152,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1158,7 +1192,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — a test staged at its base's type admits and one at
     ///   another type is refused.
-    /// - witness: `check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
+    /// - witness: `gandr-kernel-core::check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1207,7 +1241,7 @@ impl<'env> Staging<'env>
     /// - hypothesis: L3 — each of the four finishers leaves a later claim that
     ///   blocks an earlier admission without truncating either region, and the
     ///   retained declaration subsequently admits on its own.
-    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `gandr-kernel-core::environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
@@ -1283,7 +1317,7 @@ pub struct AdmittedDeclaration
 
 /// The parts of an admitted declaration that an admission hands the record:
 /// each part but its kind, since an admitted declaration enters live.
-pub(crate) struct AdmittedParts
+pub struct AdmittedParts
 {
     /// The declaration itself.
     pub declaration: Declaration,
@@ -1348,7 +1382,7 @@ pub enum EntryKind
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Unit
+pub struct Unit
 {
     /// The position of the unit's first member.
     pub first: ConstantIndex,
@@ -1364,7 +1398,7 @@ pub(crate) struct Unit
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum UnitShape
+pub enum UnitShape
 {
     /// One declaration, admitted alone.
     Lone,
@@ -1379,7 +1413,8 @@ impl Unit
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn lone(position: ConstantIndex) -> Self
+    #[must_use]
+    pub fn lone(position: ConstantIndex) -> Self
     {
         Self {
             first: position,
@@ -1393,7 +1428,8 @@ impl Unit
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn holds(
+    #[must_use]
+    pub fn holds(
         self,
         position: ConstantIndex,
     ) -> Membership
@@ -1412,7 +1448,7 @@ impl Unit
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Membership
+pub enum Membership
 {
     /// The position is a member of the unit.
     Member,
@@ -1450,7 +1486,8 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn content(&self) -> &DeclarationContent
+    #[must_use]
+    pub const fn content(&self) -> &DeclarationContent
     {
         self.declaration.content()
     }
@@ -1472,7 +1509,8 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn block(&self) -> crate::occurrence::Block
+    #[must_use]
+    pub const fn block(&self) -> crate::occurrence::Block
     {
         self.block
     }
@@ -1482,7 +1520,8 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn accessibility(&self) -> &crate::occurrence::Accessibility
+    #[must_use]
+    pub const fn accessibility(&self) -> &crate::occurrence::Accessibility
     {
         &self.accessibility
     }
@@ -1492,7 +1531,8 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn key_name(&self) -> ConstantName
+    #[must_use]
+    pub const fn key_name(&self) -> ConstantName
     {
         self.key_name
     }
@@ -1505,7 +1545,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn rested_on(&self) -> &BTreeSet<ConstantIndex>
+    pub const fn rested_on(&self) -> &BTreeSet<ConstantIndex>
     {
         &self.rested_on
     }
@@ -1518,7 +1558,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn references(&self) -> &[ConstantIndex]
+    pub fn references(&self) -> &[ConstantIndex]
     {
         &self.references
     }
@@ -1530,7 +1570,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn unit(&self) -> Unit
+    pub const fn unit(&self) -> Unit
     {
         self.unit
     }
@@ -1541,7 +1581,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn rest_on(
+    pub fn rest_on(
         &mut self,
         rested: &BTreeSet<ConstantIndex>,
     )
@@ -1554,7 +1594,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn close(
+    pub fn close(
         &mut self,
         extent: SealExtent,
     )
@@ -1568,7 +1608,7 @@ impl AdmittedDeclaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn live(parts: AdmittedParts) -> Self
+    pub fn live(parts: AdmittedParts) -> Self
     {
         let AdmittedParts {
             declaration,
@@ -1604,9 +1644,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn key(
-        &self
-    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    pub const fn key(&self) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
     {
         self.key
     }
@@ -1647,7 +1685,7 @@ impl AdmittedDeclaration
     /// # Adequacy
     /// - hypothesis: L2 — a recalled or bypassed declaration whose census read
     ///   as the empty tally of a check that charged nothing.
-    /// - witness: `environment::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
+    /// - witness: `gandr-kernel-core::environment::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
     #[inline]
     #[spec(ensures: |ret| matches!(
         (self.admission, ret),
@@ -1696,8 +1734,8 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a declaration whose check reads an entry its content does
 ///   not name is refused at that position, and a check after many unrelated
 ///   entries reads as many entries as after few.
-/// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-/// - witness: `environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
+/// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `gandr-kernel-core::environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
 #[derive(Debug, Default)]
 pub struct Entries
 {
@@ -1716,7 +1754,7 @@ pub struct Entries
 /// the position of that declaration. The check reads only the entries its
 /// source states before that declaration.
 #[derive(Clone, Debug)]
-pub(crate) struct Horizon
+pub struct Horizon
 {
     /// The rank of the declaration the check admits.
     rank: SourceRank,
@@ -1732,7 +1770,7 @@ pub(crate) struct Horizon
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum Order
+pub enum Order
 {
     /// No entry is retired, and each entry is admitted at a rank above the
     /// rank of each earlier entry: each position is its own place.
@@ -1746,7 +1784,7 @@ pub(crate) enum Order
 /// The admitted declarations and what a check reads beside them: the view's
 /// part of the log, which every view shares under one `Arc`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct EntryLog
+pub struct EntryLog
 {
     /// The slot at each position, in admission order.
     pub family: Family<Slot>,
@@ -1783,7 +1821,7 @@ pub(crate) struct EntryLog
     reason = "one per position, read by every check; boxing the declaration would allocate per \
               admission and add an indirection to every read to shrink the rare vacant slot"
 )]
-pub(crate) enum Slot
+pub enum Slot
 {
     /// An admitted declaration, live or retired.
     Admitted(AdmittedDeclaration),
@@ -1801,7 +1839,8 @@ impl Slot
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn admitted(&self) -> Option<&AdmittedDeclaration>
+    #[must_use]
+    pub const fn admitted(&self) -> Option<&AdmittedDeclaration>
     {
         match *self {
             Self::Admitted(ref entry) => Some(entry),
@@ -1828,7 +1867,7 @@ impl Slot
 static NO_FAMILY: Family<Slot> = Family::new();
 
 /// No admitted declaration: what a judgement over an empty environment reads.
-pub(crate) static NO_ENTRIES: Entries = Entries::new();
+pub static NO_ENTRIES: Entries = Entries::new();
 
 impl Clone for Entries
 {
@@ -1893,7 +1932,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn family(&self) -> &Family<Slot>
+    #[must_use]
+    pub fn family(&self) -> &Family<Slot>
     {
         self.log.as_deref().map_or(&NO_FAMILY, |log| &log.family)
     }
@@ -1904,7 +1944,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn at<Offset>(
+    pub fn at<Offset>(
         &self,
         offset: Offset,
     ) -> Option<&AdmittedDeclaration>
@@ -1943,7 +1983,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a count that misses a vacancy or an entry that a
     ///   refused block drops differs from the count of [`Self::iter`].
-    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    /// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_refused_whole`
     #[inline]
     #[must_use]
     pub fn admitted(&self) -> gandr_kernel_term::ArenaLength
@@ -1980,9 +2020,9 @@ impl Entries
     ///   refused at that position, and a case over a sort keeps the loop arm of
     ///   a type of words the case does not name. A reference to an entry ranked
     ///   above the declaration is unbound.
-    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-    /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
-    /// - witness: `environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `gandr-kernel-core::tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    /// - witness: `gandr-kernel-core::environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
     #[inline]
     #[must_use]
     pub fn get<Offset>(
@@ -2022,7 +2062,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn peek<Offset>(
+    pub fn peek<Offset>(
         &self,
         offset: Offset,
     ) -> Option<&AdmittedDeclaration>
@@ -2081,7 +2121,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn key_names(&self) -> impl Iterator<Item = ConstantName> + '_
+    pub fn key_names(&self) -> impl Iterator<Item = ConstantName> + '_
     {
         self.family().iter().map(|slot| {
             slot.admitted()
@@ -2095,7 +2135,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn presentations(&self) -> &crate::presented::Presentations
+    #[must_use]
+    pub fn presentations(&self) -> &crate::presented::Presentations
     {
         self.horizon.as_ref().map_or_else(
             || {
@@ -2113,7 +2154,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn horizon(&self) -> SourceRank
+    #[must_use]
+    pub fn horizon(&self) -> SourceRank
     {
         self.horizon
             .as_ref()
@@ -2127,7 +2169,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn log(&self) -> Option<&EntryLog>
+    pub fn log(&self) -> Option<&EntryLog>
     {
         self.log.as_deref()
     }
@@ -2139,7 +2181,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn check_horizon(&self) -> Option<&Horizon>
+    pub const fn check_horizon(&self) -> Option<&Horizon>
     {
         self.horizon.as_ref()
     }
@@ -2150,7 +2192,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn live(
+    #[must_use]
+    pub fn live(
         &self,
         position: ConstantIndex,
     ) -> Option<&AdmittedDeclaration>
@@ -2164,7 +2207,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn rank_of(
+    pub fn rank_of(
         &self,
         position: ConstantIndex,
     ) -> Option<SourceRank>
@@ -2205,7 +2248,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn key(
+    pub fn key(
         &self,
         position: ConstantIndex,
     ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
@@ -2222,7 +2265,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn ruled(
+    #[must_use]
+    pub fn ruled(
         &self,
         root: ComputationId,
     ) -> Option<ConstantIndex>
@@ -2238,7 +2282,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn holder(
+    #[must_use]
+    pub fn holder(
         &self,
         role: gandr_kernel_term::Builtin,
     ) -> Option<ConstantIndex>
@@ -2252,7 +2297,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn holder_below(
+    #[must_use]
+    pub fn holder_below(
         &self,
         role: gandr_kernel_term::Builtin,
         below: SourceRank,
@@ -2275,7 +2321,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn digested(
+    pub fn digested(
         &self,
         digest: ContentDigest,
         below: SourceRank,
@@ -2298,7 +2344,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn reading(&self) -> Self
+    pub fn reading(&self) -> Self
     {
         Self {
             log: self.log.clone(),
@@ -2315,7 +2361,7 @@ impl Entries
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn view(&mut self) -> Self
+    pub fn view(&mut self) -> Self
     {
         Self {
             log: self.log.clone(),
@@ -2331,7 +2377,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn restore(
+    pub fn restore(
         &mut self,
         view: Self,
     )
@@ -2362,9 +2408,10 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::get`].
-    /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    /// - witness: `gandr-kernel-core::tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
     #[spec(captures: entry_len = self.len(), ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1))]
-    pub(crate) fn push(
+    #[inline]
+    pub fn push(
         &mut self,
         arena: &TermArena,
         entry: AdmittedDeclaration,
@@ -2382,7 +2429,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
-    pub(crate) fn reserve(&mut self)
+    #[inline]
+    pub fn reserve(&mut self)
     {
         let log = self.log_mut();
         log.reservations = log.reservations.saturating_add(1);
@@ -2403,9 +2451,10 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a commit in another order than the positions fills
     ///   each slot as the serial run admits it.
-    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && usize::from(self.admitted()) == usize::from(admitted).saturating_add(1))]
-    pub(crate) fn fill(
+    #[inline]
+    pub fn fill(
         &mut self,
         arena: &TermArena,
         position: ConstantIndex,
@@ -2432,9 +2481,10 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::add_decl`.
-    /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    /// - witness: `gandr-kernel-core::environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
-    pub(crate) fn vacate(&mut self)
+    #[inline]
+    pub fn vacate(&mut self)
     {
         let log = self.log_mut();
         log.vacancies = log.vacancies.saturating_add(1);
@@ -2447,7 +2497,8 @@ impl Entries
     /// # Specification
     /// trivial.
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && self.admitted() == admitted)]
-    pub(crate) fn vacate_at(
+    #[inline]
+    pub fn vacate_at(
         &mut self,
         position: ConstantIndex,
     )
@@ -2478,8 +2529,9 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::retire`.
-    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    pub(crate) fn retire(
+    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    #[inline]
+    pub fn retire(
         &mut self,
         position: ConstantIndex,
     )
@@ -2517,8 +2569,9 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::keep`.
-    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    pub(crate) fn reinstate(
+    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    #[inline]
+    pub fn reinstate(
         &mut self,
         arena: &TermArena,
         (position, rank): (ConstantIndex, SourceRank),
@@ -2577,9 +2630,10 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a block refused after one member is admitted leaves
     ///   the entries it found.
-    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    /// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(captures: entry_len = self.len(), ensures: self.len() == length.min(entry_len))]
-    pub(crate) fn truncate(
+    #[inline]
+    pub fn truncate(
         &mut self,
         length: gandr_kernel_term::ArenaLength,
     )
@@ -2618,7 +2672,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn freeze(&mut self)
+    pub fn freeze(&mut self)
     {
         if self.log.is_some() {
             self.log_mut().family.freeze();
@@ -2630,7 +2684,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn get_mut<Offset>(
+    pub fn get_mut<Offset>(
         &mut self,
         offset: Offset,
     ) -> Option<&mut AdmittedDeclaration>
@@ -2664,13 +2718,15 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::get`].
-    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-    /// - witness: `environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
-    pub(crate) fn open(
+    /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `gandr-kernel-core::environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
+    #[inline]
+    pub fn open<Roots>(
         &mut self,
-        roots: impl IntoIterator<Item = ConstantIndex>,
+        roots: Roots,
         (rank, end): (SourceRank, gandr_kernel_term::ArenaLength),
-    )
+    ) where
+        Roots: IntoIterator<Item = ConstantIndex>,
     {
         self.horizon = Some(Horizon {
             rank,
@@ -2704,7 +2760,8 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn close(&mut self) -> Option<ConstantIndex>
+    #[inline]
+    pub fn close(&mut self) -> Option<ConstantIndex>
     {
         self.horizon = None;
         alloc::sync::Arc::get_mut(self.support.as_mut()?)?.close()
@@ -2714,7 +2771,7 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn reads(&self) -> gandr_kernel_term::ArenaLength
     {
         self.support.as_deref().map_or_else(
@@ -2842,7 +2899,7 @@ impl EntryLog
 /// code there would admit provenance entries naming declarations no projection
 /// touched — a strictly more permissive gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CodeEdges
+pub enum CodeEdges
 {
     /// Follow a code into the term language and union the constants it names.
     Follow,
@@ -2879,10 +2936,10 @@ pub(crate) enum CodeEdges
 ///   Existing admission witnesses cover finite transitive chains through codes.
 /// - witness: `env::tests::reachability_separates_references_and_code_edges`
 /// - witness: `env::tests::unreadable_roots_contribute_no_references`
-/// - witness: `environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+/// - witness: `gandr-kernel-core::environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
 ///
-/// - witness: `environment::tests::sealing_provenance_does_not_follow_codes`
-/// - witness: `environment::tests::a_type_level_atom_reference_reaches_the_audit`
+/// - witness: `gandr-kernel-core::environment::tests::sealing_provenance_does_not_follow_codes`
+/// - witness: `gandr-kernel-core::environment::tests::a_type_level_atom_reference_reaches_the_audit`
 #[spec(ensures: |ret| match root {
     AnyNode::Value(id) => match arena.value(id) {
         Some(&Value::Constant(index)) => ret.len() == 1_usize && ret.contains(&index),
@@ -2904,7 +2961,9 @@ pub(crate) enum CodeEdges
         _ => true,
     },
 })]
-pub(crate) fn collect_reachable(
+#[inline]
+#[must_use]
+pub fn collect_reachable(
     arena: &TermArena,
     root: AnyNode,
     codes: CodeEdges,
@@ -2944,9 +3003,11 @@ pub(crate) fn collect_reachable(
 /// # Adequacy
 /// - hypothesis: L3 — a check that reads only what its content names admits,
 ///   and one that reads past it is refused.
-/// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
-pub(crate) fn references(
+#[inline]
+#[must_use]
+pub fn references(
     arena: &TermArena,
     declaration: &Declaration,
 ) -> Box<[ConstantIndex]>
@@ -3043,7 +3104,7 @@ pub(crate) fn references(
 
 /// Whether a walk met the constant it sought.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Mention
+pub enum Mention
 {
     /// The constant is reachable from the root.
     Named,
@@ -3550,7 +3611,7 @@ fn reach(
 /// `Unnamed` for, so asking about the parts of one type walks the nodes they
 /// share once, and it stops at the first node naming the constant.
 #[derive(Debug)]
-pub(crate) struct ConstantSearch
+pub struct ConstantSearch
 {
     /// The constant sought.
     sought: ConstantIndex,
@@ -3565,7 +3626,8 @@ impl ConstantSearch
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn new(sought: ConstantIndex) -> Self
+    #[must_use]
+    pub fn new(sought: ConstantIndex) -> Self
     {
         Self {
             sought,
@@ -3593,7 +3655,8 @@ impl ConstantSearch
     ///   `Named`.
     /// - witness: `env::tests::a_search_stops_at_its_constant_across_roots`
     #[spec(ensures: |ret| (ret == Mention::Named) == collect_reachable(arena, root, CodeEdges::Follow).contains(&self.sought))]
-    pub(crate) fn names(
+    #[inline]
+    pub fn names(
         &mut self,
         arena: &TermArena,
         root: AnyNode,
@@ -3642,7 +3705,7 @@ impl ConstantSearch
 ///   verifies that a constant reachable only through a code cannot justify a
 ///   provenance entry.
 /// - witness: `env::tests::reachability_separates_references_and_code_edges`
-/// - witness: `environment::tests::sealing_provenance_does_not_follow_codes`
+/// - witness: `gandr-kernel-core::environment::tests::sealing_provenance_does_not_follow_codes`
 #[spec(ensures: |ret| match arena.value_type(root) {
     Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
     Some(&ValueType::Data { .. } | &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
@@ -3650,7 +3713,8 @@ impl ConstantSearch
     _ => true,
 })]
 #[inline]
-pub(crate) fn projected_atoms(
+#[must_use]
+pub fn projected_atoms(
     arena: &TermArena,
     root: ValueTypeId,
 ) -> BTreeSet<ConstantIndex>

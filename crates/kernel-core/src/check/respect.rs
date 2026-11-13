@@ -175,7 +175,7 @@ pub(super) enum Reading
 ///   at both sides of the rule, refused where its arm tells them apart.
 /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `tests::native_formers::a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint`
-/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+/// - witness: `environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, leading: past, .. } if marked == fixpoint && past == leading), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
 pub(super) fn fold_root(
     arena: &mut TermArena,

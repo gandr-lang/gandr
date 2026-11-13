@@ -36,6 +36,7 @@ pub struct Program
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn program() -> impl proptest::strategy::Strategy<Value = Program>
 {
     use proptest::strategy::Strategy as _;
@@ -47,9 +48,10 @@ pub fn program() -> impl proptest::strategy::Strategy<Value = Program>
 }
 
 /// One step of a generated term's construction: an operation over a stack of
-/// values and a stack of computations, an operand missing from either read as
-/// the innermost variable or its return, so that a body built from nothing
-/// reads the binder it stands under.
+/// values and a stack of computations.
+///
+/// An operand missing from either reads as the innermost variable or its
+/// return, so that a body built from nothing reads the binder it stands under.
 #[derive(Clone, Copy, Debug)]
 pub enum Step
 {
@@ -257,6 +259,7 @@ fn popped_computation(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn generated(
     arena: &mut TermArena,
     program: &Program,

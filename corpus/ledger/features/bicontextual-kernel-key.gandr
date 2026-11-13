@@ -12,7 +12,7 @@
 /// first's entry and the kernel checks `n` once.
 ///
 /// - see: crates/kernel-term/src/support.rs
-/// - see: crates/kernel-core/src/support.rs
+/// - see: crates/kernel-core-base/src/support.rs
 
 /// The naturals `side` answers.
 data Nat : Type where

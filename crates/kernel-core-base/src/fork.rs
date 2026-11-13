@@ -15,7 +15,7 @@
 //! them. The runs read the size of the drain and the [`ForkWidth`] alone, so
 //! a check at one width forks the same jobs each time.
 //!
-//! The seam is object-safe, so a [`Judgement`](crate::Judgement) carries it
+//! The seam is object-safe, so a `Judgement` carries it
 //! without a type parameter. The kernel sits below the core crates, so it
 //! states the seam itself. The driver's pool implements it.
 //!
@@ -140,7 +140,7 @@ impl From<ForkWidth> for NonZeroUsize
 /// trivial.
 #[derive(Clone, Copy, Default)]
 #[repr(transparent)]
-pub(crate) struct Forking<'session>(Option<&'session dyn ObligationFork>);
+pub struct Forking<'session>(Option<&'session dyn ObligationFork>);
 
 impl<'session> Forking<'session>
 {
@@ -150,7 +150,8 @@ impl<'session> Forking<'session>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn new(fork: Option<&'session dyn ObligationFork>) -> Self
+    #[must_use]
+    pub const fn new(fork: Option<&'session dyn ObligationFork>) -> Self
     {
         Self(fork)
     }
@@ -160,7 +161,8 @@ impl<'session> Forking<'session>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn fork(self) -> Option<&'session dyn ObligationFork>
+    #[must_use]
+    pub const fn fork(self) -> Option<&'session dyn ObligationFork>
     {
         self.0
     }
@@ -222,7 +224,8 @@ impl SharedFork
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn forking(&self) -> Option<&dyn ObligationFork>
+    #[must_use]
+    pub fn forking(&self) -> Option<&dyn ObligationFork>
     {
         self.0
             .as_deref()

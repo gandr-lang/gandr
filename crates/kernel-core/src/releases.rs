@@ -33,8 +33,8 @@ use gandr_kernel_term::SourceRank;
 use quenchant_shape::shape::Maybe;
 
 use crate::encoding::ConstantName;
+use crate::env::UnsettledCount;
 use crate::environment::Hold;
-use crate::environment::UnsettledCount;
 use crate::verdict::VerdictKey;
 use crate::verdict::keyed;
 

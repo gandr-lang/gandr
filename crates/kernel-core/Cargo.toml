@@ -36,6 +36,7 @@ blake3.workspace = true
 ed25519-dalek.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-core-base.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-dynamic-graphs.workspace = true
@@ -46,6 +47,7 @@ quenchant-shape.workspace = true
 [dev-dependencies]
 gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-core-base = { workspace = true, features = ["fixture"] }
 proptest.workspace = true
 
 # The build script digests the kernel crates' files and the lock into the
