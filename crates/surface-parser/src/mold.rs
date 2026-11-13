@@ -3895,7 +3895,7 @@ impl<'pbg> Molder<'pbg>
                 let delta = match procedure {
                     Procedure::DryRuns => Self::push_delta(self.pbg, state, mold, text),
                     Procedure::Tables => {
-                        let class = self.chain.key(self.pbg, mold);
+                        let class = self.chain.key(self.pbg, state, mold);
                         if let Some(&(_, delta)) =
                             self.pushes.iter().find(|&&(held, _)| held == class)
                         {
@@ -4155,7 +4155,7 @@ impl<'pbg> Molder<'pbg>
             let completion = match procedure {
                 Procedure::DryRuns => Self::completion(state, mold, text),
                 Procedure::Tables => {
-                    let class = self.chain.key(self.pbg, mold);
+                    let class = self.chain.key(self.pbg, state, mold);
                     if let Some(&(_, completion)) =
                         self.completions.iter().find(|&&(held, _)| held == class)
                     {
@@ -4661,7 +4661,8 @@ impl<'pbg> Molder<'pbg>
             self.opener_keys.clear();
             for slot in 0 .. self.openers.len() {
                 if let Some(&opener) = self.openers.get(slot) {
-                    self.opener_keys.push(self.chain.key(self.pbg, opener));
+                    self.opener_keys
+                        .push(self.chain.key(self.pbg, state, opener));
                 }
             }
             self.shared_keys.clone_from(&self.opener_keys);

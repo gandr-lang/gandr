@@ -4946,6 +4946,35 @@ impl<'pbg> MeldState<'pbg>
         core::mem::replace(&mut self.reach, on)
     }
 
+    /// Whether the closer `mold` reaches an open partner below the innermost
+    /// form on this state: the reach is on and
+    /// [`reach_partner`](Self::reach_partner) finds the partner (#6323,
+    /// #7032).
+    ///
+    /// A push class reads the frontiers of its settle chain, and that chain
+    /// ends at a free innermost form, so a partner below it is outside the
+    /// class. The molder keys a closer that reaches by itself.
+    ///
+    /// # Specification
+    /// - ensures: true exactly when the reach is on and `reach_partner(mold)`
+    ///   is some frontier.
+    /// - panics: none.
+    /// - executable: none — the clause restates the body, and `reach_partner`
+    ///   walks the frontiers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two closers of one push class, of which one reaches
+    ///   its partner and one stays stray, flag different obligations; the
+    ///   differential witness and the keystroke sweep read the disagreement.
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+    pub(crate) fn reaches(
+        &self,
+        mold: MoldId,
+    ) -> CloserReach
+    {
+        CloserReach::from(bool::from(self.reach) && self.reach_partner(mold).is_some())
+    }
+
     /// Return the open frontier directly below the innermost one, when a
     /// closer `mold` reaches it across the innermost form (#6323).
     ///

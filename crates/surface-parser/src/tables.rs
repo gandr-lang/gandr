@@ -408,27 +408,32 @@ impl SettleChain
         self.keyed = false;
     }
 
-    /// The push key of `mold` over this chain.
+    /// The push key of `mold` over this chain, on `state`.
     ///
     /// # Specification
-    /// - requires: the chain was read from the state `mold` is weighed on, or
-    ///   unkeyed.
-    /// - ensures: the mold itself when the chain keys no class or the mold is
-    ///   past the table; otherwise its observation class and, for each chain
-    ///   frontier, whether the mold continues it.
+    /// - requires: the chain was read from `state`, the state `mold` is weighed
+    ///   on, or unkeyed.
+    /// - ensures: the mold itself when the chain keys no class, the mold is
+    ///   past the table, or the mold is a closer that reaches its partner on
+    ///   `state` ([`MeldState::reaches`]); otherwise its observation class and,
+    ///   for each chain frontier, whether the mold continues it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`SettleChain`].
+    /// - hypothesis: L3 — as [`SettleChain`]; a closer that reaches a partner
+    ///   below a free innermost form reads a frontier the chain does not hold,
+    ///   so a class that held it would merge it with a closer that stays stray
+    ///   (#7032).
     /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
-    #[spec(ensures: |ret| (!self.keyed || pbg.observation(mold).is_err()) == (ret == PushKey::Alone(mold)))]
+    #[spec(ensures: |ret| (!self.keyed || pbg.observation(mold).is_err() || bool::from(state.reaches(mold))) == (ret == PushKey::Alone(mold)))]
     pub(crate) fn key(
         &self,
         pbg: &Pbg,
+        state: &MeldState<'_>,
         mold: MoldId,
     ) -> PushKey
     {
-        if !self.keyed {
+        if !self.keyed || bool::from(state.reaches(mold)) {
             return PushKey::Alone(mold);
         }
         let Ok(observation) = pbg.observation(mold)
