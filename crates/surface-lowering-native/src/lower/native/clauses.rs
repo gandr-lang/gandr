@@ -91,7 +91,7 @@ pub struct Columns
     pub parameters: FormStretch,
 }
 
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
+impl<'host, 'run, 'source: 'run> Native<'host, dyn Families<'run, 'source> + 'host>
 {
     /// Read a clause tail's stated type, `: (A, …) -> C where`, under `frame`,
     /// and bind one parameter per column.

@@ -1687,20 +1687,20 @@ impl<'run, 'source> core::ops::Deref for NativeRef<'_, 'run, 'source>
 /// answers each call into another family. A call from the lowering into this
 /// family builds `Native::new(self)`.
 #[repr(transparent)]
-pub struct Native<'host, F>
+pub struct Native<'host, F: ?Sized>
 {
     /// The host: the lowering, which holds the context and the other families.
     host: &'host mut F,
 }
 
-impl<'host, F> Native<'host, F>
+impl<'host, 'run, 'source: 'run> Native<'host, dyn Families<'run, 'source> + 'host>
 {
     /// The native family over `host`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn new(host: &'host mut F) -> Self
+    pub const fn new(host: &'host mut (dyn Families<'run, 'source> + 'host)) -> Self
     {
         Self { host }
     }
@@ -1708,7 +1708,7 @@ impl<'host, F> Native<'host, F>
 
 /// The native family's way to its state and to the other families: each read
 /// is the host's context, and each call into another family is the host's.
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
+impl<'host, 'run, 'source: 'run> Native<'host, dyn Families<'run, 'source> + 'host>
 {
     /// The lowering's context, to read.
     ///
@@ -1745,12 +1745,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Specification
     /// trivial.
     #[inline]
-    fn host(&mut self) -> &mut F
+    fn host(&mut self) -> &mut (dyn Families<'run, 'source> + 'host)
     {
         self.host
     }
 }
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
+impl<'host, 'run, 'source: 'run> Native<'host, dyn Families<'run, 'source> + 'host>
 {
     /// Seed every data declaration's types: each parameter's type under the
     /// parameters before it, each index classifier under the parameters and
@@ -11191,7 +11191,7 @@ fn record_copied_since(
     carry_bindings(sink, carried, mark);
 }
 
-impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
+impl<'host, 'run, 'source: 'run> Native<'host, dyn Families<'run, 'source> + 'host>
 {
     /// Classify an instantiation, `f[<]`: the head of a recursive call
     /// claiming structural descent, the self reference a value passes on, or

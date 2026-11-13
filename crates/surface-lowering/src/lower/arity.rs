@@ -5358,7 +5358,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.cx.value_type_at(declared) {
-                Maybe::Present(domain) => domains.push(Native::<Self>::shared_domain(
+                Maybe::Present(domain) => domains.push(Native::<'_, dyn gandr_surface_lowering_base::lower::families::Families<'_, '_> + '_>::shared_domain(
                     written.get(.. index).unwrap_or_default(),
                     parameter,
                     |named| bool::from(self.names_own_binder(codomain, named.frame)),

@@ -19617,7 +19617,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     domains.get(usize::from(place)).copied()
                 },
                 (Maybe::Present(written), None) => match self.cx.value_type_at(written) {
-                    Maybe::Present(domain) => Some(Native::<Self>::shared_domain(
+                    Maybe::Present(domain) => Some(Native::<'_, dyn gandr_surface_lowering_base::lower::families::Families<'_, '_> + '_>::shared_domain(
                         parameters.get(.. index).unwrap_or_default(),
                         parameter,
                         |named| bool::from(self.cx.scope.mentioned(named.frame)),
