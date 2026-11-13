@@ -79,6 +79,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — anchor: the first adapter of exact reals, a handle to a plan the host holds.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: § presented-spaces-crates gives the adapter of stage C to the run stage; a draw is a probability operation.
 - `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — anchor: a draw's native handler.
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. A crate boundary encloses a strongly connected component, and the run stage is one such component above the dispatcher, so it is one crate.
 - `Taylor-2010-lambda_calculus_real_analysis` — exemplar: Taylor, _JLA_ 2:5, 2010, `doi:10.4115/jla.2010.2.5` — the laws a cut owes.
 - `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar: Escardó, _ENTCS_ 87, 2004, `doi:10.1016/j.entcs.2004.09.017` — a comparison as an open.
 

@@ -34,6 +34,7 @@ use super::Produced;
 use super::Reading;
 use super::Sink;
 use super::Site;
+use super::exits::Exits;
 use super::exits::mark_copies;
 use super::exits::record_copies;
 use super::lowered;
@@ -258,9 +259,9 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(stated) = answer {
             let _first = self.cx.answers.insert(block.last, stated);
         }
-        self.pass_paths(site.at.node, block.last);
+        Exits::new(self).pass_paths(site.at.node, block.last);
         if self.cx.exitable.contains(&site.at.node) {
-            self.paths_through(site, block, answer)?;
+            Exits::new(self).paths_through(site, block, answer)?;
         }
         Ok(())
     }

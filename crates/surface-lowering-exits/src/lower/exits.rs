@@ -1,0 +1,2006 @@
+//! Early exits, lowered so that every exit stands where its body ends.
+//!
+//! A `return` or a `become` stands wherever a path through a body passes. A
+//! loop's `break`, `continue` and re-entry take the same commuting, which puts
+//! them where the loop's body ends.
+//!
+//! # Three passes, one per sweep
+//!
+//! A **survey**, descending before the classification, records what every
+//! node's paths do with the body it stands in: never leave it, sometimes, or
+//! always. A function, a lambda, a thunk and a copattern block never do,
+//! since an exit inside one, or inside one of its clauses, leaves it and not
+//! the body around it. A capability scope never does either: its clauses are
+//! bodies of their own, and a `return` in its subject leaves by unwinding,
+//! not by the commuting. A `break` and a `continue` always leave the loop
+//! body they stand in; a loop sometimes leaves where it stands, through a
+//! `break` of its own, and always leaves without one, since its body only
+//! runs again or exits.
+//!
+//! The **classification** reads the survey at each block a path runs through.
+//! A statement whose computation sometimes leaves distributes the rest of the
+//! block: its computation joins the block, answers what the block answers, and
+//! every position in tail position of it joins too. A statement whose
+//! computation always leaves makes the rest of the block unreachable, which is
+//! refused. An exit standing where no path passes — a call's head, outside any
+//! body — is refused as not in tail. A handled subject is a block a path runs
+//! through on its way through the body the scope stands in: its tail is the
+//! subject's result, and every position on its paths is framed.
+//!
+//! The **mint** sweep commutes each body once, when the function, the lambda
+//! or the thunk that owns it is minted: a bind whose rest is distributed
+//! disappears into its computation, whose every local end binds a copy of the
+//! rest, carried under the binders between the statement and the end, and
+//! every exit is left where it stands, which is then where the body ends. The
+//! walk enters a loop's fixpoint: a local end inside it is a `break`, which
+//! continues what the loop's own position continues, or an exit — a
+//! `return`, a `become`, a `continue` or a re-entry — which stays. A match
+//! leaf's copy of an arm body carries the exits, the `break`s, the loops and
+//! the distributed binds of the arm with it. A handled subject is commuted as
+//! a body is, its own; a `return` framed in it is a capture its body's
+//! delimiter discards, and that body is minted under the delimiter.
+//!
+//! The decision, the alternatives and what reverses it are the crate's: see
+//! the crate documentation's section on exits.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Binders;
+use gandr_core_term::Carried;
+use gandr_core_term::ComponentCount;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::SplitMotive;
+use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::WorldForm;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering_base::lower::Context;
+pub use gandr_surface_lowering_base::lower::exits::ElidableExit;
+pub use gandr_surface_lowering_base::lower::exits::Exit;
+pub use gandr_surface_lowering_base::lower::exits::Explicitness;
+pub use gandr_surface_lowering_base::lower::exits::InferredExit;
+pub(super) use gandr_surface_lowering_base::lower::exits::Leaves;
+pub(super) use gandr_surface_lowering_base::lower::exits::Rest;
+pub use gandr_surface_lowering_base::lower::exits::Returned;
+pub(super) use gandr_surface_lowering_base::lower::exits::found_or;
+pub(super) use gandr_surface_lowering_base::lower::exits::mark_copies;
+pub(super) use gandr_surface_lowering_base::lower::exits::record_copies;
+use gandr_surface_lowering_base::lower::families::Families;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
+use quenchant_shape::shape::Maybe;
+
+use super::Block;
+use super::Sink;
+use super::lowered;
+use super::native::Answer;
+use super::native::answered;
+use crate::by_form::At;
+use crate::by_form::FormStretch;
+use crate::error::LoweringRefusal;
+use crate::form::Former;
+use crate::form::Piece;
+use crate::form::Pieces;
+use crate::form::Shape;
+use crate::form::TileName;
+use crate::form::read_pieces;
+use crate::form::shape_of;
+use crate::origin::Insertion;
+use crate::origin::Origin;
+use crate::table::NodeTable;
+
+/// Whether a node holds a `break` of the loop around it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the variants are ordered, so the greater of two children's is
+///   what a form holding both holds.
+/// - provides: the half of the survey that tells a loop which a `break` leaves
+///   from apart from one that only runs again or exits.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a loop with a `break`, one without, and a `break` inside
+///   a nested loop, each surveyed exactly.
+/// - witness: `gandr-surface-lowering::lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Breaks
+{
+    /// No `break` of the loop around the node stands in it.
+    #[default]
+    Never,
+    /// A `break` of the loop around the node stands in it.
+    Held,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rest continues no rest of its own.
+    pub mod enclosing {
+        /// The statement's computation is where its body's own path runs.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No local end of another statement holds the statement.
+            Outermost,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rest has no commuted form yet.
+    pub mod settled {
+        /// The commuting has not reached it.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No local end has asked for it.
+            Pending,
+        }
+    }
+}
+
+/// A rest of a block the commuting holds, by its position in its list.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct RestAt(usize);
+
+/// The rests a computation's local ends continue: an ordinary end's, and a
+/// `break`'s.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: an absent rest leaves its ends where they stand; a `break`'s is
+///   the rest of the position its loop stands at.
+/// - executable: none — the record holds no list of rests to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `break` inside a statement of a loop's body continues
+///   the block after the loop, while the statement's own ends continue the
+///   body's block.
+/// - witness: `gandr-surface-lowering::lower::loops::tests::a_break_continues_what_follows_its_loop`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Ends
+{
+    /// What an ordinary local end continues.
+    rests: Maybe<RestAt, enclosing::Absent>,
+    /// What a `break` of the nearest loop continues.
+    breaks: Maybe<RestAt, enclosing::Absent>,
+}
+
+/// A distributed rest: what continues each local end of its statement.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the rest is read under the statement's binder, `depth` below the
+///   body's root.
+/// - executable: none — the record holds no arena to check the depth against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rest continuing the local ends of a match nested in
+///   another match's arm continues the outer rest in turn.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Pending
+{
+    /// The rest, under the statement's one binder.
+    rest: ComputationId,
+    /// The binders between the body's root and the statement.
+    depth: Depth,
+    /// The statement's origin, which every bind of the rest carries.
+    origin: Origin,
+    /// What the statement's own position continues: the rest of the
+    /// statement it stands at a local end of, and the rest a `break` in it
+    /// continues.
+    outer: Ends,
+}
+
+/// How far below the body's root a node stands, zone by zone: an end in a
+/// fork's parent, a receive's body or a hold's scope stands under a linear
+/// binder the rest it continues must be raised past, as it is raised past an
+/// intuitionistic one.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each count is the binders of its zone crossed to reach the node,
+///   or, as an amount, the binders between two nodes one below the other.
+/// - executable: none — the record holds no arena to count against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rest continuing an end under a hold's slot or a fork's
+///   parent end reads the slots it named outside them.
+/// - witness: `gandr-surface-lowering::lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+/// - witness: `gandr-surface-lowering::lower::session::tests::a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Depth
+{
+    /// The intuitionistic binders.
+    intuitionistic: Binders,
+    /// The linear binders.
+    linear: Binders,
+}
+
+impl Depth
+{
+    /// The body's root, and the amount that raises nothing.
+    const NONE: Self = Self {
+        intuitionistic: Binders::NONE,
+        linear: Binders::NONE,
+    };
+
+    /// One intuitionistic binder deeper.
+    ///
+    /// # Specification
+    /// trivial.
+    fn deeper(self) -> Self
+    {
+        Self {
+            intuitionistic: self.intuitionistic.deeper(),
+            ..self
+        }
+    }
+
+    /// `count` intuitionistic binders deeper.
+    ///
+    /// # Specification
+    /// trivial.
+    fn deeper_by(
+        self,
+        count: ComponentCount,
+    ) -> Self
+    {
+        Self {
+            intuitionistic: self.intuitionistic.deeper_by(count),
+            ..self
+        }
+    }
+
+    /// One linear binder deeper.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_linear(self) -> Self
+    {
+        Self {
+            linear: self.linear.deeper(),
+            ..self
+        }
+    }
+
+    /// The binders between `self` and `deeper`, which stands below it, zone by
+    /// zone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn until(
+        self,
+        deeper: Self,
+    ) -> Self
+    {
+        // reason: a binder count uses u32::MAX as its conservative ceiling,
+        // and an end stands at least as deep as its statement in each zone.
+        Self {
+            intuitionistic: Binders::from(
+                u32::from(deeper.intuitionistic).saturating_sub(u32::from(self.intuitionistic)),
+            ),
+            linear: Binders::from(u32::from(deeper.linear).saturating_sub(u32::from(self.linear))),
+        }
+    }
+}
+
+/// One unit of the commuting's work.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Step
+{
+    /// Commute a computation at a depth, under the rests it continues.
+    Open(ComputationId, Ends, Depth),
+    /// Rebuild a computation over its children's commuted forms.
+    Close(ComputationId),
+    /// Keep the result on top as a rest's commuted form.
+    Settle(RestAt),
+    /// Bind a local end at a depth over a rest's commuted form.
+    Continue(ComputationId, RestAt, Depth),
+}
+
+/// The exits family over its host, which holds the lowering's context and
+/// answers each call into another family. A call from the lowering into this
+/// family builds `Exits::new(self)`.
+#[repr(transparent)]
+pub struct Exits<'host, F>
+{
+    /// The host: the lowering, which holds the context and the other families.
+    host: &'host mut F,
+}
+
+impl<'host, F> Exits<'host, F>
+{
+    /// The exits family over `host`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn new(host: &'host mut F) -> Self
+    {
+        Self { host }
+    }
+}
+
+/// The exits family's reads over its host.
+///
+/// Each read reads the lowering's context and answers a minting through the
+/// host, so a read borrows the host and never writes it. A call from a
+/// reading of the lowering into this family builds `ExitsRef::new(self)`.
+#[repr(transparent)]
+pub struct ExitsRef<'host, F>
+{
+    /// The host: the lowering, which holds the context and the other families.
+    host: &'host F,
+}
+
+impl<'host, F> ExitsRef<'host, F>
+{
+    /// The exits family's reads over `host`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn new(host: &'host F) -> Self
+    {
+        Self { host }
+    }
+}
+
+/// The reads' way to their state and to the other families.
+impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
+{
+    /// The lowering's context, to read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn cx(&self) -> &Context<'run, 'source>
+    {
+        self.host.context()
+    }
+
+    /// The family that answers a minting into another family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn host_ref(&self) -> &F
+    {
+        self.host
+    }
+}
+
+/// The exits family's way to its state and to the other families: each read
+/// is the host's context, and each call into another family is the host's.
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Exits<'_, F>
+{
+    /// The lowering's context, to read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn cx(&self) -> &Context<'run, 'source>
+    {
+        self.host.context()
+    }
+
+    /// The lowering's context, to write.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn cx_mut(&mut self) -> &mut Context<'run, 'source>
+    {
+        self.host.context_mut()
+    }
+
+    /// The family that answers a call into another family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn host(&mut self) -> &mut F
+    {
+        self.host
+    }
+
+    /// The family's reads, which borrow the host and never write it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn shared(&self) -> ExitsRef<'_, F>
+    {
+        ExitsRef::new(self.host)
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Exits<'_, F>
+{
+    /// Survey what every node's paths do with the body it stands in.
+    ///
+    /// # Specification
+    /// - requires: nothing; the survey reads the tree alone.
+    /// - ensures: every node holds its [`Leaves`], children before parents:
+    ///   `return`, `become`, `break` and `continue` always leave; a function, a
+    ///   lambda, a thunk, a copattern block, a capability scope and a temporary
+    ///   access never do, since an exit inside one leaves it, unwinds past it
+    ///   or is refused there; a `loop` sometimes does when a `break` of its own
+    ///   stands in it and always does otherwise, and a `while` or a `for`
+    ///   sometimes does; a form holding no exit outside such a body never does;
+    ///   a block or a grouping does what the child that leaves most does; a
+    ///   match always leaves when every arm does; every other form holding an
+    ///   exit sometimes does.
+    /// - provides: what the classification of a block reads to decide where the
+    ///   rest of the block goes, before any statement in it is classified.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
+    ///   allowance, a step per node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a computation with no exit, one with an exit in one
+    ///   arm and one with an exit in every arm, each at one and two depths, an
+    ///   exit inside a thunk, and loops with and without a `break`, each
+    ///   asserted as its exact survey.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
+    /// - witness: `gandr-surface-lowering::lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
+    #[spec(
+        captures: before = (usize::from(self.cx().fuel.remaining()), usize::from(self.cx().leaves.count())),
+        ensures: |ret| {
+            usize::from(self.cx().leaves.count()) == before.1
+                && (ret.is_err()
+                    || usize::from(self.cx().fuel.remaining())
+                        <= before.0.saturating_sub(self.cx().own.len()))
+        },
+    )]
+    #[inline]
+    pub fn survey(&mut self) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut pieces = core::mem::take(&mut self.cx_mut().pieces);
+        let mut remaining = self.cx().own.len();
+        let mut breaks = NodeTable::filled(self.cx().tree.blocks(), Breaks::Never);
+        let mut outcome = Ok(());
+        while let Some(next) = remaining.checked_sub(1_usize) {
+            remaining = next;
+            if let Err(refusal) = self.cx_mut().fuel.spend() {
+                outcome = Err(refusal);
+                break;
+            }
+            let Some(&position) = self.cx().own.get(next)
+            else {
+                continue;
+            };
+            let (leaves, broken) = self.shared().leaves_of(position, &mut pieces, &breaks);
+            if let Some(held) = self.cx_mut().leaves.get_mut(position) {
+                *held = leaves;
+            }
+            if let Some(held) = breaks.get_mut(position) {
+                *held = broken;
+            }
+        }
+        self.cx_mut().pieces = pieces;
+
+        outcome
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
+{
+    /// What the paths of the node at `position` do, and whether it holds a
+    /// `break` of the loop around it, its children surveyed into `breaks` and
+    /// the leaves.
+    ///
+    /// # Specification
+    /// - requires: every child of `position` is surveyed.
+    /// - ensures: as [`Exits::survey`] states it, for one node; a node that is
+    ///   no form sometimes leaves when a child does and never otherwise; a
+    ///   `break` holds one, a loop, a function, a lambda, a thunk, a copattern
+    ///   block, a capability scope and a temporary access hold none, and every
+    ///   other node holds one when a child does; a node holding a `break`
+    ///   leaves at least sometimes.
+    /// - provides: the per-node half of [`Exits::survey`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Exits::survey`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
+    /// - witness: `gandr-surface-lowering::lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
+    #[spec(ensures: |ret| ret.1 == Breaks::Never || ret.0 != Leaves::Never)]
+    fn leaves_of(
+        &self,
+        position: NodeIndex,
+        pieces: &mut Pieces,
+        breaks: &NodeTable<Breaks>,
+    ) -> (Leaves, Breaks)
+    {
+        let (held, broken) = self.cx().tree.children(position).fold(
+            (Leaves::Never, Breaks::Never),
+            |(leaves, broken), child| {
+                (
+                    leaves.max(self.leaves_at(child)),
+                    broken.max(breaks.get(child).copied().unwrap_or_default()),
+                )
+            },
+        );
+        let Some(node) = self.cx().tree.node(position)
+        else {
+            return (Leaves::Never, Breaks::Never);
+        };
+        let Ok(Shape::Form { former, .. }) = shape_of(self.cx().pbg, node)
+        else {
+            return (held.min(Leaves::Sometimes), broken);
+        };
+        match former {
+            Former::Break => (Leaves::Always, Breaks::Held),
+            Former::Exit | Former::Become | Former::Continue => (Leaves::Always, Breaks::Never),
+            Former::Thunk
+            | Former::Lambda
+            | Former::LazyRecord
+            | Former::Scope
+            | Former::Access
+            | Former::World
+            | Former::Declaration
+            | Former::WorldDeclaration
+            | Former::Module => (Leaves::Never, Breaks::Never),
+            Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
+            Former::Loop | Former::While | Former::For => (Leaves::Sometimes, Breaks::Never),
+            _ if held == Leaves::Never => (Leaves::Never, Breaks::Never),
+            Former::Block | Former::Parenthesized => (held, broken),
+            Former::Case | Former::Offer => (self.arms_leave(position, pieces), broken),
+            Former::If => (self.branches_leave(position, pieces), broken),
+            Former::Name
+            | Former::Constructor
+            | Former::Hole
+            | Former::Number
+            | Former::Text
+            | Former::Character
+            | Former::TypeQuote
+            | Former::Boolean
+            | Former::Return
+            | Former::Force
+            | Former::Run
+            | Former::Call
+            | Former::ForgetModel
+            | Former::Telescope
+            | Former::List
+            | Former::PackModel
+            | Former::Injection
+            | Former::Binary
+            | Former::Unary
+            | Former::Projection
+            | Former::TypeHead
+            | Former::TypePath
+            | Former::Universe
+            | Former::TypeApplication
+            | Former::ThunkType
+            | Former::ReturnerType
+            | Former::ArrowType
+            | Former::LinearArrowType
+            | Former::ProductType
+            | Former::SumType
+            | Former::LazyProductType
+            | Former::TelescopeType
+            | Former::LabelledSumType
+            | Former::LazyRecordType
+            | Former::ParenthesizedType
+            | Former::PathType
+            | Former::BridgeType
+            | Former::FlowType
+            | Former::RelationType
+            | Former::ManifestType
+            | Former::CapabilityType
+            | Former::AtType
+            | Former::StagedType
+            | Former::ModedType
+            | Former::AttributeBlock
+            | Former::Visibility
+            | Former::Import
+            | Former::Data
+            | Former::Mutual
+            | Former::Instantiation
+            | Former::SessionType
+            | Former::Action
+            | Former::Reserved(_)
+            | Former::Unadmitted(_)
+            | Former::Misplaced => (Leaves::Sometimes, broken),
+        }
+    }
+
+    /// What the paths of the match or the offer at `position`, which holds an
+    /// exit, do: always leave when every arm always does.
+    ///
+    /// # Specification
+    /// - requires: every arm body of the match or the offer is surveyed, and
+    ///   one of its children holds an exit.
+    /// - ensures: always when the form has an arm and every arm body always
+    ///   leaves; sometimes otherwise, a form whose pieces do not read included.
+    /// - provides: the match and offer half of [`Self::leaves_of`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Exits::survey`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
+    #[spec(ensures: |ret| ret != Leaves::Never)]
+    fn arms_leave(
+        &self,
+        position: NodeIndex,
+        pieces: &mut Pieces,
+    ) -> Leaves
+    {
+        if read_pieces(self.cx().pbg, self.cx().tree, position, pieces).is_err() {
+            return Leaves::Sometimes;
+        }
+        let mut arrow = false;
+        let mut leaves = Leaves::Sometimes;
+        let mut every = Leaves::Always;
+        for piece in &pieces.pieces {
+            match *piece {
+                Piece::Tile { label, .. } => arrow = label == TileName::FAT_ARROW,
+                Piece::Operand(body) if arrow => {
+                    arrow = false;
+                    every = every.min(self.leaves_at(body.node));
+                    leaves = every.max(Leaves::Sometimes);
+                },
+                Piece::Operand(_) => {},
+            }
+        }
+
+        leaves
+    }
+
+    /// What the paths of the conditional at `position`, which holds an exit,
+    /// do: always leave when every branch always does.
+    ///
+    /// # Specification
+    /// - requires: every computation of every branch of the conditional is
+    ///   surveyed, and one of its children holds an exit.
+    /// - ensures: always when the form has a branch and every branch has a
+    ///   computation that always leaves; sometimes otherwise, a form whose
+    ///   pieces do not read included.
+    /// - provides: the conditional's half of [`Self::leaves_of`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a conditional both of whose branches return ends its
+    ///   function with nothing after it, and one only one of whose branches
+    ///   returns continues its block.
+    /// - witness: `gandr-surface-lowering::lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
+    #[spec(ensures: |ret| ret != Leaves::Never)]
+    fn branches_leave(
+        &self,
+        position: NodeIndex,
+        pieces: &mut Pieces,
+    ) -> Leaves
+    {
+        if read_pieces(self.cx().pbg, self.cx().tree, position, pieces).is_err() {
+            return Leaves::Sometimes;
+        }
+        let mut branch = None;
+        let mut every = None;
+        for piece in &pieces.pieces {
+            match *piece {
+                Piece::Tile { label, .. } if label == TileName::BRACE_OPEN => {
+                    branch = Some(Leaves::Never);
+                },
+                Piece::Tile { label, .. } if label == TileName::BRACE_CLOSE => {
+                    let ended = branch.take().unwrap_or(Leaves::Never);
+                    every = Some(every.map_or(ended, |held: Leaves| held.min(ended)));
+                },
+                Piece::Operand(computation) => {
+                    if let Some(held) = branch.as_mut() {
+                        *held = (*held).max(self.leaves_at(computation.node));
+                    }
+                },
+                Piece::Tile { .. } => {},
+            }
+        }
+
+        every.unwrap_or(Leaves::Sometimes).max(Leaves::Sometimes)
+    }
+
+    /// What the paths of the node at `position` do, as surveyed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the surveyed answer of a node the tree holds; never for a
+    ///   position past the tree.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Exits::survey`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
+    #[spec(ensures: |ret| ret == self.cx().leaves.get(position).copied().unwrap_or_default())]
+    #[must_use]
+    #[inline]
+    pub fn leaves_at(
+        &self,
+        position: NodeIndex,
+    ) -> Leaves
+    {
+        self.cx().leaves.get(position).copied().unwrap_or_default()
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Exits<'_, F>
+{
+    /// Mark `inner`, standing in tail position of `outer`, with the paths
+    /// through `outer`: where a path ends, where an exit may stand, where a
+    /// local end continues a block, where a path through a loop's body ends,
+    /// where a `break` or a `continue` may stand, where a handled subject's
+    /// result is, where a handler's frame is live, the body the path runs
+    /// through, and whether a statement written `c ;` holds it.
+    ///
+    /// # Specification
+    /// - requires: `inner` stands in tail position of `outer`: a block's last
+    ///   computation, a match's arm, a grouping's operand.
+    /// - ensures: `inner` carries each mark `outer` carries, and keeps its own.
+    /// - provides: the one way a path is passed down the classification.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path through a grouping, a block and a match
+    ///   reaches an exit in each, an exit under none is refused, and a path
+    ///   through nested matches without its exit takes the inferred one where
+    ///   it ends.
+    /// - witness: `gandr-surface-lowering::lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    #[spec(
+        captures: before = (
+            self.cx().exits.contains(&inner) || self.cx().exits.contains(&outer),
+            self.cx().exitable.contains(&inner) || self.cx().exitable.contains(&outer),
+            self.cx().joined.contains(&inner) || self.cx().joined.contains(&outer),
+            self.cx().iterated.contains(&inner) || self.cx().iterated.contains(&outer),
+            self.cx().looping.contains(&inner) || self.cx().looping.contains(&outer),
+            self.cx().framed.contains(&inner) || self.cx().framed.contains(&outer),
+        ),
+        ensures: self.cx().exits.contains(&inner) == before.0
+            && self.cx().exitable.contains(&inner) == before.1
+            && self.cx().joined.contains(&inner) == before.2
+            && self.cx().iterated.contains(&inner) == before.3
+            && self.cx().looping.contains(&inner) == before.4
+            && self.cx().framed.contains(&inner) == before.5,
+    )]
+    #[inline]
+    pub fn pass_paths(
+        &mut self,
+        outer: NodeIndex,
+        inner: NodeIndex,
+    )
+    {
+        let cx = self.cx_mut();
+        for marks in [
+            &mut cx.exits,
+            &mut cx.exitable,
+            &mut cx.joined,
+            &mut cx.iterated,
+            &mut cx.looping,
+            &mut cx.results,
+            &mut cx.framed,
+            &mut cx.looped_past,
+        ] {
+            if marks.contains(&outer) {
+                let _marked = marks.insert(inner);
+            }
+        }
+        if let Some(&body) = self.cx().bodies.get(&outer) {
+            let _owner = self.cx_mut().bodies.insert(inner, body);
+        }
+        if self.cx().stated.contains_key(&outer) || self.cx().stated_tails.contains(&outer) {
+            let _held = self.cx_mut().stated_tails.insert(inner);
+        }
+    }
+
+    /// Read `body`, the block of a function's, a lambda's or a thunk's body,
+    /// as one a path runs through, its last computation where the body ends.
+    ///
+    /// # Specification
+    /// - requires: `body` is the block just read for the body at `site`, and
+    ///   `answer` the type the body states, when it states one.
+    /// - ensures: the block's last computation is where a path ends, in the
+    ///   body it ends, and the block's statements as [`Self::paths_through`]
+    ///   marks them.
+    /// - provides: the one opening of a body every function, lambda, thunk and
+    ///   copattern clause shares.
+    /// - fails: [`LoweringRefusal::Unreachable`], as [`Self::paths_through`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::Unreachable`] for statements no path reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::paths_through`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::code_no_path_reaches_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || (self.cx().exits.contains(&body.last) && self.cx().exitable.contains(&body.last)
+        && self.cx().bodies.get(&body.last) == Some(&body.last)))]
+    #[inline]
+    pub fn open_body(
+        &mut self,
+        site: super::Site,
+        body: Block,
+        answer: Maybe<Answer, answered::Absent>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _tail = self.cx_mut().exits.insert(body.last);
+        let _owner = self.cx_mut().bodies.insert(body.last, body.last);
+        self.paths_through(site, body, answer)
+    }
+
+    /// Record that the form at `site`, a block's last statement that is not
+    /// an exit, runs with its result discarded, the block returning the unit
+    /// after it.
+    ///
+    /// # Specification
+    /// - requires: `site` is a block's last computation written as a statement
+    ///   and no exit, outside a loop's end.
+    /// - ensures: a form whose every path leaves is left as it is, the end of
+    ///   its block; any other is recorded as trailing, is not where a path
+    ///   ends, so nothing in its tail position takes an inferred exit, and
+    ///   either joins what follows it, when a path through it leaves, or
+    ///   answers nothing, since its result is discarded.
+    /// - provides: the reading of `{ s… c ; }` as Rust reads it: `c` runs and
+    ///   the block's value is the unit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call, a `pure` and a session action ending a body
+    ///   as a statement each run before the unit is returned; a match whose
+    ///   every arm returns stays the body's end.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_block_ending_in_a_statement_returns_the_unit_1205`
+    #[spec(ensures: (self.shared().leaves_at(site.at.node) == Leaves::Always) != self.cx().trailing.contains(&site.at.node)
+        && (!self.cx().trailing.contains(&site.at.node) || !self.cx().exits.contains(&site.at.node)))]
+    #[inline]
+    pub fn trail(
+        &mut self,
+        site: super::Site,
+    )
+    {
+        let leaves = self.shared().leaves_at(site.at.node);
+        if leaves == Leaves::Always {
+            return;
+        }
+        let _first = self.cx_mut().trailing.insert(site.at.node);
+        // A path passes the statement on to the unit returned after it.
+        let _passed = self.cx_mut().exits.remove(&site.at.node);
+        if leaves == Leaves::Never {
+            let _discarded = self.cx_mut().answers.remove(&site.at.node);
+        }
+        else {
+            let _joined = self.cx_mut().joined.insert(site.at.node);
+        }
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
+{
+    /// `end`, minted at `position` where a block ends in a statement, with
+    /// its result discarded and the unit returned after it.
+    ///
+    /// # Specification
+    /// - requires: `position` trails, as [`Exits::trail`] records; `end` is the
+    ///   node's bridged computation.
+    /// - ensures: `x ← end; split x (); return ()`, every inserted node at
+    ///   `origin` marked as the statement's insertion, the `return` recorded as
+    ///   an exit, and the bind recorded as distributed when a path through
+    ///   `end` leaves. The checker checks a case `end` against the unit's
+    ///   returner at the row the block stands in, as it does every discarded
+    ///   statement's.
+    /// - provides: the minting half of [`Exits::trail`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a body ending in `c ;` lowers to the body written
+    ///   with the unit returned after `c`. L3 — the checker accepts it.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_block_ending_in_a_statement_returns_the_unit_1205`
+    #[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
+    #[inline]
+    pub fn conclude(
+        &self,
+        position: NodeIndex,
+        end: ComputationId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ComputationId
+    {
+        let inserted = origin.inserted(Insertion::Statement);
+        let discarded = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        sink.origins.record_value(discarded, inserted);
+        let unit = sink.arena.value_unit();
+        sink.origins.record_value(unit, inserted);
+        let returned = sink.arena.computation_return(unit);
+        sink.origins.record_computation(returned, inserted);
+        let _exit = sink.exits.insert(returned);
+        let split = sink
+            .arena
+            .computation_split(discarded, ComponentCount::default(), returned);
+        sink.origins.record_computation(split, inserted);
+        let leaves = self.leaves_at(position);
+        let bound = sink.arena.computation_bind(end, split);
+        sink.origins.record_computation(bound, inserted);
+        if leaves != Leaves::Never {
+            let _first = sink.distributed.insert(bound, inserted);
+        }
+
+        bound
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Exits<'_, F>
+{
+    /// Read `subject`, the block the capability scope at `site` handles, as
+    /// one a path runs through on its way through the body the scope stands
+    /// in.
+    ///
+    /// # Specification
+    /// - requires: `subject` is the block just read for the scope at `site`.
+    /// - ensures: the block's last computation is where a path through the
+    ///   subject ends, its result, and no exit; every position on the block's
+    ///   paths is framed, belongs to the body `site` belongs to, when a path
+    ///   through one passes `site`, and stands past the loop whose body `site`
+    ///   stands in, when one does; the block's statements as
+    ///   [`Self::paths_through`] marks them.
+    /// - provides: the opening of a handled subject, which is no body: a
+    ///   `return` in it leaves the body around the scope.
+    /// - fails: [`LoweringRefusal::Unreachable`], as [`Self::paths_through`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::Unreachable`] for statements no path reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `return` in a subject leaves its function, its
+    ///   `pure` clause not run; a `become`, and a `break` of a loop around the
+    ///   scope, are refused; a loop inside the subject runs as any loop.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || (self.cx().results.contains(&subject.last)
+        && self.cx().framed.contains(&subject.last) && !self.cx().exits.contains(&subject.last)
+        && self.cx().bodies.get(&subject.last) == self.cx().bodies.get(&site.at.node)))]
+    #[inline]
+    pub fn open_subject(
+        &mut self,
+        site: super::Site,
+        subject: Block,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _result = self.cx_mut().results.insert(subject.last);
+        let _framed = self.cx_mut().framed.insert(subject.last);
+        if self.cx().looping.contains(&site.at.node)
+            || self.cx().looped_past.contains(&site.at.node)
+        {
+            let _past = self.cx_mut().looped_past.insert(subject.last);
+        }
+        if let Some(&body) = self.cx().bodies.get(&site.at.node) {
+            let _owner = self.cx_mut().bodies.insert(subject.last, body);
+        }
+        self.paths_through(site, subject, Maybe::Absent(answered::Absent::Unstated))
+    }
+
+    /// Run the paths through `block` on to its statements.
+    ///
+    /// # Specification
+    /// - requires: `block` is the block just read at `site`, a path passes it,
+    ///   and `answer` is the type the block answers, when one is stated.
+    /// - ensures: the last computation and every statement's computation are
+    ///   where an exit may stand, and where a `break` or a `continue` may when
+    ///   the last computation is on a path through a loop's body; every
+    ///   statement's computation carries the last computation's frame, its loop
+    ///   past the frame, and its body; a statement whose computation sometimes
+    ///   leaves distributes the rest of the block, its computation joining the
+    ///   block and answering `answer`; a statement whose computation never
+    ///   leaves keeps its rest bound.
+    /// - provides: the statement half of the classification of exits.
+    /// - fails: [`LoweringRefusal::Unreachable`] for a statement whose
+    ///   computation always leaves, at the bytes from the next statement to the
+    ///   block's last computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::Unreachable`] for statements no path reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement leaving in one arm distributes its rest,
+    ///   one leaving in every arm refuses what follows, and one never leaving
+    ///   keeps its rest bound.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::code_no_path_reaches_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || (self.cx().exitable.contains(&block.last)
+        && self.cx().statements.read(block.statements).last().is_none_or(|statement| {
+            self.cx().exitable.contains(&statement.bound)
+                && (!self.cx().looping.contains(&block.last) || self.cx().looping.contains(&statement.bound))
+                && (!self.cx().framed.contains(&block.last) || self.cx().framed.contains(&statement.bound))
+                && self.cx().bodies.get(&block.last).is_none_or(|body| self.cx().bodies.get(&statement.bound) == Some(body))
+                && (statement.rest == Rest::Distributed) == (self.shared().leaves_at(statement.bound) == Leaves::Sometimes)
+                && (statement.rest == Rest::Bound || self.cx().joined.contains(&statement.bound))
+        })))]
+    #[inline]
+    pub fn paths_through(
+        &mut self,
+        site: super::Site,
+        block: Block,
+        answer: Maybe<Answer, answered::Absent>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _last = self.cx_mut().exitable.insert(block.last);
+        let looping = self.cx().looping.contains(&block.last);
+        let framed = self.cx().framed.contains(&block.last);
+        let past = self.cx().looped_past.contains(&block.last);
+        let body = self.cx().bodies.get(&block.last).copied();
+        let first = self
+            .cx()
+            .statements
+            .first(block.statements)
+            .map_or(0, usize::from);
+        let count = self.cx().statements.read(block.statements).len();
+        for position in (first .. first.saturating_add(count)).map(At::from) {
+            let Some(&statement) = self.cx().statements.at(position)
+            else {
+                continue;
+            };
+            let _path = self.cx_mut().exitable.insert(statement.bound);
+            if looping {
+                let _iteration = self.cx_mut().looping.insert(statement.bound);
+            }
+            if framed {
+                let _framed = self.cx_mut().framed.insert(statement.bound);
+            }
+            if past {
+                let _past = self.cx_mut().looped_past.insert(statement.bound);
+            }
+            if let Some(body) = body {
+                let _owner = self.cx_mut().bodies.insert(statement.bound, body);
+            }
+            match self.shared().leaves_at(statement.bound) {
+                Leaves::Never => {},
+                Leaves::Sometimes => {
+                    if let Some(held) = self.cx_mut().statements.at_mut(position) {
+                        held.rest = Rest::Distributed;
+                    }
+                    let _joined = self.cx_mut().joined.insert(statement.bound);
+                    if let Maybe::Present(stated) = answer {
+                        let _first = self.cx_mut().answers.insert(statement.bound, stated);
+                    }
+                },
+                Leaves::Always => {
+                    let after = self.cx().statements.after(block.statements, position);
+                    return Err(LoweringRefusal::Unreachable {
+                        span: self.shared().unreached(site, block, after),
+                    });
+                },
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
+{
+    /// The bytes no path reaches in `block` once a statement always leaves:
+    /// from the first statement of `after`, or the last computation, to the
+    /// last computation.
+    ///
+    /// # Specification
+    /// - requires: `after` is the stretch of `block`'s statements that follow
+    ///   the leaving one, `block` read at `site`.
+    /// - ensures: the span from the first node after the statement to the
+    ///   block's last computation; the site's span when the tree holds neither.
+    /// - provides: the locus of [`LoweringRefusal::Unreachable`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused rest of one statement and of none before
+    ///   the last computation, each at its exact bytes.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::code_no_path_reaches_is_refused`
+    #[spec(ensures: |ret| self.cx().tree.node(block.last).is_none_or(|node| ret.end() >= node.span().end()))]
+    fn unreached(
+        &self,
+        site: super::Site,
+        block: Block,
+        after: FormStretch,
+    ) -> ByteSpan
+    {
+        let first = self
+            .cx()
+            .statements
+            .read(after)
+            .first()
+            .map_or(block.last, |statement| statement.origin);
+        let span_of = |node: NodeIndex| {
+            self.cx()
+                .tree
+                .node(node)
+                .map(gandr_surface_syntax::Node::span)
+        };
+        match (span_of(first), span_of(block.last)) {
+            (Some(start), Some(end)) => start.join(end),
+            (Some(only), None) | (None, Some(only)) => only,
+            (None, None) => site.at.span,
+        }
+    }
+
+    /// Mint `body`, the block of a function's, a lambda's or a thunk's body, a
+    /// copattern clause or a handled subject, with every exit put where the
+    /// body ends.
+    ///
+    /// # Specification
+    /// - requires: every node the block names is already minted or absent;
+    ///   `origin` is the body's owner's.
+    /// - ensures: the block [`Families::mint_block`] mints, commuted by
+    ///   [`commute`] once any bind with a distributed rest is minted, and
+    ///   delimited by a reset, inserted at `origin`, when a `return` framed in
+    ///   a subject leaves the body; nothing when the block did not lower.
+    /// - provides: the body half of thunks, lambdas, copattern clauses,
+    ///   function tails and handled subjects.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body with no early exit is the block itself, one
+    ///   with an exit two matches deep leaves from where it stands, and one
+    ///   holding a scope whose subject returns is delimited.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Absent(_) => true,
+        | Maybe::Present(id) => sink.arena.computation(id).is_some()
+            && (!self.cx().delimited.contains(&body.last) || matches!(sink.arena.computation(id), Some(&Computation::Reset(_)))),
+    })]
+    #[inline]
+    pub fn mint_body(
+        &self,
+        body: Block,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        self.host_ref().mint_block(body, sink).map(|minted| {
+            let commuted = if sink.distributed.is_empty() {
+                minted
+            }
+            else {
+                commute(sink, minted, origin)
+            };
+            if self.cx().delimited.contains(&body.last) {
+                let id = sink.arena.computation_reset(commuted);
+                sink.origins
+                    .record_computation(id, origin.inserted(Insertion::Unwind));
+                id
+            }
+            else {
+                commuted
+            }
+        })
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Exits<'_, F>
+{
+    /// The `return` minted as `returned`, written in a handled subject, as the
+    /// capture that leaves its body.
+    ///
+    /// Every handler frame up to the body's delimiter is captured and
+    /// discarded, and the delimiter returns the value.
+    ///
+    /// # Specification
+    /// - requires: `returned` is the returner a `return` at `origin` minted.
+    /// - ensures: a shift, inserted at `origin`, over `returned` with every
+    ///   free index raised past the shift's own binder, which binds the
+    ///   captured stack the body never resumes; every node the raise minted at
+    ///   its source's origin.
+    /// - provides: the mint half of a `return` across a handler's frame.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `return` of a parameter in a subject leaves its
+    ///   function with the parameter's value, the return clause not run.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    #[spec(ensures: |ret| matches!(sink.arena.computation(ret), Some(&Computation::Shift(_))))]
+    #[inline]
+    pub fn unwind(
+        sink: &mut Sink<'_>,
+        returned: ComputationId,
+        origin: Origin,
+    ) -> ComputationId
+    {
+        let mark = sink.arena.watermark();
+        let mut carried = Vec::new();
+        let raised = gandr_core_term::shift_computation_under(
+            sink.arena,
+            returned,
+            Binders::NONE,
+            Binders::from(1_u32),
+        )
+        .settle_traced(sink.arena, &mut carried);
+        record_copies(sink, mark, &carried, origin);
+        let id = sink.arena.computation_shift(raised);
+        sink.origins
+            .record_computation(id, origin.inserted(Insertion::Unwind));
+        id
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
+{
+    /// Every exit the mint sweep inferred in a declaration that lowered, in
+    /// source order.
+    ///
+    /// # Specification
+    /// - requires: the attribute pass and the documentation pass have run, so
+    ///   every refusal is offered and every asked slot is marked.
+    /// - ensures: one record per inferred exit minted under a declaration that
+    ///   holds no refusal, at its tail's span, asked exactly when its owning
+    ///   slot is; sorted by span.
+    /// - provides: the inferred exits a lowered module exposes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — tails of each polarity in a lowered declaration, and
+    ///   one in a declaration an attribute refuses, asserted as the exact list.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    #[spec(ensures: |ret| ret.len() <= self.cx().elided.len() && ret.is_sorted())]
+    #[must_use]
+    #[inline]
+    pub fn inferred_exits(&self) -> Vec<InferredExit>
+    {
+        let mut found: Vec<InferredExit> = self
+            .cx()
+            .elided
+            .iter()
+            .filter(|&&(position, _)| !self.cx().collected.refused(position).0)
+            .filter_map(|&(position, exit)| {
+                let tail = self.cx().tree.node(position)?;
+                let explicitness = match self.cx().collected.owner_of(position) {
+                    Maybe::Present(slot) if self.cx().asked.contains(&slot) => Explicitness::Asked,
+                    Maybe::Present(_) | Maybe::Absent(_) => Explicitness::Unasked,
+                };
+                Some(InferredExit {
+                    span: tail.span(),
+                    exit,
+                    explicitness,
+                })
+            })
+            .collect();
+        found.sort_unstable();
+
+        found
+    }
+
+    /// The operand of the `return` at `position`, and what it is, when the
+    /// lowering would infer that `return` were it left out, or the checker
+    /// would elaborate it so.
+    ///
+    /// # Specification
+    /// - requires: the classification has read the body `position` stands in
+    ///   and the mint sweep has not left it, so its paths are still surveyed.
+    /// - ensures: the operand exactly when `position` is a written `return`
+    ///   where a path ends, written as no statement and in tail position of
+    ///   none, crossing no handler's frame, over an operand bridged bare as a
+    ///   value, as is every form a grouping of it holds: a grouped type is
+    ///   quoted, and a type bare at a tail takes no exit; and the form held is
+    ///   no hole, which a tail would read as a computation's. That is
+    ///   [`Returned::Value`]; an operand or a form a grouping of it holds that
+    ///   is a computation nested where the value is read is [`Returned::Run`].
+    /// - provides: what the mint sweep records of a written exit for
+    ///   [`Self::elidable_exits`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ElidableExit`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+    #[spec(ensures: |ret| ret.is_none_or(|(operand, _)| self.cx().exits.contains(&position)
+        && !self.cx().stated.contains_key(&position)
+        && !self.cx().stated_tails.contains(&position)
+        && matches!(self.cx().plans.get(position), Some(&super::Plan::Return(written)) if written == operand)))]
+    #[must_use]
+    #[inline]
+    pub fn elidable_at(
+        &self,
+        position: NodeIndex,
+    ) -> Option<(NodeIndex, Returned)>
+    {
+        let tail = self.cx().exits.contains(&position)
+            && !self.cx().inferred.contains(&position)
+            && !self.cx().stated.contains_key(&position)
+            && !self.cx().stated_tails.contains(&position)
+            && !self.cx().crossing.contains(&position);
+        let Some(&super::Plan::Return(operand)) = self.cx().plans.get(position)
+        else {
+            return None;
+        };
+        if !tail {
+            return None;
+        }
+        let mut held = operand;
+        loop {
+            match self.cx().bridges.get(held) {
+                Some(&super::Bridge::Bare) => {},
+                Some(&super::Bridge::Inserted(super::Insertion::Nested)) => {
+                    return Some((operand, Returned::Run));
+                },
+                _ => return None,
+            }
+            match self.cx().plans.get(held) {
+                Some(&super::Plan::Transparent(inner)) if !self.cx().stand_ins.contains(&held) => {
+                    held = inner;
+                },
+                Some(&super::Plan::ValueHole(_)) => return None,
+                _ => return Some((operand, Returned::Value)),
+            }
+        }
+    }
+
+    /// Every written `return` the lowering would infer, in a declaration that
+    /// lowered, in source order.
+    ///
+    /// # Specification
+    /// - requires: the attribute pass and the documentation pass have run, so
+    ///   every refusal is offered and every asked slot is marked.
+    /// - ensures: one record per `return` the mint sweep found elidable, as
+    ///   [`Self::elidable_at`] reads it, under a slot no `explicit_exits` asks
+    ///   and holding no refusal; sorted by span.
+    /// - provides: the elidable exits a lowered module exposes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ElidableExit`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+    #[spec(ensures: |ret| ret.len() <= self.cx().elidable.len() && ret.is_sorted())]
+    #[must_use]
+    #[inline]
+    pub fn elidable_exits(&self) -> Vec<ElidableExit>
+    {
+        let mut found: Vec<ElidableExit> = self
+            .cx()
+            .elidable
+            .iter()
+            .filter(|&&(position, ..)| {
+                !self.cx().collected.refused(position).0
+                    && !matches!(
+                        self.cx().collected.owner_of(position),
+                        Maybe::Present(slot) if self.cx().asked.contains(&slot)
+                    )
+            })
+            .filter_map(|&(position, operand, returned)| {
+                Some(ElidableExit {
+                    span: self.cx().tree.node(position)?.span(),
+                    value: self.cx().tree.node(operand)?.span(),
+                    returned,
+                })
+            })
+            .collect();
+        found.sort_unstable();
+
+        found
+    }
+}
+
+/// `body` with every bind whose rest is distributed commuted into its
+/// computation.
+///
+/// # Specification
+/// - requires: `body` is the computation of one function's, lambda's or thunk's
+///   body, every body nested in it already commuted; `fallback` is the body's
+///   owner's origin.
+/// - ensures: the body with each distributed bind `x ← M; N`, depth `d` below
+///   the root, replaced by `M` with every local end of `M`, `d'` below the
+///   root, continuing `N'`, where `N'` is `N`, itself commuted, with every
+///   index past its binder raised by `d' - d`, intuitionistic and linear each
+///   by its own zone's count: a returner `return v` is replaced by `N'[v/x]`,
+///   the beta step of the returner, so no producer the checker cannot
+///   synthesise is bound; any other end `e` by `x ← e; N'`. A local end is a
+///   node the walk through binds' rests, case branches, a data case's field
+///   functions, a split's body, an offer's arms, a fork's parent, a receive's
+///   body, a placement's body, a hold's scope and a loop's fixpoint reaches
+///   that is none of those and no exit; an exit resets the rests it continues
+///   to none, so it stays where it stands. An offer's arm binds nothing, and a
+///   fork's parent, a receive's body, a placement's body and a hold's scope one
+///   linear binder, so the rest reaches them at the intuitionistic depth it
+///   reaches the form, and the last four one linear binder deeper: a rest
+///   continued there reads its own slots past the slot the form opens. A loop's
+///   re-hold or re-placement, in `sink.reholds`, stands for the slot it binds
+///   again, so its scope opens no linear binder and a rest continued there
+///   reads the slot bound again. A loop's fixpoint is walked with no rest of
+///   its own, its `break`s continuing the rest its position continues, so a
+///   `break` is that rest's local end and every other end in the loop's body
+///   stays. The rest is copied once per depth it is carried to. Every rebuilt
+///   node takes its original's origin, match record, binder name and action
+///   labels, a rebuilt loop stays one and a rebuilt re-hold stays one, every
+///   bind of a rest its statement's origin, and every copied node its source's;
+///   `body` itself when nothing was distributed in it.
+/// - provides: the mint half of early exits: every exit focuses as the cut of
+///   its value against the body's own return continuation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Each step opens a node of the finite body or a rest, which is settled
+/// once, or closes one opened before.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the commuted body of a return two matches deep agrees
+///   with the body written with the rest in each arm by hand. L3 — the checker
+///   accepts it, its exit is the body's own tail, and every node has an origin;
+///   the rest reaches through a split arm, a fork's parent, an offer's arms and
+///   a hold's scope.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::a_bound_match_continues_its_block_through_a_split_arm`
+/// - witness: `gandr-surface-lowering::lower::session::tests::an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms`
+/// - witness: `gandr-surface-lowering::lower::access::tests::an_exit_inside_an_access_is_refused`
+/// - witness: `gandr-surface-lowering::lower::loops::tests::a_loop_threads_the_endpoint_it_names_4502`
+#[spec(ensures: |ret| sink.arena.computation(ret).is_some() || ret == body)]
+pub(super) fn commute(
+    sink: &mut Sink<'_>,
+    body: ComputationId,
+    fallback: Origin,
+) -> ComputationId
+{
+    let mut pending: Vec<Pending> = Vec::new();
+    let mut settled: Vec<Maybe<ComputationId, settled::Absent>> = Vec::new();
+    // economy: a rest is copied once per depth a local end continues it at,
+    // so the commuted body grows with the rest times its distinct end depths;
+    // a join point would share it, at the cost of a typed binder the core
+    // does not have.
+    let mut copies: BTreeMap<(RestAt, Depth), ComputationId> = BTreeMap::new();
+    let mut carried: Vec<Carried> = Vec::new();
+    let mut results: Vec<ComputationId> = Vec::new();
+    let outermost = Ends {
+        rests: Maybe::Absent(enclosing::Absent::Outermost),
+        breaks: Maybe::Absent(enclosing::Absent::Outermost),
+    };
+    let mut steps = Vec::from([Step::Open(body, outermost, Depth::NONE)]);
+    while let Some(step) = steps.pop() {
+        match step {
+            Step::Open(node, ends, depth) => {
+                let ends = if sink.exits.contains(&node) {
+                    Ends {
+                        rests: Maybe::Absent(enclosing::Absent::Outermost),
+                        ..ends
+                    }
+                }
+                else if sink.breaks.contains(&node) {
+                    Ends {
+                        rests: ends.breaks,
+                        ..ends
+                    }
+                }
+                else {
+                    ends
+                };
+                let held = sink.arena.computation(node);
+                match held {
+                    Some(&Computation::Bind(bound, rest)) => {
+                        if let Some(&origin) = sink.distributed.get(&node) {
+                            let at = RestAt(pending.len());
+                            pending.push(Pending {
+                                rest,
+                                depth,
+                                origin,
+                                outer: ends,
+                            });
+                            settled.push(Maybe::Absent(settled::Absent::Pending));
+                            let continued = Ends {
+                                rests: Maybe::Present(at),
+                                ..ends
+                            };
+                            steps.push(Step::Open(bound, continued, depth));
+                        }
+                        else {
+                            steps.push(Step::Close(node));
+                            steps.push(Step::Open(rest, ends, depth.deeper()));
+                        }
+                    },
+                    Some(&Computation::Fixpoint { body: under, .. })
+                        if sink.loops.contains(&node) =>
+                    {
+                        steps.push(Step::Close(node));
+                        let iterated = Ends {
+                            rests: Maybe::Absent(enclosing::Absent::Outermost),
+                            breaks: ends.rests,
+                        };
+                        steps.push(Step::Open(under, iterated, depth.deeper()));
+                    },
+                    // A `for` loop is its fixpoint applied to the list: the
+                    // application stands where the loop does, so its ends
+                    // are the loop's.
+                    Some(&Computation::Application(head, _)) if sink.loops.contains(&head) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(head, ends, depth));
+                    },
+                    Some(&Computation::Case { ref branches, .. }) => {
+                        steps.push(Step::Close(node));
+                        for &branch in branches.iter().rev() {
+                            steps.push(Step::Open(branch, ends, depth.deeper()));
+                        }
+                    },
+                    Some(&Computation::ListCase {
+                        on_nil, on_cons, ..
+                    }) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(on_cons, ends, depth.deeper().deeper()));
+                        steps.push(Step::Open(on_nil, ends, depth));
+                    },
+                    Some(&Computation::DataCase { ref branches, .. }) => {
+                        steps.push(Step::Close(node));
+                        for &branch in branches.iter().rev() {
+                            steps.push(Step::Open(branch, ends, depth));
+                        }
+                    },
+                    Some(
+                        &(Computation::Split {
+                            arity, body: under, ..
+                        }
+                        | Computation::BindAll {
+                            arity, body: under, ..
+                        }),
+                    ) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(under, ends, depth.deeper_by(arity)));
+                    },
+                    Some(&(Computation::Lambda(under) | Computation::LinearLambda(under))) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(under, ends, depth.deeper()));
+                    },
+                    Some(&Computation::Session(SessionAction::Offer { ref arms, .. })) => {
+                        steps.push(Step::Close(node));
+                        for &arm in arms.values().rev() {
+                            steps.push(Step::Open(arm, ends, depth));
+                        }
+                    },
+                    // A fork's parent, a receive's body, a placement's body and
+                    // a hold's scope are the tail, under a linear binder, so no
+                    // intuitionistic one deeper, and one linear one. A loop's
+                    // re-hold or re-placement stands in for the slot it binds
+                    // again: what a `break` continues under it reads it in that
+                    // slot's place, so it counts none.
+                    Some(
+                        &Computation::Session(
+                            SessionAction::Fork { parent: scope, .. }
+                            | SessionAction::Receive { body: scope, .. }
+                            | SessionAction::Place { body: scope, .. },
+                        )
+                        | &Computation::Memory(MemoryForm::Hold { body: scope, .. }),
+                    ) => {
+                        steps.push(Step::Close(node));
+                        let under = if sink.reholds.contains(&node) {
+                            depth
+                        }
+                        else {
+                            depth.under_linear()
+                        };
+                        steps.push(Step::Open(scope, ends, under));
+                    },
+                    // A `leta`'s body is its tail, one binder deeper; a
+                    // migration's body is not, for what follows a migration
+                    // runs back at the world it left.
+                    Some(&Computation::World(WorldForm::Leta { body: scope, .. })) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(scope, ends, depth.deeper()));
+                    },
+                    _ => match ends.rests {
+                        Maybe::Absent(_) => results.push(node),
+                        Maybe::Present(at) => match settled.get(at.0) {
+                            Some(&Maybe::Present(rest)) => {
+                                let Some(&continued) = pending.get(at.0)
+                                else {
+                                    results.push(node);
+                                    continue;
+                                };
+                                results.push(continue_end(
+                                    sink,
+                                    (node, depth),
+                                    (at, rest, continued),
+                                    &mut copies,
+                                    &mut carried,
+                                ));
+                            },
+                            Some(&Maybe::Absent(_)) | None => {
+                                let Some(&continued) = pending.get(at.0)
+                                else {
+                                    results.push(node);
+                                    continue;
+                                };
+                                steps.push(Step::Continue(node, at, depth));
+                                steps.push(Step::Settle(at));
+                                steps.push(Step::Open(
+                                    continued.rest,
+                                    continued.outer,
+                                    continued.depth.deeper(),
+                                ));
+                            },
+                        },
+                    },
+                }
+            },
+            Step::Close(node) => {
+                let rebuilt = rebuild(sink, node, &mut results, fallback);
+                results.push(rebuilt);
+            },
+            Step::Settle(at) => {
+                if let Some(commuted) = results.pop()
+                    && let Some(slot) = settled.get_mut(at.0)
+                {
+                    *slot = Maybe::Present(commuted);
+                }
+            },
+            Step::Continue(node, at, depth) => {
+                let (Some(&Maybe::Present(rest)), Some(&continued)) =
+                    (settled.get(at.0), pending.get(at.0))
+                else {
+                    results.push(node);
+                    continue;
+                };
+                results.push(continue_end(
+                    sink,
+                    (node, depth),
+                    (at, rest, continued),
+                    &mut copies,
+                    &mut carried,
+                ));
+            },
+        }
+    }
+
+    results.pop().unwrap_or(body)
+}
+
+/// Continue the local end `end`, `depth` below the body's root, with the
+/// commuted rest `rest` of the statement `continued`, carried down to it.
+///
+/// # Specification
+/// - requires: `rest` is the commuted rest of `continued`, held at `at`, and
+///   `depth` is at least the statement's.
+/// - ensures: with `rest'` the rest with every index past its binder raised by
+///   the depth between the statement and the end, intuitionistic and linear
+///   each by its own zone's count, one copy per depth kept in `copies`: `rest'`
+///   instantiated at `v` for an end `return v`, its nodes at their sources'
+///   origins and each written use of the binder labelled with what replaced it;
+///   `x ← end; rest'` at the statement's origin for any other end.
+/// - provides: the continuation half of [`commute`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`commute`]; a use the instantiation replaces answers
+///   at its bytes.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+/// - witness: `gandr-surface-lowering::lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+#[spec(captures: returned = matches!(sink.arena.computation(end.0), Some(&Computation::Return(_))),
+    ensures: |ret| returned || matches!(sink.arena.computation(ret), Some(&Computation::Bind(bound, _)) if bound == end.0))]
+fn continue_end(
+    sink: &mut Sink<'_>,
+    end: (ComputationId, Depth),
+    continued: (RestAt, ComputationId, Pending),
+    copies: &mut BTreeMap<(RestAt, Depth), ComputationId>,
+    carried: &mut Vec<Carried>,
+) -> ComputationId
+{
+    let (node, depth) = end;
+    let (at, rest, statement) = continued;
+    let amount = statement.depth.until(depth);
+    let copy = if let Some(&copy) = copies.get(&(at, amount)) {
+        copy
+    }
+    else {
+        let copy = carry(sink, rest, amount, statement.origin, carried);
+        let _first = copies.insert((at, amount), copy);
+        copy
+    };
+    if let Some(&Computation::Return(value)) = sink.arena.computation(node) {
+        let mark = sink.arena.watermark();
+        carried.clear();
+        let instantiated =
+            gandr_core_term::instantiate_computation_traced(sink.arena, copy, value, carried);
+        record_copies(sink, mark, carried, statement.origin);
+        return instantiated;
+    }
+    let bound = sink.arena.computation_bind(node, copy);
+    sink.origins.record_computation(bound, statement.origin);
+
+    bound
+}
+
+/// `rest`, under one intuitionistic binder, with every index past that binder
+/// raised by `amount`'s intuitionistic count and every free linear index by
+/// its linear count, every node it mints recorded at its source's origin.
+///
+/// # Specification
+/// - requires: every node of `rest` has an origin, or `fallback` stands for it.
+/// - ensures: the shifted rest; `rest` itself, minting nothing, when `amount`
+///   is none; every node minted carries the origin and the match record of the
+///   node it was rewritten from, or `fallback`.
+/// - provides: the copy half of [`commute`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rest carried under a match's field binder reads the
+///   function's parameter past it, a rest carried under a hold's slot reads the
+///   slot it named outside it, and each keeps its origins.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+/// - witness: `gandr-surface-lowering::lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+#[spec(ensures: |ret| amount != Depth::NONE || ret == rest)]
+fn carry(
+    sink: &mut Sink<'_>,
+    rest: ComputationId,
+    amount: Depth,
+    fallback: Origin,
+    carried: &mut Vec<Carried>,
+) -> ComputationId
+{
+    let mark = sink.arena.watermark();
+    carried.clear();
+    let shifted = gandr_core_term::shift_computation_under(
+        sink.arena,
+        rest,
+        Binders::ONE,
+        amount.intuitionistic,
+    )
+    .settle_traced(sink.arena, carried);
+    record_copies(sink, mark, carried, fallback);
+    let mark = sink.arena.watermark();
+    carried.clear();
+    let copy = gandr_core_term::raise_linear_traced(sink.arena, shifted, amount.linear, carried);
+    record_copies(sink, mark, carried, fallback);
+
+    copy
+}
+
+/// Rebuild `node` over its children's commuted forms, the last of `results`.
+///
+/// # Specification
+/// - requires: `node` is a bind, a many-value bind, a case, a data case, a
+///   split, a lambda, an offer, a fork, a hold or a loop's fixpoint whose every
+///   commuted child — a fork's parent alone, a hold's scope alone — stands on
+///   top of `results`, in order.
+/// - ensures: those results popped; `node` itself when each is the child it
+///   stands for; else a node of the same former over them, recorded at `node`'s
+///   origin, or `fallback`, and its match record, a loop's fixpoint keeping its
+///   evidence and staying a loop, a re-hold staying a re-hold.
+/// - provides: the close half of [`commute`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`commute`], each former rebuilt over children that
+///   changed.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `gandr-surface-lowering::lower::access::tests::an_exit_inside_an_access_is_refused`
+/// - witness: `gandr-surface-lowering::lower::session::tests::an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms`
+#[spec(ensures: |ret| ret == node || sink.arena.computation(ret).is_some())]
+fn rebuild(
+    sink: &mut Sink<'_>,
+    node: ComputationId,
+    results: &mut Vec<ComputationId>,
+    fallback: Origin,
+) -> ComputationId
+{
+    let Some(held) = sink.arena.computation(node).cloned()
+    else {
+        return node;
+    };
+    let count = match held {
+        Computation::Case { ref branches, .. } => branches.len(),
+        Computation::DataCase { ref branches, .. } => branches.len(),
+        Computation::Session(SessionAction::Offer { ref arms, .. }) => arms.len(),
+        Computation::ListCase { .. } => 2_usize,
+        Computation::Bind(..)
+        | Computation::BindAll { .. }
+        | Computation::Split { .. }
+        | Computation::Lambda(_)
+        | Computation::LinearLambda(_)
+        | Computation::Session(
+            SessionAction::Fork { .. }
+            | SessionAction::Receive { .. }
+            | SessionAction::Place { .. },
+        )
+        | Computation::Memory(MemoryForm::Hold { .. })
+        | Computation::World(WorldForm::Leta { .. }) => 1_usize,
+        Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
+        Computation::Application(head, _) if sink.loops.contains(&head) => 1_usize,
+        Computation::Primitive { .. }
+        | Computation::Transport(..)
+        | Computation::PathTransport { .. }
+        | Computation::Ride { .. }
+        | Computation::TelescopeTransport { .. }
+        | Computation::Fixpoint { .. }
+        | Computation::Application(..)
+        | Computation::Return(_)
+        | Computation::ReturnAll(_)
+        | Computation::Ascribe { .. }
+        | Computation::Force(_)
+        | Computation::Decompose(_)
+        | Computation::RecordProjection(..)
+        | Computation::TupleProjection(..)
+        | Computation::Hole(_)
+        | Computation::Mark { .. }
+        | Computation::ListFold { .. }
+        | Computation::Perform { .. }
+        | Computation::Handle { .. }
+        | Computation::Exercise { .. }
+        | Computation::Scope { .. }
+        | Computation::Resume(..)
+        | Computation::Abandon(_)
+        | Computation::Reset(_)
+        | Computation::Shift(_)
+        | Computation::With(..)
+        | Computation::Project(..)
+        | Computation::Session(_)
+        | Computation::Memory(_)
+        | Computation::World(_) => 0_usize,
+    };
+    let commuted = results.split_off(results.len().saturating_sub(count));
+    let rebuilt = match (held, commuted.as_slice()) {
+        (Computation::Bind(bound, rest), &[commuted]) if commuted != rest => {
+            sink.arena.computation_bind(bound, commuted)
+        },
+        (Computation::BindAll { bound, arity, body }, &[commuted]) if commuted != body => {
+            sink.arena.computation_bind_all(bound, arity, commuted)
+        },
+        (Computation::Lambda(under), &[commuted]) if commuted != under => {
+            sink.arena.computation_lambda(commuted)
+        },
+        (Computation::LinearLambda(under), &[commuted]) if commuted != under => {
+            sink.arena.computation_linear_lambda(commuted)
+        },
+        (
+            Computation::Split {
+                scrutinee,
+                arity,
+                motive,
+                body,
+            },
+            &[commuted],
+        ) if commuted != body => match motive {
+            SplitMotive::Ambient => sink.arena.computation_split(scrutinee, arity, commuted),
+            SplitMotive::Scrutinee(motive) => sink
+                .arena
+                .computation_dependent_split(scrutinee, arity, motive, commuted),
+        },
+        (
+            Computation::Case {
+                scrutinee,
+                ref branches,
+            },
+            branched,
+        ) if **branches != *branched => sink.arena.computation_case(scrutinee, branched),
+        (
+            Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+                ref arities,
+                equations,
+            },
+            branched,
+        ) if branches.as_slice() != branched => sink.arena.computation_data_case_with_equations(
+            scrutinee,
+            motive,
+            (branched.to_vec(), arities.clone()),
+            equations,
+        ),
+        (
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            },
+            &[nil, cons],
+        ) if (nil, cons) != (on_nil, on_cons) => sink.arena.computation_list_case(list, nil, cons),
+        (Computation::Session(SessionAction::Offer { endpoint, ref arms }), branched)
+            if !arms.values().copied().eq(branched.iter().copied()) =>
+        {
+            let arms = arms.keys().cloned().zip(branched.iter().copied()).collect();
+            sink.arena
+                .computation_session(SessionAction::Offer { endpoint, arms })
+        },
+        (
+            Computation::Session(SessionAction::Fork {
+                protocol,
+                child,
+                parent,
+            }),
+            &[commuted],
+        ) if commuted != parent => sink.arena.computation_session(SessionAction::Fork {
+            protocol,
+            child,
+            parent: commuted,
+        }),
+        (Computation::Session(SessionAction::Receive { endpoint, body }), &[commuted])
+            if commuted != body =>
+        {
+            sink.arena.computation_session(SessionAction::Receive {
+                endpoint,
+                body: commuted,
+            })
+        },
+        (Computation::Session(SessionAction::Place { payload, body }), &[commuted])
+            if commuted != body =>
+        {
+            let placed = sink.arena.computation_session(SessionAction::Place {
+                payload,
+                body: commuted,
+            });
+            if sink.reholds.contains(&node) {
+                let _first = sink.reholds.insert(placed);
+            }
+            placed
+        },
+        (Computation::Memory(MemoryForm::Hold { value, body, grade }), &[commuted])
+            if commuted != body =>
+        {
+            let held = sink.arena.computation_memory(MemoryForm::Hold {
+                value,
+                body: commuted,
+                grade,
+            });
+            if sink.reholds.contains(&node) {
+                let _first = sink.reholds.insert(held);
+            }
+            held
+        },
+        (Computation::World(WorldForm::Leta { world, value, body }), &[commuted])
+            if commuted != body =>
+        {
+            sink.arena.computation_world(WorldForm::Leta {
+                world,
+                value,
+                body: commuted,
+            })
+        },
+        (Computation::Fixpoint { body, evidence }, &[commuted]) if commuted != body => {
+            let looped = sink.arena.computation_fixpoint(commuted, evidence);
+            let _first = sink.loops.insert(looped);
+            looped
+        },
+        (Computation::Application(head, argument), &[commuted]) if commuted != head => {
+            sink.arena.computation_application(commuted, argument)
+        },
+        _ => return node,
+    };
+    let origin = found_or(sink.origins.computation(node), fallback);
+    sink.origins.record_computation(rebuilt, origin);
+    if let Maybe::Present(case) = sink.origins.case(node) {
+        let kept = case.clone();
+        sink.origins.record_case(rebuilt, kept);
+    }
+    if let Maybe::Present(family) = sink.origins.elimination(node) {
+        sink.origins.record_elimination(rebuilt, family);
+    }
+    if let Maybe::Present(name) = sink.origins.binder(node) {
+        sink.origins.place_binder(rebuilt, name);
+    }
+    sink.origins.relabel_action(node, rebuilt);
+
+    rebuilt
+}

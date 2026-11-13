@@ -202,6 +202,7 @@ pub(super) use gandr_surface_lowering_base::lower::capability::Standing;
 use gandr_surface_lowering_base::lower::capability::Written;
 pub(super) use gandr_surface_lowering_base::lower::capability::WrittenRow;
 pub use gandr_surface_lowering_base::lower::capability::tail;
+use gandr_surface_lowering_base::lower::families::Families as _;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;

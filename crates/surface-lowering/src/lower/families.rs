@@ -4,10 +4,12 @@
 
 use alloc::vec::Vec;
 
+use gandr_core_term::ComputationId;
 use gandr_core_term::hole::HoleForm;
 use gandr_core_term::hole::HoleId;
 use gandr_surface_lowering_base::error::LoweringRefusal;
 use gandr_surface_lowering_base::form::Boxed;
+use gandr_surface_lowering_base::form::Cursor;
 use gandr_surface_lowering_base::form::Former;
 use gandr_surface_lowering_base::form::Placed;
 use gandr_surface_lowering_base::lower::Block;
@@ -15,6 +17,7 @@ use gandr_surface_lowering_base::lower::Plan;
 use gandr_surface_lowering_base::lower::Produced;
 use gandr_surface_lowering_base::lower::Reading;
 use gandr_surface_lowering_base::lower::Resolved;
+use gandr_surface_lowering_base::lower::Sink;
 use gandr_surface_lowering_base::lower::Site;
 use gandr_surface_lowering_base::lower::Stretch;
 use gandr_surface_lowering_base::lower::arity::Dependent;
@@ -27,6 +30,7 @@ use gandr_surface_lowering_base::lower::families::Families;
 use gandr_surface_lowering_base::lower::identity::Layout;
 use gandr_surface_lowering_base::lower::identity::related;
 use gandr_surface_lowering_base::lower::implicit::Nomination;
+use gandr_surface_lowering_base::lower::lowered;
 use gandr_surface_lowering_base::lower::method::unindexing;
 use gandr_surface_lowering_base::lower::model::ModelSlot;
 use gandr_surface_lowering_base::lower::named;
@@ -35,6 +39,7 @@ use gandr_surface_lowering_base::lower::native::answered;
 use gandr_surface_lowering_base::module::Constructor;
 use gandr_surface_lowering_base::module::StructureIndex;
 use gandr_surface_lowering_base::module::TelescopeEntry;
+use gandr_surface_lowering_base::origin::Origin;
 use gandr_surface_lowering_base::resolve::Frame;
 use gandr_surface_lowering_base::resolve::ScopeId;
 use gandr_surface_lowering_base::resolve::SurfaceName;
@@ -48,6 +53,8 @@ use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
+use super::exits::Exits;
+use super::exits::ExitsRef;
 
 impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
 {
@@ -108,6 +115,21 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<Maybe<ByteSpan, unindexing::Absent>, LoweringRefusal<'source>>
     {
         Lowerer::bare_index(self, site)
+    }
+
+    /// The lowering's own `block`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn block(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        frame: Frame,
+    ) -> Result<Block, LoweringRefusal<'source>>
+    {
+        Lowerer::block(self, site, cursor, frame)
     }
 
     /// The lowering's own `boxes`.
@@ -217,6 +239,35 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::linked_selection(self, site, head)
     }
 
+    /// The lowering's own `mint_block`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mint_block(
+        &self,
+        block: Block,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        Lowerer::mint_block(self, block, sink)
+    }
+
+    /// The exits family's `mint_body`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mint_body(
+        &self,
+        body: Block,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        ExitsRef::new(self).mint_body(body, sink, origin)
+    }
+
     /// The lowering's own `name_in_type`.
     ///
     /// # Specification
@@ -259,7 +310,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::note_binder(self, binder, frame, name)
     }
 
-    /// The lowering's own `open_body`.
+    /// The exits family's `open_body`.
     ///
     /// # Specification
     /// trivial.
@@ -271,7 +322,21 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         answer: Maybe<Answer, answered::Absent>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::open_body(self, site, body, answer)
+        Exits::new(self).open_body(site, body, answer)
+    }
+
+    /// The exits family's `open_subject`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn open_subject(
+        &mut self,
+        site: super::Site,
+        subject: Block,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Exits::new(self).open_subject(site, subject)
     }
 
     /// The lowering's own `opened_module`.
@@ -306,7 +371,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::pass_model(self, site, frame, names, slot, value)
     }
 
-    /// The lowering's own `pass_paths`.
+    /// The exits family's `pass_paths`.
     ///
     /// # Specification
     /// trivial.
@@ -317,7 +382,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         inner: NodeIndex,
     )
     {
-        Lowerer::pass_paths(self, outer, inner);
+        Exits::new(self).pass_paths(outer, inner);
     }
 
     /// The lowering's own `plan`.

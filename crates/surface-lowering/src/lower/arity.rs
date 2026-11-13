@@ -197,6 +197,8 @@ use super::Site;
 use super::Stretch;
 use super::closed;
 use super::exhausted;
+use super::exits::Exits;
+use super::exits::ExitsRef;
 use super::lowered;
 use super::multiplicity_one;
 use super::native::Answer;
@@ -2203,7 +2205,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 _ => Maybe::Absent(answered::Absent::Unstated),
             };
-            self.open_body(site, clause_body(body), stated)?;
+            Exits::new(self).open_body(site, clause_body(body), stated)?;
         }
         self.plan(
             site,
@@ -5008,7 +5010,7 @@ impl<'source> Lowerer<'_, 'source>
         let written = self.cx.operands.read(clauses);
         let mut parts: Vec<ComputationId> = Vec::with_capacity(written.len());
         for &clause in written {
-            match self.mint_body(clause_body(clause), sink, origin) {
+            match ExitsRef::new(self).mint_body(clause_body(clause), sink, origin) {
                 Maybe::Present(part) => parts.push(part),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }

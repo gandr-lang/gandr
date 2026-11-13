@@ -31,18 +31,14 @@ One file for each category holds its member rows: one row for each directory, th
 - [`core`](README/core.md): 12 crates
 - [`storage`](README/storage.md): 6 crates
 - [`runtime`](README/runtime.md): 3 crates
-- [`surface`](README/surface.md): 26 crates
+- [`surface`](README/surface.md): 27 crates
 - [`workflow`](README/workflow.md): 12 crates
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 
 A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
 
-## Compilation
-
-_Projection_ is the compiler: it takes a _choreography_, one program over named _roles_, to an _endpoint_ per role, a closed program whose protocol and crossing data are fixed, and the endpoint is the artifact. A _recipe_ names a program's endpoints. A _deployment_ binds each role to a world key, an instance count and discovery, never entering an artifact's identity, so one artifact runs as two processes or a fleet. A _local artifact_ is a one-role choreography's endpoint: the degenerate case, and the only one built today. A runtime component no type demands is a recipe policy, off by default.
-
-`surface-evaluate` runs a checked source's `main` as a local artifact. `runtime-emitter` holds an endpoint's code, and `runtime-net` holds its network. Projection and the recipe have no crate yet.
+The compilation model of a program is § Compilation of [`surface-evaluate`'s crate documentation](surface-evaluate/src/lib.rs).
 
 ## Storage and distribution
 

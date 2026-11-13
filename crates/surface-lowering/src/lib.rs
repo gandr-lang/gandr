@@ -427,7 +427,6 @@ use gandr_surface_lowering_base::origin;
 pub use gandr_surface_lowering_base::prelude;
 use gandr_surface_lowering_base::resolve;
 use gandr_surface_lowering_base::slot;
-use gandr_surface_lowering_base::table;
 pub use gandr_surface_lowering_base::unbuilt;
 use gandr_surface_lowering_base::unit;
 use gandr_surface_lowering_base::written_import;

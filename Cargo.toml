@@ -40,6 +40,7 @@ members = [
   "crates/surface-layout",
   "crates/surface-lowering",
   "crates/surface-lowering-base",
+  "crates/surface-lowering-exits",
   "crates/surface-lowering-native",
   "crates/surface-lsp",
   "crates/surface-lsp-base",
@@ -177,6 +178,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-exits
 # - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
@@ -506,6 +508,7 @@ path = "crates/core-session"
 # - surface-format
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-exits
 # - surface-lowering-native
 # - surface-pretty
 # - surface-repl
@@ -609,6 +612,7 @@ path = "crates/kernel-strata"
 # - surface-dispatcher
 # - surface-format
 # - surface-lowering
+# - surface-lowering-exits
 # - surface-lowering-native
 # - surface-pretty
 # - surface-repl (dev)
@@ -800,6 +804,7 @@ path = "crates/surface-format"
 # - surface-format
 # - surface-lowering
 # - surface-lowering-base (dev)
+# - surface-lowering-exits
 # - surface-lsp
 # - surface-lsp-base
 # - surface-parser
@@ -840,9 +845,18 @@ path = "crates/surface-lowering"
 # form stretches and the circuit readings that the lowering's families share.
 # consumers:
 # - surface-lowering
+# - surface-lowering-exits
 # - surface-lowering-native
 [workspace.dependencies.gandr-surface-lowering-base]
 path = "crates/surface-lowering-base"
+
+# The exits family of the lowering: early exits commuted to where a body
+# ends, a loop's break, continue and re-entry, and the runs a computation
+# asks for, over the lowering's base.
+# consumers:
+# - surface-lowering
+[workspace.dependencies.gandr-surface-lowering-exits]
+path = "crates/surface-lowering-exits"
 
 # The native family of the lowering: data families, constructors, a data
 # declaration's signature and a match compiled to native eliminations, over
@@ -977,6 +991,7 @@ path = "crates/surface-session"
 # - surface-grammar
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-exits
 # - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
@@ -1692,6 +1707,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-exits
 # - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
