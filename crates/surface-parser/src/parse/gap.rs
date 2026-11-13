@@ -168,6 +168,8 @@ struct Frame
     /// the nearest frame, this one included, whose written opener takes that
     /// closer.
     nearest: [Option<usize>; 3],
+    /// Whether its first item is a label, as `.A` in `Path[.A = T]`.
+    labelled: bool,
 }
 
 /// What a place does to the copy that judges it.
@@ -449,6 +451,10 @@ fn gaps<'text>(
     // The token before the current one: where it ends, whether it opens a
     // bracket, whether it is a `,`, and whether it ends an operand.
     let mut previous: Option<(u32, bool, bool, bool)> = None;
+    // Whether the previous token is a word, and where the `]` before the
+    // current token ends when it closes a labelled bracket.
+    let mut previous_word = false;
+    let mut closed_labelled: Option<u32> = None;
     // The first token of the current line or block member: where it starts,
     // and whether it is a word that an attribute may begin with.
     let mut head: Option<(u32, bool)> = None;
@@ -463,9 +469,11 @@ fn gaps<'text>(
     let mut attribute: Option<u32> = None;
     // Whether a keyword at the top level starts the head the scan reads, and
     // where the `)` before the current token ends when it closes a group at
-    // the top level.
+    // the top level. `sort_named` counts the tokens of `sort <name>` read so
+    // far, so that its `=` stays inside the head's type.
     let mut keyword_head = false;
     let mut closed_head: Option<u32> = None;
+    let mut sort_named = 0_u8;
     let opener = |start: u32| Gap {
         at: ByteOffset::from(usize::try_from(start).unwrap_or(usize::MAX)),
         act: Act::Writes {
@@ -496,6 +504,7 @@ fn gaps<'text>(
                 items,
                 closer,
                 nearest,
+                labelled: false,
             }
         };
     for &token in tokens {
@@ -558,14 +567,22 @@ fn gaps<'text>(
             head = Some((token.start, class.word));
         }
         // A keyword at the top level starts a head, and its `=`, a `;` or a
-        // block ends it.
+        // block ends it. The `=` of `with sort <name> = <type>` stays inside
+        // the head's type.
         if stack.is_empty() && opaque == 0 {
             let spelled = <&str>::from(spelling(text, token));
+            let sort_equation = sort_named == 2 && spelled == "=";
+            sort_named = match (sort_named, spelled) {
+                (_, "sort") => 1,
+                (1, _) if matches!(class.edge, Edge::Both) => 2,
+                _ => 0,
+            };
             if token.lexeme == Lexeme::LowerWord && RESERVED_WORDS.contains(&spelled) {
                 keyword_head = true;
             }
-            else if matches!(spelled, "=" | ";")
-                || class.bracketing == Bracketing::Opens(Kind::Block)
+            else if !sort_equation
+                && (matches!(spelled, "=" | ";")
+                    || class.bracketing == Bracketing::Opens(Kind::Block))
             {
                 keyword_head = false;
             }
@@ -694,6 +711,27 @@ fn gaps<'text>(
                 cleared: true,
             });
         }
+        // A declaration's head ends at its `=`, before the body. A `*{` opens
+        // a value, never a type, so a head whose `=` is left out reads the
+        // body as an argument of the type before it. An `=` before the `*{`
+        // ends the type there again.
+        if !leads
+            && opaque == 0
+            && keyword_head
+            && stack.is_empty()
+            && <&str>::from(spelling(text, token)) == "*{"
+            && let Some((end, false, false, true)) = previous
+            && end < token.start
+        {
+            places.arrows.push(Gap {
+                at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                act: Act::Writes {
+                    tiles: alloc::vec!["="],
+                    over: 0,
+                },
+                cleared: true,
+            });
+        }
         // An attribute whose `@[` the source leaves out leaves its words and a
         // `]` that closes no `[` in its block. The words read as a type or a
         // call, and the `]` takes down the block around them. A `@[` before
@@ -721,6 +759,50 @@ fn gaps<'text>(
             else {
                 Items::Inline
             };
+            frame.labelled = <&str>::from(spelling(text, token)).starts_with('.');
+        }
+        // A labelled argument in brackets, as `.A = T` in `Path[.A = T](x, y)`,
+        // holds a type, and the `(` written against the type's last word
+        // opens the arguments after the `]`. Without the `]`, the arguments
+        // read as an application of the type, and the bracket stays open to
+        // the end of the form. A `]` before the `(` closes the bracket there.
+        if opaque == 0
+            && previous_word
+            && <&str>::from(spelling(text, token)) == "("
+            && let Some((end, false, false, true)) = previous
+            && end == token.start
+            && let Some(&Frame {
+                kind: Kind::Group("]"),
+                labelled: true,
+                ..
+            }) = stack.last()
+        {
+            places.arrows.push(Gap {
+                at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                act: Act::Writes {
+                    tiles: alloc::vec!["]"],
+                    over: 0,
+                },
+                cleared: true,
+            });
+        }
+        // The arguments after a labelled bracket open with a `(`. A word
+        // written against the `]` shows that the `(` is left out, and the
+        // word joins the type as an argument. A `(` after the `]` opens the
+        // arguments there again.
+        if opaque == 0
+            && matches!(token.lexeme, Lexeme::LowerWord | Lexeme::UpperWord)
+            && let Some(end) = closed_labelled
+            && end == token.start
+        {
+            places.arrows.push(Gap {
+                at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                act: Act::Writes {
+                    tiles: alloc::vec!["("],
+                    over: 0,
+                },
+                cleared: true,
+            });
         }
         if class.word && opaque == 0 {
             places.words.push((
@@ -728,6 +810,7 @@ fn gaps<'text>(
                 spelling(text, token),
             ));
         }
+        let mut labelled = false;
         match class.bracketing {
             Bracketing::Opens(kind) => {
                 if kind == Kind::Opaque {
@@ -768,7 +851,11 @@ fn gaps<'text>(
                         cleared: true,
                     });
                 }
-                if stack.pop().is_some_and(|frame| frame.kind == Kind::Opaque) {
+                let popped = stack.pop();
+                labelled = popped.is_some_and(|frame| {
+                    frame.labelled && frame.kind == Kind::Group("]") && spelled == "]"
+                });
+                if popped.is_some_and(|frame| frame.kind == Kind::Opaque) {
                     opaque = opaque.saturating_sub(1);
                 }
             },
@@ -780,6 +867,8 @@ fn gaps<'text>(
             && stack.is_empty()
             && <&str>::from(spelling(text, token)) == ")")
             .then_some(token.end);
+        closed_labelled = labelled.then_some(token.end);
+        previous_word = matches!(token.lexeme, Lexeme::LowerWord | Lexeme::UpperWord);
         previous = Some((
             token.end,
             matches!(class.bracketing, Bracketing::Opens(_)),
@@ -1797,6 +1886,112 @@ mod tests
                 .collect::<alloc::vec::Vec<_>>(),
             [(Oblig::MissingTile, at, at)],
             "a result type after the parameter list owes the `->` between them alone"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_equals_left_out_before_a_record_body_is_minted_6364() -> Result<(), Box<dyn Error>>
+    {
+        // Row 410 of `model/modules/model-manifest-type.gandr`'s recovery
+        // record: the `=` between a head's sort equation and its record body
+        // dropped. The `=` of `with sort C = …` stays inside the type.
+        let source = include_str!(
+            "gap/unformatted/an-equals-left-out-before-a-record-body-is-minted-6364.gandr"
+        );
+        let at = source.find("  *{").unwrap_or_default();
+        let pbg = built_in()?;
+        let parsed = parse(&pbg, SourceText::from(source))?;
+        assert_eq!(
+            crate::testing::reconstruct(parsed.tree()),
+            source,
+            "the tree spells the source"
+        );
+        assert_eq!(
+            parsed
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(Oblig::MissingTile, at, at)],
+            "a record body after the head's type owes the `=` between them alone"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_bracket_left_open_before_a_call_of_its_type_is_closed_there_6364()
+    -> Result<(), Box<dyn Error>>
+    {
+        // Row 199 of `model/identity/atom-identity.gandr`'s recovery record:
+        // the `]` of `Path[.A = Point.T](Point.origin, y)` dropped, so that
+        // the endpoints read as an application of the type.
+        let source = include_str!(
+            "gap/unformatted/a-bracket-left-open-before-a-call-of-its-type-is-closed-there-6364.gandr"
+        );
+        let at = source
+            .find("Point.T(")
+            .map(|start| start.saturating_add("Point.T".len()))
+            .unwrap_or_default();
+        let pbg = built_in()?;
+        let parsed = parse(&pbg, SourceText::from(source))?;
+        assert_eq!(
+            crate::testing::reconstruct(parsed.tree()),
+            source,
+            "the tree spells the source"
+        );
+        assert_eq!(
+            parsed
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(Oblig::MissingTile, at, at)],
+            "the endpoints after a labelled type owe the `]` before them alone"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_opener_left_out_after_a_labelled_bracket_is_minted_6364() -> Result<(), Box<dyn Error>>
+    {
+        // Row 200 of `model/identity/atom-identity.gandr`'s recovery record:
+        // the `(` after `Path[.A = Point.T]` dropped, so that the first
+        // endpoint reads as an argument of the type.
+        let source = include_str!(
+            "gap/unformatted/an-opener-left-out-after-a-labelled-bracket-is-minted-6364.gandr"
+        );
+        let at = source
+            .find("Point.T]")
+            .map(|start| start.saturating_add("Point.T]".len()))
+            .unwrap_or_default();
+        let pbg = built_in()?;
+        let parsed = parse(&pbg, SourceText::from(source))?;
+        assert_eq!(
+            crate::testing::reconstruct(parsed.tree()),
+            source,
+            "the tree spells the source"
+        );
+        assert_eq!(
+            parsed
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(Oblig::MissingTile, at, at)],
+            "the endpoints written against a labelled bracket owe the `(` before them alone"
         );
         Ok(())
     }
