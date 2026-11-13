@@ -3170,8 +3170,12 @@ echo "debug check OK: $(jq length .config/debug/variants.json) enums their varia
 # rustdoc JSON `evidence:rustdoc` wrote under `target/evidence/doc/`, and
 # prints one refusal per `Where` neither holds, exiting 1 on any. A body whose
 # every `Where` is a tracked path, or that has none, needs no rustdoc: the JSON
-# is built only when a `Where` stays unresolved without it, so a change with
-# no Rust path builds no Rust (`evidence:obligations`). Without a body, as in
+# is read only when a `Where` stays unresolved without it, so a change with
+# no Rust path builds no Rust (`evidence:obligations`). The JSON of another
+# tree names that tree's paths, so the task runs `evidence:rustdoc` before
+# each read, and Cargo's fingerprints key the JSON to this tree; a run over
+# an unchanged tree takes about 4 s. `evidence:prune` then drops the JSON
+# of a crate that the workspace no longer has (#7221). Without a body, as in
 # the gate, it runs the cases of `.config/bodies/refactoring.json` through
 # `.config/bodies/refactoring.jq`, each a body, the paths, names and tracked
 # files, and the lines it prints.
@@ -3199,13 +3203,11 @@ findings() {
     '{body: $body, paths: $workspace[0].paths, names: $workspace[0].names, tree: $tree[0]}' \
     | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/refactoring.jq"
 }
+echo '{"paths": [], "names": []}' > "$scratch/workspace.json"
+[[ -n $(findings) ]] || exit 0
+mise run evidence:rustdoc
+mise run evidence:prune
 docs=(target/evidence/doc/*.json)
-if [[ ! -f "${docs[0]}" ]]; then
-  echo '{"paths": [], "names": []}' > "$scratch/workspace.json"
-  [[ -n $(findings) ]] || exit 0
-  mise run evidence:rustdoc
-  docs=(target/evidence/doc/*.json)
-fi
 for doc in "${docs[@]}"; do
   jq -c '[.paths[] | select(.crate_id == 0) | .path] as $own
     | ($own[0][0] // empty) as $crate
