@@ -72,7 +72,8 @@
         ],
         "sources": ["**.mts", "**.ts"]
       }
-    ]
+    ],
+    "links": { "sources": ["**.md"] }
   },
   "lints": {
     "configuration": [
