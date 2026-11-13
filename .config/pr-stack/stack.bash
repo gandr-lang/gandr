@@ -1031,8 +1031,9 @@ cancel_stale() {
   runs=$(for status in queued in_progress waiting requested pending; do
     gh api "repos/$repo/actions/runs?status=$status&per_page=100" --jq '.workflow_runs[] | {id, event, head_branch, head_sha, status}'
   done | jq -cs .) || return 1
-  for id in $(jq -cn --argjson runs "$runs" --argjson heads "$heads" --argjson numbers "$2" --arg trunk "$trunk" \
-    '{runs: $runs, heads: $heads, numbers: $numbers, trunk: $trunk}' | jq -c -f "$pr_stack_dir/stale.jq" | jq -r '.[]'); do
+  for id in $(jq -cn --slurpfile runs <(printf '%s\n' "$runs") --slurpfile heads <(printf '%s\n' "$heads") \
+    --slurpfile numbers <(printf '%s\n' "$2") --arg trunk "$trunk" \
+    '{runs: $runs[0], heads: $heads[0], numbers: $numbers[0], trunk: $trunk}' | jq -c -f "$pr_stack_dir/stale.jq" | jq -r '.[]'); do
     if gh api -X POST "repos/$repo/actions/runs/$id/cancel" > /dev/null 2>&1; then
       echo "cancelled the stale run $id" >&2
     fi
@@ -1173,7 +1174,8 @@ signed_replay() {
       fi
     done < <(git diff-tree --no-commit-id --no-renames -r -z --name-status "$commit^" "$commit")
     jq -n --arg repo "$repo" --arg branch "$scratch" --arg head "$head" \
-      --arg headline "$(git log -1 --format=%s "$commit")" --arg body "$(git log -1 --format=%b "$commit")" \
+      --rawfile headline <(printf '%s' "$(git log -1 --format=%s "$commit")") \
+      --rawfile body <(printf '%s' "$(git log -1 --format=%b "$commit")") \
       --slurpfile additions "$request/additions" --slurpfile deletions "$request/deletions" \
       '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
         variables: {input: {branch: {repositoryNameWithOwner: $repo, branchName: $branch}, expectedHeadOid: $head,

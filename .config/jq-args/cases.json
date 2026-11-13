@@ -1,0 +1,183 @@
+[
+  {
+    "name": "#7091: a small name passes",
+    "input": {
+      "added": [
+        {
+          "file": "a.bash",
+          "line": "3",
+          "text": "jq -n --argjson n \"$number\" --arg lane \"$lane\" '$n'"
+        }
+      ],
+      "small": ["--argjson n", "--arg lane"]
+    },
+    "output": []
+  },
+  {
+    "name": "#7091: a document refuses",
+    "input": {
+      "added": [
+        { "file": "a.bash", "line": "3", "text": "jq -n --argjson issues \"$issues\" '$issues'" }
+      ],
+      "small": ["--argjson n"]
+    },
+    "output": [
+      "a.bash:3: --argjson issues takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: a text refuses",
+    "input": {
+      "added": [{ "file": "a.toml", "line": "9", "text": "  --arg body \"$body\" \\" }],
+      "small": ["--arg lane"]
+    },
+    "output": [
+      "a.toml:9: --arg body takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: a command's output refuses",
+    "input": {
+      "added": [
+        {
+          "file": "a.bash",
+          "line": "1",
+          "text": "read=$(jq -n --argjson tests \"$(\"$witnesses/tests.bash\")\" '$tests')"
+        }
+      ],
+      "small": []
+    },
+    "output": [
+      "a.bash:1: --argjson tests takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: an unquoted expansion refuses",
+    "input": {
+      "added": [{ "file": "a.bash", "line": "2", "text": "jq -n --argjson rows $rows '$rows'" }],
+      "small": []
+    },
+    "output": [
+      "a.bash:2: --argjson rows takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: a value in a file passes",
+    "input": {
+      "added": [
+        {
+          "file": "a.bash",
+          "line": "4",
+          "text": "jq -n --slurpfile issues <(printf '%s\\n' \"$issues\") --rawfile body <(printf '%s' \"$body\") '$issues[0]'"
+        }
+      ],
+      "small": []
+    },
+    "output": []
+  },
+  {
+    "name": "#7091: a literal value passes",
+    "input": {
+      "added": [
+        { "file": "a.bash", "line": "5", "text": "jq -n --argjson n 5 --arg lane flex '$n'" }
+      ],
+      "small": []
+    },
+    "output": []
+  },
+  {
+    "name": "#7091: a comment line passes",
+    "input": {
+      "added": [
+        {
+          "file": "a.bash",
+          "line": "6",
+          "text": "  # The old form was jq --argjson issues \"$issues\"."
+        }
+      ],
+      "small": []
+    },
+    "output": []
+  },
+  {
+    "name": "#7091: the option of an entry counts",
+    "input": {
+      "added": [
+        { "file": "a.bash", "line": "7", "text": "jq -n --argjson head \"$head\" '$head'" }
+      ],
+      "small": ["--arg head"]
+    },
+    "output": [
+      "a.bash:7: --argjson head takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: each argument of a line counts",
+    "input": {
+      "added": [
+        {
+          "file": "a.bash",
+          "line": "8",
+          "text": "jq -n --argjson n \"$n\" --argjson merged \"$merged\" --arg body \"$1\" '$n'"
+        }
+      ],
+      "small": ["--argjson n"]
+    },
+    "output": [
+      "a.bash:8: --argjson merged takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt.",
+      "a.bash:8: --arg body takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: the old form of #7062 refuses",
+    "input": {
+      "added": [
+        {
+          "file": ".config/deletes/records.bash",
+          "line": "40",
+          "text": "    jq -r --argjson closure \"$closure\" \\"
+        }
+      ],
+      "small": ["--argjson n"]
+    },
+    "output": [
+      ".config/deletes/records.bash:40: --argjson closure takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: the old form of #7076 refuses",
+    "input": {
+      "added": [
+        {
+          "file": ".config/mise/tasks/mise-tasks-ci.toml",
+          "line": "70",
+          "text": "  --argjson concerns \"$concerns\" --argjson added \"$added\" --argjson regressions \"$regressions\" --argjson surface \"$surface\" \\"
+        }
+      ],
+      "small": ["--argjson n"]
+    },
+    "output": [
+      ".config/mise/tasks/mise-tasks-ci.toml:70: --argjson concerns takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt.",
+      ".config/mise/tasks/mise-tasks-ci.toml:70: --argjson added takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt.",
+      ".config/mise/tasks/mise-tasks-ci.toml:70: --argjson regressions takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt.",
+      ".config/mise/tasks/mise-tasks-ci.toml:70: --argjson surface takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  },
+  {
+    "name": "#7091: the old form of #7089 refuses",
+    "input": {
+      "added": [
+        {
+          "file": ".config/mise/tasks/mise-tasks-check.toml",
+          "line": "763",
+          "text": "read=$(jq -n --arg report \"$report\" --argjson tests \"$(\"$witnesses/tests.bash\")\" \\"
+        }
+      ],
+      "small": ["--argjson n"]
+    },
+    "output": [
+      ".config/mise/tasks/mise-tasks-check.toml:763: --arg report takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt.",
+      ".config/mise/tasks/mise-tasks-check.toml:763: --argjson tests takes a shell value. Give a value of unbounded size to jq in a file with --slurpfile or --rawfile. The name of a small value goes in .config/jq-args/small.txt."
+    ]
+  }
+]

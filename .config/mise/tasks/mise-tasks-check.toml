@@ -148,6 +148,14 @@ done < <(git diff --name-status --diff-filter=M "$base" HEAD -- \
 exit "$status"
 '''
 
+# A change gives jq no value of unbounded size as one argument (#7091). The
+# kernel refuses one argument past 128 KiB. The check refuses an added line
+# of a workflow script where `--arg` or `--argjson` takes a shell expansion
+# and its name is not in `.config/jq-args/small.txt`.
+["check:jq-args"]
+description = "Refuse an added jq argument that takes a shell value of unbounded size"
+run = "bash .config/jq-args/check.bash"
+
 # The whole wall (#5014): every `check:*` task over the whole workspace, in
 # one of the host's gate slots. It takes about half an hour, and the merge
 # group runs it before every landing, so a change runs it only when no

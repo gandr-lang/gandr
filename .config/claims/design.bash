@@ -19,8 +19,8 @@ design_report() {
     | while read -r path; do
         jq -n -c --arg name "${path##*/}" --rawfile text "$vault/$path" '{name: $name, text: $text}'
       done | jq -s -c . > "$pages"
-  jq -n -c --argjson absorption "$(vault_absorption)" --slurpfile pages "$pages" --slurpfile issues "$issues" \
-    '{absorption: $absorption, pages: $pages[0], issues: $issues[0]}' \
+  jq -n -c --slurpfile absorption <(vault_absorption) --slurpfile pages "$pages" --slurpfile issues "$issues" \
+    '{absorption: $absorption[0], pages: $pages[0], issues: $issues[0]}' \
     | jq -r -L "$design_here" -L "$design_here/../issues" -f "$design_here/design.jq"
   rm -f "$pages"
 }

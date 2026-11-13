@@ -155,8 +155,8 @@ done | jq -s -c .)
 left='[]' held='[]' tests='[]' features='{}'
 if [[ $mode == full ]]; then
   # The packages whose files the change touches, each with its directory.
-  touched=$(jq -R . "$scratch/changed" | jq -s -c --argjson packages "$packages" \
-    '[.[] | select(startswith("crates/")) | split("/")[1]] | unique as $dirs | [$packages[] | select(.dir | IN($dirs[])) | {name, dir}]')
+  touched=$(jq -R . "$scratch/changed" | jq -s -c --slurpfile packages <(printf '%s\n' "$packages") \
+    '[.[] | select(startswith("crates/")) | split("/")[1]] | unique as $dirs | [$packages[0][] | select(.dir | IN($dirs[])) | {name, dir}]')
   # The evidence records of the touched packages at a tree: `$1` the tree,
   # `$2` the directory the records go to, `$3` the side. The run takes the
   # policy's configuration and denials from the tree's own `check:dylint`

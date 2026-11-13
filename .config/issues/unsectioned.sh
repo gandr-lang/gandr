@@ -52,8 +52,8 @@ else
   comments=$(gh api --paginate "repos/$repo/issues/$issue/comments?per_page=100" \
     --jq '.[] | select(.body | startswith("<!-- unit:check -->")) | {id, body}' | jq -s -c .)
 fi
-decision=$(jq -c --argjson findings "$findings" --argjson comments "$comments" \
-  '{state, labels: [.labels[].name], findings: $findings, comments: $comments}' <<< "$issued" \
+decision=$(jq -c --slurpfile findings <(printf '%s\n' "$findings") --slurpfile comments <(printf '%s\n' "$comments") \
+  '{state, labels: [.labels[].name], findings: $findings[0], comments: $comments[0]}' <<< "$issued" \
   | jq -c -f "$here/unsectioned.jq")
 case $(jq -r '.label // ""' <<< "$decision") in
   add) gh issue edit "$issue" --repo "$repo" --add-label status:unsectioned > /dev/null ;;

@@ -38,9 +38,9 @@ for (( i = 0; i < count; i++ )); do
   expected=$(jq -r ".[$i].output" "$cases")
   commits=$(own_commits main "$branch")
   ahead=$(git rev-list --count "main..$branch")
-  actual=$(jq -nc --arg branch "$branch" --argjson commits "$commits" --argjson ahead "$ahead" \
+  actual=$(jq -nc --arg branch "$branch" --slurpfile commits <(printf '%s\n' "$commits") --argjson ahead "$ahead" \
     '{path: "/w/\($branch)", branch: $branch, primary: false, cwd: false, merged: false, moved: false,
-      scratch: null, watched: null, commits: $commits, ahead: $ahead, pulls: null, idle: false}' \
+      scratch: null, watched: null, commits: $commits[0], ahead: $ahead, pulls: null, idle: false}' \
     | jq -s -r -f "$here/sweep.jq" | jq -r '.[0] | "\(.action): \(.reason)"')
   if [[ $actual != "$expected" ]]; then
     printf 'wt:sweep subject case %s\n  expected: %s\n  actual:   %s\n  commits:  %s\n' "$name" "$expected" "$actual" "$commits" >&2

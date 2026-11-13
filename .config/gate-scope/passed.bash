@@ -130,8 +130,8 @@ case ${1:-} in
     # own gates and the merge queue check, so its selection is not read again.
     if jq -e 'any(.[]; .carried != null)' <<< "$passed" > /dev/null; then exit 0; fi
     selected=$(GATE_TASKS=$(jq -c '.[0].tasks' <<< "$passed") "$here/select.bash" --landing "$commit" 2> /dev/null | jq -R . | jq -cs .)
-    verdict=$(jq -n --arg tree "$tree" --argjson selected "$selected" --argjson records "$passed" \
-      '{tree: $tree, selected: $selected, records: $records}' | jq -c -f "$here/passed.jq")
+    verdict=$(jq -n --arg tree "$tree" --slurpfile selected <(printf '%s\n' "$selected") --slurpfile records <(printf '%s\n' "$passed") \
+      '{tree: $tree, selected: $selected[0], records: $records[0]}' | jq -c -f "$here/passed.jq")
     if jq -e .accepted <<< "$verdict" > /dev/null; then exit 0; fi
     echo "$command: the gates that passed on the tree of $commit did not run $(jq -r '.missing | join(", ")' <<< "$verdict"), which its change selects; run \`mise run check\` on it, then \`$command\` again" >&2
     exit 2

@@ -231,7 +231,8 @@ watch_search() {
   commits=$(git -C "$watch_tree" rev-list --first-parent --reverse "$green..$head" | jq -R . | jq -s -c .)
   results='{}'
   while :; do
-    step=$(jq -n -c --argjson commits "$commits" --argjson results "$results" '{commits: $commits, results: $results}' \
+    step=$(jq -n -c --slurpfile commits <(printf '%s\n' "$commits") --slurpfile results <(printf '%s\n' "$results") \
+      '{commits: $commits[0], results: $results[0]}' \
       | jq -c -f "$watch_dir/search.jq") || return 1
     if probe=$(jq -er '.culprit' <<< "$step"); then
       printf '%s\n' "$probe"
