@@ -76,15 +76,18 @@ impl Lowerer<'_, '_>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
         let slot = &answering.slot;
-        let (carrier, answer) = match self.supplied_carrier(slot, &answering.supplied, sink, origin)
-        {
-            Maybe::Present(carrier) => carrier,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
+        let (carrier, answer) =
+            match self
+                .host_ref()
+                .supplied_carrier(slot, &answering.supplied, sink, origin)
+            {
+                Maybe::Present(carrier) => carrier,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
         let mut sorts: Vec<(&Name, ValueTypeId)> =
             Vec::with_capacity(slot.fixed().len().saturating_add(1));
         for (name, stated) in slot.fixed() {
-            match self.cx.value_type_at(stated.node) {
+            match self.cx().value_type_at(stated.node) {
                 Maybe::Present(ty) => sorts.push((name, ty)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -111,12 +114,20 @@ impl Lowerer<'_, '_>
             else {
                 return unminted;
             };
-            let member =
-                match self.mint_supplied(&answering.supplied, place, Binders::NONE, sink, origin) {
-                    Maybe::Present(member) => member,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
-                };
-            let ty = match self.operation_domain(slot, place, &sorts, sink, origin) {
+            let member = match self.host_ref().mint_supplied(
+                &answering.supplied,
+                place,
+                Binders::NONE,
+                sink,
+                origin,
+            ) {
+                Maybe::Present(member) => member,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            let ty = match self
+                .host_ref()
+                .operation_domain(slot, place, &sorts, sink, origin)
+            {
                 Maybe::Present(ty) => ty,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
