@@ -158,7 +158,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a context recalls the image a first context kept and
 ///   certifies nothing, and refuses a damaged image by name and certifies
 ///   afresh.
-/// - witness: `ua::tests::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
+/// - witness: `tests::ua::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
 pub trait StratumStore: core::fmt::Debug + Send + Sync
 {
     /// The image of the stratum at `at` and `level` over `family`'s
@@ -378,9 +378,9 @@ impl Strata
     ///   certified afresh. A composite at a degree its chains do not reach is
     ///   refused by the degree. The magma's stratum of degree seven at bound
     ///   seven is certified over its sub-site.
-    /// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
-    /// - witness: `ua::tests::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
-    /// - witness: `ua::tests::a_statement_derives_over_its_sub_site_the_path_the_wirings_give_4035`
+    /// - witness: `tests::ua::a_written_statement_refuses_each_defect_by_name`
+    /// - witness: `tests::ua::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
+    /// - witness: `tests::ua::a_statement_derives_over_its_sub_site_the_path_the_wirings_give_4035`
     /// - witness: `compose::tests::a_composite_refuses_each_defect_by_name`
     #[spec(ensures: |ref ret| match *ret {
         | Ok(ref stratum) => at.bound <= ShapeSize::LARGEST && stratum.degree() == at.degree
@@ -640,7 +640,7 @@ impl Strata
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Strata::certified`].
-    /// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+    /// - witness: `tests::ua::a_written_statement_refuses_each_defect_by_name`
     #[spec(ensures: |ref ret| match *ret {
         | Ok(ref catalogue) => catalogue.family() == family,
         | Err(StratumDefect::Allowance { bound: refused } | StratumDefect::Budget { bound: refused, .. }) => refused == bound,

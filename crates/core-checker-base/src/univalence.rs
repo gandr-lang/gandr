@@ -126,7 +126,7 @@ pub enum Reading
 /// - hypothesis: L3 — a decoded variable code crosses as the variable and a
 ///   list type as its quote, each converting with the written identity; quoting
 ///   a decoded code, or decoding a quote, changes the path type.
-/// - witness: `univalence::tests::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
+/// - witness: `tests::univalence::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&code| context.arena().value(code).is_some()))]
 fn code_of(
     context: &mut CheckingContext<'_>,
@@ -158,7 +158,7 @@ fn code_of(
 ///   reads `⌜Bool⌝` as the booleans and two variables as their decodes, which
 ///   the identity map does not relate; quoting a variable, or decoding a quote,
 ///   changes the record type the literal checks against.
-/// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
+/// - witness: `tests::univalence::a_record_whose_law_fails_does_not_build_a_path`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&denoted| context.arena().value_type(denoted).is_some()))]
 fn denoted(
     context: &mut CheckingContext<'_>,
@@ -187,7 +187,7 @@ fn denoted(
 /// # Adequacy
 /// - hypothesis: L3 — the derived map passes and a forged one is refused as
 ///   malformed core.
-/// - witness: `univalence::tests::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
+/// - witness: `tests::univalence::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
 #[spec(ensures: |ret| match ret {
     Ok(()) | Err(CheckRefusal::MachineInvariant) => true,
     Err(_) => false,
@@ -235,7 +235,7 @@ enum Carrier
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`checked`].
-/// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
+/// - witness: `tests::univalence::a_record_whose_law_fails_does_not_build_a_path`
 #[spec(ensures: |ret| !matches!(ret, Ok(Carrier::Universe)) || context.arena().value_type(carrier).is_some())]
 fn at_type(
     context: &mut CheckingContext<'_>,
@@ -285,8 +285,8 @@ fn at_type(
 ///   the record type off the wrong endpoint admits it or refuses it elsewhere.
 ///   A homotopy of the identity of the circle checks one dimension up, and a
 ///   map to paths that ends elsewhere is refused there.
-/// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
-/// - witness: `univalence::tests::a_homotopy_of_the_identity_is_the_cell_of_ua_at_dimension_two_6530`
+/// - witness: `tests::univalence::a_record_whose_law_fails_does_not_build_a_path`
+/// - witness: `tests::univalence::a_homotopy_of_the_identity_is_the_cell_of_ua_at_dimension_two_6530`
 #[spec(ensures: |ret| match ret {
     | Ok(Reading::Cell { cell, path }) => context.arena().value_type(cell).is_some() && context.arena().value_type(path).is_some(),
     | Ok(Reading::Synthesised) | Err(_) => true,
@@ -372,7 +372,7 @@ pub fn checked(
 ///   quotes, one of `El a ≃ El b` as the variables, and a unit is refused
 ///   wanting a dependent pair; reading the codes off the wrong factor, or
 ///   skipping a check, admits a record the rule does not.
-/// - witness: `univalence::tests::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
+/// - witness: `tests::univalence::ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, .. }) => site == TermNode::Value(at) && matches!(wanted, ExpectedShape::Sigma | ExpectedShape::Thunk),
     | Ok(premises) => premises.checks[0].0 == record,

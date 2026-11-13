@@ -265,7 +265,7 @@ impl Lift
     ///   checked after export. The witnesses observe the resulting coercion,
     ///   not arbitrary direct construction outside the ordering premise.
     /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
-    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
     #[inline]
     #[must_use]
     pub const fn new(
@@ -312,8 +312,8 @@ impl Lift
     /// - hypothesis: L3 — quoted and named small codes are checked in a larger
     ///   value universe, and kernel readmission observes the explicit lift;
     ///   missing the quote, inner type or target changes that judgement.
-    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
-    /// - witness: `bridge::tests::a_code_constant_argument_unfolds_at_export`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_argument_unfolds_at_export`
     #[spec(
         requires: arena.value(code).is_some(),
         ensures: |ret| matches!(arena.value(ret), Some(Value::Quote(quoted))
@@ -672,7 +672,7 @@ impl MetPair
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CodeDefinitions::relation`].
-    /// - witness: `bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
     pub fn certified(
         &self,
         definitions: &CodeDefinitions,
@@ -793,7 +793,7 @@ impl Reflexivity
     /// - hypothesis: L3 — a reflexivity at a point that computes to its right
     ///   endpoint records that derivation, and the bridge crosses it with the
     ///   reflexivity.
-    /// - witness: `bridge::tests::a_reflexivity_carries_its_right_endpoint_s_dialogue`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_reflexivity_carries_its_right_endpoint_s_dialogue`
     #[inline]
     #[must_use]
     pub fn right(&self) -> &[ConversionDecision<TraceNode>]
@@ -1014,7 +1014,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — a transport along a lawful atom's evidence into the
     ///   fibre its relation reads as the unit type returns the unit, and the
     ///   definition using it checks.
-    /// - witness: `bridge::tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937`
     #[inline]
     pub fn identify(
         &mut self,
@@ -1351,7 +1351,7 @@ impl CodeDefinitions
     /// - witness: `code::tests::a_call_of_a_binder_is_rigid_without_running_1369`
     /// - witness: `code::tests::a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751`
     /// - witness: `code::tests::a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832`
-    /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
             && step.redex() == code
@@ -1587,13 +1587,13 @@ impl CodeDefinitions
     ///   generated static declarations replays to convertible; the L3 residue
     ///   is a body chained through a second constant, an open instance, and a
     ///   corrupted trace refused.
-    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
-    /// - witness: `bridge::tests::every_readmission_certificate_replays`
-    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
-    /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
-    /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
-    /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
-    /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_declining_certificate_faults_the_declaration`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
     /// - witness: `code::tests::a_step_under_binders_is_certified_with_the_binders_rigid`
     #[inline]
     #[spec(ensures: |ret| match ret {
@@ -1798,7 +1798,7 @@ impl CodeDefinitions
     ///   unread call converts with what follows it only when its variable is
     ///   among `returning`.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
-    /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `divergence::tests::an_unread_call_converts_only_where_its_row_is_empty`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
@@ -1847,7 +1847,7 @@ impl CodeDefinitions
     ///   its undecided codes; a side that runs past the budget is declined for
     ///   the budget.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
-    /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
     /// - witness: `code::tests::a_side_past_the_budget_is_a_decline_for_the_budget_6478`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
@@ -1907,7 +1907,7 @@ impl CodeDefinitions
     ///   injections and the trace replays in the kernel; the identity after
     ///   negation is apart.
     /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
-    /// - witness: `bridge::tests::an_equiv_crosses_as_a_universe_path`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_equiv_crosses_as_a_universe_path`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at: found }) if found == at))]
     #[inline]
     pub fn trace_conversion(
@@ -2052,7 +2052,7 @@ impl CodeDefinitions
     ///   branch it selects, an application stuck on a variable is stuck, and
     ///   the trace replays in the kernel against the admitted definition.
     /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
-    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_crosses_as_a_higher_evaluation`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(ref evaluation)) => core.value(evaluation.returned()).is_some(),
         | Ok(Maybe::Absent(_)) => true,
@@ -2103,7 +2103,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — `λf. f(true)` at the generic higher-order pattern
     ///   reads to its stuck application with a trace the kernel replays.
     /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
-    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
     #[spec(ensures: |ret| match ret {
         | Ok(Reading::Returned(ref evaluation)) => core.value(evaluation.returned()).is_some(),
         | Ok(Reading::Stuck(ref reduction)) => core.value(reduction.normal()).is_some(),
@@ -2222,7 +2222,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
     /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
     /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
-    /// - witness: `bridge::tests::a_call_in_a_stuck_arm_of_a_returned_code_replays_2831`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_call_in_a_stuck_arm_of_a_returned_code_replays_2831`
     #[spec(ensures: |ret| match ret {
         | Ok(Readback::Returned { normal, returned }) => core.value(normal).is_some() && core.value(returned).is_some(),
         | Ok(Readback::Stuck(normal)) => core.value(normal).is_some(),
@@ -2307,9 +2307,9 @@ impl CodeDefinitions
     ///   through `p`'s definition, and a run left to the evaluation records no
     ///   step for it, so the kernel's replay, which unfolds `p` only on a
     ///   recorded step, refuses what the checker accepted.
-    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
-    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
-    /// - witness: `bridge::tests::a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335`
     #[spec(ensures: |ret| ret.is_ok() || ret == Err(CheckRefusal::Undecided { at: claim }))]
     fn claim_trace(
         &self,

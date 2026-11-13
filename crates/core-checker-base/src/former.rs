@@ -687,8 +687,8 @@ pub fn form_abstract(
 /// - hypothesis: L3 — a total relation over `Unit` with its reflexivity and
 ///   contraction checks, and each member named at another member's place is
 ///   refused; the same atom's identity reads the relation.
-/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-/// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
 #[spec(ensures: |ret| matches!(declared.interface(), Maybe::Present(_)) || ret.is_ok())]
 pub fn form_interface(
     context: &mut CheckingContext<'_>,
@@ -747,8 +747,8 @@ pub fn form_interface(
 /// - hypothesis: L3 — the reflexivity is checked at the relation's diagonal and
 ///   the evidence at the relation between its endpoints, so another type
 ///   refuses the atom or the evidence.
-/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-/// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
 pub fn related_by(
     arena: &mut gandr_core_term::CoreArena,
     relation: ValueId,
@@ -773,8 +773,8 @@ pub fn related_by(
 /// # Adequacy
 /// - hypothesis: L3 — a law is checked at this type, so a reflexivity named as
 ///   the law refuses the atom and the stated law admits it.
-/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-/// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
 pub fn law_type(
     arena: &mut gandr_core_term::CoreArena,
     level: &Level,

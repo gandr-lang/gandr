@@ -122,8 +122,8 @@ enum Reached
 /// - hypothesis: L3 — a bridge at a sealed atom, at a function into it and at a
 ///   list of it refuses at formation, and one at an atom stating an interface
 ///   forms, in both checkers.
-/// - witness: `bridge::tests::bridges::a_bridge_at_a_sealed_type_is_refused_by_name`
-/// - witness: `bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_sealed_type_is_refused_by_name`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::BridgeAtSealedType { at: named, .. }) if named != at))]
 pub fn require_unsealed(
     context: &mut CheckingContext<'_>,
@@ -278,9 +278,9 @@ pub enum Fibre
 ///   relations one at a product of universes, a list's lifting one at a list,
 ///   and the relation's evidence one at an interfaced atom; a code outside the
 ///   fold refuses by name; each crosses to the kernel and is readmitted.
-/// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
-/// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
-/// - witness: `bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::OutsideFold { at: named, .. }) if named != at))]
 pub fn fibre(
     context: &mut CheckingContext<'_>,
@@ -358,7 +358,7 @@ enum Visit
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`fibre`], whose endpoints it reads.
-/// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
 #[spec(ensures: |ret| !matches!(context.arena().value(ret), Some(Value::Ascribe { .. } | Value::Mark { .. })))]
 fn written(
     context: &CheckingContext<'_>,
@@ -435,7 +435,7 @@ enum Form
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`fibre`].
-/// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
 fn clause(
     context: &CheckingContext<'_>,
     code: ValueTypeId,
@@ -502,7 +502,7 @@ fn clause(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`fibre`].
-/// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
 fn form(
     context: &CheckingContext<'_>,
     value: ValueId,
@@ -542,8 +542,8 @@ fn form(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`fibre`].
-/// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
-/// - witness: `bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
 fn visit(
     context: &mut CheckingContext<'_>,
     (code, left, right): (ValueTypeId, ValueId, ValueId),
@@ -669,7 +669,7 @@ fn visit(
 /// # Adequacy
 /// - hypothesis: L3 — a constructor of two fields relates as the product of
 ///   their fibres, and one of none by the unit type.
-/// - witness: `bridge::tests::bridges::a_bridge_at_a_data_type_relates_constructor_by_constructor`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_data_type_relates_constructor_by_constructor`
 #[spec(ensures: |ret| match ret {
     Ok(Visit::Then(ref steps)) => steps.len() == lefts.len().saturating_mul(2).saturating_sub(1),
     Ok(Visit::Fibre(_)) => lefts.is_empty(),
@@ -738,7 +738,7 @@ fn constructor_fields(
 /// - hypothesis: L3 — a dependent arrow, the path universe, a bridge at a
 ///   bridge, a ternary product and a data type holding itself each refuse by
 ///   name, and the codes the clauses read pass.
-/// - witness: `bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::OutsideFold { at: named, .. }) if named != at))]
 fn interpret(
     context: &mut CheckingContext<'_>,
@@ -860,7 +860,7 @@ fn interpret(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`interpret`], whose data clause it reads.
-/// - witness: `bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
 fn data_fields(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,

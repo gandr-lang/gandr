@@ -33,8 +33,8 @@ impl Erasure<'_, '_>
     /// - hypothesis: L3 — parameterized constructors, dependent cases and
     ///   nested records distinguish missing children and changed order after
     ///   admission.
-    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::record_width_depth_and_projection`
     #[spec(ensures: |ret| ret.is_err() || !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
     pub(super) fn prepare_native(
         &mut self,
@@ -305,7 +305,7 @@ impl Erasure<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::finish_native`], whose data types and
     ///   constructors cross by it.
-    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[spec(ensures: |ret| ret.is_some() || !self.positions.admitted.contains_key(&declaration))]
     pub(super) fn data_position(
         &self,
@@ -339,8 +339,8 @@ impl Erasure<'_, '_>
     /// - hypothesis: L3 — admission after a refused declaration changes kernel
     ///   positions; nominal confusion, lost labels and lost motives are exposed
     ///   by constructor and projection judgments over the exported artifact.
-    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
-    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(ensures: |ret| match ret {
         Ok(Step::Ascend(AnyNode::Value(image))) => matches!(root,CoreNode::Term(TermNode::Value(at)) if self.reached().values.get(&at) == Some(&Image::Erased(image))),
         Ok(Step::Ascend(AnyNode::Computation(image))) => matches!(root,CoreNode::Term(TermNode::Computation(at)) if self.reached().computations.get(&at) == Some(&Image::Erased(image))),
@@ -786,8 +786,8 @@ fn ascription(
 ///   kernel replays the engine's simulation between them; the seat past its
 ///   root, inside its recursion, forms. A copy that kept the free variable or
 ///   repeated a node is refused by the kernel's formation.
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
-/// - witness: `judgement::session::tests::a_session_code_crosses_re_rooted_at_its_state_1319`
+/// - witness: `gandr-core-checker-base::tests::flow::statements_decide_by_the_engine_and_replay`
+/// - witness: `gandr-core-checker-base::tests::judgement::session::a_session_code_crosses_re_rooted_at_its_state_1319`
 #[spec(ensures: |ret| session.state() != session.protocol().root()
     || (ret.nodes.len() == session.protocol().nodes().len()
         && ret.root.0 == usize::from(session.state())))]

@@ -13,15 +13,15 @@ sites = [
 
 [refusal.EndpointMismatch]
 sites = [
-  { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*return Err\(CheckRefusal::EndpointMismatch \{' },
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*return Err\(CheckRefusal::EndpointMismatch \{' },
   { file = "crates/kernel-core/src/flow_universe.rs", pattern = 'Err\(FlowError::EndpointMismatch\)' },
 ]
 
 [refusal.UnboundIndex]
 sites = [
-  { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UnboundIndex \{' },
-  { file = "crates/core-checker/src/judgement/access.rs", pattern = '^\s*return Err\(CheckRefusal::UnboundIndex \{' },
-  { file = "crates/core-checker/src/judgement/session.rs", pattern = '^\s*CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker-base/src/judgement/access.rs", pattern = '^\s*return Err\(CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker-base/src/judgement/session.rs", pattern = '^\s*CheckRefusal::UnboundIndex \{' },
   { file = "crates/core-term/src/context.rs", pattern = '^\s*let unbound = ContextError::UnboundIndex' },
 ]
 
@@ -38,8 +38,8 @@ sites = [
 
 [refusal.NotSynthesisable]
 sites = [
-  { file = "crates/core-checker/src/judgement.rs", pattern = 'Err\(CheckRefusal::NotSynthesisable \{' },
-  { file = "crates/core-checker/src/judgement/session.rs", pattern = '^\s*Err\(CheckRefusal::NotSynthesisable \{' },
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = 'Err\(CheckRefusal::NotSynthesisable \{' },
+  { file = "crates/core-checker-base/src/judgement/session.rs", pattern = '^\s*Err\(CheckRefusal::NotSynthesisable \{' },
 ]
 
 [refusal.UnknownMember]
@@ -51,7 +51,7 @@ sites = [
 
 [refusal.OutOfFragment]
 sites = [
-  { file = "crates/core-checker/src/bridge.rs", pattern = '(return Err\(|= |\|former\| |^\s*)Refusal::OutOfFragment \{' },
+  { file = "crates/core-checker-bridge/src/bridge.rs", pattern = '(return Err\(|= |\|former\| |^\s*)Refusal::OutOfFragment \{' },
 ]
 
 [refusal.Unannotated]
@@ -87,7 +87,7 @@ sites = [
 
 [refusal.FixedFieldDiffers]
 sites = [
-  { file = "crates/core-checker/src/judgement/native.rs", pattern = '^\s*Ok\(_\) => CheckRefusal::FixedFieldDiffers \{$' },
+  { file = "crates/core-checker-base/src/judgement/native.rs", pattern = '^\s*Ok\(_\) => CheckRefusal::FixedFieldDiffers \{$' },
 ]
 
 [refusal.UnresolvedTypeHead]
@@ -103,10 +103,10 @@ sites = [
 
 [refusal.UndecidedCoverage]
 sites = [
-  { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UndecidedCoverage\(term\)\)' },
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UndecidedCoverage\(term\)\)' },
 ]
 
 [refusal.CrossBlockReference]
 sites = [
-  { file = "crates/core-checker/src/occurrence.rs", pattern = '\.map_err\(\|later\| CheckRefusal::CrossBlockReference \{ site, index: later \}\)\?;' },
+  { file = "crates/core-checker-base/src/occurrence.rs", pattern = '\.map_err\(\|later\| CheckRefusal::CrossBlockReference \{ site, index: later \}\)\?;' },
 ]

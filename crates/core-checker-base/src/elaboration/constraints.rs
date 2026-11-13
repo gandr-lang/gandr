@@ -55,8 +55,8 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — exact equations and blockers separate bare flex–rigid
 ///   suspension from rigid disagreement and flex–flex comparison.
-/// - witness: `elaboration::tests::owed_conversion_suspends`
-/// - witness: `elaboration::tests::only_bare_flex_rigid_equations_suspend`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::only_bare_flex_rigid_equations_suspend`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Equation
 {
@@ -182,8 +182,8 @@ pub enum Signing
 /// # Adequacy
 /// - hypothesis: L3 — a residual alone, a waiting read alone and neither
 ///   separate the three answers of [`Residue::pending`].
-/// - witness: `elaboration::tests::owed_conversion_suspends`
-/// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::dependent_resumption_closes_its_prerequisites`
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Residue
 {
@@ -265,8 +265,8 @@ impl Deferrals
     /// - hypothesis: L3 — two suspended declarations judged in turn keep their
     ///   own blockers, and a nominal declaration after an owed hole forms
     ///   rigidly.
-    /// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
-    /// - witness: `elaboration::tests::resumptions_commute`
+    /// - witness: `gandr-core-checker::tests::elaboration::residual_conjunction_does_not_hide_refusal`
+    /// - witness: `gandr-core-checker::tests::elaboration::resumptions_commute`
     #[spec(
         captures: [owed = self.owed.len(), suspended = self.suspended.len()],
         ensures: self.collecting == collecting && self.residue.equations.is_empty()
@@ -304,7 +304,7 @@ impl Deferrals
     /// # Adequacy
     /// - hypothesis: L3 — a splice's answer is the hole's solution the body is
     ///   judged again with.
-    /// - witness: `tactic::tests::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+    /// - witness: `tests::tactic::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
     #[spec(ensures: self.spliced.contains_key(&hole))]
     pub fn splice(
         &mut self,
@@ -337,8 +337,8 @@ impl Deferrals
     /// # Adequacy
     /// - hypothesis: L3 — a reference to a waiting declaration and one to a
     ///   checked declaration separate a dependency from a plain read.
-    /// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
-    /// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
+    /// - witness: `gandr-core-checker::tests::elaboration::dependent_resumption_closes_its_prerequisites`
+    /// - witness: `gandr-core-checker::tests::elaboration::checked_success_is_stable_without_rejudgement`
     #[spec(
         captures: count = self.residue.dependencies.len(),
         ensures: if self.collecting == Collecting::On && self.suspended.contains(&constant) {
@@ -370,8 +370,8 @@ impl Deferrals
     /// - hypothesis: L3 — reversed orientation, rigid and flex–flex controls in
     ///   both the value and the computation family distinguish the eligibility
     ///   boundary without claiming unification.
-    /// - witness: `elaboration::tests::only_bare_flex_rigid_equations_suspend`
-    /// - witness: `elaboration::tests::computation_code_decodes_suspend_as_value_ones_do`
+    /// - witness: `gandr-core-checker::tests::elaboration::only_bare_flex_rigid_equations_suspend`
+    /// - witness: `gandr-core-checker::tests::elaboration::computation_code_decodes_suspend_as_value_ones_do`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(equation) => self.owed.contains(&equation.hole),
         Maybe::Absent(_) => true,
@@ -428,8 +428,8 @@ impl Deferrals
     /// - hypothesis: L3 — an owed decode suspends a value declaration; a rigid
     ///   decode keeps the rigid mismatch, and a collector that is off defers
     ///   nothing while holes are owed.
-    /// - witness: `elaboration::tests::owed_conversion_suspends`
-    /// - witness: `elaboration::tests::only_bare_flex_rigid_equations_suspend`
+    /// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+    /// - witness: `gandr-core-checker::tests::elaboration::only_bare_flex_rigid_equations_suspend`
     /// - witness: `elaboration::tests::an_off_collector_never_defers`
     #[spec(
         captures: before = self.residue.equations.len(),
@@ -503,8 +503,8 @@ impl Deferrals
     ///   call a definition over an omitted model wait for the model to be
     ///   resolved, and are judged once it is filled in; reading the nominated
     ///   hole as bound refuses both before the resolution.
-    /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
-    /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
     #[spec(ensures: |ret| ret == Deferred::No || !self.nominated.is_empty())]
     pub fn awaits(
         &self,
@@ -805,7 +805,7 @@ impl Deferrals
     /// - witness: `elaboration::tests::an_implicit_no_argument_forces_is_unsolved_1216`
     /// - witness: `elaboration::tests::an_implicit_solved_past_its_scope_escapes_1216`
     /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
-    /// - witness: `tactic::tests::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+    /// - witness: `tests::tactic::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
     #[spec(ensures: |ret| ret.as_ref().map_or(!self.nominated.is_empty(), |solutions| {
         solutions.len()
             == self.nominated.len().saturating_add(self.answered.len()).saturating_add(self.spliced.len())

@@ -47,7 +47,7 @@ use crate::refusal::TermNode;
 /// # Adequacy
 /// - hypothesis: L3 — a handler whose clause resumes its subject and one whose
 ///   clause answers for it each cross as their fold at the recorded types.
-/// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Handled
 {

@@ -161,9 +161,9 @@ impl core::error::Error for ResumeError
 /// # Adequacy
 /// - hypothesis: L2/L3 — filled batch equality, opposite resumption orders, and
 ///   unchanged checked work counts distinguish the three substitution laws.
-/// - witness: `elaboration::tests::incremental_equals_from_scratch`
-/// - witness: `elaboration::tests::resumptions_commute`
-/// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
+/// - witness: `tests::elaboration::incremental_equals_from_scratch`
+/// - witness: `tests::elaboration::resumptions_commute`
+/// - witness: `tests::elaboration::checked_success_is_stable_without_rejudgement`
 pub struct Session<'arena>
 {
     /// Exclusive ownership of the arena borrow prevents external truncation.
@@ -193,9 +193,9 @@ impl<'arena> Session<'arena>
     /// # Adequacy
     /// - hypothesis: L1/L3 — kernel replay checks output typing; exact residual
     ///   and refused-subterm observations separate the outcomes.
-    /// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
-    /// - witness: `elaboration::tests::owed_conversion_suspends`
-    /// - witness: `elaboration::tests::refused_subterms_refuse_the_declaration`
+    /// - witness: `tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
+    /// - witness: `tests::elaboration::owed_conversion_suspends`
+    /// - witness: `tests::elaboration::refused_subterms_refuse_the_declaration`
     ///
     /// [`check_module`]: crate::check_module
     #[must_use]
@@ -296,10 +296,10 @@ impl<'arena> Session<'arena>
     /// - hypothesis: L2/L3 — batch equality and work counts witness
     ///   substitution; invalid fills distinguish substitution from arbitrary
     ///   body editing.
-    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
-    /// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
-    /// - witness: `elaboration::tests::invalid_fills_leave_entries_unchanged`
-    /// - witness: `elaboration::tests::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
+    /// - witness: `tests::elaboration::incremental_equals_from_scratch`
+    /// - witness: `tests::elaboration::checked_success_is_stable_without_rejudgement`
+    /// - witness: `tests::elaboration::invalid_fills_leave_entries_unchanged`
+    /// - witness: `tests::elaboration::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -397,10 +397,10 @@ impl<'arena> Session<'arena>
     /// - hypothesis: L2/L3 — batch comparison and opposite orders observe the
     ///   calculus laws independently of typing; work counts detect judging
     ///   again.
-    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
-    /// - witness: `elaboration::tests::resumptions_commute`
-    /// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
-    /// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
+    /// - witness: `tests::elaboration::incremental_equals_from_scratch`
+    /// - witness: `tests::elaboration::resumptions_commute`
+    /// - witness: `tests::elaboration::checked_success_is_stable_without_rejudgement`
+    /// - witness: `tests::elaboration::dependent_resumption_closes_its_prerequisites`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -455,7 +455,7 @@ impl<'arena> Session<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L1 — readmission of this report observes every outcome.
-    /// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
+    /// - witness: `tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
     ///
     /// [`elaborated_report`]: crate::elaborated_report
     #[must_use]
@@ -479,8 +479,8 @@ impl<'arena> Session<'arena>
     /// - hypothesis: L1 — the existing kernel independently checks every
     ///   output; no conditional success is smuggled into its environment as an
     ///   axiom.
-    /// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
-    /// - witness: `elaboration::tests::owed_conversion_suspends`
+    /// - witness: `tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
+    /// - witness: `tests::elaboration::owed_conversion_suspends`
     #[must_use]
     #[spec(ensures: |ret| ret.readmitted().len() == self.entries.len())]
     #[inline]
@@ -503,7 +503,7 @@ impl<'arena> Session<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unknown constant is refused before any work.
-    /// - witness: `elaboration::tests::invalid_fills_leave_entries_unchanged`
+    /// - witness: `tests::elaboration::invalid_fills_leave_entries_unchanged`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entry| entry.constant() == constant))]
     fn entry(
         &self,
@@ -531,7 +531,7 @@ impl<'arena> Session<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a fill and a resumption replace the entry they judged
     ///   and no other.
-    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
+    /// - witness: `tests::elaboration::incremental_equals_from_scratch`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entry| entry.constant() == constant))]
     fn entry_mut(
         &mut self,
@@ -565,8 +565,8 @@ impl<'arena> Session<'arena>
     /// # Adequacy
     /// - hypothesis: L2/L3 — batch equality checks prefix reconstruction, and
     ///   per-entry counts distinguish adoption from judging again.
-    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
-    /// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
+    /// - witness: `tests::elaboration::incremental_equals_from_scratch`
+    /// - witness: `tests::elaboration::checked_success_is_stable_without_rejudgement`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entry| usize::from(entry.judgements()) == 1))]
     fn rejudge(
         &mut self,

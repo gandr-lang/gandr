@@ -68,9 +68,9 @@ use crate::refusal::TacticFault;
 ///   with that binder, and `intro(assumption)` at a function goal with the
 ///   identity; a goal no binder answers and an `intro` at a value goal are
 ///   refused naming why.
-/// - witness: `tactic::tests::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
-/// - witness: `tactic::tests::intro_states_its_new_goal_under_the_binder_it_opens_2762`
-/// - witness: `tactic::tests::a_tactic_with_no_answer_names_why`
+/// - witness: `tests::tactic::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+/// - witness: `tests::tactic::intro_states_its_new_goal_under_the_binder_it_opens_2762`
+/// - witness: `tests::tactic::a_tactic_with_no_answer_names_why`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
@@ -132,8 +132,8 @@ pub fn answer(
 /// - hypothesis: L3 — two introductions at a polymorphic identity's type open
 ///   two binders, the second's type reading the first, and an introduction at a
 ///   value goal is refused.
-/// - witness: `tactic::tests::intro_states_its_new_goal_under_the_binder_it_opens_2762`
-/// - witness: `tactic::tests::a_tactic_with_no_answer_names_why`
+/// - witness: `tests::tactic::intro_states_its_new_goal_under_the_binder_it_opens_2762`
+/// - witness: `tests::tactic::a_tactic_with_no_answer_names_why`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| usize::from(context.depth(Zone::Intuitionistic))
@@ -191,7 +191,7 @@ fn introduce(
 /// # Adequacy
 /// - hypothesis: L3 — two binders of the goal's type answer the inner one, and
 ///   a goal neither answers is refused.
-/// - witness: `tactic::tests::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+/// - witness: `tests::tactic::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,

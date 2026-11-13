@@ -95,7 +95,7 @@ const fn unbound(at: ValueTypeId) -> CheckRefusal
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a bound is a binder stated before it.
-/// - witness: `quantified::tests::a_bound_naming_a_later_binder_is_refused`
+/// - witness: `tests::quantified::a_bound_naming_a_later_binder_is_refused`
 #[spec(ensures: |ret| ret.is_err() == bounds.iter().enumerate().any(|(ordinal, &bound)| {
     matches!(bound, StageBound::Below(binder) if usize::from(binder) >= ordinal)
 }))]
@@ -126,7 +126,7 @@ pub fn bounded(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a helper typed at a stage checks its body there.
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(requires: bounds.iter().enumerate().all(|(ordinal, &bound)| {
     !matches!(bound, StageBound::Below(binder) if usize::from(binder) >= ordinal)
 }))]
@@ -171,7 +171,7 @@ pub fn mint(
 /// # Adequacy
 /// - hypothesis: L3 — a helper's function parameter and its argument each yield
 ///   a mark and erase to the plain type.
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(erased, ref marks)| arena.value_type(erased).is_some() && marks.iter().all(|mark| usize::from(mark.binder()) < bounds.len())))]
 pub fn split(
     arena: &mut CoreArena,
@@ -267,7 +267,7 @@ pub fn split(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`instantiation`].
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| arena.value_type(staged).is_some()))]
 pub fn restaged(
     arena: &mut CoreArena,
@@ -328,7 +328,7 @@ fn reached_through(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`restaged`].
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |rebuilt| matches!((root, *rebuilt),
     (Part::Value(_), Part::Value(_)) | (Part::Computation(_), Part::Computation(_)))))]
 fn wrapped(
@@ -403,11 +403,11 @@ fn wrapped(
 ///   refused; two arguments at apart stages for one binder are refused by name,
 ///   whichever comes first; a supplied stage the arguments show checks, and one
 ///   they do not show, or show apart, is refused.
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
-/// - witness: `quantified::tests::a_call_at_no_stage_reads_its_result_plain`
-/// - witness: `quantified::tests::a_bounded_binder_read_above_its_bound_is_refused_1241`
-/// - witness: `quantified::tests::arguments_at_apart_stages_disagree_by_name_1227`
-/// - witness: `quantified::tests::a_supplied_stage_is_held_to_the_arguments_1227`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_call_at_no_stage_reads_its_result_plain`
+/// - witness: `tests::quantified::a_bounded_binder_read_above_its_bound_is_refused_1241`
+/// - witness: `tests::quantified::arguments_at_apart_stages_disagree_by_name_1227`
+/// - witness: `tests::quantified::a_supplied_stage_is_held_to_the_arguments_1227`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.len() == signature.bounds().len()))]
 pub fn instantiation<Found>(
     (arena, order): (&CoreArena, &StageOrder),
@@ -534,7 +534,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`instantiation`].
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| !matches!(reach, StageReach::At) || ret == Maybe::Present(found))]
 fn lifted(
     reach: StageReach,
@@ -576,7 +576,7 @@ fn lifted(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`instantiation`].
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| match ret {
     Maybe::Present((argument, rest)) => spine.contains(&argument) && rest.len() < path.len(),
     Maybe::Absent(_) => true,
@@ -640,8 +640,8 @@ fn argument_at<'path>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`instantiation`].
-/// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
-/// - witness: `quantified::tests::arguments_at_apart_stages_disagree_by_name_1227`
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::arguments_at_apart_stages_disagree_by_name_1227`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_))
     || !path.is_empty()
     || matches!(ret, Maybe::Present((_, Side::Lower))))]

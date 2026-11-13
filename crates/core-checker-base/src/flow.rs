@@ -296,7 +296,7 @@ impl Statement
     /// # Adequacy
     /// - hypothesis: L3 — a bisimilarity whose protocols receive `Unit * Unit`
     ///   and `Unit` owes exactly that pair.
-    /// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
+    /// - witness: `tests::flow::a_bisimulation_owes_a_path_per_differing_payload_pair`
     #[spec(ensures: |ret| ret.len() == self.owed.len())]
     #[inline]
     #[must_use]
@@ -401,9 +401,9 @@ pub fn universe(arena: &mut CoreArena) -> ValueTypeId
 /// # Adequacy
 /// - hypothesis: L3 — a named session code, a quoted integer and a session past
 ///   its root separate the readings.
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+/// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
 /// - witness: `flow::tests::each_refusal_is_named`
-/// - witness: `flow::tests::a_session_is_a_code_only_at_its_root`
+/// - witness: `tests::flow::a_session_is_a_code_only_at_its_root`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref session)) => session.state() == session.protocol().root(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -479,7 +479,7 @@ pub fn session_code(
 /// # Adequacy
 /// - hypothesis: L3 — a named code crosses as the quote it unfolds to, which
 ///   the kernel decodes as a session graph.
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+/// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&quote| matches!(context.arena().value(quote), Some(&Value::Quote(_)))) == ret.is_ok())]
 fn quoted(
     context: &mut CheckingContext<'_>,
@@ -558,8 +558,8 @@ struct Owing
 /// - hypothesis: L3 — a widened selection relates by subtyping, not by
 ///   equivalence; a reversed pair does not relate; a pair of differing payloads
 ///   is owed once however often the engine meets it.
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
-/// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
+/// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
+/// - witness: `tests::flow::a_bisimulation_owes_a_path_per_differing_payload_pair`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref related)) => !related.evidence.pairs.is_empty(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -606,7 +606,7 @@ fn relation_evidence(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`relation_evidence`].
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+/// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref evidence)) => !evidence.pairs.is_empty(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -651,9 +651,9 @@ fn converting_evidence(
 ///   widened selection is a supertype and not an equivalent, the reverse
 ///   simulation is refused, and a protocol over a type and over another is
 ///   bisimilar owing a path between the two.
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+/// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
 /// - witness: `flow::tests::each_refusal_is_named`
-/// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
+/// - witness: `tests::flow::a_bisimulation_owes_a_path_per_differing_payload_pair`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::SessionNotEquivalent { at: site } | CheckRefusal::SessionNotSubtype { at: site }) => site == at,
     | Ok(ref statement) => statement.relation == relation
@@ -810,7 +810,7 @@ pub fn payload_paths(
 /// - hypothesis: L3 — one owed pair elaborates its path, a module-level
 ///   equivalence read through its constant, to the native certificate the
 ///   kernel replays, and a path a parameter binds is refused.
-/// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
+/// - witness: `tests::flow::a_bisimulation_owes_a_path_per_differing_payload_pair`
 #[spec(ensures: |ret| ret.is_err() || match (context.arena().value(at), context.flows().get(&at)) {
     | (Some(&Value::SessionRelated { payloads, .. }), Some(statement)) => statement.owed.is_empty()
         || matches!(
@@ -891,7 +891,7 @@ pub fn elaborate(
 /// - hypothesis: L3 — a univalence through its constant pays a pair whose
 ///   payloads are differing types, one over a record a parameter binds is
 ///   refused, and a parameter-bound path is refused as before.
-/// - witness: `flow::tests::a_univalence_pays_a_payload_pair_when_closed`
+/// - witness: `tests::flow::a_univalence_pays_a_payload_pair_when_closed`
 #[spec(ensures: |ret| match ret {
     | Ok(native) => matches!(context.arena().value(native), Some(Value::Univalence(..) | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::PathProduct(..))),
     | Err(_) => true,
@@ -952,7 +952,7 @@ fn payload_certificate(
 /// # Adequacy
 /// - hypothesis: L3 — a stay at a session code and a composite of two
 ///   simulations are recorded and replay; a stay at a boolean records nothing.
-/// - witness: `flow::tests::stays_and_composites_record_their_simulation`
+/// - witness: `tests::flow::stays_and_composites_record_their_simulation`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::SessionNotSubtype { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
@@ -1079,7 +1079,7 @@ pub fn endpoints(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a stay rides as the identity at any motive.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
 pub fn convertible(
     context: &CheckingContext<'_>,
@@ -1347,7 +1347,7 @@ pub fn covariant(
 /// - hypothesis: L3 — a ride and a transport along a level-one universe form
 ///   their motives at level one and the kernel replays both, while a ride at
 ///   level zero records nothing.
-/// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+/// - witness: `tests::flow::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&family| family == written || context.motives().get(&at) == Some(&family)))]
 pub fn levelled(
     context: &mut CheckingContext<'_>,
@@ -1400,7 +1400,7 @@ pub fn levelled(
 ///   widening, a list motive between them is unsupported, a stay rides fixed, a
 ///   decode of the code rides a migration fixed while a record of it is
 ///   unsupported, and the symmetry motive along a migration is refused.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::a_prefix_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::motives_ride_only_covariantly`
 /// - witness: `forward::tests::a_migration_is_decided_at_every_covering_input`
@@ -1624,7 +1624,7 @@ fn computed(
 ///   run taking a dropped offer is refused at that move, and an open run along
 ///   an offer-narrowing flow is refused as such; an open prefix moves and stays
 ///   open, and one that took a dropped offer is refused at that move.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::a_prefix_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == value && moving != Moving::Fixed,
@@ -1712,8 +1712,8 @@ pub fn admit(
 ///   paused run is refused at its pause and a truncated one at its end; the
 ///   truncated run checks as a prefix, which still refuses a move the protocol
 ///   does not offer.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
-/// - witness: `flow::tests::a_prefix_admits_an_open_run_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_prefix_admits_an_open_run_and_refuses_by_move`
 /// - witness: `flow::tests::each_refusal_is_named`
 /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
 #[spec(ensures: |ret| match ret {
@@ -1834,7 +1834,7 @@ pub fn run_premises(
 ///   offer of another label are unmatched; a move off the seat's protocol is
 ///   refused at its log position, and a dialogue that stops short at the log's
 ///   end.
-/// - witness: `flow::tests::a_dialogue_checks_by_its_web_and_refuses_by_move`
+/// - witness: `tests::flow::a_dialogue_checks_by_its_web_and_refuses_by_move`
 #[spec(ensures: |ret| match ret {
     | Err(
         CheckRefusal::RunNotAdmitted { at: site, .. }
@@ -2122,8 +2122,8 @@ impl Log
 /// # Adequacy
 /// - hypothesis: L3 — a complete seat run checks with its three payloads, and
 ///   each endpoint of a dialogue checks its own payloads at its protocol.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
-/// - witness: `flow::tests::a_dialogue_checks_by_its_web_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_dialogue_checks_by_its_web_and_refuses_by_move`
 pub fn payload_premises<'moves, Moves>(
     session: SessionType,
     moves: Moves,
@@ -2195,7 +2195,7 @@ fn step(index: gandr_core_session::MoveIndex) -> RunStep
 /// # Adequacy
 /// - hypothesis: L3 — a paused run, a truncated one, one moving the wrong way
 ///   and one moving past its close name distinct faults.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::each_refusal_is_named`
 #[spec(ensures: |ret| matches!(ret, CheckRefusal::RunNotAdmitted { at: site, .. } if site == at)
     || ret == CheckRefusal::MachineInvariant)]
@@ -2256,7 +2256,7 @@ pub fn replay_fault(error: &ReplayError) -> Option<RunFault>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a run taking a dropped offer is refused at that move.
-/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| matches!(ret, CheckRefusal::RunNotAdmitted { at: site, .. } if site == at)
     || ret == CheckRefusal::MachineInvariant)]
 fn transport_refusal(

@@ -194,8 +194,8 @@ pub fn families(
 ///   recursion two parameters deep opens the second, and a fixpoint at a
 ///   returner is refused; a recursion at the sum of a rose tree's two families
 ///   stages each summand.
-/// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
-/// - witness: `recursion::tests::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+/// - witness: `tests::recursion::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursion::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
 /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(opened)) => context.arena().comp_type(opened.own).is_some() && context.arena().comp_type(opened.inside).is_some(),
@@ -309,7 +309,7 @@ pub fn open_fixpoint(
 /// # Adequacy
 /// - hypothesis: L3 — a subtraction's result past its second argument is read
 ///   at its first argument's stage.
-/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+/// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
 fn result_at(
     context: &mut CheckingContext<'_>,
@@ -370,7 +370,7 @@ fn result_at(
 /// - hypothesis: L3 — a predecessor over the naturals returns its parameter's
 ///   type and is judged again; so is one returning the successor of its field,
 ///   which the second judgement then refuses.
-/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+/// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if found != position))]
 pub fn returns_recursed_on(
     context: &mut CheckingContext<'_>,
@@ -449,7 +449,7 @@ pub fn returns_recursed_on(
 /// # Adequacy
 /// - hypothesis: L3 — a predecessor's case judged at a staged result reads its
 ///   branches there, and a motive at another type keeps its own.
-/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+/// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
     Maybe::Present(read) => context.arena().comp_type(read).is_some(),
     Maybe::Absent(reason) => reason == Unstaged::Plain,
@@ -552,7 +552,7 @@ impl Dependence
 ///   its fields each mint one child, so a call on a field two cases deep is two
 ///   steps below the fixpoint's stage; a case on a stratified value at no stage
 ///   binds its negative field at a root its own scrutinee does not fit.
-/// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `tests::recursion::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
 /// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| match ret {
     Ok((read, Maybe::Present(_))) => read == scrutinee || matches!(context.arena().value_type(scrutinee), Some(&ValueType::Staged { base, .. }) if base == read),
@@ -632,8 +632,8 @@ enum Visit
 /// - hypothesis: L3 — a direct field, a function field, a field under a
 ///   function's domain and a field of a family quoting the type each move to
 ///   the stage, and a field holding none stays.
-/// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
-/// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursion::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `tests::recursion::a_type_parameter_instantiates_at_a_staged_code`
 /// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
@@ -739,8 +739,8 @@ pub fn stage_field(
 ///   plain arrows `branch_type` builds there; a decoder's arm reads its
 ///   universe's field through its self binder, and a field decoding the
 ///   constructor's own result is refused.
-/// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
-/// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursion::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursion::a_type_parameter_instantiates_at_a_staged_code`
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(staged, _)| context.arena().comp_type(staged).is_some()))]
@@ -828,7 +828,7 @@ pub enum Identified
 /// # Adequacy
 /// - hypothesis: L3 — a constructor rebuilt two cases deep checks at the bound,
 ///   and the same constructor rebuilt one case deep is refused.
-/// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `tests::recursion::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(owed)) => owed.fields == below(owed.wanted),
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Plain,
@@ -911,7 +911,7 @@ pub fn constructor_owes(
 /// - hypothesis: L3 — a nullary argument under a successor arm's field is
 ///   witnessed, and the same argument under the zero arm, where the case has
 ///   minted its stage but bound nothing at it, is not.
-/// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
+/// - witness: `tests::recursion::a_nullary_argument_needs_a_value_below_the_stage`
 #[spec(ensures: |ret| !matches!(ret, Ok(Room::Witnessed)) || usize::from(context.depth(Zone::Intuitionistic)) > 0)]
 pub fn room(
     context: &CheckingContext<'_>,
@@ -970,8 +970,8 @@ pub fn room(
 ///   node itself in a one-element list instantiates nothing and the claim is
 ///   refused; a value of a stage handed to a generic `apply` instantiates its
 ///   parameter at that stage.
-/// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
-/// - witness: `recursion::tests::a_claim_at_the_scrutinee_through_map_is_refused`
+/// - witness: `tests::recursion::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursion::a_claim_at_the_scrutinee_through_map_is_refused`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(staged)) => matches!(context.arena().value(staged), Some(&Value::Quote(quoted))
         if matches!(context.arena().value_type(quoted), Some(ValueType::Staged { .. }))),
@@ -1060,7 +1060,7 @@ where
 /// - hypothesis: L3 — a division calling a subtraction on its dividend's
 ///   predecessor descends on the result; a call on a value at no stage leaves
 ///   the result at none.
-/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+/// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
 pub fn followed(
     context: &mut CheckingContext<'_>,
@@ -1163,8 +1163,8 @@ enum Held
 /// - hypothesis: L3 — `map`'s list parameter meets a rose tree's children at
 ///   their stage, and `apply`'s decoded parameter a predecessor at its stage; a
 ///   list built around the scrutinee holds no stage.
-/// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
-/// - witness: `recursion::tests::a_claim_at_the_scrutinee_through_map_is_refused`
+/// - witness: `tests::recursion::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursion::a_claim_at_the_scrutinee_through_map_is_refused`
 #[spec(ensures: |ret| match ret {
     Maybe::Present((base, Held::Itself)) => matches!(arena.value_type(found),
         Some(&ValueType::Staged { base: inner, .. }) if inner == base),

@@ -74,7 +74,7 @@ impl Transports
     /// # Adequacy
     /// - hypothesis: L1/L3 — a shared code used at two universes must emit
     ///   distinct transports, both accepted by the kernel.
-    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+    /// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
     #[spec(
         captures: before = (self.uses.get(&at).cloned().unwrap_or_default(), transport.clone()),
         ensures: self.uses.get(&at).is_some_and(|uses| {
@@ -192,9 +192,9 @@ enum Visit
 /// - hypothesis: L1/L3 — the kernel independently checks emitted terms; nested
 ///   and shared code occurrences separate transport placement and multiplicity,
 ///   and unchanged paths beside a lift observe that they keep their ids.
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
-/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
-/// - witness: `elaboration::tests::unchanged_paths_keep_their_ids_beside_a_lift`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `gandr-core-checker::tests::elaboration::unchanged_paths_keep_their_ids_beside_a_lift`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|emitted| arena.value(emitted.body).is_some()))]
 pub(super) fn emit(
     arena: &mut CoreArena,
@@ -269,7 +269,7 @@ pub(super) fn emit(
 ///
 /// # Adequacy
 /// - hypothesis: L1/L3 — shared code occurrences observe traversal order.
-/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
 #[spec(captures: depth = pending.len(), ensures: pending.len() >= depth)]
 fn children(
     arena: &CoreArena,
@@ -413,7 +413,7 @@ fn children(
 ///
 /// # Adequacy
 /// - hypothesis: L1 — kernel readmission checks the child relation.
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
 #[spec(
     captures: before = (emitted.last().copied(), emitted.len()),
     ensures: |ret| emitted.len() == before.1.saturating_sub(1) && match before.0 {
@@ -442,7 +442,7 @@ fn value(emitted: &mut Vec<TermNode>) -> Result<ValueId, CheckRefusal>
 ///
 /// # Adequacy
 /// - hypothesis: L1 — kernel readmission checks the child relation.
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
 #[spec(
     captures: before = (emitted.last().copied(), emitted.len()),
     ensures: |ret| emitted.len() == before.1.saturating_sub(1) && match before.0 {
@@ -473,7 +473,7 @@ fn computation(emitted: &mut Vec<TermNode>) -> Result<ComputationId, CheckRefusa
 ///
 /// # Adequacy
 /// - hypothesis: L1 — kernel readmission checks the child relation.
-/// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
+/// - witness: `gandr-core-checker::tests::elaboration::residual_conjunction_does_not_hide_refusal`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|values| values.len() == originals.len()))]
 fn values(
     emitted: &mut Vec<TermNode>,
@@ -503,7 +503,7 @@ fn values(
 ///
 /// # Adequacy
 /// - hypothesis: L1 — kernel readmission checks the child relation.
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|computations| computations.len() == originals.len()))]
 fn computations(
     emitted: &mut Vec<TermNode>,
@@ -536,10 +536,10 @@ fn computations(
 ///   reconstruction from a source-id remapping; a lift under each former of the
 ///   fragment separates rebuilding that former from keeping it, and unchanged
 ///   formers beside a lift separate keeping them from minting a copy.
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
-/// - witness: `elaboration::tests::every_fragment_former_carries_a_nested_lift`
-/// - witness: `elaboration::tests::unchanged_paths_keep_their_ids_beside_a_lift`
-/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::every_fragment_former_carries_a_nested_lift`
+/// - witness: `gandr-core-checker::tests::elaboration::unchanged_paths_keep_their_ids_beside_a_lift`
+/// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
 #[spec(ensures: |ret| match (ret, node) {
     (Ok(TermNode::Value(body)), TermNode::Value(_)) => arena.value(body).is_some(),
     (Ok(TermNode::Computation(body)), TermNode::Computation(_)) => arena.computation(body).is_some(),

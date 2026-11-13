@@ -1444,7 +1444,7 @@ impl Machine<'_, '_>
     ///   state receives; each action of the seat exchange keeps its endpoint's
     ///   state.
     /// - witness: `judgement::session::tests::an_operator_holding_the_seat_view_is_refused`
-    /// - witness: `judgement::session::tests::a_typed_run_keeps_each_endpoint_s_state`
+    /// - witness: `tests::judgement::session::a_typed_run_keeps_each_endpoint_s_state`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|session| session.step().is_ok_and(|step| step.action() == observed)))]
     fn admitted(
         &mut self,
@@ -2147,7 +2147,7 @@ impl Machine<'_, '_>
     ///   placement; a recursive definition's endpoint parameter is placed, so
     ///   its self-call, not the placement, is refused.
     /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
-    /// - witness: `judgement::session::tests::a_placed_endpoint_is_spent_by_its_body_1862`
+    /// - witness: `tests::judgement::session::a_placed_endpoint_is_spent_by_its_body_1862`
     /// - witness: `judgement::session::tests::a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704`
     #[spec(
         captures: before = self.context.depth(Zone::Linear),
@@ -3902,7 +3902,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
     /// - witness: `judgement::session::tests::an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it`
-    /// - witness: `judgement::session::tests::a_fork_carries_nothing_kept_in_a_region`
+    /// - witness: `tests::judgement::session::a_fork_carries_nothing_kept_in_a_region`
     /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
     pub(super) fn fork_formed(

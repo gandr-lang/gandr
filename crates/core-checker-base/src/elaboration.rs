@@ -121,8 +121,8 @@ use crate::unfolding;
 /// # Adequacy
 /// - hypothesis: L1 — the kernel independently checks emitted definitions;
 ///   exact nested-lift observations distinguish emission from input copying.
-/// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Output
 {
@@ -174,9 +174,9 @@ impl Output
 /// # Adequacy
 /// - hypothesis: L3 — exact blockers and equations detect refusal-as-suspension
 ///   and lost obligations; two residuals witness conjunction.
-/// - witness: `elaboration::tests::owed_conversion_suspends`
-/// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
-/// - witness: `elaboration::tests::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::residual_conjunction_does_not_hide_refusal`
+/// - witness: `gandr-core-checker::tests::elaboration::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Suspension
 {
@@ -206,8 +206,8 @@ impl Suspension
     /// # Adequacy
     /// - hypothesis: L3 — a fill of the hole before a dependent's record is
     ///   made leaves its blockers empty with the prerequisite still named.
-    /// - witness: `elaboration::tests::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
-    /// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
+    /// - witness: `gandr-core-checker::tests::elaboration::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
+    /// - witness: `gandr-core-checker::tests::elaboration::dependent_resumption_closes_its_prerequisites`
     #[spec(
         captures: residue_dependencies = residue.dependencies.clone(),
         ensures: |ret| ret.dependencies == residue_dependencies
@@ -472,8 +472,8 @@ impl Entry
     /// # Adequacy
     /// - hypothesis: L2/L3 — a resumed dependent of a filled hole unfolds it,
     ///   and per-entry counts distinguish adoption from judging again.
-    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
-    /// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
+    /// - witness: `gandr-core-checker::tests::elaboration::incremental_equals_from_scratch`
+    /// - witness: `gandr-core-checker::tests::elaboration::checked_success_is_stable_without_rejudgement`
     #[spec(ensures: |ret| ret.judgements == Judgements(1))]
     pub fn judged(
         context: &CheckingContext<'_>,
@@ -520,7 +520,7 @@ impl Entry
     /// # Adequacy
     /// - hypothesis: L1 — readmission matches each outcome with its kernel
     ///   answer.
-    /// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
+    /// - witness: `gandr-core-checker::tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
     #[spec(ensures: |ret| match self.outcome {
         Outcome::Checked(output) => ret == output.verdict,
         Outcome::Formed => ret == Verdict::Data,
@@ -553,8 +553,8 @@ impl Entry
 /// # Adequacy
 /// - hypothesis: L2/L3 — a resumed dependent of a filled hole unfolds it, and a
 ///   fill reading a waiting declaration waits on it.
-/// - witness: `elaboration::tests::incremental_equals_from_scratch`
-/// - witness: `elaboration::tests::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
+/// - witness: `gandr-core-checker::tests::elaboration::incremental_equals_from_scratch`
+/// - witness: `gandr-core-checker::tests::elaboration::filling_through_a_suspended_dependency_reports_only_still_owed_blockers`
 #[spec(ensures: |ret| match *outcome {
     Outcome::Owed(_) => ret == Maybe::Absent(unfolding::Absent::Owed),
     Outcome::Suspended(_) => ret == Maybe::Absent(unfolding::Absent::Waiting),
@@ -596,9 +596,9 @@ fn unfolds(
 /// # Adequacy
 /// - hypothesis: L1/L3 — a lifted argument is emitted explicitly, and two
 ///   declarations' transports stay their own, a refused one's included.
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
-/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
-/// - witness: `elaboration::tests::a_refused_declaration_leaves_no_transport_behind`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `gandr-core-checker::tests::elaboration::a_refused_declaration_leaves_no_transport_behind`
 #[spec(ensures: |ret| matches!(context.deferrals().emission, Emission::Recording(_)) || ret.is_err())]
 pub fn emit_recorded(
     context: &mut CheckingContext<'_>,
@@ -643,8 +643,8 @@ pub fn record_transports(context: &mut CheckingContext<'_>)
 /// # Adequacy
 /// - hypothesis: L1 — readmission observes the emitted body under the verdict's
 ///   own evidence.
-/// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
 #[spec(
     captures: emitted_before = emitted.as_ref().map(|emitted| emitted.body).map_err(|refusal| *refusal),
     ensures: |ret| match (&emitted_before, &ret.0) {

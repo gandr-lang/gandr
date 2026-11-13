@@ -1667,7 +1667,7 @@ impl Readmission
     ///   reference reads; a nominal declaration decoded under its own name.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
-    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2900,7 +2900,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a lone family offers nothing, and a universe naming its
 ///   decoder offers the two.
-/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `gandr-core-checker-base::tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret.is_empty() || ret.len() >= 2)]
 fn block_offers<'report>(
     arena: &CoreArena,
@@ -3287,7 +3287,7 @@ enum Erased
 /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
-/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+/// - witness: `gandr-core-checker-base::tests::module::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 #[spec(
     captures: [entries = environment.entries().admitted(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formations.len()],
     ensures: |ret| {
@@ -3592,7 +3592,7 @@ enum Seed
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
-/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `gandr-core-checker-base::tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|unstaged| match *unstaged {
     Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
     Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
@@ -3961,7 +3961,7 @@ fn settle(
 /// # Adequacy
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
-/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `gandr-core-checker-base::tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(captures: [entries = environment.entries().admitted(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
         || usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
@@ -4142,7 +4142,7 @@ enum Assumption
 /// # Adequacy
 /// - hypothesis: L3 — a received value and an offered choice each cross under
 ///   their assumption, and a received endpoint crosses with none.
-/// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+/// - witness: `gandr-core-checker-base::tests::judgement::session::a_received_value_crosses_as_an_assumption_1319`
 #[spec(ensures: |ret| ret.is_none() || matches!(at, CoreNode::Term(TermNode::Computation(_))))]
 fn wanted(
     arena: &CoreArena,
@@ -4216,7 +4216,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a declaration reading a received value, and one taking an
 ///   offer's choice, are each admitted once their assumption is, and every
 ///   assumption one receive's type or one arm count needs is admitted once.
-/// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+/// - witness: `gandr-core-checker-base::tests::judgement::session::a_received_value_crosses_as_an_assumption_1319`
 ///
 /// [`Absent`]: assumption::Absent
 #[spec(
@@ -4547,8 +4547,8 @@ fn model_name(
 ///   and one whose glued value has another type than its field's separate the
 ///   arms. Two equal systems at two core nodes cross one formation, and two
 ///   systems that differ in one fixed value cross two.
-/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
-/// - witness: `module::tests::equal_patched_types_share_one_formation_5748`
+/// - witness: `gandr-core-checker-base::tests::module::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+/// - witness: `gandr-core-checker-base::tests::module::equal_patched_types_share_one_formation_5748`
 #[spec(captures: formed = positions.formed.len(), ensures: |ret| ret.is_err() || positions.formed.len() == formed.saturating_add(1))]
 fn formed<Vouch>(
     environment: &mut Environment,
@@ -4759,7 +4759,7 @@ fn record_of<'label>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`formed`].
-/// - witness: `module::tests::equal_patched_types_share_one_formation_5748`
+/// - witness: `gandr-core-checker-base::tests::module::equal_patched_types_share_one_formation_5748`
 #[spec(captures: entries = environment.entries().len(), ensures: |ret| environment.entries().len() == entries && ret.as_ref().map_or(true, |key| key.len() == records.len()))]
 fn formation_key<Vouch>(
     environment: &mut Environment,
@@ -4831,7 +4831,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`formed`].
-/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+/// - witness: `gandr-core-checker-base::tests::module::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 #[spec(captures: exports = positions.exports.len(), ensures: |ret| ret.is_err() || positions.exports.len() != exports)]
 fn witness<Vouch>(
     environment: &mut Environment,
@@ -5201,7 +5201,7 @@ impl Positions
     ///   an axiom or failing to remap its position changes those observations.
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
-    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[spec(
         requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
             && !self.unfoldings.contains_key(&admitted.position()),
@@ -6996,7 +6996,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   verbatim, and one read normalizing, withheld.
     /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
-    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `gandr-core-checker-base::tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err()
         || self.positions.admitted.get(&constant).copied() == ret.ok()
         || self.crossing.binary_search_by_key(&constant, |&(member, _)| member).is_ok_and(|found| self.crossing.get(found).map(|&(_, kernel)| kernel) == ret.as_ref().ok().copied())
@@ -7235,7 +7235,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Adequacy
     /// - hypothesis: L3 — a stream's observations cross as their kernel
     ///   computation types, its tail naming its own kernel position.
-    /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
+    /// - witness: `gandr-core-checker-base::tests::codata::a_stream_is_admitted_observed_and_adopted`
     #[spec(ensures: |ret| match ret { | Ok(image) => target.comp_type(image).is_some()
         && self.reached().comp_types.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
     fn comp_type(
@@ -7451,7 +7451,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
-    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
     #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
     fn descend_value(
         &mut self,
@@ -8275,8 +8275,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::returning_a_literal_lowers`
     /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
-    /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
-    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
         captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.restated.binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::ReturnAll(ref values) => Some(values.len()), Computation::Ascribe { .. } | Computation::BindAll { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
         ensures: |ret| match held {
@@ -8563,7 +8563,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
     /// - witness: `bridge::tests::a_reader_of_an_atom_withheld_with_its_law_is_withheld_1959`
     /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
-    /// - witness: `flow::tests::a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628`
+    /// - witness: `gandr-core-checker-base::tests::flow::a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(AnyNode::ValueType(_)) | Step::Descend(_)) => self.reached().value_types.contains_key(&at),
         | Ok(Step::Ascend(_)) => false,
@@ -9152,7 +9152,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Adequacy
     /// - hypothesis: L3 — a migration's forward flow crosses with one image per
     ///   pattern and replays in the kernel.
-    /// - witness: `forward::tests::directed_statements_cross_and_replay`
+    /// - witness: `gandr-core-checker-base::tests::forward::directed_statements_cross_and_replay`
     fn forward_images(
         &mut self,
         target: &mut TermArena,
@@ -9197,7 +9197,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Adequacy
     /// - hypothesis: L3 — a configuration coerced in to a patched type crosses
     ///   as its restriction at both fixed fields, and the kernel admits it.
-    /// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+    /// - witness: `gandr-core-checker-base::tests::module::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
     fn restricted(
         &mut self,
         target: &mut TermArena,
@@ -10133,9 +10133,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   offers, and a delegation each cross, the first two bound to their
     ///   assumptions and the delegation to none.
     /// - witness: `bridge::tests::a_session_action_crosses_as_what_it_computes_1319`
-    /// - witness: `judgement::session::tests::a_fork_crosses_as_its_child_then_its_parent_1319`
-    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
-    /// - witness: `judgement::session::tests::a_placed_endpoint_is_spent_by_its_body_1862`
+    /// - witness: `gandr-core-checker-base::tests::judgement::session::a_fork_crosses_as_its_child_then_its_parent_1319`
+    /// - witness: `gandr-core-checker-base::tests::judgement::session::a_received_value_crosses_as_an_assumption_1319`
+    /// - witness: `gandr-core-checker-base::tests::judgement::session::a_placed_endpoint_is_spent_by_its_body_1862`
     #[spec(ensures: |ret| match ret {
         | Ok((ref frame, reduct)) => self.arena.computation(reduct).is_some()
             && matches!(*frame, Frame::Rewritten { at: site } | Frame::Assumed { at: site, .. } if site == at),
@@ -11507,7 +11507,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - hypothesis: L3 — a split reading each of three components crosses as
     ///   the binds that read them, and a split of the unit crosses as its body;
     ///   a wrong shift or order changes the kernel's verdict.
-    /// - witness: `tests::native_formers::a_split_crosses_as_its_projection_binds`
+    /// - witness: `gandr-core-checker-base::tests::native_formers::a_split_crosses_as_its_projection_binds`
     #[spec(ensures: |ret| usize::from(arity) != 0_usize || ret == body)]
     fn split_reduct(
         &mut self,

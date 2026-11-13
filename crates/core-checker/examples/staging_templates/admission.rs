@@ -230,7 +230,6 @@ fn replay_measure(
 /// # Adequacy
 /// - hypothesis: L2 — every row is compared to its independently harvested
 ///   sides.
-/// - witness: `template::tests::compressed_admission_matches_plain_families`
 /// - witness: `admission::handoff::tests::pooled_receipts_equal_the_serial_oracle`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|admission|
     admission.choices == Work(choices.len()) && admission.comparisons == Work(0) && admission.classifiers == Work(0)))]
@@ -444,7 +443,6 @@ fn pooled_measure(
 /// # Adequacy
 /// - hypothesis: L2/L3 — harvested and generated inputs, distinct work counters
 ///   and the independent plain path distinguish replay removal from caching it.
-/// - witness: `template::tests::compressed_admission_matches_plain_families`
 /// - witness: `admission::handoff::tests::scoped_rows_and_replay_keep_their_serial_counters`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",

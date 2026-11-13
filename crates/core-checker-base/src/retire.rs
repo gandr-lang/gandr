@@ -39,7 +39,7 @@ pub enum Demand<Retired>
 /// # Adequacy
 /// - hypothesis: L3 — a run polled to retirement stops at the step it polled
 ///   before, and a run resumed from what it held answers as a whole run does.
-/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
 pub trait Retirement
 {
     /// What retires the work: whatever the retiring party names it by, such
@@ -58,7 +58,7 @@ pub trait Retirement
     /// # Adequacy
     /// - hypothesis: L3 — a run stops before the step whose poll answered
     ///   retired, and takes every step whose poll answered wanted.
-    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
     fn demand(&self) -> Demand<Self::Retired>;
 }
 
@@ -78,7 +78,7 @@ impl Retirement for Unretired
     /// # Adequacy
     /// - hypothesis: L3 — a readmission nobody retires takes every step: each
     ///   certificate it reaches is replayed.
-    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_readmission_certificate_replays`
     #[inline]
     fn demand(&self) -> Demand<Infallible>
     {
@@ -107,7 +107,7 @@ impl<Whole, Held> Polled<Whole, Infallible, Held>
     /// # Adequacy
     /// - hypothesis: L3 — a readmission nobody retires answers the whole
     ///   readmission, every declaration with its outcome.
-    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_readmission_certificate_replays`
     #[inline]
     pub fn whole(self) -> Whole
     {

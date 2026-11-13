@@ -197,7 +197,7 @@ impl NestedElaboration
     /// # Adequacy
     /// - hypothesis: L3 — a body whose nested runs elaborate into binds reports
     ///   the rebuilt body beside the written one it stands for.
-    /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+    /// - witness: `tests::module::a_nested_run_elaborates_into_a_bind_before_its_region`
     #[inline]
     #[must_use]
     pub fn carried(&self) -> &[Carried]
@@ -241,7 +241,7 @@ impl NestedElaboration
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`cross`].
-    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    /// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
     #[spec(captures: [ahead = carried.len(), own = self.carried.len(), count = crossings.len()],
         ensures: |ret| ret.carried.len() == ahead.saturating_add(own) && ret.crossings.len() == count)]
     #[must_use]
@@ -276,8 +276,8 @@ impl NestedElaboration
     /// - hypothesis: L3 — an update keeping one field of its base and writing
     ///   another stands as the record of both; an element of a patched type
     ///   that a run returns as a definition's own value stands as its record.
-    /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
-    /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+    /// - witness: `tests::module::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    /// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
     #[spec(captures: own = self.carried.len(), ensures: |ret| ret.1.carried.len() >= own)]
     #[must_use]
     pub(crate) fn updated(
@@ -355,7 +355,7 @@ impl NestedElaboration
 /// - hypothesis: L3 — a run before a constructor's return, a suspension at a
 ///   thunk-typed argument and a run in a definition's own value separate the
 ///   two elaborations and the refusal.
-/// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+/// - witness: `tests::module::a_nested_run_elaborates_into_a_bind_before_its_region`
 /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
 /// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed_only_when_effectful_4812`
 #[spec(ensures: |ret| match ret {
@@ -415,9 +415,9 @@ pub fn elaborate(
 ///   call's decision; a literal read in a definition's own value stands as the
 ///   value its reader returns; a call whose result stands at its base runs
 ///   before the update of its result.
-/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-/// - witness: `module::tests::a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812`
-/// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+/// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `tests::module::a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812`
+/// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
 #[spec(ensures: |ret| ret.2.len() >= decisions.len())]
 pub fn cross(
     arena: &mut CoreArena,

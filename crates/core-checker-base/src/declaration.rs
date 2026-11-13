@@ -181,7 +181,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a lawful atom's relation is its identity in the checker
 ///   and in the kernel.
-/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AtomInterface
 {
@@ -223,8 +223,8 @@ impl AtomInterface
     /// - hypothesis: L3 — the same atom with and without its law reads the
     ///   relation's evidence as an identity only with it, and refuses it by
     ///   name without.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
     #[inline]
     #[must_use]
     pub const fn lawful(
@@ -247,8 +247,8 @@ impl AtomInterface
     /// - hypothesis: L3 — the relation is checked at its own type and read as
     ///   the atom's identity, so another value in its place refuses the atom or
     ///   the evidence.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
     #[inline]
     #[must_use]
     pub const fn relation(&self) -> ValueId
@@ -264,8 +264,8 @@ impl AtomInterface
     /// # Adequacy
     /// - hypothesis: L3 — the reflexivity is checked at its own type, so
     ///   another value in its place refuses the atom.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
     #[inline]
     #[must_use]
     pub const fn reflexivity(&self) -> ValueId
@@ -281,8 +281,8 @@ impl AtomInterface
     /// # Adequacy
     /// - hypothesis: L3 — a stated law makes the relation's evidence an
     ///   identity, and its absence refuses that evidence by name.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
     #[inline]
     pub const fn law(&self) -> Maybe<ValueId, law::Absent>
     {
@@ -345,7 +345,7 @@ impl AbstractType
     /// # Adequacy
     /// - hypothesis: L3 — an interfaced atom reads its relation as its
     ///   identity, which a plain atom does not.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
     #[inline]
     #[must_use]
     pub const fn interfaced(
@@ -367,7 +367,7 @@ impl AbstractType
     /// # Adequacy
     /// - hypothesis: L3 — the interface read back is the one the evidence is
     ///   checked through, so an absent one keeps the atom's own fibre.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
     #[inline]
     pub const fn interface(&self) -> Maybe<AtomInterface, interface::Absent>
     {
@@ -850,7 +850,7 @@ impl Declaration
     /// # Adequacy
     /// - hypothesis: L3 — an operation's rules cross to the kernel, which
     ///   admits the corpus's converging operations and refuses a forged pair.
-    /// - witness: `bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
     #[spec(
         captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.operation_rules.rules().len(), rules.rules().len()),
         ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
@@ -891,7 +891,7 @@ impl Declaration
     /// # Adequacy
     /// - hypothesis: L3 — a match's derivation crosses to the kernel, which
     ///   replays it against the match's tree.
-    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
     #[spec(
         captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.covers.len(), covers.len()),
         ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
@@ -941,7 +941,7 @@ impl Declaration
     /// # Adequacy
     /// - hypothesis: L3 — a helper typed at a stage takes a recursion's claim,
     ///   and a call at no stage reads its result plain.
-    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
     #[spec(
         captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.stages.len(), stages.len()),
         ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
@@ -977,7 +977,7 @@ impl Declaration
     /// # Adequacy
     /// - hypothesis: L3 — a supply the arguments agree with checks, and one
     ///   they do not is refused.
-    /// - witness: `quantified::tests::a_supplied_stage_is_held_to_the_arguments_1227`
+    /// - witness: `tests::quantified::a_supplied_stage_is_held_to_the_arguments_1227`
     #[spec(
         captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.supplies.len(), supplies.len()),
         ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1

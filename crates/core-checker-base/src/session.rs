@@ -695,7 +695,7 @@ pub(crate) fn relate(
 /// # Adequacy
 /// - hypothesis: L3 — a widened selection relates by subtyping with evidence
 ///   the kernel replays, and not by equivalence.
-/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+/// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref decided)) => !decided.evidence.pairs.is_empty(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,

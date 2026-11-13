@@ -248,8 +248,8 @@ pub fn codes(
 ///   ridden along a record flow images its cell over its own image of the tail.
 /// - witness: `forward::tests::a_migration_is_decided_at_every_covering_input`
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
-/// - witness: `forward::tests::directed_statements_cross_and_replay`
-/// - witness: `forward::tests::a_list_ridden_along_a_flow_recurses_into_its_tail`
+/// - witness: `tests::forward::directed_statements_cross_and_replay`
+/// - witness: `tests::forward::a_list_ridden_along_a_flow_recurses_into_its_tail`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(ref decided) => !decided.images.is_empty() && decided.images.len() == decided.dialogues.len(),
@@ -347,7 +347,7 @@ pub fn decide(
 /// - hypothesis: L3 — a list ridden along a record flow images its cell over
 ///   its own image of the tail and replays in the kernel; a cell whose output
 ///   reverses the tail's image is refused by name.
-/// - witness: `forward::tests::a_list_ridden_along_a_flow_recurses_into_its_tail`
+/// - witness: `tests::forward::a_list_ridden_along_a_flow_recurses_into_its_tail`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok((image, _)) => matches!(context.arena().value(image), Some(&Value::Thunk(_))),
@@ -595,7 +595,7 @@ enum Walk
 ///   fields at the types its tag gives them.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
-/// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
+/// - witness: `tests::forward::a_list_migration_moves_its_tail_unread`
 /// - witness: `forward::tests::data_shapes_are_read_constructor_by_constructor`
 fn leaves(
     context: &mut CheckingContext<'_>,
@@ -746,7 +746,7 @@ fn leaves(
 ///   its own fields' atoms and refuses short of its fields or past its table.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
-/// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
+/// - witness: `tests::forward::a_list_migration_moves_its_tail_unread`
 /// - witness: `forward::tests::data_shapes_are_read_constructor_by_constructor`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,

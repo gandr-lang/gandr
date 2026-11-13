@@ -583,7 +583,7 @@ pub enum Unsolved
 /// - hypothesis: L3 — `assumption` with no binder of the goal's type, `intro`
 ///   at a goal of no function type, a forged answer and a splice whose type is
 ///   synthesised separate the four reasons.
-/// - witness: `tactic::tests::a_tactic_with_no_answer_names_why`
+/// - witness: `tests::tactic::a_tactic_with_no_answer_names_why`
 /// - witness: `judgement::tests::a_forged_answer_is_refused_naming_its_tactic_2762`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TacticFault

@@ -3537,7 +3537,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   program, which the kernel admits.
     /// - witness: `judgement::tests::handlers_discharge_only_their_own_interface`
     /// - witness: `divergence::tests::no_handler_discharges_partial`
-    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth.saturating_add(1))]
     fn handle_subject(
         &mut self,
@@ -4953,7 +4953,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
     /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
-    /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     #[spec(
         captures: depth = self.frames.len(),
@@ -5551,7 +5551,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
-    /// - witness: `module::tests::a_call_returning_a_function_runs_where_one_is_read_2327`
+    /// - witness: `tests::module::a_call_returning_a_function_runs_where_one_is_read_2327`
     /// - witness: `module::tests::a_nested_argument_binds_the_implicit_it_is_read_at`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     ///
@@ -6057,8 +6057,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — separated by a saturated instance, one past its
     ///   arity, one of a code that is no operator, and one whose argument
     ///   misses its classifier at either position.
-    /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
-    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| ret.is_err()
@@ -6114,7 +6114,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a complete seat run checks, a run with a payload of
     ///   the wrong type is refused by that payload's mismatch, a paused run is
     ///   refused at its pause.
-    /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+    /// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| ret.is_err() || (ret == Ok(Step::Ascend(Produced::Checked)) && self.frames.len() >= depth),
@@ -6163,7 +6163,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   dialogue check alike, a receipt of another payload is unmatched, a
     ///   receipt logged before its send is inverted, and a move off its
     ///   endpoint's protocol is refused at that move.
-    /// - witness: `flow::tests::a_dialogue_checks_by_its_web_and_refuses_by_move`
+    /// - witness: `tests::flow::a_dialogue_checks_by_its_web_and_refuses_by_move`
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| ret.is_err() || (ret == Ok(Step::Ascend(Produced::Checked)) && self.frames.len() >= depth),
@@ -6215,7 +6215,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — separated by a static lambda, a static definition and
     ///   an opaque operator, each at a dynamic parameter.
-    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::StaticLambdaArgument { at }) => at == argument,
         | Ok(()) | Err(_) => true,
@@ -6780,8 +6780,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `judgement::tests::a_pattern_hole_at_a_leaf_leaves_the_match_undecided`
     /// - witness: `tests::recursive_data::a_fixpoint_checks_at_every_computation_type`
-    /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
-    /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+    /// - witness: `tests::recursion::a_recursion_descends_on_its_first_parameter`
+    /// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
@@ -7587,7 +7587,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a call returning a function, read where that
     ///   function's thunk is read, runs; a call returning a value, read where a
     ///   thunk of its returner is read, stays suspended.
-    /// - witness: `module::tests::a_call_returning_a_function_runs_where_one_is_read_2327`
+    /// - witness: `tests::module::a_call_returning_a_function_runs_where_one_is_read_2327`
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| read == NestedRead::Body
         || matches!(
@@ -7874,9 +7874,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   lawless one, `()` checks at an identity of the unit type between two
     ///   variables and at an identity of the paths of a lawful atom relating by
     ///   the unit type, and the kernel admits each identity checked.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
-    /// - witness: `bridge::tests::j_along_an_atom_relating_by_the_paths_of_the_unit_type_checks_and_replays_1960`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::j_along_an_atom_relating_by_the_paths_of_the_unit_type_checks_and_replays_1960`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |fibre| fibre.is_none_or(|fibre| self.context.arena().value_type(fibre).is_some())))]
     fn identity_fibre(
         &mut self,
@@ -8337,7 +8337,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the public faces; a system of two faces that agree on their meet, and
     ///   its twin that disagrees there.
     /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
-    /// - witness: `bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
     /// - witness: `judgement::tests::a_session_payload_reads_a_binder_only_in_a_run_protocol_1728`
     /// - witness: `module::tests::a_system_of_faces_is_formed_where_its_faces_agree_on_their_meet_5106`
     #[spec(
@@ -8987,8 +8987,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — separated by classifiers that are universes and
     ///   static Pis, a domain that is neither, and a codomain that is neither.
-    /// - witness: `bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
-    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_static_declaration_is_readmitted`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::StaticClassifierExpected { at: named, .. }) => named == at,
         | Ok(()) | Err(_) => true,
@@ -9207,7 +9207,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_family_at_a_call_argument_converts_with_the_type_written_with_it_720`
     /// - witness: `judgement::tests::a_composite_started_at_a_call_argument_converts_with_the_type_written_with_it_4065`
     /// - witness: `judgement::tests::a_lambda_argument_a_later_type_reads_stands_as_its_thunk_5321`
-    /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
+    /// - witness: `tests::recursion::a_type_parameter_instantiates_at_a_staged_code`
     #[spec(ensures: |ret| match codomain {
         | Codomain::Ambient(held) => ret == Ok(held),
         | Codomain::Dependent(_) => ret.as_ref().map_or(true, |&instantiated| self.context.arena().comp_type(instantiated).is_some()),
@@ -9305,9 +9305,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a recursion's claim handed to a helper typed at a
     ///   stage is admitted, and a call on a value at no stage reads the
     ///   helper's type plain.
-    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
-    /// - witness: `quantified::tests::a_call_at_no_stage_reads_its_result_plain`
-    /// - witness: `quantified::tests::a_supplied_stage_is_held_to_the_arguments_1227`
+    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `tests::quantified::a_call_at_no_stage_reads_its_result_plain`
+    /// - witness: `tests::quantified::a_supplied_stage_is_held_to_the_arguments_1227`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
         Maybe::Present(staged) => self.context.arena().value_type(staged).is_some(),
         Maybe::Absent(_) => true,
@@ -9356,7 +9356,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::quantified_at`] and [`Self::regioned_at`].
-    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
     #[spec(ensures: |ret| ret.is_some() == matches!(self.frames.last(), Some(Waiting { frame: Frame::Force { .. }, .. })))]
     fn forced_call(&self) -> Option<(ValueId, Vec<ValueId>)>
     {
@@ -9459,8 +9459,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   after them as what they return, and the second run accepts them; a
     ///   call written two deep, or under a constructor, as a dependent argument
     ///   converts with the type written with it.
-    /// - witness: `module::tests::a_pure_run_a_type_reads_stands_as_what_it_returns_444`
-    /// - witness: `module::tests::a_call_beneath_a_type_read_argument_stands_as_written_762`
+    /// - witness: `tests::module::a_pure_run_a_type_reads_stands_as_what_it_returns_444`
+    /// - witness: `tests::module::a_call_beneath_a_type_read_argument_stands_as_written_762`
     #[spec(
         captures: [
             before = self.context.nesting().get(&self.context.written(value)).copied(),
@@ -9570,10 +9570,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_result_of_the_wrong_kind_is_a_machine_fault`
     /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
-    /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
-    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
-    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
-    /// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    /// - witness: `tests::product::a_product_with_a_native_and_a_written_component_reads_as_an_element`
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     /// - witness: `judgement::tests::a_transport_along_an_unknown_path_and_a_run_of_a_function_are_refused_by_shape`
     #[spec(ensures: |ret| match ret {
@@ -11536,7 +11536,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the pair's binders from the record's refusal.
     /// - witness: `judgement::tests::a_split_binds_every_component_of_its_product`
     /// - witness: `judgement::tests::a_split_synthesises_its_body_type_outside_its_binders`
-    /// - witness: `bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
     #[spec(
         captures: before = usize::from(self.context.depth(Zone::Intuitionistic)),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { direction: judged, .. }))
@@ -11689,7 +11689,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a split by position of a pair a call computes, whose
     ///   body reads its second component at its first, crosses restated, and
     ///   the kernel admits it.
-    /// - witness: `bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
     #[spec(ensures: |ret| ret.is_err() != matches!(self.context.arena().computation(at), Some(Computation::Split { .. })))]
     fn restate_pair(
         &mut self,
@@ -11728,7 +11728,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — native endpoint codes remain ordered and in the
     ///   first-order fragment; mismatched classifiers report their original
     ///   site.
-    /// - witness: `bridge::tests::native_path_module_round_trips`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::native_path_module_round_trips`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| match ret {
         Ok(pair) => <[ValueTypeId; 2]>::from(pair).iter().all(|&id| matches!(self.context.arena().value_type(id), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_))))),
@@ -11780,8 +11780,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — `here` checks at a bridge at an interfaced atom from
     ///   a point to itself and is refused at a bridge at the universe by shape,
     ///   in both checkers.
-    /// - witness: `bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
-    /// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
         | Ok(PathReading::Known { .. } | PathReading::Unknown(_)) | Err(_) => true,
@@ -12238,11 +12238,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   omits meets its endpoints once its argument binds the implicit.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `judgement::tests::a_pair_the_tier_meets_carries_its_evaluation_3557`
-    /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
-    /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
-    /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
-    /// - witness: `bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right, .. }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),
@@ -12366,7 +12366,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — sum operands retain their classifiers and mismatch
     ///   refusals retain the source site instead of reporting a native-path
     ///   shape; an injection against the unknown type checks its payload.
-    /// - witness: `bridge::tests::native_path_module_round_trips`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::native_path_module_round_trips`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
     #[spec(ensures: |ret| match ret {
         Ok(Components::Known(ref parts)) => parts.iter().all(|&part| self.context.arena().value_type(part).is_some()) && self.context.arena().value_type(classifier).is_none_or(|held| !matches!(*held, gandr_core_term::ValueType::Sum(ref held) if held != parts)),
@@ -12407,7 +12407,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — nil, cons, invalid head and invalid tail distinguish
     ///   the native rule.
-    /// - witness: `bridge::tests::native_lists_check_and_round_trip`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::native_lists_check_and_round_trip`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&element| self.context.arena().value_type(element).is_some()))]
@@ -12446,7 +12446,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a fold with distinct head and result classifiers
     ///   separates binder order and closure; malformed annotations are refused
     ///   before use.
-    /// - witness: `bridge::tests::native_lists_check_and_round_trip`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::native_lists_check_and_round_trip`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)),
         ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == match phase {
             ListPhase::Nil => depth.saturating_add(2), ListPhase::Cons => depth.saturating_sub(2), ListPhase::Element | ListPhase::Result | ListPhase::Input => depth,

@@ -511,8 +511,8 @@ impl ModuleReport
     /// - hypothesis: L3 — a ride and a transport above level zero report the
     ///   family at the carrier's level, by a batch run and by a fill, and a run
     ///   with none reports an empty table, so an emptied or padded table shows.
-    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
-    /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
+    /// - witness: `tests::flow::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    /// - witness: `gandr-core-checker::tests::elaboration::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
     #[inline]
     #[must_use]
     pub const fn motives(&self) -> &BTreeMap<ComputationId, ValueTypeId>
@@ -532,7 +532,7 @@ impl ModuleReport
     /// - hypothesis: L3 — a received value crosses as an assumption of the
     ///   recorded type and a sent one ascribed it, so an emptied table leaves
     ///   the receive uncrossed and a sent injection unchecked by the kernel.
-    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    /// - witness: `tests::judgement::session::a_received_value_crosses_as_an_assumption_1319`
     #[inline]
     #[must_use]
     pub const fn payloads(&self) -> &BTreeMap<ComputationId, ValueTypeId>
@@ -550,7 +550,7 @@ impl ModuleReport
     /// # Adequacy
     /// - hypothesis: L3 — a handler crosses as the fold of its free model at
     ///   the recorded types, so an emptied table leaves it refused.
-    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
     #[inline]
     #[must_use]
     pub const fn handled(&self) -> &BTreeMap<ComputationId, crate::handler::Handled>
@@ -568,7 +568,7 @@ impl ModuleReport
     /// - hypothesis: L3 — a declaration at a row crosses as a program of the
     ///   row's model at the recorded types, so an emptied record leaves it
     ///   refused.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     #[inline]
     #[must_use]
     pub const fn rows(&self) -> &crate::program::Rows
@@ -1044,8 +1044,8 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L1 — a fill using a rule the batch run never decided is
 ///   readmitted only when its decision reaches the bridge.
-/// - witness: `elaboration::tests::incremental_equals_from_scratch`
-/// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
+/// - witness: `gandr-core-checker::tests::elaboration::incremental_equals_from_scratch`
+/// - witness: `gandr-core-checker::tests::elaboration::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
 #[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
     && context.coercions().keys().all(|at| report.coercions.contains_key(at))
     && context.relations().keys().all(|at| report.relations.contains_key(at))
@@ -1167,8 +1167,8 @@ pub fn absorb(
 /// # Adequacy
 /// - hypothesis: L1 — kernel readmission checks emitted terms without trusting
 ///   residual premises or an implicit-lift side table.
-/// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
-/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+/// - witness: `gandr-core-checker::tests::elaboration::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `gandr-core-checker::tests::elaboration::outputs_materialize_nested_lifts`
 #[spec(ensures: |ret| ret.judged.len() == entries.len()
     && ret.suspensions.len() == entries.iter().filter(|entry| matches!(entry.outcome(), crate::elaboration::Outcome::Suspended(_))).count())]
 #[must_use]

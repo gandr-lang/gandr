@@ -19,8 +19,8 @@
 //
 // - see: #5719 — the goal memo of the core checker.
 // - see: #5797 — the decoder's cap on expanded work.
-// - see: `crates/core-checker/src/judgement/memo.rs` — the key and the binders
-//   that it reads.
+// - see: `crates/core-checker-base/src/judgement/memo.rs` — the key and the
+//   binders that it reads.
 // - see: `crates/kernel-core/src/lib.rs` § the memo's collapse law — the
 //   kernel's memo on the pair that the kernel builds.
 

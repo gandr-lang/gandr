@@ -224,7 +224,7 @@ pub enum Reading
 ///   where the accumulators cancel; the kernel re-derives every verdict.
 /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
-/// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,

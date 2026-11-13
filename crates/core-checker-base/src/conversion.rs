@@ -464,9 +464,9 @@ pub enum Agreement
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
-/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
-/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `tests::module::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 #[spec(
     captures: before = tally.0,
     ensures: |ret| tally.0 == before.saturating_add(1)
@@ -637,7 +637,7 @@ pub type Coercion = alloc::collections::BTreeMap<gandr_core_term::FieldLabel, Va
 /// # Adequacy
 /// - hypothesis: L3 — a configuration at a patched type that fixes its own port
 ///   checks, and one whose port is another value is refused by the port.
-/// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+/// - witness: `tests::module::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), wanted), Ok(ValueTypeView::Patched { .. })))]
 fn coerced_in(
     context: &mut CheckingContext<'_>,
@@ -698,7 +698,7 @@ fn coerced_in(
 /// # Adequacy
 /// - hypothesis: L3 — a configuration on the secure port at the configuration
 ///   stands as the record of its host, its port and its transport.
-/// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+/// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), found.node()), Ok(ValueTypeView::Patched { .. })))]
 fn coerced_out(
     context: &mut CheckingContext<'_>,
@@ -758,7 +758,7 @@ fn coerced_out(
 /// - hypothesis: L3 — beside a theory that includes another, a value at one
 ///   owed code's decode where another's is wanted is still apart, and a model
 ///   still crosses to the included theory's by its reduct.
-/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
 /// - witness: `module::tests::an_owed_decode_crosses_by_no_reduct`
 #[spec(
     captures: before = context.deferrals().collecting,
@@ -803,8 +803,8 @@ fn crossing(
 /// - hypothesis: L3 — a monoid's model at a semigroup's crosses by the monoid's
 ///   reduct, and at an unrelated theory's by none; a counter whose carrier is
 ///   manifest crosses at the counters by the forgetting map at that carrier.
-/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-/// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
+/// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `tests::module::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
 fn kept_crossing(
     context: &mut CheckingContext<'_>,
     found: Relocated<ValueTypeId>,
@@ -888,10 +888,10 @@ fn kept_crossing(
 ///   not the flag's, a literal at a type two readers answer is refused naming
 ///   it, and a variable at the parity crosses by none; a negative literal
 ///   crosses by the negative reader at its magnitude, never by the natural one.
-/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `tests::module::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 /// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
 /// - witness: `module::tests::an_integer_variable_crosses_by_no_reader_4528`
-/// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+/// - witness: `tests::module::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
 #[spec(
     captures: before = context.deferrals().collecting,
     ensures: context.deferrals().collecting == before,
@@ -974,8 +974,8 @@ fn literal_reader(
 ///   decimal at a type one decimal reader carries crosses by it at its digits
 ///   and exponent, a decimal two readers carry is refused naming the type, and
 ///   a decimal at a type no reader carries is refused as a float.
-/// - witness: `module::tests::a_decimal_at_f64_stands_as_its_float_4807`
-/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+/// - witness: `tests::module::a_decimal_at_f64_stands_as_its_float_4807`
+/// - witness: `tests::module::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
 #[spec(
     captures: [before = context.deferrals().collecting, counted = tally.0],
     ensures: context.deferrals().collecting == before && tally.0 == counted.saturating_add(1),
@@ -1066,7 +1066,7 @@ pub fn decimal_bridge(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decimal_bridge`].
-/// - witness: `module::tests::a_decimal_at_f64_stands_as_its_float_4807`
+/// - witness: `tests::module::a_decimal_at_f64_stands_as_its_float_4807`
 fn rounded(decimal: &gandr_kernel_term::NumericLiteral) -> gandr_kernel_term::Float64Literal
 {
     let whole: &str = decimal.integer_part().as_ref();
@@ -1106,7 +1106,7 @@ fn rounded(decimal: &gandr_kernel_term::NumericLiteral) -> gandr_kernel_term::Fl
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decimal_bridge`].
-/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+/// - witness: `tests::module::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
 fn exact(
     decimal: &gandr_kernel_term::NumericLiteral
 ) -> (
@@ -1152,7 +1152,7 @@ fn exact(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decimal_bridge`].
-/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+/// - witness: `tests::module::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
 fn decimal_reader(
     context: &mut CheckingContext<'_>,
     arguments: [ValueId; 2],
@@ -1270,7 +1270,7 @@ impl ReaderOperand
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`literal_reader`].
-    /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+    /// - witness: `tests::module::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
     fn value(
         &mut self,
         context: &mut CheckingContext<'_>,
@@ -1328,9 +1328,9 @@ enum Readers
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`literal_reader`].
-/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `tests::module::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 /// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
-/// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+/// - witness: `tests::module::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
 fn kept_reader(
     context: &mut CheckingContext<'_>,
     operand: &mut ReaderOperand,
@@ -1419,7 +1419,7 @@ fn kept_reader(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`kept_crossing`].
-/// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
+/// - witness: `tests::module::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
 fn carriers(
     context: &mut CheckingContext<'_>,
     found: Relocated<ValueTypeId>,
@@ -1814,10 +1814,10 @@ pub fn fixed_field_agrees(
 ///   at the carrier its signature solves; one whose endpoint maps an implicit
 ///   its call omits converts once the argument binds the implicit.
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
-/// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
-/// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
-/// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
-/// - witness: `bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
 fn endpoints_agree(
     context: &mut CheckingContext<'_>,
     left: ValueId,
@@ -1873,7 +1873,7 @@ fn endpoints_agree(
 /// # Adequacy
 /// - hypothesis: L3 — as [`endpoints_agree`].
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
-/// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
 fn agree(
     context: &mut CheckingContext<'_>,
     (left, right): (ValueId, ValueId),
@@ -1972,7 +1972,7 @@ fn agree(
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
 /// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
-/// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
 /// - witness: `conversion::tests::codes_agree_exactly_where_their_parts_do`
 /// - witness: `conversion::tests::invariant_types_agree_exactly_where_their_parts_do`
 /// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
@@ -1980,10 +1980,10 @@ fn agree(
 /// - witness: `conversion::tests::kept_and_located_types_agree_on_their_region_and_world`
 /// - witness: `conversion::tests::a_path_type_is_apart_from_data_it_does_not_read_as`
 /// - witness: `conversion::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
-/// - witness: `elaboration::tests::owed_conversion_suspends`
-/// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
-/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
-/// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::residual_conjunction_does_not_hide_refusal`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
 /// - witness: `tests::native_formers::a_family_argument_written_as_a_call_converts_with_its_value_3579`
 /// - witness: `tests::native_formers::term_indices_are_structural_in_both_checkers`
 /// - witness: `tests::native_formers::a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733`
@@ -3859,7 +3859,7 @@ fn root_knowledge(
 /// # Adequacy
 /// - hypothesis: L3 — a path type's open end met at the value bridge against a
 ///   known end is solved to it; a hole no judgement nominated stays unknown.
-/// - witness: `bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
 /// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
 fn pose_open(
     context: &mut CheckingContext<'_>,

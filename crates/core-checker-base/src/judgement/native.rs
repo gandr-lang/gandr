@@ -272,10 +272,10 @@ impl Machine<'_, '_>
     ///   a successor's field and refused under the zero arm, and a constructor
     ///   whose one recursive field is thunked is refused with nothing below the
     ///   stage.
-    /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
-    /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
-    /// - witness: `recursion::tests::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
-    /// - witness: `recursion::tests::a_thunked_field_shows_no_value_below_the_stage_598`
+    /// - witness: `tests::recursion::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+    /// - witness: `tests::recursion::a_nullary_argument_needs_a_value_below_the_stage`
+    /// - witness: `tests::recursion::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
+    /// - witness: `tests::recursion::a_thunked_field_shows_no_value_below_the_stage_598`
     /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn staged_constructor(
@@ -1047,7 +1047,7 @@ impl Machine<'_, '_>
     ///   staged result owes it in each branch.
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
-    /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+    /// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_branches(
         &mut self,
@@ -1366,7 +1366,7 @@ impl Machine<'_, '_>
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
     /// - witness: `tests::native_formers::a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint`
-    /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, leading: past, .. } if marked == fixpoint && past == leading), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
     pub(super) fn fold_root(
         &mut self,
@@ -1457,7 +1457,7 @@ impl Machine<'_, '_>
     /// - witness: `tests::native_formers::tuple_projection_reads_each_component`
     /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first_6574`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
-    /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+    /// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn native_projection(
         &mut self,

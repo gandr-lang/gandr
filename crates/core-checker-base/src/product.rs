@@ -151,8 +151,8 @@ pub struct Component
 /// - hypothesis: L3 — reflexivity at the unit and an equivalence of Bool read
 ///   as element identities, a native product's components as native paths, and
 ///   a path at Integer is refused by its shape.
-/// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
-/// - witness: `product::tests::what_the_product_cannot_read_it_refuses_by_name`
+/// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
+/// - witness: `tests::product::what_the_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
@@ -282,9 +282,9 @@ pub fn component(
 /// - hypothesis: L3 — a product of written paths synthesises the element
 ///   identity between its pairs and checks at the declared telescope, and a
 ///   product of native paths keeps the native classifier.
-/// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
-/// - witness: `bridge::tests::native_path_module_round_trips`
-/// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
+/// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::native_path_module_round_trips`
+/// - witness: `tests::product::a_product_with_a_native_and_a_written_component_reads_as_an_element`
 pub fn classifier(
     arena: &mut CoreArena,
     first: Component,
@@ -323,8 +323,8 @@ pub fn classifier(
 /// # Adequacy
 /// - hypothesis: L3 — `stay` at the unit and a forward flow of Bool read as
 ///   universe flows, and a flow at Integer is refused by its shape.
-/// - witness: `product::tests::a_flow_product_synthesises_the_flow_between_its_pairs`
-/// - witness: `product::tests::what_the_flow_product_cannot_read_it_refuses_by_name`
+/// - witness: `tests::product::a_flow_product_synthesises_the_flow_between_its_pairs`
+/// - witness: `tests::product::what_the_flow_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
@@ -413,7 +413,7 @@ pub fn flow_component(
 /// # Adequacy
 /// - hypothesis: L3 — a product of `stay` and a forward flow synthesises the
 ///   flow between its pairs, and checks at the declared telescope.
-/// - witness: `product::tests::a_flow_product_synthesises_the_flow_between_its_pairs`
+/// - witness: `tests::product::a_flow_product_synthesises_the_flow_between_its_pairs`
 pub fn flow_classifier(
     arena: &mut CoreArena,
     (first_source, first_target): (ValueTypeId, ValueTypeId),
@@ -452,8 +452,8 @@ pub fn flow_classifier(
 /// - hypothesis: L3 — reflexivity at the unit beside an equivalence of Bool
 ///   elaborates to the native reflexivity beside the native certificate over
 ///   the same translators; a component a parameter binds is refused.
-/// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
-/// - witness: `product::tests::what_the_product_cannot_read_it_refuses_by_name`
+/// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
+/// - witness: `tests::product::what_the_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&native| matches!(context.arena().value(native), Some(Value::PathProduct(..)))))]
 pub fn native(
     context: &mut CheckingContext<'_>,
@@ -496,10 +496,10 @@ pub fn native(
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity, an equivalence through a constant and a
 ///   parameter each reach their own arm.
-/// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
-/// - witness: `product::tests::what_the_product_cannot_read_it_refuses_by_name`
-/// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
-/// - witness: `ua::tests::a_statement_stands_in_a_product_as_its_derived_path`
+/// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
+/// - witness: `tests::product::what_the_product_cannot_read_it_refuses_by_name`
+/// - witness: `tests::product::a_product_with_a_native_and_a_written_component_reads_as_an_element`
+/// - witness: `tests::ua::a_statement_stands_in_a_product_as_its_derived_path`
 #[spec(ensures: |ret| match ret {
     | Ok(native) => matches!(context.arena().value(native), Some(Value::PathRefl(_) | Value::PathEquiv { .. } | Value::PathProduct(..))),
     | Err(CheckRefusal::ShapeMismatch { found, .. }) => found == TypeNode::Value(classifier),

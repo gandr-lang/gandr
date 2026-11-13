@@ -629,9 +629,9 @@ enum Run
 /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
 /// - witness: `module::tests::a_body_that_synthesised_nothing_supplies_no_type`
 /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
-/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
 /// - witness: `module::tests::a_decoded_hole_in_a_signature_is_solved_where_it_forms_5026`
-/// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
+/// - witness: `gandr-core-checker::tests::elaboration::dependent_resumption_closes_its_prerequisites`
 #[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
@@ -723,14 +723,14 @@ struct Decision
 ///   run and one with nowhere to run separate the elaborated answers.
 /// - witness: `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
-/// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+/// - witness: `tests::module::a_nested_run_elaborates_into_a_bind_before_its_region`
 /// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed_only_when_effectful_4812`
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
 /// - witness: `module::tests::a_refused_first_run_leaves_its_nesting_unaccepted`
 /// - witness: `module::tests::an_omitted_implicit_is_typed_at_its_solution_1216`
-/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
-/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
 #[spec(ensures: |ret| (run == Run::Typed || matches!(ret.typings, Maybe::Absent(typed::Absent::Unasked)))
     && (matches!(ret.verdict, Verdict::Suspended(_)) == (ret.residue.pending() == Deferred::Yes))
     && match (&ret.verdict, &ret.failure) {
@@ -1305,7 +1305,7 @@ fn decide(
 /// - hypothesis: L3 — two updates at distinct labels commuting, and an update
 ///   writing a field's own value, each read in a path type's endpoints, convert
 ///   to the record they build only once the signature is built.
-/// - witness: `module::tests::a_record_update_in_a_signature_reads_its_record_2159`
+/// - witness: `tests::module::a_record_update_in_a_signature_reads_its_record_2159`
 fn form_built(
     context: &mut CheckingContext<'_>,
     declared: gandr_core_term::ValueTypeId,
@@ -1350,7 +1350,7 @@ fn form_built(
 /// # Adequacy
 /// - hypothesis: L3 — a subtraction recursing on its first argument follows it,
 ///   and an addition returning its accumulator does not.
-/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+/// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: context.result_stage() == crate::recursion::ResultStage::Declared)]
 fn follows(
     context: &mut CheckingContext<'_>,
@@ -1536,10 +1536,10 @@ fn judge(
 ///   omitting a model slot one module answers runs as that module supplied. A
 ///   declared type that decodes through a slot two modules answer, or none, is
 ///   refused as the slot's resolution refuses it.
-/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
-/// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
 /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
-/// - witness: `bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195`
 #[spec(
     captures: refused = first.is_err(),
     ensures: |ret| ret.0 >= body && (!refused || (ret.0 == body && ret.3.is_empty())),
@@ -1662,9 +1662,9 @@ fn implicits(
 ///   endpoints on their unfilled holes, and both are refused. A reflexivity in
 ///   the type's endpoints over a call whose implicit the signature binds
 ///   crosses with the dialogues of the filled type, and the kernel admits it.
-/// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
-/// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
-/// - witness: `bridge::tests::a_filled_signature_s_reflexivity_crosses_with_its_dialogues_5521`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_filled_signature_s_reflexivity_crosses_with_its_dialogues_5521`
 #[spec(ensures: |ret| ret.as_ref().is_err_and(|_| matches!(direction, Direction::Check(_)))
     || ret.as_ref().is_ok_and(|filled| matches!(filled, Direction::Synthesise) == matches!(direction, Direction::Synthesise)))]
 fn formed_filled(
@@ -1707,7 +1707,7 @@ fn formed_filled(
 /// - hypothesis: L3 — a solution mentioning a hole solved after it is read
 ///   through, raised past the binders between the two.
 /// - witness: `module::tests::a_solution_naming_a_later_hole_is_read_through_1216`
-/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
 #[spec(ensures: |ret| ret >= body)]
 fn fill(
     arena: &mut gandr_core_term::CoreArena,
@@ -1890,7 +1890,7 @@ fn unenclosed_failure(run: ValueId) -> Failure
 ///   forms.
 /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
 /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
-/// - witness: `bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
 #[spec(ensures: |ret| {
     let entries = ret.support().consulted();
     entries.iter().zip(entries.iter().skip(1)).all(|(left, right)| left.constant() < right.constant())
@@ -1939,7 +1939,7 @@ pub fn check_declaration_supported(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`check_declaration_supported`].
-/// - witness: `bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
 #[spec(ensures: |ret| ret == Entered::AsWritten
     || matches!(verdict, Verdict::Checked { .. } | Verdict::Synthesised { .. }))]
 fn entered(
@@ -2003,7 +2003,7 @@ fn entered(
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
 /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
 /// - witness: `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`
-/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -2067,7 +2067,7 @@ pub fn check_module(
 ///   recorded by one declaration and none by the next separates a settlement
 ///   called per declaration from one called once.
 /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
-/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
 #[spec(ensures: |ret| ret.judged().len() == declarations.len())]
 pub fn run<Settle>(
     context: &mut CheckingContext<'_>,
@@ -2435,8 +2435,8 @@ impl Default for ModuleRun
 /// - hypothesis: L2/L3 — a resumption agreeing with a batch run of the filled
 ///   module, and judgement counts unchanged on the adopted prefix, separate
 ///   adoption from judging again.
-/// - witness: `elaboration::tests::incremental_equals_from_scratch`
-/// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
+/// - witness: `gandr-core-checker::tests::elaboration::incremental_equals_from_scratch`
+/// - witness: `gandr-core-checker::tests::elaboration::checked_success_is_stable_without_rejudgement`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(verdict, ref residue)|
     matches!(verdict, Verdict::Suspended(_)) == (residue.pending() == Deferred::Yes)))]
 pub fn rejudge<Adopt>(

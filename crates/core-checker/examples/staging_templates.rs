@@ -626,7 +626,6 @@ struct FamilyObservation
 /// - hypothesis: L2 — real serializer output, with literals and classifiers,
 ///   separates stored bytes from the node-cost model; a harvested family
 ///   refused outside its peak keeps its row.
-/// - witness: `template::tests::serialized_images_reconstruct_the_original_equations`
 /// - witness: `tests::measurements_preserve_structural_and_replay_refusals`
 fn observe_family(
     arena: &Arena,

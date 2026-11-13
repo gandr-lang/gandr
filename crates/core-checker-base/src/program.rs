@@ -106,7 +106,7 @@ pub fn programmed(
 /// - hypothesis: L3 — a declaration at a row whose body requests an operation,
 ///   binds a call and returns crosses as a program of the row's model at the
 ///   recorded types.
-/// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Rows
 {
@@ -130,7 +130,7 @@ pub struct Rows
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Rows::forget`].
-/// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Gained
 {
@@ -203,7 +203,7 @@ impl Rows
     /// # Adequacy
     /// - hypothesis: L3 — a declaration at a row crosses as a program of the
     ///   row's model at the recorded returner.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     pub(crate) fn check(
         &mut self,
         at: ComputationId,
@@ -232,7 +232,7 @@ impl Rows
     /// # Adequacy
     /// - hypothesis: L3 — a call of a declaration at a row binds its program
     ///   into the caller's.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     pub(crate) fn synthesise(
         &mut self,
         at: ComputationId,
@@ -262,7 +262,7 @@ impl Rows
     /// # Adequacy
     /// - hypothesis: L3 — a declared type at a row crosses as a returner of the
     ///   row's model at this level.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     pub(crate) fn form(
         &mut self,
         ty: CompTypeId,
@@ -304,7 +304,7 @@ impl Rows
     /// # Adequacy
     /// - hypothesis: L3 — a case on a run, at a row and over a type variable,
     ///   crosses at the records of the run that judges its elaborated body.
-    /// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
     pub(crate) fn forget(
         &mut self,
         gained: impl IntoIterator<Item = Gained>,
@@ -337,7 +337,7 @@ impl Rows
     /// # Adequacy
     /// - hypothesis: L3 — a nested elaboration's records reach the bridge, and
     ///   a rest that reads an outer binder crosses at them.
-    /// - witness: `bridge::tests::a_call_folds_into_a_rest_that_reads_a_parameter_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_call_folds_into_a_rest_that_reads_a_parameter_6642`
     pub(crate) fn absorb(
         &mut self,
         other: &Self,

@@ -785,7 +785,7 @@ impl<'arena> CheckingContext<'arena>
     /// - witness: `context::tests::the_producer_declares_the_rigid_base_atoms`
     /// - witness: `context::tests::an_undeclared_type_name_is_refused_by_name`
     /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
-    /// - witness: `elaboration::tests::owed_conversion_suspends`
+    /// - witness: `gandr-core-checker::tests::elaboration::owed_conversion_suspends`
     #[spec(ensures: |ret| ret.budget.0 == budget.0
         && ret.signatures.is_empty() && ret.definitions.definitions().next().is_none()
         && ret.lifts.is_empty() && matches!(ret.admitted, Maybe::Absent(admission::Absent::Fresh))
@@ -1399,7 +1399,7 @@ impl<'arena> CheckingContext<'arena>
     /// - hypothesis: L3 — a context handed a store holding a stratum's image
     ///   replays it and certifies nothing, and one holding a damaged image
     ///   refuses it by name and certifies afresh.
-    /// - witness: `ua::tests::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
+    /// - witness: `tests::ua::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
     #[inline]
     pub fn keep_strata_in(
         &mut self,
@@ -1524,7 +1524,7 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::code::MetPair::certified`].
-    /// - witness: `bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
     #[spec(ensures: |ret| ret.point() == point)]
     pub(crate) fn met_pair(
         &mut self,
@@ -1622,7 +1622,7 @@ impl<'arena> CheckingContext<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — each action of the seat exchange keeps its endpoint's
     ///   state, which advances along the protocol.
-    /// - witness: `judgement::session::tests::a_typed_run_keeps_each_endpoint_s_state`
+    /// - witness: `tests::judgement::session::a_typed_run_keeps_each_endpoint_s_state`
     #[spec(
         captures: before = self.typings.as_ref().map(|log| log.endpoints.len()),
         ensures: self.typings.as_ref().map(|log| log.endpoints.len()) == before.map(|count| count.saturating_add(1)),
@@ -2060,7 +2060,7 @@ impl<'arena> CheckingContext<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a monoid's model passed where a semigroup's is asked
     ///   checks once the reduct is kept and is refused while it is not.
-    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    /// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
     #[inline]
     pub fn keep_reducts(
         &mut self,
@@ -2101,8 +2101,8 @@ impl<'arena> CheckingContext<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a literal checked at a parity crosses by the parity's
     ///   reader once it is kept, and is refused while it is not.
-    /// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
-    /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+    /// - witness: `tests::module::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+    /// - witness: `tests::module::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
     #[inline]
     pub fn keep_readers(
         &mut self,
@@ -3192,8 +3192,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a lawful atom's identity reads its relation, a
     ///   lawless one refuses the relation's evidence by name, and an atom
     ///   stating no interface keeps its neutral fibre.
-    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
     #[spec(ensures: |ret| ret.is_some() == self.sealed.get(&atom).is_some_and(|sealed| matches!(sealed.declared.interface(), Maybe::Present(_))))]
     pub(crate) fn interface_of(
         &self,
@@ -3290,7 +3290,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   decode unfolds to, and an adopted hole a later decode suspends on.
     /// - witness: `module::tests::an_adopted_answer_is_read_as_if_judged`
     /// - witness: `context::tests::an_adopted_untyped_body_does_not_become_a_definition`
-    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
+    /// - witness: `gandr-core-checker::tests::elaboration::incremental_equals_from_scratch`
     #[spec(
         captures: [admitted = self.admitted, entries = self.signatures.len(), previous = self.definitions.body(constant)],
         ensures: |ret| match ret {
@@ -3585,10 +3585,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   readmission, and a transport along a constant defined by `ua` or by a
     ///   path product computes along its native path; a missing body, lift or
     ///   path changes those outcomes.
-    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
-    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
-    /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
-    /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `tests::ua::a_written_statement_derives_the_path_at_its_stratum`
+    /// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
     #[spec(ensures: matches!(self.definitions.body(constant), Maybe::Present(defined)
         if defined == body || self.natives.get(&body) == Some(&defined)
             || matches!(self.arena.value(defined), Some(Value::Quote(lifted))
@@ -3621,8 +3621,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a quoted small type declared at its own universe or a
     ///   larger one is observed through conversion and kernel readmission;
     ///   dropped or incorrectly shaped elaborations change these decisions.
-    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
-    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|elaborated| elaborated == body
         || matches!(self.arena.value(elaborated), Some(Value::Quote(lifted))
             if matches!(value_type_view(self.arena, *lifted), Ok(ValueTypeView::Lift { .. })))))]
@@ -3698,8 +3698,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   call a definition over an omitted model are met once the model is
     ///   resolved, and refused when the filled endpoints are apart; reading the
     ///   decline as apart refuses the first before the resolution.
-    /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
-    /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
     #[spec(ensures: |ret| ret == crate::elaboration::Deferred::No || verdict == gandr_core_nbe::MachineVerdict::Declined(gandr_core_nbe::DeclineReason::Indeterminate))]
     pub(crate) fn awaits_fill(
         &self,
@@ -3747,7 +3747,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   its own reflexivity, reads the carrier its signature solves; the
     ///   checker and the kernel admit it, and a composite at an endpoint that
     ///   the carrier does not reach is refused as on a written carrier.
-    /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
     pub(crate) fn relate_solved(
         &mut self,
         point: ValueId,
@@ -3806,7 +3806,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::relate_solved`].
-    /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
     #[spec(ensures: |ret| ret == value || self.arena.value(ret).is_some())]
     pub(crate) fn read_solved(
         &mut self,
@@ -3856,8 +3856,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::elaboration::Deferrals::unify`].
-    /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
-    /// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
     pub(crate) fn unify(
         &mut self,
         left: TypeNode,
@@ -3886,7 +3886,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::elaboration::Deferrals::unify_values`].
-    /// - witness: `bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
     pub(crate) fn unify_values(
         &mut self,
         left: ValueId,
@@ -3946,7 +3946,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::elaboration::Deferrals::nominate`].
-    /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
     pub(crate) fn nominate(
         &mut self,
         at: ValueId,
@@ -3981,7 +3981,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L1/L3 — one shared code used at a higher and an equal
     ///   universe distinguishes an identity occurrence from a missing record.
-    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+    /// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
     /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
     #[spec(
         captures: [count = self.lifts.len(), held = self.lifts.contains_key(&at)],
@@ -4025,8 +4025,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   shared uses distinguish occurrence-specific output from one transport
     ///   per source node.
     /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
-    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
-    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
     #[spec(
         requires: bool::from(lift.natural().lt(lift.target())),
         captures: [
@@ -4077,7 +4077,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decided funext crosses with exactly its recorded
     ///   components.
-    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_crosses_as_a_higher_evaluation`
     #[spec(ensures: self.funexts.contains_key(&at))]
     pub(crate) fn record_funext(
         &mut self,
@@ -4111,7 +4111,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a base value at a patched type crosses as the
     ///   restriction to its free fields.
-    /// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+    /// - witness: `tests::module::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
     #[spec(ensures: self.coercions.contains_key(&at))]
     pub(crate) fn record_coercion(
         &mut self,
@@ -4144,7 +4144,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decided equivalence crosses with exactly its
     ///   recorded classifier and evidence.
-    /// - witness: `bridge::tests::an_equiv_crosses_as_a_universe_path`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_equiv_crosses_as_a_universe_path`
     #[spec(ensures: self.equivalences.contains_key(&at))]
     pub(crate) fn record_equivalence(
         &mut self,
@@ -4176,7 +4176,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decided statement crosses with exactly its recorded
     ///   classifier and evidence.
-    /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+    /// - witness: `tests::flow::statements_decide_by_the_engine_and_replay`
     #[spec(ensures: self.flows.contains_key(&at))]
     pub(crate) fn record_flow(
         &mut self,
@@ -4208,7 +4208,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decided statement crosses with exactly its recorded
     ///   classifier, images and dialogues.
-    /// - witness: `forward::tests::directed_statements_cross_and_replay`
+    /// - witness: `tests::forward::directed_statements_cross_and_replay`
     #[spec(ensures: self.directed.contains_key(&at))]
     pub(crate) fn record_directed(
         &mut self,
@@ -4228,8 +4228,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`ModuleReport::motives`], which a batch run
     ///   copies from this table and a fill extends with it.
-    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
-    /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
+    /// - witness: `tests::flow::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    /// - witness: `gandr-core-checker::tests::elaboration::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
     ///
     /// [`ModuleReport::motives`]: crate::ModuleReport::motives
     #[inline]
@@ -4249,7 +4249,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::record_motive`].
-    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    /// - witness: `tests::flow::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
     #[spec(ensures: |ret| ret == self.motives.get(&at).copied().unwrap_or(written))]
     #[inline]
     #[must_use]
@@ -4273,7 +4273,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a ride and a transport above level zero each form and
     ///   cross with the recorded family, and one at level zero records none.
-    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    /// - witness: `tests::flow::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
     #[spec(ensures: self.motives.get(&at) == Some(&family))]
     pub(crate) fn record_motive(
         &mut self,
@@ -4293,7 +4293,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`ModuleReport::payloads`], which a run copies
     ///   from this table.
-    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    /// - witness: `tests::judgement::session::a_received_value_crosses_as_an_assumption_1319`
     ///
     /// [`ModuleReport::payloads`]: crate::ModuleReport::payloads
     #[inline]
@@ -4316,7 +4316,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a received value crosses as an assumption of the
     ///   recorded type, a sent one ascribed it, and the kernel checks the body
     ///   that reads each.
-    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    /// - witness: `tests::judgement::session::a_received_value_crosses_as_an_assumption_1319`
     #[spec(ensures: self.payloads.contains_key(&at))]
     pub(crate) fn record_payload(
         &mut self,
@@ -4336,7 +4336,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`ModuleReport::handled`], which a run copies from
     ///   this table.
-    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
     ///
     /// [`ModuleReport::handled`]: crate::ModuleReport::handled
     #[inline]
@@ -4357,7 +4357,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a handler crosses as the fold of its free model at
     ///   the recorded types, and the kernel checks the fold there.
-    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
     #[spec(ensures: self.handled.contains_key(&at))]
     pub(crate) fn record_handled(
         &mut self,
@@ -4377,7 +4377,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`ModuleReport::rows`], which a run copies from
     ///   this record.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     ///
     /// [`ModuleReport::rows`]: crate::ModuleReport::rows
     #[inline]
@@ -4403,7 +4403,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a declaration at a row crosses as a program of the
     ///   row's model at the recorded returner.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     pub(crate) fn record_checked_row(
         &mut self,
         at: ComputationId,
@@ -4435,7 +4435,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a call of a declaration at a row binds its program
     ///   into the caller's, and a pure call at a row returns its value as a
     ///   program.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     pub(crate) fn record_synthesised_row(
         &mut self,
         at: ComputationId,
@@ -4476,7 +4476,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a declared type at a row crosses as a returner of the
     ///   row's model at this level.
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     pub(crate) fn record_formed_row(
         &mut self,
         formed: CompTypeId,
@@ -4497,7 +4497,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::program::Rows::forget`].
-    /// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
     pub(crate) fn open_rows(&mut self)
     {
         self.gained_rows.clear();
@@ -4515,7 +4515,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::program::Rows::forget`].
-    /// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
     pub(crate) fn forget_rows(&mut self)
     {
         self.rows.forget(self.gained_rows.drain(..));
@@ -4533,7 +4533,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_formed_row`].
-    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     fn row_level(
         &self,
         ty: CompTypeId,
@@ -4575,7 +4575,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a checked reflexivity crosses with exactly its
     ///   recorded dialogues.
-    /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     #[spec(ensures: self.reflexivities.contains_key(&at))]
     pub(crate) fn record_reflexivity(
         &mut self,
@@ -4600,7 +4600,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a nested computation against a thunk type and against
     ///   an atom are each recorded as their rule decided.
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
-    /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+    /// - witness: `tests::module::a_nested_run_elaborates_into_a_bind_before_its_region`
     /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
     #[spec(captures: written = self.written(at), ensures: self.nesting.get(&written) == Some(&nesting))]
     pub(crate) fn record_nesting(
@@ -4635,7 +4635,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::record_nesting`]; a second
     ///   declaration's elaboration reads only its own decisions.
-    /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+    /// - witness: `tests::module::a_nested_run_elaborates_into_a_bind_before_its_region`
     #[spec(ensures: self.nesting.is_empty())]
     pub(crate) fn take_nesting(&mut self) -> BTreeMap<ValueId, crate::nested::Nesting>
     {
@@ -4655,7 +4655,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
-    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    /// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
     #[spec(captures: [kept = crossing.clone(), written = self.written(at)], ensures: self.crossings.get(&written) == Some(&kept))]
     pub(crate) fn record_crossing(
         &mut self,
@@ -4677,7 +4677,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
-    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    /// - witness: `tests::module::a_model_crosses_to_an_included_theory_s_by_its_reduct`
     #[spec(ensures: self.crossings.is_empty())]
     pub(crate) fn take_crossings(&mut self) -> BTreeMap<ValueId, gandr_core_term::Crossing>
     {
@@ -4697,7 +4697,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — an update that overlays one field of two keeps the
     ///   other.
-    /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    /// - witness: `tests::module::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
     #[spec(captures: [count = kept.len(), written = self.written(at)], ensures: self.updates.get(&written).map(Vec::len) == Some(count))]
     pub(crate) fn record_update(
         &mut self,
@@ -4727,7 +4727,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — an element of a patched type at its base stands as
     ///   the record of its base's fields, and a selection of a fixed field
     ///   reads the value that the type fixes.
-    /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+    /// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
     #[spec(captures: [count = kept.len(), written = self.written(at)], ensures: self.updates.get(&written).map(Vec::len) == Some(count)
         && self.crossings.get(&written).is_some_and(|crossing| crossing.operand == gandr_core_term::CrossedOperand::Overlaid(overlay)))]
     pub(crate) fn record_overlay(
@@ -4755,7 +4755,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::record_update`].
-    /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    /// - witness: `tests::module::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
     #[spec(ensures: self.updates.is_empty())]
     pub(crate) fn take_updates(&mut self) -> BTreeMap<ValueId, Vec<gandr_kernel_term::FieldLabel>>
     {
@@ -4925,7 +4925,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a split by position of a pair a call computes crosses
     ///   restated, and the kernel admits it.
-    /// - witness: `bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
     #[spec(ensures: self.restating.get(&TermNode::Computation(at)) == Some(&TermNode::Computation(restated)))]
     pub(crate) fn record_restated_split(
         &mut self,
@@ -5135,7 +5135,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the rules cross to the kernel with their declaration.
-    /// - witness: `bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
     #[spec(captures: entry = rules.rules().len(), ensures: entry == 0 || self.operation_rules.get(&constant).map(|kept| kept.rules().len()) == Some(entry))]
     pub(crate) fn keep_operation_rules(
         &mut self,
@@ -5160,7 +5160,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — the derivations cross to the kernel with their
     ///   declaration.
-    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
     #[spec(captures: entry = covers.len(), ensures: entry == 0 || self.covers.get(&constant).map(Vec::len) == Some(entry))]
     pub(crate) fn keep_covers(
         &mut self,
@@ -5241,7 +5241,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a call reads the signature to instantiate the
     ///   definition's stages, and it crosses to the kernel with it.
-    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
     #[spec(captures: entry = signature.bounds().is_empty(), ensures: entry || self.stage_signatures.contains_key(&constant))]
     pub(crate) fn keep_stage_signature(
         &mut self,
@@ -5293,8 +5293,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decided statement and a judged product cross as
     ///   exactly their recorded paths, which the kernel admits.
-    /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
-    /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
+    /// - witness: `tests::ua::a_written_statement_derives_the_path_at_its_stratum`
+    /// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
     #[spec(ensures: self.natives.get(&at) == Some(&path))]
     pub(crate) fn record_native(
         &mut self,
@@ -5465,7 +5465,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   inside and outside its seal separates reading through from keeping it
     ///   rigid.
     /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
-    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
     /// - witness: `module::tests::a_sealed_member_checks_at_the_representation_inside`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|head|
         value_type_view(self.arena, head).is_ok()
@@ -5693,8 +5693,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   witnessed where it is defined.
     /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
     /// - witness: `context::tests::a_second_unfold_of_a_code_takes_its_held_step`
-    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
-    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(reduct)) => reduct != code && self.arena.value(reduct).is_some(),
         | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -5748,8 +5748,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — separated by a rigid head, a chain of two constants,
     ///   and a static definition that does not reduce short of its arguments.
-    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
-    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|head| self.arena.value(head).is_some()))]
     pub(crate) fn whnf_code(
         &mut self,
@@ -5787,8 +5787,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   declaration levels expose their natural level through the inserted
     ///   lift and independent readmission; other syntax uses the fallback,
     ///   without a claim that it independently reveals a classifier.
-    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
-    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     #[spec(ensures: |ret| match self.arena.value(code) {
         | None => ret == Err(CheckRefusal::DanglingNode { node: CoreNode::Term(TermNode::Value(code)) }),
         | Some(&Value::Constant(constant)) => match self.signature(constant) {
@@ -6250,7 +6250,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — read through the room rule, whose witnesses separate
     ///   a hypothesis at a stage from one past it.
-    /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
+    /// - witness: `tests::recursion::a_nullary_argument_needs_a_value_below_the_stage`
     #[spec(ensures: |ret| ret.is_ok() == usize::try_from(u32::from(index)).is_ok_and(|at| at < usize::from(self.depth(Zone::Intuitionistic))))]
     pub(crate) fn hypothesis(
         &self,

@@ -388,7 +388,7 @@ impl Universal
     /// - hypothesis: L3 — a written statement synthesises the identity at the
     ///   universe between the quotes of its two telescopes, the type element
     ///   transport reads its endpoints from.
-    /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+    /// - witness: `tests::ua::a_written_statement_derives_the_path_at_its_stratum`
     #[inline]
     pub fn identity(
         &self,
@@ -422,7 +422,7 @@ impl Universal
     /// - hypothesis: L3 — the swap of a binary generator beside a constant
     ///   keeps both corollas' translators, the constant's first in catalogue
     ///   order.
-    /// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
+    /// - witness: `tests::ua::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
     #[inline]
     #[must_use]
     pub fn corollas(&self) -> &[(ShapeIndex, Translators)]
@@ -446,7 +446,7 @@ impl Universal
 /// - hypothesis: L3 — the binary corolla's code has two summands and the
 ///   constant's one, and the derived path is admitted at the telescope built
 ///   from them.
-/// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
+/// - witness: `tests::ua::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
 #[inline]
 pub fn code(
     arena: &mut CoreArena,
@@ -473,7 +473,7 @@ pub fn code(
 /// # Adequacy
 /// - hypothesis: L3 — the swap's table evaluates back to itself and the derived
 ///   path is admitted with it as both translators.
-/// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
+/// - witness: `tests::ua::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
 #[inline]
 pub fn tabulate(
     arena: &mut CoreArena,
@@ -513,7 +513,7 @@ pub fn tabulate(
 /// # Adequacy
 /// - hypothesis: L3 — the swap reads back as its table, and a translator
 ///   returning a summand past its code is stuck at its first element.
-/// - witness: `ua::tests::what_the_stratum_does_not_admit_it_refuses_by_name`
+/// - witness: `tests::ua::what_the_stratum_does_not_admit_it_refuses_by_name`
 #[spec(ensures: |ret| match ret {
     | Ok(ref table) => table.images().len() == from.len() && table.images().iter().all(|&image| usize::from(image) < to.len()),
     | Err(UaRefusal::Stuck { corolla: found, element }) => found == corolla && usize::from(element) < from.len(),
@@ -602,11 +602,11 @@ struct Stage
 ///   conjugate's table and the crossed exchange does not; crossed generators, a
 ///   non-inverse pair, a stuck translator and a missing one are refused by
 ///   name, the crossed pair passing code univalence alone.
-/// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
-/// - witness: `ua::tests::the_swap_at_degree_two_is_a_path_over_its_segal_telescope`
-/// - witness: `ua::tests::equivalent_equivalences_go_to_identified_paths`
-/// - witness: `ua::tests::a_corolla_automorphism_acts_on_a_certificate_by_conjugation`
-/// - witness: `ua::tests::what_the_stratum_does_not_admit_it_refuses_by_name`
+/// - witness: `tests::ua::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
+/// - witness: `tests::ua::the_swap_at_degree_two_is_a_path_over_its_segal_telescope`
+/// - witness: `tests::ua::equivalent_equivalences_go_to_identified_paths`
+/// - witness: `tests::ua::a_corolla_automorphism_acts_on_a_certificate_by_conjugation`
+/// - witness: `tests::ua::what_the_stratum_does_not_admit_it_refuses_by_name`
 #[inline]
 #[spec(ensures: |ret| match ret {
     | Ok(ref universal) => universal.corollas.iter().all(|&(index, given)| translators.get(&index) == Some(&given))
@@ -867,7 +867,7 @@ impl UaDefect
     /// # Adequacy
     /// - hypothesis: L3 — crossed generators and a non-inverse pair are refused
     ///   under their own names at the binary corolla.
-    /// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+    /// - witness: `tests::ua::a_written_statement_refuses_each_defect_by_name`
     #[spec(ensures: |ret| !matches!(ret, Self::UnknownGenerator { .. } | Self::Stuck { .. }))]
     fn of(defect: &Defect) -> Self
     {
@@ -914,7 +914,7 @@ struct Statement
 /// # Adequacy
 /// - hypothesis: L3 — a written statement's parts are read as written by its
 ///   premises and its decision.
-/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+/// - witness: `tests::ua::a_written_statement_derives_the_path_at_its_stratum`
 #[spec(ensures: |ret| ret.is_err() || matches!(arena.value(at), Some(Value::Ua { .. })))]
 fn statement(
     arena: &CoreArena,
@@ -956,7 +956,7 @@ fn statement(
 /// # Adequacy
 /// - hypothesis: L3 — a misspelt generator is refused before any translator is
 ///   checked.
-/// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+/// - witness: `tests::ua::a_written_statement_refuses_each_defect_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |labelled| matches!(arena.value(record), Some(Value::Record(fields)) if fields.len() == labelled.len())))]
 fn labelled(
     arena: &CoreArena,
@@ -1014,7 +1014,7 @@ fn labelled(
 /// - hypothesis: L3 — the swap and the constant's identity are checked at their
 ///   corollas' function types and a translator at the wrong code is refused as
 ///   a mismatch.
-/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+/// - witness: `tests::ua::a_written_statement_derives_the_path_at_its_stratum`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |premises| premises.len() == 2_usize))]
 pub(crate) fn premises(
     context: &mut CheckingContext<'_>,
@@ -1112,9 +1112,9 @@ pub(crate) fn premises(
 ///   the path the kernel admits, over the sub-site on the magma's corollas the
 ///   path the whole catalogue gives; each defect of the stratum and of the
 ///   translators is refused under its own name.
-/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
-/// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
-/// - witness: `ua::tests::a_statement_derives_over_its_sub_site_the_path_the_wirings_give_4035`
+/// - witness: `tests::ua::a_written_statement_derives_the_path_at_its_stratum`
+/// - witness: `tests::ua::a_written_statement_refuses_each_defect_by_name`
+/// - witness: `tests::ua::a_statement_derives_over_its_sub_site_the_path_the_wirings_give_4035`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::UaUncertified { at: site, .. } | CheckRefusal::UaInequivalent { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,

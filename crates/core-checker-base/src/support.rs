@@ -371,7 +371,7 @@ impl Support
 /// # Adequacy
 /// - hypothesis: L3 — a declaration whose omitted implicit is filled enters
 ///   elaborated, and the declaration it calls enters as written.
-/// - witness: `bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Entered
 {

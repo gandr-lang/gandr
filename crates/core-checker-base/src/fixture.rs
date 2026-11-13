@@ -421,7 +421,7 @@ pub struct Booleans
 /// - hypothesis: L3 — negation twice and the identity relate pointwise,
 ///   negation and the identity do not.
 /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
-/// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_crosses_as_a_higher_evaluation`
 #[spec(ensures: |ret| arena.value_type(ret.ty).is_some()
     && arena.value_type(ret.function).is_some()
     && [ret.not, ret.not_not, ret.same].iter().all(|&function| arena.value(function).is_some()))]
@@ -1295,7 +1295,7 @@ impl AtomType
     /// - hypothesis: L1 — generated function domains, statements and results
     ///   are checked and independently readmitted, separating an atom-family
     ///   swap from the recipe's type oracle within the three-atom domain.
-    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
     #[spec(ensures: |ret| match self {
         Self::Integer => arena.value_type(ret) == Some(&ValueType::Base(BaseType::Integer)),
         Self::String => arena.value_type(ret) == Some(&ValueType::Base(BaseType::String)),
@@ -1325,7 +1325,7 @@ impl AtomType
     /// - hypothesis: L1 — functions with no in-scope binder return an atom
     ///   inhabitant and cross the independent kernel checker; a wrong literal
     ///   family disagrees with the recipe's result type.
-    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
     #[spec(ensures: |ret| match self {
         Self::Integer => matches!(arena.value(ret), Some(gandr_core_term::Value::Literal(Literal::Integer(_)))),
         Self::String => matches!(arena.value(ret), Some(gandr_core_term::Value::Literal(Literal::Text(_)))),
@@ -1397,7 +1397,7 @@ impl FunctionRecipe
     /// - hypothesis: L1 — up to three parameters and two statements expose the
     ///   chosen return variable through checking and kernel readmission;
     ///   reversed or omitted scope entries change its expected type.
-    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1427,7 +1427,7 @@ impl FunctionRecipe
     /// - hypothesis: L1 — bounded generated functions compare this independent
     ///   atom-selection oracle with checker acceptance and kernel readmission;
     ///   wrong de Bruijn order or a false typing classification disagrees.
-    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
     #[spec(ensures: |ret| self.parameters.len().checked_add(self.statements.len()).is_some_and(|length| {
         let chosen = self.returned.0.checked_rem(length)
             .and_then(|position| self.parameters.get(position)
@@ -1464,7 +1464,7 @@ impl FunctionRecipe
     /// - hypothesis: L1 — generated functions are checked against the recipe
     ///   oracle and accepted ones are independently readmitted; misplaced
     ///   binders, statement order or result types change those decisions.
-    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
     #[spec(
         requires: self.parameters.len() < 4 && self.statements.len() < 3
             && constants.len().checked_add(self.statements.len()).is_some(),
@@ -1539,7 +1539,7 @@ impl FunctionRecipe
 /// - hypothesis: L1 — bounded functions compare the atom oracle with checking,
 ///   and accepted functions cross an independent kernel; this establishes
 ///   sampled semantic agreement, not a distribution claim.
-/// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+/// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
 pub fn function_recipe() -> impl Strategy<Value = FunctionRecipe>
 {
     let atom = || {
@@ -1590,7 +1590,7 @@ impl Retirement for RetireAt
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses count the readings a readmission and a
     ///   run made.
-    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
     /// - witness: `module::tests::a_retired_run_judges_nothing_after_its_poll_1663`
     #[spec(
         captures: before = self.readings.get(),
