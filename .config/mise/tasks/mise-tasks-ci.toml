@@ -5590,6 +5590,10 @@ exit 2
 # seconds after any exit, a `systemd --user` unit on Linux and a `launchd`
 # agent on macOS (`.config/service/service.jq`, #4167), and `--remove` stops
 # and deletes that service. One runs per fleet, on the triage lane's host.
+# The service runs from a clone of its own under the state directory, set
+# to `origin/landing` before each reading. A landing that changes a file
+# under `.config/` or `mise.toml` starts the watch again from that clone,
+# so a repair of the detector is live at the next reading (#7002).
 # A finding standing `escalate` minutes after its first page stalls its pull
 # request: a comment opening `<!-- stall -->` names the finding and the seat,
 # the `status:stalled` label goes on, and the coordinator is paged again
@@ -5641,7 +5645,7 @@ quiet = true
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
-flag "--install" help="install and start the service that keeps stall:watch running from this checkout"
+flag "--install" help="install and start the service that keeps stall:watch running from a clone of its own at origin/landing"
 flag "--remove" help="stop and delete that service"
 '''
 run = '''
@@ -5819,6 +5823,20 @@ required=$(required_contexts)
 trap 'drop_scratch' EXIT
 mkdir -p "$(dirname "$stall_state")"
 while :; do
+  # The service sets its own checkout to `origin/landing` before each
+  # reading, and starts again from it when the move changes a script it
+  # reads (#7002). A run from another checkout reads with that checkout's
+  # scripts.
+  if [[ $(git rev-parse --show-toplevel) -ef $stall_home ]]; then
+    before=$(git rev-parse HEAD)
+    if ! service_home_sync "$stall_home"; then
+      echo "stall:watch: $stall_home cannot take origin/landing; reading with the commit it holds" >&2
+    elif stall_scripts_moved "$before"; then
+      echo "stall:watch: landing moves the scripts from ${before::9} to $(git rev-parse --short=9 HEAD); the watch starts again from them" >&2
+      drop_scratch
+      exec mise run stall:watch
+    fi
+  fi
   interval=$(stall_thresholds | jq .interval)
   # A failed read is no finding; the next reading reads again.
   if ! reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)"); then
@@ -5916,7 +5934,7 @@ while :; do
   # reading, and the reading sources `watch.bash` from it again (#6653).
   # A run from another checkout reads with that checkout's script.
   if [[ $(git rev-parse --show-toplevel) -ef $watch_home ]]; then
-    watch_home_sync || echo "landing:watch: $watch_home cannot take origin/landing; reading with the commit it holds" >&2
+    service_home_sync "$watch_home" || echo "landing:watch: $watch_home cannot take origin/landing; reading with the commit it holds" >&2
   fi
   # A reading that prints no state keeps the last one.
   state=$(watch_reading "$repo" | jq -c --argjson read "$(date +%s)" '.read = $read') || state=
