@@ -1699,6 +1699,56 @@
     "output": "[{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/unwatched\",\"branch\":\"unwatched\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
   },
   {
+    "name": "#6837: a landed worktree that a live process works in is kept, and so is one whose process table cannot be read; a held idle tree keeps its caches, and a landed tree nothing holds is removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/gating",
+        "branch": "gating",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "held": "3457419"
+      },
+      {
+        "path": "/w/unread",
+        "branch": "unread",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "held": "unread",
+        "commits": [{ "subject": "S", "on_trunk": true }],
+        "ahead": 1
+      },
+      {
+        "path": "/w/building",
+        "branch": "building",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "held": "4242",
+        "idle": true
+      },
+      {
+        "path": "/w/free",
+        "branch": "free",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "held": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/gating\",\"branch\":\"gating\",\"action\":\"keep\",\"reason\":\"held by live process 3457419\"},{\"path\":\"/w/unread\",\"branch\":\"unread\",\"action\":\"keep\",\"reason\":\"the process table cannot be read\"},{\"path\":\"/w/building\",\"branch\":\"building\",\"action\":\"keep\",\"reason\":\"held by live process 4242\"},{\"path\":\"/w/free\",\"branch\":\"free\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
     "name": "a branch judged landed whose head moved since keeps its worktree (#2299)",
     "program": "sweep.jq",
     "input": [

@@ -2211,6 +2211,10 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # `.config/pr-stack/pulls.json` with a stubbed `gh`: a sweep asks about its
 # branches in one call at most, and about a branch at a head only once
 # (#5839).
+# `.config/pr-stack/held-cases.bash` runs `held.bash` over live processes: a
+# process that works below a scratch tree holds it, a tree that no process
+# works in is free, and the caller's own directory is free (#6837). The
+# sweep and `remove_landed_worktree` keep a held tree.
 # `.config/pr-stack/landed-heads-cases.bash` reads a scratch remote's heads
 # as the landing watcher reads them and deletes the decided ones in one push:
 # a landed head that no open pull request uses goes, and a head with a commit
@@ -2254,6 +2258,7 @@ fi
 .config/pr-stack/await.bash || failed=1
 .config/pr-stack/sweep-subjects.bash || failed=1
 .config/pr-stack/sweep-pulls.bash || failed=1
+.config/pr-stack/held-cases.bash || failed=1
 .config/pr-stack/link-reads.bash || failed=1
 .config/pr-stack/landed-heads-cases.bash || failed=1
 .config/pr-stack/moved-cases.bash || failed=1

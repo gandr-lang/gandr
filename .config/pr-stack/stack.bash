@@ -1281,13 +1281,24 @@ signed_restack() {
 # gone, and every later git command fails ("Unable to read current working
 # directory"). The function therefore first moves the shell to the primary
 # worktree, read when this file is sourced; the caller exits right after.
+#
+# A worktree that another live process works in stays (#6837, `held.bash`):
+# a gate that runs there would lose its files. `wt:sweep` removes it once no
+# process works there. A process table that cannot be read keeps it too.
 pr_stack_primary=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+source "${BASH_SOURCE[0]%/*}/held.bash"
 remove_landed_worktree() {
-  local branch path out
+  local branch path out holder
   cd "$pr_stack_primary" || return 0
   branch=$(gh pr view "$1" -R "$repo" --json headRefName --jq .headRefName) || return 0
   path=$(git worktree list --porcelain | awk -v ref="branch refs/heads/$branch" '/^worktree / { tree = substr($0, 10) } $0 == ref { print tree }')
   [[ -n "$path" && "$path" != "$pr_stack_primary" ]] || return 0
+  held_read
+  if holder=$(tree_held "$(realpath "$path" 2> /dev/null || printf '%s' "$path")"); then
+    if [[ -n $holder ]]; then holder="process $holder works in it"; else holder="the process table cannot be read"; fi
+    echo "kept the worktree of #$1 at $path: $holder; wt:sweep removes it once no process works there" >&2
+    return 0
+  fi
   if out=$(wt remove --foreground --yes "$path" 2>&1); then
     echo "removed the worktree of #$1 at $path" >&2
   else
