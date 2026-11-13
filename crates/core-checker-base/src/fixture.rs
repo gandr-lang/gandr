@@ -1443,7 +1443,7 @@ impl FunctionRecipe
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body copies every parameter and statement once; the check compares each once"
+            reason = "parity: the body copies every parameter and statement once; the check compares each once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| ret.iter().eq(self.parameters.iter().chain(&self.statements)))]

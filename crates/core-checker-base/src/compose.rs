@@ -374,7 +374,7 @@ fn level_four_object(tree: Tree) -> Result<WreathShape<WreathShape<WreathShape<S
 /// economy: the chains at bound 15, to the 7-chain, certify degree 13 in under
 /// half a second; bound 17 adds the 8-chain and takes eight seconds; bound 19
 /// runs past half an hour. The budget refuses bound 17 at its tenth shape,
-/// before any hom set is built.
+/// before any hom set is built (#7085).
 ///
 /// # Specification
 /// trivial.

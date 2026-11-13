@@ -437,7 +437,7 @@ impl Drafter
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body writes every binding slot once; the check reads each once"
+            reason = "parity: the body writes every binding slot once; the check reads each once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |output| output.is_err() || (self.selected.is_empty() && self.rigid.is_empty()
@@ -524,7 +524,7 @@ impl Drafter
     dylint_lib = "quenchant_dylints",
     expect(
         spec_clause_traversal,
-        reason = "parity: the body searches the remembered pairs once before comparing; the check searches them once more"
+        reason = "parity: the body searches the remembered pairs once before comparing; the check searches them once more; #104 owns the cost of the clause"
     )
 )]
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|agreement|
@@ -850,7 +850,7 @@ fn occurrences(
     dylint_lib = "quenchant_dylints",
     expect(
         spec_clause_traversal,
-        reason = "parity: the body resets and marks the reach of every node of the graph once; the check reads each once"
+        reason = "parity: the body resets and marks the reach of every node of the graph once; the check reads each once; #104 owns the cost of the clause"
     )
 )]
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|tidiness| *tidiness == Tidiness::Garbage

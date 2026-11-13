@@ -1672,7 +1672,7 @@ impl Readmission
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every readmitted entry and every admitted declaration once; the check walks the readmitted entries three times"
+            reason = "parity: the body walks every readmitted entry and every admitted declaration once; the check walks the readmitted entries three times; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -1736,7 +1736,7 @@ impl Readmission
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every readmitted entry once; the check walks the readmitted entries once"
+            reason = "parity: the body walks every readmitted entry once; the check walks the readmitted entries once; #104 owns the cost of the clause"
         )
     )]
     #[spec(
@@ -3039,7 +3039,7 @@ struct OpenSeal
     dylint_lib = "quenchant_dylints",
     expect(
         spec_clause_traversal,
-        reason = "parity: the body partitions every open seal once; the check reads each it kept once"
+        reason = "parity: the body partitions every open seal once; the check reads each it kept once; #104 owns the cost of the clause"
     )
 )]
 #[spec(ensures: positions.open.iter().all(|seal| seal.end > reached))]
@@ -5243,7 +5243,7 @@ impl Positions
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body merges every crossed definition and operator once; the check reads each once more"
+            reason = "parity: the body merges every crossed definition and operator once; the check reads each once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| operators.iter().all(|(&position, &entry)| {

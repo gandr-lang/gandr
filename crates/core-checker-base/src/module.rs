@@ -2008,7 +2008,7 @@ fn entered(
     dylint_lib = "quenchant_dylints",
     expect(
         spec_clause_traversal,
-        reason = "parity: the body judges every declaration and copies the context's lifts and definitions into the report; the check compares each copy once"
+        reason = "parity: the body judges every declaration and copies the context's lifts and definitions into the report; the check compares each copy once; #104 owns the cost of the clause"
     )
 )]
 #[spec(ensures: |ret| ret.judged().len() == declarations.len()

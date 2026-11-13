@@ -3345,7 +3345,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - fails: as [`Self::adopt`].
     /// - panics: none.
     /// - economy: no formation walk; the reused verdict's own formation is the
-    ///   claim.
+    ///   claim (#7084).
     ///
     /// # Errors
     /// - [`CheckRefusal::AdmissionOrder`] — as [`Self::adopt`].

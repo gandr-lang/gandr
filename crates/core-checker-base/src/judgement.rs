@@ -3752,7 +3752,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body counts the waiting region frames once; the check counts them once more"
+            reason = "parity: the body counts the waiting region frames once; the check counts them once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&open| usize::try_from(u32::from(open)).ok() == Some(self.frames.iter().filter(|waiting| matches!(waiting.frame, Frame::ScopeSubject { .. } | Frame::HoldBody { .. })).count())))]
@@ -8820,7 +8820,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body unions the two rows, comparing every shared interface; the check compares each demanded interface with the union once"
+            reason = "parity: the body unions the two rows, comparing every shared interface; the check compares each demanded interface with the union once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| ret.is_err() || match comp_type_view(self.context.arena(), bound) {

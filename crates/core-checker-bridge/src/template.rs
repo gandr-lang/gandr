@@ -1578,7 +1578,7 @@ impl Template
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body binds one arm per entry while matching the peak; the check reads each entry's binding once"
+            reason = "parity: the body binds one arm per entry while matching the peak; the check reads each entry's binding once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|substitution|
@@ -1623,7 +1623,7 @@ impl Template
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body checks every entry's arm before materializing; the check reads each entry's arm once more"
+            reason = "parity: the body checks every entry's arm before materializing; the check reads each entry's arm once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|&(_, step)|

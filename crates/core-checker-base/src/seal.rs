@@ -494,7 +494,7 @@ impl SealTable
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body compares the record with the minting order site by site once; the check compares them once more"
+            reason = "parity: the body compares the record with the minting order site by site once; the check compares them once more; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| match ret {

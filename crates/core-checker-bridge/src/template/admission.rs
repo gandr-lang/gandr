@@ -107,7 +107,7 @@ impl Entry
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body places every arm once; the check reads each arm's slot once"
+            reason = "parity: the body places every arm once; the check reads each arm's slot once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|arms| arms.len() == self.arms.len()

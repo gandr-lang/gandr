@@ -315,7 +315,7 @@ impl Program
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body executes every instruction once; the check reads each instruction's operands once"
+            reason = "parity: the body executes every instruction once; the check reads each instruction's operands once; #104 owns the cost of the clause"
         )
     )]
     #[spec(requires: self.result.0 < self.instructions.len()
@@ -379,7 +379,7 @@ impl Program
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body admits the definition through the kernel, which reads its body and the declarations it names; the check audits that definition's dependencies once"
+            reason = "parity: the body admits the definition through the kernel, which reads its body and the declarations it names; the check audits that definition's dependencies once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|admitted| {

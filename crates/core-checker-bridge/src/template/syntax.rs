@@ -786,7 +786,7 @@ impl Graph
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body exports every retained classifier once; the check reads each once and each exported one once"
+            reason = "parity: the body exports every retained classifier once; the check reads each once and each exported one once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|types|

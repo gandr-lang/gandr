@@ -507,7 +507,7 @@ pub struct Memo
 {
     /// One slot per key seen.
     // economy: keys are compared linearly, as harvest compares them; a family
-    // count per program in the hundreds keeps the scan below the walk.
+    // count per program in the hundreds keeps the scan below the walk (#7087).
     slots: Vec<Slot>,
     /// The memo-wide controller state.
     switch: Switch,
@@ -1084,7 +1084,7 @@ impl Memo
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body searches the slots for the key once; the check scans them once"
+            reason = "parity: the body searches the slots for the key once; the check scans them once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |output| matches!(output, Maybe::Absent(Unheld::Unseen))
@@ -1122,7 +1122,7 @@ impl Memo
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body searches the slots for the key once; the check reads the key's template through the same search once"
+            reason = "parity: the body searches the slots for the key once; the check reads the key's template through the same search once; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |()| matches!(self.template(family), Maybe::Present(_)))]

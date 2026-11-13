@@ -742,7 +742,7 @@ pub fn derive(
 /// bound. Bound 7 holds 631 classes, and the magma's sub-site 11 of them,
 /// certified at degree 7 in milliseconds where the 631 take nine seconds; bound
 /// 8 holds 1856, so it passes the budget, and the enumeration stops at its
-/// 1001st class in a few milliseconds.
+/// 1001st class in a few milliseconds (#7086).
 ///
 /// # Specification
 /// trivial.

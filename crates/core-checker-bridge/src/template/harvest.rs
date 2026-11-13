@@ -277,7 +277,7 @@ impl Harvest
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body searches the families once per key of the grouping; the check sums the families' member counts twice"
+            reason = "parity: the body searches the families once per key of the grouping; the check sums the families' member counts twice; #104 owns the cost of the clause"
         )
     )]
     #[cfg_attr(
