@@ -2669,6 +2669,315 @@ fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
 }
 
 #[test]
+fn a_readmission_keeps_a_sealed_module_whose_seal_stays_whole_7200()
+{
+    // def lead : Integer = 1 ;
+    // module Counter :> #{ type T, seed : T } { type T = Integer ;
+    //                                           def seed = 7 ; }
+    // def client : Counter.T = Counter.seed ;
+    //
+    // An unedited recheck resumes each entry. An edit of the lead keeps the
+    // atom, its members and the client by their keys, which the kernel gave
+    // them when the seal closed. An edit of the client resumes the seal, and
+    // an edit inside the seal readmits whole. Each readmission answers as a
+    // whole readmission of its module answers.
+    use gandr_kernel_term::SealExtent;
+
+    use crate::declaration::AbstractType;
+    use crate::seal::ComponentOrdinal;
+    use crate::seal::SealSite;
+    use crate::seal::SealingSite;
+    let judged = |lead: u8, representation: u8, client: u8| {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let literal = |arena: &mut CoreArena, value: u8| {
+            arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{value}"))
+                        .unwrap(),
+                ),
+            ))
+        };
+        let led = literal(&mut arena, lead);
+        let represented = literal(&mut arena, representation);
+        let atom = arena.value_type_abstract(ConstantIndex::from(1_usize));
+        let seed = arena.value_constant(ConstantIndex::from(2_usize));
+        let (declared, defined) = if client == 0 {
+            (atom, arena.value_constant(ConstantIndex::from(3_usize)))
+        }
+        else {
+            (integer, literal(&mut arena, client))
+        };
+        let declarations = [
+            declaration(At(0), Maybe::Present(integer), Maybe::Present(led)),
+            Declaration::abstract_type(
+                ConstantIndex::from(1_usize),
+                AbstractType::new(
+                    small,
+                    integer,
+                    SealExtent::from(2_usize),
+                    SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+                ),
+                origin(At(1)),
+            ),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(represented)),
+            declaration(At(3), Maybe::Present(atom), Maybe::Present(seed)),
+            declaration(At(4), Maybe::Present(declared), Maybe::Present(defined)),
+        ];
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &declarations)
+        };
+        let keys: Vec<super::DeclarationKey> = [lead, 0, representation, 0, client]
+            .into_iter()
+            .enumerate()
+            .map(|(place, word)| {
+                Maybe::Present(ContentDigest::new(
+                    gandr_kernel_check_memo::DigestWord::from(u64::try_from(place).unwrap()),
+                    gandr_kernel_check_memo::DigestWord::from(u64::from(word)),
+                ))
+            })
+            .collect();
+        (arena, report, keys)
+    };
+    let (mut arena, report, keys) = judged(1, 7, 0);
+    let (_, record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    for (lead, representation, client, answered, edit) in [
+        (1, 7, 0, (5, 0), "no edit"),
+        (2, 7, 0, (0, 4), "an edit before the seal"),
+        (1, 7, 9, (4, 0), "an edit of the client"),
+        (1, 8, 0, (0, 0), "an edit inside the seal"),
+    ] {
+        let (mut arena, report, keys) = judged(lead, representation, client);
+        let (readmission, _) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(&record)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        let (mut whole_arena, whole_report, _) = judged(lead, representation, client);
+        let whole = readmit(&mut whole_arena, &whole_report);
+        assert_eq!(
+            (
+                usize::from(readmission.resumed()),
+                usize::from(readmission.kept())
+            ),
+            answered,
+            "the declarations resumed and kept after {edit}"
+        );
+        assert_eq!(
+            agreed(&readmission),
+            agreed(&whole),
+            "each entry agrees after {edit}"
+        );
+        assert_eq!(
+            readmission.export(BTreeMap::new()),
+            whole.export(BTreeMap::new()),
+            "the export is the whole one's after {edit}"
+        );
+    }
+}
+
+/// One declaration of a module with formations: its name, then a plain
+/// integer or a reader of the patched type `*{port, tls : Integer}[.port = n]`.
+#[derive(Clone, Copy, Debug)]
+enum Formable
+{
+    /// `def _ : Integer = value`.
+    Plain(u8),
+    /// `def _ : *{port, tls : Integer}[.port = port] = {tls = tls}`.
+    Reads
+    {
+        /// The fixed value at `port`, which keys the formation.
+        port: u8,
+        /// The value of the free field.
+        tls: u8,
+    },
+}
+
+/// `module` judged over a fresh arena, with the key of each declaration: its
+/// name and its shape.
+///
+/// # Specification
+/// trivial.
+fn formable_module(
+    module: &[(u8, Formable)]
+) -> (CoreArena, ModuleReport, Vec<super::DeclarationKey>)
+{
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
+    let literal = |arena: &mut CoreArena, value: u8| {
+        arena.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{value}")).unwrap(),
+            ),
+        ))
+    };
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let record_type = arena.value_type_record(BTreeMap::from([
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let mut declarations = Vec::with_capacity(module.len());
+    let mut keys = Vec::with_capacity(module.len());
+    for (place, &(name, shape)) in module.iter().enumerate() {
+        let (declared, defined, word) = match shape {
+            Formable::Plain(value) => (integer, literal(&mut arena, value), u64::from(value)),
+            Formable::Reads { port, tls } => {
+                let fixed = literal(&mut arena, port);
+                let system = arena.value_type_system(
+                    record_type,
+                    BTreeMap::from([(label("port"), fixed)]),
+                    Vec::new(),
+                );
+                let free = literal(&mut arena, tls);
+                let body = arena.value_record(BTreeMap::from([(label("tls"), free)]));
+                (
+                    system,
+                    body,
+                    (1 << 32_u32) | (u64::from(port) << 8_u32) | u64::from(tls),
+                )
+            },
+        };
+        declarations.push(declaration(
+            At(place),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+        ));
+        keys.push(Maybe::Present(ContentDigest::new(
+            gandr_kernel_check_memo::DigestWord::from(u64::from(name)),
+            gandr_kernel_check_memo::DigestWord::from(word),
+        )));
+    }
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &declarations)
+    };
+    (arena, report, keys)
+}
+
+#[test]
+fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
+{
+    // def a : Integer = 1 ; def f : *{port, tls}[.port = 1] = {tls = 1} ;
+    // def b : Integer = 2 ; def g : *{port, tls}[.port = 2] = {tls = 1} ;
+    //
+    // An unedited recheck resumes each entry. Each witness is a seed just
+    // below its first reader, so an edit away from each formation keeps each
+    // entry outside its reach, each witness by its own key. An edit of a
+    // first reader, a new formation below a kept one, and a kept formation
+    // that a new crossing reads first each readmit whole. Each readmission
+    // answers as a whole readmission of its module answers.
+    let reads = |port, tls| Formable::Reads { port, tls };
+    let base = [
+        (0, Formable::Plain(1)),
+        (1, reads(1, 1)),
+        (2, Formable::Plain(2)),
+        (3, reads(2, 1)),
+    ];
+    let (mut arena, report, keys) = formable_module(&base);
+    let (first, record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    assert_eq!(
+        usize::from(first.environment().entries().len()),
+        6,
+        "each formation crosses one witness below its reader"
+    );
+    let edited = |place: usize, shape: Formable| {
+        let mut module = base.to_vec();
+        if let Some(entry) = module.get_mut(place) {
+            entry.1 = shape;
+        }
+        module
+    };
+    let inserted = |shape: Formable| {
+        let mut module = base.to_vec();
+        module.insert(0, (4, shape));
+        module
+    };
+    for (module, answered, edit) in [
+        (base.to_vec(), (4, 0), "no edit"),
+        (
+            edited(0, Formable::Plain(5)),
+            (0, 3),
+            "an edit before each formation",
+        ),
+        (
+            edited(2, Formable::Plain(5)),
+            (2, 1),
+            "an edit between the formations",
+        ),
+        (edited(1, reads(1, 3)), (0, 0), "an edit of a first reader"),
+        (
+            inserted(reads(3, 1)),
+            (0, 0),
+            "a new formation below a kept one",
+        ),
+        (
+            inserted(reads(1, 2)),
+            (0, 0),
+            "a new first reader of a kept formation",
+        ),
+    ] {
+        let (mut arena, report, keys) = formable_module(&module);
+        let (readmission, _) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(&record)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        let (mut whole_arena, whole_report, _) = formable_module(&module);
+        let whole = readmit(&mut whole_arena, &whole_report);
+        assert_eq!(
+            (
+                usize::from(readmission.resumed()),
+                usize::from(readmission.kept())
+            ),
+            answered,
+            "the declarations resumed and kept after {edit}"
+        );
+        assert_eq!(
+            agreed(&readmission),
+            agreed(&whole),
+            "each entry agrees after {edit}"
+        );
+        assert_eq!(
+            readmission.export(BTreeMap::new()),
+            whole.export(BTreeMap::new()),
+            "the export is the whole one's after {edit}"
+        );
+    }
+}
+
+#[test]
 fn a_seal_ending_at_a_skipped_position_closes_before_its_client_2004()
 {
     // module Counter :> #{ type T, seed : T, type Alias = T } {

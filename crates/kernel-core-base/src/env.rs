@@ -2616,6 +2616,29 @@ impl Entries
         }
     }
 
+    /// Key the entry at `position` with `key`: the key that a fresh admission
+    /// of its closed module gives, once the seal of an atom that it reads
+    /// closes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn rekey(
+        &mut self,
+        position: ConstantIndex,
+        key: crate::verdict::VerdictKey,
+    )
+    {
+        if let Some(entry) = self
+            .log_mut()
+            .family
+            .get_mut(usize::from(position))
+            .and_then(Slot::admitted_mut)
+        {
+            entry.key = Maybe::Present(key);
+        }
+    }
+
     /// Keep the first `length` entries, dropping later ones and their rows in
     /// the tables kept beside them.
     ///
