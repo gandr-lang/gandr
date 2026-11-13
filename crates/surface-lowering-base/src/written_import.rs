@@ -260,10 +260,11 @@ quenchant_shape::reason_enum! {
 /// [`LoweringRefusal::MalformedForm`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an aliased import of an escaped address, one read via a
-///   flow and one read through a renaming each read whole; a flow left unnamed
-///   is refused.
-/// - witness: `written_import::tests::each_import_a_root_writes_reads_whole_in_order`
+/// - hypothesis: L3 — exact address decoding with and without an alias, and a
+///   tile out of place, distinguish reading from binding refusal.
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_import_repaired_inside_a_nested_form_is_refused_by_that_form`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref entry) => entry.span == import.span && {
@@ -428,9 +429,11 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an import read via a flow and one read through a renaming
-///   are read whole, and a flow left unnamed is refused.
-/// - witness: `written_import::tests::each_import_a_root_writes_reads_whole_in_order`
+/// - hypothesis: L3 — an import read via a flow, an import read through a
+///   renaming and an offer read through each are read whole.
+/// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+/// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+/// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
 #[spec(ensures: |ret| match ret {
     | Maybe::Present(WrittenTranslation::Renaming(ref pairs)) => !pairs.is_empty(),
     | Maybe::Present(WrittenTranslation::Via(_)) | Maybe::Absent(_) => true,
@@ -506,8 +509,10 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an escaped address reads decoded.
-/// - witness: `written_import::tests::each_import_a_root_writes_reads_whole_in_order`
+/// - hypothesis: L3 — an escaped address reads decoded, and an extern block's
+///   language and library read as written.
+/// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
 /// - witness: `written_import::tests::escape_decoding_covers_continuations_unknowns_and_unicode`
 #[spec(ensures: |ref ret| match *ret {
     | Maybe::Present((_, between)) => between.end() <= cursor.here().start(),
@@ -598,9 +603,9 @@ fn module_file(path: SourceFragment<'_>) -> ImportUri
 /// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::UnknownMold`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a root of three imports before two declarations lists
-///   exactly the three imports, in order.
-/// - witness: `written_import::tests::each_import_a_root_writes_reads_whole_in_order`
+/// - hypothesis: L3 — a source with an unqualified and an aliased import
+///   between two declarations lists exactly the two imports.
+/// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.windows(2).all(|pair| match *pair {
     [ref first, ref second] => first.span.start() < second.span.start(),
     _ => false,
@@ -654,10 +659,11 @@ pub fn written_imports<'source>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a source importing one sibling by path, another under an
-///   alias and a third by a scheme sees the first and the prelude; a source
-///   writing no import sees the prelude alone.
-/// - witness: `written_import::tests::a_source_sees_what_it_imports_unqualified_and_the_prelude`
+/// - hypothesis: L3 — a source importing one sibling unqualified and another
+///   under an alias sees the first alone; a source writing no import sees the
+///   prelude's theories.
+/// - witness: `gandr-surface-lowering::tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+/// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
 #[spec(ensures: |ret| ret.values().all(|targets| !targets.is_empty()))]
 #[inline]
 #[must_use]
@@ -896,143 +902,5 @@ mod tests
         ] {
             assert_eq!(decode_escapes(SourceFragment::from(written)), expected);
         }
-    }
-
-    /// The imports a root writes read whole and in source order, every other
-    /// child passed over: an aliased import of an escaped address, one read
-    /// via a flow and one read through a renaming. A flow left unnamed is
-    /// refused.
-    #[test]
-    fn each_import_a_root_writes_reads_whole_in_order()
-    {
-        use alloc::vec;
-        use alloc::vec::Vec;
-
-        use gandr_surface_syntax::SourceText;
-        use quenchant_shape::shape::Maybe;
-
-        use super::WrittenTranslation;
-        use super::written_imports;
-        use crate::fixture::grammar;
-        use crate::fixture::parsed;
-        use crate::form::Placed;
-
-        let grammar = grammar();
-        let text = include_str!(
-            "written_import/tests/unformatted/each-import-a-root-writes-reads-whole-in-order.gandr"
-        );
-        let tree = parsed(&grammar, SourceText::from(text));
-        let spelled = |at: Placed| {
-            text.get(usize::from(at.span.start()) .. usize::from(at.span.end()))
-                .unwrap()
-        };
-        let read: Vec<_> = written_imports(&grammar, &tree)
-            .unwrap()
-            .into_iter()
-            .map(|import| {
-                (
-                    String::from(import.uri.as_ref()),
-                    match import.alias {
-                        Maybe::Present(alias) => Some(spelled(alias)),
-                        Maybe::Absent(_) => None,
-                    },
-                    import
-                        .signature
-                        .iter()
-                        .map(|&at| spelled(at))
-                        .collect::<Vec<_>>(),
-                    match import.translation {
-                        Maybe::Present(WrittenTranslation::Via(flow)) => vec![(spelled(flow), "")],
-                        Maybe::Present(WrittenTranslation::Renaming(pairs)) => pairs
-                            .iter()
-                            .map(|&(member, name)| (spelled(member), spelled(name)))
-                            .collect(),
-                        Maybe::Absent(_) => Vec::new(),
-                    },
-                )
-            })
-            .collect();
-        assert_eq!(read, [
-            (
-                String::from("file:///no/such/\"place\".gandr"),
-                Some("far"),
-                vec![],
-                vec![]
-            ),
-            (String::from("./base.gandr"), None, vec!["Older"], vec![(
-                "downgrade",
-                ""
-            )]),
-            (
-                String::from("./base.gandr"),
-                Some("old"),
-                vec!["Older"],
-                vec![("reply", "answer"), ("label", "tag")]
-            ),
-        ]);
-        let unnamed = gandr_surface_parser::parse(
-            &grammar,
-            SourceText::from("import \"./base.gandr\" : Older via;\n"),
-        )
-        .unwrap()
-        .into_tree();
-        assert!(
-            written_imports(&grammar, &unnamed).is_err(),
-            "a flow left unnamed"
-        );
-    }
-
-    /// A source sees the source it imports unqualified by path, and none it
-    /// imports under an alias or by a scheme; every source but the prelude
-    /// sees the prelude.
-    #[test]
-    fn a_source_sees_what_it_imports_unqualified_and_the_prelude()
-    {
-        use alloc::collections::BTreeMap;
-        use alloc::collections::BTreeSet;
-        use alloc::vec::Vec;
-
-        use gandr_surface_syntax::ByteOffset;
-        use gandr_surface_syntax::SourceText;
-
-        use super::unqualified_imports;
-        use crate::fixture::grammar;
-        use crate::fixture::parsed;
-        use crate::unit::ImportTarget;
-        use crate::unit::SourceIndex;
-        use crate::unit::Unit;
-        use crate::unit::UnitSource;
-
-        let text = include_str!(
-            "written_import/tests/unformatted/a-source-sees-what-it-imports-unqualified-and-the-prelude.gandr"
-        );
-        let at = |written: &str| ByteOffset::from(text.find(written).unwrap());
-        let written = Unit::new(Vec::from([
-            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
-            UnitSource::new(at("def b"), Vec::new()),
-            UnitSource::new(
-                at("import"),
-                Vec::from([
-                    ImportTarget::Source(SourceIndex::from(0_usize)),
-                    ImportTarget::Source(SourceIndex::from(1_usize)),
-                ]),
-            ),
-        ]))
-        .unwrap();
-        let (laid, unit) = crate::prelude::lay(SourceText::from(text), &written).unwrap();
-        let grammar = grammar();
-        let tree = parsed(&grammar, SourceText::from(laid.as_str()));
-        let source = SourceIndex::from;
-        assert_eq!(
-            unqualified_imports(&grammar, &tree, &[tree.root()], &unit),
-            BTreeMap::from([
-                (source(1_usize), BTreeSet::from([source(0_usize)])),
-                (source(2_usize), BTreeSet::from([source(0_usize)])),
-                (
-                    source(3_usize),
-                    BTreeSet::from([source(0_usize), source(1_usize)])
-                ),
-            ])
-        );
     }
 }

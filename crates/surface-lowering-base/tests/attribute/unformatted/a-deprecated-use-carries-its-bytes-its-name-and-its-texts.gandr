@@ -1,5 +1,0 @@
-@[deprecated(*{since = "0.2"})]
-def square = 1;
-def cube = 3;
-def a = square;
-def b = cube;

@@ -1,5 +1,0 @@
-import "file:///no/such/\"place\".gandr" as far;
-import "./base.gandr" : Older via downgrade;
-import "./base.gandr" as old : Older renaming { reply as answer, label as tag };
-def x : Integer;
-def x = 3;

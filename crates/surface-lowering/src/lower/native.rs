@@ -7512,7 +7512,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Matcher::Hole(self.hole(at)?));
         }
         if name == FormName::IDENTIFIER {
-            if self.text_at(at).as_ref() == super::identity::HERE {
+            if self.text_at(at).as_ref() == super::HERE {
                 // The type the scrutinee's position states names the words;
                 // the words in scope name them only where it names none.
                 let form = match self.stated_words(queued.stated)? {
@@ -10206,7 +10206,7 @@ impl<'source> Lowerer<'_, 'source>
                 Vec::with_capacity(words.loops.len().saturating_mul(2).saturating_add(1));
             let mut names = Vec::with_capacity(constructors.capacity());
             constructors.push(Vec::new());
-            names.push(String::from(super::identity::HERE));
+            names.push(String::from(super::HERE));
             for &bound in &words.loops {
                 let letter = self
                     .collected

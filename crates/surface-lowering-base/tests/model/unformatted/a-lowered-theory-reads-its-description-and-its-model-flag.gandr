@@ -1,2 +1,0 @@
-
-data Flag : Type where { | On : Flag | Off : Flag }

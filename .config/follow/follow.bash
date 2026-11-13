@@ -3,7 +3,9 @@
 # driver there and deploys the build as the default toolchain, so every relay
 # and every `gandr` the proxy runs follows `main`. It then syncs the
 # checkout's code index and warms the builds a gate and `pr:open` make, which
-# every new worktree copies (#4866, `follow_warm`).
+# every new worktree copies (#4866, `follow_warm`). On the builder, each
+# fast-forward also pushes the host tools to the hosts that receive them
+# (#7008, `follow_tools`).
 #
 # No seat and no editor reloads for new tooling. A running `gandr lsp` or
 # `gandr mcp` moves to the deployed build in place, on the next request its
@@ -16,13 +18,16 @@
 #   $XDG_CONFIG_HOME/gandr/follow.json   `{checkout, interval, page}`: the
 #       main checkout it builds in, the seconds between readings, and the
 #       page command's argument vector before the line;
+#   $XDG_CONFIG_HOME/gandr/host-tools.toml   the builder's configuration,
+#       on the builder only (`crates/workflow-host-tools`);
 #   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed,
-#       fetch_failures, indexed, warmed, paged}`: the commit deployed, the
-#       one deployed before it, the last commit whose build cargo refused,
-#       the failed fetches in a row, the commits the code index was last
-#       synced to and the gates' builds last warmed at, and the keys of the
-#       pages already sent;
-#   $XDG_STATE_HOME/gandr/follow-build.log   the output of the last build.
+#       fetch_failures, indexed, warmed, pushed, paged}`: the commit
+#       deployed, the one deployed before it, the last commit whose build
+#       cargo refused, the failed fetches in a row, the commits the code
+#       index was last synced to, the gates' builds last warmed at and the
+#       host tools last pushed at, and the keys of the pages already sent;
+#   $XDG_STATE_HOME/gandr/follow-build.log   the output of the last build;
+#   $XDG_STATE_HOME/gandr/follow-tools.log   the output of the last push.
 # The builds live in `$XDG_DATA_HOME/gandr/builds/<commit>/gandr`. The
 # toolchain `main` names the deployed build and is the default, and the
 # toolchain `previous` names the build before it, for a rollback by
@@ -35,6 +40,8 @@ follow_dir="$(git rev-parse --show-toplevel)/.config/follow"
 follow_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/follow.json"
 follow_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow.json"
 follow_build_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow-build.log"
+follow_host_tools="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/host-tools.toml"
+follow_tools_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow-tools.log"
 follow_builds="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/builds"
 follow_toolchains="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/toolchains"
 # The page command's argument vector before the line, the configuration's
@@ -185,13 +192,48 @@ follow_warm() {
   ) &
 }
 
-# One reading in the checkout `$1`: fetch, fast-forward, build, deploy, sync
-# the code index and warm the gates' builds. A checkout off `main`, dirty, or
-# past `origin/main` is left as it is and paged once per commit of
-# `origin/main`. A fetch that fails twice in a row is paged once per commit of
-# `origin/main` last fetched (#4866). A build that cargo refuses deploys
-# nothing and is paged once per commit. A build that a signal ends records
-# nothing, and the next reading builds the commit again.
+# Run `tools:push` at `HEAD` `$1` on the builder (#7008): the host whose
+# configuration `host-tools.toml` stands. The push builds the keys of each
+# receiver's target, copies each key to its receivers and brings mise to the
+# pin on each host; a host with no receiver gets nothing. Like `follow_warm`,
+# it runs in the background, at the lowest CPU priority and outside every
+# gate slot, so no build or deploy waits on it. A reading that finds it
+# running leaves its head to the reading after it ends. A failed push is
+# paged once per commit and runs again at the next reading; its markers keep
+# each copy that ended, so the next push copies only the rest.
+follow_tools() {
+  local head=$1 lock="$follow_state.pushing" pusher
+  [[ -f "$follow_host_tools" ]] || return 0
+  [[ "$head" != $(jq -r '.pushed // empty' <<< "$(follow_memory)") ]] || return 0
+  mkdir -p "$(dirname "$follow_state")"
+  if ! mkdir "$lock" 2> /dev/null; then
+    pusher=$(< "$lock/pid") 2> /dev/null || pusher=
+    if [[ -n $pusher ]] && kill -0 "$pusher" 2> /dev/null; then return 0; fi
+    rm -rf -- "$lock"
+    mkdir "$lock" 2> /dev/null || return 0
+  fi
+  (
+    trap 'rm -rf -- "$lock"' EXIT
+    echo "$BASHPID" > "$lock/pid"
+    export GANDR_GATE_SLOT=follow
+    echo "toolchain:follow: pushing the host tools at ${head:0:9}"
+    if nice -n 19 mise run --quiet tools:push > "$follow_tools_log" 2>&1; then
+      follow_remember "$(jq -c --arg head "$head" '.pushed = $head' <<< "$(follow_memory)")"
+      echo "toolchain:follow: pushed the host tools at ${head:0:9}"
+    else
+      follow_page "tools:$head" "FOLLOW tools-failed: tools:push at ${head:0:9} failed: $(awk '/^failed/ {line = $0} END {print line}' "$follow_tools_log")"
+    fi
+  ) &
+}
+
+# One reading in the checkout `$1`: fetch, fast-forward, push the host tools
+# on the builder, build, deploy, sync the code index and warm the gates'
+# builds. A checkout off `main`, dirty, or past `origin/main` is left as it
+# is and paged once per commit of `origin/main`. A fetch that fails twice in
+# a row is paged once per commit of `origin/main` last fetched (#4866). A
+# build that cargo refuses deploys nothing and is paged once per commit. A
+# build that a signal ends records nothing, and the next reading builds the
+# commit again.
 follow_once() {
   local checkout=$1 upstream branch head memory error url prefix status failures index
   cd "$checkout" || { follow_page "missing:$checkout" "FOLLOW checkout-missing: $checkout is no directory; nothing deployed"; return; }
@@ -236,6 +278,7 @@ follow_once() {
     return
   fi
   head=$(git rev-parse HEAD)
+  follow_tools "$head"
   memory=$(follow_memory)
   if [[ "$head" != $(jq -r '.deployed // empty' <<< "$memory") && "$head" != $(jq -r '.failed // empty' <<< "$memory") ]]; then
     echo "toolchain:follow: building $head"

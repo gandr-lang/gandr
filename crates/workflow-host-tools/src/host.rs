@@ -12,14 +12,16 @@ use serde::Deserialize;
 
 use crate::error::HostToolsError;
 use crate::input::Input;
+use crate::names::HostName;
 use crate::names::ProgramName;
+use crate::names::RemotePath;
 use crate::names::Target;
 
 /// The builder's configuration, `$XDG_CONFIG_HOME/gandr/host-tools.toml`.
 ///
 /// # Specification
 /// - provides: for each target, its linker and C tools; for each program a
-///   build needs, its path.
+///   build needs, its path; each host that receives the keys of its target.
 /// - executable: none — a plain record; [`Host::read`] fills it.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct Host
@@ -30,6 +32,31 @@ pub struct Host
     /// The path of each program a build needs, by its name.
     #[serde(default)]
     pub programs: BTreeMap<ProgramName, String>,
+    /// The hosts that receive the keys, in the configuration's order.
+    #[serde(default)]
+    pub receiver: Vec<Receiver>,
+}
+
+/// A host that receives the keys of its target.
+///
+/// # Specification
+/// - provides: the host as ssh names it, its target, the data directory of its
+///   mise, and the path of its mise when the builder builds it.
+/// - executable: none — a plain record.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct Receiver
+{
+    /// The host, as ssh names it.
+    pub host: HostName,
+    /// The host's target triple.
+    pub target: Target,
+    /// The data directory of the host's mise, relative to its home:
+    /// `.local/share/mise` when the configuration names none.
+    pub data: Option<RemotePath>,
+    /// The path of the host's mise, relative to its home, which the key of
+    /// mise replaces. With no path, the host takes `mise self-update` to the
+    /// pin.
+    pub mise: Option<RemotePath>,
 }
 
 /// The linker and the C tools of one target.

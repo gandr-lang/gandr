@@ -1,9 +1,12 @@
-//! A job built into its key, under a lock for the key, whole or not at all.
+//! A job built into its key, under a lock for the key, whole or not at all,
+//! and the scratch of the builds removed when no build holds it.
 //!
 //! The key of a job is the directory `<into>/<target>/<install
 //! name>/<version>`. A build takes the lock of its key, builds into a partial
 //! directory and renames it into the key at its end. So a key stands whole or
-//! not at all, and two builders of one key build it once.
+//! not at all, and two builders of one key build it once. The builds of a run
+//! share the scratch `<into>/.scratch`: one target directory and the clones.
+//! [`prune`] removes it at the end of a run.
 
 use std::fs::File;
 use std::path::Path;
@@ -20,6 +23,27 @@ use crate::names::Version;
 use crate::steps::Run;
 use crate::steps::Step;
 use crate::steps::steps;
+
+/// The lock that each build holds shared while it uses the scratch, and that
+/// [`prune`] takes whole, under `<into>/.locks`.
+const SCRATCH_LOCK: &str = "scratch.lock";
+
+/// What a prune did with the scratch.
+///
+/// # Specification
+/// - provides: whether the prune removed the scratch, found a build that holds
+///   it, or found no scratch.
+/// - executable: none — a plain record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Pruned
+{
+    /// The scratch stood, no build held it, and the prune removed it.
+    Removed,
+    /// A build holds the scratch, and the prune left it.
+    Busy,
+    /// No scratch stood.
+    Absent,
+}
 
 /// What a build did for a job.
 ///
@@ -227,6 +251,12 @@ where
         .join(&job.version);
     clear(&partial)?;
     std::fs::create_dir_all(&partial).map_err(|error| io(&partial, &error))?;
+    // A prune removes the scratch only while no build holds this lock.
+    let scratch_path = locks.join(SCRATCH_LOCK);
+    let scratch_lock = File::create(&scratch_path).map_err(|error| io(&scratch_path, &error))?;
+    scratch_lock
+        .lock_shared()
+        .map_err(|error| io(&scratch_path, &error))?;
     let scratch = into.join(".scratch");
     let built = steps(job, &partial, &scratch, host).and_then(|planned| {
         planned.iter().try_for_each(|step| match *step {
@@ -252,6 +282,134 @@ where
     }
     std::fs::rename(&partial, &key).map_err(|error| io(&key, &error))?;
     Ok(Built::Built)
+}
+
+/// Remove the scratch `<into>/.scratch` when no build holds it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: with no scratch, nothing changes and the result is
+///   [`Pruned::Absent`]. When a build holds the scratch's lock shared, the
+///   scratch stands and the result is [`Pruned::Busy`]: the prune never waits.
+///   Otherwise the prune holds the lock whole, the scratch does not stand, and
+///   the result is [`Pruned::Removed`].
+/// - provides: the bound of the scratch: at rest it holds nothing, and a run
+///   that a crash ends leaves a scratch that the next run's prune removes.
+/// - fails: [`HostToolsError::Io`] when the lock cannot be made or taken, or
+///   the scratch cannot be removed.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a prune leaves a scratch that a build holds, removes it
+///   when no build holds it, and finds none after.
+/// - witness: `build::tests::a_prune_removes_the_scratch_unless_a_build_holds_it`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
+#[inline]
+pub fn prune(into: &Path) -> Result<Pruned, HostToolsError>
+{
+    let scratch = into.join(".scratch");
+    if !scratch.exists() {
+        return Ok(Pruned::Absent);
+    }
+    let locks = into.join(".locks");
+    std::fs::create_dir_all(&locks).map_err(|error| io(&locks, &error))?;
+    let lock_path = locks.join(SCRATCH_LOCK);
+    let lock = File::create(&lock_path).map_err(|error| io(&lock_path, &error))?;
+    match lock.try_lock() {
+        Ok(()) => {},
+        Err(std::fs::TryLockError::WouldBlock) => return Ok(Pruned::Busy),
+        Err(std::fs::TryLockError::Error(error)) => return Err(io(&lock_path, &error)),
+    }
+    clear(&scratch)?;
+    Ok(Pruned::Removed)
+}
+
+/// Remove the key of each version of `job`'s tool and target other than the
+/// version of `job`, with the markers of its copies.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: of the keys under `<into>/<target>/<install name>/` that the call
+///   reads, only the key of `job`'s version stands. Each other key goes under
+///   its own lock, and each marker `<into>/.pushed/<host>/<target>.<install
+///   name>.<version>` of a removed version goes with it. The result names the
+///   removed versions in order.
+/// - provides: the bound of the keys: the builder holds one key for each tool
+///   and target, the version that `mise.lock` locks.
+/// - fails: [`HostToolsError::Io`] when a directory cannot be read, a lock
+///   cannot be made or taken, or a key or a marker cannot be removed.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the keys of an older and a newer version go with their
+///   markers; the key and the marker of the job's version stay.
+/// - witness: `build::tests::a_retire_removes_each_other_version_and_its_markers`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
+#[inline]
+pub fn retire(
+    into: &Path,
+    job: &Job,
+) -> Result<Vec<Version>, HostToolsError>
+{
+    let tool = into.join(&job.target).join(&job.install_name);
+    let mut versions = names(&tool)?
+        .into_iter()
+        .filter(|name| job.version != *name.as_str())
+        .map(|name| Version::from(name.as_str()))
+        .collect::<Vec<_>>();
+    versions.sort();
+    let hosts = names(&into.join(".pushed"))?;
+    let locks = into.join(".locks");
+    if !versions.is_empty() {
+        std::fs::create_dir_all(&locks).map_err(|error| io(&locks, &error))?;
+    }
+    for version in &versions {
+        let lock_path = locks.join(format!(
+            "{}.{}.{version}.lock",
+            job.target, job.install_name
+        ));
+        let lock = File::create(&lock_path).map_err(|error| io(&lock_path, &error))?;
+        lock.lock().map_err(|error| io(&lock_path, &error))?;
+        clear(&tool.join(version))?;
+        // The lock is the marker's name with `.lock` after it.
+        let marker = lock_path.file_stem().unwrap_or_default();
+        for host in &hosts {
+            let path = into.join(".pushed").join(host).join(marker);
+            match std::fs::remove_file(&path) {
+                Ok(()) => {},
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                Err(error) => return Err(io(&path, &error)),
+            }
+        }
+    }
+    Ok(versions)
+}
+
+/// The names of the entries of `directory`, none when it does not stand.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn names(directory: &Path) -> Result<Vec<String>, HostToolsError>
+{
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(io(directory, &error)),
+    };
+    entries
+        .map(|entry| {
+            entry
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .map_err(|error| io(directory, &error))
+        })
+        .collect()
 }
 
 /// Remove `directory` and what it holds, if it stands.
@@ -334,10 +492,13 @@ mod tests
 
     use super::Built;
     use super::Processes;
+    use super::Pruned;
     use super::Runner;
     use super::build;
     use super::io;
     use super::key;
+    use super::prune;
+    use super::retire;
     use crate::error::HostToolsError;
     use crate::host::Host;
     use crate::input::Input;
@@ -346,6 +507,7 @@ mod tests
     use crate::names::Repository;
     use crate::names::Template;
     use crate::names::ToolKey;
+    use crate::names::Version;
     use crate::recipe::Recipe;
     use crate::recipe::Stamp;
     use crate::steps::Run;
@@ -586,5 +748,51 @@ mod tests
             "{refused}"
         );
         std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_prune_removes_the_scratch_unless_a_build_holds_it()
+    {
+        let into = scratch();
+        std::fs::create_dir_all(into.join(".scratch/target")).unwrap();
+        std::fs::create_dir_all(into.join(".locks")).unwrap();
+        let held = std::fs::File::create(into.join(".locks/scratch.lock")).unwrap();
+        held.lock_shared().unwrap();
+        assert_eq!(prune(&into), Ok(Pruned::Busy));
+        assert!(into.join(".scratch/target").is_dir());
+        drop(held);
+        assert_eq!(prune(&into), Ok(Pruned::Removed));
+        assert!(!into.join(".scratch").exists());
+        assert_eq!(prune(&into), Ok(Pruned::Absent));
+        std::fs::remove_dir_all(&into).unwrap();
+    }
+
+    #[test]
+    fn a_retire_removes_each_other_version_and_its_markers()
+    {
+        let into = scratch();
+        let tool = into.join("riscv64gc-unknown-linux-gnu/github-a-tool");
+        for version in ["1.2.2", "1.2.3", "1.2.4"] {
+            std::fs::create_dir_all(tool.join(version).join("bin")).unwrap();
+        }
+        let pushed = into.join(".pushed/rv");
+        std::fs::create_dir_all(&pushed).unwrap();
+        let marker = |version: &str| {
+            pushed.join(format!(
+                "riscv64gc-unknown-linux-gnu.github-a-tool.{version}"
+            ))
+        };
+        std::fs::write(marker("1.2.2"), "").unwrap();
+        std::fs::write(marker("1.2.3"), "").unwrap();
+        assert_eq!(
+            retire(&into, &job()),
+            Ok(vec![Version::from("1.2.2"), Version::from("1.2.4")])
+        );
+        assert!(tool.join("1.2.3").is_dir());
+        assert!(!tool.join("1.2.2").exists());
+        assert!(!tool.join("1.2.4").exists());
+        assert!(marker("1.2.3").is_file());
+        assert!(!marker("1.2.2").exists());
+        std::fs::remove_dir_all(&into).unwrap();
     }
 }

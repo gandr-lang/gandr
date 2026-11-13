@@ -1052,7 +1052,7 @@ path = "crates/theory-exact-reals"
 # features:
 # - none: alloc-only posets over finite Stone duality's bit rows.
 # consumers:
-# - surface-lowering
+# - surface-lowering-base
 # - theory-cellular-sheaves
 # - theory-discrete-morse
 # - theory-shapes (dev)
@@ -1183,7 +1183,7 @@ path = "crates/theory-sites"
 # - storage-artifact
 # - storage-records
 # - storage-values
-# - surface-lowering
+# - surface-lowering-base
 # - surface-parser
 # - theory-cell-complexes
 # - theory-circuit-algebras
@@ -1198,7 +1198,7 @@ path = "crates/theory-spec-combinators"
 # features:
 # - none: alloc-only lattices, posets and maps.
 # consumers:
-# - surface-lowering
+# - surface-lowering-base
 # - theory-cellular-sheaves
 # - theory-discrete-morse
 # - theory-graded-posets

@@ -643,9 +643,10 @@ impl Unit
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the stand-in takes one byte at the last source's
-    ///   start, and the last source moves past it and imports it last.
-    /// - witness: `unit::tests::a_stand_in_takes_one_byte_before_the_last_source_which_imports_it_last`
+    /// - hypothesis: L3 — a row naming a host interface whose home the unit
+    ///   lays no source of is admitted through the stand-in, and refused
+    ///   without it.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_stand_in_takes_the_import_of_a_home_the_unit_lacks_5209`
     #[spec(captures: laid = (self.sources.len(), self.prelude), ensures: |ret| ret.sources.len() == laid.0.saturating_add(1_usize) && ret.prelude == laid.1)]
     #[inline]
     #[must_use]
@@ -896,47 +897,5 @@ mod tests
             "the closure before the importer keeps the prelude"
         );
         assert_eq!(Unit::single().before_last(), Err(UnitFault::Empty));
-    }
-
-    /// A stand-in for a home the unit lays no source of takes one byte at the
-    /// last source's start, homed as the module; the last source moves on by
-    /// that byte and imports it after every import it writes, and the sources
-    /// before keep their places.
-    #[test]
-    fn a_stand_in_takes_one_byte_before_the_last_source_which_imports_it_last()
-    {
-        use quenchant_shape::shape::Maybe;
-
-        use crate::resolve::SurfaceName;
-
-        let unit = two().standing_in(SurfaceName::from("Host"));
-        let [ref first, ref stand_in, ref last] = *unit.sources()
-        else {
-            panic!("one source more: {unit:?}")
-        };
-        assert_eq!(
-            (first.start, first.imports()),
-            (ByteOffset::from(0_usize), [].as_slice())
-        );
-        assert_eq!(
-            (stand_in.start, stand_in.imports(), stand_in.home()),
-            (
-                ByteOffset::from(10_usize),
-                [].as_slice(),
-                Maybe::Present(SurfaceName::from("Host"))
-            )
-        );
-        assert_eq!(
-            (last.start, last.imports()),
-            (
-                ByteOffset::from(11_usize),
-                [
-                    ImportTarget::Source(SourceIndex::from(0_usize)),
-                    ImportTarget::Source(SourceIndex::from(1_usize)),
-                ]
-                .as_slice()
-            )
-        );
-        assert_eq!(unit.last(), SourceIndex::from(2_usize));
     }
 }

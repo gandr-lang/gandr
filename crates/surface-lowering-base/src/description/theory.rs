@@ -3297,10 +3297,9 @@ impl Run<'_>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two inner blocks before a sort, the first over a
-///   bracketed payload, one after a member and one in a theory an outer block
-///   decorates each reach the reading at their spans.
-/// - witness: `description::theory::tests::each_inner_block_reaches_the_reading_at_its_span_3586`
+/// - hypothesis: L3 — an inner block before a sort, one after a member and one
+///   doubling an outer block each reach the lowering at their spans.
+/// - witness: `gandr-surface-lowering::tests::theory::an_inner_attribute_decorates_its_theory_3586`
 #[spec(ensures: |(blocks, rest)| blocks.iter().map(|block| block.len()).sum::<usize>().saturating_add(rest.len()) == member.len())]
 fn inner_blocks(member: &[Piece]) -> (Vec<&[Piece]>, &[Piece])
 {

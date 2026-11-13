@@ -553,7 +553,6 @@ use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
-use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
@@ -570,6 +569,8 @@ use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering_base::lower::literal;
+use gandr_surface_lowering_base::lower::parse_literal;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -757,9 +758,7 @@ mod boundary;
 
 mod capability;
 
-mod cells;
-
-pub use cells::refuse_cells;
+pub use gandr_surface_lowering_base::lower::cells::refuse_cells;
 
 mod closure;
 
@@ -804,7 +803,7 @@ pub use runs::RunSpelling;
 
 mod identity;
 
-pub use identity::HERE;
+pub use gandr_surface_lowering_base::lower::HERE;
 
 mod implicit;
 
@@ -860,23 +859,6 @@ quenchant_shape::reason_enum! {
             /// family, so the field gives the constructor written in it no
             /// type.
             Unclassified,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a lexeme denotes no literal.
-    pub mod literal {
-        /// The text is not a lexeme of the literal form asked about.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The text is not the form's lexeme.
-            Malformed,
-            /// The former is not a literal former at all.
-            NotALiteral,
-            /// A typed number's digits do not fit its integer width, or are
-            /// no integer.
-            OutsideWidth,
         }
     }
 }
@@ -8007,7 +7989,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — as [`misplaced()`]; a definition whose block closes
     ///   twice on one line keeps the doubled closer's refusal.
     /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
-    /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
+    /// - witness: `gandr-surface-lowering-base::module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
     fn place_by_layout(&mut self)
     {
         let pbg = self.pbg;
@@ -24409,8 +24391,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a planned operation lowers to a completed declaration
     ///   the checker accepts and the machine runs.
-    /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
-    /// - witness: `operation::tests::a_call_reaches_the_operation_before_a_builtin_of_its_name`
+    /// - witness: `tests::operation::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    /// - witness: `tests::operation::a_call_reaches_the_operation_before_a_builtin_of_its_name`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -26572,208 +26554,6 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::PackModel
             | Former::Injection
     ))
-}
-
-/// Parse a literal's own text into a core literal.
-///
-/// # Specification
-/// - requires: `text` is the literal node's whole source text.
-/// - ensures: a number is the canonical non-negative magnitude of its digits,
-///   so a padded spelling and its unpadded form are one literal; a string is
-///   the text between its delimiting quotes with its escapes decoded — `\n`,
-///   `\t`, `\r`, `\0`, `\\`, `\"` and `\'` to the character each names, a
-///   backslash before a line break elided with the break, any other escaped
-///   character to itself, and a trailing lone backslash dropped; a character is
-///   the one scalar its quotes hold once that same decoding runs.
-/// - provides: the only place a lexeme becomes a core literal.
-/// - fails: never; the malformed absence for a number holding a non-digit or
-///   nothing at all, a string missing either delimiter, and a character whose
-///   quotes are missing or decode to no scalar or to several, and the
-///   not-a-literal absence for every other former.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — two decision surfaces (the magnitude guard and the
-///   delimiter strip) and the escape table, separated by a padded integer, an
-///   empty integer, an integer holding a letter, a quoted text, an escaped
-///   text, an unterminated text, a bare quote and an unquoted text, each
-///   asserted as an exact literal or absence.
-/// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
-/// - witness: `lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
-/// - witness: `lower::tests::a_lexeme_of_the_wrong_shape_parses_to_nothing`
-#[spec(
-    ensures: |ret| {
-        let spelled: &str = text.as_ref();
-        match former {
-            | Former::Number => {
-                if spelled.is_empty() || !spelled.bytes().all(|byte| byte.is_ascii_digit()) {
-                    matches!(ret, Maybe::Absent(literal::Absent::Malformed))
-                }
-                else {
-                    let unpadded = spelled.trim_start_matches('0');
-                    let expected = if unpadded.is_empty() { "0" } else { unpadded };
-                    matches!(ret, Maybe::Present(Literal::Integer(ref integer)) if integer.sign() == Sign::NonNegative && integer.magnitude().as_ref() == expected)
-                }
-            },
-            | Former::Text => match spelled
-                .strip_prefix('"')
-                .and_then(|opened| opened.strip_suffix('"'))
-            {
-                | Some(content) => match ret {
-                    | Maybe::Present(Literal::Text(ref literal)) => {
-                        let content: &str = content;
-                        let actual: &str = literal.as_ref();
-                        let mut escaped = false;
-                        let mut after_cr = false;
-                        actual.chars().eq(content.chars().filter_map(|character| {
-                            if after_cr {
-                                after_cr = false;
-                                if character == '\n' {
-                                    return None;
-                                }
-                            }
-                            if escaped {
-                                escaped = false;
-                                match character {
-                                    | 'n' => Some('\n'),
-                                    | 't' => Some('\t'),
-                                    | 'r' => Some('\r'),
-                                    | '0' => Some('\0'),
-                                    | '\r' => {
-                                        after_cr = true;
-                                        None
-                                    },
-                                    | '\n' => None,
-                                    | other => Some(other),
-                                }
-                            }
-                            else if character == '\\' {
-                                escaped = true;
-                                None
-                            }
-                            else {
-                                Some(character)
-                            }
-                        }))
-                    },
-                    | _ => false,
-                },
-                | None => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
-            },
-            | Former::Character => match spelled
-                .strip_prefix('\'')
-                .and_then(|opened| opened.strip_suffix('\''))
-                .map(|content| decode_escapes(SourceFragment::from(content)))
-            {
-                | Some(decoded) if decoded.chars().count() == 1 => {
-                    matches!(ret, Maybe::Present(Literal::Character(character)) if decoded.chars().eq(core::iter::once(char::from(character))))
-                },
-                | _ => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
-            },
-            | _ => matches!(ret, Maybe::Absent(literal::Absent::NotALiteral)),
-        }
-    },
-)]
-pub fn parse_literal(
-    former: Former,
-    text: SourceFragment<'_>,
-) -> Maybe<Literal, literal::Absent>
-{
-    let spelled: &str = text.as_ref();
-    let found = match former {
-        Former::Number => Magnitude::from_decimal_text(String::from(spelled))
-            .map(|magnitude| Literal::Integer(IntegerLiteral::new(Sign::NonNegative, magnitude))),
-        Former::Text => spelled
-            .strip_prefix('"')
-            .and_then(|opened| opened.strip_suffix('"'))
-            .map(|content| {
-                Literal::Text(StringLiteral::new(decode_escapes(SourceFragment::from(
-                    content,
-                ))))
-            }),
-        Former::Character => spelled
-            .strip_prefix('\'')
-            .and_then(|opened| opened.strip_suffix('\''))
-            .and_then(|content| {
-                CharacterLiteral::try_from(decode_escapes(SourceFragment::from(content))).ok()
-            })
-            .map(Literal::Character),
-        Former::Name
-        | Former::Hole
-        | Former::Binary
-        | Former::Unary
-        | Former::Constructor
-        | Former::Parenthesized
-        | Former::TypeQuote
-        | Former::Boolean
-        | Former::Thunk
-        | Former::Lambda
-        | Former::Block
-        | Former::Return
-        | Former::Exit
-        | Former::Become
-        | Former::Loop
-        | Former::While
-        | Former::For
-        | Former::Break
-        | Former::Continue
-        | Former::Force
-        | Former::Run
-        | Former::Call
-        | Former::ForgetModel
-        | Former::Case
-        | Former::If
-        | Former::Telescope
-        | Former::List
-        | Former::PackModel
-        | Former::Injection
-        | Former::LazyRecord
-        | Former::Instantiation
-        | Former::Projection
-        | Former::TypeHead
-        | Former::TypePath
-        | Former::Universe
-        | Former::TypeApplication
-        | Former::ThunkType
-        | Former::ReturnerType
-        | Former::ArrowType
-        | Former::LinearArrowType
-        | Former::ProductType
-        | Former::SumType
-        | Former::LazyProductType
-        | Former::TelescopeType
-        | Former::LabelledSumType
-        | Former::LazyRecordType
-        | Former::ParenthesizedType
-        | Former::PathType
-        | Former::BridgeType
-        | Former::FlowType
-        | Former::RelationType
-        | Former::ManifestType
-        | Former::CapabilityType
-        | Former::AtType
-        | Former::StagedType
-        | Former::ModedType
-        | Former::Scope
-        | Former::Declaration
-        | Former::AttributeBlock
-        | Former::Visibility
-        | Former::Import
-        | Former::Module
-        | Former::Data
-        | Former::Mutual
-        | Former::SessionType
-        | Former::Action
-        | Former::Offer
-        | Former::Access
-        | Former::World
-        | Former::WorldDeclaration
-        | Former::Reserved(_)
-        | Former::Unadmitted(_)
-        | Former::Misplaced => return Maybe::Absent(literal::Absent::NotALiteral),
-    };
-
-    found.map_or(Maybe::Absent(literal::Absent::Malformed), Maybe::Present)
 }
 
 /// Read a number written with an integer width: decimal digits, then `u32`,

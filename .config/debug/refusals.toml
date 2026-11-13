@@ -82,7 +82,7 @@ sites = [
 
 [refusal.ExtraOperand]
 sites = [
-  { file = "crates/surface-lowering/src/module.rs", pattern = 'Err\(extra_operand\(FormName::ATTRIBUTE, (stray|extra)\)\)' },
+  { file = "crates/surface-lowering-base/src/module.rs", pattern = 'Err\(extra_operand\(FormName::ATTRIBUTE, (stray|extra)\)\)' },
 ]
 
 [refusal.FixedFieldDiffers]
@@ -97,7 +97,7 @@ sites = [
 
 [refusal.IllFormedDescription]
 sites = [
-  { file = "crates/surface-lowering/src/module/sealing.rs", pattern = '^\s*return Err\(LoweringRefusal::IllFormedDescription \{$' },
+  { file = "crates/surface-lowering-base/src/module/sealing.rs", pattern = '^\s*return Err\(LoweringRefusal::IllFormedDescription \{$' },
   { file = "crates/surface-lowering-base/src/description.rs", pattern = 'LoweringRefusal::IllFormedDescription \{$' },
 ]
 

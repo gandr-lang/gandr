@@ -84,10 +84,10 @@ pub fn grammar() -> Pbg
 /// - panics: if parsing fails or reports a repair.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a clean source parses to a tree over its source and
-///   grammar, and a source the parser repairs panics.
-/// - witness: `fixture::tests::a_clean_source_parses_whole_and_a_broken_one_carries_its_repair`
-/// - witness: `fixture::tests::a_broken_source_is_no_clean_fixture`
+/// - hypothesis: L3 — the predicate checks source and grammar identity; the
+///   body assertion separates a clean fixture from a repaired parse. Exact
+///   lowered spans observe the supplied source on finite built-in examples.
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
 #[spec(
     ensures: |ret| ret.source() == source && ret.grammar() == pbg.fingerprint(),
 )]
@@ -117,11 +117,10 @@ pub fn parsed<'source>(
 /// - panics: if parsing fails or reports no repair.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a source the parser repairs parses to a tree over its
-///   source and grammar whose reading holds the repair, and a clean source
-///   panics.
-/// - witness: `fixture::tests::a_clean_source_parses_whole_and_a_broken_one_carries_its_repair`
-/// - witness: `fixture::tests::a_clean_source_is_no_repaired_fixture`
+/// - hypothesis: L3 — source and grammar are checked by the predicate; the body
+///   assertion requires a repair. The declaration witness observes a postfix
+///   grout and its exact empty span, not every repair kind.
+/// - witness: `gandr-surface-lowering::lower::tests::a_repaired_declaration_is_refused`
 #[spec(
     ensures: |ret| ret.source() == source && ret.grammar() == pbg.fingerprint(),
 )]
@@ -281,10 +280,11 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - panics: if the builder identity space is exhausted.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declaration built under the grammar reads as the
-    ///   parser's tree of its text, over its source and the grammar's
-    ///   fingerprint.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the predicate checks the lookup grammar. Hand-built
+    ///   declarations exercise the staged source and molds through an exact
+    ///   lowering refusal; process-wide identity exhaustion is outside this
+    ///   fixture.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_malformed_integer_literal_is_refused`
     #[spec(
         ensures: |ret| ret.pbg.fingerprint() == pbg.fingerprint(),
     )]
@@ -311,9 +311,11 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - panics: if the builder identity space is exhausted.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a tree built under another grammar records that
-    ///   grammar's fingerprint.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the predicate checks the lookup grammar; a completed
+    ///   foreign-grammar tree observes the independent recorded fingerprint via
+    ///   the exact grammar-mismatch refusal. Identity exhaustion is not
+    ///   exercised.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_tree_of_another_grammar_is_refused`
     #[spec(
         ensures: |ret| ret.pbg.fingerprint() == pbg.fingerprint(),
     )]
@@ -342,9 +344,12 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - panics: if the count does not fit or the pair is missing.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the tiles of a declaration selected by their rule and
-    ///   label read as the parser's.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the returned mold is checked against both table
+    ///   fields. Hand-built declarations exercise repeated tile labels across
+    ///   named rules and exact malformed-literal refusals; arbitrary custom
+    ///   grammars are not enumerated by these built-in-grammar fixtures.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_malformed_integer_literal_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_root_that_is_not_a_module_is_refused`
     #[spec(
         ensures: |ret| {
             self.pbg.rule_of(ret).is_ok_and(|held| held.name == rule.0)
@@ -385,9 +390,12 @@ impl<'run, 'source> Handmade<'run, 'source>
     ///   remain attached, so a caught panic does not promise rollback.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a raw layout node keeps its label and its span at the
-    ///   root.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the predicate separates a new parent from its
+    ///   children. A hand-built declaration's malformed literal and exact
+    ///   refusal span observe label, span and child placement after finishing;
+    ///   this is finite fixture evidence, not a predicate over the opaque
+    ///   staged graph.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_malformed_integer_literal_is_refused`
     #[spec(
         ensures: |ret| !children.contains(&ret),
     )]
@@ -417,9 +425,12 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - panics: if mold selection or staging fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each tile of a hand-built declaration reads as the
-    ///   parser's tile at its span.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the predicate checks the named-pair domain without
+    ///   allocating a second tree. Hand-built literal and declaration fixtures
+    ///   observe the selected tile through exact lowering refusals. The finite
+    ///   fixtures do not enumerate all missing pairs or invalid spans.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_malformed_integer_literal_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_root_that_is_not_a_module_is_refused`
     #[spec(
         requires: u32::try_from(self.pbg.mold_count().0).is_ok_and(|count| {
             (0_u32 .. count).any(|position| {
@@ -455,9 +466,11 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - panics: if mold selection or staging fails; no rollback is promised.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declaration melded over five tiles reads as the
-    ///   parser's declaration.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the predicate checks parent-child distinctness. A
+    ///   declaration fixture with several differently labelled children
+    ///   observes their placement through the malformed literal's exact
+    ///   refusal; the opaque staged graph is not inspected by the predicate.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_malformed_integer_literal_is_refused`
     #[spec(
         ensures: |ret| !children.contains(&ret),
     )]
@@ -490,9 +503,12 @@ impl<'run, 'source> Handmade<'run, 'source>
     /// - panics: if staging or finishing fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the module closed over a hand-built declaration reads
-    ///   it as its first form.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — the root label, span and child count are checked by
+    ///   predicate. Malformed-literal and foreign-grammar fixtures observe the
+    ///   root's contents and retained grammar through different exact refusals;
+    ///   this does not cover every staged graph or finishing failure.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_malformed_integer_literal_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_tree_of_another_grammar_is_refused`
     #[spec(
         ensures: |ret| {
             ret.node(ret.root()).is_some_and(|root| {
@@ -531,9 +547,13 @@ impl<'run, 'source> Handmade<'run, 'source>
     ///   builder.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a tree finished at a declaration is rooted there and
-    ///   reads as that declaration.
-    /// - witness: `fixture::tests::a_handmade_tree_reads_as_the_parser_s_tree_of_its_text`
+    /// - hypothesis: L3 — a declaration-rooted tree is refused as the wrong
+    ///   module sort at its exact span, while a wald-rooted foreign-grammar
+    ///   tree retains its requested fingerprint. These distinguish root
+    ///   wrapping and grammar substitution on those fixtures, not arbitrary
+    ///   staged graphs.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_root_that_is_not_a_module_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_tree_of_another_grammar_is_refused`
     #[inline]
     #[must_use]
     pub fn finish(
@@ -683,162 +703,6 @@ mod tests
             presentation_text(&arena, end),
             "End",
             "a constructor with no field is its name alone"
-        );
-    }
-
-    /// A clean source parses to a tree over that source and grammar, and a
-    /// broken one to such a tree whose root reads the parser's repair.
-    #[test]
-    fn a_clean_source_parses_whole_and_a_broken_one_carries_its_repair()
-    {
-        use gandr_surface_syntax::SourceText;
-
-        use super::grammar;
-        use super::parsed;
-        use super::repaired;
-        use crate::form::Pieces;
-        use crate::form::read_pieces;
-
-        let pbg = grammar();
-        let clean = SourceText::from("def a = 3;");
-        let tree = parsed(&pbg, clean);
-        assert_eq!((tree.source(), tree.grammar()), (clean, pbg.fingerprint()));
-        let broken = SourceText::from("def x ;");
-        let tree = repaired(&pbg, broken);
-        assert_eq!((tree.source(), tree.grammar()), (broken, pbg.fingerprint()));
-        let mut root = Pieces::new();
-        read_pieces(&pbg, &tree, tree.root(), &mut root).unwrap();
-        let declaration = root.pieces.first().unwrap().placed();
-        let mut read = Pieces::new();
-        read_pieces(&pbg, &tree, declaration.node, &mut read).unwrap();
-        assert!(
-            [root.repair, read.repair]
-                .iter()
-                .any(|repair| matches!(*repair, quenchant_shape::shape::Maybe::Present(_))),
-            "the root or the declaration reads the repair"
-        );
-    }
-
-    /// A source the parser repairs is no clean fixture.
-    #[test]
-    #[should_panic(expected = "repair")]
-    fn a_broken_source_is_no_clean_fixture()
-    {
-        let _tree = super::parsed(
-            &super::grammar(),
-            gandr_surface_syntax::SourceText::from("def x ;"),
-        );
-    }
-
-    /// A source the parser accepts whole is no repaired fixture.
-    #[test]
-    #[should_panic(expected = "repair")]
-    fn a_clean_source_is_no_repaired_fixture()
-    {
-        let _tree = super::repaired(
-            &super::grammar(),
-            gandr_surface_syntax::SourceText::from("def a = 3;"),
-        );
-    }
-
-    /// A declaration built by hand reads as the one the parser builds for its
-    /// text, under the module the builder closes; finished at the declaration
-    /// it is rooted there; a builder under another grammar records it, and a
-    /// raw node keeps its label.
-    #[test]
-    fn a_handmade_tree_reads_as_the_parser_s_tree_of_its_text()
-    {
-        use gandr_surface_syntax::ByteOffset;
-        use gandr_surface_syntax::ByteSpan;
-        use gandr_surface_syntax::GrammarFingerprint;
-        use gandr_surface_syntax::NodeLabel;
-        use gandr_surface_syntax::SourceText;
-        use gandr_surface_syntax::StagedId;
-        use gandr_surface_syntax::SyntaxTree;
-
-        use super::Handmade;
-        use super::Rule;
-        use super::Spelled;
-        use super::grammar;
-        use super::parsed;
-        use super::span;
-        use crate::form::Piece;
-        use crate::form::Pieces;
-        use crate::form::read_pieces;
-
-        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let pbg = grammar();
-        let text = SourceText::from("def a = 3 ;");
-        let declaration = |made: &mut Handmade<'_, 'static>| -> StagedId {
-            let keyword = made.tile(Rule("def_value"), Spelled("def"), at(0_usize, 3_usize));
-            let name = made.tile(
-                Rule("def_value"),
-                Spelled("identifier"),
-                at(4_usize, 5_usize),
-            );
-            let equals = made.tile(Rule("def_value"), Spelled("="), at(6_usize, 7_usize));
-            let body = made.tile(
-                Rule("number.expression"),
-                Spelled("number"),
-                at(8_usize, 9_usize),
-            );
-            let close = made.tile(Rule("def_value"), Spelled(";"), at(10_usize, 11_usize));
-            made.meld(Rule("def_value"), Spelled("def"), at(0_usize, 11_usize), &[
-                keyword, name, equals, body, close,
-            ])
-        };
-        let pieces = |tree: &SyntaxTree<'_>, root: bool| -> Vec<(bool, ByteSpan)> {
-            let mut held = tree.root();
-            if root {
-                let mut read = Pieces::new();
-                read_pieces(&pbg, tree, held, &mut read).unwrap();
-                held = read.pieces.first().unwrap().placed().node;
-            }
-            let mut read = Pieces::new();
-            read_pieces(&pbg, tree, held, &mut read).unwrap();
-            read.pieces
-                .iter()
-                .map(|piece| (matches!(*piece, Piece::Tile { .. }), piece.placed().span))
-                .collect()
-        };
-        let mut made = Handmade::new(&pbg, text);
-        let staged = declaration(&mut made);
-        let module = made.module(at(0_usize, 11_usize), &[staged]);
-        assert_eq!(
-            (module.source(), module.grammar()),
-            (text, pbg.fingerprint())
-        );
-        assert_eq!(
-            pieces(&module, true),
-            pieces(&parsed(&pbg, text), true),
-            "the hand-built declaration reads as the parsed one"
-        );
-        let mut made = Handmade::new(&pbg, text);
-        let staged = declaration(&mut made);
-        let finished = made.finish(staged);
-        assert_eq!(
-            pieces(&finished, false),
-            pieces(&module, true),
-            "finished at the declaration, the tree is rooted there"
-        );
-        let foreign = GrammarFingerprint::from(0_u64);
-        let mut made = Handmade::under(&pbg, SourceText::from("x"), foreign);
-        let name = made.tile(
-            Rule("identifier.expression"),
-            Spelled("identifier"),
-            at(0_usize, 1_usize),
-        );
-        assert_eq!(
-            made.module(at(0_usize, 1_usize), &[name]).grammar(),
-            foreign
-        );
-        let mut made = Handmade::new(&pbg, SourceText::from("  "));
-        let space = made.raw(NodeLabel::Space, at(0_usize, 2_usize), &[]);
-        let tree = made.finish(space);
-        assert_eq!(
-            tree.node(tree.root())
-                .map(|node| (node.label(), node.span())),
-            Some((NodeLabel::Space, at(0_usize, 2_usize)))
         );
     }
 }

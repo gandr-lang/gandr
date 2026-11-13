@@ -101,7 +101,8 @@ impl<'body> CircuitReading<'body>
     /// # Adequacy
     /// - hypothesis: L3 — a marked merge gives a spider; the same merge
     ///   unmarked, and a marked wire that neither merges nor splits, give none.
-    /// - witness: `circuit::embed::tests::a_reading_is_spidered_where_a_marked_wire_merges_5763`
+    /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
+    /// - witness: `description::theory::tests::an_unmarked_merge_keeps_the_boundary_reading_5763`
     #[inline]
     #[must_use]
     pub fn spidered(self) -> Option<Self>

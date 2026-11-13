@@ -454,9 +454,9 @@ pub fn deprecation(
 ///   it holds.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the one use of a marked declaration carries its bytes,
-///   its name and the text its attribute states.
-/// - witness: `tests::attribute::a_deprecated_use_carries_its_bytes_its_name_and_its_texts`
+/// - hypothesis: L3 — as
+///   [`LoweredModule::deprecated_uses`](crate::module::LoweredModule::deprecated_uses).
+/// - witness: `gandr-surface-lowering::lower::tests::each_use_of_a_deprecated_declaration_is_listed`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeprecatedUse<'source>
 {
@@ -1153,9 +1153,10 @@ pub const fn payload_verdict(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the literal formers, a bare name and three other formers
-///   each read as their own form.
-/// - witness: `attribute::tests::each_former_reads_as_its_own_payload_form`
+/// - hypothesis: L3 — source attributes reject a payload of the wrong literal
+///   form, and a word schema admits a bare word and refuses a text.
+/// - witness: `gandr-surface-lowering::lower::tests::a_payload_of_the_wrong_form_is_refused`
+/// - witness: `gandr-surface-lowering::lower::tests::a_form_payload_is_read_as_one_of_its_words`
 #[spec(
     ensures: |ret| {
         matches!(ret, PayloadForm::Integer) == matches!(former, Former::Number)
@@ -1558,7 +1559,7 @@ impl AttributeTable
     /// # Adequacy
     /// - hypothesis: L3 — worlds filed under one key are read back from it and
     ///   from no other.
-    /// - witness: `attribute::tests::the_table_reads_back_what_it_files_under_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_entry_names_its_home_then_its_capabilities`
     #[spec(
         captures: count = worlds.len(),
         ensures: self.worlds.get(&key).is_some_and(|held| held.len() == count),
@@ -1589,7 +1590,9 @@ impl AttributeTable
     /// # Adequacy
     /// - hypothesis: L3 — an `entry`, a `respects` and a `boundary` separate
     ///   the three routes.
-    /// - witness: `attribute::tests::the_table_reads_back_what_it_files_under_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_entry_names_its_home_then_its_capabilities`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_respects_attribute_names_its_laws_through_either_form`
+    /// - witness: `gandr-surface-lowering::lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
     #[spec(
         captures: count = named.len(),
         ensures: count == 0
@@ -1688,7 +1691,8 @@ impl AttributeTable
     /// # Adequacy
     /// - hypothesis: L3 — a spelling filed under one key is read back from it,
     ///   and from no other key or entry.
-    /// - witness: `attribute::tests::the_table_reads_back_what_it_files_under_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
+    /// - witness: `gandr-surface-lowering::lower::tests::traces_is_written_once_per_channel_3338`
     #[spec(ensures: self.spellings.contains_key(&(key, at)))]
     #[inline]
     pub fn file_spelled(
@@ -1713,7 +1717,8 @@ impl AttributeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::file_spelled`].
-    /// - witness: `attribute::tests::the_table_reads_back_what_it_files_under_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
+    /// - witness: `gandr-surface-lowering::lower::tests::traces_is_written_once_per_channel_3338`
     #[spec(ensures: |ret| ret.is_some() == self.spellings.contains_key(&(key, at)))]
     #[inline]
     #[must_use]
@@ -1741,7 +1746,7 @@ impl AttributeTable
     /// # Adequacy
     /// - hypothesis: L3 — a marker, a record and an undecorated declaration
     ///   separate the answers.
-    /// - witness: `attribute::tests::the_table_reads_back_what_it_files_under_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     #[spec(ensures: |ret| ret.is_none() || !self.entries(key).is_empty())]
     #[must_use]
     #[inline]
@@ -1778,7 +1783,7 @@ impl AttributeTable
     /// # Adequacy
     /// - hypothesis: L3 — a filed key and an unfiled one separate the two
     ///   answers.
-    /// - witness: `attribute::tests::the_table_reads_back_what_it_files_under_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::an_entry_names_its_home_then_its_capabilities`
     #[spec(
         ensures: |ret| match self.worlds.get(&key) {
             | Some(worlds) => core::ptr::eq(&raw const *ret, &raw const *worlds.as_slice()),
@@ -2366,114 +2371,6 @@ mod tests
                 ))
                 .is_empty(),
             "a key the table holds nothing for reads as the empty list"
-        );
-    }
-
-    /// The literal formers read as their own payload forms, a bare name as a
-    /// word, and every other former as a value of another form.
-    #[test]
-    fn each_former_reads_as_its_own_payload_form()
-    {
-        use crate::form::Former;
-
-        for (former, form) in [
-            (Former::Number, PayloadForm::Integer),
-            (Former::Text, PayloadForm::Text),
-            (Former::Name, PayloadForm::Word),
-            (Former::Character, PayloadForm::OtherValue),
-            (Former::Constructor, PayloadForm::OtherValue),
-            (Former::Lambda, PayloadForm::OtherValue),
-        ] {
-            assert_eq!(super::payload_form(former), form, "{former:?}");
-        }
-    }
-
-    /// What the table files under one key it reads back from that key alone:
-    /// the worlds of an `entry`, the laws of a `respects`, nothing of a
-    /// `boundary`, a spelling by its entry's span, and a deprecation by its
-    /// payload.
-    #[test]
-    fn the_table_reads_back_what_it_files_under_its_key_alone()
-    {
-        let mut table = AttributeTable::new();
-        let [first, second, third] = [1_u8, 2, 3]
-            .map(|form| keyed(SourceIndex::default(), NodeDigest::from([form; 32_usize])));
-        let names = vec![ConstantIndex::from(4_usize), ConstantIndex::from(7_usize)];
-        table.file_named(first, registered(SurfaceName::from("entry")), names.clone());
-        table.file_named(
-            second,
-            registered(SurfaceName::from("respects")),
-            names.clone(),
-        );
-        table.file_named(
-            third,
-            registered(SurfaceName::from("boundary")),
-            names.clone(),
-        );
-        assert_eq!(
-            (table.worlds(first), table.laws(first)),
-            (names.as_slice(), [].as_slice()),
-            "an `entry` names worlds"
-        );
-        assert_eq!(
-            (table.worlds(second), table.laws(second)),
-            ([].as_slice(), names.as_slice()),
-            "a `respects` names laws"
-        );
-        assert_eq!(
-            (table.worlds(third), table.laws(third)),
-            ([].as_slice(), [].as_slice()),
-            "a `boundary` files nothing here"
-        );
-        table.file_worlds(third, vec![ConstantIndex::from(9_usize)]);
-        assert_eq!(table.worlds(third), [ConstantIndex::from(9_usize)]);
-
-        let at = span(ByteOffset::from(0_usize), ByteOffset::from(9_usize));
-        let elsewhere = span(ByteOffset::from(10_usize), ByteOffset::from(19_usize));
-        table.file_spelled(first, at, String::from("explicit"));
-        assert_eq!(table.spelled(first, at), Some(&String::from("explicit")));
-        assert_eq!(
-            table.spelled(first, elsewhere),
-            None,
-            "another entry's span"
-        );
-        assert_eq!(table.spelled(second, at), None, "another key");
-
-        let mut arena = CoreArena::new();
-        let note = arena.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
-            String::from("use `cube`"),
-        )));
-        let record = arena.value_record(BTreeMap::from([(
-            gandr_kernel_term::FieldLabel::from(String::from("note")),
-            note,
-        )]));
-        let deprecated = |payload| {
-            AttributeEntry::new(
-                registered(SurfaceName::from("deprecated")),
-                AttributeSchema::MarkerOrRecord(&["since", "note"]),
-                payload,
-                at,
-            )
-        };
-        table.file(first, deprecated(Maybe::Absent(payload::Absent::Marker)));
-        table.file(second, deprecated(Maybe::Present(record)));
-        assert_eq!(
-            table.deprecation(first, &arena),
-            Some(Deprecation::default()),
-            "a bare marker states nothing"
-        );
-        assert_eq!(
-            table.deprecation(second, &arena),
-            Some(Deprecation {
-                since: None,
-                note: Some(String::from("use `cube`")),
-            }),
-            "a record states its texts"
-        );
-        assert_eq!(
-            table.deprecation(third, &arena),
-            None,
-            "an undecorated declaration"
         );
     }
 

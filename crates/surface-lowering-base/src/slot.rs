@@ -20,10 +20,13 @@
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a member's written signature declares it and its derived
-///   type is a witness; an opaque ascription's abstract component is declared
+/// - hypothesis: L3 — declared names export while signature witnesses and held
+///   refusals do not; an opaque ascription's abstract component is declared
 ///   before the members.
-/// - witness: `tests::slot::each_slot_is_read_with_its_role`
+/// - witness: `gandr-surface-lowering::tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `gandr-surface-lowering::tests::modules::signatures_attach_to_their_defs`
+/// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
+/// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Role
 {

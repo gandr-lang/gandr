@@ -4,7 +4,10 @@
 # would reject them.
 #:tombi schema.strict = false
 
-min_version = "2026.10.3"
+# The floor is the pin, `mise run mise:pin`, so an older mise refuses the
+# tree: an older mise rewrites `mise.lock` (#6976). Each host runs the pin,
+# and `tools:push` on the builder brings each host to it (#7008).
+min_version = "2026.11.4"
 
 [settings]
 activate_aggressive = true
