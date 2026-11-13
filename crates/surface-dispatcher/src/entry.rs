@@ -60,14 +60,18 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Composed;
-use crate::report::Lints;
-use crate::report::Reach;
-use crate::report::Shown;
-use crate::report::Verb;
-use crate::report::shown;
 use crate::walk::Standing;
 use crate::walk::Step;
 use crate::workspace::stepped_alone;
+
+pub mod exercised;
+pub mod report;
+
+use self::report::Lints;
+use self::report::Reach;
+use self::report::Shown;
+use self::report::Verb;
+use self::report::shown;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration has no entry.

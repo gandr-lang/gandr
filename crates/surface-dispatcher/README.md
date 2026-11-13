@@ -30,7 +30,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`; `Admission::admit_resuming` and `Resumption` resume from an earlier readmission; `install_verdict_cache` keeps kernel verdicts on disk, in the process, or in both for a server ([`verdicts`](src/verdicts.rs)). `install_admission_policy` and `admitted_tally`: the admission policy ([`tier`](src/tier.rs)).
 - `spellings` and `failures` on `Composed::Settled`: the `TypeSpellings` and the `Failures` that a face reads each checker refusal through ([`compose`](src/compose.rs)).
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds ([`entry`](src/entry.rs)).
-- `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables and where each reaches ([`report`](src/report.rs)). `inferred` and `runs` on `Composed::Settled` hold what `explicit-exits` and `explicit-runs` report ([`compose`](src/compose.rs)).
+- `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables and where each reaches ([`entry::report`](src/entry/report.rs)). `inferred` and `runs` on `Composed::Settled` hold what `explicit-exits` and `explicit-runs` report ([`compose`](src/compose.rs)).
 - `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy.
 - `adapt`: the lowering's module as checker declaration input.
 - `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at, from one typed run of the checker. `TypeTable::of_parsed`, `of_parsed_unit` and `of_parsed_after` type a parse the caller holds ([`typed`](src/typed.rs)). `TypeTable::shadows` and `hidden_at`: each binder that hides a binding.
@@ -103,8 +103,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The driver's pool, the reader | [`pool`](src/pool.rs), [`reader`](src/reader.rs) |
 | The default width | [`width`](src/width.rs) |
 | Membership, the pending set | [`root`](src/root.rs) |
-| Faults, unsettled declarations and goals | [`report`](src/report.rs) |
-| The exercised table | [`exercised`](src/exercised.rs) |
+| Faults, unsettled declarations and goals | [`entry::report`](src/entry/report.rs) |
+| The exercised table | [`entry::exercised`](src/entry/exercised.rs) |
 | The run and the stage verbs; the store account | [`script`](src/script.rs), [`stage`](src/stage.rs); [`stored`](src/stored.rs) |
 | The format verb | [`format`](src/format.rs) |
 

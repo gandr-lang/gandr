@@ -135,11 +135,11 @@ use quenchant_shape::shape::Maybe;
 
 use crate::compose::Composed;
 use crate::entry::entries;
+use crate::entry::report::Goals;
+use crate::entry::report::Verb;
 use crate::evaluate::Program;
 use crate::evaluate::WorldBindings;
 use crate::evaluate::declaration_name;
-use crate::report::Goals;
-use crate::report::Verb;
 use crate::walk::Step;
 use crate::workspace::Answered;
 use crate::workspace::Spelling;
