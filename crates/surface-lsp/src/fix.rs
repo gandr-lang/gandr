@@ -470,8 +470,8 @@ mod tests
     use crate::protocol::DocumentUri;
     use crate::protocol::DocumentVersion;
     use crate::protocol::EditsShaped;
-    use crate::recheck::forms;
-    use crate::recheck::grammar;
+    use crate::toolkit::forms;
+    use crate::toolkit::grammar;
 
     /// A client that takes versioned edits and snippet edits.
     const SNIPPETS: EditsShaped = EditsShaped {

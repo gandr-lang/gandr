@@ -57,7 +57,7 @@ use gandr_core_fork::activity::Slots;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::activity_clock;
 
-use crate::server::Peer;
+use crate::peer::Peer;
 
 mod pane;
 

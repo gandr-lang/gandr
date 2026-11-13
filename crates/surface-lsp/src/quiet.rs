@@ -913,7 +913,7 @@ pub mod tests
     use crate::position::Range;
     use crate::protocol::Diagnostic;
     use crate::protocol::Severity;
-    use crate::recheck::grammar;
+    use crate::toolkit::grammar;
 
     /// The files a watch handed `inbox`'s loop, one list per handing, in the
     /// order they came.

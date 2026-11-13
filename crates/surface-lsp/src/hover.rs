@@ -220,9 +220,9 @@ use crate::reading::ImportAt;
 use crate::reading::Reading;
 use crate::reading::Tile;
 use crate::reading::Written;
-use crate::recheck::roles;
 use crate::search::Found;
 use crate::signature::Signatures;
+use crate::toolkit::roles;
 use crate::tracking::Gap;
 
 /// The page width a hover lays a type out at.
@@ -2043,7 +2043,7 @@ mod tests
     use crate::position::Line;
     use crate::position::Position;
     use crate::reading::Reading;
-    use crate::recheck::grammar;
+    use crate::toolkit::grammar;
 
     /// The style a client keeping no HTML tags reads, in the explicit form
     /// the fixtures below are written in.

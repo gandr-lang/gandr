@@ -204,6 +204,11 @@ work = "doi:10.4230/lipics.rta.2013.223"
 exemplar = "no newer work states homotopical completion with the parting critical pair as its obstruction; the newer monograph cites it for the procedure"
 
 [[site]]
+site = "surface-lsp-base"
+work = "doi:10.17487/rfc8089"
+exemplar = "RFC 8089 is the standard of the file URI scheme, and no newer work states the scheme or the percent-decoding of its path"
+
+[[site]]
 site = "surface-dispatcher::evaluate::reals"
 work = "Escardó-2004-synthetic_topology_data_types_classical_spaces"
 exemplar = "no newer work states a strict comparison of two reals as an open that a run semidecides, with no stop read as false"

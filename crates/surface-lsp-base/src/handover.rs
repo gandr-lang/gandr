@@ -61,10 +61,8 @@ pub struct Carried(pub Vec<u8>);
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a handover written and read back keeps its replay and
-///   carried bytes, and a session opened by a switch's handover goes on in the
-///   next relay with the replay's answers dropped.
+///   carried bytes.
 /// - witness: `handover::tests::a_handover_reads_back_as_written`
-/// - witness: `hub::tests::a_relay_switches_once_nothing_is_pending`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Handover
 {

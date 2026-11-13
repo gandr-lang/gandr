@@ -60,10 +60,10 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::peer::Peer;
 use crate::relocate::Moves;
 use crate::search::Declared;
 use crate::search::declared;
-use crate::server::Peer;
 
 /// A source's place in the table, stable while the table lives.
 #[repr(transparent)]
@@ -654,10 +654,10 @@ mod tests
     use gandr_surface_grammar::built_in;
 
     use super::Files;
+    use crate::peer::Peer;
     use crate::protocol::DocumentUri;
     use crate::protocol::FileRename;
     use crate::relocate::Moves;
-    use crate::server::Peer;
 
     /// A package source. Its sources are in its own directory.
     const ROOTED: &str = "// The scratch package. Its sources are in its directory.\n";

@@ -307,7 +307,7 @@ mod tests
     use crate::hover::hovering;
     use crate::protocol::InlayHint;
     use crate::reading::Reading;
-    use crate::recheck::grammar;
+    use crate::toolkit::grammar;
 
     /// The hints over the bytes `window` of `text`, the source at `path`,
     /// that `keep` holds, each as its line, named by the declaration it stands

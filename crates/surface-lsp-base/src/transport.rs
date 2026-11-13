@@ -41,13 +41,15 @@ use quenchant_shape::shape::Maybe;
 ///
 /// economy: 64 MiB. The ceiling bounds the buffer a broken or hostile length
 /// would allocate before a byte of the body arrives; a source file past it is
-/// not a document an editor sends whole on every change.
+/// not a document an editor sends whole on every change. #7034 grows the
+/// buffer as the bytes arrive.
 const BODY_CEILING: usize = 0x0400_0000;
 
 /// The most bytes one header line may hold, its terminator included.
 ///
 /// economy: 1 KiB. The protocol defines two headers, each a short name and a
 /// short value; the ceiling bounds the buffer a line with no terminator fills.
+/// #7034 reads the header and the body through one bounded reader.
 const HEADER_CEILING: usize = 1_024;
 
 /// The one header the framing reads, compared case-insensitively.

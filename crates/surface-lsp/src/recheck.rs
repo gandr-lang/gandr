@@ -152,7 +152,6 @@ use core::fmt::Write as _;
 use core::time::Duration;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::time::Instant;
 
 use anodized::spec;
@@ -193,11 +192,8 @@ use gandr_surface_dispatcher::path_imports;
 use gandr_surface_dispatcher::shown;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_dispatcher::written;
-use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
-use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Spelling;
-use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::Unit;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
@@ -224,7 +220,6 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::inline::Forms;
 use crate::instrument::Job;
 use crate::position::Range;
 use crate::protocol::CodeDescription;
@@ -241,6 +236,8 @@ use crate::quiet::formless;
 use crate::reading::Reading;
 use crate::signature::Signatures;
 use crate::tier::Tier;
+use crate::toolkit::grammar;
+use crate::toolkit::roles;
 
 /// The session one open document's revisions are submitted to, or the fault
 /// that kept the grammar it parses under from building. Its store keeps
@@ -248,127 +245,6 @@ use crate::tier::Tier;
 /// `saved` module states.
 pub type DocumentSession =
     Result<Session<DiscardingCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
-
-/// The built-in grammar, the role table read off it and the forms an inline
-/// completion offers under it.
-#[derive(Debug)]
-struct Toolkit
-{
-    /// The grammar every document is parsed and composed under.
-    grammar: Pbg,
-    /// The roles its molds highlight as.
-    roles: RoleTable,
-    /// The forms a hole of each sort can open.
-    forms: Forms,
-}
-
-/// The process's one toolkit, or the fault that kept it from building.
-static TOOLKIT: OnceLock<Result<Toolkit, PbgError>> = OnceLock::new();
-
-/// The process's one toolkit, built on first use.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the same toolkit, at the same address, on every call; the
-///   grammar, its role table and its forms are built by the first call alone.
-/// - provides: the grammar every recheck and every highlight reads.
-/// - fails: the [`PbgError`] the first build met, on every call, since the
-///   built-in grammar is the same on every call.
-/// - panics: none.
-///
-/// # Errors
-/// [`PbgError`], as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — two calls are asserted to answer one address.
-/// - witness: `recheck::tests::the_grammar_is_built_once_per_process`
-#[spec(ensures: |ret| TOOLKIT.get().is_some_and(|stored|
-    match (stored.as_ref(), ret) {
-        (Ok(expected), Ok(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
-        (Err(expected), Err(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
-        _ => false,
-    }))]
-fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
-{
-    TOOLKIT
-        .get_or_init(|| {
-            let grammar = built_in()?;
-            let roles = RoleTable::build(&grammar)?;
-            let forms = Forms::new(&grammar);
-            Ok(Toolkit {
-                grammar,
-                roles,
-                forms,
-            })
-        })
-        .as_ref()
-}
-
-/// The process's one grammar, built on first use.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the grammar of [`toolkit`], at the same address on every call.
-/// - provides: the grammar an inline completion and the outline mold under.
-/// - fails: the [`PbgError`] the toolkit's first build met.
-/// - panics: none.
-///
-/// # Errors
-/// [`PbgError`], as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the grammar is asserted at the toolkit's address;
-///   building a grammar of its own changes that address.
-/// - witness: `recheck::tests::the_grammar_is_built_once_per_process`
-#[spec(ensures: |ret| ret.is_ok() == toolkit().is_ok())]
-pub fn grammar() -> Result<&'static Pbg, &'static PbgError>
-{
-    toolkit().map(|toolkit| &toolkit.grammar)
-}
-
-/// The forms of the process's one grammar, read off it with it.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the forms of [`toolkit`], at the same address on every call.
-/// - provides: the forms an inline completion offers to fill a slot.
-/// - fails: the [`PbgError`] the toolkit's first build met.
-/// - panics: none.
-///
-/// # Errors
-/// [`PbgError`], as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the server's inline witness answers forms at an open slot
-///   only when they are read off the process's grammar.
-/// - witness: `server::tests::inline_completion_answers_the_expected_closer`
-#[spec(ensures: |ret| ret.is_ok() == toolkit().is_ok())]
-pub fn forms() -> Result<&'static Forms, &'static PbgError>
-{
-    toolkit().map(|toolkit| &toolkit.forms)
-}
-
-/// The role table of the process's one grammar, built with it.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the role table of [`toolkit`], at the same address on every call.
-/// - provides: the roles the outline reads a declaration's name by.
-/// - fails: the [`PbgError`] the toolkit's first build met.
-/// - panics: none.
-///
-/// # Errors
-/// [`PbgError`], as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the outline witness names each declaration by the role
-///   its name tile highlights as; a table of another grammar fails it.
-/// - witness: `outline::tests::declarations_nest_as_symbols`
-#[spec(ensures: |ret| ret.is_ok() == toolkit().is_ok())]
-pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
-{
-    toolkit().map(|toolkit| &toolkit.roles)
-}
 
 /// A fresh session for the document at `uri`, under the root its `file`
 /// URI's path classifies as, molding its forms and judging its candidates on
@@ -398,9 +274,9 @@ pub fn open(
     pool: &Arc<Pool>,
 ) -> DocumentSession
 {
-    let toolkit = toolkit()?;
+    let grammar = grammar()?;
     Ok(Session::new(
-        toolkit.grammar.clone(),
+        grammar.clone(),
         classify(&uri.path()),
         DiscardingCheckpointStore,
         InMemoryBlockStore::default(),
@@ -2056,17 +1932,16 @@ mod tests
 
     use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_grammar::Spelling;
+    use gandr_surface_lsp_base::tokens::TokenStream;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
     use super::Reached;
     use super::admission;
     use super::admitted;
-    use super::grammar;
     use super::open;
     use super::recheck;
     use super::settle;
-    use super::toolkit;
     use super::trial;
     use crate::position::Character;
     use crate::position::Line;
@@ -2080,7 +1955,6 @@ mod tests
     use crate::protocol::Severity;
     use crate::quiet::formless;
     use crate::reading::Reading;
-    use crate::tokens::TokenStream;
     use crate::tokens::encode;
 
     /// A recheck asked about no caret.
@@ -2365,22 +2239,6 @@ mod tests
                 character: Character::from(end_character),
             },
         }
-    }
-
-    #[test]
-    fn the_grammar_is_built_once_per_process()
-    {
-        let first = toolkit().expect("the built-in grammar builds");
-        let second = toolkit().expect("the built-in grammar builds");
-        assert!(
-            core::ptr::eq(core::ptr::from_ref(first), core::ptr::from_ref(second)),
-            "each recheck reads one shared grammar rather than building its own"
-        );
-        let grammar = grammar().expect("the built-in grammar builds");
-        assert!(
-            core::ptr::eq(core::ptr::from_ref(grammar), &raw const first.grammar),
-            "an inline completion molds under the toolkit's grammar"
-        );
     }
 
     #[test]

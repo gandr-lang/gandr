@@ -11,14 +11,14 @@
 //! `<pre><code>` (or `<code>` inline), each run the highlighter classifies
 //! wrapped in `<span style="color:var(--vscode-gandr-hover-<role>);">`, the
 //! rest HTML-escaped. The roles are the ones the semantic tokens carry: text
-//! read from the document takes the spans its [`crate::reading::Reading`]
-//! holds over that range, so a name hovers in the colour it has in the editor;
-//! text the printer wrote is parsed in a host declaration (`def h : <type> ;`
-//! for a type, `def h = <term> ;` for a term) and takes the spans the same
-//! role table gives it there. Text the parser does not read is written
-//! escaped and uncoloured. A client that keeps none of those tags reads the
-//! fenced `gandr` block the hover always wrote, byte for byte, and colours it
-//! with its own grammar for the fence's language, if it has one.
+//! read from the document takes the spans that the server's one reading of
+//! the document holds over that range, so a name hovers in the colour it has
+//! in the editor; text the printer wrote is parsed in a host declaration
+//! (`def h : <type> ;` for a type, `def h = <term> ;` for a term) and takes
+//! the spans the same role table gives it there. Text the parser does not read
+//! is written escaped and uncoloured. A client that keeps none of those tags
+//! reads the fenced `gandr` block the hover always wrote, byte for byte, and
+//! colours it with its own grammar for the fence's language, if it has one.
 //!
 //! The colour is a CSS variable, not a colour: VS Code's sanitizer keeps a
 //! `style` attribute that names one of its own theme variables, and an
@@ -47,8 +47,8 @@ use gandr_surface_syntax::SourceText;
 
 use crate::fragment::coloured;
 use crate::fragment::fragments;
-use crate::recheck::grammar;
-use crate::recheck::roles;
+use crate::toolkit::grammar;
+use crate::toolkit::roles;
 
 /// The tags a client's markdown renderer keeps for the server to write HTML.
 const TAGS: [&str; 3] = ["span", "pre", "code"];
@@ -85,6 +85,7 @@ impl Markup
     /// - witness: `markup::tests::html_needs_every_tag_it_writes`
     #[spec(ensures: |ret| (ret == Self::Html) == TAGS.iter().all(|wanted| tags.iter().any(|tag| tag == wanted)))]
     #[must_use]
+    #[inline]
     pub fn of(tags: &[String]) -> Self
     {
         if TAGS
@@ -103,6 +104,7 @@ impl Markup
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn opener(self) -> Opener
     {
         Opener(match self {
@@ -136,6 +138,8 @@ impl Host
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn host(
         self,
         text: SourceText<'_>,
@@ -210,6 +214,7 @@ impl Code
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn new(markup: Markup) -> Self
     {
         Self {
@@ -235,6 +240,7 @@ impl Code
     /// - hypothesis: L3 — a hovered name and binder are coloured as the
     ///   editor's tokens colour them.
     /// - witness: `markup::tests::quoted_and_printed_text_take_their_roles`
+    #[inline]
     pub fn quoted(
         &mut self,
         text: SourceText<'_>,
@@ -275,6 +281,7 @@ impl Code
     ///   uncoloured as the editor leaves it, and the markdown text is the
     ///   printed text itself.
     /// - witness: `markup::tests::quoted_and_printed_text_take_their_roles`
+    #[inline]
     pub fn printed(
         &mut self,
         text: SourceText<'_>,
@@ -300,6 +307,7 @@ impl Code
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn plain(
         &mut self,
         text: SourceText<'_>,
@@ -377,6 +385,7 @@ impl Code
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn block(self) -> String
     {
         match self.markup {
@@ -398,6 +407,7 @@ impl Code
     /// - witness: `markup::tests::plain_text_is_escaped_and_uncoloured`
     /// - witness: `markup::tests::inline_html_escapes_the_markdown_punctuation_outside_its_tags`
     #[must_use]
+    #[inline]
     pub fn inline(self) -> String
     {
         match self.markup {
@@ -436,6 +446,7 @@ impl Code
 }
 
 /// `text`, a declaration's documentation in markdown, written for `markup`.
+///
 /// In HTML, each fragment outside a fenced block that reads as gandr is
 /// coloured inline code, so a hover colours the fragment as the editor does.
 ///
@@ -457,9 +468,9 @@ impl Code
 ///   coloured code for the name and keeps the path as written. A fenced block
 ///   stays as it is. The markdown text is unchanged.
 /// - witness: `markup::tests::documentation_colours_its_fragments_in_html`
-/// - witness: `hover::tests::a_documented_fragment_hovers_in_its_editor_colours_4919`
 #[spec(ensures: |ret| markup != Markup::Markdown || ret == <&str>::from(text))]
 #[must_use]
+#[inline]
 pub fn documented(
     markup: Markup,
     text: SourceText<'_>,
@@ -535,6 +546,7 @@ fn unfenced(text: SourceText<'_>) -> Vec<ByteRange>
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn escape(
     out: &mut String,
     text: SourceText<'_>,

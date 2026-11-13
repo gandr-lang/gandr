@@ -37,6 +37,7 @@ use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 
+use crate::edit::edit_text;
 use crate::position::Range;
 use crate::protocol::CellKind;
 use crate::protocol::Diagnostic;
@@ -48,7 +49,6 @@ use crate::protocol::NotebookChange;
 use crate::protocol::NotebookDocument;
 use crate::protocol::PublishParams;
 use crate::protocol::TextDocumentItem;
-use crate::server::edit_text;
 
 /// A notebook a connection holds open: its cells in order and each cell's
 /// text.

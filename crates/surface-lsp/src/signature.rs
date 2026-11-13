@@ -80,10 +80,10 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
-use crate::goto::ranged;
 use crate::hover::Hovering;
 use crate::inline::escape_into;
 use crate::position::Position;
+use crate::position::ranged;
 use crate::protocol::Answer;
 use crate::protocol::LabelOffsets;
 use crate::protocol::MarkupContent;
@@ -2140,8 +2140,8 @@ mod tests
     use gandr_surface_syntax::SourceText;
 
     use super::Signatures;
-    use crate::recheck::grammar;
-    use crate::recheck::roles;
+    use crate::toolkit::grammar;
+    use crate::toolkit::roles;
 
     /// #1403: an importer's heads, read after its closure's lowering, are the
     /// heads read off its whole tree, and a second reading after the same

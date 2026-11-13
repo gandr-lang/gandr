@@ -62,7 +62,8 @@ crates/
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
 ├── surface-lowering/              the molded tree into core terms: module collection, declaration lowering
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits
-├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the model, semantic tokens from highlight roles, and the hub serving a workspace's clients on a Unix socket
+├── surface-lsp/                   the language server: diagnostics from the model, tokens from highlight roles, the hub on a Unix socket
+├── surface-lsp-base/              the server's base: the protocol, positions, markup, inline completion
 ├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width

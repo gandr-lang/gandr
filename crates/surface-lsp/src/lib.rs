@@ -376,6 +376,21 @@ extern crate alloc;
 
 use core::fmt;
 
+use gandr_surface_lsp_base::edit;
+use gandr_surface_lsp_base::fragment;
+use gandr_surface_lsp_base::handover;
+use gandr_surface_lsp_base::inline;
+use gandr_surface_lsp_base::markup;
+use gandr_surface_lsp_base::notebook;
+use gandr_surface_lsp_base::peer;
+use gandr_surface_lsp_base::position;
+use gandr_surface_lsp_base::protocol;
+use gandr_surface_lsp_base::rpc;
+use gandr_surface_lsp_base::syntax;
+use gandr_surface_lsp_base::toolkit;
+use gandr_surface_lsp_base::tracking;
+use gandr_surface_lsp_base::transport;
+
 #[cfg(feature = "instrument")]
 mod activity;
 #[cfg(test)]
@@ -395,29 +410,21 @@ mod doc;
 mod files;
 mod fix;
 mod format;
-mod fragment;
 mod goto;
-mod handover;
 mod hover;
 #[cfg(unix)]
 mod hub;
 mod inlay;
-mod inline;
 mod instrument;
-mod markup;
 mod missing;
-mod notebook;
 mod outline;
 mod paste;
-mod position;
 mod proposal;
-mod protocol;
 mod quiet;
 mod reading;
 mod recheck;
 mod relocate;
 mod rename;
-mod rpc;
 mod run;
 mod saved;
 mod search;
@@ -429,17 +436,16 @@ mod site;
 #[cfg(unix)]
 mod stored;
 mod sweep;
-mod syntax;
 mod tier;
 mod tokens;
-mod tracking;
-mod transport;
 mod unused;
 mod uses;
 mod view;
 
 pub use gandr_surface_dispatcher::Pool;
 pub use gandr_surface_dispatcher::Width;
+pub use gandr_surface_lsp_base::tokens::TOKEN_MODIFIERS;
+pub use gandr_surface_lsp_base::tokens::TOKEN_TYPES;
 pub use gandr_surface_pretty::Spelling;
 
 #[cfg(feature = "instrument")]
@@ -480,6 +486,7 @@ pub use crate::hub::run_hub;
 pub use crate::hub::socket_for;
 #[cfg(unix)]
 pub use crate::hub::workspace_name;
+pub use crate::peer::Peer;
 pub use crate::position::Character;
 pub use crate::position::Line;
 pub use crate::position::Position;
@@ -503,7 +510,6 @@ pub use crate::run::Unran;
 pub use crate::saved::Saved;
 pub use crate::server::Admissions;
 pub use crate::server::Awaiting;
-pub use crate::server::Peer;
 pub use crate::server::Served;
 pub use crate::server::Server;
 pub use crate::server::Settled;
@@ -520,8 +526,6 @@ pub use crate::site::site;
 pub use crate::site::sourced;
 #[cfg(unix)]
 pub use crate::stored::Stored;
-pub use crate::tokens::TOKEN_MODIFIERS;
-pub use crate::tokens::TOKEN_TYPES;
 pub use crate::transport::Body;
 pub use crate::transport::TransportFault;
 pub use crate::transport::read_frame;

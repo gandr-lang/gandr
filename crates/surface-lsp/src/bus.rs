@@ -118,8 +118,8 @@ use crate::activity::Pane;
 #[cfg(feature = "instrument")]
 use crate::activity::Tick;
 use crate::hub::lock;
+use crate::peer::Peer;
 use crate::protocol::DocumentUri;
-use crate::server::Peer;
 use crate::server::Settlement;
 use crate::server::Workspace;
 

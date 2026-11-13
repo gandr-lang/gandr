@@ -15,7 +15,7 @@ use gandr_surface_dispatcher::marked;
 use super::Activities;
 use super::Cadence;
 use super::lock;
-use crate::server::Peer;
+use crate::peer::Peer;
 
 #[test]
 fn a_watcher_hears_each_task_and_the_fold_ends_without_one()

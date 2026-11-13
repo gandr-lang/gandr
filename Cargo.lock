@@ -1738,6 +1738,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-lsp",
+ "gandr-surface-lsp-base",
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-render-remote",
@@ -1750,6 +1751,27 @@ dependencies = [
  "percent-encoding",
  "proptest",
  "pulldown-cmark",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gandr-surface-lsp-base"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "expect-test",
+ "gandr-surface-diagnostics",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-pretty",
+ "gandr-surface-render-remote",
+ "gandr-surface-syntax",
+ "gandr-workflow-sweep",
+ "percent-encoding",
  "quenchant-anodized",
  "quenchant-shape",
  "serde",

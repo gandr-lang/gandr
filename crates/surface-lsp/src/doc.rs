@@ -59,7 +59,7 @@ use crate::markup::Markup;
 use crate::protocol::SymbolKind;
 use crate::reading::Reading;
 use crate::reading::Written;
-use crate::recheck::grammar;
+use crate::toolkit::grammar;
 
 /// The style a page spells its types in: the editor's default, sugared and
 /// in Unicode, written in `markup`.

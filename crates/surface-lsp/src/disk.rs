@@ -49,8 +49,8 @@ use notify::RecommendedWatcher;
 use notify::RecursiveMode;
 use notify::Watcher as _;
 
+use crate::peer::Peer;
 use crate::quiet::Changes;
-use crate::server::Peer;
 
 /// How often the followed files are read while a registration is pending.
 pub const POLL: Duration = Duration::from_millis(50);
@@ -499,9 +499,9 @@ mod tests
     use super::handed;
     use super::lock;
     use super::polled;
+    use crate::peer::Peer;
     use crate::quiet::Inbox;
     use crate::quiet::tests::handed as received;
-    use crate::server::Peer;
 
     /// A file a connection follows is handed on when it is created, changed
     /// or removed, and not when it is only opened or closed: a save closes
