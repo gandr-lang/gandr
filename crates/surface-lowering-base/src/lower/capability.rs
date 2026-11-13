@@ -460,3 +460,16 @@ impl Sink<'_>
         ty
     }
 }
+
+/// What a binder's declared type states to a call its name heads.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stated
+{
+    /// A continuation's type, `Stack(C, D)`: the call resumes it.
+    Stack,
+    /// Any other type: the call applies it.
+    Other,
+}

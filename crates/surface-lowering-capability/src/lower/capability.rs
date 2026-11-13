@@ -1,0 +1,3346 @@
+//! Capabilities in the lowering: the capability type, a returner's effect
+//! row, the exercise and the perform of an operation, the capability scope
+//! and the resumption of a continuation.
+//!
+//! The written forms are the capability type `Cap {op, …}`, the effect row
+//! `-F [I, …] A`, the exercise `c.op(v)`, the perform `I.op(v)` by an
+//! interface's name, the capability scope `handle c : I { M } with { … }`,
+//! `with N` or no `with`, and the resumption `k(v)` of a continuation that
+//! an operation clause binds or a parameter states.
+//!
+//! The rules these forms lower into are `gandr-core-checker`'s `capability`
+//! module; this one decides only their spelling and what each spelling
+//! denotes.
+//!
+//! # Operations and interfaces are the host's
+//!
+//! The interfaces a capability names are the host's — `Exec`, `Fs`, `Proc`,
+//! `Env`, `Ring` and `Console`, as `gandr_core_term::effect::host` declares
+//! them — and the classification resolves every written name against that
+//! table, minted once into a scratch arena of its own, so the names are never a
+//! second copy. The mint sweep mints the table into the module's arena once, at
+//! the first form that needs a signature, each of its types carrying that
+//! form's origin.
+//!
+//! A capability type names its operations bare, `Cap {read, write}`, and each
+//! belongs to the one host interface that offers it: no two host interfaces
+//! share an operation name. The alternative was a qualified spelling,
+//! `Cap {Fs.read}`; it was declined because the bare spelling is the one the
+//! capability rules are stated in and the host table never makes it
+//! ambiguous. Reversal: interfaces the surface declares itself, whose
+//! operation names may collide, qualify them.
+//!
+//! An operation no host interface offers is
+//! [`LoweringRefusal::UnresolvedName`] at the operation, and an interface the
+//! host does not declare is [`LoweringRefusal::UnresolvedTypeHead`] at the
+//! interface.
+//!
+//! # The grade is written where a bridge's is
+//!
+//! `Cap {…}` and `Cap[ω] {…}` are durable; `Cap[1] {…}` is consumable, which
+//! the checker refuses at formation by name, so the drop of a linear
+//! capability is refused rather than read as a durable one. Any other grade
+//! is [`LoweringRefusal::GradedBridge`], as it is on a thunk type.
+//!
+//! # A returner's row is written in its bracket
+//!
+//! `-F [Fs] String` is the returner whose row holds the whole `Fs` interface,
+//! in the bracket a thunk type's grade takes; `-F String` is the pure
+//! returner. The alternative was a row after the result, `-F String ! {Fs}`;
+//! it was declined because the bracket after the keyword is where a bridge
+//! already carries what qualifies it. Reversal: row polymorphism, whose row
+//! variable needs a spelling of its own.
+//!
+//! An entry names a host interface or a theory at the sorts it fixes,
+//! `-F [st : State with sort S = Integer] A`, read as a capability scope reads
+//! its interface: the manifest's types substitute into the theory's
+//! operations, and a scope over the theory at the same sorts discharges the
+//! entry's instance.
+//!
+//! # An exercise is decided by the written type
+//!
+//! `c.op(v)` is a call whose head selects `op` off a name whose binder or
+//! declaration was written with a `Cap` type, or that a capability scope
+//! introduced. No argument passes the unit payload, one passes itself, and
+//! several pass their tuple, so `c.write("notes", "x")` sends `Fs.write` its
+//! pair. Every other selection stays an observation of a lazy record. The
+//! lowering reads no types, so the decision is the written type's; the
+//! alternative, a type-directed choice, waits on an elaborator. Reversal: an
+//! elaborator that reads types, which would let a capability bound without a
+//! written type be exercised.
+//!
+//! # A perform is named by its interface
+//!
+//! `I.op(v)`, where `I` names no value in scope but a host interface, is the
+//! perform of `op` of `I`: no capability is exercised, the computation's row
+//! holds `I`, and the operation goes to whichever handler stands nearest when
+//! it runs — a scope handling `I`, or else the host at the program's entry. So
+//! `Console.print("hello, world!")` is a computation at `-F [Console] Unit`.
+//! An operation `I` does not offer is [`LoweringRefusal::UnresolvedName`] at
+//! the operation; a value named `I` shadows the interface, and its selection
+//! reads as it would otherwise.
+//!
+//! # A scope's clauses
+//!
+//! `handle c : I { M } with { | pure(x) => N | oper op(p, k) => N_op | … }`
+//! binds `c` over `M` alone, `x` over `N`, and `p` then `k` over `N_op`. The
+//! return clause is spelled `pure`, the returner's own keyword, because
+//! `return` is the function exit in this surface; an operation clause is led by
+//! `oper`, the keyword a signature declares an operation with. The alternative
+//! was an operation clause led by the operation's name, `op(p, k) => N_op`; it
+//! was declined because its tiles gave every damaged call `f(a, b)` a stray
+//! clause to read, and the parser's recovery from a dropped token worsened
+//! wherever a call stood. Reversal: a recovery that never reads a form's
+//! inner tiles without the tile that opens it. Within an operation clause
+//! `k(v)` resumes the subject with `pure v`, and `abandon(k)` ends the
+//! subject's continuation without running it, its value the unit; `abandon`
+//! is that former only where the program binds no `abandon` of its own. `k`
+//! is bound in that clause alone, so an abandonment written elsewhere names
+//! nothing. A clause may hand `k` on: a function stating `Stack(C, D)`, or a
+//! type member abbreviating it, resumes the stack its parameter holds with the
+//! same former, `j(v)`. Coverage — one clause per operation of `I` — is the
+//! checker's, and so is the rule that a clause whose continuation holds an
+//! obligation ends `k` exactly once, never handing it on.
+//!
+//! # A clause that mints a buffer
+//!
+//! An operation replying a buffer, `Ring.alloc`, has its clause written
+//! `oper alloc(n, b, k) => N`: the scope mints `b`, the buffer the clause
+//! resumes with, and the clause holds it live. The core clause keeps its two
+//! binders: its payload binder holds the pair of the payload and the mint,
+//! which the body splits, and the mint is placed under `b`'s linear binder,
+//! so `N` returns it exactly once, through `k(b)`.
+//!
+//! - choice: the mint rides the payload binder, so every walk over a clause's
+//!   binders is unchanged; the placement is the session action
+//!   `SessionAction::Place` the perform site uses.
+//! - alternatives: a third clause binder for the mint, which every pass over
+//!   clauses would learn; a scope that resumes with a buffer of its own, the
+//!   clause resuming with unit, which leaves the handler no buffer to recycle.
+//! - reversal: a clause former whose binders are read off its operation.
+//!
+//! A `let` statement `let b = c.alloc(n) ;` binds the reply under a binder no
+//! name reaches and places it under `b`'s linear binder, so the rest of the
+//! block holds `b` live: it hands `b` back to a `free`, or on through a send,
+//! exactly once, and never reads it.
+//!
+//! # Exits across a scope
+//!
+//! Each clause is a body of its own, as a lambda's is: an exit written
+//! inside one leaves that body, so its value is the scope's. The subject is
+//! no body: its tail is its result, which the `pure` clause receives, and an
+//! exit written in it acts on the body around the scope, past the handler's
+//! frame, which is live while the subject runs.
+//!
+//! - choice: a `return` in the subject leaves the body around the scope with
+//!   its value, every handler frame between unwound and no `pure` clause run. A
+//!   `become` there, and a `break` or a `continue` whose loop holds the scope,
+//!   are [`LoweringRefusal::AcrossHandler`]: each would run code in place of
+//!   the live frame, and a computation run there is no tail of the body. A loop
+//!   inside the subject is a loop as any other.
+//! - mechanism: the core's delimited control. The `return` mints a shift that
+//!   never resumes what it captures, and the body it leaves is minted under a
+//!   reset; the machine's shift captures through handler frames to the nearest
+//!   reset, as the checker types it, so the frames are dropped with the
+//!   capture. No clause runs while unwinding, and unwinding performs no effect.
+//! - alternatives: a `return` that leaves the subject alone, its value passed
+//!   to `pure` — the reading a `pure` tail already spells; a jump former in the
+//!   core, which every pass over core terms and the command IL would learn, and
+//!   whose label the machine could not keep as a mark while a delimiter is
+//!   live; a sum the subject returns and the scope's continuation inspects,
+//!   which needs the types the lowering does not read.
+//! - cost: a body holding such a `return` keeps its reset frame while it runs,
+//!   so its own tail calls do not run in constant continuation.
+//! - reversal: relocatable continuation marks, with which the `return` becomes
+//!   a jump to the body's own continuation and no reset is minted.
+//!
+//! # References
+//!
+//! - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories
+//!   design (§ theories-models-manifest-sorts): what `with sort x = A` fixes,
+//!   which the row's reading substitutes into the theory's operations.
+//! - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax
+//!   bikeshed (row "An effect whose sort is fixed at a type"): the row entry's
+//!   spelling, `T with sort x = A`, which [`CapabilityRef::returner_row`]
+//!   reads.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Carried;
+use gandr_core_term::ComponentCount;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::control::EffectClause;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectOp;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::OperationName;
+use gandr_core_term::effect::capability::CapabilityGrade;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
+use gandr_core_term::effect::host::HostSignatures;
+use gandr_core_term::handler;
+use gandr_core_term::handler::HandlerLaw;
+use gandr_core_term::handler::subject;
+use gandr_core_term::session::SessionAction;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering_base::lower::arity::Planned;
+use gandr_surface_lowering_base::lower::arity::clause_body;
+pub(super) use gandr_surface_lowering_base::lower::capability::Authority;
+use gandr_surface_lowering_base::lower::capability::Clause;
+pub(super) use gandr_surface_lowering_base::lower::capability::Exercised;
+use gandr_surface_lowering_base::lower::capability::Handlers;
+pub(super) use gandr_surface_lowering_base::lower::capability::Interface;
+use gandr_surface_lowering_base::lower::capability::Mint;
+use gandr_surface_lowering_base::lower::capability::Performer;
+pub(super) use gandr_surface_lowering_base::lower::capability::Scoped;
+pub(super) use gandr_surface_lowering_base::lower::capability::Standing;
+pub(super) use gandr_surface_lowering_base::lower::capability::Stated;
+use gandr_surface_lowering_base::lower::capability::Written;
+pub(super) use gandr_surface_lowering_base::lower::capability::WrittenRow;
+pub use gandr_surface_lowering_base::lower::capability::tail;
+use gandr_surface_lowering_base::lower::exits;
+use gandr_surface_lowering_base::lower::families::Families;
+use gandr_surface_lowering_base::lower::native;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SourceFragment;
+use gandr_theory_levitation::Name;
+use quenchant_shape::shape::Maybe;
+
+use super::Context;
+use super::Lowered;
+use super::Produced;
+use super::Reading;
+use super::Resolved;
+use super::Sink;
+use super::Site;
+use super::Stretch;
+use super::arguments;
+use super::closed;
+use super::exhausted;
+use super::lowered;
+use crate::by_form::At;
+use crate::by_form::FormStretch;
+use crate::error::FormFault;
+use crate::error::FragmentBoundary;
+use crate::error::LoweringRefusal;
+use crate::form::Cursor;
+use crate::form::FormName;
+use crate::form::Former;
+use crate::form::Piece;
+use crate::form::Pieces;
+use crate::form::Placed;
+use crate::form::Run;
+use crate::form::Shape;
+use crate::form::TileName;
+use crate::form::WrittenPath;
+use crate::form::entry_path;
+use crate::form::operand_entry;
+use crate::form::read_pieces;
+use crate::form::shape_of;
+use crate::model::InterfaceFault;
+use crate::module::Provider;
+use crate::origin::ClauseBinder;
+use crate::origin::ClausePlace;
+use crate::origin::Label;
+use crate::origin::Labelled;
+use crate::origin::Origin;
+use crate::origin::RowTheory;
+use crate::origin::ScopeAnswer;
+use crate::origin::WrittenModel;
+use crate::resolve::Frame;
+use crate::resolve::SurfaceName;
+use crate::resolve::Telescope;
+use crate::resolve::binder_site;
+use crate::unbuilt::Unbuilt;
+
+mod answered;
+
+use answered::Answering;
+use gandr_surface_lowering_base::lower::capability::theory;
+pub(super) use theory::TheoryInterface;
+
+/// The name an abandonment is called by, where the program binds none.
+const ABANDON: &str = "abandon";
+
+/// What a name a selection is made off holds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Holder
+{
+    /// A capability: the selection is an exercise.
+    Capability,
+    /// Anything else: the selection is an observation or a member.
+    Other,
+}
+
+/// The host's interfaces, minted into a scratch arena for their names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the host table; only its names are read, never its types.
+/// - fails: [`LoweringRefusal::HostConflict`] at `site` if the host table
+///   conflicts with itself, which its own tests rule out.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::HostConflict`] for a host table in conflict.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every capability form resolves its names through here.
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_type_lowers_to_its_authority`
+#[spec(ensures: |ret| ret.is_ok())]
+fn host<'source>(site: Site) -> Result<HostSignatures, LoweringRefusal<'source>>
+{
+    HostSignatures::new(&mut CoreArena::new())
+        .map_err(|_conflict| LoweringRefusal::HostConflict { span: site.at.span })
+}
+
+/// What the reply of an operation is to the scope handling it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reply
+{
+    /// A buffer the scope mints, which its performer holds live.
+    Minted,
+    /// Any other value.
+    Plain,
+}
+
+/// What the reply of the host operation `operation` is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Reply::Minted`] exactly for an operation a host interface
+///   offers whose reply is the buffer type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Ring.alloc` mints, `Ring.free` and `Proc.exit` do not.
+/// - witness: `gandr-surface-lowering::lower::capability::tests::an_allocated_buffer_is_placed_live_and_freed`
+#[spec(ensures: |ret| ret == Reply::Plain || matches!(HostSignatures::new(&mut CoreArena::new()), Ok(ref table) if matches!(table.offering(operation), Maybe::Present(_))))]
+pub(super) fn mints(operation: &OperationName) -> Reply
+{
+    let mut arena = CoreArena::new();
+    let Ok(table) = HostSignatures::new(&mut arena)
+    else {
+        return Reply::Plain;
+    };
+    let Maybe::Present(offered) = table.offering(operation)
+    else {
+        return Reply::Plain;
+    };
+    let Maybe::Present(requested) = offered.operation(operation)
+    else {
+        return Reply::Plain;
+    };
+    if matches!(arena.value_type(requested.reply), Some(&ValueType::Buffer)) {
+        Reply::Minted
+    }
+    else {
+        Reply::Plain
+    }
+}
+
+/// The capability family over its host, which holds the lowering's context
+/// and answers each call into another family. A call from the lowering into
+/// this family builds `Capability::new(self)`.
+#[repr(transparent)]
+pub struct Capability<'host, F>
+{
+    /// The host: the lowering, which holds the context and the other families.
+    host: &'host mut F,
+}
+
+impl<'host, F> Capability<'host, F>
+{
+    /// The capability family over `host`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn new(host: &'host mut F) -> Self
+    {
+        Self { host }
+    }
+}
+
+/// The capability family's reads over its host.
+///
+/// Each read reads the lowering's context and answers a minting through the
+/// host, so a read borrows the host and never writes it. A call from a
+/// reading of the lowering into this family builds `CapabilityRef::new(self)`.
+#[repr(transparent)]
+pub struct CapabilityRef<'host, F>
+{
+    /// The host: the lowering, which holds the context and the other families.
+    host: &'host F,
+}
+
+impl<'host, F> CapabilityRef<'host, F>
+{
+    /// The capability family's reads over `host`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn new(host: &'host F) -> Self
+    {
+        Self { host }
+    }
+}
+
+/// The reads' way to their state and to the other families.
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// The lowering's context, to read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn cx(&self) -> &Context<'run, 'source>
+    {
+        self.host.context()
+    }
+
+    /// The family that answers a minting into another family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn host_ref(&self) -> &F
+    {
+        self.host
+    }
+}
+
+/// The capability family's way to its state and to the other families: each
+/// read is the host's context, and each call into another family is the
+/// host's.
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// The lowering's context, to read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn cx(&self) -> &Context<'run, 'source>
+    {
+        self.host.context()
+    }
+
+    /// The lowering's context, to write.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn cx_mut(&mut self) -> &mut Context<'run, 'source>
+    {
+        self.host.context_mut()
+    }
+
+    /// The family that answers a call into another family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn host(&mut self) -> &mut F
+    {
+        self.host
+    }
+
+    /// The family's reads, which borrow the host and never write it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn shared(&self) -> CapabilityRef<'_, F>
+    {
+        CapabilityRef::new(self.host)
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// Mint the signature of every extern block the current source declares,
+    /// before any of its declarations is minted.
+    ///
+    /// # Specification
+    /// - requires: the current source is collected.
+    /// - ensures: each of its blocks' signatures is in `sink`, minted as
+    ///   [`Sink::foreign`] mints it, so each member type answers at its bytes
+    ///   whether or not a declaration performs the block's operations.
+    /// - fails: never: a block whose signature does not mint is refused at the
+    ///   call that performs it.
+    /// - panics: none.
+    /// - executable: none — the clause is the minted signatures, which
+    ///   [`Sink::foreign`] states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block no declaration performs answers at each
+    ///   member type.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    #[inline]
+    pub fn mint_foreign(
+        &self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for interface in self
+            .cx()
+            .collected
+            .interfaces
+            .blocks(self.cx().current.source)
+        {
+            let _minted = sink.foreign(interface);
+        }
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Classify a capability type, `Cap {op, …}` or `Cap[r] {op, …}`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a capability type.
+    /// - ensures: the type stands as a value type, planned over the authority
+    ///   its operations name, each under the host interface offering it, and
+    ///   the grade its bracket writes: durable for none and for `ω`, consumable
+    ///   for `1`.
+    /// - fails: the wrong-sort refusal where no value type is read;
+    ///   [`LoweringRefusal::GradedBridge`] for any other grade;
+    ///   [`LoweringRefusal::UnresolvedName`] for an operation no host interface
+    ///   offers; a misplaced-tile fault for a type out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The type's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-interface authority, the consumable grade, a
+    ///   refused grade and an unknown operation, each asserted as the exact
+    ///   minted type or refusal.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_type_lowers_to_its_authority`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Capability(..))))]
+    #[inline]
+    pub fn capability_type(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _frame = self.host().require(site, Produced::ValueType)?;
+        closed(site, &mut cursor, TileName::CAP)?;
+        let grade = if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
+            self.shared().capability_grade(site, &mut cursor)?
+        }
+        else {
+            CapabilityGrade::Durable
+        };
+        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        let table = host(site)?;
+        let mut authority = Authority::new();
+        loop {
+            let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            let name = self.cx().name_at(written);
+            let operation = OperationName::from(name.as_ref());
+            if let Maybe::Absent(_) = table.offering(&operation) {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: written.span,
+                    name,
+                });
+            }
+            let _first = authority.insert(operation);
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                break;
+            }
+            if let Maybe::Present(_) = cursor.at(TileName::BRACE_CLOSE) {
+                break;
+            }
+        }
+        closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
+        exhausted(site, &cursor)?;
+
+        let region = self
+            .cx()
+            .regions
+            .get(&site.at.node)
+            .copied()
+            .unwrap_or(Region::Held);
+        self.host()
+            .plan(site, super::Plan::Capability(authority, grade, region));
+
+        Ok(())
+    }
+
+    /// Classify a type placed somewhere, `T at c`: a type kept in a region, or
+    /// a handle to a value meaningful at a world.
+    ///
+    /// # Specification
+    /// - requires: `site` is an at type.
+    /// - ensures: where `c` names a capability scope or a hold around the type,
+    ///   the type's region is the one that scope or hold opens:
+    ///   [`Region::Scoped`] at the number of capability scopes and holds from
+    ///   the outermost to the one binding `c`, counted from one, the depth the
+    ///   checker gives that region. Where `c` names none and is a region binder
+    ///   of the definition the type stands in, the region is [`Region::Bound`]
+    ///   at that binder's ordinal. A capability type operand stands as the
+    ///   type, its region recorded; any other operand is kept in the region,
+    ///   the operand read as a value type where the at type stands. Where `c`
+    ///   names none of these and an earlier declaration, the type is the handle
+    ///   `T at c` to a value of the operand meaningful at the world that
+    ///   declaration declares, the operand read as a value type where the at
+    ///   type stands (a declaration that declares no world is the checker's to
+    ///   refuse).
+    /// - fails: the wrong-sort refusal where no value type is read;
+    ///   [`LoweringRefusal::UnresolvedName`] at `c` when neither a capability
+    ///   scope, a hold, a region binder nor an earlier declaration binds it; a
+    ///   misplaced tile or missing operand fault for a type out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The type's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a capability at the inner of two nested scopes and at
+    ///   the outer one mint their depths, a name no scope binds is refused, an
+    ///   integer kept at a scope mints the kept type and one kept at a hold
+    ///   inside the scope counts both, each asserted exactly; a handle at a
+    ///   declared world mints the handle type; a thunk kept at a region binder
+    ///   in a parameter and in a body's ascription keeps it at the binder's
+    ///   ordinal, and a scope of the binder's name inside the body shadows it.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    /// - witness: `gandr-surface-lowering::lower::world::tests::the_located_forms_lower_to_their_world_forms`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Transparent(operand)) if self.cx().regions.contains_key(&operand))
+        || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Kept(..)))
+        || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::World(gandr_surface_lowering_base::lower::world::Worlded::At { .. }))))]
+    #[inline]
+    pub fn at_type(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.host().require(site, Produced::ValueType)?;
+        let operand = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::AT)?;
+        let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        exhausted(site, &cursor)?;
+        let name = self.cx().name_at(written);
+        let unbound = move || LoweringRefusal::UnresolvedName {
+            span: written.span,
+            name,
+        };
+        let Some(region) = self.region_named(site, frame, name)
+        else {
+            return match self.host().resolve_name(site, frame, name) {
+                Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
+                    self.host().located_type(site, operand, constant)
+                },
+                Ok(Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_)) | Err(_) => {
+                    Err(unbound())
+                },
+            };
+        };
+        self.host().read(operand.node, site.reading);
+        if let Some((_, Former::CapabilityType)) = self.cx().form_at(operand)? {
+            let _first = self.cx_mut().regions.insert(operand.node, region);
+            self.host()
+                .plan(site, super::Plan::Transparent(operand.node));
+        }
+        else {
+            self.host()
+                .plan(site, super::Plan::Kept(operand.node, region));
+        }
+
+        Ok(())
+    }
+
+    /// The region the name `name` names where `frame` stands, read at `site`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a capability scope's binder or a hold, [`Region::Scoped`]
+    ///   at the count of scopes and holds from the binder outward; otherwise,
+    ///   for a region binder of the declaration owning `site` — one its
+    ///   telescope binds, or an instance's a label of its row binds —
+    ///   [`Region::Bound`] at it; none for any other name, and for a count past
+    ///   the region's width.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::at_type`], and a row's label naming its
+    ///   function's instance, and one naming nothing.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    #[spec(ensures: |ret| ret.is_none_or(|region| region != Region::Held))]
+    fn region_named(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        name: SurfaceName<'source>,
+    ) -> Option<Region>
+    {
+        if let Ok(Maybe::Present(Resolved::Binder(bound))) =
+            self.host().resolve_name(site, frame, name)
+            && (self.cx().capabilities.contains(&bound.binder)
+                || self.cx().held.contains(&bound.binder))
+        {
+            let depth = self
+                .cx()
+                .scope
+                .chain(Frame::Inner(bound.binder))
+                .filter(|binder| {
+                    self.cx().capabilities.contains(binder) || self.cx().held.contains(binder)
+                })
+                .count();
+            return u32::try_from(depth)
+                .ok()
+                .map(|depth| Region::Scoped(RegionDepth::from(depth)));
+        }
+        self.host()
+            .region_binder(site.at.node, name)
+            .map(Region::Bound)
+    }
+
+    /// Bind the instance `entry`, a label of the result row of the function
+    /// `site` declares, as a parameter under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `entry` is an [`Plicity::Instance`](crate::module::Plicity)
+    ///   entry of the function's merged telescope.
+    /// - ensures: the label bound in a frame extending `frame`, recorded as an
+    ///   instance of its interface — a host interface, or a theory, whose sorts
+    ///   the row fixes when it is planned ([`Self::effectful`]) — living at a
+    ///   region binder of the declaration's own, named as the label and
+    ///   numbered after every one the declaration binds before it, and pushed
+    ///   as a parameter whose type is that instance's capability; the frame it
+    ///   bound is returned.
+    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] at the name for a host
+    ///   interface whose `std` module the source does not import (#4523); the
+    ///   refusals of [`crate::module::Collected::presented_theory`] for an
+    ///   interface neither the host nor a theory answers, at the name; a
+    ///   binder's own refusal; a fault at the label when the declaration has no
+    ///   owner or its region binders overflow their width.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose row labels two instances of one
+    ///   interface takes them as two capability parameters at two region
+    ///   binders, after its explicit parameter; one labelling a theory's
+    ///   instance takes the theory's capability.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    #[spec(
+        captures: before = self.cx().parameters.mark(),
+        ensures: |ret| ret.is_err() || self.cx().parameters.mark() == before.next(),
+    )]
+    #[inline]
+    pub fn instance_parameter(
+        &mut self,
+        site: Site,
+        entry: crate::module::TelescopeEntry<'source>,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        let misplaced = site.fault(entry.binder.span, FormFault::MisplacedTile);
+        let Maybe::Present(path) = entry.interface
+        else {
+            return Err(misplaced);
+        };
+        let named = self.cx().instance_interface(path);
+        let table = host(site)?;
+        let interface = EffectName::from(named.as_ref());
+        if let Maybe::Present(_) = table.named(&interface) {
+            if !self.cx().collected.reaches(path.start(), &interface).0 {
+                return Err(LoweringRefusal::UnresolvedTypeHead {
+                    span: path,
+                    head: path,
+                    name: named,
+                    arity: crate::resolve::HeadArity::Nullary,
+                });
+            }
+            self.cx_mut().collected.reach_host(path.start(), &interface);
+        }
+        else {
+            let mut segments = self.shared().path_segments(path);
+            let Some((span, last)) = segments.pop()
+            else {
+                return Err(misplaced);
+            };
+            let _presented =
+                self.cx()
+                    .collected
+                    .presented_theory_in(path.start(), &segments, span, last)?;
+        }
+        let Maybe::Present(slot) = self.cx().collected.owner_of(site.at.node)
+        else {
+            return Err(misplaced);
+        };
+        let binders = self.cx_mut().region_binders.entry(slot).or_default();
+        let ordinal = u32::try_from(binders.len()).map_err(|_wide| misplaced)?;
+        let region = gandr_core_term::effect::capability::RegionBinder::from(ordinal);
+        let _shadowed = binders.insert(entry.name, region);
+        self.host().note_binder(entry.binder, frame, entry.name)?;
+        let bound = self.cx_mut().scope.extend_instance(
+            frame,
+            entry.name,
+            Maybe::Present(entry.binder.span),
+        );
+        let _first = self
+            .cx_mut()
+            .labelled
+            .insert(bound, (interface.clone(), region));
+        let _first = self
+            .cx_mut()
+            .instance_parameters
+            .insert(entry.binder.node, (interface, region));
+        self.cx_mut().parameters.push(super::Parameter::elsewhere(
+            entry.binder.node,
+            bound,
+            Maybe::Absent(gandr_surface_lowering_base::lower::stated::Absent::Instance),
+        ));
+
+        Ok(Frame::Inner(bound))
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// Each name of the dotted path the bytes `path` spell, `std`, `io`,
+    /// `Console` and `Eff` of `std.io.Console.Eff`, at its own bytes.
+    ///
+    /// # Specification
+    /// - requires: `path` spans a path a row label's entry writes.
+    /// - ensures: one entry per name between the dots, in written order, each
+    ///   at its bytes with the space beside it left out, inside `path`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a labelled entry naming a dotted theory path whose
+    ///   last name no theory bears, refused at that name's own bytes.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_labelled_row_entry_names_a_theory_by_its_dotted_path_4495`
+    #[spec(ensures: |ret| ret.iter().all(|&(span, _)| path.start() <= span.start() && span.end() <= path.end()))]
+    fn path_segments(
+        &self,
+        path: ByteSpan,
+    ) -> Vec<(ByteSpan, SurfaceName<'source>)>
+    {
+        let text: &'source str = self.cx().tree.spanned(path).map_or("", <&str>::from);
+        let start = usize::from(path.start());
+        let mut segments = Vec::new();
+        let mut from = 0_usize;
+        for piece in text.split('.') {
+            let lead = piece.len().saturating_sub(piece.trim_start().len());
+            let name = piece.trim();
+            let first = start.saturating_add(from).saturating_add(lead);
+            if let Ok(span) = ByteSpan::new(
+                ByteOffset::from(first),
+                ByteOffset::from(first.saturating_add(name.len())),
+            ) {
+                segments.push((span, SurfaceName::from(SourceFragment::from(name))));
+            }
+            from = from.saturating_add(piece.len()).saturating_add(1);
+        }
+        segments
+    }
+
+    /// Read a capability's grade, `[r]`, past its `[`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the grade's `[`.
+    /// - ensures: `ω` is durable and `1` consumable, the cursor past the `]`.
+    /// - fails: [`LoweringRefusal::GradedBridge`] for any other numeral or a
+    ///   name, at the grade; a misplaced-tile fault for a grade out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The grade's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `ω`, `1`, `0` and a name, each asserted as the grade
+    ///   or the exact refusal.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_type_lowers_to_its_authority`
+    #[spec(
+        captures: first = cursor.peek(),
+        ensures: |ret| match ret {
+            | Ok(CapabilityGrade::Durable) => matches!(first, Maybe::Present(Piece::Tile { label: TileName::OMEGA, .. })),
+            | Ok(CapabilityGrade::Consumable) => matches!(first, Maybe::Present(Piece::Tile { label: TileName::NUMBER, .. })),
+            | Err(_) => true,
+        },
+    )]
+    fn capability_grade(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<CapabilityGrade, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Tile { label, at }) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let grade = if label == TileName::OMEGA {
+            CapabilityGrade::Durable
+        }
+        else if label == TileName::NUMBER && self.cx().name_at(at).as_ref() == "1" {
+            CapabilityGrade::Consumable
+        }
+        else if label == TileName::NUMBER || label == TileName::IDENTIFIER {
+            return Err(LoweringRefusal::GradedBridge {
+                span: at.span,
+                grade: self.cx().name_at(at),
+            });
+        }
+        else {
+            return Err(site.fault(at.span, FormFault::MisplacedTile));
+        };
+        closed(site, cursor, TileName::BRACKET_CLOSE)?;
+
+        Ok(grade)
+    }
+
+    /// Read a returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`,
+    /// each entry's name followed by the sorts it fixes, `[T with sort x =
+    /// A]`, past its `[`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the row's `[`.
+    /// - ensures: the interfaces the row names whole, in name order, each label
+    ///   it writes beside its interface, in written order, and the operand it
+    ///   stays open through when one is written, the cursor past the `]`; a row
+    ///   names an interface, a label or a tail. Each entry's name is read as a
+    ///   capability scope reads its interface's ([`Self::handled`]): the
+    ///   interface an extern block of the entry's source declares under the
+    ///   name, ahead of the host interface of the name, or the theory it names
+    ///   at the sorts the entry fixes, each fixed type kept to be read with the
+    ///   row.
+    /// - fails: the refusals of [`Self::handled`] at an entry, the unresolved
+    ///   head among them for a name that no extern block, host interface the
+    ///   source imports or theory answers;
+    ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named whole
+    ///   again, or a label written again, at the second, since a row holds each
+    ///   label once; a misplaced-tile fault for a row out of shape or a label
+    ///   that is not one name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The row's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row of two interfaces and an undeclared one, each
+    ///   asserted as the minted returner or the exact refusal, a row open
+    ///   through a tail after its interfaces and alone, each minted over it, a
+    ///   row naming two instances of one interface apart, and a row naming a
+    ///   theory at its sort, whole and by a label, beside each refusal its
+    ///   manifest meets.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_returner_row_names_whole_interfaces`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_each_interface_once`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.interfaces.is_empty() || !row.labels.is_empty() || matches!(row.tail, Maybe::Present(_))))]
+    #[inline]
+    pub fn returner_row(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<WrittenRow, LoweringRefusal<'source>>
+    {
+        // An operand alone is the row's tail, `[r]`, unless it spells a
+        // package's path, `[std.fs.Eff]`, the sorts it fixes beside it.
+        if let Maybe::Present(Piece::Operand(written)) = cursor.peek() {
+            let mut ahead = cursor.clone();
+            let _written = ahead.read();
+            if let Maybe::Present(_) = ahead.tile(TileName::BRACKET_CLOSE)
+                && operand_entry(self.cx().pbg, self.cx().tree, written)?.is_none()
+            {
+                *cursor = ahead;
+                return Ok(WrittenRow {
+                    interfaces: Vec::new(),
+                    labels: Vec::new(),
+                    placed: Vec::new(),
+                    fixed: Vec::new(),
+                    named: Vec::new(),
+                    tail: Maybe::Present(written.node),
+                });
+            }
+        }
+        let mut row: BTreeMap<EffectName, (ByteSpan, Interface)> = BTreeMap::new();
+        let mut labels: Vec<(Placed, Interface)> = Vec::new();
+        let mut labelled_at = BTreeMap::new();
+        let mut manifest: Vec<(Placed, NodeIndex)> = Vec::new();
+        let mut fixed = Vec::new();
+        let mut named = Vec::new();
+        loop {
+            // An operand the `:` follows is the entry's label, `a : I`.
+            let mut label = None;
+            if let Maybe::Present(Piece::Operand(written)) = cursor.peek() {
+                let mut ahead = cursor.clone();
+                let _written = ahead.read();
+                if let Maybe::Present(_) = ahead.tile(TileName::COLON) {
+                    *cursor = ahead;
+                    label = Some(self.label_of(site, written)?);
+                }
+            }
+            let Maybe::Present((written, stated)) =
+                entry_path(self.cx().pbg, self.cx().tree, cursor)?
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            manifest.clear();
+            for (sort, ty) in stated {
+                manifest.push((sort, ty.node));
+                fixed.push(ty);
+            }
+            while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
+                closed(site, cursor, TileName::SORT)?;
+                let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+                else {
+                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                };
+                closed(site, cursor, TileName::EQUALS)?;
+                let ty = site.one(cursor.operands())?;
+                manifest.push((sort, ty.node));
+                fixed.push(ty);
+            }
+            let interface = self.handled(site, &written, written.last.node, &manifest)?;
+            if let Interface::Theory(ref theory) = interface {
+                named.push((written.span(), theory.theory));
+            }
+            if let Some(label) = label {
+                let label_name = self.cx().name_at(label);
+                if let Some(&first) = labelled_at.get(&label_name) {
+                    return Err(LoweringRefusal::DuplicateDefinition {
+                        span: label.span,
+                        name: label_name,
+                        first,
+                    });
+                }
+                let _first = labelled_at.insert(label_name, label.span);
+                labels.push((label, interface));
+            }
+            else {
+                if let Some(&(first, _)) = row.get(interface.name()) {
+                    return Err(LoweringRefusal::DuplicateDefinition {
+                        span: written.span(),
+                        name: written.name(self.cx().tree),
+                        first,
+                    });
+                }
+                let _first = row.insert(interface.name().clone(), (written.span(), interface));
+            }
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                break;
+            }
+        }
+        let tail = if let Maybe::Present(_) = cursor.tile(TileName::BAR) {
+            let Maybe::Present(Piece::Operand(tail)) = cursor.read()
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            Maybe::Present(tail.node)
+        }
+        else {
+            Maybe::Absent(tail::Absent::Closed)
+        };
+        closed(site, cursor, TileName::BRACKET_CLOSE)?;
+
+        Ok(WrittenRow {
+            interfaces: row.into_values().map(|(_, interface)| interface).collect(),
+            labels,
+            placed: Vec::new(),
+            fixed,
+            named,
+            tail,
+        })
+    }
+
+    /// The name tile of the row label `written`, the operand before a `:`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the operand's one tile, when it is an identifier or a type
+    ///   variable.
+    /// - fails: a misplaced-tile fault at the operand for any other operand; a
+    ///   form fault reading its pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::returner_row`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|at| written.span.start() <= at.span.start() && at.span.end() <= written.span.end()))]
+    #[inline]
+    pub fn label_of(
+        &self,
+        site: Site,
+        written: Placed,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, written.node, &mut pieces)?;
+        match *pieces.pieces.as_slice() {
+            [Piece::Tile { label, at }]
+                if label == TileName::IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                Ok(at)
+            },
+            _ => Err(site.fault(written.span, FormFault::MisplacedTile)),
+        }
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Plan the returner over `argument` whose row is `row`.
+    ///
+    /// # Specification
+    /// - ensures: the returner stands as a computation type, its row's tail
+    ///   read as a value, each type a theory entry fixes a sort to and its
+    ///   argument as value types under its frame, the fixed types minted ahead
+    ///   of the sweep, each label of its row placed at the region its name
+    ///   names there ([`Self::region_named`]), a label of a theory's instance
+    ///   recorded as that theory's capability, and each theory entry's name
+    ///   resolved to the theory's declaration, planned over both. An argument
+    ///   written as a group of outputs, `-F [E] (q : A, r : B)`, is read as a
+    ///   result, the group the row's returner returns.
+    /// - fails: the wrong-sort refusal where no computation type is read;
+    ///   [`LoweringRefusal::UnresolvedName`] at a label naming no region.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::OutOfFragment`] for a sort mismatch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CapabilityRef::returner_row`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_returner_row_names_whole_interfaces`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_row_returns_a_group_of_outputs`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument.node))]
+    #[inline]
+    pub fn effectful(
+        &mut self,
+        site: Site,
+        mut row: WrittenRow,
+        argument: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.host().require(site, Produced::CompType)?;
+        // Every operation exercised in the function's body reads the types the
+        // row fixes, and the body stands deeper in the tree than the row.
+        for &ty in &row.fixed {
+            self.host().read(ty.node, Reading::ValueType(frame));
+            self.cx_mut().fixed_carriers.push(ty);
+        }
+        // Each host interface the row names reaches the import of its module.
+        for interface in row
+            .interfaces
+            .iter()
+            .chain(row.labels.iter().map(|&(_, ref held)| held))
+        {
+            if let Interface::Host(ref named) = *interface {
+                self.cx_mut()
+                    .collected
+                    .reach_host(site.at.span.start(), named);
+            }
+        }
+        for &(span, theory) in &row.named {
+            self.cx_mut()
+                .resolutions
+                .push((span, crate::resolve::Resolution::Declaration(theory)));
+        }
+        for &(label, ref interface) in &row.labels {
+            let name = self.cx().name_at(label);
+            let Some(region) = self.region_named(site, frame, name)
+            else {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: label.span,
+                    name,
+                });
+            };
+            if let Interface::Theory(ref theory) = *interface {
+                // The label's instance exercises the theory's operations, and
+                // the parameter it binds is the theory's capability.
+                if let Ok(Maybe::Present(Resolved::Binder(bound))) =
+                    self.host().resolve_name(site, frame, name)
+                {
+                    let _first = self
+                        .cx_mut()
+                        .theory_capabilities
+                        .insert(bound.binder, Arc::clone(theory));
+                }
+                let _first = self
+                    .cx_mut()
+                    .instance_theories
+                    .insert(label.node, Arc::clone(theory));
+            }
+            row.placed.push((interface.clone(), region));
+        }
+        if let Maybe::Present(tail) = row.tail {
+            self.host().read(tail, Reading::Value(frame));
+        }
+        let reading = if self.host().written_group(argument, frame)?.0 {
+            Reading::Result(frame)
+        }
+        else {
+            Reading::ValueType(frame)
+        };
+        self.host().read(argument.node, reading);
+        self.host()
+            .plan(site, super::Plan::Effectful(row, argument.node));
+
+        Ok(())
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// What the type written at `declared` makes of a selection off its name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a capability exactly when the node is a `Cap` form, bare or
+    ///   placed at a scope.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter and a declaration written at `Cap` are
+    ///   exercised, and a selection off a lazy record stays an observation.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    fn written_holder(
+        &self,
+        declared: Maybe<NodeIndex, crate::resolve::binder_type::Absent>,
+    ) -> Result<Holder, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(declared) = declared
+        else {
+            return Ok(Holder::Other);
+        };
+        let Some(node) = self.cx().tree.node(declared)
+        else {
+            return Ok(Holder::Other);
+        };
+
+        Ok(match shape_of(self.cx().pbg, node)? {
+            Shape::Form {
+                former: Former::CapabilityType | Former::AtType,
+                ..
+            } => Holder::Capability,
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Holder::Other,
+        })
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Classify the call at `site` as an exercise when its head selects an
+    /// operation off a capability, or as a perform when it selects one off a
+    /// host interface by name.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the call's head.
+    /// - ensures: a head `c.op` whose `c` is bound or declared at a written
+    ///   `Cap` type, or bound by a capability scope, stands as a computation
+    ///   reading `c` and each argument as a value under its frame, planned as
+    ///   the exercise of `op` under the host interface offering it; a head
+    ///   `I.op` whose `I` names no value in scope but a host interface stands
+    ///   as a computation reading each argument, planned as the perform of `op`
+    ///   of `I`; any other call is left unplanned.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] for an operation no host
+    ///   interface offers, or one the interface `I` does not; the wrong-sort
+    ///   refusal where no computation is read; the name's resolution refusal;
+    ///   the argument list's fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exercises through a parameter, a declaration and a
+    ///   scope's binder lower and check, and one outside the authority is
+    ///   refused by the checker by name; a perform by an interface's name
+    ///   checks at the row holding the interface, and an operation the named
+    ///   interface does not offer is refused at the operation.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Exercise(_))))]
+    #[inline]
+    pub fn exercise(
+        &mut self,
+        site: Site,
+        cursor: &Cursor<'_>,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let mut ahead = cursor.clone();
+        let Run::One(head) = ahead.operands()
+        else {
+            return Ok(Planned(false));
+        };
+        let Some((performer, selected)) = self.exercised(site, site.reading.frame(), head)?
+        else {
+            return Ok(Planned(false));
+        };
+        if let Performer::Interface(ref named) = performer {
+            self.cx_mut().collected.reach_host(head.span.start(), named);
+        }
+        let name = self.cx().name_at(selected);
+        let operation = OperationName::from(name.as_ref());
+        let interface = if let Performer::Capability(_, Some(ref theory)) = performer {
+            if theory.operation(&operation).is_none() {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: selected.span,
+                    name,
+                });
+            }
+            Interface::Theory(Arc::clone(theory))
+        }
+        else if let Performer::Interface(ref named) = performer
+            && let Some(&Provider::Block(ref foreign)) =
+                self.cx().collected.interface(head.span.start(), named)
+        {
+            if !foreign
+                .operations
+                .iter()
+                .any(|offered| offered.name == operation)
+            {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: selected.span,
+                    name,
+                });
+            }
+            Interface::Foreign(Arc::clone(foreign))
+        }
+        else {
+            let table = host(site)?;
+            let Maybe::Present(offered) = table.offering(&operation)
+            else {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: selected.span,
+                    name,
+                });
+            };
+            let interface = offered.name().clone();
+            if let Performer::Interface(ref named) = performer
+                && *named != interface
+            {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: selected.span,
+                    name,
+                });
+            }
+            Interface::Host(interface)
+        };
+        let frame = self.host().require(site, Produced::Computation)?;
+        let start = self.cx().operands.entries().len();
+        arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
+        let payload = Stretch {
+            start,
+            end: self.cx().operands.entries().len(),
+        };
+        if let Performer::Capability(capability, _) = performer {
+            self.host().read(capability, Reading::Value(frame));
+        }
+        for position in payload.start .. payload.end {
+            if let Some(&argument) = self.cx().operands.entries().get(position) {
+                self.host().read(argument, Reading::Value(frame));
+            }
+        }
+
+        let kept = self.cx().kept(payload);
+        self.host().plan(
+            site,
+            super::Plan::Exercise(Exercised {
+                performer,
+                interface,
+                operation,
+                frame,
+                head: head.span,
+                payload: kept,
+            }),
+        );
+
+        Ok(Planned(true))
+    }
+
+    /// What performs the operation a call head `x.op` selects, and the
+    /// selected `op`, when `x` holds a capability where `frame` stands or
+    /// names an interface's module and no value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the capability `c` and the selected `op` for a projection off
+    ///   a name bound or declared at a written `Cap` type, or bound by a
+    ///   capability scope; the interface and `op` for a projection off a name
+    ///   that resolves to no binder or declaration, a capitalised name no
+    ///   constructor bears, or a module path, `std.io.Console.print`, each
+    ///   naming an interface as [`CapabilityRef::interface_named`] reads it;
+    ///   nothing for any other head.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::exercise`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    fn exercised(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<Option<(Performer, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::Projection)) = self.cx().form_at(head)?
+        else {
+            return Ok(None);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut pieces)?;
+        let &[
+            Piece::Operand(target),
+            Piece::Tile {
+                label: TileName::DOT,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: selected,
+            },
+        ] = pieces.pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        let written = self.cx().name_at(target);
+        match self.cx().form_at(target)? {
+            Some((_, Former::Name)) => {},
+            // A capitalised name the source declares no constructor by: the
+            // interface it names, when a host interface bears it.
+            Some((_, Former::Constructor)) => {
+                return Ok(match self.host().constructor_named(site, written) {
+                    Maybe::Present(_) => None,
+                    Maybe::Absent(_) => self
+                        .shared()
+                        .interface_named(target.span.start(), written)
+                        .map(|interface| (Performer::Interface(interface), selected)),
+                });
+            },
+            // A module path, `std.io.Console`: the interface living in it.
+            Some((_, Former::Projection)) => {
+                return Ok(self
+                    .shared()
+                    .interface_named(target.span.start(), written)
+                    .map(|interface| (Performer::Interface(interface), selected)));
+            },
+            Some(_) | None => return Ok(None),
+        }
+        // Resolved at the call, whose declaration already owns it: the holder's
+        // own node inherits its owner only once the projection is read.
+        let resolved = self.host().resolve_name(site, frame, written);
+        let holder = match resolved {
+            Ok(Maybe::Present(Resolved::Binder(bound)))
+                if self.cx().capabilities.contains(&bound.binder)
+                    || self.cx().labelled.contains_key(&bound.binder) =>
+            {
+                let theory = self.cx().theory_capabilities.get(&bound.binder).cloned();
+                return Ok(Some((Performer::Capability(target.node, theory), selected)));
+            },
+            Ok(Maybe::Present(Resolved::Binder(bound))) => {
+                self.shared().written_holder(bound.declared)?
+            },
+            Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => {
+                self.shared().written_holder(declared)?
+            },
+            Ok(Maybe::Absent(_)) | Err(_) => {
+                if let Some(interface) = self.shared().interface_named(target.span.start(), written)
+                {
+                    return Ok(Some((Performer::Interface(interface), selected)));
+                }
+                Holder::Other
+            },
+        };
+        Ok((holder == Holder::Capability)
+            .then_some((Performer::Capability(target.node, None), selected)))
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// The interface the module `written` names where `at` stands, as that
+    /// source reads it: an extern block's interface by the block's own name,
+    /// or else the interface `Eff` the module holds, `std.io.Console.Eff` for
+    /// `std.io.Console`, as each effect lives in its API's module.
+    ///
+    /// # Specification
+    /// trivial.
+    fn interface_named(
+        &self,
+        at: ByteOffset,
+        written: SurfaceName<'_>,
+    ) -> Option<EffectName>
+    {
+        let named = EffectName::from(written.as_ref());
+        if self.cx().collected.interface(at, &named).is_some() {
+            return Some(named);
+        }
+        let homed = named.homed();
+        self.cx().collected.interface(at, &homed).map(|_| homed)
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Whether the computation `bound` a `let` statement binds, read where
+    /// `frame` stands, exercises an operation the scope handling it mints a
+    /// buffer for, so the statement places the buffer live.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly for a call `c.op(…)` whose head is a selection
+    ///   off a capability and whose `op` replies a buffer.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `let b = r.alloc(n) ;` places `b`, a run of any other
+    ///   exercise names its reply.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_allocated_buffer_is_placed_live_and_freed`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    #[inline]
+    pub fn placing(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        bound: Placed,
+    ) -> Result<Reply, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::Call)) = self.cx().form_at(bound)?
+        else {
+            return Ok(Reply::Plain);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, bound.node, &mut pieces)?;
+        let Some(&Piece::Operand(head)) = pieces.pieces.first()
+        else {
+            return Ok(Reply::Plain);
+        };
+        // A theory's operation replies a value of a sort its manifest fixes,
+        // which no scope mints.
+        Ok(match self.exercised(site, frame, head)? {
+            Some((Performer::Capability(_, Some(_)), _)) | None => Reply::Plain,
+            Some((_, selected)) => {
+                mints(&OperationName::from(self.cx().name_at(selected).as_ref()))
+            },
+        })
+    }
+
+    /// What the type written at `declared` states: a stack, `Stack(C, D)`
+    /// itself or a type member abbreviating one through any number of
+    /// members, or another type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Stated::Stack`] exactly when the chain of transparent plans
+    ///   from `declared`, each the type a manifest member was written at,
+    ///   reaches a node planned as a stack, or a node not yet classified that
+    ///   [`Families::written_stack`] reads as one; a member is classified after
+    ///   a declaration that reads it whenever the member's type lies deeper in
+    ///   the tree.
+    /// - fails: an engine fault.
+    /// - panics: none.
+    /// - executable: none — the answer is the walk itself, and no predicate
+    ///   over the plans states it without walking them again.
+    ///
+    /// # Errors
+    /// The engine fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written stack, a member abbreviating one read
+    ///   inside its module and one read qualified from a declaration classified
+    ///   before it are resumed, and a thunk type is applied.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
+    fn states_a_stack(
+        &mut self,
+        declared: NodeIndex,
+    ) -> Result<Stated, LoweringRefusal<'source>>
+    {
+        let mut at = declared;
+        loop {
+            self.cx_mut().fuel.spend()?;
+            match self.cx().plans.get(at) {
+                Some(&super::Plan::Stack(..)) => return Ok(Stated::Stack),
+                Some(&super::Plan::Transparent(written)) => at = written,
+                Some(&super::Plan::Unplanned) => return self.host().written_stack(at),
+                Some(_) | None => return Ok(Stated::Other),
+            }
+        }
+    }
+
+    /// Classify the call at `site` as a resumption when its head is a
+    /// continuation: one an operation clause binds, or a binder declared at
+    /// `Stack(C, D)` or a member abbreviating it, which a clause hands its
+    /// continuation on by.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the call's head.
+    /// - ensures: a head naming a clause's continuation or a binder whose
+    ///   declared type is a stack, as [`Self::states_a_stack`] reads it, stands
+    ///   as a computation reading the continuation and each argument as a value
+    ///   under its frame, planned as the resumption with the reply its
+    ///   arguments make; any other call is left unplanned.
+    /// - fails: the wrong-sort refusal where no computation is read; the name's
+    ///   resolution refusal; an engine fault reading the binder's declared
+    ///   type; the argument list's fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause resuming its subject lowers to the
+    ///   resumption of `pure unit` and checks; a function resuming the stack it
+    ///   states lowers to the same resumption.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Resume(..))))]
+    #[inline]
+    pub fn resumption(
+        &mut self,
+        site: Site,
+        cursor: &Cursor<'_>,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let mut ahead = cursor.clone();
+        let Run::One(head) = ahead.operands()
+        else {
+            return Ok(Planned(false));
+        };
+        let Some((_, Former::Name)) = self.cx().form_at(head)?
+        else {
+            return Ok(Planned(false));
+        };
+        let cx = self.cx_mut();
+        let Maybe::Present(bound) =
+            cx.scope
+                .resolve(site.reading.frame(), cx.name_at(head), &mut cx.fuel)?
+        else {
+            return Ok(Planned(false));
+        };
+        let resumes = self.cx().resumptions.contains(&bound.binder)
+            || match bound.declared {
+                Maybe::Present(declared) => self.states_a_stack(declared)? == Stated::Stack,
+                Maybe::Absent(_) => false,
+            };
+        if !resumes {
+            return Ok(Planned(false));
+        }
+        let frame = self.host().require(site, Produced::Computation)?;
+        let start = self.cx().operands.entries().len();
+        arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
+        let reply = Stretch {
+            start,
+            end: self.cx().operands.entries().len(),
+        };
+        self.host().read(head.node, Reading::Value(frame));
+        for position in reply.start .. reply.end {
+            if let Some(&argument) = self.cx().operands.entries().get(position) {
+                self.host().read(argument, Reading::Value(frame));
+            }
+        }
+
+        let kept = self.cx().kept(reply);
+        self.host().plan(site, super::Plan::Resume(head.node, kept));
+
+        Ok(Planned(true))
+    }
+
+    /// Classify the call at `site` as an abandonment when its head is the
+    /// name `abandon`, which the program does not bind, and its one argument
+    /// a continuation an operation clause binds.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the call's head.
+    /// - ensures: such a call stands as a computation reading the continuation
+    ///   as a value under its frame, planned as the abandonment; any other call
+    ///   is left unplanned, the operand store as it was found.
+    /// - fails: the wrong-sort refusal where no computation is read; a name's
+    ///   resolution refusal; the argument list's fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause abandoning its continuation lowers to the
+    ///   abandonment of the clause's stack, and a program binding its own
+    ///   `abandon` calls it.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_clause_abandons_its_continuation_1334`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Abandon(_))))]
+    #[inline]
+    pub fn abandonment(
+        &mut self,
+        site: Site,
+        cursor: &Cursor<'_>,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let mut ahead = cursor.clone();
+        let Run::One(head) = ahead.operands()
+        else {
+            return Ok(Planned(false));
+        };
+        let Some((_, Former::Name)) = self.cx().form_at(head)?
+        else {
+            return Ok(Planned(false));
+        };
+        let name = self.cx().name_at(head);
+        if name.as_ref() != ABANDON {
+            return Ok(Planned(false));
+        }
+        let cx = self.cx_mut();
+        if let Maybe::Present(_) = cx.scope.resolve(site.reading.frame(), name, &mut cx.fuel)? {
+            return Ok(Planned(false));
+        }
+        let start = self.cx().operands.entries().len();
+        arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
+        let argument = if let Some(&[argument]) = self.cx().operands.entries().get(start ..) {
+            Some(argument)
+        }
+        else {
+            None
+        };
+        self.cx_mut().operands.truncate(At::from(start));
+        let Some(argument) = argument
+        else {
+            return Ok(Planned(false));
+        };
+        let Some(node) = self.cx().tree.node(argument)
+        else {
+            return Ok(Planned(false));
+        };
+        let placed = Placed::of(argument, node);
+        let Some((_, Former::Name)) = self.cx().form_at(placed)?
+        else {
+            return Ok(Planned(false));
+        };
+        let cx = self.cx_mut();
+        let Maybe::Present(bound) =
+            cx.scope
+                .resolve(site.reading.frame(), cx.name_at(placed), &mut cx.fuel)?
+        else {
+            return Ok(Planned(false));
+        };
+        if !self.cx().resumptions.contains(&bound.binder) {
+            return Ok(Planned(false));
+        }
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(argument, Reading::Value(frame));
+        self.host().plan(site, super::Plan::Abandon(argument));
+        Ok(Planned(true))
+    }
+
+    /// Classify a capability scope,
+    /// `handle c : I { M } with { | pure(x) => N | oper op(p, k) => N_op | …
+    /// }`, its interface a host's or a theory's with its value sorts,
+    /// `handle c : T with sort S = A { M } with { … }`, the clauses of a
+    /// theory's scope given by a model of it the scope names, `with N`, or
+    /// by the one model in scope, for a scope writing no `with`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a capability scope in term position.
+    /// - ensures: the scope stands as a computation; each manifest type is read
+    ///   as a value type under the scope's own frame, a fixed carrier minted
+    ///   before the sweep; `c` is bound over the subject `M` alone, read as a
+    ///   body a path runs through; `x` is bound over `N`, and `p` then `k` over
+    ///   each `N_op`, `k` alone over an unnamed payload for `oper op(k)`, every
+    ///   clause read as a computation body under the scope's own frame; `k` is
+    ///   recorded as a continuation and `c` as a capability answering the
+    ///   interface's name (the host's `answered`), beside the theory it handles
+    ///   for a theory's scope, whose written name is resolved to the theory's
+    ///   declaration (`LoweredModule::resolutions`); the scope is planned over
+    ///   the interface, [`CapabilityRef::handled`], the subject and the clauses
+    ///   in written order, or, for `with N`, the theory's slot at the
+    ///   manifest's sorts ([`Families::theory_slot`]) and what `N` passes for
+    ///   it ([`Families::named_model`]), or, for no `with`, that slot and its
+    ///   holes ([`Families::answering_model`]).
+    /// - fails: the wrong-sort refusal where no computation is read and at a
+    ///   module a host interface's scope names; a missing-operand fault where
+    ///   the subject of a host scope writing no `with` ends, which its clauses
+    ///   follow; out of the fragment (`extern_block`) at the interface of a
+    ///   scope over an extern block's interface, which the host the run is
+    ///   offered to answers; the refusals of [`CapabilityRef::handled`],
+    ///   [`Families::theory_slot`], [`Families::named_model`] and
+    ///   [`Families::answering_model`]; [`LoweringRefusal::UninterfacedMember`]
+    ///   at the theory's name with [`InterfaceFault::Value`] for a scope
+    ///   writing its clauses over a theory with a value operation, which no
+    ///   clause answers; [`LoweringRefusal::DuplicateDefinition`] for a second
+    ///   return clause; a missing-operand fault for a scope with none; a
+    ///   misplaced-tile fault for a scope out of shape, a minting clause naming
+    ///   no payload among them; the block's and each body's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The scope's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope whose subject exercises its capability and
+    ///   whose clause resumes checks; one returning its capability is refused
+    ///   by the checker as escaping; an undeclared interface and a second
+    ///   return clause are refused here by name.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scoped_capability_cannot_escape`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_model_answers_a_theory_s_value_operations_2288`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Scope(_))))]
+    #[inline]
+    pub fn capability_scope(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.host().require(site, Produced::Computation)?;
+        // The clauses' `with` is the last, and the one no `sort` follows: every
+        // manifest sort's stands before the subject. A scope writing none
+        // leaves its model to the models in scope.
+        let split = pieces
+            .pieces
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|&(at, piece)| {
+                matches!(*piece, Piece::Tile { label, .. } if label == TileName::WITH)
+                    && !matches!(
+                        pieces.pieces.get(at.saturating_add(1)),
+                        Some(&Piece::Tile { label, .. }) if label == TileName::SORT
+                    )
+            })
+            .map_or(pieces.pieces.len(), |(at, _)| at);
+        let Some((head, handlers)) = pieces.pieces.split_at_checked(split)
+        else {
+            return Err(site.fault(site.at.span, FormFault::MisplacedTile));
+        };
+
+        let mut cursor = Cursor::new(head, site.at.span);
+        closed(site, &mut cursor, TileName::HANDLE)?;
+        let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        closed(site, &mut cursor, TileName::COLON)?;
+        let Maybe::Present((written, written_fixed)) =
+            entry_path(self.cx().pbg, self.cx().tree, &mut cursor)?
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let mut manifest = Vec::new();
+        let mut stated = Vec::new();
+        let mut fix = |this: &mut Self, sort: Placed, ty: Placed| {
+            this.host().read(ty.node, Reading::ValueType(frame));
+            // Every operation exercised in the subject reads the type, and the
+            // subject stands after it in the tree.
+            this.cx_mut().fixed_carriers.push(ty);
+            manifest.push((sort, ty.node));
+            stated.push((sort, ty));
+        };
+        for (sort, ty) in written_fixed {
+            fix(self, sort, ty);
+        }
+        while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
+            closed(site, &mut cursor, TileName::SORT)?;
+            let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(site, &mut cursor, TileName::EQUALS)?;
+            let ty = site.one(cursor.operands())?;
+            fix(self, sort, ty);
+        }
+        let interface = self
+            .shared()
+            .handled(site, &written, site.at.node, &manifest)?;
+        let held = self.bind(binder, frame)?;
+        let _first = self.cx_mut().capabilities.insert(held);
+        match interface {
+            Interface::Host(ref name) => {
+                self.cx_mut()
+                    .collected
+                    .reach_host(site.at.span.start(), name);
+                let _first = self.cx_mut().answered.insert(held, name.clone());
+            },
+            Interface::Theory(ref theory) => {
+                let _first = self.cx_mut().answered.insert(held, theory.name.clone());
+                let _first = self
+                    .cx_mut()
+                    .theory_capabilities
+                    .insert(held, Arc::clone(theory));
+                // The written path's last name refers to the theory, as
+                // `Model(T)`'s does.
+                self.cx_mut().resolutions.push((
+                    written.last.span,
+                    crate::resolve::Resolution::Declaration(theory.theory),
+                ));
+            },
+            // A source handler of an extern block's interface is beyond the
+            // form: the host the run is offered to answers it (#327).
+            Interface::Foreign(_) => {
+                let named = Site {
+                    at: written.last,
+                    ..site
+                };
+                return Err(named.folded(
+                    FormName::EXTERN_BLOCK,
+                    FragmentBoundary::Unadmitted(Unbuilt::ExternBlock),
+                ));
+            },
+        }
+        let subject = self.host().block(site, &mut cursor, Frame::Inner(held))?;
+        self.host().open_subject(site, subject)?;
+
+        if handlers.is_empty() {
+            let named = Site {
+                at: written.last,
+                ..site
+            };
+            // Only clauses answer a host's interface, so a host scope that
+            // writes no `with` leaves them out where its subject ends. A
+            // doubled `}` that closes the scope early leaves the same gap.
+            if !matches!(interface, Interface::Theory(_)) {
+                return Err(site.fault(cursor.here(), FormFault::MissingOperand));
+            }
+            let slot = self
+                .host()
+                .theory_slot(named, &written, site.at.span.start(), &stated)?;
+            let written_name = written.name(self.cx().tree);
+            let supplied = self.host().answering_model(site, written_name, &slot)?;
+            self.host().plan(
+                site,
+                super::Plan::Scope(Scoped {
+                    interface,
+                    subject,
+                    frame,
+                    binder: binder.node,
+                    handlers: Handlers::Model(Arc::new(Answering {
+                        slot,
+                        supplied,
+                        written: ScopeAnswer::InScope,
+                    })),
+                }),
+            );
+            return Ok(());
+        }
+        let mut cursor = Cursor::new(handlers, site.at.span);
+        closed(site, &mut cursor, TileName::WITH)?;
+        if let Maybe::Present(module) = cursor.tile(TileName::TYPE_IDENTIFIER) {
+            exhausted(site, &cursor)?;
+            if !matches!(interface, Interface::Theory(_)) {
+                let named = Site { at: module, ..site };
+                return Err(named.out(FragmentBoundary::WrongSort));
+            }
+            let named = Site {
+                at: written.last,
+                ..site
+            };
+            let slot = self
+                .host()
+                .theory_slot(named, &written, site.at.span.start(), &stated)?;
+            let supplied = self.host().named_model(site, module, &slot)?;
+            let module_name = Name::from(self.cx().name_at(module).as_ref());
+            self.host().plan(
+                site,
+                super::Plan::Scope(Scoped {
+                    interface,
+                    subject,
+                    frame,
+                    binder: binder.node,
+                    handlers: Handlers::Model(Arc::new(Answering {
+                        slot,
+                        supplied,
+                        written: ScopeAnswer::Named(module_name),
+                    })),
+                }),
+            );
+            return Ok(());
+        }
+        // A value operation performs nothing, so no clause answers it: only a
+        // model the scope names does.
+        if let Interface::Theory(ref theory) = interface
+            && let Some(value) = theory.values.first()
+        {
+            return Err(LoweringRefusal::UninterfacedMember {
+                span: written.span(),
+                name: self.cx().name_at(value.named),
+                fault: InterfaceFault::Value,
+            });
+        }
+        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        // The clauses each open with an arm bar, or are separated by `,`.
+        let barred = matches!(cursor.tile(TileName::ARM_BAR), Maybe::Present(_));
+        let mut on_return: Maybe<(NodeIndex, Placed, NodeIndex), clause::Absent> =
+            Maybe::Absent(clause::Absent::Unwritten);
+        let mut clauses = Vec::new();
+        loop {
+            match cursor.read() {
+                Maybe::Present(Piece::Tile { label, at }) if label == TileName::PURE => {
+                    let (result, body) = Self::clause_parameter(site, &mut cursor)?;
+                    if let Maybe::Present((_, first, _)) = on_return {
+                        return Err(LoweringRefusal::DuplicateDefinition {
+                            span: at.span,
+                            name: SurfaceName::from("pure"),
+                            first: first.span,
+                        });
+                    }
+                    let bound = self.bind(result, frame)?;
+                    self.clause(site, body, Frame::Inner(bound))?;
+                    on_return = Maybe::Present((body, at, result.node));
+                },
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
+                    let Maybe::Present(at) = cursor.tile(TileName::IDENTIFIER)
+                    else {
+                        return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                    };
+                    closed(site, &mut cursor, TileName::PAREN_OPEN)?;
+                    let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER)
+                    else {
+                        return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                    };
+                    // `oper op(k)`: an operation that sends nothing binds its
+                    // resumption alone.
+                    let (payload, second) = if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+                    {
+                        let Maybe::Present(second) = cursor.tile(TileName::IDENTIFIER)
+                        else {
+                            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                        };
+                        (Some(first), second)
+                    }
+                    else {
+                        (None, first)
+                    };
+                    let operation = OperationName::from(self.cx().name_at(at).as_ref());
+                    // A host operation replying a buffer names its mint
+                    // between the payload and the continuation; a theory's
+                    // replies values of the sorts its manifest fixes.
+                    let minting = matches!(interface, Interface::Host(_))
+                        && mints(&operation) == Reply::Minted;
+                    let (minted, continuation) = match (minting, payload) {
+                        (true, Some(_)) => {
+                            closed(site, &mut cursor, TileName::COMMA)?;
+                            let Maybe::Present(continuation) = cursor.tile(TileName::IDENTIFIER)
+                            else {
+                                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                            };
+                            (Some(second), continuation)
+                        },
+                        (true, None) => {
+                            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                        },
+                        (false, _) => (None, second),
+                    };
+                    closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+                    closed(site, &mut cursor, TileName::FAT_ARROW)?;
+                    let body = site.one(cursor.operands())?;
+                    let (under, mint) = if let (Some(minted), Some(payload)) = (minted, payload) {
+                        // The payload binder holds the pair the body splits
+                        // into the payload and the mint, placed live.
+                        let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
+                        let pair =
+                            self.cx_mut()
+                                .scope
+                                .extend(frame, SurfaceName::from(""), unwritten());
+                        let resumed = self.bind(continuation, Frame::Inner(pair))?;
+                        let _first = self.cx_mut().resumptions.insert(resumed);
+                        let split = self.bind(payload, Frame::Inner(resumed))?;
+                        let placed = self.cx_mut().scope.extend(
+                            Frame::Inner(split),
+                            SurfaceName::from(""),
+                            unwritten(),
+                        );
+                        let name = self.cx().name_at(minted);
+                        self.host()
+                            .note_binder(minted, Frame::Inner(placed), name)?;
+                        let live = self.cx_mut().scope.extend_linear(
+                            Frame::Inner(placed),
+                            name,
+                            Maybe::Present(minted.span),
+                        );
+                        (Frame::Inner(live), Mint::Minted { mint: minted.node })
+                    }
+                    else {
+                        let bound = match payload {
+                            Some(payload) => self.bind(payload, frame)?,
+                            None => self.cx_mut().scope.extend(
+                                frame,
+                                SurfaceName::from(""),
+                                Maybe::Absent(binder_site::Absent::Unwritten),
+                            ),
+                        };
+                        let resumed = self.bind(continuation, Frame::Inner(bound))?;
+                        let _first = self.cx_mut().resumptions.insert(resumed);
+                        (Frame::Inner(resumed), Mint::Unminted)
+                    };
+                    self.clause(site, body.node, under)?;
+                    clauses.push(Clause {
+                        operation,
+                        payload: payload.map(|payload| payload.node),
+                        continuation: continuation.node,
+                        body: body.node,
+                        mint,
+                    });
+                },
+                Maybe::Present(piece) => {
+                    return Err(site.fault(piece.placed().span, FormFault::MisplacedTile));
+                },
+                Maybe::Absent(_) => {
+                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                },
+            }
+            if barred {
+                if let Maybe::Absent(_) = cursor.tile(TileName::ARM_BAR) {
+                    break;
+                }
+                continue;
+            }
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                break;
+            }
+            if let Maybe::Present(_) = cursor.at(TileName::BRACE_CLOSE) {
+                break;
+            }
+        }
+        closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
+        exhausted(site, &cursor)?;
+        let Maybe::Present((on_return, _, result)) = on_return
+        else {
+            return Err(site.fault(site.at.span, FormFault::MissingOperand));
+        };
+
+        self.host().plan(
+            site,
+            super::Plan::Scope(Scoped {
+                interface,
+                subject,
+                frame,
+                binder: binder.node,
+                handlers: Handlers::Written(Written {
+                    on_return,
+                    result,
+                    clauses,
+                }),
+            }),
+        );
+
+        Ok(())
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// The interface a capability scope or a row entry names by the path
+    /// `written`, the value sorts `manifest` fixes each beside the node of the
+    /// type it writes, a theory's signature minted once for the form at `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the interface the source reads the whole path as, where it
+    ///   reads one and the manifest is empty. The source reads a block of its
+    ///   own over the host's interface of the path. Otherwise the theory the
+    ///   path resolves to where the form stands, its last name under the
+    ///   modules its prefix names, read as an interface whose value sorts the
+    ///   manifest fixes ([`theory::operations`]), held for the form at `at` and
+    ///   named by the whole path.
+    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] at a host interface
+    ///   whose `std` module the source does not import (#4523);
+    ///   [`LoweringRefusal::UnresolvedName`] at a manifest sort the interface
+    ///   does not declare, an interface the source reads declaring none;
+    ///   [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest fixes
+    ///   twice; the refusals of
+    ///   [`crate::module::Collected::presented_theory_in`] for a path neither
+    ///   the source's interfaces nor a theory answers; an unadmitted form for a
+    ///   theory whose value codes no presentation;
+    ///   [`LoweringRefusal::UninterfacedMember`] at the theory's path, for its
+    ///   first member out of shape or first law no clause reads; an unadmitted
+    ///   form for a scope over a theory no declaration owns.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `State` fixed at `Integer` handled and exercised; a
+    ///   theory refused at each fault; a manifest sort the theory does not
+    ///   declare and one a host interface is written with, each refused by
+    ///   name.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_s_manifest_names_only_its_theory_s_sorts_2272`
+    /// - witness: `gandr-surface-lowering-base::lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    #[spec(ensures: |ret| ret.is_err() || manifest.is_empty() || matches!(ret, Ok(Interface::Theory(ref theory)) if theory.scope == at))]
+    #[inline]
+    pub fn handled(
+        &self,
+        site: Site,
+        written: &WrittenPath,
+        at: NodeIndex,
+        manifest: &[(Placed, NodeIndex)],
+    ) -> Result<Interface, LoweringRefusal<'source>>
+    {
+        let span = written.span();
+        let handled = written.name(self.cx().tree);
+        let named = EffectName::from(handled.as_ref());
+        if let Some(provider) = self.cx().collected.interface(span.start(), &named) {
+            if let Some(&(sort, _)) = manifest.first() {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: sort.span,
+                    name: self.cx().name_at(sort),
+                });
+            }
+            return Ok(match *provider {
+                Provider::Block(ref foreign) => Interface::Foreign(Arc::clone(foreign)),
+                Provider::Host => Interface::Host(named),
+            });
+        }
+        // A host interface whose module the source does not import is no
+        // theory either: the head is unresolved, and its help names the
+        // import (#4523).
+        if let Maybe::Present(_) = gandr_core_term::effect::host::home(&named) {
+            return Err(LoweringRefusal::UnresolvedTypeHead {
+                span,
+                head: span,
+                name: handled,
+                arity: crate::resolve::HeadArity::Nullary,
+            });
+        }
+        let prefix: Vec<(ByteSpan, SurfaceName<'source>)> = written
+            .prefix
+            .iter()
+            .map(|&segment| (segment.span, self.cx().name_at(segment)))
+            .collect();
+        let (presented, presentation) = self.cx().collected.presented_theory_in(
+            span.start(),
+            &prefix,
+            written.last.span,
+            self.cx().name_at(written.last),
+        )?;
+        let Some(theory) = self
+            .cx()
+            .collected
+            .slots
+            .get(usize::from(presented))
+            .map(|slot| slot.constant)
+        else {
+            return Err(LoweringRefusal::UnresolvedTypeHead {
+                span,
+                head: span,
+                name: handled,
+                arity: crate::resolve::HeadArity::Nullary,
+            });
+        };
+        // A handler is a model of the theory: a value presenting no theory
+        // has none, as `Model(T)` refuses it.
+        let Ok(members) = presentation.members()
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
+        };
+        let declared: BTreeSet<&Name> = members.sorts.iter().map(|sort| &sort.name).collect();
+        let mut fixed: BTreeMap<Name, NodeIndex> = BTreeMap::new();
+        let mut first: BTreeMap<Name, Placed> = BTreeMap::new();
+        for &(sort, ty) in manifest {
+            let name = self.cx().name_at(sort);
+            let key = Name::from(name.as_ref());
+            if !declared.contains(&key) {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: sort.span,
+                    name,
+                });
+            }
+            if let Some(&earlier) = first.get(&key) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: sort.span,
+                    name,
+                    first: earlier.span,
+                });
+            }
+            let _first = first.insert(key.clone(), sort);
+            let _fixed = fixed.insert(key, ty);
+        }
+        let read = theory::operations(&members, &fixed).and_then(|read| {
+            theory::laws(&members, &presentation.laws, &read.effects, &read.values)
+                .map(|laws| (read, laws))
+        });
+        // A law the order turned rewrites from its written right side; a
+        // presentation coding no certificate turns none.
+        let turns = presentation
+            .value
+            .certificate()
+            .map_or_else(|_uncertified| Vec::new(), |certificate| certificate.turns);
+        let (theory::Operations { effects, values }, laws) = match read {
+            Ok(read) => read,
+            Err((member, fault)) => {
+                return Err(LoweringRefusal::UninterfacedMember {
+                    span,
+                    name: self.cx().name_at(member),
+                    fault,
+                });
+            },
+        };
+        let owner = match self.cx().collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self
+                .cx()
+                .collected
+                .slots
+                .get(usize::from(owner))
+                .map(|slot| slot.constant),
+            Maybe::Absent(_) => None,
+        };
+        let Some(owner) = owner
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnownedScope)));
+        };
+        Ok(Interface::Theory(Arc::new(TheoryInterface {
+            scope: at,
+            name: EffectName::from(handled.as_ref()),
+            theory,
+            rules: theory::rules(&members, &effects, &turns),
+            operations: effects,
+            values,
+            laws,
+            owner,
+            manifest: manifest
+                .iter()
+                .map(|&(sort, ty)| (Name::from(self.cx().name_at(sort).as_ref()), ty))
+                .collect(),
+        })))
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Read a return clause's `(x) =>` and its body, past its `pure`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the clause's `pure`.
+    /// - ensures: the result's binder and the body, the cursor past the body.
+    /// - fails: a misplaced-tile fault for a clause out of shape; the body
+    ///   hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::capability_scope`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::MalformedForm { .. })))]
+    fn clause_parameter(
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<(Placed, NodeIndex), LoweringRefusal<'source>>
+    {
+        closed(site, cursor, TileName::PAREN_OPEN)?;
+        let Maybe::Present(result) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        closed(site, cursor, TileName::PAREN_CLOSE)?;
+        closed(site, cursor, TileName::FAT_ARROW)?;
+        let body = site.one(cursor.operands())?;
+
+        Ok((result, body.node))
+    }
+
+    /// Bind the name written at `binder` in a frame extending `frame`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the new frame, its binder named and sited as written.
+    /// - fails: the binder note's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The binder note's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::capability_scope`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&bound| self.cx().scope.site(bound) == Maybe::Present(binder.span)))]
+    fn bind(
+        &mut self,
+        binder: Placed,
+        frame: Frame,
+    ) -> Result<crate::resolve::ScopeId, LoweringRefusal<'source>>
+    {
+        let name = self.cx().name_at(binder);
+        self.host().note_binder(binder, frame, name)?;
+
+        Ok(self
+            .cx_mut()
+            .scope
+            .extend(frame, name, Maybe::Present(binder.span)))
+    }
+
+    /// Read a clause's body at `body` as a computation under `frame`, a body a
+    /// path runs through.
+    ///
+    /// # Specification
+    /// - requires: `body` is a clause's one operand.
+    /// - ensures: the body reads as a computation under `frame` and is where a
+    ///   path ends.
+    /// - fails: the unreachable refusal, as [`Families::open_body`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::Unreachable`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::capability_scope`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    #[spec(ensures: |ret| ret.is_err() || self.cx().reading(body) == Reading::Computation(frame))]
+    fn clause(
+        &mut self,
+        site: Site,
+        body: NodeIndex,
+        frame: Frame,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        self.host().read(body, Reading::Computation(frame));
+        self.host().open_body(
+            site,
+            clause_body(body),
+            Maybe::Absent(native::answered::Absent::Unstated),
+        )
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Mint a capability type over `authority` at `grade`, living in `region`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the capability type whose authority restricts each host
+    ///   interface to the operations written of it, at `origin`.
+    /// - fails: the unminted absence when an operation is no host interface's,
+    ///   which the classification rules out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Capability::capability_type`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_type_lowers_to_its_authority`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::ValueType(id)) => sink.origins.value_type(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_capability(
+        authority: &Authority,
+        grade: CapabilityGrade,
+        region: Region,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let row = match sink.host(origin) {
+            Maybe::Present(table) => table.authority(authority),
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Ok(row) = row
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let id = sink.arena.value_type_capability(row, grade, region);
+        sink.origins.record_value_type(id, origin);
+
+        Maybe::Present(Lowered::ValueType(id))
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// Mint the returner over `argument` whose row holds the interfaces of
+    /// `row`, whole, and its labels' instances, open through its tail when
+    /// one is written.
+    ///
+    /// # Specification
+    /// - requires: `argument` and the row's tail are already minted or absent.
+    /// - ensures: `F^⟨row⟩ A` at `origin`, or the many-value returner of a
+    ///   group the argument plans with the same row, each interface named whole
+    ///   at its default label and each label's instance at its region, each an
+    ///   extern block's signature, a host's, or a theory's at the types its
+    ///   entry fixes ([`Self::interface_signature`]), its tail standing for the
+    ///   row the tail's value denotes, and each entry over a theory recorded at
+    ///   the returner with its instance's region, the theory and the sorts it
+    ///   fixes as written; the argument's, a fixed type's or the tail's absence
+    ///   when it did not lower, and the unminted absence when two labels name
+    ///   one instance.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::returner_row`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_returner_row_names_whole_interfaces`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_row_returns_a_group_of_outputs`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_records_the_theory_and_sorts_each_entry_fixes_3230`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::CompType(id)) => sink.origins.comp_type(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_effectful(
+        &self,
+        row: &WrittenRow,
+        argument: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut grouped = argument;
+        while let Some(&super::Plan::Transparent(inner)) = self.cx().plans.get(grouped) {
+            grouped = inner;
+        }
+        let outputs = match self.cx().plans.get(grouped) {
+            Some(&super::Plan::Returns(outputs)) => Some(outputs),
+            _ => None,
+        };
+        let result = match outputs {
+            Some(_) => None,
+            None => match self.cx().value_type_at(argument) {
+                Maybe::Present(result) => Some(result),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+        };
+        let tail = match row.tail {
+            Maybe::Present(written) => match self.cx().value_at(written) {
+                Maybe::Present(value) => {
+                    let tail = sink.arena.value_type_row_tail(value);
+                    sink.origins.record_value_type(tail, origin);
+                    Some(tail)
+                },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Maybe::Absent(_) => None,
+        };
+        let mut placed = Vec::with_capacity(row.interfaces.len().saturating_add(row.placed.len()));
+        let interfaces = row
+            .interfaces
+            .iter()
+            .map(|interface| (interface, Region::Held));
+        let labels = row
+            .placed
+            .iter()
+            .map(|&(ref interface, region)| (interface, region));
+        let mut theories = Vec::new();
+        for (interface, region) in interfaces.chain(labels) {
+            match self.interface_signature(interface, Standing::Read, sink, origin) {
+                Maybe::Present(signature) => placed.push((signature, region)),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+            if let Interface::Theory(ref theory) = *interface {
+                let mut sorts = Vec::with_capacity(theory.manifest.len());
+                for &(ref sort, ty) in &theory.manifest {
+                    match self.fixed_at(ty, Standing::Read, sink, origin) {
+                        Maybe::Present(fixed) => sorts.push((sort.clone(), fixed)),
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    }
+                }
+                theories.push(RowTheory {
+                    region,
+                    model: WrittenModel {
+                        theory: Name::from(theory.name.as_ref()),
+                        sorts,
+                    },
+                });
+            }
+        }
+        let Ok(effects) = EffectRow::from_placed(placed)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let effects = effects.with_tail(tail);
+        let id = match (outputs, result) {
+            (Some(outputs), _) => {
+                match self.host_ref().mint_returns(outputs, effects, sink, origin) {
+                    Maybe::Present(Lowered::CompType(id)) => id,
+                    Maybe::Present(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                }
+            },
+            (None, Some(result)) => {
+                let id = sink.arena.comp_type_returner_with_effects(result, effects);
+                sink.origins.record_comp_type(id, origin);
+                id
+            },
+            (None, None) => return Maybe::Absent(lowered::Absent::Unminted),
+        };
+        for entry in theories {
+            sink.origins.record_row_theory(id, entry);
+        }
+
+        Maybe::Present(Lowered::CompType(id))
+    }
+
+    /// Mint the payload the values of `written` make: unit for none, the value
+    /// for one, and their tuple for several.
+    ///
+    /// # Specification
+    /// - requires: every value `written` names is already minted or absent.
+    /// - ensures: the payload, a new unit or tuple carrying `origin`; the first
+    ///   absence among the values.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — payloads of one and two values check against their
+    ///   operations' payload types.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => sink.arena.value(id).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_payload(
+        &self,
+        written: FormStretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueId, lowered::Absent>
+    {
+        let written = self.cx().operands.read(written);
+        let mut values = Vec::with_capacity(written.len());
+        for &position in written {
+            match self.cx().value_at(position) {
+                Maybe::Present(value) => values.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        if let &[only] = values.as_slice() {
+            return Maybe::Present(only);
+        }
+        let id = sink.arena.value_tuple(&values);
+        sink.origins.record_value(id, origin);
+
+        Maybe::Present(id)
+    }
+
+    /// The signature of `interface` in the module's arena, standing as
+    /// `standing` says: the host's, or the theory's, minted at the first form
+    /// naming its scope at that standing and the same signature for every
+    /// form after.
+    ///
+    /// # Specification
+    /// - requires: every type a theory operation names is already minted or
+    ///   absent.
+    /// - ensures: the host interface's signature, as [`Sink::signature`]; a
+    ///   theory's, one operation per theory operation, its payload and its
+    ///   reply each [`Self::tuple_at`] of the operation's types at `standing`,
+    ///   kept by the scope and the standing so every later call answers it.
+    /// - fails: never; the first absence among the types, or the unminted
+    ///   absence for a theory naming one operation twice, which the theory's
+    ///   own presentation rules out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over `State` and the exercises in its subject
+    ///   check against one signature, each where it stands.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
+    #[spec(ensures: |ref ret| match *ret {
+        | Maybe::Present(ref signature) => signature.name() == interface.name(),
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn interface_signature(
+        &self,
+        interface: &Interface,
+        standing: Standing,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<EffectSig, lowered::Absent>
+    {
+        let theory = match *interface {
+            Interface::Host(ref name) => return sink.signature(name, origin),
+            Interface::Foreign(ref foreign) => return sink.foreign(foreign),
+            Interface::Theory(ref theory) => theory,
+        };
+        if let Some(minted) = sink.theories.get(&(theory.scope, standing)) {
+            return Maybe::Present(minted.clone());
+        }
+        let operations = theory
+            .operations
+            .iter()
+            .map(|operation| {
+                let payload = match self.tuple_at(&operation.payload, standing, sink, origin) {
+                    Maybe::Present(payload) => payload,
+                    Maybe::Absent(reason) => return Err(reason),
+                };
+                let reply = match self.tuple_at(&operation.reply, standing, sink, origin) {
+                    Maybe::Present(reply) => reply,
+                    Maybe::Absent(reason) => return Err(reason),
+                };
+                Ok(EffectOp {
+                    name: operation.name.clone(),
+                    payload,
+                    reply,
+                })
+            })
+            .collect::<Result<Vec<EffectOp>, lowered::Absent>>();
+        let operations = match operations {
+            Ok(operations) => operations,
+            Err(reason) => return Maybe::Absent(reason),
+        };
+        let Ok(signature) = EffectSig::new(theory.name.clone(), operations)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let _first = sink
+            .theories
+            .insert((theory.scope, standing), signature.clone());
+        Maybe::Present(signature)
+    }
+
+    /// The type of the values whose written types are `types`, at `standing`:
+    /// the unit for none, its own for one, and their tuple for several, as an
+    /// exercise passes its arguments.
+    ///
+    /// # Specification
+    /// - requires: every node of `types` is already minted or absent.
+    /// - ensures: the one type's [`Self::fixed_at`] for one; otherwise the
+    ///   product of each type's, in order, at `origin`.
+    /// - fails: never; the first absence among the types.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::interface_signature`]: `get` replies one
+    ///   type and sends none.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
+    #[spec(ensures: |ret| types.len() == 1 || match ret {
+        | Maybe::Present(id) => matches!(sink.arena.value_type(id), Some(&ValueType::Product(ref components)) if components.len() == types.len()),
+        | Maybe::Absent(_) => true,
+    })]
+    fn tuple_at(
+        &self,
+        types: &[NodeIndex],
+        standing: Standing,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        if let &[only] = types {
+            return self.fixed_at(only, standing, sink, origin);
+        }
+        let components = types
+            .iter()
+            .map(|&ty| match self.fixed_at(ty, standing, sink, origin) {
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(reason) => Err(reason),
+            })
+            .collect::<Result<Vec<ValueTypeId>, lowered::Absent>>();
+        match components {
+            Ok(components) => {
+                let id = sink.arena.value_type_product(&components);
+                sink.origins.record_value_type(id, origin);
+                Maybe::Present(id)
+            },
+            Err(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The type written at `written`, a type a theory's sort is fixed to, at
+    /// `standing`.
+    ///
+    /// # Specification
+    /// - requires: `written` is already minted or absent; at a frame's term
+    ///   context, `written` is read under that frame or one of its chain.
+    /// - ensures: the minted type where it was read; at a frame's term context,
+    ///   the minted type carried there from the frame it is read under, as
+    ///   [`Families::carry_value_type`] from the signature's telescope.
+    /// - fails: never; the type's absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope fixing a sort to a parameter reads the
+    ///   parameter at the scope and at an exercise under its binder.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => sink.arena.value_type(id).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn fixed_at(
+        &self,
+        written: NodeIndex,
+        standing: Standing,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        self.cx()
+            .value_type_at(written)
+            .map(|minted| match standing {
+                Standing::Read => minted,
+                Standing::Term(at) => {
+                    let from = self.cx().reading(written).frame();
+                    self.host_ref().carry_value_type(
+                        minted,
+                        from,
+                        Telescope::Signature,
+                        at,
+                        sink,
+                        origin,
+                    )
+                },
+            })
+    }
+
+    /// Mint the exercise or the perform `exercised` plans.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: the exercise of the operation, under its interface's whole
+    ///   signature, of the capability with the payload its arguments make, or,
+    ///   for an interface named, the perform of the operation under that
+    ///   signature with the payload, at `origin`, and a label at the head
+    ///   naming the operation's type, its payload to the returner of its reply;
+    ///   the first absence among the children.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Capability::exercise`]; the head answers at the
+    ///   operation it selects.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_s_head_answers_at_its_operation`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_exercise(
+        &self,
+        exercised: &Exercised,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let capability = match exercised.performer {
+            Performer::Capability(node, _) => match self.cx().value_at(node) {
+                Maybe::Present(capability) => Some(capability),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Performer::Interface(_) => None,
+        };
+        let payload = match self.mint_payload(exercised.payload, sink, origin) {
+            Maybe::Present(payload) => payload,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let standing = Standing::Term(exercised.frame);
+        self.interface_signature(&exercised.interface, standing, sink, origin)
+            .map(|signature| {
+                if let Maybe::Present(&EffectOp { payload, reply, .. }) =
+                    signature.operation(&exercised.operation)
+                {
+                    let replied = sink.arena.comp_type_returner(reply);
+                    let ty = sink.arena.comp_type_arrow(payload, replied);
+                    sink.origins.record_label(Label {
+                        span: exercised.head,
+                        labelled: Labelled::CompType {
+                            ty,
+                            context: Vec::new(),
+                        },
+                    });
+                }
+                let id = match capability {
+                    Some(capability) => sink.arena.computation_exercise(
+                        capability,
+                        signature,
+                        exercised.operation.clone(),
+                        payload,
+                    ),
+                    None => sink.arena.computation_perform(
+                        signature,
+                        exercised.operation.clone(),
+                        payload,
+                    ),
+                };
+                sink.computation(id, origin)
+            })
+    }
+
+    /// Mint the resumption of the continuation at `continuation` with the
+    /// reply the values of `reply` make.
+    ///
+    /// # Specification
+    /// - requires: every node named is already minted or absent.
+    /// - ensures: the resumption of the continuation with `pure` of the reply,
+    ///   both at `origin`; the first absence among the children.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Capability::resumption`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_resume(
+        &self,
+        continuation: NodeIndex,
+        reply: FormStretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let stack = match self.cx().value_at(continuation) {
+            Maybe::Present(stack) => stack,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        self.mint_payload(reply, sink, origin).map(|replied| {
+            let returned = sink.arena.computation_return(replied);
+            sink.origins.record_computation(returned, origin);
+            let id = sink.arena.computation_resume(stack, returned);
+            sink.computation(id, origin)
+        })
+    }
+
+    /// Mint the abandonment of the continuation at `continuation`.
+    ///
+    /// # Specification
+    /// - requires: the continuation's node is already minted or absent.
+    /// - ensures: the abandonment of the continuation at `origin`; the
+    ///   continuation's absence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Capability::abandonment`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_clause_abandons_its_continuation_1334`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_abandon(
+        &self,
+        continuation: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        self.cx().value_at(continuation).map(|stack| {
+            let id = sink.arena.computation_abandon(stack);
+            sink.computation(id, origin)
+        })
+    }
+
+    /// Mint the capability scope `scoped` plans.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: the scope over the interface's whole signature, its subject,
+    ///   normalised by the theory's rules for a scope over a theory
+    ///   ([`normalized`]), its return clause and its operation clauses —
+    ///   written ones in written order ([`Self::mint_clauses`]), or the ones
+    ///   its model gives in the theory's order ([`Self::mint_answered`]) — each
+    ///   body minted as a body a path runs through, at `origin`, with the
+    ///   capability's written name recorded as the scope's binder and each
+    ///   written clause's binders — the result, and each operation clause's
+    ///   payload and continuation by its place — as the scope's clause binders,
+    ///   and, for a scope over a theory, the theory and each sort its manifest
+    ///   fixes beside the type it fixes it to, in the order written, as the
+    ///   scope's theory; the first absence among the bodies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Capability::capability_scope`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_s_subject_normalises_by_its_theory_s_laws_2272`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_scope(
+        &self,
+        scoped: &Scoped,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let subject = match self.host_ref().mint_body(scoped.subject, sink, origin) {
+            Maybe::Present(subject) => subject,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let subject = match scoped.interface {
+            Interface::Theory(ref theory) => normalized(sink, subject, &theory.rules, origin),
+            Interface::Host(_) | Interface::Foreign(_) => subject,
+        };
+        let minted = match (&scoped.handlers, &scoped.interface) {
+            (&Handlers::Written(ref written), _) => self.mint_clauses(written, sink, origin),
+            (&Handlers::Model(ref answering), &Interface::Theory(ref theory)) => {
+                self.mint_answered(theory, answering, sink, origin)
+            },
+            (&Handlers::Model(_), &Interface::Host(_) | &Interface::Foreign(_)) => {
+                Maybe::Absent(lowered::Absent::Unminted)
+            },
+        };
+        let (on_return, clauses) = match minted {
+            Maybe::Present(minted) => minted,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let standing = Standing::Term(scoped.frame);
+        self.interface_signature(&scoped.interface, standing, sink, origin)
+            .map(|signature| {
+                let id =
+                    sink.arena
+                        .computation_scope(signature, subject, on_return, Arc::from(clauses));
+                let scope = sink.computation(id, origin);
+                if let Maybe::Present(name) = self.cx().origin_at(scoped.binder) {
+                    sink.origins.record_binder(id, name);
+                }
+                if let Handlers::Written(ref written) = scoped.handlers {
+                    let binders = core::iter::once((ClauseBinder::Result, Some(written.result)))
+                        .chain(
+                            written
+                                .clauses
+                                .iter()
+                                .enumerate()
+                                .flat_map(|(place, clause)| {
+                                    let place = ClausePlace::from(place);
+                                    [
+                                        (ClauseBinder::Payload(place), clause.payload),
+                                        (
+                                            ClauseBinder::Continuation(place),
+                                            Some(clause.continuation),
+                                        ),
+                                    ]
+                                }),
+                        );
+                    for (binder, node) in binders {
+                        if let Some(node) = node
+                            && let Maybe::Present(name) = self.cx().origin_at(node)
+                        {
+                            sink.origins.place_clause_binder(id, binder, name);
+                        }
+                    }
+                }
+                if let Handlers::Model(ref answering) = scoped.handlers {
+                    sink.origins
+                        .record_scope_answer(id, answering.written.clone());
+                }
+                if let Interface::Theory(ref theory) = scoped.interface {
+                    let sorts = theory
+                        .manifest
+                        .iter()
+                        .filter_map(|&(ref sort, ty)| {
+                            match self.fixed_at(ty, standing, sink, origin) {
+                                Maybe::Present(fixed) => Some((sort.clone(), fixed)),
+                                Maybe::Absent(_) => None,
+                            }
+                        })
+                        .collect();
+                    sink.origins.record_scope_theory(id, WrittenModel {
+                        theory: Name::from(theory.name.as_ref()),
+                        sorts,
+                    });
+                }
+                scope
+            })
+    }
+
+    /// The return clause and the operation clauses a scope writes, `written`,
+    /// each body minted as a body a path runs through.
+    ///
+    /// # Specification
+    /// - requires: every node `written` names is already minted or absent.
+    /// - ensures: the return clause's body, and one clause per written
+    ///   operation clause, in written order, a minting clause's body split into
+    ///   its payload and its mint, the mint placed live, at `origin`; the first
+    ///   absence among the bodies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Capability::capability_scope`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((_, ref clauses)) => clauses.len() == written.clauses.len(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_clauses(
+        &self,
+        written: &Written,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<(ComputationId, Vec<EffectClause>), lowered::Absent>
+    {
+        let on_return =
+            match self
+                .host_ref()
+                .mint_body(clause_body(written.on_return), sink, origin)
+            {
+                Maybe::Present(on_return) => on_return,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        let mut clauses: Vec<EffectClause> = Vec::with_capacity(written.clauses.len());
+        for clause in &written.clauses {
+            let mut body: ComputationId =
+                match self
+                    .host_ref()
+                    .mint_body(clause_body(clause.body), sink, origin)
+                {
+                    Maybe::Present(body) => body,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+            if let Mint::Minted { mint } = clause.mint {
+                // Under the pair and the continuation: split the pair, the
+                // payload then the mint, and place the mint live.
+                let minted = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(minted, origin);
+                let placed = sink.arena.computation_session(SessionAction::Place {
+                    payload: minted,
+                    body,
+                });
+                sink.origins.record_computation(placed, origin);
+                if let Maybe::Present(name) = self.cx().origin_at(mint) {
+                    sink.origins.record_binder(placed, name);
+                }
+                let pair = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+                sink.origins.record_value(pair, origin);
+                body = sink
+                    .arena
+                    .computation_split(pair, ComponentCount::from(2_usize), placed);
+                sink.origins.record_computation(body, origin);
+                if let Some(payload) = clause.payload
+                    && let Maybe::Present(name) = self.cx().origin_at(payload)
+                {
+                    sink.origins.record_binder(body, name);
+                }
+            }
+            clauses.push(EffectClause {
+                operation: clause.operation.clone(),
+                body,
+            });
+        }
+
+        Maybe::Present((on_return, clauses))
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// The laws the minted scope `scope` owes the theory `scoped` handles,
+    /// each read through the scope's clauses, beside the declaration holding
+    /// the scope.
+    ///
+    /// # Specification
+    /// - requires: `scope` is the scope [`CapabilityRef::mint_scope`] minted
+    ///   for `scoped`.
+    /// - ensures: for a scope over a theory whose clauses it writes, its owner
+    ///   and one law per rule, then per stated law, of the theory whose
+    ///   operations each have a clause, in the theory's order, both sides read
+    ///   by [`handler::obligation`] and every node they mint at `origin`, each
+    ///   law's name recorded at the scope and its place; nothing for a scope
+    ///   over a host interface, nor for one a model answers, whose module's
+    ///   ascription states the laws. A law naming an operation the scope has no
+    ///   clause for is left to the coverage refusal the scope meets first.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over a theory with two laws owes both, a
+    ///   scope over one with none owes nothing, a scope naming a model owes
+    ///   nothing, and a stated law is owed after the rules under its name.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref laws)| laws.iter().all(|law| law.scope == scope)))]
+    #[inline]
+    pub fn scope_laws(
+        scoped: &Scoped,
+        scope: ComputationId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<(ConstantIndex, Vec<HandlerLaw>)>
+    {
+        let (&Interface::Theory(ref theory), &Handlers::Written(_)) =
+            (&scoped.interface, &scoped.handlers)
+        else {
+            return None;
+        };
+        let Some(&Computation::Scope { ref clauses, .. }) = sink.arena.computation(scope)
+        else {
+            return None;
+        };
+        let bodies: BTreeMap<OperationName, ComputationId> = clauses
+            .iter()
+            .map(|clause| (clause.operation.clone(), clause.body))
+            .collect();
+        let mark = sink.arena.watermark();
+        let laws = theory
+            .laws
+            .iter()
+            .filter_map(|law| {
+                let left = handler::obligation(sink.arena, (&law.read, &law.read.left), &bodies)?;
+                let right = handler::obligation(sink.arena, (&law.read, &law.read.right), &bodies)?;
+                sink.origins
+                    .record_scope_law(scope, law.rule, law.name.clone());
+                Some(HandlerLaw {
+                    scope,
+                    rule: law.rule,
+                    left,
+                    right,
+                })
+            })
+            .collect();
+        native::record_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(native::rooted::Absent::Unminted),
+        );
+        Some((theory.owner, laws))
+    }
+}
+
+/// `subject`, the subject of a scope over a theory, normalised by `rules`,
+/// every node the rewrite mints at the origin of the node it stands for.
+///
+/// # Specification
+/// - requires: `subject` is minted and every node of it has an origin; `rules`
+///   are the theory's, read for the scope's operations.
+/// - ensures: [`subject::normalize`]'s normal form; each node it minted carries
+///   the origin of the step or the exercise it stands for, else `origin`, and
+///   each rebuilt bind the name its original binds, so a rebuilt step reads as
+///   the statement it was written as; every mark a rebuilt step's original
+///   carries, it carries.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a scope over get-get reading twice lowers its subject
+///   with one get, the second's statement keeping its origin and its name.
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_s_subject_normalises_by_its_theory_s_laws_2272`
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+#[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
+fn normalized(
+    sink: &mut Sink<'_>,
+    subject: ComputationId,
+    rules: &[subject::SubjectRule],
+    origin: Origin,
+) -> ComputationId
+{
+    let mark = sink.arena.watermark();
+    let mut carried = Vec::new();
+    let normal = subject::normalize(sink.arena, subject, rules, &mut carried);
+    exits::record_copies(sink, mark, &carried, origin);
+    exits::mark_copies(sink, &carried);
+    let mut named: Vec<(ComputationId, Origin)> = carried
+        .iter()
+        .filter_map(|pair| match *pair {
+            Carried::Computation(held, written)
+                if matches!(
+                    sink.arena.computation(written),
+                    Some(&Computation::Bind(..))
+                ) =>
+            {
+                match sink.origins.binder(held) {
+                    Maybe::Present(name) => Some((written, name)),
+                    Maybe::Absent(_) => None,
+                }
+            },
+            Carried::Computation(..)
+            | Carried::Value(..)
+            | Carried::ValueType(..)
+            | Carried::CompType(..) => None,
+        })
+        .collect();
+    named.sort_unstable_by_key(|&(written, _)| written);
+    named.dedup_by_key(|&mut (written, _)| written);
+    for (written, name) in named {
+        sink.origins.record_binder(written, name);
+    }
+    normal
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a capability scope has no return clause.
+    pub mod clause {
+        /// The scope's clauses hold no `pure` clause.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No return clause was written.
+            Unwritten,
+        }
+    }
+}

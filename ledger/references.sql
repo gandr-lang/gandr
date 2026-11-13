@@ -435,10 +435,10 @@ INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-
 INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','form','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering-base','lower::capability::theory','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering-capability','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering','lower::capability','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering-capability','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering-native','lower::native','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-core','check::cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-term','cover','anchor',NULL,NULL,NULL);
@@ -446,7 +446,7 @@ INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kerne
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kernel-term','cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','kernel-core','check::guard','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','surface-lowering-native','lower::native','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a15b47-4304-793b-a542-d12afcf732a6','surface-lowering','lower::method','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a15b47-4304-793b-a542-d12afcf732a6','surface-lowering-capability','lower::method','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering-base','lower::capability::theory','lineage',NULL,NULL,NULL);
@@ -469,6 +469,7 @@ INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','kerne
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-evaluate','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-base','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-capability','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-exits','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-native','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-56f5-7082-acef-f7c1b85fc0a2','kernel-check-memo','overlay','anchor',NULL,NULL,NULL);

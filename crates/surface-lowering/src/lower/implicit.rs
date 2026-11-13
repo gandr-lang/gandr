@@ -117,6 +117,7 @@ use super::Site;
 use super::Stretch;
 use super::arguments;
 use super::arity;
+use super::capability::Capability;
 use super::model;
 use super::named;
 use super::stated;
@@ -393,14 +394,16 @@ impl<'source> Lowerer<'_, 'source>
     ///   model implicit flattened into one parameter per component
     ///   ([`Self::flatten_implicit`]), an instance bound as its interface's
     ///   capability at a region binder of its own
-    ///   ([`Self::instance_parameter`]), and a recursive tail's own name bound
-    ///   before the entry after the kept ones ([`Self::bind_kept`]); the cursor
-    ///   then stands at the list's `)`, or at a clause tail's `:` when it
-    ///   writes no list, and the frame the last entry bound is returned.
-    ///   Otherwise nothing changes and `frame` is returned.
+    ///   ([`crate::lower::capability::Capability::instance_parameter`]), and a
+    ///   recursive tail's own name bound before the entry after the kept ones
+    ///   ([`Self::bind_kept`]); the cursor then stands at the list's `)`, or at
+    ///   a clause tail's `:` when it writes no list, and the frame the last
+    ///   entry bound is returned. Otherwise nothing changes and `frame` is
+    ///   returned.
     /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
-    ///   an instance's ([`Self::instance_parameter`]); a fault at the parameter
-    ///   list when it ends before its `)`.
+    ///   an instance's
+    ///   ([`crate::lower::capability::Capability::instance_parameter`]); a
+    ///   fault at the parameter list when it ends before its `)`.
     /// - panics: none.
     ///
     /// # Errors
@@ -438,7 +441,7 @@ impl<'source> Lowerer<'_, 'source>
         for (written, entry) in entries.into_iter().enumerate() {
             frame = self.bind_kept(site, own, frame);
             if entry.plicity == Plicity::Instance {
-                frame = self.instance_parameter(site, entry, frame)?;
+                frame = Capability::new(self).instance_parameter(site, entry, frame)?;
                 continue;
             }
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
@@ -613,6 +616,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a bare use and a supplied call separate the answers.
     /// - witness: `lower::implicit::tests::an_unsupplied_implicit_is_refused_with_its_slot_spelling`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::ImplicitUnsupplied { .. })))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn supplied_or_refused(
         &self,
         site: Site,

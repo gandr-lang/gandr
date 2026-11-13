@@ -52,11 +52,14 @@ quenchant-shape.workspace = true
 # The integration target lowers a unit through the lowering, which depends on
 # this crate. Cargo admits that cycle for a test target, and the test links
 # one copy of this crate, its `fixture` feature on. The checker judges a
-# description's minted values.
+# description's minted values. A test of a theory's shape here witnesses
+# `handled` of the capability family, which the lowering links, so the
+# family is a dev-dependency too.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
+gandr-surface-lowering-capability.workspace = true
 gandr-surface-parser.workspace = true
 
 [features]

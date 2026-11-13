@@ -1,0 +1,32 @@
+[package]
+name = "gandr-surface-lowering-capability"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The capability family of gandr's lowering: capability scopes and their handlers, session endpoints, method calls and field access, over the lowering's base crate"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["effects", "gandr", "lowering", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The pinned anodized facade supplies the executable specifications. The base
+# crate holds the lowering's context, the records that the families share and
+# the `Families` trait, through which this family reads the context and calls
+# the other families. The kernel and core crates name the terms the family
+# mints, the grammar the tree's productions that the family reads, and the
+# syntax crate the tree it reads.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-levitation.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

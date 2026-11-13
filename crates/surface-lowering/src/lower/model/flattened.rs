@@ -298,6 +298,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     /// - witness: `tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| !slot.theories.is_empty() && slot.fixed.len() <= sorts.len()))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn theory_slot(
         &mut self,
@@ -344,6 +348,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   runs, and one naming no module is refused at the name.
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |supplied| matches!(*supplied, Supplied::Module(_))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn named_model(
         &mut self,
@@ -384,6 +392,10 @@ impl<'source> Lowerer<'_, 'source>
         | Ok(Supplied::Module(_) | Supplied::Bound(_)) => false,
         | Err(_) => true,
     })]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn answering_model(
         &mut self,
@@ -417,6 +429,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   it writes.
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((_, id)) if sink.arena.value_type(id).is_some()))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn supplied_carrier(
         &self,
@@ -476,6 +492,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   state-passing carrier, as the module's members are declared.
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn operation_domain(
         &self,
@@ -1052,6 +1072,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::supply_model`].
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value(id).is_some()))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn mint_supplied(
         &self,

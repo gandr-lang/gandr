@@ -4,15 +4,23 @@
 
 use alloc::vec::Vec;
 
+use gandr_core_term::Binders;
 use gandr_core_term::ComputationId;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::hole::HoleForm;
 use gandr_core_term::hole::HoleId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_lowering_base::by_form::FormStretch;
 use gandr_surface_lowering_base::error::LoweringRefusal;
 use gandr_surface_lowering_base::form::Boxed;
 use gandr_surface_lowering_base::form::Cursor;
 use gandr_surface_lowering_base::form::Former;
 use gandr_surface_lowering_base::form::Placed;
+use gandr_surface_lowering_base::form::TileName;
 use gandr_surface_lowering_base::lower::Block;
+use gandr_surface_lowering_base::lower::Lowered;
 use gandr_surface_lowering_base::lower::Plan;
 use gandr_surface_lowering_base::lower::Produced;
 use gandr_surface_lowering_base::lower::Reading;
@@ -22,9 +30,11 @@ use gandr_surface_lowering_base::lower::Site;
 use gandr_surface_lowering_base::lower::Stretch;
 use gandr_surface_lowering_base::lower::arity::Dependent;
 use gandr_surface_lowering_base::lower::arity::Entry;
+use gandr_surface_lowering_base::lower::arity::Grouped;
 use gandr_surface_lowering_base::lower::arity::Planned;
 use gandr_surface_lowering_base::lower::arity::Thunked;
 use gandr_surface_lowering_base::lower::arity::stated_labels;
+use gandr_surface_lowering_base::lower::capability;
 use gandr_surface_lowering_base::lower::context::Context;
 use gandr_surface_lowering_base::lower::families::Families;
 use gandr_surface_lowering_base::lower::identity::Layout;
@@ -32,13 +42,22 @@ use gandr_surface_lowering_base::lower::identity::related;
 use gandr_surface_lowering_base::lower::implicit::Nomination;
 use gandr_surface_lowering_base::lower::lowered;
 use gandr_surface_lowering_base::lower::method::unindexing;
+use gandr_surface_lowering_base::lower::model::ComponentPlace;
 use gandr_surface_lowering_base::lower::model::ModelSlot;
+use gandr_surface_lowering_base::lower::model::Supplied;
 use gandr_surface_lowering_base::lower::named;
 use gandr_surface_lowering_base::lower::native::Answer;
+use gandr_surface_lowering_base::lower::native::Unwrapped;
 use gandr_surface_lowering_base::lower::native::answered;
+use gandr_surface_lowering_base::lower::native::constructed;
+use gandr_surface_lowering_base::lower::native::inherited;
+use gandr_surface_lowering_base::lower::native::unfolding;
 use gandr_surface_lowering_base::module::Constructor;
+use gandr_surface_lowering_base::module::SlotIndex;
 use gandr_surface_lowering_base::module::StructureIndex;
 use gandr_surface_lowering_base::module::TelescopeEntry;
+use gandr_surface_lowering_base::module::TypeComponent;
+use gandr_surface_lowering_base::namespace::NamePath;
 use gandr_surface_lowering_base::origin::Origin;
 use gandr_surface_lowering_base::resolve::Frame;
 use gandr_surface_lowering_base::resolve::ScopeId;
@@ -47,17 +66,69 @@ use gandr_surface_lowering_base::resolve::Telescope;
 use gandr_surface_lowering_base::resolve::TypeAtom;
 use gandr_surface_lowering_base::resolve::binder_type;
 use gandr_surface_lowering_base::resolve::type_head;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::LayoutBlock;
 use gandr_surface_syntax::NodeIndex;
+use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
+use super::capability::Capability;
 use super::exits::Exits;
 use super::exits::ExitsRef;
+use super::native::Native;
+use super::native::NativeRef;
 
 impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
 {
+    /// The lowering's own `answering_model`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn answering_model(
+        &mut self,
+        site: Site,
+        theory: SurfaceName<'source>,
+        slot: &ModelSlot,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        Lowerer::answering_model(self, site, theory, slot)
+    }
+
+    /// The native family's `carry_value_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn carry_value_type(
+        &self,
+        ty: ValueTypeId,
+        from: Frame,
+        telescope: Telescope,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        NativeRef::over(&self.cx).carry_value_type(ty, from, telescope, to, sink, origin)
+    }
+
+    /// The native family's `constructor_named`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn constructor_named(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Maybe<Constructor, constructed::Absent>
+    {
+        Native::new(self).constructor_named(site, name)
+    }
+
     /// The context the lowering holds, to read.
     ///
     /// # Specification
@@ -104,7 +175,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::atom(self, name)
     }
 
-    /// The lowering's own `bare_index`.
+    /// The capability family's `bare_index`.
     ///
     /// # Specification
     /// trivial.
@@ -114,7 +185,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         site: Site,
     ) -> Result<Maybe<ByteSpan, unindexing::Absent>, LoweringRefusal<'source>>
     {
-        Lowerer::bare_index(self, site)
+        Capability::new(self).bare_index(site)
     }
 
     /// The lowering's own `block`.
@@ -157,6 +228,19 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     )
     {
         Lowerer::constructed_at(self, span, constructor);
+    }
+
+    /// The native family's `definition_written`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn definition_written(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<NodeIndex, unfolding::Absent>
+    {
+        NativeRef::over(&self.cx).definition_written(constant)
     }
 
     /// The lowering's own `dependent_links`.
@@ -225,6 +309,19 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::implicit_slot(self, site, entry)
     }
 
+    /// The lowering's own `inherit_owner`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn inherit_owner(
+        &mut self,
+        position: NodeIndex,
+    )
+    {
+        Lowerer::inherit_owner(self, position);
+    }
+
     /// The lowering's own `linked_selection`.
     ///
     /// # Specification
@@ -237,6 +334,21 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
         Lowerer::linked_selection(self, site, head)
+    }
+
+    /// The lowering's own `located_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn located_type(
+        &mut self,
+        site: Site,
+        operand: Placed,
+        constant: ConstantIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Lowerer::located_type(self, site, operand, constant)
     }
 
     /// The lowering's own `mint_block`.
@@ -268,6 +380,39 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         ExitsRef::new(self).mint_body(body, sink, origin)
     }
 
+    /// The lowering's own `mint_returns`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mint_returns(
+        &self,
+        entries: FormStretch,
+        effects: gandr_core_term::effect::EffectRow,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        Lowerer::mint_returns(self, entries, effects, sink, origin)
+    }
+
+    /// The lowering's own `mint_supplied`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mint_supplied(
+        &self,
+        supplied: &Supplied,
+        place: ComponentPlace,
+        under: Binders,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueId, lowered::Absent>
+    {
+        Lowerer::mint_supplied(self, supplied, place, under, sink, origin)
+    }
+
     /// The lowering's own `name_in_type`.
     ///
     /// # Specification
@@ -280,6 +425,21 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Telescope
     {
         Lowerer::name_in_type(self, node, binder)
+    }
+
+    /// The lowering's own `named_model`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn named_model(
+        &mut self,
+        site: Site,
+        module: Placed,
+        slot: &ModelSlot,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        Lowerer::named_model(self, site, module, slot)
     }
 
     /// The lowering's own `nominate`.
@@ -354,6 +514,23 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::opened_module(self, site, head, links)
     }
 
+    /// The lowering's own `operation_domain`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn operation_domain(
+        &self,
+        slot: &ModelSlot,
+        place: ComponentPlace,
+        sorts: &[(&Name, ValueTypeId)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        Lowerer::operation_domain(self, slot, place, sorts, sink, origin)
+    }
+
     /// The lowering's own `pass_model`.
     ///
     /// # Specification
@@ -383,6 +560,49 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     )
     {
         Exits::new(self).pass_paths(outer, inner);
+    }
+
+    /// The lowering's own `path_head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn path_head(
+        &mut self,
+        site: Site,
+        target: Placed,
+        links: &mut Vec<(Placed, Placed)>,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        Lowerer::path_head(self, site, target, links)
+    }
+
+    /// The lowering's own `path_named`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn path_named(
+        &self,
+        head: Placed,
+        links: &[(Placed, Placed)],
+    ) -> NamePath
+    {
+        Lowerer::path_named(self, head, links)
+    }
+
+    /// The lowering's own `phased`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn phased(
+        &self,
+        site: Site,
+        reached: SlotIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Lowerer::phased(self, site, reached)
     }
 
     /// The lowering's own `plan`.
@@ -427,6 +647,20 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     )
     {
         Lowerer::read(self, position, reading);
+    }
+
+    /// The lowering's own `region_binder`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn region_binder(
+        &self,
+        at: NodeIndex,
+        name: SurfaceName<'source>,
+    ) -> Option<RegionBinder>
+    {
+        Lowerer::region_binder(self, at, name)
     }
 
     /// The lowering's own `require`.
@@ -501,6 +735,19 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::scrutinee_type(self, frame, scrutinee)
     }
 
+    /// The capability family's `session_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn session_type(
+        &mut self,
+        site: Site,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Capability::new(self).session_type(site)
+    }
+
     /// The lowering's own `stated_entries`.
     ///
     /// # Specification
@@ -536,6 +783,20 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::stated_form(self, site, node, former, thunked)
     }
 
+    /// The lowering's own `stated_named`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn stated_named(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<TypeComponent<'source>, named::Absent>, LoweringRefusal<'source>>
+    {
+        Lowerer::stated_named(self, site, name)
+    }
+
     /// The lowering's own `stated_relation`.
     ///
     /// # Specification
@@ -547,6 +808,36 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<Maybe<Layout, related::Absent>, LoweringRefusal<'source>>
     {
         Lowerer::stated_relation(self, stated)
+    }
+
+    /// The lowering's own `supplied_carrier`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn supplied_carrier(
+        &self,
+        slot: &ModelSlot,
+        supplied: &Supplied,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<(Name, ValueTypeId), lowered::Absent>
+    {
+        Lowerer::supplied_carrier(self, slot, supplied, sink, origin)
+    }
+
+    /// The lowering's own `supplied_or_refused`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn supplied_or_refused(
+        &self,
+        site: Site,
+        constant: ConstantIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Lowerer::supplied_or_refused(self, site, constant)
     }
 
     /// The lowering's own `supplied_value`.
@@ -562,6 +853,50 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::supplied_value(self, site)
     }
 
+    /// The lowering's own `telescope_at`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn telescope_at(
+        &self,
+        node: NodeIndex,
+    ) -> Telescope
+    {
+        Lowerer::telescope_at(self, node)
+    }
+
+    /// The lowering's own `theory_slot`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn theory_slot(
+        &mut self,
+        named: Site,
+        theory: &crate::form::WrittenPath,
+        at: ByteOffset,
+        sorts: &[(Placed, Placed)],
+    ) -> Result<ModelSlot, LoweringRefusal<'source>>
+    {
+        Lowerer::theory_slot(self, named, theory, at, sorts)
+    }
+
+    /// The lowering's own `type_entries`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn type_entries(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        closer: TileName,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
+        Lowerer::type_entries(self, site, cursor, closer)
+    }
+
     /// The lowering's own `ungrouped_target`.
     ///
     /// # Specification
@@ -574,5 +909,45 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<Option<Placed>, LoweringRefusal<'source>>
     {
         Lowerer::ungrouped_target(self, target, anchor)
+    }
+
+    /// The native family's `unwrapped`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unwrapped(
+        &mut self,
+        node: NodeIndex,
+    ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>
+    {
+        Native::new(self).unwrapped(node)
+    }
+
+    /// The lowering's own `written_group`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn written_group(
+        &mut self,
+        at: Placed,
+        frame: Frame,
+    ) -> Result<Grouped, LoweringRefusal<'source>>
+    {
+        Lowerer::written_group(self, at, frame)
+    }
+
+    /// The lowering's own `written_stack`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn written_stack(
+        &mut self,
+        at: NodeIndex,
+    ) -> Result<capability::Stated, LoweringRefusal<'source>>
+    {
+        Lowerer::written_stack(self, at)
     }
 }

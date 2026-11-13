@@ -31,9 +31,9 @@
 //! the telescope's region binders. The binders are filed under the
 //! declaration's key, and a kept type `A at r` anywhere in the definition
 //! that names no capability scope or hold reads `r` there
-//! ([`Lowerer::at_type`]), so the type keeps its value at
-//! [`gandr_core_term::effect::capability::Region::Bound`]. A region binder is
-//! no value: the body reads it only in a kept type.
+//! ([`crate::lower::capability::Capability::at_type`]), so the type keeps its
+//! value at [`gandr_core_term::effect::capability::Region::Bound`]. A region
+//! binder is no value: the body reads it only in a kept type.
 //!
 //! # Boundaries
 //!
@@ -311,6 +311,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   binder of their definition's telescope.
     /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
     #[spec(ensures: |ret| ret.is_none() || matches!(self.cx.collected.owner_of(at), Maybe::Present(_)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn region_binder(
         &self,
         at: NodeIndex,
