@@ -163,7 +163,7 @@ use crate::levels::LevelContext;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Environment::release`].
-/// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+/// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
 #[derive(Debug)]
 pub struct Check
 {
@@ -190,7 +190,7 @@ impl Check
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Environment::release`].
-    /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+    /// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
     #[inline]
     #[must_use]
     pub fn run(self) -> Ran
@@ -409,7 +409,7 @@ impl Environment
     ///   outcomes the run kept, and neither signs nor counts what the run
     ///   admitted.
     /// - witness: `tests::verdicts::a_handed_on_environment_keys_on_and_signs_only_its_own`
-    /// - witness: `env::tests::a_handed_on_environment_stands_on_the_kept_outcomes_of_its_run_6468`
+    /// - witness: `environment::tests::a_handed_on_environment_stands_on_the_kept_outcomes_of_its_run_6468`
     #[inline]
     #[must_use]
     pub fn handed_on(&self) -> Self
@@ -454,7 +454,7 @@ impl Environment
     ///   admits a definition reading the frozen one and refuses a bad one as an
     ///   environment built alike and never frozen does, and the environment it
     ///   was cloned from sees neither.
-    /// - witness: `env::tests::a_frozen_environment_admits_as_one_never_frozen`
+    /// - witness: `environment::tests::a_frozen_environment_admits_as_one_never_frozen`
     #[spec(
         captures: [entry_mark = self.arena.watermark(), entry_len = self.entries.len()],
         ensures: self.arena.watermark() == entry_mark && self.entries.len() == entry_len,
@@ -518,12 +518,12 @@ impl Environment
     /// - hypothesis: L3 — a kept environment over the kernel's generated
     ///   sources exports the bytes of a fresh admission for each class of edit;
     ///   an environment with nothing retired builds no places.
-    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    /// - witness: `env::tests::an_inserted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::a_deleted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::a_moved_admission_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::an_unedited_source_keeps_the_bytes_of_a_fresh_admission_6845`
-    /// - witness: `env::tests::an_export_by_position_after_a_retire_differs_6845`
+    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `environment::tests::an_inserted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `environment::tests::a_deleted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `environment::tests::a_moved_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `environment::tests::an_unedited_source_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `environment::tests::an_export_by_position_after_a_retire_differs_6845`
     #[inline]
     pub fn places(&self) -> Maybe<gandr_kernel_term::Places, places::Absent>
     {
@@ -554,7 +554,7 @@ impl Environment
     ///   equals the entries whose support holds an edited entry, after refused
     ///   blocks roll back, and a type of words reaches an entry after it
     ///   through its sort and no entry before it.
-    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
     /// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| usize::from(position) < usize::from(self.entries.len())))]
     #[inline]
@@ -623,10 +623,10 @@ impl Environment
     ///   separated by an abandoned session (which leaves nothing outstanding,
     ///   so an earlier declaration still admits) and a finished one (which
     ///   does, so an earlier declaration is refused).
-    /// - witness: `env::tests::an_abandoned_staging_leaves_the_arena_unchanged`
-    /// - witness: `env::tests::an_abandoned_staging_releases_its_claim`
-    /// - witness: `env::tests::implicit_staging_drop_releases_its_claim`
-    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    /// - witness: `environment::tests::an_abandoned_staging_leaves_the_arena_unchanged`
+    /// - witness: `environment::tests::an_abandoned_staging_releases_its_claim`
+    /// - witness: `environment::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `environment::tests::every_finisher_retains_its_claim_until_admission`
     #[spec(
         captures: [entry_mark = self.arena.watermark(), entry_len = self.outstanding.marks.len()],
         ensures: |ret| ret.builder().content_start() == entry_mark
@@ -679,9 +679,9 @@ impl Environment
     ///   above it (the arena shrinks and an earlier declaration then admits)
     ///   and one with content above it (the arena is unchanged and the content
     ///   above still resolves).
-    /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
-    /// - witness: `env::tests::abandoning_beneath_outstanding_content_retains_it`
-    /// - witness: `env::tests::abandonment_preserves_the_admission_floor`
+    /// - witness: `environment::tests::abandoning_a_staged_declaration_releases_its_claim`
+    /// - witness: `environment::tests::abandoning_beneath_outstanding_content_retains_it`
+    /// - witness: `environment::tests::abandonment_preserves_the_admission_floor`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -749,8 +749,8 @@ impl Environment
     ///   admission; abandoning that later content removes the obstruction.
     ///   Equal and lower marks are separated by the componentwise-count
     ///   witness.
-    /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
-    /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
+    /// - witness: `environment::tests::outstanding_later_staged_content_refuses_admission`
+    /// - witness: `environment::tests::abandoning_a_staged_declaration_releases_its_claim`
     /// - witness: `env::tests::marks_above_are_counted_componentwise`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -831,12 +831,12 @@ impl Environment
     ///   signer or a tampered record, and never recalled under
     ///   [`TrustPolicy::Recheck`](crate::verdict::TrustPolicy::Recheck); a
     ///   rejection before it changes no later key.
-    /// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
-    /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
-    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
-    /// - witness: `env::tests::a_rejection_keeps_a_prior_admission_resolvable`
-    /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
-    /// - witness: `env::tests::an_in_order_producer_is_never_refused`
+    /// - witness: `environment::tests::a_definition_referencing_a_prior_one_checks`
+    /// - witness: `environment::tests::a_forward_constant_reference_is_unbound`
+    /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    /// - witness: `environment::tests::a_rejection_keeps_a_prior_admission_resolvable`
+    /// - witness: `environment::tests::outstanding_later_staged_content_refuses_admission`
+    /// - witness: `environment::tests::an_in_order_producer_is_never_refused`
     /// - witness: `tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
     /// - witness: `tests::verdicts::an_unlisted_signer_recalls_nothing`
     /// - witness: `tests::verdicts::a_tampered_record_recalls_nothing`
@@ -891,8 +891,8 @@ impl Environment
     /// - hypothesis: L3 — a check released from the environment crosses threads
     ///   and settles as [`Self::add_decl`] admits; each witness of
     ///   [`Self::add_decl`] runs through it.
-    /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
-    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    /// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+    /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     #[inline]
     pub fn release(
         &mut self,
@@ -1020,8 +1020,8 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::release`].
-    /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
-    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
+    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     #[inline]
     #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1) && self.entries.check_horizon().is_none())]
     pub fn settle(
@@ -1156,8 +1156,8 @@ impl Environment
     /// # Adequacy
     /// - hypothesis: L3 — a read outside the support refuses the declaration,
     ///   and an entry ranked above the declaration is unbound to its check.
-    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-    /// - witness: `env::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
+    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
     #[spec(ensures: self.entries.check_horizon().is_none())]
     fn within_view<T>(
         &mut self,
@@ -1205,7 +1205,7 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_decl`].
-    /// - witness: `env::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
     #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted()], ensures: |ret| match ret.as_ref() {
         Ok(id) => usize::from(id.position()) == usize::from(entry_len) && self.admission_floor == self.arena.watermark(),
@@ -1391,8 +1391,8 @@ impl Environment
     ///   declaration is present and that dependents' audits name it, pinned by
     ///   a dependent's report; the L3 residue is the floor rise, pinned by a
     ///   later rejection leaving bypassed content resolvable.
-    /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
-    /// - witness: `env::tests::a_rejection_keeps_bypassed_content_resolvable`
+    /// - witness: `environment::tests::audit_reports_a_transitive_unchecked_admission`
+    /// - witness: `environment::tests::a_rejection_keeps_bypassed_content_resolvable`
     #[inline]
     #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
         && self
@@ -1778,8 +1778,8 @@ impl Environment
     /// - hypothesis: L3 — a readmission that retires the entries from an edit
     ///   on and keeps or offers each declaration in source order reads as a
     ///   fresh admission of the edited source, entry by entry.
-    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    /// - witness: `env::tests::a_keep_that_names_a_retired_position_is_refused_6621`
+    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `environment::tests::a_keep_that_names_a_retired_position_is_refused_6621`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
         ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
             && (ret.is_err() || positions.iter().all(|&position| self.entries.live(position).is_none())))]
@@ -1865,10 +1865,10 @@ impl Environment
     ///   and one whose precedence changed, are refused; a kept environment
     ///   reads as a fresh admission, entry by entry.
     /// - witness: `ruled::tests::an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621`
-    /// - witness: `env::tests::an_entry_kept_after_an_appended_twin_reads_as_after_it_6621`
-    /// - witness: `env::tests::a_keep_that_names_a_retired_position_is_refused_6621`
+    /// - witness: `environment::tests::an_entry_kept_after_an_appended_twin_reads_as_after_it_6621`
+    /// - witness: `environment::tests::a_keep_that_names_a_retired_position_is_refused_6621`
     /// - witness: `ruled::tests::a_keep_whose_precedence_changed_is_refused_6621`
-    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
         ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
             && ret.as_ref().map_or(true, |kept| self.entries.live(kept.position()).is_some()))]
@@ -2020,8 +2020,8 @@ impl Environment
     /// - hypothesis: L3 — a member admitted before the close checks at the
     ///   representation, a value of the representation offered after it is
     ///   refused, and a second close of the same atom is refused.
-    /// - witness: `env::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
-    /// - witness: `env::tests::an_atom_seals_once`
+    /// - witness: `environment::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
+    /// - witness: `environment::tests::an_atom_seals_once`
     #[spec(
         captures: [entry_len = self.entries.len(), entry_manifest = self.manifest.len()],
         ensures: |ret| self.entries.len() == entry_len && ret.as_ref().map_or_else(
@@ -2536,10 +2536,10 @@ impl Environment
     ///   code. L3 distinguishes a closed definition's empty report. These
     ///   witnesses do not establish completeness for arbitrary dependency
     ///   graphs.
-    /// - witness: `env::tests::audit_reports_the_transitive_axiom`
-    /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
-    /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
-    /// - witness: `env::tests::a_closed_definition_rests_on_nothing`
+    /// - witness: `environment::tests::audit_reports_the_transitive_axiom`
+    /// - witness: `environment::tests::audit_reports_a_transitive_unchecked_admission`
+    /// - witness: `environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+    /// - witness: `environment::tests::a_closed_definition_rests_on_nothing`
     #[spec(ensures: |ret| self.entries.peek(usize::from(id.position())).map_or_else(
         || ret.axioms().is_empty() && ret.unchecked_admissions().is_empty() && ret.primitives().is_empty(),
         |entry| ret.axioms().iter().copied().eq(entry.rested_on().iter().copied().filter(|&position|
@@ -2638,9 +2638,9 @@ impl Environment
     ///   audit reasons through definitions and through type-level code edges.
     ///   The predicate checks self-inclusion and the classification of every
     ///   returned earlier position, not reachability of arbitrary graphs.
-    /// - witness: `env::tests::audit_reports_the_transitive_axiom`
-    /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
-    /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+    /// - witness: `environment::tests::audit_reports_the_transitive_axiom`
+    /// - witness: `environment::tests::audit_reports_a_transitive_unchecked_admission`
+    /// - witness: `environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
     /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
         requires: usize::from(position) == self.entries.len(),
@@ -2916,7 +2916,7 @@ impl CommitLog
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Environment::add_decl`].
-    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
     fn admit(
         &mut self,
         (position, rank): (ConstantIndex, SourceRank),
@@ -2991,7 +2991,7 @@ impl CommitLog
     /// # Adequacy
     /// - hypothesis: L3 — a block refused after one member is admitted leaves
     ///   the rows it found.
-    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
     fn truncate(
         &mut self,
         entries: &Entries,
@@ -3173,7 +3173,7 @@ impl Names
 /// # Adequacy
 /// - hypothesis: L3 — a check that reads past its support and fails, and one
 ///   that reads past it and succeeds, are each refused at the position read.
-/// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
 #[spec(ensures: |ret| outside.is_none_or(|position| ret.as_ref().err() == Some(&KernelError::OutsideSupport { position })))]
 fn supported<T>(
     checked: Result<T, KernelError>,
@@ -4419,8 +4419,8 @@ mod tests
     /// - hypothesis: L3 — the fixture's distinct staged regions drive admission
     ///   refusal, abandonment and subsequent successful admission. Predicates
     ///   check its unit roots, starting mark and outstanding registration.
-    /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
-    /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
+    /// - witness: `environment::tests::outstanding_later_staged_content_refuses_admission`
+    /// - witness: `environment::tests::abandoning_a_staged_declaration_releases_its_claim`
     #[spec(captures: [entry_mark = environment.arena().watermark(), entry_len = environment.outstanding.marks.len()],
     ensures: |ret| ret.content_start() == entry_mark
         && environment.outstanding.marks.len().checked_sub(1_usize) == Some(entry_len)
