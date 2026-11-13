@@ -12,7 +12,9 @@
 #   - a stale entry is refused, and a write over it replaces it;
 #   - writers of one key at once leave one whole entry, and a writer that
 #     stops after half its files leaves no entry;
-#   - past the bound, the entries with the oldest touch leave first.
+#   - past the bound, the entries with the oldest touch leave first;
+#   - the run of a package records its library, though the run of a package
+#     that depends on it built that library first (#7092).
 # With `--build`, one case builds: a hit from an entry that a scratch
 # worktree writes equals a fresh run in this worktree, byte for byte, for
 # each package named (`gandr-core-fork` by default).
@@ -56,10 +58,27 @@ rustc() {
     --print) echo "$work/sysroot" ;;
   esac
 }
+# A record run, `cargo dylint --lib <library> -- -p <name> …`, builds the
+# library and the test unit of the package and the library of each
+# dependency, each unit that its check target lacks, as Cargo builds each
+# unit that is not fresh. It writes a record for each unit that it builds.
+# The check target is `dylint/target/<toolchain>` of the records target, as
+# `cargo dylint` keeps it. `cargo clean --quiet -p <name> --target-dir <dir>`
+# takes the units of the package out of `<dir>`.
 cargo() {
   case $1 in
     -V) echo "cargo 1.0.0-nightly" ;;
-    dylint) echo "$tool_dylint" ;;
+    dylint)
+      if [[ $2 == --version ]]; then echo "$tool_dylint"; return; fi
+      local unit units=("$6.lib" "$6.test") built=$records_target/dylint/target/nightly-x
+      if [[ $6 == a ]]; then units+=(b.lib); fi
+      mkdir -p "$built"
+      for unit in "${units[@]}"; do
+        [[ -e $built/$unit ]] && continue
+        touch "$built/$unit"
+        echo "{\"unit\": \"$unit\"}" > "$records_work/records/crates_${unit%%.*}_src_lib.rs.${unit#*.}.jsonl"
+      done ;;
+    clean) rm -f "${6%/}/$4".* ;;
   esac
 }
 
@@ -298,6 +317,15 @@ touch -t 202601010000 "$records_cache/$key_k"
 records_bound_kib=$(( $(du -sk "$records_cache" | awk '{ print $1 }') - 1 ))
 records_evict
 [[ ! -e $records_cache/$key_k && -e $records_cache/$key_a ]] || fail "past the bound, the entry with the oldest touch does not leave first"
+cases=$((cases + 1))
+
+# The run of `b` records its library, though the run of `a`, which depends
+# on `b`, built that library first (#7092).
+rm -rf "$records_target/dylint"
+records_build a || fail "#7092: the run of a does not build"
+records_build b || fail "#7092: the run of b does not build"
+[[ -e $records_work/records/crates_b_src_lib.rs.lib.jsonl ]] \
+  || fail "#7092: the run of b after the run of a records no library unit of b: $(ls "$records_work/records" | tr '\n' ' ')"
 cases=$((cases + 1))
 
 echo "records-cases OK: $cases cases"

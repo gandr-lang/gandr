@@ -133,7 +133,7 @@ records_open() {
 # The lines of the manifest that every package of the tree shares.
 records_fixed() {
   local path value dir seen=" "
-  echo "scheme 1"
+  echo "scheme 2"
   printf '%s\n' Cargo.lock Cargo.toml .cargo/config.toml rust-toolchain.toml mise.toml mise.lock | records_objects blob
   echo "policy $(awk -v tree="$records_tree" '!/^evidence_directory = / {
       while ((at = index($0, tree)) > 0) $0 = substr($0, 1, at - 1) "<tree>" substr($0, at + length(tree))
@@ -369,6 +369,25 @@ records_evict() {
   done < <(ls -1tr "$records_cache")
 }
 
+# Builds the records of package `$1` into `$records_work/records`, with the
+# run's messages in `$records_work/messages.json`. The run first takes the
+# package's own artifacts out of the check targets that `cargo dylint` keeps
+# under `dylint/target/<toolchain>` of the records target. The run of a
+# package that depends on it builds its library there, a fresh unit gives no
+# record, and the entry would then hold no library unit (#7092).
+records_build() {
+  local dir
+  rm -rf "$records_work/records"
+  mkdir -p "$records_work/records"
+  : > "$records_work/dylint.log"
+  for dir in "$records_target"/dylint/target/*/; do
+    [[ -d $dir ]] || continue
+    records_run cargo clean --quiet -p "$1" --target-dir "$dir" 2>> "$records_work/dylint.log" || return
+  done
+  records_run cargo dylint --lib quenchant_dylints -- -p "$1" --all-targets --locked --quiet --message-format=json \
+    > "$records_work/messages.json" 2>> "$records_work/dylint.log"
+}
+
 records_main() {
   local tree=${1:?usage: records.bash <tree> <target> <out> <package>=<directory>...}
   local target=${2:?usage: records.bash <tree> <target> <out> <package>=<directory>...}
@@ -392,10 +411,7 @@ records_main() {
   done
   root=$records_root
   for i in "${missed[@]}"; do
-    rm -rf "$records_work/records"
-    mkdir -p "$records_work/records"
-    records_run cargo dylint --lib quenchant_dylints -- -p "${names[i]}" --all-targets --locked --quiet --message-format=json \
-      > "$records_work/messages.json" 2> "$records_work/dylint.log" \
+    records_build "${names[i]}" \
       || { echo "check:deletes: the records of ${names[i]} at $records_tree do not build:" >&2; tail -n 20 "$records_work/dylint.log" >&2; return 2; }
     prefix=$(tr '/' '_' <<< "${dirs[i]}")_
     shopt -s nullglob
