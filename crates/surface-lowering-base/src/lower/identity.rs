@@ -6,13 +6,20 @@
 //! sweep reads them back, and `gandr-surface-lowering` names each one at its
 //! old path.
 
+use anodized::spec;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::Composite;
 use gandr_surface_syntax::NodeIndex;
+use quenchant_shape::shape::Maybe;
 
+use super::arity::Dependent;
+use super::arity::Place;
 use super::native::Answer;
 use crate::by_form::FormStretch;
 use crate::resolve::Frame;
 use crate::resolve::ScopeId;
+use crate::resolve::SurfaceName;
 
 /// A derived operation's written operands.
 ///
@@ -352,4 +359,126 @@ pub struct Transported
     pub value: NodeIndex,
     /// The frame the transport stands under.
     pub frame: Frame,
+}
+
+/// The path type a derived operation minted at: its carrier and its two
+/// endpoints, read where the operation stands.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the operation's transport returns an element of `Path[.A =
+///   carrier]( left, right)`.
+/// - executable: none — the ids hold no arena to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a synthesised operation over another reads the inner
+///   one's path type.
+/// - witness: `gandr-surface-lowering::lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Identity
+{
+    /// The path's carrier.
+    pub carrier: ValueTypeId,
+    /// The path's left endpoint.
+    pub left: ValueId,
+    /// The path's right endpoint.
+    pub right: ValueId,
+}
+
+/// The inverse's spelling: of a path, and of a loop where a word's letter is
+/// written.
+pub const BACK: &str = "back";
+
+/// The record a relation between types abbreviates, or one of the records
+/// nested in it, as a pattern splits it: its labels in written order and
+/// whether each link binds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Layout
+{
+    /// `A ≅ B`: `#{into, from, sect, retr}`.
+    Isomorphism,
+    /// `A ≃ B`: `#{into, linv, rinv}`, `linv` and `rinv` records of their own.
+    Equivalence,
+    /// The equivalence's left inverse `linv`: `#{from, sect}`.
+    LeftInverse,
+    /// The equivalence's right inverse `rinv`: `#{from, retr}`.
+    RightInverse,
+}
+
+impl Layout
+{
+    /// The record's labels, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn fields(self) -> impl ExactSizeIterator<Item = SurfaceName<'static>>
+    {
+        let labels: &'static [&'static str] = match self {
+            Self::Isomorphism => &["into", "from", "sect", "retr"],
+            Self::Equivalence => &["into", "linv", "rinv"],
+            Self::LeftInverse => &["from", "sect"],
+            Self::RightInverse => &["from", "retr"],
+        };
+        labels.iter().map(|&label| SurfaceName::from(label))
+    }
+
+    /// Whether each field but the last binds a later one: every map does,
+    /// a round trip and an inverse do not.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn links(self) -> &'static [Dependent]
+    {
+        match self {
+            Self::Isomorphism => &[Dependent(true), Dependent(true), Dependent(false)],
+            Self::Equivalence => &[Dependent(true), Dependent(false)],
+            Self::LeftInverse | Self::RightInverse => &[Dependent(true)],
+        }
+    }
+
+    /// The record nested at `place`, when the field there is one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the equivalence's left inverse at its second field and its
+    ///   right inverse at its third; the other-former absence for every other
+    ///   field.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pattern at an equivalence splits both inverses.
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self == Self::Equivalence)]
+    #[inline]
+    pub fn inner(
+        self,
+        place: Place,
+    ) -> Maybe<Self, related::Absent>
+    {
+        match (self, place.0) {
+            (Self::Equivalence, 1_usize) => Maybe::Present(Self::LeftInverse),
+            (Self::Equivalence, 2_usize) => Maybe::Present(Self::RightInverse),
+            _ => Maybe::Absent(related::Absent::Otherwise),
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a type states no relation's record.
+    pub mod related {
+        /// The type is no equivalence or quasi-inverse.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type is planned as another former, or as a flow.
+            Otherwise,
+        }
+    }
 }

@@ -38,6 +38,7 @@ use super::exits::mark_copies;
 use super::exits::record_copies;
 use super::lowered;
 use super::native::Answer;
+use super::native::NativeRef;
 use super::native::Over;
 use super::native::answered;
 use super::native::passed;
@@ -366,7 +367,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   written answer synthesises it where its position states none.
     /// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
     /// - witness: `lower::conditional::tests::a_written_answer_ascribes_the_conditional_2089`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(self.computation_at(condition), Maybe::Present(_)))]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(self.cx.computation_at(condition), Maybe::Present(_)))]
     fn tested(
         &self,
         (condition, answer): (NodeIndex, Maybe<Answer, answered::Absent>),
@@ -375,7 +376,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        let tested = match self.computation_at(condition) {
+        let tested = match self.cx.computation_at(condition) {
             Maybe::Present(tested) => tested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -388,14 +389,14 @@ impl<'source> Lowerer<'_, 'source>
         let case = match answer {
             Maybe::Present(answer) => {
                 let mark = sink.arena.watermark();
-                let Maybe::Present(written) = self.answered_type(answer, sink)
+                let Maybe::Present(written) = NativeRef::over(&self.cx).answered_type(answer, sink)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
                 // The answer is read under the condition's frame, and the case
                 // stands under the condition's binder.
                 let mut carried = alloc::vec::Vec::new();
-                let answered = self.relocate(
+                let answered = NativeRef::over(&self.cx).relocate(
                     sink.arena,
                     written,
                     answer.frame,

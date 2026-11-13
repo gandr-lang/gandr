@@ -153,7 +153,8 @@ impl Lowerer<'_, '_>
                     },
                     Maybe::Absent(_) => AskedRuns::Unasked,
                 };
-                let spelling = if matches!(self.reading(origin.node()), super::Reading::Head(_)) {
+                let spelling = if matches!(self.cx.reading(origin.node()), super::Reading::Head(_))
+                {
                     RunSpelling::Parenthesised
                 }
                 else {

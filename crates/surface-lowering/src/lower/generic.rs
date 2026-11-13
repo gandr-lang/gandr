@@ -73,6 +73,7 @@ use gandr_theory_levitation::ValueTypeRef;
 use gandr_theory_levitation::ValueTypeView;
 use quenchant_shape::shape::Maybe;
 
+use super::Context;
 use super::Former;
 use super::Frame;
 use super::Lowerer;
@@ -223,7 +224,7 @@ impl<'source> Lowerer<'_, 'source>
         if self.names_generic(site, module, member).is_some() {
             return Ok(Maybe::Present(Derivation::Equality));
         }
-        let written = self.text_at(member);
+        let written = self.cx.text_at(member);
         let Some(&(_, statement)) = LAWS.iter().find(|&&(name, _)| written.as_ref() == name)
         else {
             return unspelled;
@@ -275,8 +276,8 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mut scratch = core::mem::take(&mut self.cx.scratch);
         let read = read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut scratch);
-        let linked =
-            read.and_then(|()| Self::link(Site { at: head, ..site }, &scratch.pieces, head.span));
+        let linked = read
+            .and_then(|()| Context::link(Site { at: head, ..site }, &scratch.pieces, head.span));
         let repaired = matches!(scratch.repair, Maybe::Present(_));
         self.cx.scratch = scratch;
         // A head the selection cannot read is the projection's to refuse.
@@ -316,7 +317,7 @@ impl<'source> Lowerer<'_, 'source>
                 })
             )
         });
-        let (module_text, member_text) = (self.text_at(module), self.text_at(member));
+        let (module_text, member_text) = (self.cx.text_at(module), self.cx.text_at(member));
         if !simple || module_text.as_ref() != MODULE || member_text.as_ref() != MEMBER {
             return None;
         }
@@ -325,7 +326,7 @@ impl<'source> Lowerer<'_, 'source>
             .cx
             .collected
             .imports
-            .aliased(source, self.name_at(module))
+            .aliased(source, self.cx.name_at(module))
         {
             return None;
         }
@@ -410,7 +411,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(misplaced);
         };
-        let name = self.name_at(at);
+        let name = self.cx.name_at(at);
         let Maybe::Present(Resolved::Declaration { constant, .. }) =
             self.resolve_name(Site { at, ..site }, frame, name)?
         else {
@@ -517,7 +518,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(Half {
                     operand: Operand::Written(written),
                     ..
-                }) => self.value_type_at(written.node),
+                }) => self.cx.value_type_at(written.node),
                 Maybe::Present(_) | Maybe::Absent(_) => {
                     Maybe::Absent(super::lowered::Absent::Unminted)
                 },
@@ -780,7 +781,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unknown);
         };
-        let Maybe::Present(kind) = self.value_type_at(classifier.node)
+        let Maybe::Present(kind) = self.cx.value_type_at(classifier.node)
         else {
             return Err(unknown);
         };

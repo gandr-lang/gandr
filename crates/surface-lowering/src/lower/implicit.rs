@@ -106,6 +106,7 @@ pub(super) use gandr_surface_lowering_base::lower::implicit::Nomination;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Context;
 use super::Lowerer;
 use super::Parameter;
 use super::Plan;
@@ -657,17 +658,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   naming it or, where none does, the hole the call nominates for it
     ///   ([`Self::nominate`]), an instance's the resident naming it or, where
     ///   none does, the instance handled in scope
-    ///   ([`Self::resolved_instance`]), and an explicit one's the next written
-    ///   argument, each written argument read as a value under `frame` and the
-    ///   declaration's name as the head; a resident naming a stage binder is no
-    ///   argument but a stage the head carries ([`Self::stage_supplies`]); the
-    ///   head is recorded as supplied. False, with nothing changed, for any
-    ///   other head.
+    ///   ([`Context::resolved_instance`]), and an explicit one's the next
+    ///   written argument, each written argument read as a value under `frame`
+    ///   and the declaration's name as the head; a resident naming a stage
+    ///   binder is no argument but a stage the head carries
+    ///   ([`Self::stage_supplies`]); the head is recorded as supplied. False,
+    ///   with nothing changed, for any other head.
     /// - fails: [`LoweringRefusal::ImplicitInParentheses`] for a call writing
     ///   one argument per parameter and omitting an implicit;
     ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit,
     ///   instance or stage binder, and at a stage supplied by a name the caller
-    ///   binds no stage to; [`Self::resolved_instance`]'s refusal for an
+    ///   binds no stage to; [`Context::resolved_instance`]'s refusal for an
     ///   omitted instance; a fault at a resident written twice; the reserved
     ///   refusal for a resident other than `a = e` beside one that is; the
     ///   budget refusal once no hole can be nominated; a form fault reading the
@@ -727,17 +728,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   resident `a = e` names one, the instantiation then planned as the
     ///   declaration applied in its merged telescope's order to the residents,
     ///   each read as a value, to the instance handled in scope for each
-    ///   instance no resident names ([`Self::resolved_instance`]), and to the
-    ///   variable of a lambda the supply opens
+    ///   instance no resident names ([`Context::resolved_instance`]), and to
+    ///   the variable of a lambda the supply opens
     ///   ([`Context::abstracted`](gandr_surface_lowering_base::lower::Context::abstracted))
     ///   for each explicit parameter the telescope places before its last
     ///   implicit, or for every explicit parameter when a stage is supplied,
     ///   bridged as a computation read where it stands. False, with nothing
     ///   changed, for any other instantiation, a recursion's claim among them.
     /// - fails: [`LoweringRefusal::ImplicitUnsupplied`] for a supply leaving an
-    ///   implicit out; [`Self::resolved_instance`]'s refusal for one leaving an
-    ///   instance out; the wrong-sort refusal where no computation can stand;
-    ///   the refusals of [`Self::supplied_call`] at a resident.
+    ///   implicit out; [`Context::resolved_instance`]'s refusal for one leaving
+    ///   an instance out; the wrong-sort refusal where no computation can
+    ///   stand; the refusals of [`Self::supplied_call`] at a resident.
     /// - panics: none.
     ///
     /// # Errors
@@ -927,7 +928,7 @@ impl<'source> Lowerer<'_, 'source>
                     break;
                 },
             };
-            let implicit = self.name_at(written);
+            let implicit = self.cx.name_at(written);
             if supplied.insert(implicit, (written, value)).is_some() {
                 outcome = Err(site.fault(written.span, FormFault::SuppliedTwice));
                 break;
@@ -945,7 +946,7 @@ impl<'source> Lowerer<'_, 'source>
             member
         }
         else {
-            let name = self.name_at(inner);
+            let name = self.cx.name_at(inner);
             if let Maybe::Present(_) = self.cx.scope.resolve(frame, name, &mut self.cx.fuel)? {
                 return Ok(arity::Planned(false));
             }
@@ -1032,22 +1033,22 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<(SlotIndex, SurfaceName<'source>), named::Absent>, LoweringRefusal<'source>>
     {
         let unresolved = Maybe::Absent(named::Absent::Unresolved);
-        let Ok((mut target, selected)) = Self::link(site, pieces, head.span)
+        let Ok((mut target, selected)) = Context::link(site, pieces, head.span)
         else {
             return Ok(unresolved);
         };
-        let member = self.name_at(selected);
+        let member = self.cx.name_at(selected);
         let mut links = Vec::from([(target, selected)]);
         let mut chain = Pieces::new();
         let root = loop {
             self.cx.fuel.spend()?;
-            match self.form_at(target)? {
+            match self.cx.form_at(target)? {
                 Some((_, Former::Projection)) => {
                     read_pieces(self.cx.pbg, self.cx.tree, target.node, &mut chain)?;
                     if let Maybe::Present(_) = chain.repair {
                         return Ok(unresolved);
                     }
-                    let Ok((inner, selected)) = Self::link(site, &chain.pieces, target.span)
+                    let Ok((inner, selected)) = Context::link(site, &chain.pieces, target.span)
                     else {
                         return Ok(unresolved);
                     };
@@ -1058,7 +1059,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(_) | None => return Ok(unresolved),
             }
         };
-        let module = self.name_at(root);
+        let module = self.cx.name_at(root);
         if let Maybe::Present(_) = self.cx.scope.resolve(frame, module, &mut self.cx.fuel)? {
             return Ok(unresolved);
         }
@@ -1067,9 +1068,9 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Maybe::Present((slot, member)));
         }
         let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
-        segments.push(Segment::from(self.text_at(root).as_ref()));
+        segments.push(Segment::from(self.cx.text_at(root).as_ref()));
         for &(_, selected) in links.iter().rev() {
-            segments.push(Segment::from(self.text_at(selected).as_ref()));
+            segments.push(Segment::from(self.cx.text_at(selected).as_ref()));
         }
         let path = NamePath::from(segments);
         self.see_module(site, module);
@@ -1352,7 +1353,7 @@ impl<'source> Lowerer<'_, 'source>
                         Some(value)
                     }
                     else {
-                        let index = self.resolved_instance(site, frame, function, *entry)?;
+                        let index = self.cx.resolved_instance(site, frame, function, *entry)?;
                         let _first = self.cx.instanced.insert(self.cx.operands.next_key(), index);
                         Some(site.at.node)
                     }
@@ -1404,7 +1405,7 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(argument, Reading::Value(frame));
             }
         }
-        self.plan(site, Plan::Application(inner.node, self.kept(applied)));
+        self.plan(site, Plan::Application(inner.node, self.cx.kept(applied)));
 
         Ok(arity::Planned(true))
     }

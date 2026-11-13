@@ -96,7 +96,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(statement, cursor, TileName::SEMICOLON)?;
         let stated = self.opened_declared(opened, frame)?;
         let _first = self.cx.opened_models.insert(opened.node, stated);
-        let name = self.name_at(binder);
+        let name = self.cx.name_at(binder);
         self.note_binder(binder, frame, name)?;
         let _result = self.cx.results.insert(opened.node);
         self.read(opened.node, Reading::Computation(frame));
@@ -137,7 +137,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::module_statement`].
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.form_at(opened), Ok(Some((_, Former::Name)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.form_at(opened), Ok(Some((_, Former::Name)))))]
     fn opened_declared(
         &mut self,
         opened: Placed,
@@ -146,7 +146,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let refused = LoweringRefusal::NotAModel {
             span: opened.span,
-            name: self.name_at(opened),
+            name: self.cx.name_at(opened),
         };
         match self.name_type(frame, opened)? {
             Maybe::Present(stated) => Ok(stated),
@@ -190,7 +190,7 @@ impl<'source> Lowerer<'_, 'source>
                 _ => {
                     return Err(LoweringRefusal::NotAModel {
                         span: site.at.span,
-                        name: self.name_at(site.at),
+                        name: self.cx.name_at(site.at),
                     });
                 },
             }

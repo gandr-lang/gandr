@@ -286,7 +286,7 @@ impl<'source> Lowerer<'_, 'source>
         ) {
             return Maybe::Present(Verdict {
                 span: translation.named.span,
-                theory: self.name_at(domain.named),
+                theory: self.cx.name_at(domain.named),
                 unmatched,
             });
         }
@@ -412,7 +412,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<Unmatched<'source>, matched::Absent>
     {
-        let name = self.name_at(named);
+        let name = self.cx.name_at(named);
         let presentation = match self.cx.collected.presented_theory_in(
             named.span.start(),
             prefix,
@@ -435,7 +435,7 @@ impl<'source> Lowerer<'_, 'source>
             origin: Origin::new(named.node, named.span),
         };
         for component in &derived.components {
-            let member = self.name_at(component.named);
+            let member = self.cx.name_at(component.named);
             let fault = |fault| Maybe::Present(Unmatched::Member(member, fault));
             let Some(position) = self
                 .cx
@@ -498,7 +498,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Unmatched<'source>, matched::Absent>
     {
         let derived = |prefix: &[(ByteSpan, SurfaceName<'source>)], named: Placed| {
-            let name = self.name_at(named);
+            let name = self.cx.name_at(named);
             match self.cx.collected.presented_theory_in(
                 named.span.start(),
                 prefix,
@@ -529,10 +529,12 @@ impl<'source> Lowerer<'_, 'source>
         // The codomain's components by name, the first of each name kept.
         let mut made_by_name = BTreeMap::new();
         for made in &produced.components {
-            let _first = made_by_name.entry(self.name_at(made.named)).or_insert(made);
+            let _first = made_by_name
+                .entry(self.cx.name_at(made.named))
+                .or_insert(made);
         }
         for component in &stated.components {
-            let member = self.name_at(component.named);
+            let member = self.cx.name_at(component.named);
             let fault = |fault| Maybe::Present(Unmatched::Member(member, fault));
             let Some(&made) = made_by_name.get(&member)
             else {

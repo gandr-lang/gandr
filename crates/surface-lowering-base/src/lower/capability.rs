@@ -8,19 +8,36 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use answered::Answering;
+use gandr_core_term::Sort;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectOp;
+use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::host::HostSignatures;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
+use super::Sink;
+use super::lowered;
 use crate::by_form::FormStretch;
 use crate::form::Placed;
 use crate::module::ForeignInterface;
+use crate::module::ForeignType;
+use crate::origin::Insertion;
+use crate::origin::Label;
+use crate::origin::Labelled;
+use crate::origin::Origin;
 use crate::resolve::Frame;
 
 pub mod answered;
@@ -228,4 +245,218 @@ pub enum Mint
         /// The mint's name, as written.
         mint: NodeIndex,
     },
+}
+
+/// Where a theory's signature stands: where its fixed types were read, in the
+/// signature's telescope, or in the term context of a frame under it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Standing
+{
+    /// Where the fixed types were read: a row in a declaration's type.
+    Read,
+    /// The term context of this frame: a scope's, or an exercise's.
+    Term(Frame),
+}
+
+/// The host signatures the mint sweep has minted into the module's arena.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub enum Host
+{
+    /// No capability form has been minted.
+    Unminted,
+    /// The host table, in the module's arena.
+    Minted(HostSignatures),
+}
+
+impl Sink<'_>
+{
+    /// The host table in the module's arena, minted at the first call, each
+    /// of its types at `origin`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the host table, every type of which resolves in the arena; it
+    ///   is minted at most once per sink.
+    /// - fails: the unminted absence if the host table conflicts with itself.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module with capability forms over two interfaces
+    ///   mints one table and checks.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    #[spec(ensures: |ref ret| match *ret {
+        | Maybe::Present(table) => table.interfaces().iter().all(|signature| signature.types().all(|ty| self.arena.value_type(ty).is_some())),
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn host(
+        &mut self,
+        origin: Origin,
+    ) -> Maybe<&HostSignatures, lowered::Absent>
+    {
+        if matches!(self.host, Host::Unminted) {
+            let mark = self.arena.watermark();
+            let Ok(minted) = HostSignatures::new(self.arena)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            for id in self.arena.value_types_since(mark) {
+                self.origins.record_value_type(id, origin);
+            }
+            self.host = Host::Minted(minted);
+        }
+        match self.host {
+            Host::Minted(ref table) => Maybe::Present(table),
+            Host::Unminted => Maybe::Absent(lowered::Absent::Unminted),
+        }
+    }
+
+    /// The signature of the host interface `interface` in the module's arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the interface's signature, as [`Self::host`] mints it; the
+    ///   unminted absence for a name the host does not declare, which the
+    ///   classification rules out.
+    /// - fails: as [`Self::host`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::host`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    #[spec(ensures: |ref ret| match *ret {
+        | Maybe::Present(ref signature) => signature.name() == interface,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn signature(
+        &mut self,
+        interface: &EffectName,
+        origin: Origin,
+    ) -> Maybe<EffectSig, lowered::Absent>
+    {
+        self.host(origin)
+            .and_then(|table| match table.named(interface) {
+                Maybe::Present(signature) => Maybe::Present(signature.clone()),
+                Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+            })
+    }
+
+    /// The signature of the extern block's interface `foreign` in the
+    /// module's arena, minted at the first call, each member type where the
+    /// member writes it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one operation per member, in order, its payload the unit for
+    ///   no parameter, the parameter's width for one and the product of their
+    ///   widths in order for several, as a call passes its arguments, and its
+    ///   reply its result's width; minted at the first call for the block, as
+    ///   [`Self::foreign_type`] mints each member type, the product inserted at
+    ///   the member's name, and the same signature at every call after.
+    /// - fails: the unminted absence for a block naming one member twice, which
+    ///   the collection refuses.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row and two performs of one block check against one
+    ///   signature.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    #[spec(ensures: |ref ret| match *ret {
+        | Maybe::Present(ref signature) => signature.name() == &foreign.name
+            && signature.operations().len() == foreign.operations.len(),
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn foreign(
+        &mut self,
+        foreign: &ForeignInterface,
+    ) -> Maybe<EffectSig, lowered::Absent>
+    {
+        if let Some(minted) = self.foreign.get(&foreign.named.start()) {
+            return Maybe::Present(minted.clone());
+        }
+        let mut operations: Vec<EffectOp> = Vec::with_capacity(foreign.operations.len());
+        let mut parameters: Vec<ValueTypeId> = Vec::new();
+        for operation in &foreign.operations {
+            parameters.clear();
+            for parameter in &operation.parameters {
+                parameters.push(self.foreign_type(parameter.ty));
+            }
+            let payload = if let [only] = *parameters.as_slice() {
+                only
+            }
+            else {
+                let product = self.arena.value_type_product(&parameters);
+                let named = Origin::new(operation.named.node, operation.named.span);
+                self.origins
+                    .record_value_type(product, named.inserted(Insertion::Foreign));
+                product
+            };
+            let reply = self.foreign_type(operation.result);
+            operations.push(EffectOp {
+                name: operation.name.clone(),
+                payload,
+                reply,
+            });
+        }
+        let Ok(signature) = EffectSig::new(foreign.name.clone(), operations)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let _first = self
+            .foreign
+            .insert(foreign.named.start(), signature.clone());
+
+        Maybe::Present(signature)
+    }
+
+    /// The base type an extern block's member writes as `written`, read at
+    /// its kind there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a fresh base type of `written`'s width, recorded as written
+    ///   at the bytes that write it, and a kind label there naming a fresh
+    ///   value universe inserted for the block: no judgement forms the type
+    ///   where it is written, so it answers at its kind, as a functor
+    ///   parameter's abstract type does.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each member type of a block answers at its own bytes,
+    ///   whether or not a declaration performs the block's operations.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    #[spec(
+        captures: labels = self.origins.labels().len(),
+        ensures: |ret| matches!(self.arena.value_type(ret), Some(&ValueType::Base(BaseType::Fixed(width))) if width == written.width)
+            && self.origins.labels().len() == labels.saturating_add(1),
+    )]
+    #[inline]
+    pub fn foreign_type(
+        &mut self,
+        written: ForeignType,
+    ) -> ValueTypeId
+    {
+        let at = Origin::new(written.written.node, written.written.span);
+        let ty = self.arena.value_type_base(BaseType::Fixed(written.width));
+        self.origins.record_value_type(ty, at);
+        let kind = self
+            .arena
+            .value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        self.origins
+            .record_value_type(kind, at.inserted(Insertion::Foreign));
+        self.origins.record_label(Label {
+            span: written.written.span,
+            labelled: Labelled::Kind(kind),
+        });
+        ty
+    }
 }

@@ -236,7 +236,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(_) = cursor.at(TileName::DOT) {
             let mut fixed = Vec::new();
             while let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
-                let key = match self.dotted(site, cursor)? {
+                let key = match self.cx.dotted(site, cursor)? {
                     Key::Index(_, name, at) => {
                         return Err(LoweringRefusal::UnresolvedName {
                             span: at.span,
@@ -383,7 +383,7 @@ impl<'source> Lowerer<'_, 'source>
         let (entries, held) = self.base_record(site, frame, base)?;
         let unnamed = |face: Placed| LoweringRefusal::UnresolvedName {
             span: face.span,
-            name: self.name_at(face),
+            name: self.cx.name_at(face),
         };
         let Some(record) = held.and_then(|held| self.cx.collected.record_faces.get(&held))
         else {
@@ -404,7 +404,7 @@ impl<'source> Lowerer<'_, 'source>
         // value writes, in written order.
         let mut arms: Vec<(usize, Vec<Entry<'source>>)> = Vec::with_capacity(faces.len());
         for &(face, value) in faces {
-            let named = self.name_at(face);
+            let named = self.cx.name_at(face);
             let Some(&mut (cell, ref mut written_at)) = named_faces.get_mut(&named)
             else {
                 return Err(unnamed(face));
@@ -445,7 +445,7 @@ impl<'source> Lowerer<'_, 'source>
                 .filter(|&&decision| decision == Membership::Inside)
                 .count();
             if written.len() != held_labels {
-                let form = self.form_at(value)?.map_or(site.name, |(name, _)| name);
+                let form = self.cx.form_at(value)?.map_or(site.name, |(name, _)| name);
                 return Err(LoweringRefusal::MalformedForm {
                     span: value.span,
                     form,
@@ -593,7 +593,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   selection off a name written at a type member.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.cx.form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
     pub(super) fn member_definition(
         &mut self,
         frame: Frame,
@@ -601,7 +601,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>
     {
         let Some((name, Former::TypeHead | Former::Name | Former::Constructor)) =
-            self.form_at(at)?
+            self.cx.form_at(at)?
         else {
             return Ok(None);
         };
@@ -610,7 +610,7 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::ValueType(frame),
         };
-        Ok(match self.stated_named(named, self.name_at(at))? {
+        Ok(match self.stated_named(named, self.cx.name_at(at))? {
             Maybe::Present(stated) => match stated.meaning {
                 TypeMeaning::Manifest(defined) => Some((defined.node, stated.held)),
                 TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
@@ -712,13 +712,13 @@ impl<'source> Lowerer<'_, 'source>
             minted @ (Maybe::Present(_) | Maybe::Absent(_)) => return minted,
         };
         if let Some(member) = member
-            && let Maybe::Present(name) = self.origin_at(member)
+            && let Maybe::Present(name) = self.cx.origin_at(member)
         {
             sink.origins.record_member(base, name);
         }
         let mut values = BTreeMap::new();
         for (label, &value) in fixed {
-            match self.value_at(value) {
+            match self.cx.value_at(value) {
                 Maybe::Present(id) => {
                     let _first = values.insert(label.clone(), id);
                 },
@@ -727,7 +727,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut met = Vec::with_capacity(meets.len());
         for &(ref label, value) in meets {
-            match self.value_at(value) {
+            match self.cx.value_at(value) {
                 Maybe::Present(id) => met.push((label.clone(), id)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -765,7 +765,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
     {
         let declined = || site.out(FragmentBoundary::Unadmitted(Unbuilt::FixedValue));
-        let Some((name, Former::Telescope)) = self.form_at(value)?
+        let Some((name, Former::Telescope)) = self.cx.form_at(value)?
         else {
             return Err(declined());
         };
@@ -806,7 +806,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(()));
         };
-        let Some((_, Former::StagedType)) = self.form_at(Placed::of(declared, tree))?
+        let Some((_, Former::StagedType)) = self.cx.form_at(Placed::of(declared, tree))?
         else {
             return Ok(Maybe::Absent(()));
         };

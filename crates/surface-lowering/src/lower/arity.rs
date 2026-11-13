@@ -161,11 +161,20 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
+pub(super) use gandr_surface_lowering_base::lower::arity::Arranged;
 pub(super) use gandr_surface_lowering_base::lower::arity::Dependent;
+pub(super) use gandr_surface_lowering_base::lower::arity::Entry;
+pub(super) use gandr_surface_lowering_base::lower::arity::Held;
+pub(super) use gandr_surface_lowering_base::lower::arity::Key;
 pub(super) use gandr_surface_lowering_base::lower::arity::Observed;
+pub(super) use gandr_surface_lowering_base::lower::arity::Place;
+pub(super) use gandr_surface_lowering_base::lower::arity::Planned;
 pub(super) use gandr_surface_lowering_base::lower::arity::Projection;
 pub(super) use gandr_surface_lowering_base::lower::arity::Selected;
 pub(super) use gandr_surface_lowering_base::lower::arity::Thunked;
+pub(super) use gandr_surface_lowering_base::lower::arity::arrange;
+pub(super) use gandr_surface_lowering_base::lower::arity::separated;
+pub(super) use gandr_surface_lowering_base::lower::arity::stated_labels;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::DeclPolarity;
@@ -173,6 +182,7 @@ use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
+use super::Context;
 use super::Frame;
 use super::LabelRead;
 use super::Lowered;
@@ -204,10 +214,8 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
-use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
-use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::Bound;
 use crate::resolve::Mentioned;
@@ -232,116 +240,6 @@ pub(super) fn clause_body(clause: NodeIndex) -> Block
         statements: FormStretch::default(),
         last: clause,
     }
-}
-
-/// How an entry of an arity-shaped form is labelled.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: an index and a label each carry where they are written.
-/// - executable: none — the key holds no form to check its tile against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — positional, indexed and labelled entries each lower to
-///   their own former, and mixing them is refused.
-/// - witness: `lower::arity::tests::labels_are_of_one_kind_and_written_once`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Key<'source>
-{
-    /// Unlabelled: the entry's place in written order labels it.
-    Positional,
-    /// `.i`: labelled by its index, spelled and written at the tile.
-    Index(usize, SurfaceName<'source>, Placed),
-    /// `l` or `.l`: labelled by name, written at the tile or the key form.
-    Label(SurfaceName<'source>, Placed),
-}
-
-/// What an entry of an arity-shaped form holds.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: an operand is a hole's form; a pun is the label tile it binds.
-/// - executable: none — the record holds no form to check against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a punned pattern entry binds its label, a renamed one its
-///   pattern.
-/// - witness: `lower::native::tests::telescope_patterns_split_and_project`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Held
-{
-    /// The entry's operand.
-    Operand(Placed),
-    /// A pattern entry `.l` with no pattern: it binds its own label.
-    Punned(Placed),
-}
-
-impl Held
-{
-    /// Where the entry's content is written.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) const fn at(self) -> Placed
-    {
-        match self {
-            Self::Operand(at) | Self::Punned(at) => at,
-        }
-    }
-}
-
-/// One entry of an arity-shaped form, as written.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: the key and what the entry holds.
-/// - executable: none — the record holds no form to check against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Key`].
-/// - witness: `lower::arity::tests::labels_are_of_one_kind_and_written_once`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Entry<'source>
-{
-    /// How the entry is labelled.
-    pub key: Key<'source>,
-    /// What the entry holds.
-    pub held: Held,
-}
-
-impl Entry<'_>
-{
-    /// Where the entry's label is written, or its content when it has none.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) const fn keyed_at(self) -> Placed
-    {
-        match self.key {
-            Key::Positional => self.held.at(),
-            Key::Index(_, _, at) | Key::Label(_, at) => at,
-        }
-    }
-}
-
-/// The entries of an arity-shaped form, of one kind throughout.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: positional entries in index order; labelled entries in written
-///   order, each label once.
-/// - executable: none — [`arrange`] establishes the order.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Key`].
-/// - witness: `lower::arity::tests::labels_are_of_one_kind_and_written_once`
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum Arranged<'source>
-{
-    /// Entries labelled by place or by index, in index order.
-    Positional(Vec<Entry<'source>>),
-    /// Entries labelled by name, in written order.
-    Labelled(Vec<Entry<'source>>),
 }
 
 /// What the hole-led entries of a telescope value read as.
@@ -409,14 +307,6 @@ enum Subject
     Family(ConstantIndex),
 }
 
-/// Whether a form was read as an arity-shaped former and planned.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Planned(pub bool);
-
 /// Whether the entries of a parenthesised type are a group of outputs. One
 /// unlabelled entry is no group: it groups one type.
 ///
@@ -434,149 +324,6 @@ pub(super) struct Grouped(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Computed(pub bool);
-
-/// The place of an entry among the entries a type states, counting from
-/// zero.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Place(pub usize);
-
-quenchant_shape::reason_enum! {
-    /// Why no type over labels is stated where a form needs one.
-    pub mod stated_labels {
-        /// The type the source states is not the former the form needs.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The stated type, through parentheses, is another former.
-            Otherwise,
-            /// The stated type over labels is a record: no later entry names
-            /// an earlier label.
-            Independent,
-        }
-    }
-}
-
-/// Order `entries` by their keys, refusing a form that mixes kinds.
-///
-/// # Specification
-/// - requires: `entries` are the entries of the form at `site`.
-/// - ensures: positional entries in written order; indexed entries reordered by
-///   index when the indices are exactly `0` to `n - 1`; labelled entries in
-///   written order.
-/// - fails: a misplaced tile at the first entry of another kind than the first
-///   entry's, and at an index out of range; a duplicate definition at a label
-///   or an index written twice.
-/// - panics: none.
-///
-/// # Errors
-/// [`LoweringRefusal::MalformedForm`] and
-/// [`LoweringRefusal::DuplicateDefinition`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — reordered indices, a gap, a repeated index and label, and
-///   mixed kinds, each asserted as the exact order or refusal.
-/// - witness: `lower::arity::tests::labels_are_of_one_kind_and_written_once`
-#[spec(
-    captures: count = entries.len(),
-    ensures: |ret| ret.as_ref().map_or(true, |arranged| match *arranged {
-        | Arranged::Positional(ref ordered) | Arranged::Labelled(ref ordered) => ordered.len() == count,
-    }),
-)]
-pub(super) fn arrange<'source>(
-    site: Site,
-    entries: Vec<Entry<'source>>,
-) -> Result<Arranged<'source>, LoweringRefusal<'source>>
-{
-    let Some(&first) = entries.first()
-    else {
-        return Ok(Arranged::Positional(entries));
-    };
-    match first.key {
-        Key::Positional => {
-            if let Some(stray) = entries
-                .iter()
-                .find(|entry| !matches!(entry.key, Key::Positional))
-            {
-                return Err(site.fault(stray.keyed_at().span, FormFault::MisplacedTile));
-            }
-            Ok(Arranged::Positional(entries))
-        },
-        Key::Label(..) => {
-            let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
-            for entry in &entries {
-                let Key::Label(name, written) = entry.key
-                else {
-                    return Err(site.fault(entry.keyed_at().span, FormFault::MisplacedTile));
-                };
-                if let Some(&earlier) = seen.get(&name) {
-                    return Err(LoweringRefusal::DuplicateDefinition {
-                        span: written.span,
-                        name,
-                        first: earlier.span,
-                    });
-                }
-                let _first = seen.insert(name, written);
-            }
-            Ok(Arranged::Labelled(entries))
-        },
-        Key::Index(..) => {
-            let mut slots: Vec<Option<Entry<'source>>> = alloc::vec![None; entries.len()];
-            for entry in &entries {
-                let Key::Index(index, name, written) = entry.key
-                else {
-                    return Err(site.fault(entry.keyed_at().span, FormFault::MisplacedTile));
-                };
-                let Some(slot) = slots.get_mut(index)
-                else {
-                    return Err(site.fault(written.span, FormFault::MisplacedTile));
-                };
-                if let Some(earlier) = *slot {
-                    return Err(LoweringRefusal::DuplicateDefinition {
-                        span: written.span,
-                        name,
-                        first: earlier.keyed_at().span,
-                    });
-                }
-                *slot = Some(*entry);
-            }
-            Ok(Arranged::Positional(slots.into_iter().flatten().collect()))
-        },
-    }
-}
-
-/// Read the separator after an entry: a comma, or the closer `closer` left
-/// for the loop to read.
-///
-/// # Specification
-/// - requires: `cursor` stands just past an entry of the form at `site`.
-/// - ensures: a comma is consumed; a closer is left in place.
-/// - fails: a misplaced tile at anything else.
-/// - panics: none.
-///
-/// # Errors
-/// [`LoweringRefusal::MalformedForm`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — trailing commas and one-entry lists read alike.
-/// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
-#[spec(ensures: |ret| ret.is_err() || matches!(cursor.peek(), Maybe::Absent(_) | Maybe::Present(_)))]
-pub(super) fn separated<'source>(
-    site: Site,
-    cursor: &mut Cursor<'_>,
-    closer: TileName,
-) -> Result<(), LoweringRefusal<'source>>
-{
-    if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
-        && let Maybe::Absent(_) = cursor.at(closer)
-    {
-        return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-    }
-
-    Ok(())
-}
 
 /// The nested-pair path to the entry `observed` selects of a dependent
 /// record: the sides to project along, innermost first.
@@ -622,76 +369,6 @@ fn groups(entries: &[Entry<'_>]) -> Grouped
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// The named kind and former of the form at `at`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the form's kind and former; nothing for a node that is no
-    ///   form.
-    /// - fails: [`LoweringRefusal::UnknownMold`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a type entry's key is told from its type by kind.
-    /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
-    pub(super) fn form_at(
-        &self,
-        at: Placed,
-    ) -> Result<Option<(FormName, Former)>, LoweringRefusal<'source>>
-    {
-        let Some(node) = self.cx.tree.node(at.node)
-        else {
-            return Ok(None);
-        };
-
-        Ok(match shape_of(self.cx.pbg, node)? {
-            Shape::Form { name, former } => Some((name, former)),
-            Shape::Root | Shape::Repair(_) | Shape::Layout => None,
-        })
-    }
-
-    /// Read a label after its dot: `.l` or `.i`.
-    ///
-    /// # Specification
-    /// - requires: `cursor` stands at the label's `.`.
-    /// - ensures: a name for an identifier, an index for a decimal number.
-    /// - fails: a misplaced tile for anything else.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::MalformedForm`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — named and indexed labels each reach their former.
-    /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Key::Positional)))]
-    pub(super) fn dotted(
-        &self,
-        site: Site,
-        cursor: &mut Cursor<'_>,
-    ) -> Result<Key<'source>, LoweringRefusal<'source>>
-    {
-        closed(site, cursor, TileName::DOT)?;
-        if let Maybe::Present(word) = cursor.tile(TileName::IDENTIFIER) {
-            return Ok(Key::Label(self.name_at(word), word));
-        }
-        let Maybe::Present(number) = cursor.tile(TileName::NUMBER)
-        else {
-            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-        };
-        let name = self.name_at(number);
-        let spelled: &str = name.as_ref();
-
-        spelled
-            .parse::<usize>()
-            .map(|index| Key::Index(index, name, number))
-            .map_err(|_overflow| site.fault(number.span, FormFault::MisplacedTile))
-    }
-
     /// Read the entries of a type list up to `closer`: each a bare type, or
     /// `k : T` whose key is a bare word, lowercase or named as a type is. A
     /// builtin type's lowercase name, `f32`, is such a word.
@@ -774,7 +451,7 @@ impl<'source> Lowerer<'_, 'source>
                 // word before the last is a mode tile over the rest.
                 let mut key = first;
                 loop {
-                    match self.form_at(key)? {
+                    match self.cx.form_at(key)? {
                         // A builtin type's lowercase name, `f32`, is a word
                         // here, as it is where a parameter or a value's label
                         // is read.
@@ -783,12 +460,13 @@ impl<'source> Lowerer<'_, 'source>
                                 || name == FormName::TYPE_IDENTIFIER
                                 || (name == FormName::PRIMITIVE_TYPE
                                     && self
+                                        .cx
                                         .text_at(key)
                                         .as_ref()
                                         .starts_with(|first: char| first.is_ascii_lowercase())) =>
                         {
                             entries.push(Entry {
-                                key: Key::Label(self.name_at(key), key),
+                                key: Key::Label(self.cx.name_at(key), key),
                                 held,
                             });
                             break;
@@ -804,7 +482,7 @@ impl<'source> Lowerer<'_, 'source>
                                 return Err(site.fault(key.span, FormFault::MisplacedTile));
                             };
                             entries.push(Entry {
-                                key: Key::Label(self.name_at(word), word),
+                                key: Key::Label(self.cx.name_at(word), word),
                                 held,
                             });
                             key = rest;
@@ -859,7 +537,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-            let key = self.dotted(site, cursor)?;
+            let key = self.cx.dotted(site, cursor)?;
             let held = match key {
                 Key::Label(_, label)
                     if between == TileName::EQUALS
@@ -919,12 +597,12 @@ impl<'source> Lowerer<'_, 'source>
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
             let first = site.one(cursor.operands())?;
             let entry = if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
-                if !matches!(self.form_at(first)?, Some((name, _)) if name == FormName::IDENTIFIER)
+                if !matches!(self.cx.form_at(first)?, Some((name, _)) if name == FormName::IDENTIFIER)
                 {
                     return Err(site.fault(first.span, FormFault::MisplacedTile));
                 }
                 Entry {
-                    key: Key::Label(self.name_at(first), first),
+                    key: Key::Label(self.cx.name_at(first), first),
                     held: Held::Operand(site.one(cursor.operands())?),
                 }
             }
@@ -988,7 +666,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             closed(site, cursor, TileName::EQUALS)?;
             written.push(Entry {
-                key: Key::Label(self.name_at(word), word),
+                key: Key::Label(self.cx.name_at(word), word),
                 held: Held::Operand(site.one(cursor.operands())?),
             });
             separated(site, cursor, TileName::BRACE_CLOSE)?;
@@ -999,110 +677,6 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(written)
-    }
-
-    /// Read the entries of a telescope pattern up to `}`: each a punned
-    /// `.l`, a renamed `.l = p`, or a positional `p`.
-    ///
-    /// # Specification
-    /// - requires: `cursor` stands just past the pattern's `#{`.
-    /// - ensures: every entry in written order, the cursor exhausted; a punned
-    ///   entry holds its label tile.
-    /// - fails: a misplaced tile at an undotted key `k = p`, at a punned index,
-    ///   and at a separator out of place; a hole's own fault.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::MalformedForm`].
-    ///
-    /// # Termination
-    /// Every round consumes at least one piece of the finite cursor or
-    /// refuses.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — punned, renamed and positional entries, and an
-    ///   undotted key.
-    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| !matches!(entry.held, Held::Punned(_)) || matches!(entry.key, Key::Label(..)))))]
-    pub(super) fn pattern_entries(
-        &self,
-        here: Site,
-        cursor: &mut Cursor<'_>,
-    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
-    {
-        let mut entries = Vec::new();
-        while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-            let entry = if let Maybe::Present(_) = cursor.at(TileName::DOT) {
-                let key = self.dotted(here, cursor)?;
-                let held = if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
-                    Held::Operand(here.one(cursor.operands())?)
-                }
-                else {
-                    match key {
-                        Key::Label(_, label) => Held::Punned(label),
-                        Key::Index(_, _, written) => {
-                            return Err(here.fault(written.span, FormFault::MisplacedTile));
-                        },
-                        Key::Positional => {
-                            return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
-                        },
-                    }
-                };
-                Entry { key, held }
-            }
-            else {
-                let first = here.one(cursor.operands())?;
-                if let Maybe::Present(equals) = cursor.at(TileName::EQUALS) {
-                    return Err(here.fault(equals.span, FormFault::MisplacedTile));
-                }
-                Entry {
-                    key: Key::Positional,
-                    held: Held::Operand(first),
-                }
-            };
-            entries.push(entry);
-            separated(here, cursor, TileName::BRACE_CLOSE)?;
-        }
-        exhausted(here, cursor)?;
-
-        Ok(entries)
-    }
-
-    /// Read the entries of a tuple pattern up to `)`, each positional.
-    ///
-    /// # Specification
-    /// - requires: `cursor` stands just past the pattern's `(`.
-    /// - ensures: every entry in written order, the cursor exhausted.
-    /// - fails: a misplaced tile, and a hole's own fault.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::MalformedForm`].
-    ///
-    /// # Termination
-    /// Every round consumes at least one piece of the finite cursor or
-    /// refuses.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a tuple pattern splits as the telescope does.
-    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.key, Key::Positional))))]
-    pub(super) fn tuple_entries(
-        here: Site,
-        cursor: &mut Cursor<'_>,
-    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
-    {
-        let mut entries = Vec::new();
-        while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
-            entries.push(Entry {
-                key: Key::Positional,
-                held: Held::Operand(here.one(cursor.operands())?),
-            });
-            separated(here, cursor, TileName::PAREN_CLOSE)?;
-        }
-        exhausted(here, cursor)?;
-
-        Ok(entries)
     }
 
     /// The type the scrutinee `scrutinee` of a match under `frame` was
@@ -1139,7 +713,7 @@ impl<'source> Lowerer<'_, 'source>
         scrutinee: Placed,
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(scrutinee)?, Some((_, Former::Name))) {
+        if !matches!(self.cx.form_at(scrutinee)?, Some((_, Former::Name))) {
             return self.called_type(frame, scrutinee.node);
         }
         let named = Site {
@@ -1149,7 +723,7 @@ impl<'source> Lowerer<'_, 'source>
         };
 
         Ok(
-            match self.resolve_name(named, frame, self.name_at(scrutinee))? {
+            match self.resolve_name(named, frame, self.cx.name_at(scrutinee))? {
                 Maybe::Present(Resolved::Binder(bound)) => match bound.declared {
                     Maybe::Absent(binder_type::Absent::Untyped) => self.ran_type(bound.binder)?,
                     declared @ (Maybe::Present(_)
@@ -1259,7 +833,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(untyped);
         };
         let head = Placed::of(head, tree);
-        if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
+        if !matches!(self.cx.form_at(head)?, Some((_, Former::Name))) {
             return Ok(untyped);
         }
         let named = Site {
@@ -1268,7 +842,7 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Value(frame),
         };
         let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, frame, self.name_at(head))?
+            self.resolve_name(named, frame, self.cx.name_at(head))?
         else {
             return Ok(untyped);
         };
@@ -1381,7 +955,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut pieces = Pieces::new();
         while let Some(next) = pending.pop() {
             self.cx.fuel.spend()?;
-            let Some((name, former)) = self.form_at(next)?
+            let Some((name, former)) = self.cx.form_at(next)?
             else {
                 return Ok(TypeZone::Ordinary);
             };
@@ -1704,14 +1278,14 @@ impl<'source> Lowerer<'_, 'source>
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
-                Plan::Tuple(self.kept(members))
+                Plan::Tuple(self.cx.kept(members))
             },
             Arranged::Positional(entries) => {
                 let components = self.stored(&entries);
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::ValueType(frame));
                 }
-                Plan::Product(self.kept(components))
+                Plan::Product(self.cx.kept(components))
             },
             Arranged::Labelled(entries) => {
                 let Some((last, binding)) = entries.split_last()
@@ -1894,7 +1468,10 @@ impl<'source> Lowerer<'_, 'source>
             self.read(entry.held.at().node, Reading::ValueType(frame));
             self.label_entry(entry, Reading::ValueType(frame));
         }
-        self.plan(site, Plan::Sum(self.kept(summands), self.kept(labels)));
+        self.plan(
+            site,
+            Plan::Sum(self.cx.kept(summands), self.cx.kept(labels)),
+        );
 
         Ok(())
     }
@@ -1942,7 +1519,10 @@ impl<'source> Lowerer<'_, 'source>
             self.read(entry.held.at().node, Reading::CompType(frame));
             self.label_entry(entry, Reading::CompType(frame));
         }
-        self.plan(site, Plan::With(self.kept(components), self.kept(labels)));
+        self.plan(
+            site,
+            Plan::With(self.cx.kept(components), self.cx.kept(labels)),
+        );
 
         Ok(())
     }
@@ -2013,7 +1593,7 @@ impl<'source> Lowerer<'_, 'source>
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
-                Plan::Tuple(self.kept(members))
+                Plan::Tuple(self.cx.kept(members))
             },
             Arranged::Labelled(entries) => {
                 Plan::Record(self.fields(&entries, Reading::Value(frame)))
@@ -2118,7 +1698,7 @@ impl<'source> Lowerer<'_, 'source>
                 break Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
             };
             let placed = Placed::of(at, tree);
-            let (name, held) = match self.form_at(placed) {
+            let (name, held) = match self.cx.form_at(placed) {
                 Ok(Some(form)) => form,
                 Ok(None) => break Ok(Maybe::Absent(stated_labels::Absent::Otherwise)),
                 Err(refusal) => break Err(refusal),
@@ -2234,7 +1814,7 @@ impl<'source> Lowerer<'_, 'source>
                 break Ok(None);
             };
             let placed = Placed::of(at, tree);
-            let held = match self.form_at(placed) {
+            let held = match self.cx.form_at(placed) {
                 Ok(Some((_, held))) => held,
                 Ok(None) => break Ok(None),
                 Err(refusal) => break Err(refusal),
@@ -2280,7 +1860,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let named = Site { at: head, ..site };
         let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, frame, self.name_at(head))?
+            self.resolve_name(named, frame, self.cx.name_at(head))?
         else {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         };
@@ -2453,39 +2033,6 @@ impl<'source> Lowerer<'_, 'source>
         Ok(entries)
     }
 
-    /// The index and the entry the label `name`, written at `written`, names
-    /// among `stated`.
-    ///
-    /// # Specification
-    /// - requires: `stated` are a stated type's entries.
-    /// - ensures: the first entry so labelled, with its index.
-    /// - fails: the unresolved-name refusal at `written` when none is.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::UnresolvedName`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a label the stated type has and one it lacks.
-    /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(place, _)| place.0 < stated.len()))]
-    pub(super) fn labelled_in(
-        stated: &[Entry<'source>],
-        name: SurfaceName<'source>,
-        written: Placed,
-    ) -> Result<(Place, Entry<'source>), LoweringRefusal<'source>>
-    {
-        stated
-            .iter()
-            .enumerate()
-            .find(|&(_, entry)| matches!(entry.key, Key::Label(held, _) if held == name))
-            .map(|(index, &entry)| (Place(index), entry))
-            .ok_or(LoweringRefusal::UnresolvedName {
-                span: written.span,
-                name,
-            })
-    }
-
     /// Classify an injection, `+{ .l = v }`.
     ///
     /// # Specification
@@ -2518,7 +2065,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let frame = self.require(site, Produced::Value)?;
         closed(site, &mut cursor, TileName::SUM_OPEN)?;
-        let key = self.dotted(site, &mut cursor)?;
+        let key = self.cx.dotted(site, &mut cursor)?;
         closed(site, &mut cursor, TileName::EQUALS)?;
         let body = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
@@ -2535,7 +2082,7 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unannotated));
                 };
-                Self::labelled_in(&stated, name, written)?.0.0
+                Context::labelled_in(&stated, name, written)?.0.0
             },
             Key::Positional => return Err(site.fault(body.span, FormFault::MisplacedTile)),
         };
@@ -2680,7 +2227,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         for clause in clauses {
             if let Key::Label(name, written) = clause.key {
-                let _index = Self::labelled_in(stated, name, written)?;
+                let _index = Context::labelled_in(stated, name, written)?;
             }
         }
         let mut ordered = Vec::with_capacity(stated.len());
@@ -2815,13 +2362,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let numbered = self.text_at(selected).as_ref().parse::<usize>().is_ok();
+        let numbered = self.cx.text_at(selected).as_ref().parse::<usize>().is_ok();
         let frame = site.reading.frame();
         let Some(subject) = self.observed_subject(site, frame, target)?
         else {
             return Ok(Planned(false));
         };
-        let label = self.name_at(selected);
+        let label = self.cx.name_at(selected);
         let (entries, thunked) = match subject {
             Subject::Written(declared, thunked, _) => (
                 self.stated_entries(site, declared, Former::LazyRecordType, thunked)?,
@@ -2838,7 +2385,7 @@ impl<'source> Lowerer<'_, 'source>
                     Self::positioned(label, selected, &stated)?
                 }
                 else {
-                    Self::labelled_in(&stated, label, selected)?.0
+                    Context::labelled_in(&stated, label, selected)?.0
                 };
                 (index, stated.len())
             },
@@ -2908,7 +2455,7 @@ impl<'source> Lowerer<'_, 'source>
         span: ByteSpan,
     ) -> Option<(Placed, Placed)>
     {
-        if let Ok(found) = Self::link(site, pieces, span) {
+        if let Ok(found) = Context::link(site, pieces, span) {
             return Some(found);
         }
         let mut cursor = Cursor::new(pieces, span);
@@ -2970,7 +2517,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Err(refusal) = self.cx.fuel.spend() {
                 break Err(refusal);
             }
-            match self.form_at(root) {
+            match self.cx.form_at(root) {
                 Ok(Some((_, Former::Projection))) => {},
                 Ok(_) => break Ok(()),
                 Err(refusal) => break Err(refusal),
@@ -2992,13 +2539,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        let mut subject = if matches!(self.form_at(root)?, Some((_, Former::Name))) {
+        let mut subject = if matches!(self.cx.form_at(root)?, Some((_, Former::Name))) {
             let named = Site {
                 at: root,
                 name: FormName::IDENTIFIER,
                 reading: Reading::Value(frame),
             };
-            let declared = match self.resolve_name(named, frame, self.name_at(root)) {
+            let declared = match self.resolve_name(named, frame, self.cx.name_at(root)) {
                 Ok(Maybe::Present(Resolved::Binder(bound))) => {
                     // A binder's type is written in the declaration the
                     // selection belongs to, and may lie where the walk has
@@ -3047,7 +2594,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Ok(None);
             };
-            let name = self.name_at(selected);
+            let name = self.cx.name_at(selected);
             let index = name.as_ref().parse::<usize>().map_or_else(
                 |_unnumbered| {
                     labels
@@ -3124,14 +2671,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
     /// - witness: `lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.form_at(at), Ok(Some((_, Former::Name)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.cx.form_at(at), Ok(Some((_, Former::Name)))))]
     pub(super) fn name_type(
         &mut self,
         frame: Frame,
         at: Placed,
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(at)?, Some((_, Former::Name))) {
+        if !matches!(self.cx.form_at(at)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(binder_type::Absent::Untyped));
         }
         let named = Site {
@@ -3140,11 +2687,13 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Value(frame),
         };
 
-        Ok(match self.resolve_name(named, frame, self.name_at(at))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
-        })
+        Ok(
+            match self.resolve_name(named, frame, self.cx.name_at(at))? {
+                Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+                Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+                Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+            },
+        )
     }
 
     /// The entries of the type written for the operand `target` of a
@@ -3230,7 +2779,7 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
         else {
             return Ok(Planned(false));
         };
@@ -3244,7 +2793,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Ok(Planned(false));
         }
-        let index = match Self::labelled_in(&stated, self.name_at(selected), selected) {
+        let index = match Context::labelled_in(&stated, self.cx.name_at(selected), selected) {
             Ok((Place(index), _)) => index,
             // A record no entry depends on is projected at the label, which
             // the checker refuses as a field the record lacks, as it refuses a
@@ -3255,7 +2804,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(_) => return Err(lacked),
             },
         };
-        let label = FieldLabel::from(String::from(self.name_at(selected).as_ref()));
+        let label = FieldLabel::from(String::from(self.cx.name_at(selected).as_ref()));
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));
         self.plan(
@@ -3309,11 +2858,11 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
         else {
             return Ok(Planned(false));
         };
-        let member = self.name_at(selected);
+        let member = self.cx.name_at(selected);
         if !member
             .as_ref()
             .chars()
@@ -3326,13 +2875,13 @@ impl<'source> Lowerer<'_, 'source>
         let mut chain = Pieces::new();
         loop {
             self.cx.fuel.spend()?;
-            match self.form_at(head)? {
+            match self.cx.form_at(head)? {
                 Some((_, Former::Projection)) => {
                     read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut chain)?;
                     if let Maybe::Present(_) = chain.repair {
                         return Ok(Planned(false));
                     }
-                    let Ok((inner, _)) = Self::link(site, &chain.pieces, head.span)
+                    let Ok((inner, _)) = Context::link(site, &chain.pieces, head.span)
                     else {
                         return Ok(Planned(false));
                     };
@@ -3342,7 +2891,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(_) | None => return Ok(Planned(false)),
             }
         }
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         if name.as_ref().chars().next().is_none_or(char::is_uppercase) {
             return Ok(Planned(false));
         }
@@ -3418,8 +2967,9 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(target.span, FormFault::MisplacedTile));
         };
         let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection));
-        if !matches!(self.form_at(target)?, Some((_, Former::Name)))
+        if !matches!(self.cx.form_at(target)?, Some((_, Former::Name)))
             || self
+                .cx
                 .name_at(target)
                 .as_ref()
                 .chars()
@@ -3447,7 +2997,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let projection = match stated {
                 Some((form, ref stated)) => {
-                    let index = match Self::labelled_in(stated, name, at) {
+                    let index = match Context::labelled_in(stated, name, at) {
                         Ok((Place(index), _)) => index,
                         Err(lacked) => match self.dependent_links(stated)? {
                             Maybe::Absent(_) => stated.len(),
@@ -3524,7 +3074,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         };
         let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection));
-        let Ok(index) = self.text_at(position).as_ref().parse::<usize>()
+        let Ok(index) = self.cx.text_at(position).as_ref().parse::<usize>()
         else {
             return Err(unadmitted());
         };
@@ -3534,7 +3084,7 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(LoweringRefusal::UnresolvedName {
                         span: position.span,
-                        name: self.name_at(position),
+                        name: self.cx.name_at(position),
                     });
                 };
                 let labelled = match entry.key {
@@ -3664,9 +3214,9 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 };
                 let placed = Placed::of(node, tree);
-                let form = self.form_at(placed)?;
+                let form = self.cx.form_at(placed)?;
                 if matches!(form, Some((_, Former::Name | Former::TypeHead)))
-                    && self.text_at(placed).as_ref() == label.as_ref()
+                    && self.cx.text_at(placed).as_ref() == label.as_ref()
                 {
                     named = true;
                     break;
@@ -3786,7 +3336,7 @@ impl<'source> Lowerer<'_, 'source>
         let entries = match self.implicit_entries(domain, frame)? {
             Some((mut implicit, explicit)) => {
                 if matches!(
-                    self.form_at(explicit)?,
+                    self.cx.form_at(explicit)?,
                     Some((_, Former::ParenthesizedType))
                 ) {
                     implicit.extend(self.domain_entries(explicit, frame)?);
@@ -3881,14 +3431,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::output_group`].
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.cx.form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
     pub(super) fn written_group(
         &mut self,
         at: Placed,
         frame: Frame,
     ) -> Result<Grouped, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(at)?, Some((_, Former::ParenthesizedType))) {
+        if !matches!(self.cx.form_at(at)?, Some((_, Former::ParenthesizedType))) {
             return Ok(Grouped(false));
         }
         let entries = self.domain_entries(at, frame)?;
@@ -4005,7 +3555,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
     /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
     /// - witness: `lower::arity::tests::an_operation_s_outputs_are_selected_and_bound_by_label_5147`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.cx.form_at(bound), Ok(Some((_, Former::Call)))))]
     pub(super) fn called_outputs(
         &mut self,
         frame: Frame,
@@ -4013,7 +3563,7 @@ impl<'source> Lowerer<'_, 'source>
         anchor: NodeIndex,
     ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::Call)) = self.form_at(bound)?
+        let Some((name, Former::Call)) = self.cx.form_at(bound)?
         else {
             return Ok(None);
         };
@@ -4029,7 +3579,8 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        if !matches!(self.form_at(head)?, Some((written, _)) if written == FormName::IDENTIFIER) {
+        if !matches!(self.cx.form_at(head)?, Some((written, _)) if written == FormName::IDENTIFIER)
+        {
             return Ok(None);
         }
         // The name is read before the walk reaches it, so it takes the
@@ -4040,7 +3591,7 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::Head(frame),
         };
-        let callee = match self.resolve_name(site, frame, self.name_at(head))? {
+        let callee = match self.resolve_name(site, frame, self.cx.name_at(head))? {
             // A callee classified ahead of this call gives its result; one
             // the walk has not reached is read off the box its signature
             // writes.
@@ -4153,7 +3704,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let written = Placed::of(written, tree);
-        if !matches!(self.form_at(written)?, Some((_, Former::ArrowType))) {
+        if !matches!(self.cx.form_at(written)?, Some((_, Former::ArrowType))) {
             return Ok(None);
         }
         let mut pieces = Pieces::new();
@@ -4238,13 +3789,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a group under a row is the callee's outputs.
     /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.cx.form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
     fn returned(
         &self,
         at: Placed,
     ) -> Result<Placed, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(at)?, Some((_, Former::ReturnerType))) {
+        if !matches!(self.cx.form_at(at)?, Some((_, Former::ReturnerType))) {
             return Ok(at);
         }
         let mut pieces = Pieces::new();
@@ -4301,7 +3852,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut order: Vec<(SurfaceName<'source>, Placed)> = Vec::new();
         let mut written: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
-            let Key::Label(label, key) = self.dotted(site, &mut cursor)?
+            let Key::Label(label, key) = self.cx.dotted(site, &mut cursor)?
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
@@ -4378,7 +3929,7 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
         else {
             return Ok(Planned(false));
         };
@@ -4391,7 +3942,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let label = self.name_at(selected);
+        let label = self.cx.name_at(selected);
         let Some(index) = outputs
             .iter()
             .position(|output| matches!(output.key, Key::Label(name, _) if name == label))
@@ -4442,7 +3993,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Option<Placed>, LoweringRefusal<'source>>
     {
         let written = target;
-        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
+        while let Some((_, Former::Parenthesized)) = self.cx.form_at(target)? {
             let mut grouped = Pieces::new();
             read_pieces(self.cx.pbg, self.cx.tree, target.node, &mut grouped)?;
             let mut cursor = Cursor::new(&grouped.pieces, target.span);
@@ -4536,11 +4087,11 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let bound = match self.computation_at(left) {
+        let bound = match self.cx.computation_at(left) {
             Maybe::Present(bound) => bound,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut applied = match self.computation_at(right) {
+        let mut applied = match self.cx.computation_at(right) {
             Maybe::Present(applied) => applied,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -4584,7 +4135,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let bound = match self.computation_at(call) {
+        let bound = match self.cx.computation_at(call) {
             Maybe::Present(bound) => bound,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -4694,7 +4245,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
+        let Some((name, Former::ParenthesizedType)) = self.cx.form_at(domain)?
         else {
             return Ok(Vec::new());
         };
@@ -4748,7 +4299,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<Option<(Vec<Entry<'source>>, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ReturnerType)) = self.form_at(domain)?
+        let Some((name, Former::ReturnerType)) = self.cx.form_at(domain)?
         else {
             return Ok(None);
         };
@@ -4959,7 +4510,7 @@ impl<'source> Lowerer<'_, 'source>
         domain: Placed,
     ) -> Result<Option<(Placed, SurfaceName<'source>, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
+        let Some((name, Former::ParenthesizedType)) = self.cx.form_at(domain)?
         else {
             return Ok(None);
         };
@@ -5130,20 +4681,20 @@ impl<'source> Lowerer<'_, 'source>
             return self.mint_record_type(fields, sink, origin);
         }
         let written = self.cx.parameters.read(binders);
-        let mut nested = match self.value_type_at(last) {
+        let mut nested = match self.cx.value_type_at(last) {
             Maybe::Present(nested) => nested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         // The last entry's label, which the innermost link holds as its
         // second component. Every link further out holds the next link
         // there, whose own first label names it, so it records none.
-        let mut second = labelled.map(|label| self.origin_at(label));
+        let mut second = labelled.map(|label| self.cx.origin_at(label));
         for parameter in written.iter().rev() {
             let Maybe::Present(declared) = parameter.declared
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
-            let first = match self.value_type_at(declared) {
+            let first = match self.cx.value_type_at(declared) {
                 Maybe::Present(first) => first,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
@@ -5153,7 +4704,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 sink.arena.value_type_product(&[first, nested])
             };
-            if let Maybe::Present(label) = self.origin_at(parameter.binder) {
+            if let Maybe::Present(label) = self.cx.origin_at(parameter.binder) {
                 sink.origins.record_pair(nested, label);
             }
             if let Some(Maybe::Present(label)) = second.take() {
@@ -5187,7 +4738,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut minted = BTreeMap::new();
         for (label, &field) in fields {
-            match self.value_type_at(field) {
+            match self.cx.value_type_at(field) {
                 Maybe::Present(id) => {
                     let _first = minted.insert(label.clone(), id);
                 },
@@ -5222,7 +4773,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut minted = BTreeMap::new();
         for (label, &field) in fields {
-            match self.value_at(field) {
+            match self.cx.value_at(field) {
                 Maybe::Present(id) => {
                     let _first = minted.insert(label.clone(), id);
                 },
@@ -5257,7 +4808,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let base = match self.value_at(base) {
+        let base = match self.cx.value_at(base) {
             Maybe::Present(id) => id,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -5298,7 +4849,7 @@ impl<'source> Lowerer<'_, 'source>
         let written = self.cx.operands.read(summands);
         let mut parts: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for &summand in written {
-            match self.value_type_at(summand) {
+            match self.cx.value_type_at(summand) {
                 Maybe::Present(part) => parts.push(part),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -5337,7 +4888,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         written
             .iter()
-            .map(|&label| match self.origin_at(label) {
+            .map(|&label| match self.cx.origin_at(label) {
                 Maybe::Present(origin) => Some(origin),
                 Maybe::Absent(_) => None,
             })
@@ -5365,7 +4916,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        self.value_at(body).map(|injected| {
+        self.cx.value_at(body).map(|injected| {
             let id = sink.arena.value_injection(summand, injected);
             sink.value(id, origin)
         })
@@ -5398,7 +4949,7 @@ impl<'source> Lowerer<'_, 'source>
         let written = self.cx.operands.read(entries);
         let mut parts: Vec<CompTypeId> = Vec::with_capacity(written.len());
         for &entry in written {
-            match self.comp_type_at(entry) {
+            match self.cx.comp_type_at(entry) {
                 Maybe::Present(part) => parts.push(part),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -5474,7 +5025,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let observing = if thunked.0 {
-            let thunk: ValueId = match self.value_at(subject) {
+            let thunk: ValueId = match self.cx.value_at(subject) {
                 Maybe::Present(thunk) => thunk,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
@@ -5483,7 +5034,7 @@ impl<'source> Lowerer<'_, 'source>
             forced
         }
         else {
-            match self.computation_at(subject) {
+            match self.cx.computation_at(subject) {
                 Maybe::Present(run) => run,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -5535,7 +5086,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let held: ValueId = match self.value_at(subject) {
+        let held: ValueId = match self.cx.value_at(subject) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -5606,7 +5157,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let held: ValueId = match self.value_at(subject) {
+        let held: ValueId = match self.cx.value_at(subject) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -5785,7 +5336,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
-            match self.value_type_at(declared) {
+            match self.cx.value_type_at(declared) {
                 Maybe::Present(domain) => domains.push(Self::shared_domain(
                     written.get(.. index).unwrap_or_default(),
                     parameter,
@@ -5804,7 +5355,7 @@ impl<'source> Lowerer<'_, 'source>
         for (parameter, &domain) in written.iter().zip(&domains).rev() {
             arrow = if bool::from(self.names_own_binder(codomain, parameter.frame)) {
                 let id = sink.arena.comp_type_pi(domain, arrow);
-                if let Maybe::Present(binder) = self.origin_at(parameter.binder) {
+                if let Maybe::Present(binder) = self.cx.origin_at(parameter.binder) {
                     sink.origins.record_arrow(id, binder);
                 }
                 id
@@ -5854,7 +5405,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unstated);
         };
-        let (domain, body) = match (self.value_type_at(declared), self.comp_type_at(codomain)) {
+        let (domain, body) = match (
+            self.cx.value_type_at(declared),
+            self.cx.comp_type_at(codomain),
+        ) {
             (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
             (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                 return Maybe::Absent(reason);
@@ -5862,7 +5416,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let id = if bool::from(self.names_own_binder(codomain, frame)) {
             let id = sink.arena.comp_type_pi(domain, body);
-            if let Maybe::Present(binder) = self.origin_at(binder) {
+            if let Maybe::Present(binder) = self.cx.origin_at(binder) {
                 sink.origins.record_arrow(id, binder);
             }
             id
@@ -5914,7 +5468,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unstated);
         };
-        let (domain, body) = match (self.value_type_at(declared), self.comp_type_at(codomain)) {
+        let (domain, body) = match (
+            self.cx.value_type_at(declared),
+            self.cx.comp_type_at(codomain),
+        ) {
             (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
             (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                 return Maybe::Absent(reason);
@@ -5928,7 +5485,7 @@ impl<'source> Lowerer<'_, 'source>
         // A nameless binder, `A ⊸ C`, stands at its own type and names
         // nothing to record.
         if binder != declared
-            && let Maybe::Present(binder) = self.origin_at(binder)
+            && let Maybe::Present(binder) = self.cx.origin_at(binder)
         {
             sink.origins.record_arrow(id, binder);
         }
@@ -5974,7 +5531,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
-            match self.value_type_at(declared) {
+            match self.cx.value_type_at(declared) {
                 Maybe::Present(result) => results.push(result),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }

@@ -118,9 +118,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
     /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(
-        captures: before = self.cx.parameters.mark(),
-        ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters == self.cx.parameters.since(before)
-            && columns.domains.len() == self.cx.parameters.read(columns.parameters).len()),
+        captures: before = self.cx().parameters.mark(),
+        ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters == self.cx().parameters.since(before)
+            && columns.domains.len() == self.cx().parameters.read(columns.parameters).len()),
     )]
     pub(in crate::lower) fn columns(
         &mut self,
@@ -134,10 +134,10 @@ impl<'source> Lowerer<'_, 'source>
         closed(function, cursor, TileName::WHERE)?;
         let mut domains = Vec::new();
         let mut result = stated.node;
-        if self.boxes(stated.node)?.0 {
+        if self.host().boxes(stated.node)?.0 {
             let tile = TileName::ARROW;
             let mut pieces = Pieces::new();
-            read_pieces(self.cx.pbg, self.cx.tree, stated.node, &mut pieces)?;
+            read_pieces(self.cx().pbg, self.cx().tree, stated.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
                 return Err(repaired.refusal(function.name));
             }
@@ -145,37 +145,39 @@ impl<'source> Lowerer<'_, 'source>
             let domain = function.one(arrow.operands())?;
             closed(function, &mut arrow, tile)?;
             let codomain = function.one(arrow.operands())?;
-            let start = self.cx.operands.entries().len();
-            let listed = self.domains(domain);
-            domains.extend_from_slice(self.cx.operands.entries().get(start ..).unwrap_or(&[]));
-            self.cx.operands.truncate(At::from(start));
+            let start = self.cx().operands.entries().len();
+            let listed = self.host().domains(domain);
+            domains.extend_from_slice(self.cx().operands.entries().get(start ..).unwrap_or(&[]));
+            self.cx_mut().operands.truncate(At::from(start));
             listed?;
             result = codomain.node;
         }
-        let start = self.cx.parameters.mark();
+        let start = self.cx().parameters.mark();
         let mut chained = frame;
         for &domain in &domains {
-            self.read(domain, Reading::ValueType(frame));
-            let bound = self.cx.scope.extend_typed(
+            self.host().read(domain, Reading::ValueType(frame));
+            let bound = self.cx_mut().scope.extend_typed(
                 chained,
                 SurfaceName::from(""),
                 domain,
                 Maybe::Absent(binder_site::Absent::Unwritten),
             );
-            self.cx.parameters.push(super::super::Parameter::elsewhere(
-                domain,
-                bound,
-                Maybe::Present(domain),
-            ));
+            self.cx_mut()
+                .parameters
+                .push(super::super::Parameter::elsewhere(
+                    domain,
+                    bound,
+                    Maybe::Present(domain),
+                ));
             chained = Frame::Inner(bound);
         }
-        self.read(result, Reading::Result(frame));
+        self.host().read(result, Reading::Result(frame));
 
         Ok(Columns {
             stated: stated.node,
             domains,
             result,
-            parameters: self.cx.parameters.since(start),
+            parameters: self.cx().parameters.since(start),
         })
     }
 
@@ -205,8 +207,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
     /// - witness: `lower::native::tests::a_clause_of_too_many_patterns_is_refused`
     #[spec(
-        captures: before = self.cx.cases.mark(),
-        ensures: |ret| ret.as_ref().map_or(true, |&index| self.cx.cases.position(index) == Some(before) && self.cx.cases.mark() == before.next()),
+        captures: before = self.cx().cases.mark(),
+        ensures: |ret| ret.as_ref().map_or(true, |&index| self.cx().cases.position(index) == Some(before) && self.cx().cases.mark() == before.next()),
     )]
     pub(in crate::lower) fn clauses(
         &mut self,
@@ -219,17 +221,17 @@ impl<'source> Lowerer<'_, 'source>
     {
         let written = Self::written_clauses(function, cursor)?;
         let recursion = match recursion {
-            Maybe::Present(own) => self.cx.recursions.get(&own).map_or(
+            Maybe::Present(own) => self.cx().recursions.get(&own).map_or(
                 Maybe::Absent(recursion::Absent::Plain),
                 |held| {
                     let first = match (
-                        self.cx.parameters.first(columns.parameters),
-                        self.cx.parameters.first(held.parameters),
+                        self.cx().parameters.first(columns.parameters),
+                        self.cx().parameters.first(held.parameters),
                     ) {
                         (Some(columns), Some(all)) => {
                             usize::from(columns).saturating_sub(usize::from(all))
                         },
-                        _ => self.cx.parameters.read(held.parameters).len(),
+                        _ => self.cx().parameters.read(held.parameters).len(),
                     };
                     Maybe::Present((own, ParameterAt(first)))
                 },
@@ -280,14 +282,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a matching lambda over two columns lowers to two
     ///   lambdas over its tree.
     /// - witness: `lower::native::tests::a_matching_lambda_binds_one_lambda_per_column`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&super::Plan::Case(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Case(_))))]
     pub(in crate::lower) fn matching_lambda(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, super::Produced::Computation)?;
+        let frame = self.host().require(site, super::Produced::Computation)?;
         let _keyword = cursor.tile(TileName::FUN);
         let written = Self::written_clauses(site, &mut cursor)?;
         let width = written
@@ -300,15 +302,15 @@ impl<'source> Lowerer<'_, 'source>
             .and_then(|clause| clause.patterns.first())
             .map_or(site.at.node, |pattern| pattern.node);
         let mut answer = self
-            .cx
+            .cx()
             .answers
             .get(&site.at.node)
-            .or_else(|| self.cx.thunked.get(&site.at.node))
+            .or_else(|| self.cx().thunked.get(&site.at.node))
             .copied();
         let mut domains = Vec::with_capacity(width);
         for _column in 0 .. width {
             let arrow = match answer {
-                Some(held) => self.arrow_of(held)?,
+                Some(held) => self.host().arrow_of(held)?,
                 None => None,
             };
             if let Some((domain, rest)) = arrow {
@@ -328,7 +330,7 @@ impl<'source> Lowerer<'_, 'source>
             recursion: Maybe::Absent(recursion::Absent::Plain),
         };
         let case = self.clause_tree(site, written, frame, &shape)?;
-        self.plan(site, super::Plan::Case(case));
+        self.host().plan(site, super::Plan::Case(case));
 
         Ok(())
     }
@@ -412,8 +414,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
     /// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
     #[spec(
-        captures: before = self.cx.cases.mark(),
-        ensures: |ret| ret.as_ref().map_or(true, |&index| self.cx.cases.position(index) == Some(before) && self.cx.cases.mark() == before.next()),
+        captures: before = self.cx().cases.mark(),
+        ensures: |ret| ret.as_ref().map_or(true, |&index| self.cx().cases.position(index) == Some(before) && self.cx().cases.mark() == before.next()),
     )]
     fn clause_tree(
         &mut self,
@@ -537,16 +539,18 @@ impl<'source> Lowerer<'_, 'source>
             })
             .unwrap_or_default();
         let scrutiny = match shape.recursion {
-            Maybe::Present((own, ParameterAt(first))) => match self.cx.recursions.get_mut(&own) {
-                Some(held) => {
-                    let position = ParameterAt(first.saturating_add(staged));
-                    held.staged = position;
-                    Some(Scrutiny {
-                        recursion: own,
-                        position,
-                    })
-                },
-                None => None,
+            Maybe::Present((own, ParameterAt(first))) => {
+                match self.cx_mut().recursions.get_mut(&own) {
+                    Some(held) => {
+                        let position = ParameterAt(first.saturating_add(staged));
+                        held.staged = position;
+                        Some(Scrutiny {
+                            recursion: own,
+                            position,
+                        })
+                    },
+                    None => None,
+                }
             },
             Maybe::Absent(_) => None,
         };
@@ -554,37 +558,40 @@ impl<'source> Lowerer<'_, 'source>
         for (arm, (clause, bound)) in clauses.iter().zip(&variables).enumerate() {
             let mut inner = frame;
             for &binder in bound {
-                let name = SurfaceName::from(self.text_at(binder));
-                self.note_binder(binder, inner, name)?;
+                let name = SurfaceName::from(self.cx().text_at(binder));
+                self.host().note_binder(binder, inner, name)?;
                 let written = Maybe::Present(binder.span);
-                let id = match self.cx.pattern_stated.get(&binder.node) {
-                    Some(&stated) => self.cx.scope.extend_typed(inner, name, stated, written),
-                    None => self.cx.scope.extend(inner, name, written),
+                let id = match self.cx().pattern_stated.get(&binder.node) {
+                    Some(&stated) => self
+                        .cx_mut()
+                        .scope
+                        .extend_typed(inner, name, stated, written),
+                    None => self.cx_mut().scope.extend(inner, name, written),
                 };
                 inner = Frame::Inner(id);
             }
             let body = clause.body.node;
-            self.read(body, Reading::Computation(inner));
+            self.host().read(body, Reading::Computation(inner));
             // A guard reads the clause's variables as its body does, and is
             // tested as a conditional's condition is.
             if let Some(&guard) = guards.get(&ArmAt(arm)) {
-                let _tested = self.cx.tested.insert(guard);
-                self.read(guard, Reading::Computation(inner));
+                let _tested = self.cx_mut().tested.insert(guard);
+                self.host().read(guard, Reading::Computation(inner));
             }
             if let Maybe::Present(answer) = shape.answer {
-                let _first = self.cx.answers.insert(body, answer);
+                let _first = self.cx_mut().answers.insert(body, answer);
             }
             if let Some(scrutiny) = scrutiny {
-                let _first = self.cx.scrutinised.insert(body, scrutiny);
+                let _first = self.cx_mut().scrutinised.insert(body, scrutiny);
             }
             let end = super::super::Block {
                 statements: FormStretch::default(),
                 last: body,
             };
-            self.open_body(site, end, shape.answer)?;
+            self.host().open_body(site, end, shape.answer)?;
             bodies.push(body);
         }
-        let index = self.cx.cases.push(CaseForm {
+        let index = self.cx_mut().cases.push(CaseForm {
             scrutinee: shape.scrutinee,
             roots: shape.roots,
             frame,

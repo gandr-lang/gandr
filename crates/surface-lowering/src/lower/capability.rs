@@ -170,7 +170,6 @@ use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
-use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
@@ -189,11 +188,8 @@ use gandr_core_term::handler;
 use gandr_core_term::handler::HandlerLaw;
 use gandr_core_term::handler::subject;
 use gandr_core_term::session::SessionAction;
-use gandr_kernel_strata::Level;
-use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::GroundSort;
 pub(super) use gandr_surface_lowering_base::lower::capability::Authority;
 use gandr_surface_lowering_base::lower::capability::Clause;
 pub(super) use gandr_surface_lowering_base::lower::capability::Exercised;
@@ -202,6 +198,7 @@ pub(super) use gandr_surface_lowering_base::lower::capability::Interface;
 use gandr_surface_lowering_base::lower::capability::Mint;
 use gandr_surface_lowering_base::lower::capability::Performer;
 pub(super) use gandr_surface_lowering_base::lower::capability::Scoped;
+pub(super) use gandr_surface_lowering_base::lower::capability::Standing;
 use gandr_surface_lowering_base::lower::capability::Written;
 pub(super) use gandr_surface_lowering_base::lower::capability::WrittenRow;
 pub use gandr_surface_lowering_base::lower::capability::tail;
@@ -228,6 +225,7 @@ use super::exhausted;
 use super::exits;
 use super::lowered;
 use super::native;
+use super::native::NativeRef;
 use crate::by_form::At;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
@@ -248,12 +246,9 @@ use crate::form::operand_entry;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::model::InterfaceFault;
-use crate::module::ForeignInterface;
-use crate::module::ForeignType;
 use crate::module::Provider;
 use crate::origin::ClauseBinder;
 use crate::origin::ClausePlace;
-use crate::origin::Insertion;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
@@ -374,216 +369,6 @@ pub(super) fn mints(operation: &OperationName) -> Reply
     }
 }
 
-/// Where a theory's signature stands: where its fixed types were read, in the
-/// signature's telescope, or in the term context of a frame under it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) enum Standing
-{
-    /// Where the fixed types were read: a row in a declaration's type.
-    Read,
-    /// The term context of this frame: a scope's, or an exercise's.
-    Term(Frame),
-}
-
-/// The host signatures the mint sweep has minted into the module's arena.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug)]
-pub(super) enum Host
-{
-    /// No capability form has been minted.
-    Unminted,
-    /// The host table, in the module's arena.
-    Minted(HostSignatures),
-}
-
-impl Sink<'_>
-{
-    /// The host table in the module's arena, minted at the first call, each
-    /// of its types at `origin`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the host table, every type of which resolves in the arena; it
-    ///   is minted at most once per sink.
-    /// - fails: the unminted absence if the host table conflicts with itself.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a module with capability forms over two interfaces
-    ///   mints one table and checks.
-    /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
-    #[spec(ensures: |ref ret| match *ret {
-        | Maybe::Present(table) => table.interfaces().iter().all(|signature| signature.types().all(|ty| self.arena.value_type(ty).is_some())),
-        | Maybe::Absent(_) => true,
-    })]
-    fn host(
-        &mut self,
-        origin: Origin,
-    ) -> Maybe<&HostSignatures, lowered::Absent>
-    {
-        if matches!(self.host, Host::Unminted) {
-            let mark = self.arena.watermark();
-            let Ok(minted) = HostSignatures::new(self.arena)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
-            for id in self.arena.value_types_since(mark) {
-                self.origins.record_value_type(id, origin);
-            }
-            self.host = Host::Minted(minted);
-        }
-        match self.host {
-            Host::Minted(ref table) => Maybe::Present(table),
-            Host::Unminted => Maybe::Absent(lowered::Absent::Unminted),
-        }
-    }
-
-    /// The signature of the host interface `interface` in the module's arena.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the interface's signature, as [`Self::host`] mints it; the
-    ///   unminted absence for a name the host does not declare, which the
-    ///   classification rules out.
-    /// - fails: as [`Self::host`].
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::host`].
-    /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
-    #[spec(ensures: |ref ret| match *ret {
-        | Maybe::Present(ref signature) => signature.name() == interface,
-        | Maybe::Absent(_) => true,
-    })]
-    pub(super) fn signature(
-        &mut self,
-        interface: &EffectName,
-        origin: Origin,
-    ) -> Maybe<EffectSig, lowered::Absent>
-    {
-        self.host(origin)
-            .and_then(|table| match table.named(interface) {
-                Maybe::Present(signature) => Maybe::Present(signature.clone()),
-                Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
-            })
-    }
-
-    /// The signature of the extern block's interface `foreign` in the
-    /// module's arena, minted at the first call, each member type where the
-    /// member writes it.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one operation per member, in order, its payload the unit for
-    ///   no parameter, the parameter's width for one and the product of their
-    ///   widths in order for several, as a call passes its arguments, and its
-    ///   reply its result's width; minted at the first call for the block, as
-    ///   [`Self::foreign_type`] mints each member type, the product inserted at
-    ///   the member's name, and the same signature at every call after.
-    /// - fails: the unminted absence for a block naming one member twice, which
-    ///   the collection refuses.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a row and two performs of one block check against one
-    ///   signature.
-    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-    #[spec(ensures: |ref ret| match *ret {
-        | Maybe::Present(ref signature) => signature.name() == &foreign.name
-            && signature.operations().len() == foreign.operations.len(),
-        | Maybe::Absent(_) => true,
-    })]
-    pub(super) fn foreign(
-        &mut self,
-        foreign: &ForeignInterface,
-    ) -> Maybe<EffectSig, lowered::Absent>
-    {
-        if let Some(minted) = self.foreign.get(&foreign.named.start()) {
-            return Maybe::Present(minted.clone());
-        }
-        let mut operations: Vec<EffectOp> = Vec::with_capacity(foreign.operations.len());
-        let mut parameters: Vec<ValueTypeId> = Vec::new();
-        for operation in &foreign.operations {
-            parameters.clear();
-            for parameter in &operation.parameters {
-                parameters.push(self.foreign_type(parameter.ty));
-            }
-            let payload = if let [only] = *parameters.as_slice() {
-                only
-            }
-            else {
-                let product = self.arena.value_type_product(&parameters);
-                let named = Origin::new(operation.named.node, operation.named.span);
-                self.origins
-                    .record_value_type(product, named.inserted(Insertion::Foreign));
-                product
-            };
-            let reply = self.foreign_type(operation.result);
-            operations.push(EffectOp {
-                name: operation.name.clone(),
-                payload,
-                reply,
-            });
-        }
-        let Ok(signature) = EffectSig::new(foreign.name.clone(), operations)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let _first = self
-            .foreign
-            .insert(foreign.named.start(), signature.clone());
-
-        Maybe::Present(signature)
-    }
-
-    /// The base type an extern block's member writes as `written`, read at
-    /// its kind there.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a fresh base type of `written`'s width, recorded as written
-    ///   at the bytes that write it, and a kind label there naming a fresh
-    ///   value universe inserted for the block: no judgement forms the type
-    ///   where it is written, so it answers at its kind, as a functor
-    ///   parameter's abstract type does.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — each member type of a block answers at its own bytes,
-    ///   whether or not a declaration performs the block's operations.
-    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-    #[spec(
-        captures: labels = self.origins.labels().len(),
-        ensures: |ret| matches!(self.arena.value_type(ret), Some(&ValueType::Base(BaseType::Fixed(width))) if width == written.width)
-            && self.origins.labels().len() == labels.saturating_add(1),
-    )]
-    fn foreign_type(
-        &mut self,
-        written: ForeignType,
-    ) -> ValueTypeId
-    {
-        let at = Origin::new(written.written.node, written.written.span);
-        let ty = self.arena.value_type_base(BaseType::Fixed(written.width));
-        self.origins.record_value_type(ty, at);
-        let kind = self
-            .arena
-            .value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-        self.origins
-            .record_value_type(kind, at.inserted(Insertion::Foreign));
-        self.origins.record_label(Label {
-            span: written.written.span,
-            labelled: Labelled::Kind(kind),
-        });
-        ty
-    }
-}
-
 impl<'source> Lowerer<'_, 'source>
 {
     /// Mint the signature of every extern block the current source declares,
@@ -660,7 +445,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            let name = self.name_at(written);
+            let name = self.cx.name_at(written);
             let operation = OperationName::from(name.as_ref());
             if let Maybe::Absent(_) = table.offering(&operation) {
                 return Err(LoweringRefusal::UnresolvedName {
@@ -747,7 +532,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         exhausted(site, &cursor)?;
-        let name = self.name_at(written);
+        let name = self.cx.name_at(written);
         let unbound = move || LoweringRefusal::UnresolvedName {
             span: written.span,
             name,
@@ -764,7 +549,7 @@ impl<'source> Lowerer<'_, 'source>
             };
         };
         self.read(operand.node, site.reading);
-        if let Some((_, Former::CapabilityType)) = self.form_at(operand)? {
+        if let Some((_, Former::CapabilityType)) = self.cx.form_at(operand)? {
             let _first = self.cx.regions.insert(operand.node, region);
             self.plan(site, super::Plan::Transparent(operand.node));
         }
@@ -868,7 +653,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(misplaced);
         };
-        let named = self.instance_interface(path);
+        let named = self.cx.instance_interface(path);
         let table = host(site)?;
         let interface = EffectName::from(named.as_ref());
         if let Maybe::Present(_) = table.named(&interface) {
@@ -918,93 +703,6 @@ impl<'source> Lowerer<'_, 'source>
         ));
 
         Ok(Frame::Inner(bound))
-    }
-
-    /// The variable a call at `site`, read under `frame`, passes for the
-    /// instance `entry` of `function` it omits: the one instance of the
-    /// entry's interface standing in scope.
-    ///
-    /// # Specification
-    /// - requires: `entry` is an instance of `function`'s merged telescope.
-    /// - ensures: the index, where `frame` stands, of the one binder in scope
-    ///   holding an instance of the entry's interface — a capability scope's
-    ///   capability, or an instance a label of the caller's own row binds.
-    /// - fails: [`LoweringRefusal::InstanceUnanswered`] when none stands;
-    ///   [`LoweringRefusal::InstanceAmbiguous`] naming the innermost two when
-    ///   several do; a fault at the call for an entry naming no interface.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one scope of the interface resolves the call to its
-    ///   capability beneath a binder of each zone, none refuses the call as
-    ///   unanswered and two as ambiguous, naming both.
-    /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
-    /// - witness: `lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } | LoweringRefusal::MalformedForm { .. })))]
-    pub(super) fn resolved_instance(
-        &self,
-        site: Site,
-        frame: Frame,
-        function: SurfaceName<'source>,
-        entry: crate::module::TelescopeEntry<'source>,
-    ) -> Result<DeBruijnIndex, LoweringRefusal<'source>>
-    {
-        let Maybe::Present(path) = entry.interface
-        else {
-            return Err(site.fault(site.at.span, FormFault::MisplacedTile));
-        };
-        let named = self.instance_interface(path);
-        let wanted = EffectName::from(named.as_ref());
-        let mut standing = self.cx.scope.bindings(frame).filter(|&(_, bound)| {
-            self.cx.answered.get(&bound.binder) == Some(&wanted)
-                || self
-                    .cx
-                    .labelled
-                    .get(&bound.binder)
-                    .is_some_and(|&(ref interface, _)| *interface == wanted)
-        });
-        let Some((first, only)) = standing.next()
-        else {
-            return Err(LoweringRefusal::InstanceUnanswered {
-                span: site.at.span,
-                function,
-                instance: entry.name,
-                interface: named,
-            });
-        };
-        if let Some((second, _)) = standing.next() {
-            return Err(LoweringRefusal::InstanceAmbiguous {
-                span: site.at.span,
-                function,
-                instance: entry.name,
-                interface: named,
-                first,
-                second,
-            });
-        }
-
-        Ok(only.index)
-    }
-
-    /// The interface an instance's row label names, as the bytes `path` of its
-    /// whole path spell it: `std.io.Console.Eff`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn instance_interface(
-        &self,
-        path: ByteSpan,
-    ) -> SurfaceName<'source>
-    {
-        SurfaceName::from(
-            self.cx
-                .tree
-                .spanned(path)
-                .unwrap_or_else(|| SourceFragment::from("")),
-        )
     }
 
     /// Each name of the dotted path the bytes `path` spell, `std`, `io`,
@@ -1083,13 +781,13 @@ impl<'source> Lowerer<'_, 'source>
         let grade = if label == TileName::OMEGA {
             CapabilityGrade::Durable
         }
-        else if label == TileName::NUMBER && self.name_at(at).as_ref() == "1" {
+        else if label == TileName::NUMBER && self.cx.name_at(at).as_ref() == "1" {
             CapabilityGrade::Consumable
         }
         else if label == TileName::NUMBER || label == TileName::IDENTIFIER {
             return Err(LoweringRefusal::GradedBridge {
                 span: at.span,
-                grade: self.name_at(at),
+                grade: self.cx.name_at(at),
             });
         }
         else {
@@ -1208,7 +906,7 @@ impl<'source> Lowerer<'_, 'source>
                 named.push((written.span(), theory.theory));
             }
             if let Some(label) = label {
-                let label_name = self.name_at(label);
+                let label_name = self.cx.name_at(label);
                 if let Some(&first) = labelled_at.get(&label_name) {
                     return Err(LoweringRefusal::DuplicateDefinition {
                         span: label.span,
@@ -1347,7 +1045,7 @@ impl<'source> Lowerer<'_, 'source>
                 .push((span, crate::Resolution::Declaration(theory)));
         }
         for &(label, ref interface) in &row.labels {
-            let name = self.name_at(label);
+            let name = self.cx.name_at(label);
             let Some(region) = self.region_named(site, frame, name)
             else {
                 return Err(LoweringRefusal::UnresolvedName {
@@ -1478,7 +1176,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Performer::Interface(ref named) = performer {
             self.cx.collected.reach_host(head.span.start(), named);
         }
-        let name = self.name_at(selected);
+        let name = self.cx.name_at(selected);
         let operation = OperationName::from(name.as_ref());
         let interface = if let Performer::Capability(_, Some(ref theory)) = performer {
             if theory.operation(&operation).is_none() {
@@ -1549,7 +1247,7 @@ impl<'source> Lowerer<'_, 'source>
                 operation,
                 frame,
                 head: head.span,
-                payload: self.kept(payload),
+                payload: self.cx.kept(payload),
             }),
         );
 
@@ -1587,7 +1285,7 @@ impl<'source> Lowerer<'_, 'source>
         head: Placed,
     ) -> Result<Option<(Performer, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((_, Former::Projection)) = self.form_at(head)?
+        let Some((_, Former::Projection)) = self.cx.form_at(head)?
         else {
             return Ok(None);
         };
@@ -1607,8 +1305,8 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        let written = self.name_at(target);
-        match self.form_at(target)? {
+        let written = self.cx.name_at(target);
+        match self.cx.form_at(target)? {
             Some((_, Former::Name)) => {},
             // A capitalised name the source declares no constructor by: the
             // interface it names, when a host interface bears it.
@@ -1701,7 +1399,7 @@ impl<'source> Lowerer<'_, 'source>
         bound: Placed,
     ) -> Result<Reply, LoweringRefusal<'source>>
     {
-        let Some((_, Former::Call)) = self.form_at(bound)?
+        let Some((_, Former::Call)) = self.cx.form_at(bound)?
         else {
             return Ok(Reply::Plain);
         };
@@ -1715,7 +1413,7 @@ impl<'source> Lowerer<'_, 'source>
         // which no scope mints.
         Ok(match self.exercised(site, frame, head)? {
             Some((Performer::Capability(_, Some(_)), _)) | None => Reply::Plain,
-            Some((_, selected)) => mints(&OperationName::from(self.name_at(selected).as_ref())),
+            Some((_, selected)) => mints(&OperationName::from(self.cx.name_at(selected).as_ref())),
         })
     }
 
@@ -1799,14 +1497,15 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Name)) = self.form_at(head)?
+        let Some((_, Former::Name)) = self.cx.form_at(head)?
         else {
             return Ok(Planned(false));
         };
-        let Maybe::Present(bound) =
-            self.cx
-                .scope
-                .resolve(site.reading.frame(), self.name_at(head), &mut self.cx.fuel)?
+        let Maybe::Present(bound) = self.cx.scope.resolve(
+            site.reading.frame(),
+            self.cx.name_at(head),
+            &mut self.cx.fuel,
+        )?
         else {
             return Ok(Planned(false));
         };
@@ -1832,7 +1531,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
 
-        self.plan(site, super::Plan::Resume(head.node, self.kept(reply)));
+        self.plan(site, super::Plan::Resume(head.node, self.cx.kept(reply)));
 
         Ok(Planned(true))
     }
@@ -1870,11 +1569,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Name)) = self.form_at(head)?
+        let Some((_, Former::Name)) = self.cx.form_at(head)?
         else {
             return Ok(Planned(false));
         };
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         if name.as_ref() != ABANDON {
             return Ok(Planned(false));
         }
@@ -1903,13 +1602,13 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         };
         let placed = Placed::of(argument, node);
-        let Some((_, Former::Name)) = self.form_at(placed)?
+        let Some((_, Former::Name)) = self.cx.form_at(placed)?
         else {
             return Ok(Planned(false));
         };
         let Maybe::Present(bound) = self.cx.scope.resolve(
             site.reading.frame(),
-            self.name_at(placed),
+            self.cx.name_at(placed),
             &mut self.cx.fuel,
         )?
         else {
@@ -2128,7 +1827,7 @@ impl<'source> Lowerer<'_, 'source>
                     handlers: Handlers::Model(Arc::new(Answering {
                         slot,
                         supplied,
-                        written: ScopeAnswer::Named(Name::from(self.name_at(module).as_ref())),
+                        written: ScopeAnswer::Named(Name::from(self.cx.name_at(module).as_ref())),
                     })),
                 }),
             );
@@ -2141,7 +1840,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Err(LoweringRefusal::UninterfacedMember {
                 span: written.span(),
-                name: self.name_at(value.named),
+                name: self.cx.name_at(value.named),
                 fault: InterfaceFault::Value,
             });
         }
@@ -2189,7 +1888,7 @@ impl<'source> Lowerer<'_, 'source>
                     else {
                         (None, first)
                     };
-                    let operation = OperationName::from(self.name_at(at).as_ref());
+                    let operation = OperationName::from(self.cx.name_at(at).as_ref());
                     // A host operation replying a buffer names its mint
                     // between the payload and the continuation; a theory's
                     // replies values of the sorts its manifest fixes.
@@ -2228,7 +1927,7 @@ impl<'source> Lowerer<'_, 'source>
                             SurfaceName::from(""),
                             unwritten(),
                         );
-                        let name = self.name_at(minted);
+                        let name = self.cx.name_at(minted);
                         self.note_binder(minted, Frame::Inner(placed), name)?;
                         let live = self.cx.scope.extend_linear(
                             Frame::Inner(placed),
@@ -2359,7 +2058,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Some(&(sort, _)) = manifest.first() {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: sort.span,
-                    name: self.name_at(sort),
+                    name: self.cx.name_at(sort),
                 });
             }
             return Ok(match *provider {
@@ -2381,13 +2080,13 @@ impl<'source> Lowerer<'_, 'source>
         let prefix: Vec<(ByteSpan, SurfaceName<'source>)> = written
             .prefix
             .iter()
-            .map(|&segment| (segment.span, self.name_at(segment)))
+            .map(|&segment| (segment.span, self.cx.name_at(segment)))
             .collect();
         let (presented, presentation) = self.cx.collected.presented_theory_in(
             span.start(),
             &prefix,
             written.last.span,
-            self.name_at(written.last),
+            self.cx.name_at(written.last),
         )?;
         let Some(theory) = self
             .cx
@@ -2413,7 +2112,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut fixed: BTreeMap<Name, NodeIndex> = BTreeMap::new();
         let mut first: BTreeMap<Name, Placed> = BTreeMap::new();
         for &(sort, ty) in manifest {
-            let name = self.name_at(sort);
+            let name = self.cx.name_at(sort);
             let key = Name::from(name.as_ref());
             if !declared.contains(&key) {
                 return Err(LoweringRefusal::UnresolvedName {
@@ -2446,7 +2145,7 @@ impl<'source> Lowerer<'_, 'source>
             Err((member, fault)) => {
                 return Err(LoweringRefusal::UninterfacedMember {
                     span,
-                    name: self.name_at(member),
+                    name: self.cx.name_at(member),
                     fault,
                 });
             },
@@ -2475,7 +2174,7 @@ impl<'source> Lowerer<'_, 'source>
             owner,
             manifest: manifest
                 .iter()
-                .map(|&(sort, ty)| (Name::from(self.name_at(sort).as_ref()), ty))
+                .map(|&(sort, ty)| (Name::from(self.cx.name_at(sort).as_ref()), ty))
                 .collect(),
         })))
     }
@@ -2534,7 +2233,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<crate::resolve::ScopeId, LoweringRefusal<'source>>
     {
-        let name = self.name_at(binder);
+        let name = self.cx.name_at(binder);
         self.note_binder(binder, frame, name)?;
 
         Ok(self
@@ -2559,7 +2258,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::capability_scope`].
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
-    #[spec(ensures: |ret| ret.is_err() || self.reading(body) == Reading::Computation(frame))]
+    #[spec(ensures: |ret| ret.is_err() || self.cx.reading(body) == Reading::Computation(frame))]
     fn clause(
         &mut self,
         site: Site,
@@ -2665,13 +2364,13 @@ impl<'source> Lowerer<'_, 'source>
         };
         let result = match outputs {
             Some(_) => None,
-            None => match self.value_type_at(argument) {
+            None => match self.cx.value_type_at(argument) {
                 Maybe::Present(result) => Some(result),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
         };
         let tail = match row.tail {
-            Maybe::Present(written) => match self.value_at(written) {
+            Maybe::Present(written) => match self.cx.value_at(written) {
                 Maybe::Present(value) => {
                     let tail = sink.arena.value_type_row_tail(value);
                     sink.origins.record_value_type(tail, origin);
@@ -2766,7 +2465,7 @@ impl<'source> Lowerer<'_, 'source>
         let written = self.cx.operands.read(written);
         let mut values = Vec::with_capacity(written.len());
         for &position in written {
-            match self.value_at(position) {
+            match self.cx.value_at(position) {
                 Maybe::Present(value) => values.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -2910,7 +2609,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   context, `written` is read under that frame or one of its chain.
     /// - ensures: the minted type where it was read; at a frame's term context,
     ///   the minted type carried there from the frame it is read under, as
-    ///   [`Self::carry_value_type`] from the signature's telescope.
+    ///   [`NativeRef::carry_value_type`] from the signature's telescope.
     /// - fails: never; the type's absence.
     /// - panics: none.
     ///
@@ -2930,11 +2629,18 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
-        self.value_type_at(written).map(|minted| match standing {
+        self.cx.value_type_at(written).map(|minted| match standing {
             Standing::Read => minted,
             Standing::Term(at) => {
-                let from = self.reading(written).frame();
-                self.carry_value_type(minted, from, Telescope::Signature, at, sink, origin)
+                let from = self.cx.reading(written).frame();
+                NativeRef::over(&self.cx).carry_value_type(
+                    minted,
+                    from,
+                    Telescope::Signature,
+                    at,
+                    sink,
+                    origin,
+                )
             },
         })
     }
@@ -2971,7 +2677,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let capability = match exercised.performer {
-            Performer::Capability(node, _) => match self.value_at(node) {
+            Performer::Capability(node, _) => match self.cx.value_at(node) {
                 Maybe::Present(capability) => Some(capability),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
@@ -3040,7 +2746,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let stack = match self.value_at(continuation) {
+        let stack = match self.cx.value_at(continuation) {
             Maybe::Present(stack) => stack,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -3076,7 +2782,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        self.value_at(continuation).map(|stack| {
+        self.cx.value_at(continuation).map(|stack| {
             let id = sink.arena.computation_abandon(stack);
             sink.computation(id, origin)
         })
@@ -3148,7 +2854,7 @@ impl<'source> Lowerer<'_, 'source>
                     sink.arena
                         .computation_scope(signature, subject, on_return, Arc::from(clauses));
                 let scope = sink.computation(id, origin);
-                if let Maybe::Present(name) = self.origin_at(scoped.binder) {
+                if let Maybe::Present(name) = self.cx.origin_at(scoped.binder) {
                     sink.origins.record_binder(id, name);
                 }
                 if let Handlers::Written(ref written) = scoped.handlers {
@@ -3171,7 +2877,7 @@ impl<'source> Lowerer<'_, 'source>
                         );
                     for (binder, node) in binders {
                         if let Some(node) = node
-                            && let Maybe::Present(name) = self.origin_at(node)
+                            && let Maybe::Present(name) = self.cx.origin_at(node)
                         {
                             sink.origins.place_clause_binder(id, binder, name);
                         }
@@ -3250,7 +2956,7 @@ impl<'source> Lowerer<'_, 'source>
                     body,
                 });
                 sink.origins.record_computation(placed, origin);
-                if let Maybe::Present(name) = self.origin_at(mint) {
+                if let Maybe::Present(name) = self.cx.origin_at(mint) {
                     sink.origins.record_binder(placed, name);
                 }
                 let pair = sink
@@ -3262,7 +2968,7 @@ impl<'source> Lowerer<'_, 'source>
                     .computation_split(pair, ComponentCount::from(2_usize), placed);
                 sink.origins.record_computation(body, origin);
                 if let Some(payload) = clause.payload
-                    && let Maybe::Present(name) = self.origin_at(payload)
+                    && let Maybe::Present(name) = self.cx.origin_at(payload)
                 {
                     sink.origins.record_binder(body, name);
                 }

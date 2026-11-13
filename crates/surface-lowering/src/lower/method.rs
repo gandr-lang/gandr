@@ -250,7 +250,7 @@ impl<'source> Lowerer<'_, 'source>
             let stray = match piece {
                 Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE => break,
                 Piece::Tile { label, at } if label == TileName::IDENTIFIER && !after_colon => {
-                    named = self.name_at(at);
+                    named = self.cx.name_at(at);
                     None
                 },
                 Piece::Tile { label, .. } if label == TileName::COLON => {
@@ -282,7 +282,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Some(at) = stray {
                 return Err(LoweringRefusal::StrayReceiverMode {
                     span: at.span,
-                    mode: self.name_at(at),
+                    mode: self.cx.name_at(at),
                 });
             }
         }
@@ -314,7 +314,7 @@ impl<'source> Lowerer<'_, 'source>
         declared: Placed,
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((_, Former::ModedType)) = self.form_at(declared)?
+        let Some((_, Former::ModedType)) = self.cx.form_at(declared)?
         else {
             return Ok(None);
         };
@@ -371,7 +371,7 @@ impl<'source> Lowerer<'_, 'source>
 
         Err(LoweringRefusal::StrayReceiverMode {
             span: site.at.span,
-            mode: self.name_at(written),
+            mode: self.cx.name_at(written),
         })
     }
 
@@ -490,7 +490,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(refused);
         };
-        let Some((_, Former::Call)) = self.form_at(call)?
+        let Some((_, Former::Call)) = self.cx.form_at(call)?
         else {
             return Err(refused);
         };
@@ -556,7 +556,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Projection)) = self.form_at(head)?
+        let Some((_, Former::Projection)) = self.cx.form_at(head)?
         else {
             return Ok(Planned(false));
         };
@@ -576,11 +576,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Name)) = self.form_at(target)?
+        let Some((_, Former::Name)) = self.cx.form_at(target)?
         else {
             return Ok(Planned(false));
         };
-        let method = self.name_at(selected);
+        let method = self.cx.name_at(selected);
         let Container::TopLevel(here) = self.cx.collected.top(selected.span.start())
         else {
             return Ok(Planned(false));
@@ -605,7 +605,7 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
-        let resolved = match self.resolve_name(receiver, frame, self.name_at(target))? {
+        let resolved = match self.resolve_name(receiver, frame, self.cx.name_at(target))? {
             Maybe::Present(resolved) => resolved,
             Maybe::Absent(_) => return Ok(Planned(false)),
         };
@@ -673,7 +673,7 @@ impl<'source> Lowerer<'_, 'source>
                         else {
                             return Err(site.fault(block.here(), FormFault::MisplacedTile));
                         };
-                        let name = self.name_at(viewer);
+                        let name = self.cx.name_at(viewer);
                         self.note_binder(viewer, frame, name)?;
                         let index = self
                             .cx
@@ -724,7 +724,7 @@ impl<'source> Lowerer<'_, 'source>
             Plan::Method(Called {
                 method: constant,
                 receiving,
-                arguments: self.kept(written),
+                arguments: self.cx.kept(written),
                 head: head.node,
                 receiver: target.node,
             }),
@@ -758,7 +758,7 @@ impl<'source> Lowerer<'_, 'source>
         written: Placed,
     ) -> Result<SurfaceName<'source>, LoweringRefusal<'source>>
     {
-        let name = self.name_at(written);
+        let name = self.cx.name_at(written);
         let bound = match self.cx.collected.owner_of(site.at.node) {
             Maybe::Present(slot) => self
                 .cx
@@ -812,7 +812,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let refused = LoweringRefusal::ViewNotPlace { span: result.span };
         let mut pieces = Pieces::new();
-        let view = match self.form_at(result)? {
+        let view = match self.cx.form_at(result)? {
             Some((_, Former::StagedType)) => result,
             Some((_, Former::ReturnerType)) => {
                 read_pieces(self.cx.pbg, self.cx.tree, result.node, &mut pieces)?;
@@ -820,7 +820,7 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(refused);
                 };
-                let Some((_, Former::StagedType)) = self.form_at(view)?
+                let Some((_, Former::StagedType)) = self.cx.form_at(view)?
                 else {
                     return Err(refused);
                 };
@@ -856,12 +856,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(refused);
         };
-        let viewed = matches!(self.form_at(head)?, Some((_, Former::TypeHead)))
-            && self.name_at(head).as_ref() == "View";
+        let viewed = matches!(self.cx.form_at(head)?, Some((_, Former::TypeHead)))
+            && self.cx.name_at(head).as_ref() == "View";
         if !viewed {
             return Err(refused);
         }
-        if self.name_at(written) != mode {
+        if self.cx.name_at(written) != mode {
             return Err(LoweringRefusal::ViewNotPlace { span: written.span });
         }
         let _fresh = self.cx.view_types.insert(view.node);
@@ -951,7 +951,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(unlent::Absent::Unnamed));
         };
-        if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
+        if !matches!(self.cx.form_at(head)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(unlent::Absent::Unnamed));
         }
         let named = Site {
@@ -1021,7 +1021,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(unindexing::Absent::Unnamed));
         };
-        if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
+        if !matches!(self.cx.form_at(head)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(unindexing::Absent::Unnamed));
         }
         let mut pieces = Pieces::new();
@@ -1031,7 +1031,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Ok(Maybe::Absent(unindexing::Absent::Claimed));
         }
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         match self
             .cx
             .scope
@@ -1183,7 +1183,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let last = Placed::of(block.last, node);
         let mut pieces = Pieces::new();
-        let shaped = match self.form_at(last)? {
+        let shaped = match self.cx.form_at(last)? {
             Some((_, Former::Instantiation)) => {
                 read_pieces(self.cx.pbg, self.cx.tree, last.node, &mut pieces)?;
                 if let [
@@ -1194,7 +1194,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     ..,
                 ] = *pieces.pieces.as_slice()
-                    && matches!(self.form_at(head)?, Some((_, Former::Name)))
+                    && matches!(self.cx.form_at(head)?, Some((_, Former::Name)))
                 {
                     return Err(LoweringRefusal::MalformedForm {
                         span: bracket.span,
@@ -1263,15 +1263,15 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(_) = cursor.peek() {
             return Err(refused);
         }
-        let named = matches!(self.form_at(head)?, Some((_, Former::Name)))
-            && self.name_at(head).as_ref() == "self";
+        let named = matches!(self.cx.form_at(head)?, Some((_, Former::Name)))
+            && self.cx.name_at(head).as_ref() == "self";
         let receiver = Site {
             at: head,
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
         let resolved = if named {
-            self.resolve_name(receiver, frame, self.name_at(head))?
+            self.resolve_name(receiver, frame, self.cx.name_at(head))?
         }
         else {
             return Err(LoweringRefusal::ViewNotPlace { span: head.span });
@@ -1426,14 +1426,16 @@ impl<'source> Lowerer<'_, 'source>
         let written = self.cx.operands.read(called.arguments);
         let mut passed = Vec::with_capacity(written.len());
         for &argument in written {
-            match self.value_at(argument) {
+            match self.cx.value_at(argument) {
                 Maybe::Present(value) => passed.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let inner = origin.inserted(Insertion::Method);
-        let (head, receiver) = match (self.origin_at(called.head), self.origin_at(called.receiver))
-        {
+        let (head, receiver) = match (
+            self.cx.origin_at(called.head),
+            self.cx.origin_at(called.receiver),
+        ) {
             (Maybe::Present(head), Maybe::Present(receiver)) => (head, receiver),
             (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                 return Maybe::Absent(reason);
@@ -1448,7 +1450,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let id = match called.receiving {
             Receiving::Passed => {
-                let passed_receiver = match self.value_at(called.receiver) {
+                let passed_receiver = match self.cx.value_at(called.receiver) {
                     Maybe::Present(value) => value,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
@@ -1522,7 +1524,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             Receiving::Viewed { held, view: block } => {
                 let last = match block {
-                    Maybe::Present(viewed) => match self.origin_at(viewed.call) {
+                    Maybe::Present(viewed) => match self.cx.origin_at(viewed.call) {
                         Maybe::Present(origin) => origin,
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
@@ -1679,7 +1681,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unstated);
         };
-        let held = match self.value_type_at(written) {
+        let held = match self.cx.value_type_at(written) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };

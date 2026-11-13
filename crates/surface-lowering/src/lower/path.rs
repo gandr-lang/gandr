@@ -305,7 +305,7 @@ impl<'source> Lowerer<'_, 'source>
             span: template.named.span,
             name: template.name,
         });
-        let Maybe::Present(origin) = self.origin_at(template.named.node)
+        let Maybe::Present(origin) = self.cx.origin_at(template.named.node)
         else {
             return unminted;
         };
@@ -454,7 +454,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return None;
         };
-        let Maybe::Present(written) = self.value_type_at(defined.node)
+        let Maybe::Present(written) = self.cx.value_type_at(defined.node)
         else {
             return None;
         };
@@ -516,7 +516,7 @@ impl<'source> Lowerer<'_, 'source>
             name: trip.name,
         });
         let (Maybe::Present(origin), Some(template)) = (
-            self.origin_at(witness.introduced_by.node),
+            self.cx.origin_at(witness.introduced_by.node),
             self.cx.collected.functors.get(usize::from(first.0)),
         )
         else {
@@ -607,7 +607,7 @@ impl<'source> Lowerer<'_, 'source>
         let stated_at = match signature
             .components
             .get(usize::from(trip.component))
-            .map(|member| self.origin_at(member.named.node))
+            .map(|member| self.cx.origin_at(member.named.node))
         {
             Some(Maybe::Present(at)) => at.inserted(Insertion::Relation),
             Some(Maybe::Absent(_)) | None => origin,

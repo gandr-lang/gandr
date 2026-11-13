@@ -49,6 +49,7 @@ use super::Reading;
 use super::Resolved;
 use super::Sink;
 use super::Site;
+use super::native::NativeRef;
 use crate::attribute::names;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
@@ -195,7 +196,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Result<Maybe<(ValueTypeId, ValueId), super::lowered::Absent>, LoweringRefusal<'source>>
     {
-        let Maybe::Present(payload) = self.value_at(rows.node)
+        let Maybe::Present(payload) = self.cx.value_at(rows.node)
         else {
             return Ok(Maybe::Absent(super::lowered::Absent::Unminted));
         };
@@ -233,7 +234,7 @@ impl<'source> Lowerer<'_, 'source>
                 origin,
             )?;
             for parameter in operation.parameters.iter().rev() {
-                let spelled = String::from(self.name_at(parameter.named).as_ref());
+                let spelled = String::from(self.cx.name_at(parameter.named).as_ref());
                 let name = sink
                     .arena
                     .value_literal(Literal::Text(StringLiteral::new(spelled)));
@@ -506,7 +507,7 @@ impl<'source> Lowerer<'_, 'source>
                         second,
                         more,
                     } => {
-                        return Err(self.ambiguous_constructor(
+                        return Err(NativeRef::over(&self.cx).ambiguous_constructor(
                             site.at.span,
                             name,
                             first,

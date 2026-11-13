@@ -10,6 +10,7 @@
 //! `gandr-surface-lowering` names each one at its old path.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -18,13 +19,17 @@ use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
+use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::EffectSig;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::World;
 use gandr_kernel_strata::LevelConstant;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -36,6 +41,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::LayoutBlock;
 use gandr_surface_syntax::NodeIndex;
@@ -47,23 +53,31 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
+use crate::form::Cursor;
 use crate::form::Family;
 use crate::form::FormName;
 use crate::form::Former;
+use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
 use crate::form::Universe;
+use crate::form::declined_feature;
 use crate::module::FamilyIndex;
 use crate::module::InstanceIndex;
 use crate::module::SlotIndex;
 use crate::origin::Insertion;
 use crate::origin::Origin;
+use crate::origin::OriginTable;
+use crate::resolve::Bound;
 use crate::resolve::Frame;
 use crate::resolve::ScopeId;
 use crate::resolve::Telescope;
 use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
+use crate::resolve::atom_type;
+use crate::resolve::binder_type;
+use crate::unbuilt::Unbuilt;
 use crate::unit::SourceIndex;
 use crate::written_import::decode_escapes;
 
@@ -2060,4 +2074,984 @@ pub struct Current
     pub lettered: usize,
     /// Where its empty words' points begin.
     pub pointed: usize,
+}
+
+/// The sort a former produces before positional bridges.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The tag describes the former’s own core family before any
+///   positional bridge is inserted.
+/// - provides: The input sort to the positional admission relation.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The producing former and demanded reading are not
+///   retained; require states the complete admission and insertion relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — explicit and inserted force remain distinct, and a
+///   positive result acquires one returner rather than changing its source
+///   type.
+/// - witness: `gandr-surface-lowering::lower::tests::an_author_written_force_is_not_marked_inserted`
+/// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `gandr-surface-lowering::lower::tests::a_positive_result_gains_a_returner_once`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Produced
+{
+    /// A value.
+    Value,
+    /// A computation.
+    Computation,
+    /// A value type.
+    ValueType,
+    /// A computation type.
+    CompType,
+}
+
+/// Positions in a flat vector: the part store of one case's patterns, or the
+/// operand store while one classification pushes and takes back a list.
+///
+/// A plan keeps a [`FormStretch`] of operands instead, which [`Context::kept`]
+/// gives (#5628).
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The endpoints denote a half-open range in a caller-selected flat
+///   store; they do not certify order or bounds by themselves.
+/// - provides: A borrowed-store coordinate rather than an owned list.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No store is retained, and reversed ranges are admitted
+///   inputs to stretch; the accessor checks the borrowed range and empty
+///   fallback.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, full, interior, reversed and past-end ranges
+///   distinguish a valid selection from an invalid range.
+/// - witness: `gandr-surface-lowering::lower::tests::recorded_ranges_keep_valid_members_and_reject_invalid_bounds`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Stretch
+{
+    /// The first entry.
+    pub start: usize,
+    /// One past the last entry.
+    pub end: usize,
+}
+
+/// What a name resolved to.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A binder retains its bound coordinate; a declaration retains its
+///   constant and available written signature.
+/// - provides: A resolved name that can become a term or static code.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No name, lookup frame or declaration table is retained;
+///   `resolve_name` checks lookup and term checks the projection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — local binders and earlier declarations produce different
+///   core references, and self-reference remains unresolved.
+/// - witness: `gandr-surface-lowering::lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+/// - witness: `gandr-surface-lowering::lower::tests::an_earlier_declaration_resolves_as_a_constant`
+/// - witness: `gandr-surface-lowering::lower::tests::a_self_reference_is_unresolved`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Resolved
+{
+    /// An enclosing binder.
+    Binder(Bound),
+    /// A declaration strictly earlier than the name's own.
+    Declaration
+    {
+        /// The declaration's admission position.
+        constant: ConstantIndex,
+        /// The type its signature was written with, when it has one.
+        declared: Maybe<NodeIndex, binder_type::Absent>,
+    },
+}
+
+impl Resolved
+{
+    /// The plan of the value the name stands for in term position.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a resolved binder becomes a variable plan and a resolved
+    ///   declaration a constant plan, retaining the respective index.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — binder uses become de Bruijn variables, while earlier
+    ///   declarations become constants with their admission position.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_backward_member_reference_resolves`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, &ret),
+                (Self::Binder(_), &Plan::Variable(..))
+                    | (Self::Declaration { .. }, &Plan::Constant(_))
+            )
+        },
+    )]
+    #[must_use]
+    #[inline]
+    pub const fn term(self) -> Plan
+    {
+        match self {
+            Self::Binder(bound) => Plan::Variable(bound.index, bound.binder),
+            Self::Declaration { constant, .. } => Plan::Constant(constant),
+        }
+    }
+}
+
+/// Where the mint sweep writes: the arena and the origin table, with the
+/// computations the commuting of early exits reads.
+///
+/// # Specification
+/// - requires: The arena and origin table belong to the current minting run;
+///   pre-existing arena nodes need not have entries in the new table.
+/// - ensures: Minting operations pair newly allocated nodes with written or
+///   inserted origins rather than treating an identifier as proof of ownership.
+/// - provides: The shared targets of core allocation and provenance recording.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Allocation history is not a property of the pair of
+///   references; value, computation, atom and bridge specify each recording
+///   operation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — authored nodes, inserted force and derived function
+///   thunks retain distinct provenance on the listed source forms.
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+/// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+pub struct Sink<'run>
+{
+    /// The arena the core nodes are minted into.
+    pub arena: &'run mut CoreArena,
+    /// The table every minted node's origin is recorded in.
+    pub origins: &'run mut OriginTable,
+    /// Every computation an exit minted, and each copy a match leaf made of
+    /// one.
+    pub exits: BTreeSet<ComputationId>,
+    /// Every bind whose rest is distributed to its computation's local ends,
+    /// and each copy a match leaf made of one, with its statement's origin.
+    pub distributed: BTreeMap<ComputationId, Origin>,
+    /// The host's interfaces, once a capability form has minted them.
+    pub host: capability::Host,
+    /// The signature each capability scope over a theory handles, by the
+    /// scope's node and where the signature stands, minted at the first form
+    /// naming it there.
+    pub theories: BTreeMap<(NodeIndex, capability::Standing), EffectSig>,
+    /// The signature of each extern block's interface, by where the block
+    /// names it, minted at the first form reading it.
+    pub foreign: BTreeMap<ByteOffset, EffectSig>,
+    /// Every fixpoint a loop minted, and each copy a match leaf made of one:
+    /// the commuting walks into its body.
+    pub loops: BTreeSet<ComputationId>,
+    /// Every returner a `break` minted, and each copy a match leaf made of
+    /// one: a local end of its loop's position rather than of its body.
+    pub breaks: BTreeSet<ComputationId>,
+    /// Every hold a threading loop's pass minted to hold a slot again, and
+    /// each copy a rewrite made of one: it stands in for the slot it holds
+    /// again, so a rest a `break` continues under it reads it in that slot's
+    /// place rather than past it.
+    pub reholds: BTreeSet<ComputationId>,
+    /// Every derived operation's transport, with the path type it returns an
+    /// element of: what an operation over it reads where no type is answered.
+    pub identities: BTreeMap<ComputationId, identity::Identity>,
+    /// How many wildcards the mint inserted in each form, past the ones the
+    /// planner nominated there: the place the next one takes (#6113).
+    pub wildcards: BTreeMap<gandr_core_term::hole::HoleForm, u32>,
+}
+
+/// The tables the mint sweep keeps beside the arena and the origin table,
+/// held between two sources' lowerings.
+///
+/// # Specification
+/// - ensures: each table is [`Sink`]'s field of the same name.
+/// - provides: what a lowering suspended at a source boundary carries of its
+///   sink.
+/// - fails: none as a data value.
+/// - panics: none as a data value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document resumed after its closure commutes its exits
+///   over the closure's tables as the whole lowering does.
+/// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[derive(Clone, Debug)]
+pub struct SinkTables
+{
+    /// [`Sink::exits`].
+    pub exits: BTreeSet<ComputationId>,
+    /// [`Sink::distributed`].
+    pub distributed: BTreeMap<ComputationId, Origin>,
+    /// [`Sink::host`].
+    pub host: capability::Host,
+    /// [`Sink::theories`].
+    pub theories: BTreeMap<(NodeIndex, capability::Standing), EffectSig>,
+    /// [`Sink::foreign`].
+    pub foreign: BTreeMap<ByteOffset, EffectSig>,
+    /// [`Sink::loops`].
+    pub loops: BTreeSet<ComputationId>,
+    /// [`Sink::breaks`].
+    pub breaks: BTreeSet<ComputationId>,
+    /// [`Sink::reholds`].
+    pub reholds: BTreeSet<ComputationId>,
+    /// [`Sink::identities`].
+    pub identities: BTreeMap<ComputationId, identity::Identity>,
+    /// [`Sink::wildcards`].
+    pub wildcards: BTreeMap<gandr_core_term::hole::HoleForm, u32>,
+}
+
+impl SinkTables
+{
+    /// The tables before anything is minted: every table empty, the host
+    /// unminted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn new() -> Self
+    {
+        Self {
+            exits: BTreeSet::new(),
+            distributed: BTreeMap::new(),
+            host: capability::Host::Unminted,
+            theories: BTreeMap::new(),
+            foreign: BTreeMap::new(),
+            loops: BTreeSet::new(),
+            breaks: BTreeSet::new(),
+            reholds: BTreeSet::new(),
+            identities: BTreeMap::new(),
+            wildcards: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for SinkTables
+{
+    /// [`SinkTables::new`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
+impl<'run> Sink<'run>
+{
+    /// The sink writing into `arena` and `origins`, its tables `tables`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn new(
+        arena: &'run mut CoreArena,
+        origins: &'run mut OriginTable,
+        tables: SinkTables,
+    ) -> Self
+    {
+        let SinkTables {
+            exits,
+            distributed,
+            host,
+            theories,
+            foreign,
+            loops,
+            breaks,
+            reholds,
+            identities,
+            wildcards,
+        } = tables;
+        Self {
+            arena,
+            origins,
+            exits,
+            distributed,
+            host,
+            theories,
+            foreign,
+            loops,
+            breaks,
+            reholds,
+            identities,
+            wildcards,
+        }
+    }
+
+    /// The sink's tables, its arena and origin table released.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn into_tables(self) -> SinkTables
+    {
+        let Self {
+            exits,
+            distributed,
+            host,
+            theories,
+            foreign,
+            loops,
+            breaks,
+            reholds,
+            identities,
+            wildcards,
+            ..
+        } = self;
+        SinkTables {
+            exits,
+            distributed,
+            host,
+            theories,
+            foreign,
+            loops,
+            breaks,
+            reholds,
+            identities,
+            wildcards,
+        }
+    }
+}
+
+impl Sink<'_>
+{
+    /// Write `bridge` over `minted`, the core node of the syntax node at
+    /// `origin`.
+    ///
+    /// # Specification
+    /// - requires: `minted` is what the node's own plan minted.
+    /// - ensures: a bare node is `minted` unchanged; a forced value is minted
+    ///   as a force over it, a returned value type as a returner over it, a
+    ///   quoted type as the quote of it at its own sort, a computation standing
+    ///   as an endpoint as the value it returns, a lambda standing there as its
+    ///   thunk, and a value standing at a tail as the returner over it, each
+    ///   with `origin` marked as the insertion it is; nothing when the node did
+    ///   not lower at the sort its bridge leaves, which the classification
+    ///   makes unreachable.
+    /// - provides: the minting half of the insertions a position's sort
+    ///   decides.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — forced heads, positive results, quoted types and
+    ///   values at a tail acquire the intended inserted provenance, while an
+    ///   author-written force stays written.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_positive_result_gains_a_returner_once`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_author_written_force_is_not_marked_inserted`
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_lambda_argument_in_an_endpoint_is_its_thunk_3697`
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `gandr-surface-lowering::lower::runs::tests::a_call_returning_a_function_runs_where_it_is_applied_3935`
+    #[spec(
+        ensures: |ret| match bridge {
+            | Bridge::Bare => ret == minted,
+            | Bridge::HeadCall => match (minted, ret) {
+                | (Maybe::Present(Lowered::Computation(_)), Maybe::Present(Lowered::Computation(id))) => {
+                    self.origins.computation(id) == Maybe::Present(origin.inserted(Insertion::Force))
+                },
+                | (Maybe::Present(Lowered::Computation(_)), _) => false,
+                | (Maybe::Absent(reason), _) => ret == Maybe::Absent(reason),
+                | (Maybe::Present(_), _) => ret == Maybe::Absent(lowered::Absent::OtherSort),
+            },
+            | Bridge::Inserted(insertion) => match (minted, insertion, ret) {
+                | (Maybe::Absent(reason), ..) => ret == Maybe::Absent(reason),
+                | (
+                    Maybe::Present(Lowered::Value(_)),
+                    Insertion::Force | Insertion::Return,
+                    Maybe::Present(Lowered::Computation(id)),
+                ) => self.origins.computation(id) == Maybe::Present(origin.inserted(insertion)),
+                | (
+                    Maybe::Present(Lowered::ValueType(_)),
+                    Insertion::Returner,
+                    Maybe::Present(Lowered::CompType(id)),
+                ) => self.origins.comp_type(id) == Maybe::Present(origin.inserted(insertion)),
+                | (
+                    Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
+                    Insertion::Quote,
+                    Maybe::Present(Lowered::Value(id)),
+                )
+                | (
+                    Maybe::Present(Lowered::Computation(_)),
+                    Insertion::Endpoint | Insertion::Nested | Insertion::Bound | Insertion::Thunk,
+                    Maybe::Present(Lowered::Value(id)),
+                ) => self.origins.value(id) == Maybe::Present(origin.inserted(insertion)),
+                | (Maybe::Present(Lowered::Value(_)), Insertion::Force | Insertion::Return, _)
+                | (Maybe::Present(Lowered::ValueType(_)), Insertion::Returner, _)
+                | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint | Insertion::Nested | Insertion::Bound | Insertion::Thunk, _)
+                | (
+                    Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
+                    Insertion::Quote,
+                    _,
+                ) => false,
+                | _ => ret == Maybe::Absent(lowered::Absent::OtherSort),
+            },
+        },
+    )]
+    #[inline]
+    pub fn bridge(
+        &mut self,
+        minted: Maybe<Lowered, lowered::Absent>,
+        bridge: Bridge,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let insertion = match (bridge, minted) {
+            (Bridge::Bare, _) => return minted,
+            // A call or a selection at an application's head stands nested
+            // under a force: the checker decides whether it runs (#3935, #4818).
+            (Bridge::HeadCall, Maybe::Present(Lowered::Computation(call))) => {
+                let nested = self.arena.value_nested(call);
+                self.origins
+                    .record_value(nested, origin.inserted(Insertion::Nested));
+                let id = self.arena.computation_force(nested);
+                return Maybe::Present(self.computation(id, origin.inserted(Insertion::Force)));
+            },
+            (Bridge::HeadCall, Maybe::Present(_)) => {
+                return Maybe::Absent(lowered::Absent::OtherSort);
+            },
+            (Bridge::HeadCall, Maybe::Absent(reason)) => return Maybe::Absent(reason),
+            (Bridge::Inserted(insertion), _) => insertion,
+        };
+        let inserted = origin.inserted(insertion);
+        match (minted, insertion) {
+            (Maybe::Present(Lowered::Value(forced)), Insertion::Force) => {
+                let id = self.arena.computation_force(forced);
+                Maybe::Present(self.computation(id, inserted))
+            },
+            (Maybe::Present(Lowered::ValueType(returned)), Insertion::Returner) => {
+                let id = self.arena.comp_type_returner(returned);
+                self.origins.record_comp_type(id, inserted);
+                Maybe::Present(Lowered::CompType(id))
+            },
+            (Maybe::Present(Lowered::ValueType(quoted)), Insertion::Quote) => {
+                let id = self.arena.value_quote(quoted);
+                Maybe::Present(self.value(id, inserted))
+            },
+            (Maybe::Present(Lowered::CompType(quoted)), Insertion::Quote) => {
+                let id = self.arena.value_quote_computation(quoted);
+                Maybe::Present(self.value(id, inserted))
+            },
+            (Maybe::Present(Lowered::Computation(returned)), Insertion::Endpoint) => {
+                let id = self.arena.value_returned(returned);
+                Maybe::Present(self.value(id, inserted))
+            },
+            (
+                Maybe::Present(Lowered::Computation(nested)),
+                Insertion::Nested | Insertion::Bound,
+            ) => {
+                let id = self.arena.value_nested(nested);
+                Maybe::Present(self.value(id, inserted))
+            },
+            (Maybe::Present(Lowered::Computation(suspended)), Insertion::Thunk) => {
+                let id = self.arena.value_thunk(suspended);
+                Maybe::Present(self.value(id, inserted))
+            },
+            (Maybe::Present(Lowered::Value(returned)), Insertion::Return) => {
+                let id = self.arena.computation_return(returned);
+                Maybe::Present(self.computation(id, inserted))
+            },
+            (
+                Maybe::Present(_),
+                Insertion::Force
+                | Insertion::Thunk
+                | Insertion::Returner
+                | Insertion::Quote
+                | Insertion::Decode
+                | Insertion::Return
+                | Insertion::Classifier
+                | Insertion::Match
+                | Insertion::Fixpoint
+                | Insertion::Joint
+                | Insertion::Loop
+                | Insertion::Statement
+                | Insertion::Endpoint
+                | Insertion::Identity
+                | Insertion::Nested
+                | Insertion::Bound
+                | Insertion::Unwind
+                | Insertion::Model
+                | Insertion::Relation
+                | Insertion::Words
+                | Insertion::Terms
+                | Insertion::Method
+                | Insertion::Assignment
+                | Insertion::Parameter
+                | Insertion::Derived
+                | Insertion::Implicit
+                | Insertion::Foreign
+                | Insertion::Multiplicity,
+            ) => Maybe::Absent(lowered::Absent::OtherSort),
+            (Maybe::Absent(reason), _) => Maybe::Absent(reason),
+        }
+    }
+
+    /// Record `id`'s origin and wrap it as a lowered value.
+    ///
+    /// # Specification
+    /// - requires: the value id follows all values already recorded in this
+    ///   origin table.
+    /// - ensures: the supplied origin is recorded under the value id and the
+    ///   lowered result retains that id and family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every minted value has its own source origin, and an
+    ///   inserted force does not relabel the source value it consumes.
+    /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret == Lowered::Value(id) && self.origins.value(id) == Maybe::Present(origin)
+        },
+    )]
+    #[inline]
+    pub fn value(
+        &mut self,
+        id: ValueId,
+        origin: Origin,
+    ) -> Lowered
+    {
+        self.origins.record_value(id, origin);
+
+        Lowered::Value(id)
+    }
+
+    /// Record `id`'s origin and wrap it as a lowered computation.
+    ///
+    /// # Specification
+    /// - requires: the computation id follows all computations already recorded
+    ///   in this origin table.
+    /// - ensures: the supplied origin is recorded under the computation id and
+    ///   the lowered result retains that id and family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — written and inserted computations retain their own
+    ///   source and provenance rather than borrowing an operand origin.
+    /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret == Lowered::Computation(id)
+                && self.origins.computation(id) == Maybe::Present(origin)
+        },
+    )]
+    #[inline]
+    pub fn computation(
+        &mut self,
+        id: ComputationId,
+        origin: Origin,
+    ) -> Lowered
+    {
+        self.origins.record_computation(id, origin);
+
+        Lowered::Computation(id)
+    }
+
+    /// Mint `atom`'s value type and record its origin.
+    ///
+    /// # Specification
+    /// - requires: newly minted type ids follow those already recorded in the
+    ///   origin table.
+    /// - ensures: the selected unit, integer, text, character or floating-point
+    ///   value type is minted and receives the supplied origin.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete nullary type heads mint their own core type
+    ///   and every minted type carries a source origin.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| match ret {
+            | Lowered::ValueType(id) => self.origins.value_type(id) == Maybe::Present(origin) && match atom {
+                TypeAtom::Boolean => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.len() == 2 && parts.iter().all(|&part| self.arena.value_type(part) == Some(&ValueType::unit())))),
+                TypeAtom::Unit => self.arena.value_type(id) == Some(&ValueType::unit()),
+                TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
+                TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
+                TypeAtom::Character => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Character)),
+                TypeAtom::Float64 => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Float64)),
+                TypeAtom::Fixed(width) => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Fixed(width))),
+                TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
+                TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
+                TypeAtom::Qubit => self.arena.value_type(id) == Some(&ValueType::Qubit),
+                TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
+                TypeAtom::Row => self.arena.value_type(id) == Some(&ValueType::Row),
+            },
+            | _ => false,
+        },
+    )]
+    #[inline]
+    pub fn atom(
+        &mut self,
+        atom: TypeAtom,
+        origin: Origin,
+    ) -> Lowered
+    {
+        let id = match atom {
+            TypeAtom::Boolean => {
+                let unit = self.arena.value_type_unit();
+                self.origins.record_value_type(unit, origin);
+                self.arena.value_type_sum(&[unit, unit])
+            },
+            TypeAtom::Unit
+            | TypeAtom::Integer
+            | TypeAtom::Text
+            | TypeAtom::Character
+            | TypeAtom::Float64
+            | TypeAtom::Fixed(_)
+            | TypeAtom::Void
+            | TypeAtom::Buffer
+            | TypeAtom::Qubit
+            | TypeAtom::Web
+            | TypeAtom::Row => atom_type(self.arena, atom),
+        };
+        self.origins.record_value_type(id, origin);
+
+        Lowered::ValueType(id)
+    }
+}
+
+/// The feature a form named `name`, written where a pattern is read and taken
+/// by no pattern reading, is refused by.
+///
+/// # Specification
+/// - requires: `name` names a form no pattern reading at its position takes.
+/// - ensures: the feature the dispatch table declines `name` by where it
+///   declines it, [`Unbuilt::UnreadPattern`] for every other form.
+/// - provides: the one feature every pattern position refuses an unread form
+///   by.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rest pattern outside a list, declined by its own row, a
+///   lambda, which the dispatch reads, and a misplaced form, standing as
+///   patterns.
+/// - witness: `gandr-surface-lowering::lower::tests::an_unread_pattern_names_its_feature`
+#[spec(ensures: |ret| match declined_feature(name) {
+    | Maybe::Present(feature) => ret == feature,
+    | Maybe::Absent(_) => ret == Unbuilt::UnreadPattern,
+})]
+#[must_use]
+#[inline]
+pub fn unread_pattern(name: FormName) -> Unbuilt
+{
+    match declined_feature(name) {
+        Maybe::Present(feature) => feature,
+        Maybe::Absent(_) => Unbuilt::UnreadPattern,
+    }
+}
+
+/// Read a parenthesised, comma-separated argument list into `written`.
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `(`.
+/// - ensures: [`delimited`] between `(` and `)`.
+/// - provides: the argument reading of calls and type applications.
+/// - fails: as [`delimited`].
+/// - panics: none.
+/// - executable: none — the parentheses fixed for [`delimited`], whose
+///   predicate states the reading.
+///
+/// # Errors
+/// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`delimited`], whose argument-list witnesses read
+///   through this one.
+/// - witness: `gandr-surface-lowering::lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
+/// - witness: `gandr-surface-lowering::lower::tests::a_call_applies_its_arguments_left_to_right`
+#[inline]
+pub fn arguments<'source, Written>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Written,
+) -> Result<(), LoweringRefusal<'source>>
+where
+    Written: Extend<NodeIndex> + AsRef<[NodeIndex]>,
+{
+    delimited(
+        site,
+        cursor,
+        written,
+        TileName::PAREN_OPEN,
+        TileName::PAREN_CLOSE,
+    )
+}
+
+/// Read a comma-separated operand list between the tiles `open` and `close`
+/// into `written`.
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `open`.
+/// - ensures: every operand written is appended to `written`, left to right,
+///   with the cursor past the `close` and nothing after it; an empty list
+///   appends nothing, and a comma after the last operand is admitted.
+/// - provides: the argument reading of calls and type applications, and the
+///   element reading of a list literal.
+/// - fails: yields the hole's own refusal for an empty or juxtaposed argument,
+///   and a misplaced-tile refusal for a list out of shape; the arguments read
+///   before the refusal stay appended.
+/// - panics: none.
+///
+/// # Errors
+/// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, multi-argument and comma-closed calls append their
+///   own ordered operand range; a failure preserves the already-read prefix and
+///   locates the unexpected operand or tile instead of silently accepting a
+///   suffix. The predicate re-reads the list as the body did and compares it
+///   with only the operands this call appended.
+/// - witness: `gandr-surface-lowering::lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
+/// - witness: `gandr-surface-lowering::lower::tests::a_call_applies_its_arguments_left_to_right`
+#[spec(
+    captures: before = (written.as_ref().len(), cursor.clone()),
+    ensures: |ret| {
+        written.as_ref().len() >= before.0
+            && ret.as_ref().map_or(true, |&()| written.as_ref().get(before.0 ..).is_some_and(|appended| {
+                let mut input = before.1.clone();
+                let mut appended = appended.iter();
+                if matches!(input.tile(open), Maybe::Absent(_)) {
+                    return false;
+                }
+                if matches!(input.tile(close), Maybe::Present(_)) {
+                    return appended.next().is_none()
+                        && matches!(input.peek(), Maybe::Absent(_))
+                        && cursor.peek() == input.peek();
+                }
+                loop {
+                    match input.read() {
+                        | Maybe::Present(Piece::Operand(at))
+                            if appended.next() == Some(&at.node) => {},
+                        | _ => return false,
+                    }
+                    if matches!(input.tile(close), Maybe::Present(_)) {
+                        break;
+                    }
+                    if matches!(input.tile(TileName::COMMA), Maybe::Absent(_)) {
+                        return false;
+                    }
+                    if matches!(input.tile(close), Maybe::Present(_)) {
+                        break;
+                    }
+                }
+                appended.next().is_none()
+                    && matches!(input.peek(), Maybe::Absent(_))
+                    && cursor.peek() == input.peek()
+            }))
+    },
+)]
+#[inline]
+pub fn delimited<'source, Written>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Written,
+    open: TileName,
+    close: TileName,
+) -> Result<(), LoweringRefusal<'source>>
+where
+    Written: Extend<NodeIndex> + AsRef<[NodeIndex]>,
+{
+    delimited_list(site, cursor, written, open, close)?;
+    exhausted(site, cursor)
+}
+
+/// Read a comma-separated operand list between the tiles `open` and `close`
+/// into `written`, and leave the cursor past the `close`, where a call in a
+/// type may write its second list, `f(a)(b)` (#5213).
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `open`.
+/// - ensures: as [`delimited`], except that pieces may follow the `close`.
+/// - fails: as [`delimited`].
+/// - panics: none.
+/// - executable: none — [`delimited`] states the reading, and this is its
+///   reading without the check that nothing follows.
+///
+/// # Errors
+/// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`delimited`]; a type's call of a call reads both of
+///   its lists.
+/// - witness: `gandr-surface-lowering::tests::modules::a_module_s_function_is_called_in_a_type_5213`
+#[inline]
+pub fn delimited_list<'source, Written>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Written,
+    open: TileName,
+    close: TileName,
+) -> Result<(), LoweringRefusal<'source>>
+where
+    Written: Extend<NodeIndex>,
+{
+    if let Maybe::Absent(_) = cursor.tile(open) {
+        return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+    }
+    loop {
+        let run = cursor.operands();
+        let closing = cursor.tile(close);
+        if let (Run::Empty(_), Maybe::Present(_)) = (run, closing) {
+            return Ok(());
+        }
+        let argument = site.one(run)?;
+        written.extend([argument.node]);
+        if let Maybe::Present(_) = closing {
+            return Ok(());
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        }
+    }
+}
+
+/// The entries of `store` that `stretch` names.
+///
+/// # Specification
+/// - requires: the range is interpreted against the supplied store.
+/// - ensures: an ordered in-bounds range returns that borrowed slice; a
+///   reversed or out-of-bounds range returns an empty slice.
+/// - provides: an allocation-free view of the positions one classification
+///   reads in the operand store or the part store.
+/// - fails: invalid ranges are represented by the empty view.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, interior and full ranges retain the requested
+///   members; reversed and past-end ranges do not read an unrelated prefix.
+/// - witness: `gandr-surface-lowering::lower::tests::recorded_ranges_keep_valid_members_and_reject_invalid_bounds`
+#[spec(
+    ensures: |ret| match store.get(stretch.start .. stretch.end) {
+        | Some(expected) => core::ptr::eq(&raw const *ret, &raw const *expected),
+        | None => ret.is_empty(),
+    },
+)]
+#[inline]
+pub fn stretch<Entry>(
+    store: &[Entry],
+    stretch: Stretch,
+) -> &[Entry]
+{
+    store.get(stretch.start .. stretch.end).unwrap_or(&[])
+}
+
+/// Read the closing tile `label`, refusing anything else in its place.
+///
+/// # Specification
+/// - requires: the cursor describes the site’s remaining pieces.
+/// - ensures: the requested tile is consumed if present; otherwise the cursor
+///   is unchanged and the refusal locates its current piece or gap.
+/// - provides: a checked closing tile for the form reader.
+/// - fails: an absent or different tile is `MisplacedTile`.
+/// - panics: none.
+///
+/// # Errors
+/// `MisplacedTile` when the tile at the cursor is absent or another.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching and mismatched closing tiles separate
+///   consumption from a located refusal, including the exhausted-cursor gap.
+/// - witness: `gandr-surface-lowering::lower::tests::closing_and_exhaustion_distinguish_tiles_operands_and_gaps`
+#[spec(
+    captures: before = {
+        let found = cursor.at(label);
+        let here = cursor.here();
+        let mut next = cursor.clone();
+        if matches!(found, Maybe::Present(_)) {
+            let _piece = next.read();
+        }
+        (found, here, next.peek(), next.here())
+    },
+    ensures: |ret| {
+        ret == match before.0 {
+            | Maybe::Present(_) => Ok(()),
+            | Maybe::Absent(_) => Err(site.fault(before.1, FormFault::MisplacedTile)),
+        } && cursor.peek() == before.2
+            && cursor.here() == before.3
+    },
+)]
+#[inline]
+pub fn closed<'source>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    label: TileName,
+) -> Result<(), LoweringRefusal<'source>>
+{
+    match cursor.tile(label) {
+        Maybe::Present(_) => Ok(()),
+        Maybe::Absent(_) => Err(site.fault(cursor.here(), FormFault::MisplacedTile)),
+    }
+}
+
+/// Refuse a piece left after a form's last.
+///
+/// # Specification
+/// - requires: the cursor describes the site’s remaining pieces.
+/// - ensures: only an exhausted cursor succeeds; a remaining operand and a
+///   remaining tile yield their distinct located refusals.
+/// - provides: a check that a form reader consumed its complete input.
+/// - fails: an operand is `ExtraOperand` and a tile is `MisplacedTile`.
+/// - panics: none.
+///
+/// # Errors
+/// `ExtraOperand` for a remaining operand, and `MisplacedTile` for a remaining
+/// tile.
+///
+/// # Adequacy
+/// - hypothesis: L3 — remaining operands and tiles are distinguished from the
+///   terminal gap without consuming the unexpected piece.
+/// - witness: `gandr-surface-lowering::lower::tests::closing_and_exhaustion_distinguish_tiles_operands_and_gaps`
+/// - witness: `gandr-surface-lowering::lower::tests::a_juxtaposed_operand_is_refused`
+#[spec(
+    ensures: |ret| {
+        ret == match cursor.peek() {
+            | Maybe::Absent(_) => Ok(()),
+            | Maybe::Present(Piece::Operand(at)) => {
+                Err(site.fault(at.span, FormFault::ExtraOperand))
+            },
+            | Maybe::Present(Piece::Tile { at, .. }) => {
+                Err(site.fault(at.span, FormFault::MisplacedTile))
+            },
+        }
+    },
+)]
+#[inline]
+pub fn exhausted<'source>(
+    site: Site,
+    cursor: &Cursor<'_>,
+) -> Result<(), LoweringRefusal<'source>>
+{
+    match cursor.peek() {
+        Maybe::Absent(_) => Ok(()),
+        Maybe::Present(Piece::Operand(stray)) => {
+            Err(site.fault(stray.span, FormFault::ExtraOperand))
+        },
+        Maybe::Present(Piece::Tile { at, .. }) => {
+            Err(site.fault(at.span, FormFault::MisplacedTile))
+        },
+    }
 }

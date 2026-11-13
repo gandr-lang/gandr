@@ -139,7 +139,7 @@ impl<'source> Lowerer<'_, 'source>
         links: &[Placed],
     ) -> Result<StructureIndex, LoweringRefusal<'source>>
     {
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         let unresolved = LoweringRefusal::UnresolvedName {
             span: head.span,
             name,
@@ -174,7 +174,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut spelled = name;
         for &link in links {
             self.cx.fuel.spend()?;
-            let member = self.name_at(link);
+            let member = self.cx.name_at(link);
             let inner = self
                 .cx
                 .collected

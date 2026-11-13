@@ -98,7 +98,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         if self
             .cx
             .collected
@@ -284,7 +284,7 @@ impl<'source> Lowerer<'_, 'source>
                 | ParameterForm::Derived(_) => None,
             })?;
         match kind {
-            Maybe::Present(written) => match self.value_type_at(written.node) {
+            Maybe::Present(written) => match self.cx.value_type_at(written.node) {
                 Maybe::Present(stated) => Some(stated),
                 Maybe::Absent(_) => None,
             },
@@ -320,7 +320,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
-        | Ok(Read::Unread) => matches!(self.parameter_named(site, self.name_at(head)), Maybe::Absent(_)),
+        | Ok(Read::Unread) => matches!(self.parameter_named(site, self.cx.name_at(head)), Maybe::Absent(_)),
         | Ok(Read::Planned) => matches!(self.cx.plans.get(site.at.node), Some(&super::Plan::Constant(_))),
         | Err(_) => true,
     })]
@@ -332,12 +332,12 @@ impl<'source> Lowerer<'_, 'source>
         deeper: Deeper,
     ) -> Result<Read, LoweringRefusal<'source>>
     {
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         let Maybe::Present(parameter) = self.parameter_named(site, name)
         else {
             return Ok(Read::Unread);
         };
-        let member = self.name_at(selected);
+        let member = self.cx.name_at(selected);
         let unknown = LoweringRefusal::UnknownMember {
             span: selected.span,
             module: name,
@@ -421,7 +421,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
-        | Ok(Read::Unread) => matches!(self.parameter_named(site, self.name_at(head)), Maybe::Absent(_)),
+        | Ok(Read::Unread) => matches!(self.parameter_named(site, self.cx.name_at(head)), Maybe::Absent(_)),
         | Ok(Read::Planned) => matches!(self.cx.plans.get(site.at.node), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
         | Err(_) => true,
     })]
@@ -433,12 +433,12 @@ impl<'source> Lowerer<'_, 'source>
         deeper: Deeper,
     ) -> Result<Read, LoweringRefusal<'source>>
     {
-        let name = self.name_at(head);
+        let name = self.cx.name_at(head);
         let Maybe::Present(parameter) = self.parameter_named(site, name)
         else {
             return Ok(Read::Unread);
         };
-        let member = self.name_at(selected);
+        let member = self.cx.name_at(selected);
         let unknown = LoweringRefusal::UnknownMember {
             span: selected.span,
             module: name,
@@ -547,7 +547,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(renaming);
         };
-        let Maybe::Present(origin) = self.origin_at(instance.declared_by.node)
+        let Maybe::Present(origin) = self.cx.origin_at(instance.declared_by.node)
         else {
             return Ok(renaming);
         };
@@ -661,7 +661,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(refusal);
         }
         match argument.meaning {
-            TypeMeaning::Manifest(defined) => match self.value_type_at(defined.node) {
+            TypeMeaning::Manifest(defined) => match self.cx.value_type_at(defined.node) {
                 Maybe::Present(id) => Ok(id),
                 Maybe::Absent(_) => Err(unlowered()),
             },
@@ -718,7 +718,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return;
         };
-        let Maybe::Present(origin) = self.origin_at(instance.declared_by.node)
+        let Maybe::Present(origin) = self.cx.origin_at(instance.declared_by.node)
         else {
             return;
         };
@@ -743,7 +743,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             if self.cx.computation_members.contains(&defined.node) {
-                let Maybe::Present(template) = self.comp_type_at(defined.node)
+                let Maybe::Present(template) = self.cx.comp_type_at(defined.node)
                 else {
                     continue;
                 };
@@ -757,7 +757,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 continue;
             }
-            let Maybe::Present(template) = self.value_type_at(defined.node)
+            let Maybe::Present(template) = self.cx.value_type_at(defined.node)
             else {
                 continue;
             };
@@ -828,7 +828,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let functor = &template;
-            let Maybe::Present(origin) = self.origin_at(instance.declared_by.node)
+            let Maybe::Present(origin) = self.cx.origin_at(instance.declared_by.node)
             else {
                 continue;
             };
@@ -963,7 +963,7 @@ impl<'source> Lowerer<'_, 'source>
                 Matched::Value { member, .. },
             ) => {
                 let stated = match component.form {
-                    ParameterForm::Value(typed) => self.value_type_at(typed.node),
+                    ParameterForm::Value(typed) => self.cx.value_type_at(typed.node),
                     ParameterForm::Derived(_) => self
                         .cx
                         .modelled
@@ -993,7 +993,7 @@ impl<'source> Lowerer<'_, 'source>
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
                 let declared_type = match kind {
-                    Maybe::Present(written) => match self.value_type_at(written.node) {
+                    Maybe::Present(written) => match self.cx.value_type_at(written.node) {
                         Maybe::Present(stated) => rename_type(sink, renaming, stated, origin),
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
@@ -1016,7 +1016,7 @@ impl<'source> Lowerer<'_, 'source>
             (ParameterForm::Manifest(defined), Matched::Manifest { argument, .. }) => {
                 let (Ok(read), Maybe::Present(stated)) = (
                     self.argument_type(argument, sink, origin),
-                    self.value_type_at(defined.node),
+                    self.cx.value_type_at(defined.node),
                 )
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);

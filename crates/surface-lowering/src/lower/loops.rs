@@ -364,7 +364,7 @@ impl<'source> Lowerer<'_, 'source>
                     && matches!(self.cx.plans.get(site.at.node), Some(&Plan::While(condition, body))
                         if self.cx.looping.contains(&body.last)
                             && self.cx.tested.contains(&condition)
-                            && matches!(self.reading(condition), Reading::Computation(Frame::Inner(_)))))
+                            && matches!(self.cx.reading(condition), Reading::Computation(Frame::Inner(_)))))
         },
     )]
     pub(super) fn repeated(
@@ -485,7 +485,7 @@ impl<'source> Lowerer<'_, 'source>
             {
                 continue;
             }
-            let name = self.name_at(Placed::of(position, node));
+            let name = self.cx.name_at(Placed::of(position, node));
             if let Maybe::Present(bound) = self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?
                 && bound.zone == Zone::Linear
                 && !self.cx.capabilities.contains(&bound.binder)
@@ -639,7 +639,7 @@ impl<'source> Lowerer<'_, 'source>
                 || (self.cx.exitable.contains(&site.at.node)
                     && matches!(self.cx.plans.get(site.at.node), Some(&Plan::For(list, body))
                         if self.cx.looping.contains(&body.last)
-                            && matches!(self.reading(list), Reading::Value(_))))
+                            && matches!(self.cx.reading(list), Reading::Value(_))))
         },
     )]
     pub(super) fn stepped(
@@ -663,7 +663,7 @@ impl<'source> Lowerer<'_, 'source>
         let unwritten = Maybe::Absent(binder_site::Absent::Unwritten);
         let own = Frame::Inner(self.cx.scope.extend(frame, iteration(), unwritten));
         let listed = Frame::Inner(self.cx.scope.extend(own, SurfaceName::from(""), unwritten));
-        let name = self.name_at(binder);
+        let name = self.cx.name_at(binder);
         self.note_binder(binder, listed, name)?;
         let element = Frame::Inner(
             self.cx
@@ -1159,7 +1159,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let tested = match self.computation_at(condition) {
+        let tested = match self.cx.computation_at(condition) {
             Maybe::Present(tested) => tested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -1320,7 +1320,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let listed = match self.value_at(list) {
+        let listed = match self.cx.value_at(list) {
             Maybe::Present(listed) => listed,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
