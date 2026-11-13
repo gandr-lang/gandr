@@ -27,12 +27,11 @@
 #   files       for each `deleted`, `merged` or `narrowed` row's item, the
 #               files of the change that name it at the base
 #   signoffs    each comment of the issues the body works that says `signed`:
-#               {author, body, sha, fork, changed, joined, reshaped};
+#               {author, body, sha, fork, changed, reshaped};
 #               `changed` maps each item to the files whose words that name
 #               it move since `sha` (#7025), or is null when `sha` is no
-#               commit; `joined` maps each item to the
-#               files that join its readers at the base since `fork`, and
-#               `reshaped` lists the items whose record at the base changes
+#               commit; `reshaped` lists the items whose record at the base
+#               changes since `fork`
 #   architects  for each login whose comments sign, the heading text that its
 #               comment must hold, or "" when it needs none
 #

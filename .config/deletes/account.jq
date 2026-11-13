@@ -51,14 +51,15 @@ def signer($c; $architects):
 # and sees no later move of either half (#6852). The change's half is, in
 # each of those files, the words of the changed lines that hold the item's
 # name (#7025): `$c.changed` maps each item to the files where they move.
-# The item's half is the set of its readers and its record at the base.
+# The item's half is its record at the base. A source that joins the item's
+# readers at the base moves neither half: if it names an item that the
+# change takes out, the build of the merge group refuses it (#7218).
 def signs($c; $item; $files; $architects):
   signer($c; $architects)
   and ($c.body | test("\\bsigned\\b"))
   and ($c.body | contains($item))
   and $c.sha != null and $c.fork != null and $c.changed != null
   and ([$files[] | IN(($c.changed[$item] // [])[])] | any | not)
-  and ((($c.joined // {})[$item] // []) | length == 0)
   and ((($c.reshaped // []) | index($item)) == null);
 
 # What turned the sign-off `$c` of `$item` stale, one phrase for each move.
@@ -67,7 +68,6 @@ def moves($c; $item; $files):
   elif $c.fork == null then "no commit of this clone joins the signed commit and the base, so neither half binds"
   else
     ([$files[] | select(IN(($c.changed[$item] // [])[]))] | map("the words of `\(.)` that name the item move")[]),
-    ((($c.joined // {})[$item] // []) | map("`\(.)` joins the readers of the item at the base")[]),
     (if (($c.reshaped // []) | index($item)) != null then "the record of the item at the base changes" else empty end)
   end;
 

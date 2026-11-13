@@ -259,7 +259,41 @@
     "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the words of `crates/vd/src/hom.rs` that name the item move; the architect reads that and signs again"
   },
   {
-    "name": "#6852: the patch holds, and a reader that joins at the base and a changed record of the item turn the sign-off stale, named",
+    "name": "#6852: the patch holds, and a changed record of the item turns the sign-off stale, named",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "features": {},
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
+          "changed": {},
+          "reshaped": ["v::hom::DirectedHom::new"]
+        }
+      ],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the record of the item at the base changes; the architect reads that and signs again"
+  },
+  {
+    "name": "#7218: a source that joins the readers of the item at the base turns no sign-off stale",
     "input": {
       "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n",
       "title": "",
@@ -286,12 +320,12 @@
           "fork": "1111111aaaa",
           "changed": {},
           "joined": { "v::hom::DirectedHom::new": ["crates/theory-v/src/reader.rs"] },
-          "reshaped": ["v::hom::DirectedHom::new"]
+          "reshaped": []
         }
       ],
       "architects": { "agent-shade": "(architect" }
     },
-    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: `crates/theory-v/src/reader.rs` joins the readers of the item at the base; the record of the item at the base changes; the architect reads that and signs again"
+    "output": ""
   },
   {
     "name": "#6852: a signed commit that no fetch reaches, or that shares no commit with the base, never holds, and the refusal names the cause",
@@ -315,7 +349,6 @@
           "sha": null,
           "fork": null,
           "changed": null,
-          "joined": {},
           "reshaped": []
         },
         {
@@ -324,7 +357,6 @@
           "sha": "4d75302a6bbbb",
           "fork": null,
           "changed": null,
-          "joined": {},
           "reshaped": []
         }
       ],

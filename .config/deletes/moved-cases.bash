@@ -7,11 +7,13 @@
 # A row that the landing adds moves no word, so the sign-off holds. An edit
 # of another cell of a line that names the item moves nothing, as the `since`
 # cells of pull request 7017 did (#7025). A change to a word that names the
-# item moves it, and so does a new file that names the item. The item's half
-# holds the rest: a Rust source of a crate below that names the item joins
-# its readers, and a row or a script does not (#7164). The item's visibility
+# item moves it, and so does a new file that names the item. A file of the
+# change names an item of a crate only as a Rust source of a crate that can
+# name it, and a row or a script does not (#7164). The item's visibility
 # bounds that reach: its module, its parent's, its crate or its package
-# (#7209). An edit below of the item's own lines changes its record at the
+# (#7209). A source that joins the item's readers below the change moves
+# nothing: the build of the merge group holds that case (#7218).
+# An edit below of the item's own lines changes its record at the
 # base. A head that does not hold the group's base reads its change from
 # their merge base (#6999).
 set -euo pipefail
@@ -82,9 +84,8 @@ other=$(commit other)
 got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$other" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#7025: a new file that names the item nowhere moves nothing" "$got"
 
-# The item's half: a reader row that names the variant lands below the
-# signed deletion. The change's words hold, and a row is no reader: only a
-# Rust source of a crate reads the item (#7164).
+# A row that names the variant lands below the signed deletion. The change's
+# words hold.
 git -C "$repo" checkout --quiet landing
 printf "INSERT INTO reader VALUES ('Gone');\n" > "$repo/ledger/readers.sql"
 reader=$(commit reader)
@@ -94,10 +95,19 @@ restacked=$(git -C "$repo" rev-parse HEAD)
 fork2=$(git -C "$repo" merge-base "$signed" "$reader")
 got=$(cd "$repo" && moved "$fork2" "$signed" "$reader" "$restacked" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#6852: a row below that names the item moves no word of the change" "$got"
-got=$(cd "$repo" && joined "$fork2" "$reader" Gone | tr '\n' ' ')
-[[ -z $got ]] || fail "#7164: a row below that names the item is no reader, so the sign-off holds" "$got"
-got=$(cd "$repo" && joined "$fork2" "$base" Gone | tr '\n' ' ')
-[[ -z $got ]] || fail "#6852: a landing below that names the item nowhere adds no reader" "$got"
+
+# A Rust source that names the variant lands below the signed deletion. It
+# joins the readers of the item at the base, and it moves no word of the
+# change: the build of the merge group refuses a true reader (#7218).
+git -C "$repo" checkout --quiet landing
+printf 'pub fn late() -> E { E::Gone }\n' > "$repo/src/late.rs"
+late=$(commit late)
+git -C "$repo" checkout --quiet -b restacked-late
+git -C "$repo" cherry-pick --quiet "$signed" > /dev/null
+relanded=$(git -C "$repo" rev-parse HEAD)
+fork3=$(git -C "$repo" merge-base "$signed" "$late")
+got=$(cd "$repo" && moved "$fork3" "$signed" "$late" "$relanded" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#7218: a source below that names the item joins its readers and moves no word of the change" "$got"
 
 # The readers of an item stay within the crates that can name it (#7125).
 # The item lives in `gandr-item`. `gandr-user` names that package, and
@@ -120,7 +130,7 @@ manifest far 'gandr-user.workspace = true'
 manifest item-base
 manifest other 'gandr-item-base = { path = "../item-base" }'
 crates_commit() { git -C "$crates_repo" add -A && git -C "$crates_repo" commit --quiet --no-verify -m "$1" && git -C "$crates_repo" rev-parse HEAD; }
-crates_fork=$(crates_commit manifests)
+crates_commit manifests > /dev/null
 mkdir -p "$crates_repo/ledger"
 printf 'fn f(receiver: u8) {}\n' > "$crates_repo/crates/item/src/a.rs"
 printf 'fn g() { receive() }\n' > "$crates_repo/crates/user/src/b.rs"
@@ -135,15 +145,24 @@ crates_base=$(crates_commit readers)
 got=$(cd "$crates_repo" && crates_naming "$crates_base" 'gandr_item::session::receive' | tr '\n' ' ')
 [[ $got == 'crates/far crates/item crates/user ' ]] \
   || fail "#7125: the crates that can name an item are its own and each crate that names one of them, to a fixed point; a name that only starts with the package names another" "$got"
-got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_item::session::Program::<'"'"'arena>::receive' | tr '\n' ' ')
-[[ $got == 'crates/far/src/c.rs crates/user/src/b.rs ' ]] \
-  || fail "#7164: a reader is a Rust source of a crate that can name the item, by the whole word; a README, a ledger row and a script are none" "$got"
-got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_item::session::tests::receive' | tr '\n' ' ')
-[[ -z $got ]] \
-  || fail "#7125: an item of a test module is read in its own crate alone" "$got"
-got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_gone::receive' | tr '\n' ' ')
-[[ $got == 'crates/far/src/c.rs crates/item-base/src/d.rs crates/other/src/e.rs crates/user/src/b.rs ' ]] \
-  || fail "#7164: an item whose crate the base lacks is read in the Rust sources of every crate, by the whole word" "$got"
+# The files of the landing that hold `receive`, within the reach of the
+# item `$1`.
+printf '%s\n' crates/item/src/a.rs crates/user/src/b.rs crates/far/src/c.rs crates/item-base/src/d.rs crates/other/src/e.rs \
+  ledger/readers.sql crates/user/README.md .config/held.bash > "$work/crates-changed"
+crates_named() {
+  local -a sources=()
+  mapfile -t sources < <(cd "$crates_repo" && reach "$crates_base" "$1")
+  (cd "$crates_repo" && named "$crates_base" receive "$work/crates-changed" "${sources[@]}") | LC_ALL=C sort | tr '\n' ' '
+}
+got=$(crates_named 'gandr_item::session::Program::<'"'"'arena>::receive')
+[[ $got == 'crates/far/src/c.rs crates/item/src/a.rs crates/user/src/b.rs ' ]] \
+  || fail "#7164: a file names an item as a Rust source of a crate that can name it; a README, a ledger row and a script name none" "$got"
+got=$(crates_named 'gandr_item::session::tests::receive')
+[[ $got == 'crates/item/src/a.rs ' ]] \
+  || fail "#7125: an item of a test module is named in its own crate alone" "$got"
+got=$(crates_named 'gandr_gone::receive')
+[[ $got == 'crates/far/src/c.rs crates/item-base/src/d.rs crates/item/src/a.rs crates/other/src/e.rs crates/user/src/b.rs ' ]] \
+  || fail "#7164: an item whose crate the base lacks is named in the Rust sources of every crate" "$got"
 
 # A reader is a Rust source that the item's visibility lets name it (#7209).
 # `gandr-item` holds the module `net::session`, `gandr-user` names
@@ -193,7 +212,7 @@ EOF
 printf '#[path = "sub/other.rs"]\nmod o;\nmod s;\n' > "$vis_repo/crates/pathy/src/lib.rs"
 printf 'fn hidden() {}\n' > "$vis_repo/crates/pathy/src/s.rs"
 vis_commit() { git -C "$vis_repo" add -A && git -C "$vis_repo" commit --quiet --no-verify -m "$1" && git -C "$vis_repo" rev-parse HEAD; }
-vis_fork=$(vis_commit visibility)
+vis_commit visibility > /dev/null
 mkdir -p "$vis_repo/crates/item/src/net/session" "$vis_repo/crates/user/src" "$vis_repo/crates/lone/src" "$vis_repo/crates/pathy/src/sub"
 for file in crates/item/src/net.rs crates/item/src/other.rs crates/item/src/net/session/inner.rs \
   crates/user/src/b.rs crates/lone/src/c.rs crates/pathy/src/sub/other.rs; do
@@ -207,39 +226,41 @@ vis_record() {
     | {file: $file, start: ($start | tonumber), line: ($at | tonumber), kind: $kind, exported: ($public == "true")}' \
     --args "$1" "$2" "$3" "$4" "${5:-crates/item/src/net/session.rs}"
 }
-# The new readers of `receive` at the base, in the reach of the record `$2`
-# of the item `$1`, or of its package when `$2` is empty.
-vis_joined() {
+# The files of the landing that hold `receive`, in the reach of the record
+# `$2` of the item `$1`, or of its package when `$2` is empty.
+printf '%s\n' crates/item/src/net.rs crates/item/src/other.rs crates/item/src/net/session/inner.rs \
+  crates/user/src/b.rs crates/lone/src/c.rs crates/pathy/src/sub/other.rs ledger/purposes.sql > "$work/vis-landed"
+vis_named() {
   local -a sources=()
-  if [[ -n $2 ]]; then mapfile -t sources < <(cd "$vis_repo" && reach "$vis_base" "$1" "$2"); fi
-  (cd "$vis_repo" && joined "$vis_fork" "$vis_base" "$1" "${sources[@]}") | LC_ALL=C sort | tr '\n' ' '
+  mapfile -t sources < <(cd "$vis_repo" && reach "$vis_base" "$1" "$2")
+  (cd "$vis_repo" && named "$vis_base" receive "$work/vis-landed" "${sources[@]}") | LC_ALL=C sort | tr '\n' ' '
 }
 vis_item=gandr_item::net::session::receive
 vis_package='crates/item/src/net.rs crates/item/src/net/session/inner.rs crates/item/src/other.rs crates/user/src/b.rs '
 vis_in_crate='crates/item/src/net.rs crates/item/src/net/session/inner.rs crates/item/src/other.rs '
 vis_in_module='crates/item/src/net/session/inner.rs '
-got=$(vis_joined "$vis_item" "$(vis_record 1 1 fn true)")
+got=$(vis_named "$vis_item" "$(vis_record 1 1 fn true)")
 [[ $got == "$vis_package" ]] || fail "#7209: an exported item is read in each crate that can name its package" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 2 2 fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 2 2 fn false)")
 [[ $got == "$vis_in_crate" ]] || fail "#7209: a pub(crate) item is read in its own crate alone" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 3 3 fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 3 3 fn false)")
 [[ $got == 'crates/item/src/net.rs crates/item/src/net/session/inner.rs ' ]] \
   || fail "#7209: a pub(super) item is read in its parent module's file and below it" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 4 4 fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 4 4 fn false)")
 [[ $got == "$vis_in_module" ]] || fail "#7209: a private item is read in its own module's file and below it" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 5 10 fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 5 10 fn false)")
 [[ $got == "$vis_in_module" ]] || fail "#7209: the visibility stands past the doc comment and an attribute of three lines" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 12 12 variant false)")
+got=$(vis_named "$vis_item" "$(vis_record 12 12 variant false)")
 [[ $got == "$vis_in_module" ]] || fail "#7209: a variant of a private enum is read in the enum's module" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 16 16 assoc-fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 16 16 assoc-fn false)")
 [[ $got == "$vis_package" ]] || fail "#7209: an item of an impl of a trait has the trait's reach, the package's" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 19 19 assoc-fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 19 19 assoc-fn false)")
 [[ $got == "$vis_in_module" ]] || fail "#7209: a private item of an inherent impl is read in its module" "$got"
-got=$(vis_joined "$vis_item" "$(vis_record 21 21 fn false)")
+got=$(vis_named "$vis_item" "$(vis_record 21 21 fn false)")
 [[ $got == "$vis_package" ]] || fail "#7209: a header that the reading does not know, as a macro's, keeps the package's reach" "$got"
-got=$(vis_joined "$vis_item" '')
+got=$(vis_named "$vis_item" '')
 [[ $got == "$vis_package" ]] || fail "#7209: an item with no record keeps the package's reach" "$got"
-got=$(vis_joined gandr_pathy::s::receive "$(vis_record 1 1 fn false crates/pathy/src/s.rs)")
+got=$(vis_named gandr_pathy::s::receive "$(vis_record 1 1 fn false crates/pathy/src/s.rs)")
 [[ $got == 'crates/pathy/src/sub/other.rs ' ]] \
   || fail "#7209: a private item of a crate with a #[path] attribute is read in its whole crate" "$got"
 printf '%s\n' ledger/purposes.sql crates/item/src/other.rs crates/item/src/net/session/inner.rs > "$work/vis-changed"
@@ -342,4 +363,4 @@ git -C "$served_origin" gc --quiet --prune=now
   || fail "#7012: a signed commit that a pushed ref holds is served, so the sign-off holds" "not served"
 
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a reader is a Rust source that the item's visibility lets name it, by the whole word, and a row, a README or a script is none; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a file of the change names an item as a Rust source that the item's visibility lets name it, and a row, a README or a script names none; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"

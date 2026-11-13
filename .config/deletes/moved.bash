@@ -302,25 +302,6 @@ named() {
   done
 }
 
-# `joined <fork> <base> <item> [<pathspec>…]` prints each file at `<base>`
-# that names `<item>` and that names it nowhere at `<fork>`, one for each
-# line. Such a file is a new reader of the item. A reader is a Rust source
-# of the item's reach (`reach`, #7209), the pathspecs given or the reach of
-# its package when none are, and no other file (#7164): a script, a ledger
-# row or a README is no reader. A Rust source names the item by the whole
-# word of its last segment (#7125).
-joined() {
-  local fork=$1 base=$2 item=$3 name
-  shift 3
-  name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
-  local -a sources=("$@")
-  (( ${#sources[@]} )) || mapfile -t sources < <(reach "$base" "$item")
-  joined_readers() {
-    git grep -l -w -F -e "$name" "$1" -- "${sources[@]}" 2> /dev/null | sed "s|^$1:||" | sort -u
-  }
-  comm -13 <(joined_readers "$fork") <(joined_readers "$base")
-}
-
 # `reshaped <fork> <base> <file> <start> <end>` succeeds when the record of
 # an item, at lines `<start>` to `<end>` of `<file>` at `<base>`, changes
 # from `<fork>` to `<base>`. A hunk of the diff with no context lines that
