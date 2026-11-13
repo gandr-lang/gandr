@@ -14,17 +14,18 @@
 # refused case must not run its command. No network is read.
 set -euo pipefail
 root=$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd)
+source "$root/.config/cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 upstream=$scratch/upstream
 git init --quiet -b main "$upstream"
+identity "$upstream"
 commit() {
   printf '[toolchain]\nchannel = "%s"\n' "$1" > "$upstream/rust-toolchain.toml"
   git -C "$upstream" add rust-toolchain.toml
-  git -C "$upstream" -c user.name=case -c user.email=case@example.invalid -c commit.gpgsign=false \
-    commit --quiet --allow-empty -m "$2"
+  git -C "$upstream" commit --quiet --allow-empty -m "$2"
   git -C "$upstream" rev-parse HEAD
 }
 commit nightly-2026-05-13 'an earlier channel' > /dev/null

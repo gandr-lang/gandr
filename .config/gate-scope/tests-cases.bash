@@ -17,6 +17,7 @@ set -euo pipefail
 # the check (`GATE_BASE`, #6894).
 unset GATE_TEST_EVERY_RED GATE_BASE
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+source "$here/../cases/scratch.bash"
 scope="$here/test-scope.bash"
 source "$here/../pr-stack/trunk.bash"
 scratch=$(mktemp -d)
@@ -42,9 +43,7 @@ package() {
 setup() {
   git init --quiet -b main "$1"
   cd "$1"
-  git config user.email gate@example.invalid
-  git config user.name gate
-  git config commit.gpgsign false
+  identity
   printf '[workspace]\nmembers = ["red", "green", "dispatcher"]\nresolver = "2"\n' > Cargo.toml
   printf 'target/\n' > .gitignore
   package . red red 2

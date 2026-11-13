@@ -13,6 +13,7 @@
 # site here.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-budget.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin" "$work/repo"
@@ -25,7 +26,8 @@ if [[ ${3:-} =~ ^[0-9]+$ ]]; then echo "$3"; else git branch --show-current; fi
 EOF
 chmod +x "$work/bin/gh"
 git -C "$work/repo" init -q -b one
-git -C "$work/repo" -c user.name=case -c user.email=case@example.invalid commit -q --allow-empty -m one
+identity "$work/repo"
+git -C "$work/repo" commit -q --allow-empty -m one
 git -C "$work/repo" branch two
 export GH_TOKEN=case XDG_CACHE_HOME=$work/cache STUB_BUDGET_CALLS=$work/calls PATH=$work/bin:$PATH
 unset GH_REPO

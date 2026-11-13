@@ -15,6 +15,7 @@
 # - A reading starts a fill in the background from the last filled head.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-watch-fill.XXXXXX")
 work=$(cd "$work" && pwd -P)
 trap 'rm -rf "$work"' EXIT
@@ -27,16 +28,17 @@ fail() {
   echo "  got: $2"
   failed=1
 }
-git() { command git -c user.name=case -c user.email=case@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
 # The scratch worktrees take no entry in the host's list of trusted
 # configurations, and `mise exec` runs its command as it is. The fill in the
 # background is a fresh shell, so the stand-in is exported.
 mise() { if [[ $1 == exec ]]; then shift 2; "$@"; fi; }
-export -f mise git
+export -f mise
 export FILL_LOG=$work/log FILL_STATE=$watch_state FILL_MOVE=$work/move
 
 mkdir -p "$watch_tree"
 git init --quiet "$watch_tree"
+identity "$watch_tree"
+git -C "$watch_tree" config core.hooksPath /dev/null
 mkdir -p "$watch_tree"/crates/{a,b,c}/src "$watch_tree/.config/deletes"
 printf '[package]\nname = "gandr-a"\n\n[dependencies]\nname = "other"\n' > "$watch_tree/crates/a/Cargo.toml"
 printf '[package]\nname = "gandr-b"\n' > "$watch_tree/crates/b/Cargo.toml"

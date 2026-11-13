@@ -114,7 +114,7 @@
         "ledger/concerns.sql",
         "library/std/"
       ],
-      "check:cases": [".config/cases/"],
+      "check:cases": [".config/"],
       "check:census": [".config/cases/", ".config/census/"],
       "check:claims": [
         ".cargo/",
@@ -169,7 +169,7 @@
       "check:gh-budget": [".config/", ".github/"],
       "check:gh-direct": [".config/", ".github/"],
       "check:hooks": ["prek.toml"],
-      "check:host-lock": [".config/mise/"],
+      "check:host-lock": [".config/cases/", ".config/mise/"],
       "check:hotpath": [
         ".config/cases/",
         ".config/hotpath/",
@@ -196,6 +196,7 @@
       ],
       "check:landing-rebase": [".config/cases/", ".config/landing/"],
       "check:ledger": [
+        ".config/cases/",
         ".config/ledger/",
         ".config/mise/tasks/mise-tasks-ledger.toml",
         ".config/pr-stack/",
@@ -246,6 +247,7 @@
         "ledger/"
       ],
       "check:recovery-rise": [
+        ".config/cases/",
         ".config/recovery/",
         "corpus/",
         "crates/surface-corpus/strict/",
@@ -253,6 +255,7 @@
       ],
       "check:references": [
         ".config/bodies/",
+        ".config/cases/",
         ".config/references/",
         "README.md",
         "corpus/",

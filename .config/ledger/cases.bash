@@ -22,11 +22,13 @@ unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true
 root=$PWD
+source "$root/.config/cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 repo="$scratch/repo"
 mkdir -p "$repo/ledger" "$repo/crates/x" "$repo/corpus/ledger/features" "$scratch/gh" "$scratch/answers"
 git init --quiet "$repo"
+identity "$repo"
 {
   awk '/^CREATE TABLE feature\(/,/\) WITHOUT ROWID;$/' ledger/features.sql
   echo "INSERT INTO feature VALUES('gap','workflow','A gap',NULL,'implemented','ordinary',NULL,'A row with no witness.','x',NULL,NULL,'#1',NULL);"
@@ -37,8 +39,7 @@ printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: th
   > "$repo/corpus/ledger/features/owing.gandr"
 echo '{"superseded": []}' > "$repo/ledger/syntax.json"
 git -C "$repo" add .
-git -C "$repo" -c user.name=ledger -c user.email=ledger@example.invalid -c commit.gpgSign=false \
-  commit --quiet -m 'chore(repo): ledger base'
+git -C "$repo" commit --quiet -m 'chore(repo): ledger base'
 base=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" update-ref refs/remotes/origin/landing "$base"
 # Each case's stub answers differently: no reading is kept between them.
@@ -72,8 +73,7 @@ while IFS= read -r case; do
   git -C "$repo" reset --quiet --hard "$base"
   closes=$(jq -r '.closes[]? | "Closes #\(.)"' <<< "$case")
   if [[ -n $closes ]]; then
-    git -C "$repo" -c user.name=ledger -c user.email=ledger@example.invalid -c commit.gpgSign=false \
-      commit --quiet --allow-empty \
+    git -C "$repo" commit --quiet --allow-empty \
       -m 'test(ledger): closing issue' -m "$closes"
   fi
   for number in $(jq -r '.answers | keys[]' <<< "$case"); do

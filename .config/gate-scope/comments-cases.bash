@@ -8,6 +8,7 @@
 # selects it.
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+source "$here/../cases/scratch.bash"
 select="$here/select.bash"
 source "$here/../pr-stack/trunk.bash"
 scratch=$(mktemp -d)
@@ -29,9 +30,7 @@ fail() {
 setup() {
   git init --quiet -b main "$1"
   cd "$1"
-  git config user.email gate@example.invalid
-  git config user.name gate
-  git config commit.gpgsign false
+  identity
   mkdir -p crates/core-term/src corpus/model
   printf '%s\n' '// The count.' 'pub const N: u8 = 1;' > crates/core-term/src/lib.rs
   printf '%s\n' '/// The count.' 'def n = 1 ;' > corpus/model/count.gandr

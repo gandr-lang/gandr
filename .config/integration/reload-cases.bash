@@ -15,6 +15,7 @@
 #   script, and the detector starts again from it.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-watch-reload.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 export XDG_STATE_HOME=$work/state
@@ -29,9 +30,9 @@ fail() {
   failed=1
 }
 
-git() { command git -c user.name=case -c user.email=case@example.invalid -c commit.gpgsign=false "$@"; }
 git init --quiet --bare --initial-branch=landing "$work/origin.git"
 git clone --quiet "$work/origin.git" "$work/seed" 2> /dev/null
+identity "$work/seed"
 mkdir -p "$work/seed/.config/integration"
 # Lands a `watch.bash` whose reading prints version `$1`; prints the head.
 land() {

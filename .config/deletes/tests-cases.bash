@@ -13,6 +13,7 @@
 # that changes reads as changed and the other does not.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-deletes-tests.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
@@ -44,9 +45,7 @@ got=$(jq -rn -L "$here" --arg path "$raw" 'include "paths"; $path | tree_path')
 repo=$work/repo
 mkdir -p "$repo/crates/k/src/a" "$repo/crates/k/src/b"
 git -C "$repo" init --quiet
-git -C "$repo" config user.email cases@example.invalid
-git -C "$repo" config user.name cases
-git -C "$repo" config commit.gpgsign false
+identity "$repo"
 printf '#[path = "../b/t.rs"]\nmod placed;\n' > "$repo/crates/k/src/a/tests.rs"
 printf '#[test]\nfn holds()\n{\n    assert!(true);\n}\n' > "$repo/crates/k/src/b/t.rs"
 printf 'pub fn other() {}\n' > "$repo/crates/k/src/lib.rs"
