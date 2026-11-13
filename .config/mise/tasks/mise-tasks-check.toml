@@ -1505,6 +1505,18 @@ fi
 echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no conflict markers, merge-driver residue or residue file names in tracked files"
 '''
 
+# No line of the tree holds the path of a home directory, which names an
+# account of a host on a public surface (#7041). One `rg` reads every file
+# that git does not ignore, after the cases of `.config/local-paths/` read as
+# recorded. A placeholder name of `placeholders` stands. The check sits in no
+# group of `.config/gate-scope/table.json` and in no row of its `reads`, so
+# it is light and each change runs it.
+["check:local-paths"]
+description = "No line of the tree holds the path of a home directory"
+tools.jq = "1.8.1"
+tools.ripgrep = "15.2.0"
+run = ".config/local-paths/check.bash"
+
 # A workflow never hashes a tarball through `hashFiles`: the expression
 # engine reads the whole archive within a 120 s budget, and a build state
 # large enough to exceed it fails a lane whose tests all passed (#1173). A
