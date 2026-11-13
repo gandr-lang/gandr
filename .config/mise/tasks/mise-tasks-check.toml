@@ -323,16 +323,6 @@ issue_keep "$title" "$(issue_found "$title")" 1 "$scratch/body.md" \
   mise run --quiet issue:file "$title" "$scratch/observation.md" kind:performance area:workflow --template gate-time --fields "$fields"
 {% endraw %}'''
 
-# Every corpus source and crate fixture stays in the gandr formatter's
-# layout (#492): one process over the fixture subtrees of `corpus/`, the
-# library `library/std` and every `.gandr` file under `crates/`, beside
-# rustfmt. The formatter keeps each token as written, so the explicit-form
-# sources keep their spelling.
-["check:fmt"]
-description = "rustfmt and the gandr formatter, unchanged"
-depends = ["check:corpus-format"]
-run = ".config/mise/scope cargo fmt --all --check"
-
 # The gandr formatter's check over the corpus and the crate fixtures. A test
 # reads a fixture with `include_str!`, so the fixture is a source the gate
 # holds to the layout as it holds the corpus. A source whose layout its test

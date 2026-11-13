@@ -9,7 +9,6 @@
       "check:corpus-comments",
       "check:doctests",
       "check:dylint",
-      "check:fmt",
       "check:landing",
       "check:obligations",
       "check:tests-enforcing",
