@@ -17,9 +17,11 @@ name: Nightly
 # since the last successful run; each lane runs at the commit of main whose
 # test state it restores. A failure is a red run on main, never a blocked
 # queue. A dispatch always runs. Beside them, every day, each CI lane's
-# median job time against its budget. The sweeps and the recovery sweep run
-# on a runner of our own while one is online (#6868). The whole workflow is
-# held to fifteen minutes summed over its jobs on hosted runners.
+# median job time against its budget, and the chain of a cold build of the
+# driver on x86-64 and on riscv64 against the last night's (#6893). The
+# sweeps and the recovery sweep run on a runner of our own while one is
+# online (#6868). The whole workflow is held to fifteen minutes summed over
+# its jobs on hosted runners.
 on:
   schedule:
     - cron: "0 4 * * *"
@@ -96,12 +98,15 @@ jobs:
         name: install mise-managed policy tools
         if: ${{ needs.ci-image-ref.outputs.ref == '' && env.CI_RUNNER != 'integration' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+      # A job that runs bare beside a published image, as the chain's cold
+      # build does, sets `CI_BARE`, and the action installs the toolchain
+      # and mold there.
       - &setup-rust
         name: setup rust
         if: *hosted
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
-          install-toolchain: ${{ needs.ci-image-ref.outputs.ref == '' }}
+          install-toolchain: ${{ needs.ci-image-ref.outputs.ref == '' || env.CI_BARE == 'true' }}
           cache-save: false
       # The ci.yml test-state restore: main's newest complete test state of
       # this toolchain generation, which Cargo's fingerprints bring up to
@@ -393,6 +398,65 @@ jobs:
       - name: run the night's crates' tests with every feature on
         run: mise run ci:all-features
 
+  # The chain of each head (#6893): one cold build of the driver for each
+  # architecture (`.config/nightly/chain-build.bash`), whose build analysis
+  # log `reports` reads into the night's chain report (`mise run
+  # report:chain`). The build is cold by design, so it restores no test
+  # state, and it runs bare on the runner's own disk: `CI_BARE` has `setup
+  # rust` install the toolchain and mold. The x86-64 build runs on the hosted
+  # runner. Its job took 270 s on a hosted runner in nightly 43345701385,
+  # 223 s of it the build, so its share of the nightly's 900 s fits only
+  # beside the sweeps on a runner of our own (#6868). So it runs on a night
+  # whose sweeps run on our runner and on a dispatch, and a night whose
+  # sweeps fall back to the hosted runner reads no x86-64 row.
+  chain:
+    name: build the driver cold and keep its chain (x86-64)
+    needs: [ci-image-ref, freshness]
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || (needs.freshness.outputs.stale == 'true' && needs.freshness.outputs.runner == 'integration')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CHAIN_ARCH: x86-64
+      CI_BARE: "true"
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+    steps:
+      - *git-checkout
+      - *setup-rust
+      - &chain-build
+        name: build the driver cold and keep its build log
+        run: .config/nightly/chain-build.bash "$CHAIN_ARCH" "$RUNNER_TEMP/chain"
+      - &chain-upload
+        name: upload the build log
+        uses: *upload-artifact
+        with:
+          name: chain-log-${{ env.CHAIN_ARCH }}
+          path: ${{ runner.temp }}/chain
+          retention-days: 7
+          if-no-files-found: error
+
+  # The riscv64 build runs on a runner of our own, whose host holds the
+  # toolchain, mold and jq, and no mise, so the job runs the build's script
+  # alone. The build holds the host lock `par` that the host's measures hold
+  # (#6945), so a measure and the build do not load each other. It can first
+  # wait for one measure: 27 minutes at the most in the record. Only the
+  # schedule and a dispatch of `main` in gandr-lang/gandr reach the runner,
+  # so no fork and no branch runs code on it. Its time counts in no hosted
+  # sum.
+  chain-riscv64:
+    name: build the driver cold and keep its chain (riscv64)
+    needs: freshness
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, Linux, RISCV64] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 90
+    env:
+      CHAIN_ARCH: riscv64
+      CHAIN_LOCK: /run/lock/gandr/par.lock
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+    steps:
+      - *git-checkout
+      - *chain-build
+      - *chain-upload
+
   # The night's reports and filings run as one job, each its own step, so
   # one container start serves them (#3208): a start costs 20 to 25 s, and
   # the lane budget, the recovery filing and the reports did a minute or less
@@ -435,6 +499,12 @@ jobs:
   # The dependency and prose reports read the open issues and pull requests
   # from one read of them (`mise run issues:open`, #5681), 8 pages, in place
   # of 8 pages each, and each runs only when that read succeeds.
+  # Then the chain report (`mise run report:chain`, #6893): each chain job's
+  # build log read into its row beside the last night's, in the job summary,
+  # and a growth past 10 % in one night on the build's chain collector. The
+  # job waits on the chain jobs for their logs, and on the riscv64 build the
+  # longest. It reads the history of each crate on a chain for its edits in a
+  # week, which the whole checkout holds.
   #
   # Each lane's median job time over the newest ten runs of ci.yml that hold
   # it, against its budget, as the job summary and on one issue while any
@@ -484,7 +554,9 @@ jobs:
   # crate's 840 s held over `--daily`, its job's own limit. Both come back
   # with the lanes. This workflow's own all-features lane is held over its
   # scheduled runs (`--nightly`): about 1.5 times the 194 to 216 s each
-  # third of the all-features crates took on a dispatch. The hosted budget
+  # third of the all-features crates took on a dispatch. Its chain's x86-64
+  # job is held in the same way: about 1.5 times the 270 s of its job in
+  # nightly 43345701385 (#6893). The hosted budget
   # is this workflow's summed time of its jobs on hosted runners per run
   # (`--summed`): 15 minutes for its median, 20 the ceiling no night passes.
   # A job on a runner of our own counts in no hosted sum (#6868). The table
@@ -494,7 +566,7 @@ jobs:
   # for is a `--waiting` argument and a line of the same issue (#6947).
   reports:
     name: report and file the night's findings
-    needs: [ci-image-ref, freshness, sweeps]
+    needs: [ci-image-ref, freshness, sweeps, chain, chain-riscv64]
     if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
     runs-on: *linux
     permissions:
@@ -589,6 +661,38 @@ jobs:
       - name: list the threads outside the pool
         if: *not-cancelled
         run: mise run --quiet report:threads >> "$GITHUB_STEP_SUMMARY"
+      # The chain of each head (#6893): each chain job's build log read into
+      # its row, beside the last night's row, a growth past 10 % filed on
+      # the build's chain collector (`mise run report:chain`). The rows go
+      # on as the artifact `chain`, the next night's last rows. A night with
+      # no build log prints the last night's rows. Each log downloads by its
+      # name into its own directory: a pattern that matches one artifact
+      # extracts it with no directory of its own.
+      - name: download the x86-64 chain's build log
+        if: ${{ !cancelled() && needs.chain.result == 'success' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: chain-log-x86-64
+          path: ${{ runner.temp }}/chain/chain-log-x86-64
+      - name: download the riscv64 chain's build log
+        if: ${{ !cancelled() && needs.chain-riscv64.result == 'success' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: chain-log-riscv64
+          path: ${{ runner.temp }}/chain/chain-log-riscv64
+      - name: report the chain of each head
+        if: *not-cancelled
+        run: mise run --quiet report:chain "$RUNNER_TEMP/chain" >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the night's chain rows
+        if: *not-cancelled
+        uses: *upload-artifact
+        with:
+          name: chain
+          path: ${{ runner.temp }}/chain/rows
+          retention-days: 30
+          if-no-files-found: ignore
       - name: compare each lane with its budget
         if: *not-cancelled
         shell: bash
@@ -614,6 +718,7 @@ jobs:
             --budget "check Clippy wall=150" \
             --budget "re-verify obligated specifications (linux)=180" \
             --nightly "test every crate with every feature on=300" \
+            --nightly "build the driver cold and keep its chain (x86-64)=400" \
             --summed "Nightly=900/1200" \
             "${waiting[@]}" \
             >> "$GITHUB_STEP_SUMMARY"

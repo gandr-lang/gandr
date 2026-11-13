@@ -3984,6 +3984,113 @@ git ls-files -z -- 'crates/*.rs' | xargs -0 awk '
 '
 '''
 
+# The night's chain report (#6893). Each chain job of the nightly builds the
+# driver cold (`.config/nightly/chain-build.bash`) and keeps its build log as
+# the artifact `chain-log-<arch>`, and `reports` downloads each one into
+# `<logs>`. The task reads each log into the architecture's row
+# (`.config/nightly/chain.jq`): the units, the wall, the chain and the slack
+# of the longest units off it, with the head and the machine. A log that
+# does not read is named and set aside, so one architecture's failure keeps
+# the others' rows. For each crate's source on a chain the task counts the
+# landings of the four weeks before the head, on the first parent, and
+# divides by 4: the edits in a week of the metric of a split. It writes the
+# rows into `<logs>/rows`, which the nightly keeps as the artifact `chain`.
+# The report puts each row beside the last night's: the rows of the newest
+# `chain` artifact of another run on `main` (`.config/nightly/chain-night.jq`
+# the rule, `.config/nightly/chain.json` its cases, held by `check:nightly`).
+# The report goes to standard output, and the nightly writes it into the job
+# summary of `reports`. A chain that grows past the share in one night, on
+# the same machine, adds a row to the build's one chain collector, opened on
+# its first growth (`.config/issues/keep.bash`). Only with REPORT_FILE set
+# does the task write the collector. Without it, the task prints what it
+# reads. Given no logs, or logs of no architecture, the task prints the last
+# night's rows: a landing that changes a crate's dependencies reads the chain
+# there for its pull request. The report never blocks a landing. GH_REPO
+# names the repository.
+["report:chain"]
+description = "Read each architecture's cold build into its chain, report it beside the last night's, and file a growth past the share on the build's chain collector"
+tools.jq = "1.8.1"
+usage = '''
+arg "[logs]" help="the directory of the night's build logs, a `chain-log-<arch>` directory for each architecture; none prints the last night's rows"
+flag "--share <percent>" default="10" help="the growth in one night past which the collector takes a row"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/keep.bash"
+source "$root/.config/gh/repo.bash"
+here=$root/.config/nightly
+repo=$(repo_name)
+share=${usage_share:?}
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+# The landings of each source on a chain in the four weeks before its row's
+# head, on the first parent, divided by 4: one JSON object by source. A head
+# that the clone does not hold counts from HEAD.
+edits() {
+  jq -r '.[] | .head as $head | .chain[] | select(.source != null) | "\($head) \(.source)"' "$1" | sort -u \
+    | while read -r head source; do
+      git cat-file -e "$head^{commit}" 2> /dev/null || head=HEAD
+      since=$(( $(git show -s --format=%ct "$head") - 28 * 86400 ))
+      count=$(git rev-list --count --first-parent --since="@$since" "$head" -- "$source")
+      jq -n -c --arg source "$source" --argjson count "$count" '{($source): ($count / 4)}'
+    done \
+    | jq -s -c 'add // {}'
+}
+run=$(gh api "repos/$repo/actions/artifacts?name=chain&per_page=20" \
+  --jq "[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == \"main\" and (.workflow_run.id | tostring) != \"${GITHUB_RUN_ID:-}\")] | sort_by(.created_at) | last | .workflow_run.id // empty")
+if [[ -n $run ]]; then
+  gh run download "$run" --repo "$repo" --name chain --dir "$scratch/last"
+else
+  echo "report:chain: no night on main kept the chain" >&2
+fi
+shopt -s nullglob
+last=("$scratch"/last/chain-*.json)
+jq -s -c . "${last[@]}" /dev/null > "$scratch/last.json"
+logs=()
+if [[ -n ${usage_logs:-} ]]; then logs=("$usage_logs"/chain-log-*/); fi
+if (( ${#logs[@]} == 0 )); then
+  [[ -z ${usage_logs:-} ]] || echo "report:chain: $usage_logs holds no chain-log-<arch> directory; the last night's rows follow" >&2
+  jq -n -c --argjson share "$share" --slurpfile last "$scratch/last.json" --argjson edits "$(edits "$scratch/last.json")" \
+    '{share: $share, run: null, rows: $last[0], last: [], issues: [], edits: $edits}' \
+    | jq -r -f "$here/chain-night.jq" | jq -r .summary
+  exit 0
+fi
+mkdir -p "$usage_logs/rows"
+for dir in "${logs[@]}"; do
+  arch=$(basename "$dir")
+  arch=${arch#chain-log-}
+  if ! jq -s -c --argjson top 5 -f "$here/chain.jq" "$dir/build.jsonl" > "$scratch/row.json"; then
+    echo "report:chain: the $arch build log does not read; the report leaves $arch out" >&2
+    continue
+  fi
+  jq -c --arg arch "$arch" --arg head "$(< "$dir/head")" --arg machine "$(< "$dir/machine")" '{arch: $arch, head: $head, machine: $machine} + .' \
+    "$scratch/row.json" > "$usage_logs/rows/chain-$arch.json"
+done
+rows=("$usage_logs"/rows/chain-*.json)
+jq -s -c . "${rows[@]}" /dev/null > "$scratch/rows.json"
+title="perf: the build's chain grows past $share % in one night"
+found=null
+run=null
+if [[ -n ${REPORT_FILE:-} ]]; then
+  found=$(issue_found "$title")
+  run=$(jq -n -c --argjson id "${GITHUB_RUN_ID:?}" --arg url "${GITHUB_RUN_URL:?}" '{id: $id, url: $url}')
+fi
+jq -n -c --argjson share "$share" --argjson run "$run" --argjson found "$found" --arg title "$title" \
+  --slurpfile rows "$scratch/rows.json" --slurpfile last "$scratch/last.json" --argjson edits "$(edits "$scratch/rows.json")" \
+  '{share: $share, run: $run, rows: $rows[0], last: $last[0], issues: [$found | select(. != null) | . + {title: $title}], edits: $edits}' \
+  | jq -c -f "$here/chain-night.jq" > "$scratch/night.json"
+jq -r .summary "$scratch/night.json"
+if [[ $(jq '.action != null' "$scratch/night.json") == true ]]; then
+  jq -r .action.body "$scratch/night.json" > "$scratch/body.md"
+  issue_keep "$title" "$found" "$(jq '.grew | length' "$scratch/night.json")" "$scratch/body.md" \
+    mise run --quiet issue:file "$title" "$scratch/body.md" kind:defect area:workflow collector >&2
+elif [[ -z ${REPORT_FILE:-} && $(jq '.grew | length' "$scratch/night.json") -gt 0 ]]; then
+  echo "report:chain: a chain grows past $share %; REPORT_FILE unset, nothing written" >&2
+fi
+{% endraw %}'''
+
 # How the pull request obligations are answered (#2886): over the pull
 # requests merged in a period and the unit issues they close, five tables,
 # the lane (the closed unit's first `area:`) as the row and the ISO week of
