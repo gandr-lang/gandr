@@ -244,6 +244,20 @@ refusal=$(gate_in flex-a-6699-scope 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot 
 kill -KILL "$flex_a"
 wait "$flex_a" 2> /dev/null || true
 
+# A worktree that `wt` makes is `<repository>.<branch>` (#7046). The
+# repository's name and its `.` drop before the lane table is read, so the
+# worktrees `repo.flex-a-7046-lane` and `repo.lane-flex-b` are the lanes
+# `flex-a` and `flex-b`, not `repo.flex` and `repo.lane`.
+git init --quiet "$scratch/repo"
+git -C "$scratch/repo" -c user.name=cases -c user.email=cases@example.invalid commit --quiet --no-gpg-sign --allow-empty -m root
+for tree in flex-a-7046-lane lane-flex-b; do
+  git -C "$scratch/repo" worktree add --quiet --detach "$scratch/repo.$tree"
+done
+lanes=$(for tree in flex-a-7046-lane lane-flex-b; do
+  (cd "$scratch/repo.$tree" && bash -c 'source "$1"; gate_lane' _ "$gate_helper")
+done | paste -sd ' ' -)
+[[ $lanes == 'flex-a flex-b' ]] || fail "#7046: the worktrees repo.flex-a-7046-lane and repo.lane-flex-b gave the lanes $lanes"
+
 # A heavy check run alone holds a slot through `gated`, so another lane's gate
 # finds none of one slot free; inside a gate, which exports `GANDR_GATE_SLOT`,
 # `gated` takes none.
@@ -309,4 +323,4 @@ GANDR_HOST_LOCK_DIR=$scratch/apart XDG_RUNTIME_DIR=$scratch/runtime bash -c 'sou
 [[ -z $(ls -A "$scratch/runtime") ]] || fail "#6182: a lock wrote under XDG_RUNTIME_DIR while GANDR_HOST_LOCK_DIR was set"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"
