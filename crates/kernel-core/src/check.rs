@@ -349,6 +349,7 @@ use crate::seal;
 use crate::stage_order::StageOrder;
 use crate::support::Discharge;
 use crate::support::DrainLedger;
+use crate::support::Meeting;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
 use crate::support::Opened;
@@ -5442,32 +5443,27 @@ where
             };
             match frame {
                 Frame::Pending(mut goals, result) => {
-                    if let Some(fork) = sibling_fork(
-                        judgement,
-                        goals.len(),
-                        census,
-                        matches!(root, Maybe::Absent(_)) && staged_bodies == 0,
-                    ) && siblings_forked(
-                        arena,
-                        judgement,
-                        fork,
-                        &Siblings {
-                            context: &context,
-                            goals: &goals,
-                            field: None,
-                            stages: &stages,
-                            root,
-                            staged_bodies,
-                            own_fixpoint,
-                            parameters,
-                        },
-                        Recording {
-                            memo,
-                            session,
-                            census,
-                            owed,
-                        },
-                    )? {
+                    let siblings = Siblings {
+                        context: &context,
+                        goals: &goals,
+                        field: None,
+                        stages: &stages,
+                        root,
+                        staged_bodies,
+                        own_fixpoint,
+                        parameters,
+                    };
+                    if let Some(fork) = sibling_fork(judgement, census, &siblings)
+                        && matches!(
+                            siblings_forked(arena, judgement, fork, &siblings, Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            })?,
+                            FrameFork::Joined
+                        )
+                    {
                         produced = result;
                         continue;
                     }
@@ -5483,32 +5479,27 @@ where
                     holder,
                     begun,
                 } => {
-                    if let Some(fork) = sibling_fork(
-                        judgement,
-                        remaining.len(),
-                        census,
-                        matches!(root, Maybe::Absent(_)) && staged_bodies == 0,
-                    ) && siblings_forked(
-                        arena,
-                        judgement,
-                        fork,
-                        &Siblings {
-                            context: &context,
-                            goals: &remaining,
-                            field: Some((holder, begun)),
-                            stages: &stages,
-                            root,
-                            staged_bodies,
-                            own_fixpoint,
-                            parameters,
-                        },
-                        Recording {
-                            memo,
-                            session,
-                            census,
-                            owed,
-                        },
-                    )? {
+                    let siblings = Siblings {
+                        context: &context,
+                        goals: &remaining,
+                        field: Some((holder, begun)),
+                        stages: &stages,
+                        root,
+                        staged_bodies,
+                        own_fixpoint,
+                        parameters,
+                    };
+                    if let Some(fork) = sibling_fork(judgement, census, &siblings)
+                        && matches!(
+                            siblings_forked(arena, judgement, fork, &siblings, Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            })?,
+                            FrameFork::Joined
+                        )
+                    {
                         produced = Produced::Checked;
                         continue;
                     }
@@ -8522,14 +8513,10 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     while let Some(obligation) = owed.pop() {
-        if !ledger.take(usize::from(MAX_CODE_OBLIGATIONS)) {
-            return Err(KernelError::CodeObligationCeiling {
-                ceiling: MAX_CODE_OBLIGATIONS,
-            });
-        }
+        ledger.take(MAX_CODE_OBLIGATIONS)?;
         if matches!(M::ACTIVITY, MemoActivity::Active) {
             let key = obligation.key(arena, session);
-            if !ledger.meets(&key) {
+            if matches!(ledger.meets(&key), Meeting::Again) {
                 continue;
             }
             let named = KeptParameters::Unnamed.name(
@@ -8832,9 +8819,11 @@ where
     fork.run_jobs(&mut jobs);
     let passed = parts
         .iter()
-        .try_fold(session.drained(), |sum, part| match part.answer {
-            Some(Ok(())) => sum.checked_add(part.ledger.drained()),
-            Some(Err(_)) | None => None,
+        .try_fold(usize::from(session.drained()), |sum, part| {
+            match part.answer {
+                Some(Ok(())) => sum.checked_add(usize::from(part.ledger.drained())),
+                Some(Err(_)) | None => None,
+            }
         })
         .is_some_and(|drained| drained <= usize::from(MAX_CODE_OBLIGATIONS));
     if !passed {
@@ -8860,8 +8849,20 @@ where
         // Two parts can name one type by two nodes, and the two outcomes agree.
         memo.join_child(
             part_memo,
-            |_, outcome| passed && outcome.stands_in(arena),
-            |held, offered| held.agrees(offered, arena, session),
+            |_, outcome| {
+                passed
+                    && match *outcome {
+                        NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                        NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                        NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                    }
+            },
+            |held, offered| {
+                matches!(
+                    held.agrees(offered, arena, session),
+                    ContentAgreement::Agree
+                )
+            },
         )
         .map_err(|disagreement| {
             let (key, held, offered) = disagreement.into_parts();
@@ -8886,33 +8887,43 @@ const FORKED_SIBLINGS: usize = 2;
 /// on the calling thread than a part costs to fork and to join.
 const FORKED_AFTER: u64 = 256;
 
-/// The fork through which a frame of `count` sibling goals checks them apart,
-/// if the check forks them: the check holds a fork of more than one worker,
-/// the frame holds two goals or more, the walk stands at no root and under no
-/// fixpoint body (`unrooted`), and the check expanded [`FORKED_AFTER`] goals
-/// or more. The decision reads counts alone, so each run at one width forks
-/// the same frames.
+/// The fork through which the sibling goals of `frame` check apart, if the
+/// check forks them: the check holds a fork of more than one worker, the frame
+/// holds two goals or more, the walk stands at no root and under no fixpoint
+/// body, and the check expanded [`FORKED_AFTER`] goals or more. The decision
+/// reads counts alone, so each run at one width forks the same frames.
 ///
 /// # Specification
 /// trivial.
 #[inline]
 fn sibling_fork<'session>(
     judgement: Judgement<'session>,
-    count: usize,
     census: &ExpansionCensus,
-    unrooted: bool,
+    frame: &Siblings<'_>,
 ) -> Option<&'session dyn crate::fork::ObligationFork>
 {
     let fork = judgement.forking.fork()?;
-    (unrooted
-        && count >= FORKED_SIBLINGS
+    (matches!(frame.root, Maybe::Absent(_))
+        && frame.staged_bodies == 0
+        && frame.goals.len() >= FORKED_SIBLINGS
         && NonZeroUsize::from(fork.workers()).get() > 1
         && u64::from(census.expansions()) >= FORKED_AFTER)
         .then_some(fork)
 }
 
-/// The sibling goals of one frame, as [`siblings_forked`] reads them, and the
-/// walk the frame stands in, at no root and under no fixpoint body.
+/// What a fork of a frame's sibling goals leaves the frame to do.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FrameFork
+{
+    /// Each part passed, and the frame holds the folds of the parts.
+    Joined,
+    /// The memo cannot fork, or a part refused or did not run. The frame
+    /// checks its goals inline, as the serial walk checks them.
+    Inline,
+}
+
+/// The sibling goals of one frame, as [`sibling_fork`] and [`siblings_forked`]
+/// read them, and the walk the frame stands in.
 struct Siblings<'frame>
 {
     /// The context the goals are checked in.
@@ -9045,14 +9056,14 @@ impl SiblingPart<'_>
 /// # Specification
 /// - requires: `frame` holds the goals of a frame and the walk it stands in, at
 ///   no root and under no fixpoint body; `recording` is the frame's.
-/// - ensures: true when each part passed. The arena, the memo, the session and
-///   the census then hold the parts' folds; the memo keeps no outcome that
-///   names a node of a part's own; the session's innermost open goal holds what
-///   each part read and owed, and its ledger what each part drained. False when
-///   the memo cannot fork, or when a part refused or did not run. The arena's
-///   nodes, the memo's answers, the session's accruals and the census are then
-///   as the call found them, and the frame checks its goals inline, so a
-///   refusal is the serial run's.
+/// - ensures: [`FrameFork::Joined`] when each part passed. The arena, the memo,
+///   the session and the census then hold the parts' folds; the memo keeps no
+///   outcome that names a node of a part's own; the session's innermost open
+///   goal holds what each part read and owed, and its ledger what each part
+///   drained. [`FrameFork::Inline`] when the memo cannot fork, or when a part
+///   refused or did not run. The arena's nodes, the memo's answers, the
+///   session's accruals and the census are then as the call found them, and the
+///   frame checks its goals inline, so a refusal is the serial run's.
 /// - provides: the fork of a frame's sibling goals.
 /// - fails: two parts that keep two outcomes under one key, which do not agree
 ///   and so do not glue.
@@ -9076,7 +9087,7 @@ fn siblings_forked<M>(
     fork: &dyn crate::fork::ObligationFork,
     frame: &Siblings<'_>,
     recording: Recording<'_, M>,
-) -> Result<bool, KernelError>
+) -> Result<FrameFork, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
@@ -9100,7 +9111,7 @@ where
     for _goal in goals {
         let Some(child) = memo.fork_child()
         else {
-            return Ok(false);
+            return Ok(FrameFork::Inline);
         };
         memos.push(child);
     }
@@ -9162,8 +9173,20 @@ where
         // Two parts can name one type by two nodes, and the two outcomes agree.
         memo.join_child(
             part_memo,
-            |_, outcome| passed && outcome.stands_in(arena),
-            |held, offered| held.agrees(offered, arena, session),
+            |_, outcome| {
+                passed
+                    && match *outcome {
+                        NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                        NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                        NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                    }
+            },
+            |held, offered| {
+                matches!(
+                    held.agrees(offered, arena, session),
+                    ContentAgreement::Agree
+                )
+            },
         )
         .map_err(|disagreement| {
             let (key, held, offered) = disagreement.into_parts();
@@ -9176,7 +9199,12 @@ where
             census.absorb(&part_census);
         }
     }
-    Ok(passed)
+    Ok(if passed {
+        FrameFork::Joined
+    }
+    else {
+        FrameFork::Inline
+    })
 }
 
 /// Check a closed value without admitting a declaration or retaining a memo.
@@ -12240,42 +12268,41 @@ mod tests
         }
     }
 
-    /// Mint `(t, c, c')` at `Integer^literals × Two × Two`. The tuple `t`
-    /// holds `literals` distinct literals. `c` and `c'` are one constructor of
-    /// `two`, and each carries a node of its own for its data type. When
-    /// `refused` is true, `c'` is the literal `0`, which `Two` refuses.
+    /// The last field of the tuple that [`frame_tuple`] mints.
+    #[derive(Clone, Copy)]
+    enum Last
+    {
+        /// A second constructor of `Two`, with a node of its own for `Two`.
+        Constructor,
+        /// The literal `0`, which `Two` refuses.
+        Literal,
+    }
+
+    /// Mint `(t, c, c')` at `Integer^n × Two × Two`, where `t` is the tuple of
+    /// the `n` literals `numbers`. `c` is a constructor of `two`, and `c'` is
+    /// `last`. Each constructor carries a node of its own for its data type.
     ///
     /// # Specification
     /// trivial.
     fn frame_tuple(
         arena: &mut TermArena,
         two: ConstantIndex,
-        literals: usize,
-        refused: bool,
+        numbers: &[ValueId],
+        last: Last,
     ) -> gandr_kernel_term::Declaration
     {
         let mut builder = gandr_kernel_term::DeclarationBuilder::new(arena);
         let mint = builder.arena();
         let integer_type = mint.value_type_base(BaseType::Integer);
-        let numbers: Vec<ValueId> = (0 .. literals)
-            .map(|number| {
-                let magnitude =
-                    gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{number}"))
-                        .expect("decimal digits");
-                integer(mint, &magnitude)
-            })
-            .collect();
-        let numbers = mint.value_tuple(&numbers);
-        let numbers_type = mint.value_type_product(&vec![integer_type; literals]);
+        let numbers_type = mint.value_type_product(&vec![integer_type; numbers.len()]);
+        let numbers = mint.value_tuple(numbers);
         let first_two = mint.value_type_data(two, vec![]);
         let second_two = mint.value_type_data(two, vec![]);
         let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
         let first = mint.value_constructor(two, first_two, tag, vec![]);
-        let second = if refused {
-            integer(mint, &gandr_kernel_term::Magnitude::zero())
-        }
-        else {
-            mint.value_constructor(two, second_two, tag, vec![])
+        let second = match last {
+            Last::Constructor => mint.value_constructor(two, second_two, tag, vec![]),
+            Last::Literal => integer(mint, &gandr_kernel_term::Magnitude::zero()),
         };
         let declared = mint.value_type_product(&[numbers_type, first_two, second_two]);
         let body = mint.value_tuple(&[numbers, first, second]);
@@ -12314,9 +12341,18 @@ mod tests
         // The literals take the check past the grain before the outer frame
         // holds its two constructor fields.
         let past = usize::try_from(super::FORKED_AFTER).expect("the grain fits a count");
-        let passing = frame_tuple(&mut arena, two, past, false);
-        let refusing = frame_tuple(&mut arena, two, past, true);
-        let few = frame_tuple(&mut arena, two, 3, false);
+        let numbers: Vec<ValueId> = (0 .. past)
+            .map(|number| {
+                let magnitude =
+                    gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{number}"))
+                        .expect("decimal digits");
+                integer(&mut arena, &magnitude)
+            })
+            .collect();
+        let three = numbers.get(.. 3).expect("the grain holds three literals");
+        let passing = frame_tuple(&mut arena, two, &numbers, Last::Constructor);
+        let refusing = frame_tuple(&mut arena, two, &numbers, Last::Literal);
+        let few = frame_tuple(&mut arena, two, three, Last::Constructor);
         let levels = level_context(LevelParamCount::from(0_u32));
         let content_end = arena.watermark();
         let mut check = |declaration: &gandr_kernel_term::Declaration,

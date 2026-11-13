@@ -96,6 +96,7 @@ use gandr_kernel_term::Binders;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Reads;
+use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::WIDEST;
@@ -316,6 +317,16 @@ pub enum Discharge
     Open,
 }
 
+/// Whether a drain meets a key for the first time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Meeting
+{
+    /// The drain did not meet the key before, so it checks the key now.
+    First,
+    /// The drain met the key before, so it does not check the key again.
+    Again,
+}
+
 /// What a drain of a check's code obligations checked: how many obligations
 /// it took against the ceiling, and the keys whose verdicts the check records
 /// when its whole drain passes.
@@ -344,44 +355,47 @@ impl DrainLedger
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn drained(&self) -> usize
+    pub const fn drained(&self) -> TableEntryCount
     {
-        self.drained
+        TableEntryCount(self.drained)
     }
 
     /// Take one more obligation, when the drain took fewer than `ceiling`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: true, and one more obligation taken, when fewer than
-    ///   `ceiling` were taken; false, and the count as it was, otherwise.
+    /// - ensures: one more obligation taken, when fewer than `ceiling` were
+    ///   taken. Otherwise the count stays as it was.
     /// - provides: the ceiling of a drain.
-    /// - fails: never.
+    /// - fails: the drain took `ceiling` obligations already.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// [`crate::KernelError::CodeObligationCeiling`], naming `ceiling`, when
+    /// the drain took `ceiling` obligations already.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a drain at its ceiling refuses its next obligation.
     /// - witness: `gandr-kernel-core::check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
-    #[spec(captures: before = self.drained, ensures: |ret| if ret {
-        self.drained == before.saturating_add(1) && before < ceiling
-    } else {
-        self.drained == before && before >= ceiling
+    #[spec(captures: before = self.drained, ensures: |ret| match ret {
+        Ok(()) => self.drained == before.saturating_add(1) && before < usize::from(ceiling),
+        Err(_) => self.drained == before && before >= usize::from(ceiling),
     })]
     #[inline]
     pub fn take(
         &mut self,
-        ceiling: usize,
-    ) -> bool
+        ceiling: TableEntryCount,
+    ) -> Result<(), crate::KernelError>
     {
-        if self.drained >= ceiling {
-            return false;
+        if self.drained >= usize::from(ceiling) {
+            return Err(crate::KernelError::CodeObligationCeiling { ceiling });
         }
         self.drained = self.drained.saturating_add(1);
-        true
+        Ok(())
     }
 
-    /// Meet `key`: true when the drain did not meet it before, so it checks
-    /// it now.
+    /// Meet `key`: [`Meeting::First`] when the drain did not meet it before,
+    /// so it checks it now.
     ///
     /// # Specification
     /// trivial.
@@ -389,9 +403,14 @@ impl DrainLedger
     pub fn meets(
         &mut self,
         key: &NodeSupport,
-    ) -> bool
+    ) -> Meeting
     {
-        self.seen.insert(key.names())
+        if self.seen.insert(key.names()) {
+            Meeting::First
+        }
+        else {
+            Meeting::Again
+        }
     }
 
     /// Hold `key`, which the drain met first and checks now, to record its
@@ -633,7 +652,7 @@ impl SupportContext
     ) -> Self
     {
         let mut child = self.fork(arena);
-        let mirrored = self.open.get(self.mirrored() ..).unwrap_or_default();
+        let mirrored = self.open.get(self.mirrored().0 ..).unwrap_or_default();
         child
             .open
             .extend(mirrored.iter().map(|accrual| match *accrual {
@@ -681,7 +700,7 @@ impl SupportContext
         mut child: Self,
     ) -> Result<(), crate::KernelError>
     {
-        let mirror = self.open.len().saturating_sub(self.mirrored());
+        let mirror = self.open.len().saturating_sub(self.mirrored().0);
         while child.open.len() > mirror {
             let _inner = child.close_innermost();
         }
@@ -732,7 +751,7 @@ impl SupportContext
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn drained(&self) -> usize
+    pub const fn drained(&self) -> TableEntryCount
     {
         self.drained.drained()
     }
@@ -744,12 +763,14 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    fn mirrored(&self) -> usize
+    fn mirrored(&self) -> Opened
     {
-        self.open
-            .iter()
-            .rposition(|accrual| matches!(*accrual, Accrual::Goal { .. }))
-            .unwrap_or(self.open.len())
+        Opened(
+            self.open
+                .iter()
+                .rposition(|accrual| matches!(*accrual, Accrual::Goal { .. }))
+                .unwrap_or(self.open.len()),
+        )
     }
 
     /// Name `parameters` in this session's table, as
@@ -1308,28 +1329,6 @@ pub enum NodeOutcome
 
 impl NodeOutcome
 {
-    /// Whether `arena` holds each type that this outcome names.
-    ///
-    /// A forked part mints its own nodes on its own clone of the arena. After
-    /// the join, an outcome that names one of them names no node of `arena`,
-    /// so the join does not keep it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn stands_in(
-        &self,
-        arena: &TermArena,
-    ) -> bool
-    {
-        match *self {
-            Self::ValueType(id) => arena.value_type(id).is_some(),
-            Self::CompType(id) => arena.comp_type(id).is_some(),
-            Self::Checked | Self::Formed(..) => true,
-        }
-    }
-
     /// Whether this outcome and `other` answer one goal alike.
     ///
     /// The arena does not share one node between two equal contents. So two
@@ -1341,8 +1340,9 @@ impl NodeOutcome
     /// # Specification
     /// - requires: `arena` holds each type that either outcome names, and
     ///   `session` is the session of `arena`.
-    /// - ensures: true exactly when the two outcomes are equal, or name two
-    ///   types of one sort that the session's table places at one content.
+    /// - ensures: [`ContentAgreement::Agree`] exactly when the two outcomes are
+    ///   equal, or name two types of one sort that the session's table places
+    ///   at one content.
     /// - provides: the agreement of a forked check's join.
     /// - fails: never.
     /// - panics: none.
@@ -1360,9 +1360,9 @@ impl NodeOutcome
         other: &Self,
         arena: &TermArena,
         session: &mut SupportContext,
-    ) -> bool
+    ) -> ContentAgreement
     {
-        match (self, other) {
+        let agree = match (self, other) {
             (&Self::ValueType(held), &Self::ValueType(offered)) => {
                 held == offered
                     || session.table.place(arena, AnyNode::ValueType(held))
@@ -1374,6 +1374,12 @@ impl NodeOutcome
                         == session.table.place(arena, AnyNode::CompType(offered))
             },
             _ => self == other,
+        };
+        if agree {
+            ContentAgreement::Agree
+        }
+        else {
+            ContentAgreement::Differ
         }
     }
 }
@@ -2317,16 +2323,19 @@ mod tests
         assert_ne!(first, second, "the arena mints one content at two nodes");
         let mut session = SupportContext::new();
         let typed = super::NodeOutcome::ValueType;
-        assert!(
+        assert_eq!(
             typed(first).agrees(&typed(second), &arena, &mut session),
+            ContentAgreement::Agree,
             "two nodes of one content agree"
         );
-        assert!(
-            !typed(first).agrees(&typed(swapped), &arena, &mut session),
+        assert_eq!(
+            typed(first).agrees(&typed(swapped), &arena, &mut session),
+            ContentAgreement::Differ,
             "two contents do not agree"
         );
-        assert!(
-            !typed(first).agrees(&super::NodeOutcome::Checked, &arena, &mut session),
+        assert_eq!(
+            typed(first).agrees(&super::NodeOutcome::Checked, &arena, &mut session),
+            ContentAgreement::Differ,
             "a type and a check do not agree"
         );
     }
