@@ -73,6 +73,7 @@ digraph crates {
   }
   subgraph "cluster_surface" {
     label = "surface";
+    "surface-agentic";
     "surface-corpus";
     "surface-diagnostics";
     "surface-dispatcher";
@@ -85,7 +86,6 @@ digraph crates {
     "surface-lowering-base";
     "surface-lsp";
     "surface-lsp-base";
-    "surface-mcp";
     "surface-parser";
     "surface-pretty";
     "surface-render-remote";
@@ -210,6 +210,12 @@ digraph crates {
   "storage-store" -> "storage-values";
   "storage-values" -> "storage-chunker";
   "storage-values" -> "theory-spec-combinators";
+  "surface-agentic" -> "core-fork";
+  "surface-agentic" -> "surface-dispatcher";
+  "surface-agentic" -> "surface-features";
+  "surface-agentic" -> "surface-lsp";
+  "surface-agentic" -> "surface-render-remote";
+  "surface-agentic" -> "surface-tui";
   "surface-corpus" -> "core-checker";
   "surface-corpus" -> "core-term";
   "surface-corpus" -> "kernel-term";
@@ -263,13 +269,13 @@ digraph crates {
   "surface-driver" -> "runtime-emitter";
   "surface-driver" -> "runtime-net";
   "surface-driver" -> "storage-store";
+  "surface-driver" -> "surface-agentic";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";
   "surface-driver" -> "surface-features";
   "surface-driver" -> "surface-format";
   "surface-driver" -> "surface-grammar";
   "surface-driver" -> "surface-lsp";
-  "surface-driver" -> "surface-mcp";
   "surface-driver" -> "surface-render-terminal";
   "surface-driver" -> "surface-repl";
   "surface-driver" -> "surface-tui";
@@ -336,12 +342,6 @@ digraph crates {
   "surface-lsp-base" -> "surface-pretty";
   "surface-lsp-base" -> "surface-render-remote";
   "surface-lsp-base" -> "surface-syntax";
-  "surface-mcp" -> "core-fork";
-  "surface-mcp" -> "surface-dispatcher";
-  "surface-mcp" -> "surface-features";
-  "surface-mcp" -> "surface-lsp";
-  "surface-mcp" -> "surface-render-remote";
-  "surface-mcp" -> "surface-tui";
   "surface-parser" -> "surface-grammar";
   "surface-parser" -> "surface-syntax";
   "surface-parser" -> "theory-graphs";

@@ -16,131 +16,171 @@ The table gives each crate's census.
 
 | Crate | Public items | Boundary types | Specs per item | Hotpath | Depth | Lines |
 | ----- | ------------ | -------------- | -------------- | ------- | ----- | ----- |
-| `core-checker` | 211 | 283 | 7.45 | yes | 7 | 82731 |
-| `core-incremental` | 87 | 166 | 7.90 | no | 8 | 26867 |
-| `core-nbe` | 160 | 176 | 8.81 | no | 6 | 48316 |
-| `core-sequent` | 72 | 88 | 6.33 | no | 5 | 16013 |
-| `core-session` | 35 | 43 | 3.26 | no | 5 | 2223 |
-| `core-term` | 262 | 211 | 7.37 | no | 4 | 39821 |
-| `core-unify` | 10 | 18 | 3.70 | no | 5 | 2329 |
-| `kernel-check-memo` | 19 | 15 | 9.16 | no | 0 | 2885 |
-| `kernel-conversion-trace` | 8 | 5 | 13.25 | no | 0 | 1156 |
-| `kernel-core` | 190 | 211 | 7.72 | no | 2 | 73295 |
-| `kernel-strata` | 50 | 42 | 7.94 | no | 0 | 9298 |
-| `kernel-term` | 330 | 176 | 4.81 | no | 1 | 41114 |
-| `runtime-emitter` | 52 | 68 | 0.73 | no | 6 | 12258 |
-| `runtime-stencils` | 29 | 18 | 2.24 | no | 0 | 4884 |
-| `storage-artifact` | 28 | 46 | 9.29 | no | 5 | 4167 |
-| `storage-chunker` | 35 | 32 | 8.03 | no | 0 | 4327 |
-| `storage-records` | 85 | 56 | 13.58 | no | 1 | 13970 |
+| `core-checker` | 242 | 332 | 7.93 | yes | 8 | 109152 |
+| `core-fork` | 11 | 8 | 6.82 | no | 0 | 2177 |
+| `core-incremental` | 115 | 224 | 7.14 | no | 9 | 35651 |
+| `core-nbe` | 168 | 182 | 8.92 | no | 7 | 54296 |
+| `core-publish` | 7 | 10 | 2.86 | no | 0 | 475 |
+| `core-sequent` | 93 | 100 | 5.84 | no | 6 | 20244 |
+| `core-session` | 35 | 43 | 3.29 | no | 6 | 2221 |
+| `core-term` | 323 | 240 | 7.07 | no | 5 | 47461 |
+| `core-unify` | 10 | 18 | 3.70 | no | 6 | 2360 |
+| `kernel-check-memo` | 21 | 17 | 13.14 | no | 0 | 4128 |
+| `kernel-conversion-trace` | 8 | 5 | 13.25 | no | 0 | 1195 |
+| `kernel-core` | 224 | 256 | 8.00 | no | 3 | 97860 |
+| `kernel-strata` | 51 | 43 | 8.02 | no | 0 | 9468 |
+| `kernel-term` | 375 | 209 | 4.96 | no | 1 | 49258 |
+| `runtime-emitter` | 96 | 107 | 1.09 | no | 7 | 22020 |
+| `runtime-net` | 26 | 25 | 4.27 | no | 6 | 3642 |
+| `runtime-stencils` | 33 | 18 | 2.06 | no | 0 | 5243 |
+| `storage-artifact` | 28 | 46 | 9.82 | no | 6 | 4419 |
+| `storage-chunker` | 35 | 32 | 8.09 | no | 0 | 4454 |
+| `storage-records` | 85 | 56 | 13.58 | no | 1 | 13982 |
 | `storage-schema` | 55 | 53 | 6.35 | yes | 2 | 9502 |
-| `storage-values` | 61 | 47 | 9.74 | no | 1 | 10171 |
-| `surface-corpus` | 35 | 53 | 13.37 | no | 8 | 14473 |
-| `surface-diagnostics` | 40 | 87 | 7.60 | no | 10 | 14409 |
-| `surface-dispatcher` | 165 | 224 | 7.73 | yes | 12 | 49048 |
-| `surface-format` | 31 | 47 | 2.35 | no | 11 | 10614 |
-| `surface-grammar` | 78 | 74 | 7.74 | no | 2 | 26505 |
-| `surface-layout` | 73 | 74 | 10.38 | no | 0 | 14871 |
-| `surface-lowering` | 293 | 368 | 10.50 | yes | 5 | 147785 |
-| `surface-lsp` | 176 | 184 | 3.07 | yes | 14 | 53355 |
-| `surface-mcp` | 7 | 9 | 4.86 | no | 15 | 2926 |
-| `surface-parser` | 69 | 71 | 12.86 | no | 3 | 28677 |
-| `surface-pretty` | 46 | 72 | 10.39 | no | 9 | 21773 |
-| `surface-render-remote` | 35 | 30 | 5.46 | no | 0 | 4032 |
-| `surface-render-terminal` | 4 | 5 | 6.50 | no | 11 | 528 |
-| `surface-repl` | 34 | 52 | 6.00 | no | 14 | 4192 |
-| `surface-session` | 44 | 142 | 11.84 | no | 13 | 12920 |
-| `surface-syntax` | 28 | 28 | 11.68 | no | 0 | 6182 |
-| `surface-tui` | 20 | 25 | 6.10 | no | 15 | 2712 |
-| `theory-cell-complexes` | 73 | 70 | 6.84 | no | 1 | 12231 |
-| `theory-cell-complexes-tools` | 18 | 12 | 7.00 | no | 2 | 2733 |
-| `theory-circuit-algebras` | 55 | 65 | 4.73 | no | 2 | 8194 |
-| `theory-coherent-resolutions` | 49 | 42 | 5.33 | yes | 2 | 5408 |
-| `theory-computads` | 46 | 54 | 6.28 | no | 4 | 10424 |
-| `theory-decomposition-spaces` | 25 | 30 | 2.40 | no | 4 | 2225 |
-| `theory-deep-inference` | 110 | 110 | 4.94 | no | 3 | 12639 |
-| `theory-dynamic-graphs` | 24 | 29 | 3.21 | no | 2 | 3452 |
+| `storage-store` | 11 | 25 | 7.64 | no | 2 | 3359 |
+| `storage-values` | 62 | 47 | 9.69 | no | 1 | 10223 |
+| `surface-agentic` | 14 | 23 | 5.14 | no | 17 | 10710 |
+| `surface-corpus` | 51 | 68 | 11.22 | no | 9 | 19098 |
+| `surface-diagnostics` | 54 | 100 | 6.44 | no | 11 | 19091 |
+| `surface-dispatcher` | 268 | 358 | 6.45 | yes | 13 | 70687 |
+| `surface-features` | 8 | 15 | 7.63 | no | 0 | 1336 |
+| `surface-format` | 31 | 47 | 2.26 | no | 12 | 11908 |
+| `surface-grammar` | 85 | 76 | 7.88 | no | 2 | 27766 |
+| `surface-layout` | 73 | 74 | 10.38 | no | 0 | 14877 |
+| `surface-lowering` | 84 | 151 | 19.71 | yes | 7 | 135676 |
+| `surface-lowering-base` | 316 | 373 | 7.68 | yes | 6 | 57540 |
+| `surface-lsp` | 52 | 82 | 9.81 | yes | 15 | 51371 |
+| `surface-lsp-base` | 346 | 278 | 1.41 | no | 12 | 16101 |
+| `surface-parser` | 86 | 84 | 11.80 | no | 3 | 39458 |
+| `surface-pretty` | 54 | 81 | 10.11 | no | 10 | 27224 |
+| `surface-render-remote` | 103 | 89 | 3.49 | no | 0 | 8623 |
+| `surface-render-terminal` | 4 | 5 | 6.50 | no | 12 | 533 |
+| `surface-repl` | 34 | 54 | 6.21 | no | 15 | 4257 |
+| `surface-session` | 57 | 159 | 10.96 | no | 14 | 19293 |
+| `surface-syntax` | 37 | 37 | 10.92 | no | 0 | 8033 |
+| `surface-tui` | 23 | 33 | 7.09 | no | 16 | 5163 |
+| `theory-cell-complexes` | 77 | 71 | 7.13 | no | 1 | 12916 |
+| `theory-cell-complexes-tools` | 19 | 12 | 7.68 | no | 2 | 3047 |
+| `theory-cellular-sheaves` | 22 | 28 | 7.77 | no | 3 | 3760 |
+| `theory-circuit-algebras` | 66 | 73 | 4.71 | no | 2 | 9620 |
+| `theory-coherent-resolutions` | 92 | 82 | 4.14 | yes | 3 | 11723 |
+| `theory-computads` | 48 | 54 | 6.54 | no | 5 | 12075 |
+| `theory-decomposition-spaces` | 25 | 30 | 2.36 | no | 5 | 2249 |
+| `theory-deep-inference` | 118 | 114 | 5.16 | no | 4 | 14299 |
+| `theory-discrete-morse` | 37 | 29 | 5.46 | no | 2 | 5164 |
+| `theory-dynamic-graphs` | 24 | 29 | 3.21 | no | 2 | 3466 |
+| `theory-e-graphs` | 26 | 32 | 1.92 | no | 4 | 2432 |
+| `theory-exact-reals` | 133 | 121 | 3.99 | no | 3 | 21029 |
+| `theory-graded-posets` | 9 | 20 | 10.89 | no | 1 | 2403 |
 | `theory-graphs` | 56 | 50 | 6.64 | no | 1 | 6490 |
-| `theory-levitation` | 158 | 138 | 3.68 | no | 1 | 22304 |
-| `theory-nominal-automata` | 31 | 31 | 3.13 | no | 0 | 2196 |
-| `theory-order-maintenance` | 10 | 12 | 21.90 | no | 0 | 3113 |
-| `theory-path-orders` | 23 | 19 | 2.26 | no | 0 | 1815 |
-| `theory-shapes` | 21 | 20 | 5.71 | no | 0 | 2221 |
-| `theory-sites` | 84 | 76 | 3.70 | no | 3 | 8246 |
+| `theory-levitation` | 158 | 138 | 3.70 | no | 1 | 22422 |
+| `theory-nominal-automata` | 31 | 31 | 3.13 | no | 0 | 2201 |
+| `theory-order-maintenance` | 10 | 12 | 22.00 | no | 0 | 3169 |
+| `theory-ordered-algebras` | 37 | 28 | 4.92 | no | 4 | 3818 |
+| `theory-path-orders` | 24 | 20 | 2.17 | no | 0 | 1887 |
+| `theory-probability` | 19 | 23 | 7.42 | no | 5 | 3179 |
+| `theory-shapes` | 25 | 25 | 6.44 | no | 1 | 3063 |
+| `theory-sites` | 114 | 99 | 3.92 | no | 3 | 13508 |
 | `theory-spec-combinators` | 5 | 2 | 4.40 | no | 0 | 524 |
-| `theory-virtual-doctrines` | 80 | 88 | 3.48 | no | 5 | 5432 |
-| `workflow-build-state` | 8 | 10 | 5.38 | no | 0 | 1341 |
-| `workflow-coverage-guard` | 30 | 28 | 4.50 | no | 0 | 2407 |
-| `workflow-hotpath-guard` | 76 | 58 | 4.00 | no | 0 | 7047 |
-| `workflow-lane-budget` | 24 | 20 | 5.08 | no | 0 | 2310 |
-| `workflow-spec-cost` | 35 | 40 | 4.86 | no | 1 | 3693 |
-| `workflow-sweep` | 27 | 26 | 4.96 | no | 12 | 2681 |
-| `workflow-test-timing` | 31 | 29 | 5.71 | no | 0 | 2554 |
+| `theory-stone-duality` | 21 | 19 | 9.67 | no | 0 | 3034 |
+| `theory-virtual-doctrines` | 80 | 88 | 3.48 | no | 6 | 5439 |
+| `workflow-build-state` | 8 | 12 | 6.13 | no | 0 | 1585 |
+| `workflow-coverage-guard` | 39 | 35 | 4.31 | no | 1 | 2921 |
+| `workflow-debt-ledger` | 7 | 8 | 4.57 | no | 0 | 360 |
+| `workflow-github` | 7 | 9 | 4.14 | no | 0 | 544 |
+| `workflow-host-tools` | 29 | 29 | 4.34 | no | 0 | 2746 |
+| `workflow-hotpath-guard` | 76 | 59 | 4.00 | no | 1 | 6970 |
+| `workflow-lane-budget` | 37 | 30 | 5.76 | no | 1 | 4067 |
+| `workflow-ledger-tasks` | 10 | 24 | 9.60 | no | 14 | 8165 |
+| `workflow-prose` | 40 | 32 | 2.75 | no | 1 | 5019 |
+| `workflow-spec-cost` | 33 | 39 | 4.82 | no | 2 | 3691 |
+| `workflow-sweep` | 29 | 27 | 5.10 | no | 13 | 3056 |
+| `workflow-test-timing` | 31 | 30 | 5.71 | no | 1 | 2537 |
 
 The table ranks the crates for the first rewrite.
 
 | Rank | Crate | Why |
 | ---- | ----- | --- |
 | 1 | `theory-spec-combinators` | leaf; 0.40 boundary types per item; 4.40 specs per item |
-| 2 | `runtime-stencils` | leaf; 0.62 boundary types per item; 2.24 specs per item |
+| 2 | `runtime-stencils` | leaf; 0.55 boundary types per item; 2.06 specs per item |
 | 3 | `kernel-conversion-trace` | leaf; 0.63 boundary types per item; 13.25 specs per item |
-| 4 | `workflow-hotpath-guard` | leaf; 0.76 boundary types per item; 4.00 specs per item |
-| 5 | `kernel-check-memo` | leaf; 0.79 boundary types per item; 9.16 specs per item |
-| 6 | `theory-path-orders` | leaf; 0.83 boundary types per item; 2.26 specs per item |
-| 7 | `workflow-lane-budget` | leaf; 0.83 boundary types per item; 5.08 specs per item |
-| 8 | `kernel-strata` | leaf; 0.84 boundary types per item; 7.94 specs per item |
-| 9 | `surface-render-remote` | leaf; 0.86 boundary types per item; 5.46 specs per item |
-| 10 | `storage-chunker` | leaf; 0.91 boundary types per item; 8.03 specs per item |
-| 11 | `workflow-coverage-guard` | leaf; 0.93 boundary types per item; 4.50 specs per item |
-| 12 | `workflow-test-timing` | leaf; 0.94 boundary types per item; 5.71 specs per item |
-| 13 | `theory-shapes` | leaf; 0.95 boundary types per item; 5.71 specs per item |
-| 14 | `surface-syntax` | leaf; 1.00 boundary types per item; 11.68 specs per item |
-| 15 | `theory-nominal-automata` | leaf; 1.00 boundary types per item; 3.13 specs per item |
-| 16 | `surface-layout` | leaf; 1.01 boundary types per item; 10.38 specs per item |
-| 17 | `theory-order-maintenance` | leaf; 1.20 boundary types per item; 21.90 specs per item |
-| 18 | `workflow-build-state` | leaf; 1.25 boundary types per item; 5.38 specs per item |
-| 19 | `kernel-term` | depth 1; 0.53 boundary types per item; 4.81 specs per item |
-| 20 | `storage-records` | depth 1; 0.66 boundary types per item; 13.58 specs per item |
-| 21 | `theory-cell-complexes-tools` | depth 2; 0.67 boundary types per item; 7.00 specs per item |
-| 22 | `storage-values` | depth 1; 0.77 boundary types per item; 9.74 specs per item |
-| 23 | `core-term` | depth 4; 0.81 boundary types per item; 7.37 specs per item |
-| 24 | `theory-levitation` | depth 1; 0.87 boundary types per item; 3.68 specs per item |
-| 25 | `theory-graphs` | depth 1; 0.89 boundary types per item; 6.64 specs per item |
-| 26 | `theory-sites` | depth 3; 0.90 boundary types per item; 3.70 specs per item |
-| 27 | `surface-grammar` | depth 2; 0.95 boundary types per item; 7.74 specs per item |
-| 28 | `theory-cell-complexes` | depth 1; 0.96 boundary types per item; 6.84 specs per item |
-| 29 | `workflow-sweep` | depth 12; 0.96 boundary types per item; 4.96 specs per item |
-| 30 | `theory-deep-inference` | depth 3; 1.00 boundary types per item; 4.94 specs per item |
-| 31 | `surface-parser` | depth 3; 1.03 boundary types per item; 12.86 specs per item |
-| 32 | `core-nbe` | depth 6; 1.10 boundary types per item; 8.81 specs per item |
-| 33 | `theory-virtual-doctrines` | depth 5; 1.10 boundary types per item; 3.48 specs per item |
-| 34 | `kernel-core` | depth 2; 1.11 boundary types per item; 7.72 specs per item |
-| 35 | `workflow-spec-cost` | depth 1; 1.14 boundary types per item; 4.86 specs per item |
-| 36 | `theory-computads` | depth 4; 1.17 boundary types per item; 6.28 specs per item |
-| 37 | `theory-circuit-algebras` | depth 2; 1.18 boundary types per item; 4.73 specs per item |
-| 38 | `theory-decomposition-spaces` | depth 4; 1.20 boundary types per item; 2.40 specs per item |
-| 39 | `theory-dynamic-graphs` | depth 2; 1.21 boundary types per item; 3.21 specs per item |
-| 40 | `core-sequent` | depth 5; 1.22 boundary types per item; 6.33 specs per item |
-| 41 | `core-session` | depth 5; 1.23 boundary types per item; 3.26 specs per item |
-| 42 | `surface-render-terminal` | depth 11; 1.25 boundary types per item; 6.50 specs per item |
-| 43 | `surface-tui` | depth 15; 1.25 boundary types per item; 6.10 specs per item |
-| 44 | `surface-mcp` | depth 15; 1.29 boundary types per item; 4.86 specs per item |
-| 45 | `runtime-emitter` | depth 6; 1.31 boundary types per item; 0.73 specs per item |
-| 46 | `surface-corpus` | depth 8; 1.51 boundary types per item; 13.37 specs per item |
-| 47 | `surface-format` | depth 11; 1.52 boundary types per item; 2.35 specs per item |
-| 48 | `surface-repl` | depth 14; 1.53 boundary types per item; 6.00 specs per item |
-| 49 | `surface-pretty` | depth 9; 1.57 boundary types per item; 10.39 specs per item |
-| 50 | `storage-artifact` | depth 5; 1.64 boundary types per item; 9.29 specs per item |
-| 51 | `core-unify` | depth 5; 1.80 boundary types per item; 3.70 specs per item |
-| 52 | `core-incremental` | depth 8; 1.91 boundary types per item; 7.90 specs per item |
-| 53 | `surface-diagnostics` | depth 10; 2.17 boundary types per item; 7.60 specs per item |
-| 54 | `surface-session` | depth 13; 3.23 boundary types per item; 11.84 specs per item |
-| 55 | `theory-coherent-resolutions` | hotpath; depth 2; 0.86 boundary types per item; 5.33 specs per item |
-| 56 | `storage-schema` | hotpath; depth 2; 0.96 boundary types per item; 6.35 specs per item |
-| 57 | `surface-lsp` | hotpath; depth 14; 1.05 boundary types per item; 3.07 specs per item |
-| 58 | `surface-lowering` | hotpath; depth 5; 1.26 boundary types per item; 10.50 specs per item |
-| 59 | `core-checker` | hotpath; depth 7; 1.34 boundary types per item; 7.45 specs per item |
-| 60 | `surface-dispatcher` | hotpath; depth 12; 1.36 boundary types per item; 7.73 specs per item |
+| 4 | `core-fork` | leaf; 0.73 boundary types per item; 6.82 specs per item |
+| 5 | `kernel-check-memo` | leaf; 0.81 boundary types per item; 13.14 specs per item |
+| 6 | `theory-path-orders` | leaf; 0.83 boundary types per item; 2.17 specs per item |
+| 7 | `kernel-strata` | leaf; 0.84 boundary types per item; 8.02 specs per item |
+| 8 | `surface-render-remote` | leaf; 0.86 boundary types per item; 3.49 specs per item |
+| 9 | `theory-stone-duality` | leaf; 0.90 boundary types per item; 9.67 specs per item |
+| 10 | `storage-chunker` | leaf; 0.91 boundary types per item; 8.09 specs per item |
+| 11 | `surface-syntax` | leaf; 1.00 boundary types per item; 10.92 specs per item |
+| 12 | `workflow-host-tools` | leaf; 1.00 boundary types per item; 4.34 specs per item |
+| 13 | `theory-nominal-automata` | leaf; 1.00 boundary types per item; 3.13 specs per item |
+| 14 | `surface-layout` | leaf; 1.01 boundary types per item; 10.38 specs per item |
+| 15 | `workflow-debt-ledger` | leaf; 1.14 boundary types per item; 4.57 specs per item |
+| 16 | `theory-order-maintenance` | leaf; 1.20 boundary types per item; 22.00 specs per item |
+| 17 | `workflow-github` | leaf; 1.29 boundary types per item; 4.14 specs per item |
+| 18 | `core-publish` | leaf; 1.43 boundary types per item; 2.86 specs per item |
+| 19 | `workflow-build-state` | leaf; 1.50 boundary types per item; 6.13 specs per item |
+| 20 | `surface-features` | leaf; 1.88 boundary types per item; 7.63 specs per item |
+| 21 | `kernel-term` | depth 1; 0.56 boundary types per item; 4.96 specs per item |
+| 22 | `theory-cell-complexes-tools` | depth 2; 0.63 boundary types per item; 7.68 specs per item |
+| 23 | `storage-records` | depth 1; 0.66 boundary types per item; 13.58 specs per item |
+| 24 | `core-term` | depth 5; 0.74 boundary types per item; 7.07 specs per item |
+| 25 | `theory-ordered-algebras` | depth 4; 0.76 boundary types per item; 4.92 specs per item |
+| 26 | `storage-values` | depth 1; 0.76 boundary types per item; 9.69 specs per item |
+| 27 | `workflow-hotpath-guard` | depth 1; 0.78 boundary types per item; 4.00 specs per item |
+| 28 | `theory-discrete-morse` | depth 2; 0.78 boundary types per item; 5.46 specs per item |
+| 29 | `workflow-prose` | depth 1; 0.80 boundary types per item; 2.75 specs per item |
+| 30 | `surface-lsp-base` | depth 12; 0.80 boundary types per item; 1.41 specs per item |
+| 31 | `workflow-lane-budget` | depth 1; 0.81 boundary types per item; 5.76 specs per item |
+| 32 | `theory-sites` | depth 3; 0.87 boundary types per item; 3.92 specs per item |
+| 33 | `theory-levitation` | depth 1; 0.87 boundary types per item; 3.70 specs per item |
+| 34 | `theory-graphs` | depth 1; 0.89 boundary types per item; 6.64 specs per item |
+| 35 | `surface-grammar` | depth 2; 0.89 boundary types per item; 7.88 specs per item |
+| 36 | `workflow-coverage-guard` | depth 1; 0.90 boundary types per item; 4.31 specs per item |
+| 37 | `theory-exact-reals` | depth 3; 0.91 boundary types per item; 3.99 specs per item |
+| 38 | `theory-cell-complexes` | depth 1; 0.92 boundary types per item; 7.13 specs per item |
+| 39 | `workflow-sweep` | depth 13; 0.93 boundary types per item; 5.10 specs per item |
+| 40 | `runtime-net` | depth 6; 0.96 boundary types per item; 4.27 specs per item |
+| 41 | `theory-deep-inference` | depth 4; 0.97 boundary types per item; 5.16 specs per item |
+| 42 | `workflow-test-timing` | depth 1; 0.97 boundary types per item; 5.71 specs per item |
+| 43 | `surface-parser` | depth 3; 0.98 boundary types per item; 11.80 specs per item |
+| 44 | `theory-shapes` | depth 1; 1.00 boundary types per item; 6.44 specs per item |
+| 45 | `core-sequent` | depth 6; 1.08 boundary types per item; 5.84 specs per item |
+| 46 | `core-nbe` | depth 7; 1.08 boundary types per item; 8.92 specs per item |
+| 47 | `theory-virtual-doctrines` | depth 6; 1.10 boundary types per item; 3.48 specs per item |
+| 48 | `theory-circuit-algebras` | depth 2; 1.11 boundary types per item; 4.71 specs per item |
+| 49 | `runtime-emitter` | depth 7; 1.11 boundary types per item; 1.09 specs per item |
+| 50 | `theory-computads` | depth 5; 1.13 boundary types per item; 6.54 specs per item |
+| 51 | `kernel-core` | depth 3; 1.14 boundary types per item; 8.00 specs per item |
+| 52 | `workflow-spec-cost` | depth 2; 1.18 boundary types per item; 4.82 specs per item |
+| 53 | `theory-decomposition-spaces` | depth 5; 1.20 boundary types per item; 2.36 specs per item |
+| 54 | `theory-dynamic-graphs` | depth 2; 1.21 boundary types per item; 3.21 specs per item |
+| 55 | `theory-probability` | depth 5; 1.21 boundary types per item; 7.42 specs per item |
+| 56 | `core-session` | depth 6; 1.23 boundary types per item; 3.29 specs per item |
+| 57 | `theory-e-graphs` | depth 4; 1.23 boundary types per item; 1.92 specs per item |
+| 58 | `surface-render-terminal` | depth 12; 1.25 boundary types per item; 6.50 specs per item |
+| 59 | `theory-cellular-sheaves` | depth 3; 1.27 boundary types per item; 7.77 specs per item |
+| 60 | `surface-corpus` | depth 9; 1.33 boundary types per item; 11.22 specs per item |
+| 61 | `surface-tui` | depth 16; 1.43 boundary types per item; 7.09 specs per item |
+| 62 | `surface-pretty` | depth 10; 1.50 boundary types per item; 10.11 specs per item |
+| 63 | `surface-format` | depth 12; 1.52 boundary types per item; 2.26 specs per item |
+| 64 | `surface-repl` | depth 15; 1.59 boundary types per item; 6.21 specs per item |
+| 65 | `storage-artifact` | depth 6; 1.64 boundary types per item; 9.82 specs per item |
+| 66 | `surface-agentic` | depth 17; 1.64 boundary types per item; 5.14 specs per item |
+| 67 | `core-unify` | depth 6; 1.80 boundary types per item; 3.70 specs per item |
+| 68 | `surface-diagnostics` | depth 11; 1.85 boundary types per item; 6.44 specs per item |
+| 69 | `core-incremental` | depth 9; 1.95 boundary types per item; 7.14 specs per item |
+| 70 | `theory-graded-posets` | depth 1; 2.22 boundary types per item; 10.89 specs per item |
+| 71 | `storage-store` | depth 2; 2.27 boundary types per item; 7.64 specs per item |
+| 72 | `workflow-ledger-tasks` | depth 14; 2.40 boundary types per item; 9.60 specs per item |
+| 73 | `surface-session` | depth 14; 2.79 boundary types per item; 10.96 specs per item |
+| 74 | `theory-coherent-resolutions` | hotpath; depth 3; 0.89 boundary types per item; 4.14 specs per item |
+| 75 | `storage-schema` | hotpath; depth 2; 0.96 boundary types per item; 6.35 specs per item |
+| 76 | `surface-lowering-base` | hotpath; depth 6; 1.18 boundary types per item; 7.68 specs per item |
+| 77 | `surface-dispatcher` | hotpath; depth 13; 1.34 boundary types per item; 6.45 specs per item |
+| 78 | `core-checker` | hotpath; depth 8; 1.37 boundary types per item; 7.93 specs per item |
+| 79 | `surface-lsp` | hotpath; depth 15; 1.58 boundary types per item; 9.81 specs per item |
+| 80 | `surface-lowering` | hotpath; depth 7; 1.80 boundary types per item; 19.71 specs per item |
 
 The table gives the top three's boundary types from other crates, each by the path rustdoc records for its definition.
 

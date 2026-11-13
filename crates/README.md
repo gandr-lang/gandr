@@ -54,6 +54,7 @@ crates/
 ├── storage-schema/                the record plane as C-sets with checked equations
 ├── storage-store/                 one store over both planes and named roots
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
+├── surface-agentic/               the agentic face of the hub: the Reactive Agent Protocol's toolset by default, the Model Context Protocol for compatibility
 ├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
@@ -66,7 +67,6 @@ crates/
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
 ├── surface-lsp/                   the language server: diagnostics from the model, tokens from highlight roles, the hub on a Unix socket
 ├── surface-lsp-base/              the server's base: the protocol, positions, markup, inline completion
-├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame

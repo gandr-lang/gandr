@@ -79,13 +79,13 @@ gandr-kernel-core.workspace = true
 gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
+gandr-surface-agentic.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-features.workspace = true
 gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lsp.workspace = true
-gandr-surface-mcp.workspace = true
 gandr-surface-render-terminal.workspace = true
 gandr-surface-repl.workspace = true
 getrandom.workspace = true
@@ -153,9 +153,9 @@ hotpath = [
 instrument = [
   "dep:gandr-core-fork",
   "gandr-core-fork/instrument",
+  "gandr-surface-agentic/instrument",
   "gandr-surface-dispatcher/instrument",
   "gandr-surface-lsp/instrument",
-  "gandr-surface-mcp/instrument",
 ]
 # On macOS, serve every allocation from one private malloc zone rather than
 # the default zone; off, and on every other target, the system allocator.
