@@ -115,7 +115,7 @@ use crate::unbuilt::Unbuilt;
 pub(in crate::lower) mod tests;
 
 /// The tiles that write a place after it: `=`, `+=`, `-=` and `*=`.
-pub(super) const ASSIGNING: [TileName; 4] = [
+pub const ASSIGNING: [TileName; 4] = [
     TileName::EQUALS,
     TileName::PLUS_EQUALS,
     TileName::MINUS_EQUALS,
@@ -156,11 +156,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::a_hold_lowers_at_its_grade`
     /// - witness: `lower::access::tests::a_stated_var_ascribes_its_value_or_holds_a_handle`
     #[spec(
-        captures: before = self.cx.statements.mark(),
-        ensures: |ret| ret.is_err() || (self.cx.statements.mark() == before.next()
-            && self.cx.statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
+        captures: before = self.cx().statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx().statements.mark() == before.next()
+            && self.cx().statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
     )]
-    pub(super) fn hold(
+    #[inline]
+    pub fn hold(
         &mut self,
         cursor: &mut Cursor<'_>,
         hold: Placed,
@@ -173,7 +174,7 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Computation(frame),
         };
         let grade = match cursor.tile(TileName::BRACKET_OPEN) {
-            Maybe::Present(_) => self.hold_grade(statement, cursor)?,
+            Maybe::Present(_) => self.shared().hold_grade(statement, cursor)?,
             Maybe::Absent(_) => HoldGrade::Many,
         };
         let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
@@ -187,18 +188,18 @@ impl<'source> Lowerer<'_, 'source>
         closed(statement, cursor, TileName::EQUALS)?;
         let value = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
-        let name = self.cx.name_at(binder);
-        self.note_binder(binder, frame, name)?;
-        self.read(value.node, Reading::Value(frame));
+        let name = self.cx().name_at(binder);
+        self.host().note_binder(binder, frame, name)?;
+        self.host().read(value.node, Reading::Value(frame));
         if let Maybe::Present(stated) = stated {
-            self.read(stated.node, Reading::ValueType(frame));
-            if matches!(self.cx.form_at(stated)?, Some((_, Former::AtType))) {
+            self.host().read(stated.node, Reading::ValueType(frame));
+            if matches!(self.cx().form_at(stated)?, Some((_, Former::AtType))) {
                 // A handle is the world's to hold: it binds no slot, so a
                 // grade has nothing to grade.
                 if grade != HoldGrade::Many {
                     return Err(statement.fault(stated.span, FormFault::MisplacedTile));
                 }
-                self.cx.statements.push(Statement {
+                self.cx_mut().statements.push(Statement {
                     origin: hold.node,
                     bound: value.node,
                     binding: StatementBinding::Located {
@@ -207,14 +208,14 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     rest: exits::Rest::Bound,
                 });
-                return Ok(Frame::Inner(self.cx.scope.extend(
+                return Ok(Frame::Inner(self.cx_mut().scope.extend(
                     frame,
                     name,
                     Maybe::Present(binder.span),
                 )));
             }
         }
-        self.cx.statements.push(Statement {
+        self.cx_mut().statements.push(Statement {
             origin: hold.node,
             bound: hold.node,
             binding: StatementBinding::Held {
@@ -230,14 +231,17 @@ impl<'source> Lowerer<'_, 'source>
         });
 
         let slot = self
-            .cx
+            .cx_mut()
             .scope
             .extend_linear(frame, name, Maybe::Present(binder.span));
-        let _held = self.cx.held.insert(slot);
+        let _held = self.cx_mut().held.insert(slot);
 
         Ok(Frame::Inner(slot))
     }
+}
 
+impl<'source> Lowerer<'_, 'source>
+{
     /// Read a hold's grade, `[n]`, past its `[`.
     ///
     /// # Specification
@@ -275,17 +279,20 @@ impl<'source> Lowerer<'_, 'source>
         if label != TileName::NUMBER {
             return Err(site.fault(at.span, FormFault::MisplacedTile));
         }
-        if self.cx.name_at(at).as_ref() != "1" {
+        if self.cx().name_at(at).as_ref() != "1" {
             return Err(LoweringRefusal::GradedBridge {
                 span: at.span,
-                grade: self.cx.name_at(at),
+                grade: self.cx().name_at(at),
             });
         }
         closed(site, cursor, TileName::BRACKET_CLOSE)?;
 
         Ok(HoldGrade::One)
     }
+}
 
+impl<'source> Lowerer<'_, 'source>
+{
     /// The linear binder the name at `subject` resolves to under its frame:
     /// the one path by which every form that lends, ends or writes a slot,
     /// reads its element or acts on an endpoint finds the slot its name names.
@@ -317,8 +324,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
     {
         let frame = subject.reading.frame();
+        let subject_name = self.cx().name_at(subject.at);
         Ok(
-            match self.resolve_name(subject, frame, self.cx.name_at(subject.at))? {
+            match self.host().resolve_name(subject, frame, subject_name)? {
                 Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
                     Maybe::Present(bound)
                 },
@@ -347,7 +355,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
     /// - witness: `lower::method::tests::an_index_reads_its_held_element`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |held| match *held {
-        | Maybe::Present(bound) => self.cx.held.contains(&bound.binder),
+        | Maybe::Present(bound) => self.cx().held.contains(&bound.binder),
         | Maybe::Absent(_) => true,
     }))]
     pub(super) fn held_slot(
@@ -356,7 +364,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
     {
         Ok(match self.linear_binder(subject)? {
-            Maybe::Present(bound) if !self.cx.held.contains(&bound.binder) => {
+            Maybe::Present(bound) if !self.cx().held.contains(&bound.binder) => {
                 Maybe::Absent(slot::Absent::Unheld)
             },
             found @ (Maybe::Present(_) | Maybe::Absent(_)) => found,
@@ -441,12 +449,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         match found {
             Maybe::Present(bound) => {
-                self.resolved(subject.at.span, Resolved::Binder(bound));
+                self.host()
+                    .resolved(subject.at.span, Resolved::Binder(bound));
                 Ok((bound.index, bound.binder))
             },
             Maybe::Absent(slot::Absent::Unbound) => Err(LoweringRefusal::UnresolvedName {
                 span: subject.at.span,
-                name: self.cx.name_at(subject.at),
+                name: self.cx().name_at(subject.at),
             }),
             Maybe::Absent(slot::Absent::Unlinear | slot::Absent::Unheld) => {
                 Err(subject.out(boundary))
@@ -485,8 +494,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
     /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
     /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Access(_) | Plan::Method(_)))))]
-    pub(super) fn access_form(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Access(_) | Plan::Method(_)))))]
+    #[inline]
+    pub fn access_form(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -499,7 +509,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(Piece::Operand(_)) = cursor.peek() {
             return self.view_call(site, pieces);
         }
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         let Maybe::Present(Piece::Tile { label: keyword, .. }) = cursor.read()
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -513,8 +523,8 @@ impl<'source> Lowerer<'_, 'source>
             if keyword == TileName::RESUME {
                 let (written, value) = self.keyword_two(site, operand)?;
                 let (view, ended) = self.ended_view(frame, written)?;
-                let _first = self.cx.ended_views.insert(ended);
-                self.read(value.node, Reading::Value(frame));
+                let _first = self.cx_mut().ended_views.insert(ended);
+                self.host().read(value.node, Reading::Value(frame));
                 Accessed::Resume {
                     view,
                     value: value.node,
@@ -523,14 +533,14 @@ impl<'source> Lowerer<'_, 'source>
             else if keyword == TileName::ABORT {
                 let written = self.keyword_one(site, operand)?;
                 let (view, ended) = self.ended_view(frame, written)?;
-                let _first = self.cx.ended_views.insert(ended);
+                let _first = self.cx_mut().ended_views.insert(ended);
                 Accessed::Abort { view }
             }
             else {
                 return Err(site.fault(site.at.span, FormFault::MisplacedTile));
             }
         };
-        self.plan(site, Plan::Access(accessed));
+        self.host().plan(site, Plan::Access(accessed));
 
         Ok(())
     }
@@ -560,7 +570,7 @@ impl<'source> Lowerer<'_, 'source>
         written: Placed,
     ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
     {
-        if !matches!(self.cx.form_at(written)?, Some((_, Former::Name))) {
+        if !matches!(self.cx().form_at(written)?, Some((_, Former::Name))) {
             let view = Site {
                 at: written,
                 name: FormName::IDENTIFIER,
@@ -596,7 +606,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::a_shared_access_lowers_without_an_unwind`
     /// - witness: `lower::access::tests::an_access_of_a_place_lowers_with_its_index`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.cx.results.contains(&body.last))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.cx().results.contains(&body.last))))]
     fn access(
         &mut self,
         site: Site,
@@ -632,7 +642,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(_) => {
                 let index = site.one(cursor.operands())?;
                 closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
-                self.read(index.node, Reading::Value(frame));
+                self.host().read(index.node, Reading::Value(frame));
                 Place::At { index: index.node }
             },
             Maybe::Absent(_) => Place::Whole,
@@ -643,14 +653,14 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let (held, _) = self.linear_slot(frame, lent, FragmentBoundary::Held)?;
-        let name = self.cx.name_at(viewer);
-        self.note_binder(viewer, frame, name)?;
+        let name = self.cx().name_at(viewer);
+        self.host().note_binder(viewer, frame, name)?;
         let viewed = self
-            .cx
+            .cx_mut()
             .scope
             .extend_linear(frame, name, Maybe::Present(viewer.span));
-        let body = self.block(site, &mut cursor, Frame::Inner(viewed))?;
-        let _result = self.cx.results.insert(body.last);
+        let body = self.host().block(site, &mut cursor, Frame::Inner(viewed))?;
+        let _result = self.cx_mut().results.insert(body.last);
         let mut cursor = Cursor::new(tail, site.at.span);
         let mode = match (mode, tail.is_empty()) {
             (AccessMode::Shared, true) => AccessMode::Shared,
@@ -664,8 +674,8 @@ impl<'source> Lowerer<'_, 'source>
             },
             (AccessMode::Exclusive { .. }, false) => {
                 closed(site, &mut cursor, TileName::UNWIND)?;
-                let unwind = self.block(site, &mut cursor, frame)?;
-                let _result = self.cx.results.insert(unwind.last);
+                let unwind = self.host().block(site, &mut cursor, frame)?;
+                let _result = self.cx_mut().results.insert(unwind.last);
                 AccessMode::Exclusive {
                     unwind: Maybe::Present(unwind),
                 }
@@ -700,8 +710,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a plain and a compound assignment each lower to the
     ///   access they write.
     /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| self.cx.assignments.contains_key(&place.node)))]
-    pub(super) fn assignment(
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| self.cx().assignments.contains_key(&place.node)))]
+    #[inline]
+    pub fn assignment(
         &mut self,
         site: Site,
         cursor: &mut Cursor<'_>,
@@ -717,8 +728,8 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let value = site.one(cursor.operands())?;
-        self.read(value.node, Reading::Value(frame));
-        let _first = self.cx.assignments.insert(place.node, Assignment {
+        self.host().read(value.node, Reading::Value(frame));
+        let _first = self.cx_mut().assignments.insert(place.node, Assignment {
             operator,
             value: value.node,
         });
@@ -753,8 +764,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   name.
     /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
     /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Access(Accessed::Assign { .. }))))]
-    pub(super) fn assign(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Access(Accessed::Assign { .. }))))]
+    #[inline]
+    pub fn assign(
         &mut self,
         site: Site,
         former: Former,
@@ -764,7 +776,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         use gandr_core_term::primitive::Operator;
         use gandr_core_term::primitive::PRELUDE;
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         let (head, place) = match (former, pieces.pieces.as_slice()) {
             (Former::Name, _) => (site.at, Place::Whole),
             (
@@ -779,9 +791,9 @@ impl<'source> Lowerer<'_, 'source>
                     },
                 ],
             ) if opener == TileName::SELECT_OPEN
-                && matches!(self.cx.form_at(head)?, Some((_, Former::Name))) =>
+                && matches!(self.cx().form_at(head)?, Some((_, Former::Name))) =>
             {
-                self.read(index.node, Reading::Value(frame));
+                self.host().read(index.node, Reading::Value(frame));
                 (head, Place::At { index: index.node })
             },
             _ => return Err(site.out(FragmentBoundary::Held)),
@@ -806,7 +818,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             Maybe::Present(row)
         };
-        self.plan(
+        self.host().plan(
             site,
             Plan::Access(Accessed::Assign {
                 held,
@@ -847,7 +859,8 @@ impl<'source> Lowerer<'_, 'source>
         | Maybe::Present(_) => false,
         | Maybe::Absent(_) => true,
     })]
-    pub(super) fn mint_access(
+    #[inline]
+    pub fn mint_access(
         &self,
         accessed: Accessed,
         sink: &mut Sink<'_>,
@@ -863,12 +876,12 @@ impl<'source> Lowerer<'_, 'source>
             } => {
                 let place = match place {
                     Place::Whole => Place::Whole,
-                    Place::At { index } => match self.cx.value_at(index) {
+                    Place::At { index } => match self.cx().value_at(index) {
                         Maybe::Present(index) => Place::At { index },
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
                 };
-                let body = match self.mint_block(body, sink) {
+                let body = match self.host_ref().mint_block(body, sink) {
                     Maybe::Present(body) => body,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
@@ -876,7 +889,7 @@ impl<'source> Lowerer<'_, 'source>
                     AccessMode::Shared => AccessMode::Shared,
                     AccessMode::Exclusive {
                         unwind: Maybe::Present(unwind),
-                    } => match self.mint_block(unwind, sink) {
+                    } => match self.host_ref().mint_block(unwind, sink) {
                         Maybe::Present(unwind) => AccessMode::Exclusive { unwind },
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
@@ -897,7 +910,7 @@ impl<'source> Lowerer<'_, 'source>
                     body,
                 }
             },
-            Accessed::Resume { view, value } => match self.cx.value_at(value) {
+            Accessed::Resume { view, value } => match self.cx().value_at(value) {
                 Maybe::Present(value) => MemoryForm::Resume { view, value },
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
@@ -908,7 +921,7 @@ impl<'source> Lowerer<'_, 'source>
                 element,
             } => {
                 let (index, element) =
-                    match (self.cx.value_at(index), self.cx.value_type_at(element)) {
+                    match (self.cx().value_at(index), self.cx().value_type_at(element)) {
                         (Maybe::Present(index), Maybe::Present(element)) => (index, element),
                         (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                             return Maybe::Absent(reason);
@@ -952,7 +965,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             Accessed::Element { held, index } => {
-                let index = match self.cx.value_at(index) {
+                let index = match self.cx().value_at(index) {
                     Maybe::Present(index) => index,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
@@ -971,11 +984,11 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             Accessed::Unheld { list, index } => {
-                let list = match self.cx.value_at(list) {
+                let list = match self.cx().value_at(list) {
                     Maybe::Present(list) => list,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
-                let index = match self.cx.value_at(index) {
+                let index = match self.cx().value_at(index) {
                     Maybe::Present(index) => index,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
@@ -1044,14 +1057,14 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let value = match self.cx.value_at(value) {
+        let value = match self.cx().value_at(value) {
             Maybe::Present(value) => value,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let inner = origin.inserted(Insertion::Assignment);
         let place = match place {
             Place::Whole => Place::Whole,
-            Place::At { index } => match self.cx.value_at(index) {
+            Place::At { index } => match self.cx().value_at(index) {
                 Maybe::Present(index) => {
                     // Past the right side's binder the index's free variables
                     // are one deeper.

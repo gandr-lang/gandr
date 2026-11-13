@@ -605,6 +605,10 @@ pub use gandr_surface_lowering_base::lower::scoped;
 pub use gandr_surface_lowering_base::lower::stated;
 use gandr_surface_lowering_base::lower::stretch;
 use gandr_surface_lowering_base::lower::unread_pattern;
+use gandr_surface_lowering_native::lower::native::Unwrapped;
+use gandr_surface_lowering_native::lower::native::constructed;
+use gandr_surface_lowering_native::lower::native::inherited;
+use gandr_surface_lowering_native::lower::native::unfolding;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -1405,6 +1409,125 @@ struct Lowerer<'run, 'source>
 {
     /// The context this lowering reads and writes.
     cx: Context<'run, 'source>,
+}
+
+/// The handles of a family's body while the body stands in the lowering:
+/// the context that the body reads and writes, and the host that it calls
+/// another family through.
+///
+/// A family's own crate gives the same handles over its host, so the body
+/// moves into that crate unchanged.
+impl<'run, 'source> Lowerer<'run, 'source>
+{
+    /// The context, as a family's body reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn cx(&self) -> &Context<'run, 'source>
+    {
+        &self.cx
+    }
+
+    /// The context, as a family's body writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn cx_mut(&mut self) -> &mut Context<'run, 'source>
+    {
+        &mut self.cx
+    }
+
+    /// The host that a family's body calls another family through: the
+    /// lowering itself.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn host(&mut self) -> &mut Self
+    {
+        self
+    }
+
+    /// The host that a family's read calls another family through: the
+    /// lowering itself.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn host_ref(&self) -> &Self
+    {
+        self
+    }
+
+    /// The family's reads, over the same lowering.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn shared(&self) -> &Self
+    {
+        self
+    }
+}
+
+/// The native family's calls that a body of another family makes through
+/// its host, while the body stands in the lowering.
+impl<'source> Lowerer<'_, 'source>
+{
+    /// The native family's `carry_value_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn carry_value_type(
+        &self,
+        ty: ValueTypeId,
+        from: Frame,
+        telescope: Telescope,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        NativeRef::over(&self.cx).carry_value_type(ty, from, telescope, to, sink, origin)
+    }
+
+    /// The native family's `constructor_named`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn constructor_named(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Maybe<Constructor, constructed::Absent>
+    {
+        Native::new(self).constructor_named(site, name)
+    }
+
+    /// The native family's `definition_written`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn definition_written(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<NodeIndex, unfolding::Absent>
+    {
+        NativeRef::over(&self.cx).definition_written(constant)
+    }
+
+    /// The native family's `unwrapped`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unwrapped(
+        &mut self,
+        node: NodeIndex,
+    ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>
+    {
+        Native::new(self).unwrapped(node)
+    }
 }
 
 /// The tables a closure's own module finishes with that a document's module

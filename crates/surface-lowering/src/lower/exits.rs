@@ -338,39 +338,40 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
     /// - witness: `lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
     #[spec(
-        captures: before = (usize::from(self.cx.fuel.remaining()), usize::from(self.cx.leaves.count())),
+        captures: before = (usize::from(self.cx().fuel.remaining()), usize::from(self.cx().leaves.count())),
         ensures: |ret| {
-            usize::from(self.cx.leaves.count()) == before.1
+            usize::from(self.cx().leaves.count()) == before.1
                 && (ret.is_err()
-                    || usize::from(self.cx.fuel.remaining())
-                        <= before.0.saturating_sub(self.cx.own.len()))
+                    || usize::from(self.cx().fuel.remaining())
+                        <= before.0.saturating_sub(self.cx().own.len()))
         },
     )]
-    pub(super) fn survey(&mut self) -> Result<(), LoweringRefusal<'source>>
+    #[inline]
+    pub fn survey(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
-        let mut pieces = core::mem::take(&mut self.cx.pieces);
-        let mut remaining = self.cx.own.len();
-        let mut breaks = NodeTable::filled(self.cx.tree.blocks(), Breaks::Never);
+        let mut pieces = core::mem::take(&mut self.cx_mut().pieces);
+        let mut remaining = self.cx().own.len();
+        let mut breaks = NodeTable::filled(self.cx().tree.blocks(), Breaks::Never);
         let mut outcome = Ok(());
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
-            if let Err(refusal) = self.cx.fuel.spend() {
+            if let Err(refusal) = self.cx_mut().fuel.spend() {
                 outcome = Err(refusal);
                 break;
             }
-            let Some(&position) = self.cx.own.get(next)
+            let Some(&position) = self.cx().own.get(next)
             else {
                 continue;
             };
-            let (leaves, broken) = self.leaves_of(position, &mut pieces, &breaks);
-            if let Some(held) = self.cx.leaves.get_mut(position) {
+            let (leaves, broken) = self.shared().leaves_of(position, &mut pieces, &breaks);
+            if let Some(held) = self.cx_mut().leaves.get_mut(position) {
                 *held = leaves;
             }
             if let Some(held) = breaks.get_mut(position) {
                 *held = broken;
             }
         }
-        self.cx.pieces = pieces;
+        self.cx_mut().pieces = pieces;
 
         outcome
     }
@@ -403,7 +404,7 @@ impl<'source> Lowerer<'_, 'source>
         breaks: &NodeTable<Breaks>,
     ) -> (Leaves, Breaks)
     {
-        let (held, broken) = self.cx.tree.children(position).fold(
+        let (held, broken) = self.cx().tree.children(position).fold(
             (Leaves::Never, Breaks::Never),
             |(leaves, broken), child| {
                 (
@@ -412,11 +413,11 @@ impl<'source> Lowerer<'_, 'source>
                 )
             },
         );
-        let Some(node) = self.cx.tree.node(position)
+        let Some(node) = self.cx().tree.node(position)
         else {
             return (Leaves::Never, Breaks::Never);
         };
-        let Ok(Shape::Form { former, .. }) = shape_of(self.cx.pbg, node)
+        let Ok(Shape::Form { former, .. }) = shape_of(self.cx().pbg, node)
         else {
             return (held.min(Leaves::Sometimes), broken);
         };
@@ -518,7 +519,7 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &mut Pieces,
     ) -> Leaves
     {
-        if read_pieces(self.cx.pbg, self.cx.tree, position, pieces).is_err() {
+        if read_pieces(self.cx().pbg, self.cx().tree, position, pieces).is_err() {
             return Leaves::Sometimes;
         }
         let mut arrow = false;
@@ -564,7 +565,7 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &mut Pieces,
     ) -> Leaves
     {
-        if read_pieces(self.cx.pbg, self.cx.tree, position, pieces).is_err() {
+        if read_pieces(self.cx().pbg, self.cx().tree, position, pieces).is_err() {
             return Leaves::Sometimes;
         }
         let mut branch = None;
@@ -602,15 +603,20 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::survey`].
     /// - witness: `lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
-    #[spec(ensures: |ret| ret == self.cx.leaves.get(position).copied().unwrap_or_default())]
-    pub(super) fn leaves_at(
+    #[spec(ensures: |ret| ret == self.cx().leaves.get(position).copied().unwrap_or_default())]
+    #[must_use]
+    #[inline]
+    pub fn leaves_at(
         &self,
         position: NodeIndex,
     ) -> Leaves
     {
-        self.cx.leaves.get(position).copied().unwrap_or_default()
+        self.cx().leaves.get(position).copied().unwrap_or_default()
     }
+}
 
+impl<'source> Lowerer<'_, 'source>
+{
     /// Mark `inner`, standing in tail position of `outer`, with the paths
     /// through `outer`: where a path ends, where an exit may stand, where a
     /// local end continues a block, where a path through a loop's body ends,
@@ -635,49 +641,51 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         captures: before = (
-            self.cx.exits.contains(&inner) || self.cx.exits.contains(&outer),
-            self.cx.exitable.contains(&inner) || self.cx.exitable.contains(&outer),
-            self.cx.joined.contains(&inner) || self.cx.joined.contains(&outer),
-            self.cx.iterated.contains(&inner) || self.cx.iterated.contains(&outer),
-            self.cx.looping.contains(&inner) || self.cx.looping.contains(&outer),
-            self.cx.framed.contains(&inner) || self.cx.framed.contains(&outer),
+            self.cx().exits.contains(&inner) || self.cx().exits.contains(&outer),
+            self.cx().exitable.contains(&inner) || self.cx().exitable.contains(&outer),
+            self.cx().joined.contains(&inner) || self.cx().joined.contains(&outer),
+            self.cx().iterated.contains(&inner) || self.cx().iterated.contains(&outer),
+            self.cx().looping.contains(&inner) || self.cx().looping.contains(&outer),
+            self.cx().framed.contains(&inner) || self.cx().framed.contains(&outer),
         ),
-        ensures: self.cx.exits.contains(&inner) == before.0
-            && self.cx.exitable.contains(&inner) == before.1
-            && self.cx.joined.contains(&inner) == before.2
-            && self.cx.iterated.contains(&inner) == before.3
-            && self.cx.looping.contains(&inner) == before.4
-            && self.cx.framed.contains(&inner) == before.5,
+        ensures: self.cx().exits.contains(&inner) == before.0
+            && self.cx().exitable.contains(&inner) == before.1
+            && self.cx().joined.contains(&inner) == before.2
+            && self.cx().iterated.contains(&inner) == before.3
+            && self.cx().looping.contains(&inner) == before.4
+            && self.cx().framed.contains(&inner) == before.5,
     )]
+    #[inline]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn pass_paths(
+    pub fn pass_paths(
         &mut self,
         outer: NodeIndex,
         inner: NodeIndex,
     )
     {
+        let cx = self.cx_mut();
         for marks in [
-            &mut self.cx.exits,
-            &mut self.cx.exitable,
-            &mut self.cx.joined,
-            &mut self.cx.iterated,
-            &mut self.cx.looping,
-            &mut self.cx.results,
-            &mut self.cx.framed,
-            &mut self.cx.looped_past,
+            &mut cx.exits,
+            &mut cx.exitable,
+            &mut cx.joined,
+            &mut cx.iterated,
+            &mut cx.looping,
+            &mut cx.results,
+            &mut cx.framed,
+            &mut cx.looped_past,
         ] {
             if marks.contains(&outer) {
                 let _marked = marks.insert(inner);
             }
         }
-        if let Some(&body) = self.cx.bodies.get(&outer) {
-            let _owner = self.cx.bodies.insert(inner, body);
+        if let Some(&body) = self.cx().bodies.get(&outer) {
+            let _owner = self.cx_mut().bodies.insert(inner, body);
         }
-        if self.cx.stated.contains_key(&outer) || self.cx.stated_tails.contains(&outer) {
-            let _held = self.cx.stated_tails.insert(inner);
+        if self.cx().stated.contains_key(&outer) || self.cx().stated_tails.contains(&outer) {
+            let _held = self.cx_mut().stated_tails.insert(inner);
         }
     }
 
@@ -702,21 +710,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::paths_through`].
     /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
     /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || (self.cx.exits.contains(&body.last) && self.cx.exitable.contains(&body.last)
-        && self.cx.bodies.get(&body.last) == Some(&body.last)))]
+    #[spec(ensures: |ret| ret.is_err() || (self.cx().exits.contains(&body.last) && self.cx().exitable.contains(&body.last)
+        && self.cx().bodies.get(&body.last) == Some(&body.last)))]
+    #[inline]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn open_body(
+    pub fn open_body(
         &mut self,
         site: super::Site,
         body: Block,
         answer: Maybe<Answer, answered::Absent>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _tail = self.cx.exits.insert(body.last);
-        let _owner = self.cx.bodies.insert(body.last, body.last);
+        let _tail = self.cx_mut().exits.insert(body.last);
+        let _owner = self.cx_mut().bodies.insert(body.last, body.last);
         self.paths_through(site, body, answer)
     }
 
@@ -742,25 +751,26 @@ impl<'source> Lowerer<'_, 'source>
     ///   as a statement each run before the unit is returned; a match whose
     ///   every arm returns stays the body's end.
     /// - witness: `lower::exits::tests::a_block_ending_in_a_statement_returns_the_unit_1205`
-    #[spec(ensures: (self.leaves_at(site.at.node) == Leaves::Always) != self.cx.trailing.contains(&site.at.node)
-        && (!self.cx.trailing.contains(&site.at.node) || !self.cx.exits.contains(&site.at.node)))]
-    pub(super) fn trail(
+    #[spec(ensures: (self.shared().leaves_at(site.at.node) == Leaves::Always) != self.cx().trailing.contains(&site.at.node)
+        && (!self.cx().trailing.contains(&site.at.node) || !self.cx().exits.contains(&site.at.node)))]
+    #[inline]
+    pub fn trail(
         &mut self,
         site: super::Site,
     )
     {
-        let leaves = self.leaves_at(site.at.node);
+        let leaves = self.shared().leaves_at(site.at.node);
         if leaves == Leaves::Always {
             return;
         }
-        let _first = self.cx.trailing.insert(site.at.node);
+        let _first = self.cx_mut().trailing.insert(site.at.node);
         // A path passes the statement on to the unit returned after it.
-        let _passed = self.cx.exits.remove(&site.at.node);
+        let _passed = self.cx_mut().exits.remove(&site.at.node);
         if leaves == Leaves::Never {
-            let _discarded = self.cx.answers.remove(&site.at.node);
+            let _discarded = self.cx_mut().answers.remove(&site.at.node);
         }
         else {
-            let _joined = self.cx.joined.insert(site.at.node);
+            let _joined = self.cx_mut().joined.insert(site.at.node);
         }
     }
 
@@ -785,7 +795,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   with the unit returned after `c`. L3 — the checker accepts it.
     /// - witness: `lower::exits::tests::a_block_ending_in_a_statement_returns_the_unit_1205`
     #[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
-    pub(super) fn conclude(
+    #[inline]
+    pub fn conclude(
         &self,
         position: NodeIndex,
         end: ComputationId,
@@ -816,7 +827,10 @@ impl<'source> Lowerer<'_, 'source>
 
         bound
     }
+}
 
+impl<'source> Lowerer<'_, 'source>
+{
     /// Read `subject`, the block the capability scope at `site` handles, as
     /// one a path runs through on its way through the body the scope stands
     /// in.
@@ -843,22 +857,25 @@ impl<'source> Lowerer<'_, 'source>
     ///   scope, are refused; a loop inside the subject runs as any loop.
     /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
     /// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || (self.cx.results.contains(&subject.last)
-        && self.cx.framed.contains(&subject.last) && !self.cx.exits.contains(&subject.last)
-        && self.cx.bodies.get(&subject.last) == self.cx.bodies.get(&site.at.node)))]
-    pub(super) fn open_subject(
+    #[spec(ensures: |ret| ret.is_err() || (self.cx().results.contains(&subject.last)
+        && self.cx().framed.contains(&subject.last) && !self.cx().exits.contains(&subject.last)
+        && self.cx().bodies.get(&subject.last) == self.cx().bodies.get(&site.at.node)))]
+    #[inline]
+    pub fn open_subject(
         &mut self,
         site: super::Site,
         subject: Block,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _result = self.cx.results.insert(subject.last);
-        let _framed = self.cx.framed.insert(subject.last);
-        if self.cx.looping.contains(&site.at.node) || self.cx.looped_past.contains(&site.at.node) {
-            let _past = self.cx.looped_past.insert(subject.last);
+        let _result = self.cx_mut().results.insert(subject.last);
+        let _framed = self.cx_mut().framed.insert(subject.last);
+        if self.cx().looping.contains(&site.at.node)
+            || self.cx().looped_past.contains(&site.at.node)
+        {
+            let _past = self.cx_mut().looped_past.insert(subject.last);
         }
-        if let Some(&body) = self.cx.bodies.get(&site.at.node) {
-            let _owner = self.cx.bodies.insert(subject.last, body);
+        if let Some(&body) = self.cx().bodies.get(&site.at.node) {
+            let _owner = self.cx_mut().bodies.insert(subject.last, body);
         }
         self.paths_through(site, subject, Maybe::Absent(answered::Absent::Unstated))
     }
@@ -891,66 +908,67 @@ impl<'source> Lowerer<'_, 'source>
     ///   keeps its rest bound.
     /// - witness: `lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
     /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || (self.cx.exitable.contains(&block.last)
-        && self.cx.statements.read(block.statements).last().is_none_or(|statement| {
-            self.cx.exitable.contains(&statement.bound)
-                && (!self.cx.looping.contains(&block.last) || self.cx.looping.contains(&statement.bound))
-                && (!self.cx.framed.contains(&block.last) || self.cx.framed.contains(&statement.bound))
-                && self.cx.bodies.get(&block.last).is_none_or(|body| self.cx.bodies.get(&statement.bound) == Some(body))
-                && (statement.rest == Rest::Distributed) == (self.leaves_at(statement.bound) == Leaves::Sometimes)
-                && (statement.rest == Rest::Bound || self.cx.joined.contains(&statement.bound))
+    #[spec(ensures: |ret| ret.is_err() || (self.cx().exitable.contains(&block.last)
+        && self.cx().statements.read(block.statements).last().is_none_or(|statement| {
+            self.cx().exitable.contains(&statement.bound)
+                && (!self.cx().looping.contains(&block.last) || self.cx().looping.contains(&statement.bound))
+                && (!self.cx().framed.contains(&block.last) || self.cx().framed.contains(&statement.bound))
+                && self.cx().bodies.get(&block.last).is_none_or(|body| self.cx().bodies.get(&statement.bound) == Some(body))
+                && (statement.rest == Rest::Distributed) == (self.shared().leaves_at(statement.bound) == Leaves::Sometimes)
+                && (statement.rest == Rest::Bound || self.cx().joined.contains(&statement.bound))
         })))]
-    pub(super) fn paths_through(
+    #[inline]
+    pub fn paths_through(
         &mut self,
         site: super::Site,
         block: Block,
         answer: Maybe<Answer, answered::Absent>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _last = self.cx.exitable.insert(block.last);
-        let looping = self.cx.looping.contains(&block.last);
-        let framed = self.cx.framed.contains(&block.last);
-        let past = self.cx.looped_past.contains(&block.last);
-        let body = self.cx.bodies.get(&block.last).copied();
+        let _last = self.cx_mut().exitable.insert(block.last);
+        let looping = self.cx().looping.contains(&block.last);
+        let framed = self.cx().framed.contains(&block.last);
+        let past = self.cx().looped_past.contains(&block.last);
+        let body = self.cx().bodies.get(&block.last).copied();
         let first = self
-            .cx
+            .cx()
             .statements
             .first(block.statements)
             .map_or(0, usize::from);
-        let count = self.cx.statements.read(block.statements).len();
+        let count = self.cx().statements.read(block.statements).len();
         for position in (first .. first.saturating_add(count)).map(At::from) {
-            let Some(&statement) = self.cx.statements.at(position)
+            let Some(&statement) = self.cx().statements.at(position)
             else {
                 continue;
             };
-            let _path = self.cx.exitable.insert(statement.bound);
+            let _path = self.cx_mut().exitable.insert(statement.bound);
             if looping {
-                let _iteration = self.cx.looping.insert(statement.bound);
+                let _iteration = self.cx_mut().looping.insert(statement.bound);
             }
             if framed {
-                let _framed = self.cx.framed.insert(statement.bound);
+                let _framed = self.cx_mut().framed.insert(statement.bound);
             }
             if past {
-                let _past = self.cx.looped_past.insert(statement.bound);
+                let _past = self.cx_mut().looped_past.insert(statement.bound);
             }
             if let Some(body) = body {
-                let _owner = self.cx.bodies.insert(statement.bound, body);
+                let _owner = self.cx_mut().bodies.insert(statement.bound, body);
             }
-            match self.leaves_at(statement.bound) {
+            match self.shared().leaves_at(statement.bound) {
                 Leaves::Never => {},
                 Leaves::Sometimes => {
-                    if let Some(held) = self.cx.statements.at_mut(position) {
+                    if let Some(held) = self.cx_mut().statements.at_mut(position) {
                         held.rest = Rest::Distributed;
                     }
-                    let _joined = self.cx.joined.insert(statement.bound);
+                    let _joined = self.cx_mut().joined.insert(statement.bound);
                     if let Maybe::Present(stated) = answer {
-                        let _first = self.cx.answers.insert(statement.bound, stated);
+                        let _first = self.cx_mut().answers.insert(statement.bound, stated);
                     }
                 },
                 Leaves::Always => {
-                    let after = self.cx.statements.after(block.statements, position);
+                    let after = self.cx().statements.after(block.statements, position);
                     return Err(LoweringRefusal::Unreachable {
-                        span: self.unreached(site, block, after),
+                        span: self.shared().unreached(site, block, after),
                     });
                 },
             }
@@ -976,7 +994,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a refused rest of one statement and of none before
     ///   the last computation, each at its exact bytes.
     /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
-    #[spec(ensures: |ret| self.cx.tree.node(block.last).is_none_or(|node| ret.end() >= node.span().end()))]
+    #[spec(ensures: |ret| self.cx().tree.node(block.last).is_none_or(|node| ret.end() >= node.span().end()))]
     fn unreached(
         &self,
         site: super::Site,
@@ -985,13 +1003,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> ByteSpan
     {
         let first = self
-            .cx
+            .cx()
             .statements
             .read(after)
             .first()
             .map_or(block.last, |statement| statement.origin);
         let span_of = |node: NodeIndex| {
-            self.cx
+            self.cx()
                 .tree
                 .node(node)
                 .map(gandr_surface_syntax::Node::span)
@@ -1029,23 +1047,24 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| match ret {
         | Maybe::Absent(_) => true,
         | Maybe::Present(id) => sink.arena.computation(id).is_some()
-            && (!self.cx.delimited.contains(&body.last) || matches!(sink.arena.computation(id), Some(&Computation::Reset(_)))),
+            && (!self.cx().delimited.contains(&body.last) || matches!(sink.arena.computation(id), Some(&Computation::Reset(_)))),
     })]
-    pub(super) fn mint_body(
+    #[inline]
+    pub fn mint_body(
         &self,
         body: Block,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        self.mint_block(body, sink).map(|minted| {
+        self.host_ref().mint_block(body, sink).map(|minted| {
             let commuted = if sink.distributed.is_empty() {
                 minted
             }
             else {
                 commute(sink, minted, origin)
             };
-            if self.cx.delimited.contains(&body.last) {
+            if self.cx().delimited.contains(&body.last) {
                 let id = sink.arena.computation_reset(commuted);
                 sink.origins
                     .record_computation(id, origin.inserted(Insertion::Unwind));
@@ -1055,6 +1074,162 @@ impl<'source> Lowerer<'_, 'source>
                 commuted
             }
         })
+    }
+
+    /// Every exit the mint sweep inferred in a declaration that lowered, in
+    /// source order.
+    ///
+    /// # Specification
+    /// - requires: the attribute pass and the documentation pass have run, so
+    ///   every refusal is offered and every asked slot is marked.
+    /// - ensures: one record per inferred exit minted under a declaration that
+    ///   holds no refusal, at its tail's span, asked exactly when its owning
+    ///   slot is; sorted by span.
+    /// - provides: the inferred exits a lowered module exposes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — tails of each polarity in a lowered declaration, and
+    ///   one in a declaration an attribute refuses, asserted as the exact list.
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    #[spec(ensures: |ret| ret.len() <= self.cx().elided.len() && ret.is_sorted())]
+    #[must_use]
+    #[inline]
+    pub fn inferred_exits(&self) -> Vec<InferredExit>
+    {
+        let mut found: Vec<InferredExit> = self
+            .cx()
+            .elided
+            .iter()
+            .filter(|&&(position, _)| !self.cx().collected.refused(position).0)
+            .filter_map(|&(position, exit)| {
+                let tail = self.cx().tree.node(position)?;
+                let explicitness = match self.cx().collected.owner_of(position) {
+                    Maybe::Present(slot) if self.cx().asked.contains(&slot) => Explicitness::Asked,
+                    Maybe::Present(_) | Maybe::Absent(_) => Explicitness::Unasked,
+                };
+                Some(InferredExit {
+                    span: tail.span(),
+                    exit,
+                    explicitness,
+                })
+            })
+            .collect();
+        found.sort_unstable();
+
+        found
+    }
+
+    /// The operand of the `return` at `position`, and what it is, when the
+    /// lowering would infer that `return` were it left out, or the checker
+    /// would elaborate it so.
+    ///
+    /// # Specification
+    /// - requires: the classification has read the body `position` stands in
+    ///   and the mint sweep has not left it, so its paths are still surveyed.
+    /// - ensures: the operand exactly when `position` is a written `return`
+    ///   where a path ends, written as no statement and in tail position of
+    ///   none, crossing no handler's frame, over an operand bridged bare as a
+    ///   value, as is every form a grouping of it holds: a grouped type is
+    ///   quoted, and a type bare at a tail takes no exit; and the form held is
+    ///   no hole, which a tail would read as a computation's. That is
+    ///   [`Returned::Value`]; an operand or a form a grouping of it holds that
+    ///   is a computation nested where the value is read is [`Returned::Run`].
+    /// - provides: what the mint sweep records of a written exit for
+    ///   [`Self::elidable_exits`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ElidableExit`].
+    /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+    #[spec(ensures: |ret| ret.is_none_or(|(operand, _)| self.cx().exits.contains(&position)
+        && !self.cx().stated.contains_key(&position)
+        && !self.cx().stated_tails.contains(&position)
+        && matches!(self.cx().plans.get(position), Some(&super::Plan::Return(written)) if written == operand)))]
+    #[must_use]
+    #[inline]
+    pub fn elidable_at(
+        &self,
+        position: NodeIndex,
+    ) -> Option<(NodeIndex, Returned)>
+    {
+        let tail = self.cx().exits.contains(&position)
+            && !self.cx().inferred.contains(&position)
+            && !self.cx().stated.contains_key(&position)
+            && !self.cx().stated_tails.contains(&position)
+            && !self.cx().crossing.contains(&position);
+        let Some(&super::Plan::Return(operand)) = self.cx().plans.get(position)
+        else {
+            return None;
+        };
+        if !tail {
+            return None;
+        }
+        let mut held = operand;
+        loop {
+            match self.cx().bridges.get(held) {
+                Some(&super::Bridge::Bare) => {},
+                Some(&super::Bridge::Inserted(super::Insertion::Nested)) => {
+                    return Some((operand, Returned::Run));
+                },
+                _ => return None,
+            }
+            match self.cx().plans.get(held) {
+                Some(&super::Plan::Transparent(inner)) if !self.cx().stand_ins.contains(&held) => {
+                    held = inner;
+                },
+                Some(&super::Plan::ValueHole(_)) => return None,
+                _ => return Some((operand, Returned::Value)),
+            }
+        }
+    }
+
+    /// Every written `return` the lowering would infer, in a declaration that
+    /// lowered, in source order.
+    ///
+    /// # Specification
+    /// - requires: the attribute pass and the documentation pass have run, so
+    ///   every refusal is offered and every asked slot is marked.
+    /// - ensures: one record per `return` the mint sweep found elidable, as
+    ///   [`Self::elidable_at`] reads it, under a slot no `explicit_exits` asks
+    ///   and holding no refusal; sorted by span.
+    /// - provides: the elidable exits a lowered module exposes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ElidableExit`].
+    /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+    #[spec(ensures: |ret| ret.len() <= self.cx().elidable.len() && ret.is_sorted())]
+    #[must_use]
+    #[inline]
+    pub fn elidable_exits(&self) -> Vec<ElidableExit>
+    {
+        let mut found: Vec<ElidableExit> = self
+            .cx()
+            .elidable
+            .iter()
+            .filter(|&&(position, ..)| {
+                !self.cx().collected.refused(position).0
+                    && !matches!(
+                        self.cx().collected.owner_of(position),
+                        Maybe::Present(slot) if self.cx().asked.contains(&slot)
+                    )
+            })
+            .filter_map(|&(position, operand, returned)| {
+                Some(ElidableExit {
+                    span: self.cx().tree.node(position)?.span(),
+                    value: self.cx().tree.node(operand)?.span(),
+                    returned,
+                })
+            })
+            .collect();
+        found.sort_unstable();
+
+        found
     }
 
     /// The `return` minted as `returned`, written in a handled subject, as the
@@ -1097,156 +1272,6 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins
             .record_computation(id, origin.inserted(Insertion::Unwind));
         id
-    }
-
-    /// Every exit the mint sweep inferred in a declaration that lowered, in
-    /// source order.
-    ///
-    /// # Specification
-    /// - requires: the attribute pass and the documentation pass have run, so
-    ///   every refusal is offered and every asked slot is marked.
-    /// - ensures: one record per inferred exit minted under a declaration that
-    ///   holds no refusal, at its tail's span, asked exactly when its owning
-    ///   slot is; sorted by span.
-    /// - provides: the inferred exits a lowered module exposes.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — tails of each polarity in a lowered declaration, and
-    ///   one in a declaration an attribute refuses, asserted as the exact list.
-    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
-    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
-    #[spec(ensures: |ret| ret.len() <= self.cx.elided.len() && ret.is_sorted())]
-    pub(super) fn inferred_exits(&self) -> Vec<InferredExit>
-    {
-        let mut found: Vec<InferredExit> = self
-            .cx
-            .elided
-            .iter()
-            .filter(|&&(position, _)| !self.cx.collected.refused(position).0)
-            .filter_map(|&(position, exit)| {
-                let tail = self.cx.tree.node(position)?;
-                let explicitness = match self.cx.collected.owner_of(position) {
-                    Maybe::Present(slot) if self.cx.asked.contains(&slot) => Explicitness::Asked,
-                    Maybe::Present(_) | Maybe::Absent(_) => Explicitness::Unasked,
-                };
-                Some(InferredExit {
-                    span: tail.span(),
-                    exit,
-                    explicitness,
-                })
-            })
-            .collect();
-        found.sort_unstable();
-
-        found
-    }
-
-    /// The operand of the `return` at `position`, and what it is, when the
-    /// lowering would infer that `return` were it left out, or the checker
-    /// would elaborate it so.
-    ///
-    /// # Specification
-    /// - requires: the classification has read the body `position` stands in
-    ///   and the mint sweep has not left it, so its paths are still surveyed.
-    /// - ensures: the operand exactly when `position` is a written `return`
-    ///   where a path ends, written as no statement and in tail position of
-    ///   none, crossing no handler's frame, over an operand bridged bare as a
-    ///   value, as is every form a grouping of it holds: a grouped type is
-    ///   quoted, and a type bare at a tail takes no exit; and the form held is
-    ///   no hole, which a tail would read as a computation's. That is
-    ///   [`Returned::Value`]; an operand or a form a grouping of it holds that
-    ///   is a computation nested where the value is read is [`Returned::Run`].
-    /// - provides: what the mint sweep records of a written exit for
-    ///   [`Self::elidable_exits`].
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`ElidableExit`].
-    /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
-    #[spec(ensures: |ret| ret.is_none_or(|(operand, _)| self.cx.exits.contains(&position)
-        && !self.cx.stated.contains_key(&position)
-        && !self.cx.stated_tails.contains(&position)
-        && matches!(self.cx.plans.get(position), Some(&super::Plan::Return(written)) if written == operand)))]
-    pub(super) fn elidable_at(
-        &self,
-        position: NodeIndex,
-    ) -> Option<(NodeIndex, Returned)>
-    {
-        let tail = self.cx.exits.contains(&position)
-            && !self.cx.inferred.contains(&position)
-            && !self.cx.stated.contains_key(&position)
-            && !self.cx.stated_tails.contains(&position)
-            && !self.cx.crossing.contains(&position);
-        let Some(&super::Plan::Return(operand)) = self.cx.plans.get(position)
-        else {
-            return None;
-        };
-        if !tail {
-            return None;
-        }
-        let mut held = operand;
-        loop {
-            match self.cx.bridges.get(held) {
-                Some(&super::Bridge::Bare) => {},
-                Some(&super::Bridge::Inserted(super::Insertion::Nested)) => {
-                    return Some((operand, Returned::Run));
-                },
-                _ => return None,
-            }
-            match self.cx.plans.get(held) {
-                Some(&super::Plan::Transparent(inner)) if !self.cx.stand_ins.contains(&held) => {
-                    held = inner;
-                },
-                Some(&super::Plan::ValueHole(_)) => return None,
-                _ => return Some((operand, Returned::Value)),
-            }
-        }
-    }
-
-    /// Every written `return` the lowering would infer, in a declaration that
-    /// lowered, in source order.
-    ///
-    /// # Specification
-    /// - requires: the attribute pass and the documentation pass have run, so
-    ///   every refusal is offered and every asked slot is marked.
-    /// - ensures: one record per `return` the mint sweep found elidable, as
-    ///   [`Self::elidable_at`] reads it, under a slot no `explicit_exits` asks
-    ///   and holding no refusal; sorted by span.
-    /// - provides: the elidable exits a lowered module exposes.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`ElidableExit`].
-    /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
-    #[spec(ensures: |ret| ret.len() <= self.cx.elidable.len() && ret.is_sorted())]
-    pub(super) fn elidable_exits(&self) -> Vec<ElidableExit>
-    {
-        let mut found: Vec<ElidableExit> = self
-            .cx
-            .elidable
-            .iter()
-            .filter(|&&(position, ..)| {
-                !self.cx.collected.refused(position).0
-                    && !matches!(
-                        self.cx.collected.owner_of(position),
-                        Maybe::Present(slot) if self.cx.asked.contains(&slot)
-                    )
-            })
-            .filter_map(|&(position, operand, returned)| {
-                Some(ElidableExit {
-                    span: self.cx.tree.node(position)?.span(),
-                    value: self.cx.tree.node(operand)?.span(),
-                    returned,
-                })
-            })
-            .collect();
-        found.sort_unstable();
-
-        found
     }
 }
 
