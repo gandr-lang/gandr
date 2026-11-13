@@ -2098,5 +2098,95 @@
       ]
     },
     "output": ""
+  },
+  {
+    "name": "#6873: a body closing a `view` unit whose `## Observed at` test stands under its surface's paths opens",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Closes #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["view"] }],
+      "views": {
+        "built": [],
+        "tests": [
+          {
+            "surface": "editor extension",
+            "test": "the stack view lists each spine",
+            "found": true
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#6873: a body closing a `view` unit whose `## Observed at` test stands nowhere at the head is refused, naming the row",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Closes #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["view"] }],
+      "views": {
+        "built": [],
+        "tests": [{ "surface": "gandr view", "test": "a_card_draws_its_title", "found": false }]
+      }
+    },
+    "output": "the body closes #6873, a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head (none found: `gandr view` `a_card_draws_its_title`): write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/claims/surfaces.json`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
+  },
+  {
+    "name": "#6873: a body closing a `view` unit with no `## Observed at` row is refused",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Closes #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["view"] }],
+      "views": { "built": [], "tests": [] }
+    },
+    "output": "the body closes #6873, a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head: write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/claims/surfaces.json`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
+  },
+  {
+    "name": "#6873: a body advancing a `view` unit with no `## Observed at` row opens: its server side lands first",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Advances #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["view"] }],
+      "views": { "built": ["request `gandr/stack`"], "tests": [] }
+    },
+    "output": ""
+  },
+  {
+    "name": "#6873: a change adding a request that closes an issue with no `view` is refused, naming the request",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Closes #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["kind:gap"] }],
+      "views": { "built": ["request `gandr/stack`", "card `StackCard`"], "tests": [] }
+    },
+    "output": "the change adds request `gandr/stack`, card `StackCard`, a view, and closes #6873, which carries no `view`: label the issue `view` and write its `## Observed at`, or write `Advances #6873` while the view stands on its server side alone, then run `pr:open` again"
+  },
+  {
+    "name": "#6873: a change adding a card type that closes a `view` unit with a test found opens",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Closes #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n", "labels": ["view", "kind:gap"] }],
+      "views": {
+        "built": ["card `StackCard`"],
+        "tests": [
+          {
+            "surface": "gandr tui",
+            "test": "stack::tests::a_stack_card_lists_its_spines",
+            "found": true
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#6873: a body without the `views` reading, as a case before the rule, opens",
+    "input": {
+      "branch": "workflow-6873-observed",
+      "body": "Closes #6873\n\n## Refactoring\n\nno\n",
+      "issues": [{ "number": 6873, "body": "Text.\n" }]
+    },
+    "output": ""
   }
 ]

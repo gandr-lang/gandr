@@ -88,12 +88,14 @@
 --arg sent
 --arg sets
 --arg sha
+--arg side
 --arg since
 --arg source
 --arg stack
 --arg start
 --arg state
 --arg status
+--arg surface
 --arg task
 --arg test
 --arg tip
@@ -122,6 +124,7 @@
 --argjson family_count
 --argjson first
 --argjson forgo
+--argjson found
 --argjson gated
 --argjson gone
 --argjson grace

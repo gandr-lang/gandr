@@ -4644,6 +4644,9 @@ ceilings=$(jq -c --argjson open "$open" 'map(. + {open: [.cites[] | select(IN($o
 # The `gh` call sites the change alters (#5061, `.config/gh/changed.bash`),
 # each of which the body prices under `## API budget`.
 budget=$("$claims/../gh/changed.bash" "$from")
+# The requests and card types the change adds, and the tests of the body's
+# `## Observed at` rows found at HEAD (#6873, `views.bash`).
+views=$("$claims/views.bash" "$from" "$body")
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
