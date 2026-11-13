@@ -36,6 +36,7 @@ use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::ValueType;
 
 use crate::env::OutstandingCount;
+use crate::environment::UnsettledCount;
 
 pub(crate) mod flow;
 pub(crate) mod identity;
@@ -1100,6 +1101,18 @@ pub enum KernelError
         /// How many staged, unresolved marks sit above this declaration's.
         above: OutstandingCount,
     },
+    /// A call that reads the order of every commit came while released
+    /// checks of the environment are not settled.
+    ///
+    /// A bypass, a block, a retirement or a keep reads the chain, the ranks
+    /// and the slots that each outstanding commit moves. A lone admission
+    /// whose release holds reads one of them too. The caller settles each
+    /// outstanding check first.
+    UnsettledReleases
+    {
+        /// How many released checks are not settled.
+        unsettled: UnsettledCount,
+    },
     /// A static Pi's domain or codomain was not a static classifier: a
     /// universe, or a static Pi over them. An operator ranges over codes, so
     /// its classifier is built of the types that classify codes.
@@ -1430,6 +1443,9 @@ impl core::fmt::Display for KernelError
             Self::OutstandingStagedContent { .. } => {
                 f.write_str("a later staged declaration is still unresolved")
             },
+            Self::UnsettledReleases { .. } => {
+                f.write_str("a released check of the environment is not settled")
+            },
             Self::StaticClassifierExpected { .. } => {
                 f.write_str("a static Pi stands over a type that classifies no codes")
             },
@@ -1525,6 +1541,7 @@ mod tests
     use super::ValueTypeMismatch;
     use crate::Environment;
     use crate::env::OutstandingCount;
+    use crate::environment::UnsettledCount;
     use crate::error::flow::Boundary;
     use crate::error::flow::Family;
     use crate::error::flow::FlowError;
@@ -1654,6 +1671,9 @@ mod tests
             KernelError::SealingProvenanceNotCanonical { atom: index },
             KernelError::OutstandingStagedContent {
                 above: OutstandingCount::from(usize::MAX),
+            },
+            KernelError::UnsettledReleases {
+                unsettled: UnsettledCount::from(usize::MAX),
             },
             KernelError::StaticClassifierExpected { actual: unit },
             KernelError::Identity(IdentityError::OutsideFold(unit)),

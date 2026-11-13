@@ -83,6 +83,22 @@
 //! from `add_decl` is caught by the witness that the later staging's root
 //! still resolves after the refusal.
 //!
+//! # Releases, their commits and the cursor
+//!
+//! [`Environment::release`] reserves the next position and the declaration's
+//! rank. It gives the check, which runs on any thread.
+//! [`Environment::settle`] commits the outcome at the reserved position.
+//! Commits come in any order that the dependences allow. A cursor folds the
+//! states that read the order of every commit, in position order: the order
+//! flag, the rows of the dependents, the chain key and the records of the
+//! verdicts. A release can read an earlier commit before that commit comes.
+//! Then the release holds, and [`Released::Held`] gives the declaration back.
+//! The caller settles the outstanding releases and releases it again. A
+//! refusal below the content of a later staging keeps its content as an
+//! orphan, as the clamp of a rejection does. The bypass, a block, a
+//! retirement and a keep read every commit. Each refuses with
+//! [`KernelError::UnsettledReleases`] while a release is outstanding.
+//!
 //! # Receipts and the audit
 //!
 //! A [`CheckedId`] names a position, not an environment identity; it is
@@ -171,6 +187,105 @@ pub struct Check
     declaration: Declaration,
     /// A recorded verdict, or what the check reads.
     way: Way,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a staged declaration carries no rank.
+    pub mod unranked {
+        /// The reason no rank is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Its source gives it none, so it takes the rank past every
+            /// live one.
+            Unranked,
+        }
+    }
+}
+
+/// What a release answers: the check, released at its reserved position, or
+/// the declaration handed back with the reason it holds.
+///
+/// # Specification
+/// - requires: made by [`Environment::release`].
+/// - ensures: a running check settles through [`Environment::settle`] at its
+///   reserved position. A held declaration is unchanged, and its staged mark
+///   stays outstanding: settle each outstanding check, then release it again.
+/// - panics: none.
+/// - executable: none — a data declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Environment::release`].
+/// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+#[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per release, moved once to its thread or back to its caller; boxing the check would allocate at every release"
+)]
+pub enum Released
+{
+    /// The check runs apart from the environment, and what its commit needs
+    /// beside it.
+    Running(Pending, Check),
+    /// The declaration, handed back: its release reads a commit that has not
+    /// come.
+    Held(StagedDeclaration, Hold),
+}
+
+/// Why a release hands its declaration back: what it reads of an earlier
+/// release whose commit has not come.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Hold
+{
+    /// An atom is manifest. Its seal advances at each admission, and the
+    /// check reads the manifest atoms.
+    Manifest,
+    /// The declaration, or an outstanding one, is an abstract type, a
+    /// presented type or a role holder. Each check after it reads it.
+    Ordering,
+    /// An outstanding release reserves the declaration's rank, or the rank
+    /// past every rank that an unranked declaration takes.
+    Rank,
+    /// An outstanding release ranked below carries the same generative
+    /// content or the same plain definition, which the declaration's key or
+    /// name counts.
+    Content,
+    /// The declaration has no entry key, so its recall reads the chain key,
+    /// which only the cursor finds.
+    Chain,
+}
+
+/// How many released checks of an environment are not settled.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnsettledCount(usize);
+
+impl From<usize> for UnsettledCount
+{
+    /// The count of `count` released checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<UnsettledCount> for usize
+{
+    /// How many released checks `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: UnsettledCount) -> Self
+    {
+        count.0
+    }
 }
 
 impl Check
@@ -313,6 +428,9 @@ pub struct Environment
     /// The fork that the last drain of each check runs its obligations
     /// through, if any.
     forking: crate::fork::SharedFork,
+    /// The releases whose commits the cursor has not folded, and what each
+    /// outstanding release holds. Only the committer reads it.
+    releases: crate::releases::Releases,
 }
 
 impl Environment
@@ -426,6 +544,10 @@ impl Environment
             admitting: crate::admitted::AdmissionPolicy::Derive,
             admitted: crate::admitted::AdmittedCount::NONE,
             forking: crate::fork::SharedFork::serial(),
+            // A copy taken while a check is released holds its reservation,
+            // which no settle of the copy fills, so the copy refuses what
+            // reads the order of every commit.
+            releases: self.releases.clone(),
         }
     }
 
@@ -858,24 +980,39 @@ impl Environment
         staged: StagedDeclaration,
     ) -> Result<CheckedId, KernelError>
     {
-        let (pending, check) = self.release(staged)?;
-        let ran = check.run();
-        self.settle(pending, ran)
+        match self.release(staged)? {
+            Released::Running(pending, check) => {
+                let ran = check.run();
+                self.settle(pending, ran)
+            },
+            // A hold reads a commit that only the caller can settle, so the
+            // declaration waits for it outside this call.
+            Released::Held(..) => Err(KernelError::UnsettledReleases {
+                unsettled: self.releases.outstanding(),
+            }),
+        }
     }
 
-    /// Release the check of a lone declaration: the guards, the keys and the
-    /// recall run here, and the check runs apart from the environment, on any
-    /// thread, until [`Self::settle`] commits what it found.
+    /// Release the check of a lone declaration at the next position: the
+    /// guards, the keys and the recall run here, and the check runs apart from
+    /// the environment, on any thread, until [`Self::settle`] commits what it
+    /// found. Earlier releases may be outstanding, and their commits come in
+    /// any order that the dependences allow.
     ///
     /// # Specification
     /// - requires: `staged` was built into this environment's arena through
-    ///   [`Self::stage`], and no other check of this environment is released
-    ///   and not yet settled.
-    /// - ensures: the declaration's place, keys, references and marks, and its
-    ///   check: the reading of a verdict that a trusted record holds under its
-    ///   key, or a check that owns a view of the entries below its rank through
-    ///   its support, a clone of the frozen arena and a fork of the session.
-    ///   The environment holds no new entry until the settle.
+    ///   [`Self::stage`], and the content that each declaration it names holds
+    ///   is committed.
+    /// - ensures: a running check holds the declaration's place, keys,
+    ///   references, marks and name, and its check: the reading of a verdict
+    ///   that a trusted record holds under its key, or a check that owns a view
+    ///   of the entries below its rank through its support, a clone of the
+    ///   frozen arena and a fork of the session. Its position is reserved, and
+    ///   no read sees it until the settle. The chain key is taken here only
+    ///   when every earlier release is settled; the cursor takes it otherwise.
+    ///   A held declaration comes back unchanged, with its staged mark
+    ///   outstanding, when its release reads an earlier commit that has not
+    ///   come ([`Hold`]); nothing else changes then.
     /// - fails: as [`Self::add_decl`] fails before its check.
     /// - panics: none.
     /// - executable: none — the clauses state what the check owns, which no
@@ -890,16 +1027,20 @@ impl Environment
     /// # Adequacy
     /// - hypothesis: L3 — a check released from the environment crosses threads
     ///   and settles as [`Self::add_decl`] admits; each witness of
-    ///   [`Self::add_decl`] runs through it.
+    ///   [`Self::add_decl`] runs through it. Releases settled in each order
+    ///   that their dependences allow give the entries, ranks, keys, names,
+    ///   refusals, records, order and reach of the serial run; a hold that does
+    ///   not fire for one read of order changes one of them.
     /// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
     /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[inline]
     pub fn release(
         &mut self,
         staged: StagedDeclaration,
-    ) -> Result<(Pending, Check), KernelError>
+    ) -> Result<Released, KernelError>
     {
-        let (content_start, rank, declaration) = staged.into_parts();
+        let (content_start, staged_rank, declaration) = staged.into_parts();
         // The guard, before anything is truncated: a declaration staged after
         // this one owns arena nodes above this one's content-start, and the
         // rollback below is a contiguous truncation that cannot spare them.
@@ -914,9 +1055,24 @@ impl Environment
             return Err(KernelError::OutstandingStagedContent { above });
         }
         let position = ConstantIndex::from(usize::from(self.entries.len()));
+        // The cursor stands at this release when no earlier release is
+        // outstanding. Then every read of order reads the serial state.
+        let alone = usize::from(self.releases.outstanding()) == 0;
         // A declaration staged with no rank ranks past every live entry, so a
         // vacancy before it moves its position and not its rank.
-        let rank = rank.unwrap_or_else(|| self.commits.past_ranks());
+        let committed = self.commits.past_ranks();
+        if !alone
+            && let Maybe::Present(hold) = self.releases.rank(
+                staged_rank.map_or(Maybe::Absent(unranked::Absent::Unranked), Maybe::Present),
+                committed,
+            )
+        {
+            return Ok(self.hand_back(
+                StagedDeclaration::new(content_start, staged_rank, declaration),
+                hold,
+            ));
+        }
+        let rank = staged_rank.unwrap_or_else(|| self.releases.past(committed));
         let content_end = self.arena.watermark();
         // The rejection mark: this declaration's content-start, clamped into
         // `[admission floor, content-end]`, so a rollback can neither delete an
@@ -936,7 +1092,13 @@ impl Environment
                 // environment holds, and a rejected one enters none. Its
                 // position stays as a vacancy.
                 self.arena.truncate_to(rejected);
-                self.vacate();
+                if alone {
+                    self.vacate();
+                }
+                else {
+                    self.entries.vacate();
+                    self.releases.vacate();
+                }
                 return Err(error);
             },
         };
@@ -957,58 +1119,179 @@ impl Environment
             ),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
-        let key = self.verdicts.key(&self.arena, (&declaration, rank));
+        let generative_content = match (generative, content) {
+            (true, Maybe::Present(content)) => Maybe::Present(content),
+            (true, Maybe::Absent(_)) => Maybe::Absent(crate::releases::generative::Absent::Unkeyed),
+            (false, Maybe::Present(_) | Maybe::Absent(_)) => {
+                Maybe::Absent(crate::releases::generative::Absent::Plain)
+            },
+        };
+        // The name reads the definitions ranked below this one, which every
+        // earlier commit holds unless an outstanding one is alike.
+        let key_name = self.definition_name(&declaration, rank);
+        let sway = sway(&declaration);
+        if !alone
+            && let Maybe::Present(hold) =
+                self.reads_order((sway, rank), generative_content, (entry_key, key_name))
+        {
+            return Ok(self.hand_back(
+                StagedDeclaration::new(content_start, staged_rank, declaration),
+                hold,
+            ));
+        }
+        // The chain key reads the state that each earlier commit moves, so
+        // only a release at the cursor takes it; the fold takes it otherwise.
+        let chained = if alone {
+            crate::releases::Chained::Taken(self.verdicts.key(&self.arena, (&declaration, rank)))
+        }
+        else {
+            crate::releases::Chained::Deferred
+        };
         // The entry key first, which an edit the declaration does not read
         // leaves alone; then the chain key, which a store of an earlier
-        // release holds.
+        // release holds. A chain key that hits names the same prefix and the
+        // same declaration, so the entry key hits too: a release behind the
+        // cursor loses no recall.
         let recalled = match entry_key {
             Maybe::Present(entry_key) => self.verdicts.recall(entry_key),
             Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
         };
-        let recalled = match (recalled, key) {
-            (Maybe::Absent(crate::verdict::stored::Absent::Unrecorded), Maybe::Present(key)) => {
-                self.verdicts.recall(key)
-            },
-            (recalled, Maybe::Present(_) | Maybe::Absent(_)) => recalled,
+        let recalled = match (recalled, &chained) {
+            (
+                Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
+                &crate::releases::Chained::Taken(Maybe::Present(key)),
+            ) => self.verdicts.recall(key),
+            (
+                recalled,
+                &(crate::releases::Chained::Taken(Maybe::Present(_) | Maybe::Absent(_))
+                | crate::releases::Chained::Deferred),
+            ) => recalled,
         };
         let named = references(&self.arena, &declaration);
+        // The slot first, so the view that the check takes shares the log
+        // that the next write would otherwise copy.
+        self.entries.reserve();
+        self.releases.reserve(
+            position,
+            crate::releases::Reservation::new(rank, sway, generative_content, key_name),
+        );
         let way = match recalled {
             Maybe::Present(accessibility) => Way::Recalled(accessibility),
             // The check reads through the support its content names, and a
             // read outside it refuses the declaration whatever the check
             // decided.
-            Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => {
-                Way::Checking(self.open_scope((&named, rank)), Judged {
+            Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => Way::Checking(
+                self.open_scope(
+                    (&named, rank),
+                    gandr_kernel_term::ArenaLength::from(usize::from(position)),
+                ),
+                Judged {
                     levels,
                     manifest: self.manifest.clone(),
                     admitting: self.admitting,
                     forking: self.forking.clone(),
-                })
-            },
+                },
+            ),
         };
-        Ok((
+        Ok(Released::Running(
             Pending {
                 place: (position, rank),
                 content: (content, generative),
-                keys: (entry_key, key),
+                keys: (entry_key, chained),
                 references: named,
                 marks: (content_end, rejected),
+                key_name,
             },
             Check { declaration, way },
         ))
     }
 
-    /// Settle a released check: take back the scope that it ran in, refuse a
-    /// read outside its support, and commit what it found.
+    /// Hand `staged` back for `hold`: its staged mark stays outstanding, so
+    /// the release that follows the settles resolves it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hand_back(
+        &mut self,
+        staged: StagedDeclaration,
+        hold: Hold,
+    ) -> Released
+    {
+        self.outstanding.register(staged.content_start());
+        Released::Held(staged, hold)
+    }
+
+    /// Why a release behind the cursor reads an earlier commit that has not
+    /// come: the manifest, a declaration that each later check reads, the
+    /// same generative content or plain definition ranked below it, or a
+    /// recall that only the chain key makes. `sway` and `rank` state the
+    /// declaration, `generative` its content key when it is generative, and
+    /// `keyed` its entry key and its name.
+    ///
+    /// # Specification
+    /// - requires: an earlier release is outstanding, and `keyed.1` names the
+    ///   declaration's content in this environment's arena.
+    /// - ensures: absent only when no read of order that the release makes
+    ///   reads an outstanding release.
+    /// - provides: the first hold that applies, in the order of the variants of
+    ///   [`Hold`].
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state what the outstanding releases
+    ///   would change, which no predicate over one call reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::release`].
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    fn reads_order(
+        &mut self,
+        (sway, rank): (crate::releases::Sway, SourceRank),
+        generative: Maybe<crate::verdict::VerdictKey, crate::releases::generative::Absent>,
+        (entry_key, key_name): (
+            Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+            ConstantName,
+        ),
+    ) -> Maybe<Hold, crate::releases::free::Absent>
+    {
+        if !self.manifest.is_empty() {
+            return Maybe::Present(Hold::Manifest);
+        }
+        if let Maybe::Present(hold) = self.releases.ordering(sway) {
+            return Maybe::Present(hold);
+        }
+        if let Maybe::Present(content) = generative
+            && let Maybe::Present(hold) = self.releases.generative(content, rank)
+        {
+            return Maybe::Present(hold);
+        }
+        if let ConstantName::Definition { digest, .. } = key_name
+            && crate::encoding::likeness(
+                self.names.session_mut().table_mut(),
+                &self.arena,
+                key_name,
+                self.releases.definitions(digest, rank),
+            ) == crate::encoding::Likeness::Alike
+        {
+            return Maybe::Present(Hold::Content);
+        }
+        if let (Maybe::Absent(_), Maybe::Present(_)) = (entry_key, self.verdicts.last()) {
+            return Maybe::Present(Hold::Chain);
+        }
+        Maybe::Absent(crate::releases::free::Absent::Unread)
+    }
+
+    /// Settle a released check at its reserved position: take back the scope
+    /// that it ran in, refuse a read outside its support, and commit what it
+    /// found. The cursor then folds each slot whose commit came, in position
+    /// order.
     ///
     /// # Specification
     /// - requires: `pending` and the check that `ran` answers come from one
-    ///   [`Self::release`] of this environment, and no other check settled
-    ///   since.
+    ///   [`Self::release`] of this environment.
     /// - ensures: as [`Self::add_decl`] ensures after its check: on an outcome
-    ///   that admits, one entry at the released position; on a refusal, a
-    ///   vacancy there. The session holds what the check named, and the entries
-    ///   hold no horizon.
+    ///   that admits, one entry at the reserved position; on a refusal, a
+    ///   vacancy there. The length is unchanged. The session holds what the
+    ///   check named, and the entries hold no horizon.
     /// - panics: none.
     ///
     /// # Errors
@@ -1016,14 +1299,16 @@ impl Environment
     /// first position that it read outside its support.
     /// [`KernelError::KeptOutcomesDisagree`] refuses the environment when the
     /// check kept an outcome under a key that the environment kept with
-    /// another outcome since the release.
+    /// another outcome since the release. [`KernelError::UnboundConstant`]
+    /// when no reservation of this environment stands at the position.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::release`].
     /// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
     /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[inline]
-    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1) && self.entries.check_horizon().is_none())]
+    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| self.entries.len() == entry_len && self.entries.check_horizon().is_none())]
     pub fn settle(
         &mut self,
         pending: Pending,
@@ -1048,6 +1333,7 @@ impl Environment
             keys,
             references,
             marks,
+            key_name,
         } = pending;
         self.commit(Lone {
             declaration,
@@ -1060,22 +1346,24 @@ impl Environment
             outcome,
             admission,
             marks,
+            key_name,
         })
     }
 
-    /// Open a check's scope below `rank`: a view whose support `roots`
-    /// start, a clone of the frozen arena and a fork of the session, which
-    /// names the view's constants first.
+    /// Open a check's scope below `rank` for the declaration placed at `end`:
+    /// a view whose support `roots` start, a clone of the frozen arena and a
+    /// fork of the session, which names the view's constants first.
     ///
     /// # Specification
     /// trivial.
     fn open_scope(
         &mut self,
         (roots, rank): (&[ConstantIndex], SourceRank),
+        end: gandr_kernel_term::ArenaLength,
     ) -> Scope
     {
         let mut view = self.entries.view();
-        view.open(roots.iter().copied(), rank);
+        view.open(roots.iter().copied(), (rank, end));
         // A freeze moves the nodes minted since the last one into a segment,
         // so the clone shares every node and copies none.
         self.arena.freeze();
@@ -1170,7 +1458,8 @@ impl Environment
         ) -> Result<T, KernelError>,
     ) -> Result<T, KernelError>
     {
-        let mut scope = self.open_scope((roots, rank));
+        let end = self.entries.len();
+        let mut scope = self.open_scope((roots, rank), end);
         let checked = {
             let Scope {
                 ref view,
@@ -1189,28 +1478,34 @@ impl Environment
         self.close_scope(scope, checked)
     }
 
-    /// Commit what the check of a lone declaration found: record its verdict,
-    /// keep its content and push its entry, or drop its content on a refusal.
+    /// Commit what the check of a lone declaration found at its reserved
+    /// position: keep its content and fill its slot, or leave a vacancy on a
+    /// refusal. The cursor then folds each slot whose commit came.
     ///
     /// # Specification
-    /// - requires: `lone` is the declaration staged at the next position, and
+    /// - requires: `lone` is the declaration released at `lone.place.0`, and
     ///   the arena holds its content below `lone.marks.0`.
     /// - ensures: on an outcome that admits, one entry at `lone.place.0` and
-    ///   the admission floor at `lone.marks.0`; on a refusal, a vacancy at
-    ///   `lone.place.0` and the arena truncated to `lone.marks.1`.
+    ///   the admission floor at least at `lone.marks.0`; on a refusal, a
+    ///   vacancy at `lone.place.0`, and the arena truncated to `lone.marks.1`
+    ///   when no content sits above the declaration's. Otherwise its content
+    ///   stays as an orphan below the later content. The length is unchanged.
     /// - panics: none.
     ///
     /// # Errors
-    /// The refusal that `lone.outcome` carries.
+    /// The refusal that `lone.outcome` carries, or
+    /// [`KernelError::UnboundConstant`] when no reservation stands at
+    /// `lone.place.0`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::add_decl`].
+    /// - hypothesis: L3 — as [`Self::add_decl`], and a refusal under a later
+    ///   staging keeps that staging's content.
     /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
-    #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted()], ensures: |ret| match ret.as_ref() {
-        Ok(id) => usize::from(id.position()) == usize::from(entry_len) && self.admission_floor == self.arena.watermark(),
-        Err(_) => usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1)
-            && self.entries.admitted() == admitted,
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted(), place = lone.place.0], ensures: |ret| self.entries.len() == entry_len && match ret.as_ref() {
+        Ok(id) => id.position() == place,
+        Err(_) => self.entries.admitted() == admitted,
     })]
     fn commit(
         &mut self,
@@ -1221,57 +1516,163 @@ impl Environment
             declaration,
             place: (position, rank),
             content: (content, generative),
-            keys: (entry_key, key),
+            keys: (entry_key, chained),
             references: named,
             census,
             took,
             outcome,
             admission,
             marks: (content_end, rejected),
+            key_name,
         } = lone;
+        let cursor =
+            usize::from(self.entries.len()).saturating_sub(usize::from(self.releases.unfolded()));
+        let Some(offset) = usize::from(position)
+            .checked_sub(cursor)
+            .map(gandr_kernel_term::ArenaLength::from)
+        else {
+            return Err(KernelError::UnboundConstant { index: position });
+        };
         match outcome {
             Ok(accessibility) => {
-                if (admission, took) == (Admission::Checked, crate::admitted::AdmittedCount::NONE) {
-                    self.verdicts.checked(entry_key, key, accessibility.clone());
+                // A receipt attests only what the kernel checked itself.
+                let record = (admission, took)
+                    .eq(&(Admission::Checked, crate::admitted::AdmittedCount::NONE))
+                    .then(|| accessibility.clone());
+                if let Maybe::Absent(_) = self
+                    .releases
+                    .commit(offset, crate::releases::Unfolded::Admitted(chained, record))
+                {
+                    return Err(KernelError::UnboundConstant { index: position });
                 }
                 self.admitted = self.admitted.and(took);
                 // The arena holds this declaration's content, and the check's
-                // intermediates left with its clone.
-                self.admission_floor = content_end;
+                // intermediates left with its clone. A later commit may have
+                // raised the floor past it already.
+                self.admission_floor =
+                    content_end.clamped_into(self.admission_floor, self.arena.watermark());
                 let rested_on = self.transitive_rest(
                     declaration.content(),
                     declaration.laws(),
                     position,
                     admission,
                 );
-                let key_name = self.definition_name(&declaration, rank);
-                self.enter(AdmittedDeclaration::live(AdmittedParts {
-                    declaration,
-                    admission,
-                    rested_on,
-                    references: named,
-                    block: check::occurrence::Block::lone(position),
-                    accessibility,
-                    key_name,
-                    census,
-                    key: entry_key,
-                    rank,
-                    unit: Unit::lone(position),
-                }));
+                self.entries.fill(
+                    &self.arena,
+                    position,
+                    AdmittedDeclaration::live(AdmittedParts {
+                        declaration,
+                        admission,
+                        rested_on,
+                        references: named,
+                        block: check::occurrence::Block::lone(position),
+                        accessibility,
+                        key_name,
+                        census,
+                        key: entry_key,
+                        rank,
+                        unit: Unit::lone(position),
+                    }),
+                );
+                alloc::sync::Arc::make_mut(&mut self.commits).hold((position, rank));
                 if let (true, Maybe::Present(content)) = (generative, content) {
                     alloc::sync::Arc::make_mut(&mut self.commits).generative(content, position);
                 }
+                // A later release named this position while it was reserved;
+                // no content named it then, so the name changes nothing read.
+                self.names
+                    .session_mut()
+                    .table_mut()
+                    .rename_constant(position, key_name);
                 self.advance_seals(position);
+                self.fold();
                 Ok(CheckedId::new(position))
             },
             Err(error) => {
+                if let Maybe::Absent(_) = self
+                    .releases
+                    .commit(offset, crate::releases::Unfolded::Vacated(chained))
+                {
+                    return Err(KernelError::UnboundConstant { index: position });
+                }
                 // Drop this declaration's content, down to the admission floor
-                // and no further. Its position stays as a vacancy.
-                self.arena.truncate_to(rejected);
-                self.vacate();
-                self.verdicts.refused();
+                // and no further, when no later staging sits above it. Its
+                // position stays as a vacancy either way.
+                if self.arena.watermark() == content_end {
+                    self.arena
+                        .truncate_to(rejected.clamped_into(self.admission_floor, content_end));
+                }
+                self.entries.vacate_at(position);
+                self.fold();
                 Err(error)
             },
+        }
+    }
+
+    /// Fold each slot at the cursor whose commit came, in position order: the
+    /// rows of the dependents, the order, the chain key and the record of the
+    /// verdict. A refused slot folds its vacancy, and its chain key steps
+    /// back when its release took one.
+    ///
+    /// # Specification
+    /// - requires: each committed slot from the cursor on holds its commit.
+    /// - ensures: the cursor stands at the first reserved slot, or at the
+    ///   length; the folded state is the state of the serial run over the slots
+    ///   below the cursor.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the folded state is the serial run's, which no
+    ///   predicate over one call reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fold out of position order moves the order flag,
+    ///   the reach or the chain key off the serial run's.
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    fn fold(&mut self)
+    {
+        loop {
+            let position = ConstantIndex::from(
+                usize::from(self.entries.len())
+                    .saturating_sub(usize::from(self.releases.unfolded())),
+            );
+            let Maybe::Present(unfolded) = self.releases.next()
+            else {
+                return;
+            };
+            match unfolded {
+                crate::releases::Unfolded::Admitted(chained, record) => {
+                    let Self {
+                        ref entries,
+                        ref mut commits,
+                        ref mut verdicts,
+                        ref arena,
+                        ..
+                    } = *self;
+                    let Some(entry) = entries.at(usize::from(position))
+                    else {
+                        continue;
+                    };
+                    alloc::sync::Arc::make_mut(commits)
+                        .fold((position, entry.rank()), entry.references());
+                    let chain = match chained {
+                        crate::releases::Chained::Taken(key) => key,
+                        crate::releases::Chained::Deferred => {
+                            verdicts.key(arena, (entry.declaration(), entry.rank()))
+                        },
+                    };
+                    if let Some(accessibility) = record {
+                        verdicts.checked(entry.key(), chain, accessibility);
+                    }
+                },
+                crate::releases::Unfolded::Vacated(chained) => {
+                    alloc::sync::Arc::make_mut(&mut self.commits).vacate(position);
+                    match chained {
+                        crate::releases::Chained::Taken(_) => self.verdicts.refused(),
+                        crate::releases::Chained::Deferred => {},
+                    }
+                },
+                crate::releases::Unfolded::Reserved(_) => return,
+            }
         }
     }
 
@@ -1383,8 +1784,15 @@ impl Environment
     ///   bypass committed. The outstanding-content guard is therefore not owed
     ///   here: the bypass destroys nothing, so there is nothing to preserve.
     /// - provides: the tracked, warned bypass.
-    /// - fails: never — the bypass does not check.
+    /// - fails: [`KernelError::UnsettledReleases`] while a released check is
+    ///   not settled, since the bypass ends the chain and takes the rank past
+    ///   every rank, which each outstanding commit moves. Otherwise never: the
+    ///   bypass does not check.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// [`KernelError::UnsettledReleases`] while a released check is not
+    /// settled.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the bypass's whole observable effect is that the
@@ -1394,18 +1802,19 @@ impl Environment
     /// - witness: `environment::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `environment::tests::a_rejection_keeps_bypassed_content_resolvable`
     #[inline]
-    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
+    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: |ret| ret.is_err() || (arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
         && self
             .entries
             .at(entry_len)
             .is_some_and(|entry| entry.admission() == Admission::Unchecked)
         && self.arena.watermark() == entry_watermark
-        && self.admission_floor == self.arena.watermark())]
+        && self.admission_floor == self.arena.watermark()))]
     pub fn add_decl_unchecked(
         &mut self,
         staged: StagedDeclaration,
-    ) -> CheckedId
+    ) -> Result<CheckedId, KernelError>
     {
+        self.settled()?;
         let (content_start, rank, declaration) = staged.into_parts();
         self.outstanding.resolve(content_start);
         let position = ConstantIndex::from(usize::from(self.entries.len()));
@@ -1442,7 +1851,34 @@ impl Environment
             unit: Unit::lone(position),
         }));
         self.advance_seals(position);
-        CheckedId::new(position)
+        Ok(CheckedId::new(position))
+    }
+
+    /// Refuse a call that reads the order of every commit while a released
+    /// check is not settled.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` exactly when no release is outstanding.
+    /// - fails: [`KernelError::UnsettledReleases`] with the count of the
+    ///   outstanding releases.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block offered while a release is outstanding is
+    ///   refused, and the same block after the settle is admitted.
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    #[spec(ensures: |ret| ret.is_ok() == (usize::from(self.releases.outstanding()) == 0))]
+    fn settled(&self) -> Result<(), KernelError>
+    {
+        let unsettled = self.releases.outstanding();
+        if usize::from(unsettled) == 0 {
+            return Ok(());
+        }
+        Err(KernelError::UnsettledReleases { unsettled })
     }
 
     /// Admit a mutual block through the checked choke point: its families, a
@@ -1471,12 +1907,14 @@ impl Environment
     /// - provides: the one checked entry for declarations that name each other,
     ///   by the same choke point [`Self::add_decl`] is.
     /// - fails: [`KernelError::OutstandingStagedContent`] when a declaration
-    ///   staged after the block is unresolved; otherwise any [`KernelError`] a
-    ///   member's admission surfaces.
+    ///   staged after the block is unresolved;
+    ///   [`KernelError::UnsettledReleases`] while a released check is not
+    ///   settled; otherwise any [`KernelError`] a member's admission surfaces.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`KernelError::OutstandingStagedContent`], or any [`KernelError`].
+    /// [`KernelError::OutstandingStagedContent`],
+    /// [`KernelError::UnsettledReleases`], or any [`KernelError`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a universe and its decoder are admitted together; a
@@ -1500,6 +1938,7 @@ impl Environment
         staged: Vec<StagedDeclaration>,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
+        self.settled()?;
         let Some(content_start) = staged.iter().map(StagedDeclaration::content_start).min()
         else {
             return Ok(Vec::new());
@@ -1768,7 +2207,9 @@ impl Environment
     /// - provides: the first half of a readmission that keeps the entries an
     ///   edit leaves.
     /// - fails: [`KernelError::UnboundConstant`] at a position past the
-    ///   entries, and [`KernelError::KindTaken`] at an entry retired already.
+    ///   entries, [`KernelError::KindTaken`] at an entry retired already, and
+    ///   [`KernelError::UnsettledReleases`] while a released check is not
+    ///   settled.
     /// - panics: none.
     ///
     /// # Errors
@@ -1789,6 +2230,7 @@ impl Environment
         positions: &[ConstantIndex],
     ) -> Result<(), KernelError>
     {
+        self.settled()?;
         for &position in positions {
             match self.entries.family().get(usize::from(position)) {
                 None => return Err(KernelError::UnboundConstant { index: position }),
@@ -1852,7 +2294,9 @@ impl Environment
     ///   live; [`KernelError::RankTaken`] when a live entry holds a rank of
     ///   `ranks`; and [`KernelError::Unkept`] when `first` and `ranks` do not
     ///   name the unit, when the unit or its check now has no key, or when the
-    ///   key its check reads now is another key.
+    ///   key its check reads now is another key; and
+    ///   [`KernelError::UnsettledReleases`] while a released check is not
+    ///   settled.
     /// - panics: none.
     ///
     /// # Errors
@@ -1879,6 +2323,7 @@ impl Environment
     ) -> Result<CheckedId, KernelError>
     {
         use crate::error::KeepRefusal;
+        self.settled()?;
         let unkept = |refusal| KernelError::Unkept {
             position: first,
             refusal,
@@ -2160,7 +2605,12 @@ impl Environment
                             })?;
                 },
                 AdmissionMark::UncheckedBypass => {
-                    let _admitted = environment.add_decl_unchecked(staged);
+                    let _admitted = environment.add_decl_unchecked(staged).map_err(|error| {
+                        ArtifactRefusal {
+                            position: ConstantIndex::from(position),
+                            error,
+                        }
+                    })?;
                 },
             }
             position = position.saturating_add(1);
@@ -2615,10 +3065,10 @@ impl Environment
     /// kernel — would then be a false negative rather than a fact.
     ///
     /// # Specification
-    /// - requires: `position` is the next admission index and `content` and
-    ///   `laws` are its declaration's. Checked references name earlier
-    ///   admissions; a bypass is itself an audit reason even if it names an
-    ///   unknown position.
+    /// - requires: `position` is the next admission index, or the slot that the
+    ///   declaration's release reserved, and `content` and `laws` are its
+    ///   declaration's. Checked references name earlier admissions; a bypass is
+    ///   itself an audit reason even if it names an unknown position.
     /// - ensures: the union of the audits of every position the declared type,
     ///   an abstract type's representation or a definition's body names, and of
     ///   every law the definition's folds rest on, with `position` itself
@@ -2643,7 +3093,7 @@ impl Environment
     /// - witness: `environment::tests::audit_reaches_an_axiom_named_only_inside_a_code`
     /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
-        requires: usize::from(position) == self.entries.len(),
+        requires: usize::from(position) <= usize::from(self.entries.len()),
         ensures: |ret| ret.contains(&position)
             == (matches!(*content, DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. }) || matches!(admission, Admission::Unchecked))
             && ret.iter().all(|&ancestor| ancestor == position ||
@@ -2901,14 +3351,12 @@ impl CommitLog
     }
 
     /// Take the rows of the entry admitted at `position` and `rank`, which
-    /// names `references`.
+    /// names `references`: its rank, then its fold.
     ///
     /// # Specification
     /// - requires: `position` is the next position, and no live entry holds
     ///   `rank`.
-    /// - ensures: the rank index holds `rank` at `position`; the reverse index
-    ///   holds a row for each of `references`; the order is ranked once `rank`
-    ///   stands below the rank of an earlier entry.
+    /// - ensures: as [`Self::hold`] and then [`Self::fold`].
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses state the tables before and after the
@@ -2923,14 +3371,60 @@ impl CommitLog
         references: &[ConstantIndex],
     )
     {
-        if self
-            .ranked
-            .last_key_value()
-            .is_some_and(|(&last, _)| last > rank)
+        self.hold((position, rank));
+        self.fold((position, rank), references);
+    }
+
+    /// Hold `rank` at `position`, for the entry committed there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold(
+        &mut self,
+        (position, rank): (ConstantIndex, SourceRank),
+    )
+    {
+        let _previous = self.ranked.insert(rank, position);
+    }
+
+    /// Fold the entry at `position` and `rank`, which names `references`,
+    /// once every slot before it is folded: its rows in the reverse index,
+    /// and the order.
+    ///
+    /// # Specification
+    /// - requires: every slot before `position` is folded, and the rank index
+    ///   holds `rank` at `position`.
+    /// - ensures: the reverse index holds a row for each of `references`; the
+    ///   order is ranked once `rank` stands below the rank of a live entry
+    ///   before `position`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the tables before and after the
+    ///   change, which a predicate may not capture whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fold that reads a later commit's rank ranks an
+    ///   order that the serial run keeps positional.
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    fn fold(
+        &mut self,
+        (position, rank): (ConstantIndex, SourceRank),
+        references: &[ConstantIndex],
+    )
+    {
+        // A commit past the cursor holds its rank before the fold reads this
+        // entry, so the walk passes each later position. Those are the
+        // commits in flight, and no other.
+        if self.order == Order::Positional
+            && self
+                .ranked
+                .iter()
+                .rev()
+                .find(|&(_, &held)| held < position)
+                .is_some_and(|(&last, _)| last > rank)
         {
             self.order = Order::Ranked;
         }
-        let _previous = self.ranked.insert(rank, position);
         self.dependents.admit(position, references);
     }
 
@@ -3185,6 +3679,42 @@ fn supported<T>(
     })
 }
 
+/// Whether `declaration` holds each release after it until its commit: an
+/// abstract type, whose seal each later check reads through the manifest; a
+/// presented type, whose words each later key over its sort reads; or a role
+/// holder, which each later check that reads the role finds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`crate::releases::Sway::Ordering`] exactly for an abstract type,
+///   a declaration with presentation rules, or a declaration with a role.
+/// - provides: the one classification of a release that holds its successors.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a released atom whose successors do not hold for its
+///   commit reads another manifest than the serial run.
+/// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+#[spec(ensures: |ret| (ret == crate::releases::Sway::Ordering)
+    == (matches!(*declaration.content(), DeclarationContent::AbstractType { .. })
+        || !declaration.presentation().rules().is_empty()
+        || matches!(declaration.role(), Maybe::Present(_))))]
+fn sway(declaration: &Declaration) -> crate::releases::Sway
+{
+    let abstract_type = matches!(
+        *declaration.content(),
+        DeclarationContent::AbstractType { .. }
+    );
+    if abstract_type
+        || !declaration.presentation().rules().is_empty()
+        || matches!(declaration.role(), Maybe::Present(_))
+    {
+        return crate::releases::Sway::Ordering;
+    }
+    crate::releases::Sway::Free
+}
+
 /// The position past the block the declaration at `first` leads: past the
 /// furthest position its run of data declarations reaches, when every
 /// position up to there is held — data declarations at the head, then
@@ -3401,11 +3931,11 @@ impl ArtifactRefusal
 }
 
 /// What the check of one lone declaration hands its commit: the declaration,
-/// its place, its keys and its outcome. The check reads its view alone, and
-/// the commit alone writes the environment.
+/// its place, its keys, its name and its outcome. The check reads its view
+/// alone, and the commit alone writes the environment.
 struct Lone
 {
-    /// The declaration staged at the next position.
+    /// The declaration staged at its reserved position.
     declaration: Declaration,
     /// Its position and its rank.
     place: (ConstantIndex, SourceRank),
@@ -3414,10 +3944,10 @@ struct Lone
         Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
         bool,
     ),
-    /// Its entry key and its chain key.
+    /// Its entry key, and how it finds its chain key.
     keys: (
         Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        crate::releases::Chained,
     ),
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
@@ -3432,15 +3962,17 @@ struct Lone
     /// The arena's mark past its content, and the mark that a refusal
     /// truncates to.
     marks: (ArenaWatermark, ArenaWatermark),
+    /// How a memo key names a reference to it once it is admitted.
+    key_name: ConstantName,
 }
 
 /// What the commit of one lone declaration needs beside its check: its
-/// place, its keys, the positions that its content names and the arena's
-/// marks. The committer keeps it while the check runs.
+/// place, its keys, the positions that its content names, the arena's marks
+/// and its name. The committer keeps it while the check runs.
 ///
 /// # Specification
 /// - requires: made by [`Environment::release`].
-/// - ensures: the place, the keys, the references and the marks that
+/// - ensures: the place, the keys, the references, the marks and the name that
 ///   [`Environment::settle`] commits with the check's outcome.
 /// - panics: none.
 /// - executable: none — the fields are private and set only by
@@ -3459,16 +3991,18 @@ pub struct Pending
         Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
         bool,
     ),
-    /// Its entry key and its chain key.
+    /// Its entry key, and how it finds its chain key.
     keys: (
         Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        crate::releases::Chained,
     ),
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// The arena's mark past its content, and the mark that a refusal
     /// truncates to.
     marks: (ArenaWatermark, ArenaWatermark),
+    /// How a memo key names a reference to it once it is admitted.
+    key_name: ConstantName,
 }
 
 /// What a check owns of the environment: a view of the entries below its
@@ -3588,6 +4122,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Environment;
+    use super::Released;
     use crate::census::ExpansionCensus;
     use crate::env::Admission;
     use crate::env::AdmittedDeclaration;
@@ -3673,9 +4208,12 @@ mod tests
             let serial_staged = staged(&mut serial, body);
             let admitted = serial.add_decl(serial_staged);
             let released_staged = staged(&mut released, body);
-            let (pending, check) = released
+            let Released::Running(pending, check) = released
                 .release(released_staged)
-                .expect("a monomorphic definition releases its check");
+                .expect("a monomorphic definition releases its check")
+            else {
+                panic!("a release with no other release outstanding never holds");
+            };
             // The check runs on a thread of its own while the environment
             // stays on this one.
             let ran = std::thread::scope(|scope| scope.spawn(move || check.run()).join())
@@ -3761,7 +4299,9 @@ mod tests
             let body = staging.arena().value_unit();
             staging.def(LevelSignature::monomorphic(), declared, body)
         };
-        let bypassed = environment.add_decl_unchecked(bypassed);
+        let bypassed = environment
+            .add_decl_unchecked(bypassed)
+            .expect("no check is released, so the bypass admits");
         assert_eq!(
             environment
                 .entries()
@@ -4097,7 +4637,9 @@ mod tests
             let body = staging.arena().value_unit();
             staging.def(LevelSignature::monomorphic(), declared, body)
         };
-        let bypassed = environment.add_decl_unchecked(bypassed);
+        let bypassed = environment
+            .add_decl_unchecked(bypassed)
+            .expect("no check is released, so the bypass admits");
         let bad = {
             let mut staging = environment.stage();
             let declared = staging.arena().value_type_base(BaseType::Integer);
@@ -4309,7 +4851,9 @@ mod tests
             let body = staging.arena().value_unit();
             staging.def(LevelSignature::monomorphic(), declared, body)
         };
-        let bypassed = environment.add_decl_unchecked(bypassed);
+        let bypassed = environment
+            .add_decl_unchecked(bypassed)
+            .expect("no check is released, so the bypass admits");
         let dependent = {
             let mut staging = environment.stage();
             let declared = staging.arena().value_type_unit();
@@ -4844,7 +5388,9 @@ mod tests
             &mut environment,
             SealScope::Closed(SealExtent::from(0_usize)),
         );
-        let sealed = environment.add_decl_unchecked(sealed);
+        let sealed = environment
+            .add_decl_unchecked(sealed)
+            .expect("no check is released, so the bypass admits");
         let axiom = {
             let mut staging = environment.stage();
             let declared = staging.arena().value_type_abstract(sealed.position());
@@ -5747,6 +6293,701 @@ mod tests
         Ok(())
     }
 
+    /// Whether an offer of the release differential ranks below the offer
+    /// before it.
+    #[derive(Clone, Copy, Debug)]
+    enum Dip
+    {
+        /// It ranks past every earlier offer.
+        Ascending,
+        /// It ranks below the offer before it.
+        Below,
+    }
+
+    /// One offer of a source that the release differential admits.
+    #[derive(Clone, Debug)]
+    enum Offer
+    {
+        /// A generated declaration, alone.
+        Lone(Member, Dip),
+        /// A block of generated declarations.
+        Block(Vec<Member>),
+        /// A unit definition: its body is the unit value, or the constant of
+        /// the earlier unit definition that the draw picks.
+        Unit(Option<usize>, Dip),
+        /// An integer atom, sealed open, or closed after the extent.
+        Atom(Option<usize>),
+        /// The definition `7` of the latest atom, or of the integer.
+        Seven,
+    }
+
+    /// What an offer gives the offers after it, and what it reads of the
+    /// offers before it.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Kind
+    {
+        /// The data types.
+        Data,
+        /// The unit definitions.
+        Unit,
+        /// The atoms.
+        Atom,
+        /// Every earlier offer: a block settles each release before it.
+        Every,
+        /// No earlier offer.
+        Nothing,
+    }
+
+    /// A generated dip.
+    ///
+    /// # Specification
+    /// trivial.
+    fn dip() -> impl proptest::strategy::Strategy<Value = Dip>
+    {
+        use proptest::prelude::Just;
+        proptest::prop_oneof![3 => Just(Dip::Ascending), 1 => Just(Dip::Below)]
+    }
+
+    /// A generated offer. The alphabet is small, so declarations repeat.
+    ///
+    /// # Specification
+    /// trivial.
+    fn offer() -> impl proptest::strategy::Strategy<Value = Offer>
+    {
+        use proptest::prelude::Just;
+        use proptest::strategy::Strategy as _;
+        proptest::prop_oneof![
+            4 => (member(), dip()).prop_map(|(member, dip)| Offer::Lone(member, dip)),
+            1 => proptest::collection::vec(member(), 1 .. 3).prop_map(Offer::Block),
+            4 => (proptest::option::of(0_usize .. 4), dip())
+                .prop_map(|(drawn, dip)| Offer::Unit(drawn, dip)),
+            1 => proptest::option::of(0_usize .. 3).prop_map(Offer::Atom),
+            1 => Just(Offer::Seven),
+        ]
+    }
+
+    /// What `offer` gives the offers after it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn gives(offer: &Offer) -> Kind
+    {
+        match *offer {
+            Offer::Lone(Member::Data(..), _) => Kind::Data,
+            Offer::Unit(..) => Kind::Unit,
+            Offer::Atom(_) => Kind::Atom,
+            Offer::Block(_) => Kind::Every,
+            Offer::Lone(Member::Codata(..) | Member::Axiom(_) | Member::Refused, _)
+            | Offer::Seven => Kind::Nothing,
+        }
+    }
+
+    /// What `offer` reads of the offers before it, which the driver settles
+    /// before it stages the offer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reads(offer: &Offer) -> Kind
+    {
+        let earlier = |field: &Field| matches!(*field, Field::Earlier(_));
+        match *offer {
+            Offer::Lone(Member::Data(_, ref fields), _) if fields.iter().any(earlier) => Kind::Data,
+            Offer::Lone(Member::Codata(_, ref field) | Member::Axiom(ref field), _)
+                if earlier(field) =>
+            {
+                Kind::Data
+            },
+            Offer::Unit(Some(_), _) => Kind::Unit,
+            Offer::Seven => Kind::Atom,
+            Offer::Block(_) => Kind::Every,
+            Offer::Lone(..) | Offer::Unit(None, _) | Offer::Atom(_) => Kind::Nothing,
+        }
+    }
+
+    /// Whether the release differential ranks each offer.
+    #[derive(Clone, Copy, Debug)]
+    enum Ranking
+    {
+        /// Each offer ranks at twice its position, or three below that when it
+        /// dips.
+        Ranked,
+        /// No offer carries a rank.
+        Unranked,
+    }
+
+    /// The admitted positions that an offer reads: the data types, the unit
+    /// definitions and the latest atom, each in position order.
+    #[derive(Clone, Debug, Default)]
+    struct InScope
+    {
+        /// The admitted data types.
+        data: Vec<ConstantIndex>,
+        /// The admitted unit definitions.
+        units: Vec<ConstantIndex>,
+        /// The latest admitted atom.
+        atom: Option<ConstantIndex>,
+    }
+
+    impl InScope
+    {
+        /// Note what `offer` gives once `outcome` resolves it.
+        ///
+        /// # Specification
+        /// trivial.
+        fn note(
+            &mut self,
+            offer: &Offer,
+            outcome: &Result<Vec<ConstantIndex>, KernelError>,
+        )
+        {
+            let Ok(positions) = outcome.as_ref()
+            else {
+                return;
+            };
+            let insert = |held: &mut Vec<ConstantIndex>, position: ConstantIndex| {
+                let at = held.partition_point(|&earlier| earlier < position);
+                held.insert(at, position);
+            };
+            match *offer {
+                Offer::Lone(Member::Data(..), _) => {
+                    for &position in positions {
+                        insert(&mut self.data, position);
+                    }
+                },
+                Offer::Block(ref members) => {
+                    for (member, &position) in members.iter().zip(positions) {
+                        if matches!(*member, Member::Data(..)) {
+                            insert(&mut self.data, position);
+                        }
+                    }
+                },
+                Offer::Unit(..) => {
+                    for &position in positions {
+                        insert(&mut self.units, position);
+                    }
+                },
+                Offer::Atom(_) => self.atom = positions.last().copied().max(self.atom),
+                Offer::Lone(Member::Codata(..) | Member::Axiom(_) | Member::Refused, _)
+                | Offer::Seven => {},
+            }
+        }
+    }
+
+    /// The rank of an offer at `position`, as `dip` and `ranking` state.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ranked(
+        staged: StagedDeclaration,
+        position: ConstantIndex,
+        (dip, ranking): (Dip, Ranking),
+    ) -> StagedDeclaration
+    {
+        let even = usize::from(position).saturating_mul(2);
+        match (ranking, dip) {
+            (Ranking::Unranked, Dip::Ascending | Dip::Below) => staged,
+            (Ranking::Ranked, Dip::Below) if even >= 4 => {
+                staged.ranked(SourceRank::from(even.saturating_sub(3)))
+            },
+            (Ranking::Ranked, Dip::Ascending | Dip::Below) => staged.ranked(SourceRank::from(even)),
+        }
+    }
+
+    /// Stage `offer` in `environment` over what `scope` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stage_offer(
+        environment: &mut Environment,
+        offer: &Offer,
+        scope: &InScope,
+        ranking: Ranking,
+    ) -> Vec<StagedDeclaration>
+    {
+        let base = environment.entries().len();
+        let own = ConstantIndex::from(base);
+        match *offer {
+            Offer::Lone(ref member, dip) => {
+                let staged = stage_member(environment, member, own, &scope.data);
+                vec![ranked(staged, own, (dip, ranking))]
+            },
+            Offer::Block(ref members) => {
+                let mut data = scope.data.clone();
+                let mut staged = Vec::with_capacity(members.len());
+                for (offset, member) in members.iter().enumerate() {
+                    let own = ConstantIndex::from(usize::from(base).saturating_add(offset));
+                    staged.push(ranked(
+                        stage_member(environment, member, own, &data),
+                        own,
+                        (Dip::Ascending, ranking),
+                    ));
+                    if matches!(*member, Member::Data(..)) {
+                        data.push(own);
+                    }
+                }
+                staged
+            },
+            Offer::Unit(drawn, dip) => {
+                let named = drawn.and_then(|drawn| {
+                    let at = drawn.checked_rem(scope.units.len())?;
+                    scope.units.get(at).copied()
+                });
+                vec![ranked(
+                    unit_definition(environment, named),
+                    own,
+                    (dip, ranking),
+                )]
+            },
+            Offer::Atom(extent) => {
+                let scope = extent.map_or(SealScope::Open, |extent| {
+                    SealScope::Closed(SealExtent::from(extent))
+                });
+                vec![ranked(
+                    integer_atom(environment, scope),
+                    own,
+                    (Dip::Ascending, ranking),
+                )]
+            },
+            Offer::Seven => vec![ranked(
+                seven_at(environment, scope.atom),
+                own,
+                (Dip::Ascending, ranking),
+            )],
+        }
+    }
+
+    /// Admit `source` in `environment` in order, each offer settled before
+    /// the next, and answer the outcome of each offer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_serially(
+        environment: &mut Environment,
+        source: &[Offer],
+        ranking: Ranking,
+    ) -> Vec<Result<Vec<ConstantIndex>, KernelError>>
+    {
+        let mut scope = InScope::default();
+        let mut outcomes = Vec::with_capacity(source.len());
+        for offer in source {
+            let mut staged = stage_offer(environment, offer, &scope, ranking);
+            let outcome = match *offer {
+                Offer::Block(_) => environment
+                    .add_block(staged)
+                    .map(|ids| ids.into_iter().map(CheckedId::position).collect()),
+                Offer::Lone(..) | Offer::Unit(..) | Offer::Atom(_) | Offer::Seven => environment
+                    .add_decl(staged.pop().expect("a lone offer stages one declaration"))
+                    .map(|id| vec![id.position()]),
+            };
+            scope.note(offer, &outcome);
+            outcomes.push(outcome);
+        }
+        outcomes
+    }
+
+    /// How the driver picks the release that it settles next.
+    #[derive(Clone, Copy, Debug)]
+    enum Settling
+    {
+        /// The release made first.
+        Oldest,
+        /// The release made last.
+        Newest,
+        /// A release that a fixed sequence of draws picks.
+        Drawn,
+    }
+
+    /// One release in flight: the offer that it answers, what the offer
+    /// gives, and the check.
+    struct Flight
+    {
+        /// The index of the offer in the source.
+        offer: usize,
+        /// What the offer gives the offers after it.
+        gives: Kind,
+        /// What the commit needs beside the check.
+        pending: super::Pending,
+        /// The check, released.
+        check: super::Check,
+    }
+
+    /// The place of an offer in its source.
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    struct At(usize);
+
+    /// The most releases that a driver keeps in flight.
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    struct InFlight(usize);
+
+    /// The serial driver of the release differential: it releases each offer
+    /// in source order, and it settles the releases in flight in the order
+    /// that its settling picks, as their dependences allow.
+    struct Driver<'source>
+    {
+        /// The environment that the driver admits into.
+        environment: Environment,
+        /// The offers.
+        source: &'source [Offer],
+        /// The releases in flight, oldest first.
+        flights: Vec<Flight>,
+        /// What the offers settled so far give.
+        scope: InScope,
+        /// The outcome of each offer, once it resolves.
+        outcomes: Vec<Option<Result<Vec<ConstantIndex>, KernelError>>>,
+        /// How the driver picks the release that it settles next.
+        settling: Settling,
+        /// The state of the draws.
+        draw: u64,
+    }
+
+    impl Driver<'_>
+    {
+        /// Settle one release in flight, as the settling picks it.
+        ///
+        /// # Specification
+        /// trivial.
+        fn settle_one(&mut self)
+        {
+            let last = self.flights.len().saturating_sub(1);
+            let at = match self.settling {
+                Settling::Oldest => 0,
+                Settling::Newest => last,
+                Settling::Drawn => {
+                    // A xorshift step: deterministic, and enough to reach
+                    // each order of a few releases.
+                    let state = self.draw ^ self.draw.wrapping_shl(13);
+                    let state = state ^ state.wrapping_shr(7);
+                    let state = state ^ state.wrapping_shl(17);
+                    self.draw = state;
+                    let count = u64::try_from(self.flights.len()).expect("a small count");
+                    usize::try_from(state.checked_rem(count).unwrap_or(0)).expect("a small index")
+                },
+            };
+            let Flight {
+                offer,
+                pending,
+                check,
+                ..
+            } = self.flights.remove(at);
+            let ran = check.run();
+            let outcome = self
+                .environment
+                .settle(pending, ran)
+                .map(|id| vec![id.position()]);
+            self.scope.note(&self.source[offer], &outcome);
+            self.outcomes[offer] = Some(outcome);
+        }
+
+        /// Settle the releases in flight until none gives `kind`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn settle_until_none_gives(
+            &mut self,
+            kind: Kind,
+        )
+        {
+            while self
+                .flights
+                .iter()
+                .any(|flight| kind == Kind::Every || flight.gives == kind)
+            {
+                self.settle_one();
+            }
+        }
+
+        /// Release `offer`, at index `index`, settling every release in
+        /// flight when it holds.
+        ///
+        /// # Specification
+        /// trivial.
+        fn release(
+            &mut self,
+            At(index): At,
+            staged: StagedDeclaration,
+        )
+        {
+            let released = match self.environment.release(staged) {
+                Ok(super::Released::Held(staged, _)) => {
+                    self.settle_until_none_gives(Kind::Every);
+                    self.environment.release(staged)
+                },
+                other => other,
+            };
+            match released {
+                Ok(super::Released::Running(pending, check)) => self.flights.push(Flight {
+                    offer: index,
+                    gives: gives(&self.source[index]),
+                    pending,
+                    check,
+                }),
+                Ok(super::Released::Held(_, hold)) => {
+                    panic!("a release with no release outstanding never holds, yet {hold:?}")
+                },
+                Err(error) => self.outcomes[index] = Some(Err(error)),
+            }
+        }
+    }
+
+    /// Admit `source` through the driver under `settling`, with at most
+    /// `width` releases in flight, and answer the outcome of each offer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_released(
+        environment: Environment,
+        source: &[Offer],
+        (settling, InFlight(width), ranking): (Settling, InFlight, Ranking),
+    ) -> (Environment, Vec<Result<Vec<ConstantIndex>, KernelError>>)
+    {
+        let mut driver = Driver {
+            environment,
+            source,
+            flights: Vec::new(),
+            scope: InScope::default(),
+            outcomes: vec![None; source.len()],
+            settling,
+            draw: 0x9e37_79b9_7f4a_7c15,
+        };
+        for (index, offer) in source.iter().enumerate() {
+            match reads(offer) {
+                Kind::Nothing => {},
+                kind @ (Kind::Data | Kind::Unit | Kind::Atom | Kind::Every) => {
+                    driver.settle_until_none_gives(kind);
+                },
+            }
+            let mut staged = stage_offer(&mut driver.environment, offer, &driver.scope, ranking);
+            match *offer {
+                Offer::Block(_) => {
+                    let outcome = driver
+                        .environment
+                        .add_block(staged)
+                        .map(|ids| ids.into_iter().map(CheckedId::position).collect());
+                    driver.scope.note(offer, &outcome);
+                    driver.outcomes[index] = Some(outcome);
+                },
+                Offer::Lone(..) | Offer::Unit(..) | Offer::Atom(_) | Offer::Seven => {
+                    driver.release(
+                        At(index),
+                        staged.pop().expect("a lone offer stages one declaration"),
+                    );
+                },
+            }
+            while driver.flights.len() > width {
+                driver.settle_one();
+            }
+        }
+        driver.settle_until_none_gives(Kind::Every);
+        let outcomes = driver
+            .outcomes
+            .into_iter()
+            .map(|outcome| outcome.expect("every offer resolves"))
+            .collect();
+        (driver.environment, outcomes)
+    }
+
+    /// How an entry's admission named it, read without the arena's ids.
+    #[derive(Debug, Eq, PartialEq)]
+    enum Named
+    {
+        /// By its position.
+        Position,
+        /// By its content: its order among its twins and its digest.
+        Definition(
+            crate::encoding::DefinitionRank,
+            gandr_kernel_check_memo::ContentDigest,
+        ),
+    }
+
+    /// One entry as the release differential compares it: its rank, its key,
+    /// its name, how it was admitted, whether it is live, what it names, what
+    /// it rests on and its reading.
+    type Compared = (
+        SourceRank,
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        Named,
+        Admission,
+        EntryKind,
+        alloc::boxed::Box<[ConstantIndex]>,
+        BTreeSet<ConstantIndex>,
+        crate::check::Accessibility,
+    );
+
+    /// What the release differential compares of an environment: each slot,
+    /// the places, the reach of each position, the records that a receipt
+    /// signs, the manifest and the admitted count. The census is a tally of
+    /// the memo that each check met, and the memo is the one part that the
+    /// order of the commits moves; so it is left out.
+    #[derive(Debug, PartialEq)]
+    struct Folded
+    {
+        /// Each slot, as its entry or as a vacancy.
+        slots: Vec<Option<Compared>>,
+        /// The place of each live position.
+        places: Maybe<gandr_kernel_term::Places, super::places::Absent>,
+        /// The reach of an edit at each position.
+        reach: Vec<alloc::boxed::Box<[ConstantIndex]>>,
+        /// The records that a receipt signs.
+        records: Vec<crate::verdict::VerdictRecord>,
+        /// The atoms manifest after the last admission.
+        manifest: Vec<ConstantIndex>,
+        /// How many admitted results the checks took.
+        admitted: crate::admitted::AdmittedCount,
+    }
+
+    /// Read `environment` as the release differential compares it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn folded(
+        environment: &Environment,
+        signer: &crate::verdict::KernelSigner,
+    ) -> Folded
+    {
+        let length = usize::from(environment.entries().len());
+        let slots = (0 .. length)
+            .map(|position| {
+                environment.entries().at(position).map(|entry| {
+                    (
+                        entry.rank(),
+                        entry.key(),
+                        match entry.key_name() {
+                            crate::encoding::ConstantName::Position => Named::Position,
+                            crate::encoding::ConstantName::Definition { rank, digest, .. } => {
+                                Named::Definition(rank, digest)
+                            },
+                        },
+                        entry.admission(),
+                        entry.kind(),
+                        alloc::boxed::Box::<[ConstantIndex]>::from(entry.references()),
+                        entry.rested_on().clone(),
+                        entry.accessibility().clone(),
+                    )
+                })
+            })
+            .collect();
+        let reach = (0 .. length)
+            .map(|position| environment.reach([ConstantIndex::from(position)]))
+            .collect();
+        let records = match environment.receipt(signer) {
+            Maybe::Present(stored) => stored.records().to_vec(),
+            Maybe::Absent(_) => Vec::new(),
+        };
+        Folded {
+            slots,
+            places: environment.places(),
+            reach,
+            records,
+            manifest: environment.manifest.clone(),
+            admitted: environment.admitted(),
+        }
+    }
+
+    /// A source of verdicts that answers the receipts of one earlier run for
+    /// every key.
+    #[derive(Debug)]
+    #[repr(transparent)]
+    struct Recorded(Vec<alloc::sync::Arc<crate::verdict::StoredReceipt>>);
+
+    impl crate::verdict::VerdictSource for Recorded
+    {
+        /// The receipts of the earlier run, whatever `key` is.
+        ///
+        /// # Specification
+        /// trivial.
+        fn receipts(
+            &self,
+            _key: crate::verdict::VerdictKey,
+        ) -> &[alloc::sync::Arc<crate::verdict::StoredReceipt>]
+        {
+            &self.0
+        }
+    }
+
+    /// How the environments of the release differential treat verdicts.
+    #[derive(Clone, Copy, Debug)]
+    enum Verdicts
+    {
+        /// They recheck every admission and key none.
+        Rechecked,
+        /// They key each admission and recall nothing.
+        Keyed,
+        /// They recall from the receipt of a keyed serial run of the whole
+        /// source, and they admit the source less its first offer.
+        Recalled,
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(64))]
+
+        /// #3476: releases settled in each order that their dependences
+        /// allow give the outcomes, the entries, the ranks, the keys, the
+        /// names, the order, the reach and the records of the serial run. The
+        /// driver releases in source order. It settles the releases in flight
+        /// that an offer reads before it stages the offer, every release when
+        /// a release holds, and one more whenever more than the width are in
+        /// flight. Atoms, presented and repeated declarations, refusals,
+        /// dips in rank and unranked offers each meet a read of order.
+        #[test]
+        fn each_commit_order_of_a_released_source_folds_as_the_serial_run_3476(
+            source in proptest::collection::vec(offer(), 1 .. 12),
+        ) {
+            let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+            for ranking in [Ranking::Ranked, Ranking::Unranked] {
+                let mut recording = keyed();
+                let _recorded = admit_serially(&mut recording, &source, ranking);
+                let store: Vec<_> = match recording.receipt(&signer) {
+                    Maybe::Present(stored) => vec![alloc::sync::Arc::new(stored)],
+                    Maybe::Absent(_) => Vec::new(),
+                };
+                let store: alloc::sync::Arc<dyn crate::verdict::VerdictSource> =
+                    alloc::sync::Arc::new(Recorded(store));
+                for verdicts in [Verdicts::Rechecked, Verdicts::Keyed, Verdicts::Recalled] {
+                    let fresh = || match verdicts {
+                        Verdicts::Rechecked => Environment::new(),
+                        Verdicts::Keyed => keyed(),
+                        Verdicts::Recalled => Environment::recalling(
+                            crate::verdict::TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+                            alloc::sync::Arc::clone(&store),
+                        ),
+                    };
+                    let offered = match verdicts {
+                        Verdicts::Rechecked | Verdicts::Keyed => source.as_slice(),
+                        Verdicts::Recalled => source.get(1 ..).unwrap_or_default(),
+                    };
+                    let mut serial = fresh();
+                    let reference = admit_serially(&mut serial, offered, ranking);
+                    let expected = folded(&serial, &signer);
+                    for settling in [Settling::Oldest, Settling::Newest, Settling::Drawn] {
+                        for width in [1_usize, 2, 3, 8] {
+                            let (released, outcomes) =
+                                admit_released(fresh(), offered, (settling, InFlight(width), ranking));
+                            proptest::prop_assert_eq!(
+                                &outcomes,
+                                &reference,
+                                "each offer resolves as in the serial run: {:?} {:?} {:?} {}",
+                                verdicts, ranking, settling, width
+                            );
+                            proptest::prop_assert_eq!(
+                                &folded(&released, &signer),
+                                &expected,
+                                "the environment folds as the serial run's: {:?} {:?} {:?} {}",
+                                verdicts, ranking, settling, width
+                            );
+                            proptest::prop_assert_eq!(
+                                usize::from(released.releases.outstanding()),
+                                0_usize,
+                                "no release stays outstanding"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     proptest::proptest! {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
 
@@ -6104,7 +7345,8 @@ mod tests
             let empty =
                 arena.value_constructor(words, own, ConstructorTag::from(0_usize), Vec::new());
             let mut view = environment.entries.view();
-            view.open(roots.iter().copied(), SourceRank::ABOVE);
+            let end = view.len();
+            view.open(roots.iter().copied(), (SourceRank::ABOVE, end));
             let unfoldings = Unfoldings::admitted(&view)
                 .extended(vec![Unfoldable::Body(ident)])
                 .presenting(view.presentations().clone());

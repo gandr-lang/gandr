@@ -1381,6 +1381,20 @@ impl Verdicts
         }
     }
 
+    /// The key the chain stands at: the key of the last keyed admission, or
+    /// the start; absent with the reason once the chain keys nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
+    {
+        match self.chain {
+            Maybe::Present(ref chain) => Maybe::Present(chain.last),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        }
+    }
+
     /// The state a run under `policy`, finding recorded verdicts in `source`,
     /// starts with.
     ///

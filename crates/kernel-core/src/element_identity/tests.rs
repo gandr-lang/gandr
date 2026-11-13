@@ -2874,7 +2874,9 @@ fn a_pair_s_components_stop_at_a_body_naming_its_own_position()
     let declared = arena.value_type_unit();
     let itself = arena.value_constant(ConstantIndex::from(0_usize));
     let declaration = staging.def(LevelSignature::monomorphic(), declared, itself);
-    environment.add_decl_unchecked(declaration);
+    let _admitted = environment
+        .add_decl_unchecked(declaration)
+        .expect("no check is released, so the bypass admits");
     let entries = environment.entries().clone();
     let mut arena = environment.arena().clone();
     let itself = arena.value_constant(ConstantIndex::from(0_usize));
