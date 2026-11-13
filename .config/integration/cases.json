@@ -614,6 +614,198 @@
     "output": null
   },
   {
+    "name": "#7078: a bound line on the newest merge is the repair",
+    "program": "repair.jq",
+    "input": {
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ],
+      "merges": [
+        {
+          "sha": "5555555555555555555555555555555555555555",
+          "number": 7057,
+          "body": "Advances #6323\n\nRepairs integration at 222222222222\n"
+        },
+        {
+          "sha": "6666666666666666666666666666666666666666",
+          "number": 7056,
+          "body": "none"
+        }
+      ]
+    },
+    "output": {
+      "sha": "5555555555555555555555555555555555555555",
+      "held": true,
+      "from": 7057
+    }
+  },
+  {
+    "name": "#7078: a bound line below a merge with no line is the repair",
+    "program": "repair.jq",
+    "input": {
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ],
+      "merges": [
+        {
+          "sha": "5555555555555555555555555555555555555555",
+          "number": 7058,
+          "body": "none"
+        },
+        {
+          "sha": "6666666666666666666666666666666666666666",
+          "number": 7057,
+          "body": "Repairs integration at 2222222\r\n"
+        }
+      ]
+    },
+    "output": {
+      "sha": "6666666666666666666666666666666666666666",
+      "held": true,
+      "from": 7057
+    }
+  },
+  {
+    "name": "#7078: a line of an older red takes nothing",
+    "program": "repair.jq",
+    "input": {
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        },
+        {
+          "databaseId": 1,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "4444444444444444444444444444444444444444",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/1"
+        }
+      ],
+      "merges": [
+        {
+          "sha": "5555555555555555555555555555555555555555",
+          "number": 7057,
+          "body": "Repairs integration at 444444444444"
+        }
+      ]
+    },
+    "output": null
+  },
+  {
+    "name": "#7078: no line takes nothing",
+    "program": "repair.jq",
+    "input": {
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ],
+      "merges": [
+        {
+          "sha": "5555555555555555555555555555555555555555",
+          "number": 7057,
+          "body": "The cycle on 222222222222 fails."
+        },
+        {
+          "sha": "6666666666666666666666666666666666666666",
+          "number": 7056,
+          "body": null
+        }
+      ]
+    },
+    "output": null
+  },
+  {
+    "name": "#7078: a red tip takes landing with the repair that a pull request states",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "repair": {
+        "sha": "5555555555555555555555555555555555555555",
+        "held": true,
+        "from": 7057
+      },
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 3,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "fast-forward",
+      "dispatch": true,
+      "repaired": true,
+      "line": "Run 3 fails on the tip of integration, 222222222222, and landing, 111111111111, holds its repair, 555555555555 of pull request 7057, so integration takes landing, and the suite starts."
+    }
+  },
+  {
     "name": "#6540: a list with no row closes its open issue, so an empty list counts as no open defect",
     "program": "list-state.jq",
     "input": {
@@ -808,7 +1000,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 2, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core|\n|`aborts`|`gandr-surface-parser::recovery`|cargo-test-enforcing-shard-core|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|test enforcing targets (linux, core)|\n\n</details>",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nA repair states this head on a line of its own in its pull request: `Repairs integration at 222222222222`. The cycle takes `landing` once that repair lands (#7078).\n\n<details><summary>Known-red tests: 2, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core|\n|`aborts`|`gandr-surface-parser::recovery`|cargo-test-enforcing-shard-core|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|test enforcing targets (linux, core)|\n\n</details>",
       "soundness": [
         {
           "title": "soundness: gandr-core-term tests::fails fails on integration",
@@ -875,7 +1067,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 1, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core, cargo-test-plain-only|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nA repair states this head on a line of its own in its pull request: `Repairs integration at 222222222222`. The cycle takes `landing` once that repair lands (#7078).\n\n<details><summary>Known-red tests: 1, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core, cargo-test-plain-only|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.",
       "soundness": [
         {
           "title": "soundness: gandr-core-term tests::fails fails on integration",
@@ -911,7 +1103,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nNo test report names a failure. The failed jobs hold the cause.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|check formatting and lint gates (treefmt)|\n\n</details>",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nA repair states this head on a line of its own in its pull request: `Repairs integration at 222222222222`. The cycle takes `landing` once that repair lands (#7078).\n\nNo test report names a failure. The failed jobs hold the cause.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|check formatting and lint gates (treefmt)|\n\n</details>",
       "soundness": []
     }
   },
@@ -1012,7 +1204,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 4](https://github.com/gandr-lang/gandr/actions/runs/4).\n\nNo test report names a failure, and no job of the run fails. A second such run on one head gives a verdict (#6887).",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 4](https://github.com/gandr-lang/gandr/actions/runs/4).\n\nA repair states this head on a line of its own in its pull request: `Repairs integration at 222222222222`. The cycle takes `landing` once that repair lands (#7078).\n\nNo test report names a failure, and no job of the run fails. A second such run on one head gives a verdict (#6887).",
       "soundness": []
     }
   },

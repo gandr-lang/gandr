@@ -1493,7 +1493,12 @@ running() {
 }
 landing=$(tip landing)
 integration=$(tip integration)
-compare=$(gh api "repos/$repo/compare/$integration...$landing" --jq .status)
+# The comparison of the tips, with the merges of the queue past
+# `integration`, which the read of a stated repair takes below (#7078).
+gh api "repos/$repo/compare/$integration...$landing" \
+  --jq '{status, merges: [.commits[] | select((.parents | length) == 2) | {sha, subject: (.commit.message | split("\n")[0])}]}' \
+  > "$scratch/compare.json"
+compare=$(jq -r .status "$scratch/compare.json")
 # The repair that the fixer marks on `landing` (#6560, `integration:repair`):
 # the tag `integration-repair`, which GitHub answers with 404 while no mark
 # stands, and whether `landing` holds its commit. One read on each step, and
@@ -1518,9 +1523,34 @@ for _ in 1 2 3; do
     'map(if .databaseId == $id then .hollow = $hollow else . end)' "$scratch/runs.json" > "$scratch/marked.json"
   mv "$scratch/marked.json" "$scratch/runs.json"
 done
+# The repair that a pull request on `landing` states (#7078, `repair.jq`). The
+# step reads it only while no tag stands and the newest verdict fails on the
+# tip of `integration`: one GraphQL query for the bodies of the newest 100
+# merges of the queue past `integration`. A read that fails finds no repair,
+# so `landing` waits as before.
+stated=null
+if [[ -z $repair ]] && jq -e -L "$here" --arg tip "$integration" \
+  'include "verdicts"; (verdicts | first) as $v | $v != null and ($v.conclusion | failed) and $v.headSha == $tip' \
+  "$scratch/runs.json" > /dev/null; then
+  numbers=$(jq -r '[.merges | reverse | .[0:100][] | .subject | capture("\\(#(?<n>[0-9]+)\\)$").n] | join(" ")' "$scratch/compare.json")
+  if [[ -n $numbers ]]; then
+    query="query { repository(owner: \"${repo%/*}\", name: \"${repo#*/}\") {"
+    for number in $numbers; do query+=" p$number: pullRequest(number: $number) { number body }"; done
+    query+=" } }"
+    if gh api graphql -f query="$query" --jq '[.data.repository[] | select(. != null)]' > "$scratch/bodies.json" 2> "$scratch/bodies.err"; then
+      stated=$(jq -n -c --slurpfile runs "$scratch/runs.json" --slurpfile compare "$scratch/compare.json" --slurpfile bodies "$scratch/bodies.json" \
+        '($bodies[0] | map({(.number | tostring): .body}) | add // {}) as $body
+         | {runs: $runs[0], merges: [$compare[0].merges | reverse | .[] | (.subject | capture("\\(#(?<n>[0-9]+)\\)$").n) as $n | {sha, number: ($n | tonumber), body: $body[$n]}]}' \
+        | jq -c -L "$here" -f "$here/repair.jq") || stated=null
+    else
+      say "The step reads no body of the merges past integration: $(< "$scratch/bodies.err")"
+    fi
+  fi
+fi
+[[ -n $stated ]] || stated=null
 decision=$(jq -n -c --arg landing "$landing" --arg integration "$integration" --arg compare "$compare" \
-  --arg repair "$repair" --argjson held "$held_repair" --slurpfile runs "$scratch/runs.json" \
-  '{landing: $landing, integration: $integration, compare: $compare, repair: (if $repair == "" then null else {sha: $repair, held: $held} end), runs: $runs[0]}' \
+  --arg repair "$repair" --argjson held "$held_repair" --argjson stated "$stated" --slurpfile runs "$scratch/runs.json" \
+  '{landing: $landing, integration: $integration, compare: $compare, repair: (if $repair == "" then $stated else {sha: $repair, held: $held} end), runs: $runs[0]}' \
   | jq -c -L "$here" -f "$here/cycle.jq")
 verdict=$(jq -c .verdict <<< "$decision")
 conclusion=$(jq -r '.conclusion // empty' <<< "$verdict")
@@ -1599,8 +1629,9 @@ if [[ -n $write ]]; then
       fi
       ;;
   esac
-  # A take of a repair drops its mark, so the next red verdict waits again.
-  if [[ $conflict == null && $(jq -r '.repaired // false' <<< "$decision") == true ]]; then
+  # A take of a repair drops its mark, so the next red verdict waits again. A
+  # repair that a pull request states has no mark to drop (#7078).
+  if [[ $conflict == null && -n $repair && $(jq -r '.repaired // false' <<< "$decision") == true ]]; then
     gh api -X DELETE "repos/$repo/git/refs/tags/integration-repair" > /dev/null
     say "The cycle drops the mark of the repair, ${repair:0:12}: integration holds it now."
   fi
