@@ -1916,7 +1916,7 @@ fn oriented_terms<G>(
 ///   display they are, and a missing parenthesis, trailing text and an
 ///   undeclared name are refused apart; the channel a restriction abstracts
 ///   reads as its occurrence inside the abstraction and is unknown beside it.
-/// - witness: `coincide::tests::a_call_reads_as_the_term_it_spells_or_says_why_not`
+/// - witness: `gandr-surface-lowering::tests::coincide::a_call_reads_its_normal_form_or_says_why_not`
 #[spec(ensures: |ret| ret.as_ref().is_err() || text.0.split_whitespace().collect::<String>()
     == ret.as_ref().map(|term| term.to_string().split_whitespace().collect::<String>()).unwrap_or_default())]
 fn read_call<G>(

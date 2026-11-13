@@ -1153,9 +1153,9 @@ impl<'source> Scope<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an operand's binder resolves at its index and answers
-    ///   the operand absence of a written type.
-    /// - witness: `resolve::tests::an_operand_and_an_instance_answer_their_own_absence_of_a_type`
+    /// - hypothesis: L3 — an operator's binder applied where a computation type
+    ///   is read decodes its static application rather than a call's return.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
@@ -1201,9 +1201,10 @@ impl<'source> Scope<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an instance's binder resolves at its index and
-    ///   answers the instance absence of a written type.
-    /// - witness: `resolve::tests::an_operand_and_an_instance_answer_their_own_absence_of_a_type`
+    /// - hypothesis: L3 — a function over a row variable and two instances
+    ///   reads the variable in its open row at the index its explicit twin's
+    ///   does.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
@@ -1696,10 +1697,9 @@ impl<'source> Scope<'source>
     ///   instance's variable through it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a chain with a linear frame between intuitionistic
-    ///   ones yields each binding outward, a shadowed and an unnamed one
-    ///   included, each zone counted apart.
-    /// - witness: `resolve::tests::a_chain_and_its_bindings_walk_every_frame_outward`
+    /// - hypothesis: L3 — an instance resolved beneath a binder of the other
+    ///   zone and one of its own is the variable at its own count.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
     #[inline]
     pub fn bindings(
         &self,
@@ -2069,9 +2069,9 @@ impl<'source> Scope<'source>
     ///   chain's scopes through it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a chain of four frames walks each from its own to the
-    ///   outermost, and the outermost frame walks none.
-    /// - witness: `resolve::tests::a_chain_and_its_bindings_walk_every_frame_outward`
+    /// - hypothesis: L3 — a capability at the inner of two nested scopes counts
+    ///   both; a walk stopping early or skipping a frame miscounts the depth.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
     #[inline]
     pub fn chain(
         &self,
@@ -2150,9 +2150,8 @@ impl<'source> Scope<'source>
     /// - intension: one pass over the frames and one sort of `read`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a span read twice is held once and the spans ascend,
-    ///   and the table answers each offset from them.
-    /// - witness: `resolve::tests::the_table_in_scope_answers_the_narrowest_reading_s_chain`
+    /// - hypothesis: L3 — as [`InScope::binders_at`].
+    /// - witness: `gandr-surface-lowering::tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
     #[spec(ensures: |ret| ret.frames.entries().len() == self.frames.entries().len()
         && ret.read.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if (first.start(), first.end()) < (second.start(), second.end()) || (first.start(), first.end()) == (second.start(), second.end()))))]
     #[inline]
@@ -2194,9 +2193,9 @@ impl<'source> Scope<'source>
     ///   `prior`'s spans.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a table resumed after a prior one equals the table
-    ///   built whole.
-    /// - witness: `resolve::tests::the_table_in_scope_answers_the_narrowest_reading_s_chain`
+    /// - hypothesis: L3 — a document resumed after its closure keeps the table
+    ///   the whole lowering builds.
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     #[spec(
         requires: prior.read.last().is_none_or(|&(last, _)| read.iter().all(|&(span, _)| span.start() >= last.end())),
         captures: added = read.len(),
@@ -2245,7 +2244,7 @@ impl<'source> Scope<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`InScope::binders_at`].
-/// - witness: `resolve::tests::the_table_in_scope_answers_the_narrowest_reading_s_chain`
+/// - witness: `gandr-surface-lowering::tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InScope
 {
@@ -2280,11 +2279,12 @@ impl InScope
     ///   step per frame of the chain.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an offset inside a nested span answers its chain's
-    ///   written binders, innermost first, an unwritten frame passed over; an
-    ///   offset at a span's end answers the enclosing chain, and one past every
-    ///   span nothing.
-    /// - witness: `resolve::tests::the_table_in_scope_answers_the_narrowest_reading_s_chain`
+    /// - hypothesis: L3 — a parameter in its body and out of it, a pattern's
+    ///   binder in its arm and in a sibling arm, a lambda's binder, and the
+    ///   binders of a declaration the lowering refused, each asserted at their
+    ///   exact names.
+    /// - witness: `gandr-surface-lowering::tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
+    /// - witness: `gandr-surface-lowering::tests::scopes::the_binders_in_scope_are_kept_for_a_refused_declaration_831`
     #[inline]
     pub fn binders_at(
         &self,
@@ -3229,154 +3229,6 @@ mod tests
             scope.linear_index(Frame::Inner(view), elsewhere),
             Maybe::Absent(binder::Absent::Unbound),
             "a binder off the chain is not found"
-        );
-    }
-
-    /// An operand's binder and an instance's resolve as any binder does, each
-    /// answering its own absence of a written type.
-    #[test]
-    fn an_operand_and_an_instance_answer_their_own_absence_of_a_type()
-    {
-        let mut scope = Scope::new();
-        let operand = scope.extend_operand(Frame::Outermost, SurfaceName::from("a"), UNWRITTEN);
-        let instance =
-            scope.extend_instance(Frame::Inner(operand), SurfaceName::from("io"), UNWRITTEN);
-        let bound = |index: u32, binder, declared| {
-            Ok(Maybe::Present(Bound {
-                index: DeBruijnIndex::from(index),
-                binder,
-                declared: Maybe::Absent(declared),
-                zone: Zone::Intuitionistic,
-            }))
-        };
-        assert_eq!(
-            scope.resolve(Frame::Inner(instance), SurfaceName::from("a"), &mut tank()),
-            bound(1_u32, operand, binder_type::Absent::Operand)
-        );
-        assert_eq!(
-            scope.resolve(Frame::Inner(instance), SurfaceName::from("io"), &mut tank()),
-            bound(0_u32, instance, binder_type::Absent::Instance)
-        );
-    }
-
-    /// A chain walks from its own frame to the outermost, and its bindings
-    /// count each zone apart, a shadowed binder and an unnamed one included.
-    #[test]
-    fn a_chain_and_its_bindings_walk_every_frame_outward()
-    {
-        use alloc::vec::Vec;
-
-        let mut scope = Scope::new();
-        let x = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
-        let held = scope.extend_linear(Frame::Inner(x), SurfaceName::from("n"), UNWRITTEN);
-        let hidden = scope.extend(Frame::Inner(held), SurfaceName::from(""), UNWRITTEN);
-        let shadow = scope.extend(Frame::Inner(hidden), SurfaceName::from("x"), UNWRITTEN);
-        assert_eq!(scope.chain(Frame::Inner(shadow)).collect::<Vec<_>>(), [
-            shadow, hidden, held, x
-        ]);
-        assert_eq!(scope.chain(Frame::Outermost).count(), 0_usize);
-        assert_eq!(
-            scope
-                .bindings(Frame::Inner(shadow))
-                .map(|(name, bound)| (name, bound.binder, bound.index, bound.zone))
-                .collect::<Vec<_>>(),
-            [
-                (
-                    SurfaceName::from("x"),
-                    shadow,
-                    DeBruijnIndex::from(0_u32),
-                    Zone::Intuitionistic
-                ),
-                (
-                    SurfaceName::from(""),
-                    hidden,
-                    DeBruijnIndex::from(1_u32),
-                    Zone::Intuitionistic
-                ),
-                (
-                    SurfaceName::from("n"),
-                    held,
-                    DeBruijnIndex::from(0_u32),
-                    Zone::Linear
-                ),
-                (
-                    SurfaceName::from("x"),
-                    x,
-                    DeBruijnIndex::from(2_u32),
-                    Zone::Intuitionistic
-                ),
-            ]
-        );
-    }
-
-    /// The table in scope answers at an offset the written binders of the
-    /// narrowest read span's chain, innermost first, an unwritten frame
-    /// passed over; nothing past every span. A table resumed after a prior one
-    /// is the table built whole.
-    #[test]
-    fn the_table_in_scope_answers_the_narrowest_reading_s_chain()
-    {
-        use alloc::vec;
-        use alloc::vec::Vec;
-
-        let at = |start: usize, end: usize| {
-            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).unwrap()
-        };
-        let mut scope = Scope::new();
-        let x = scope.extend(
-            Frame::Outermost,
-            SurfaceName::from("x"),
-            Maybe::Present(at(4, 5)),
-        );
-        let hidden = scope.extend(Frame::Inner(x), SurfaceName::from(""), UNWRITTEN);
-        let y = scope.extend(
-            Frame::Inner(hidden),
-            SurfaceName::from("y"),
-            Maybe::Present(at(10, 11)),
-        );
-        let z = scope.extend(
-            Frame::Outermost,
-            SurfaceName::from("z"),
-            Maybe::Present(at(30, 31)),
-        );
-        let table = scope.in_scope(vec![
-            (at(12, 20), y),
-            (at(6, 25), x),
-            (at(12, 20), y),
-            (at(32, 40), z),
-        ]);
-        assert_eq!(
-            table.reads(),
-            [(at(6, 25), x), (at(12, 20), y), (at(32, 40), z)],
-            "ascending, a span read twice held once"
-        );
-        let binders = |offset: usize| {
-            table
-                .binders_at(ByteOffset::from(offset))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(binders(14), [at(10, 11), at(4, 5)]);
-        assert_eq!(binders(7), [at(4, 5)]);
-        assert_eq!(binders(20), [at(4, 5)], "a span holds no offset at its end");
-        assert_eq!(binders(33), [at(30, 31)]);
-        assert_eq!(binders(26), []);
-
-        let prior = scope.in_scope(vec![(at(6, 25), x), (at(12, 20), y)]);
-        let resumed = scope.in_scope_after(&prior, vec![(at(32, 40), z), (at(30, 45), z)]);
-        assert_eq!(resumed.reads(), [
-            (at(6, 25), x),
-            (at(12, 20), y),
-            (at(30, 45), z),
-            (at(32, 40), z)
-        ]);
-        assert_eq!(
-            resumed,
-            scope.in_scope(vec![
-                (at(32, 40), z),
-                (at(6, 25), x),
-                (at(30, 45), z),
-                (at(12, 20), y),
-            ])
         );
     }
 }

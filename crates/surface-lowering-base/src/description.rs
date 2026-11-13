@@ -1006,10 +1006,10 @@ impl<'held> Visible<'held>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declaration sees its own source's and an imported
-    ///   source's public one, and reads past a private one of an imported
-    ///   source and one of a source not imported.
-    /// - witness: `description::tests::a_declaration_sees_its_own_source_and_what_its_imports_export`
+    /// - hypothesis: L3 — a declaration of a source not imported is not seen,
+    ///   nor is one its imported source keeps private.
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ret| ret.own.iter().all(|declaration| unit.source_at(declaration.at.span.start()) == source)
         && ret.imported.iter().all(|&(from, declaration)| from != source && imports.contains(&from)
             && unit.source_at(declaration.at.span.start()) == from))]
@@ -2401,7 +2401,8 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a tail at the parameters swapped, at the family
     ///   applied again and at a data family reads each argument the family does
     ///   not head at its own node.
-    /// - witness: `description::tests::a_codata_self_reference_reads_its_written_steps_2188`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_self_reference_keeps_its_written_arguments_2188`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
     #[spec(ensures: |result| result.as_ref().map_or(true, |steps| !steps.is_empty()))]
     fn self_applied(
         &self,
@@ -2630,7 +2631,7 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a field written in parentheses reads as the field it
     ///   groups, and a group over two types is left whole.
-    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_where_it_is_written_2664`
+    /// - witness: `gandr-surface-lowering::tests::description::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |result| result.as_ref().map_or(true, |&(read, _)| read.span.start() >= at.span.start() && read.span.end() <= at.span.end()))]
     fn ungrouped(
         &self,
@@ -2673,10 +2674,10 @@ impl Reader<'_, '_>
     /// Returns `NoType`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a numeral, a string, a character, a hole, `()`, a
-    ///   group over two types and a grouped numeral are each refused as no type
-    ///   at their own bytes.
-    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_where_it_is_written_2664`
+    /// - hypothesis: L3 — a numeral, a string, a boolean, a character, a hole,
+    ///   `()`, a group over two types and a grouped numeral are no type, and
+    ///   the lowering refuses each once.
+    /// - witness: `gandr-surface-lowering::tests::description::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| refusal.span == at.span && refusal.fault == DescriptionFault::NoType, |&()| true))]
     fn typed(
         &self,

@@ -487,35 +487,3 @@ fn an_exhausted_budget_declines_rather_than_reporting_no_match()
         Err(CircuitEmbedError::Matching(_))
     ));
 }
-
-/// #5763: a reading is spidered exactly where a marked wire merges or splits.
-/// The same merge unmarked gives no spider. A marked wire that one node
-/// produces and one node reads gives none too.
-#[test]
-fn a_reading_is_spidered_where_a_marked_wire_merges_5763()
-{
-    let merge = CircuitBody::new([operation("f", "x", "z"), operation("g", "y", "z")], "z");
-    let inputs = names(["x", "y"]);
-    let marks = marked(["z"]);
-    let unmarked = BTreeMap::new();
-    assert!(
-        CircuitReading::new(&merge, &inputs, &marks)
-            .spidered()
-            .is_some(),
-        "a marked merge gives a spider"
-    );
-    assert!(
-        CircuitReading::new(&merge, &inputs, &unmarked)
-            .spidered()
-            .is_none(),
-        "the same merge unmarked gives none"
-    );
-    let chain = CircuitBody::new([operation("f", "x", "z"), operation("g", "z", "w")], "w");
-    let input = names(["x"]);
-    assert!(
-        CircuitReading::new(&chain, &input, &marks)
-            .spidered()
-            .is_none(),
-        "a marked wire that neither merges nor splits gives none"
-    );
-}

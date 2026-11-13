@@ -17,7 +17,7 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 
 **Why.** The lowering is the longest crate in the build of the driver. A part that reads nothing of the lowering compiles in a crate of its own, before the lowering and beside its code generation. Each later split of the lowering adds its parts here or in a family crate over this one.
 
-**How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate. The integration target takes `gandr-surface-lowering` as a dev-dependency, its `fixture` feature on, so a case can lower a unit over this crate's items. A case that witnesses an item of each crate has a copy in each crate. The `fixture` feature opens the test fixtures to the tests of `gandr-surface-lowering`.
+**How.** Each module states its mechanism and its decisions in its rustdoc. A witness of an item is a test of this crate, or a test of `gandr-surface-lowering` spelled with that package's name, where the case lowers a source. The integration target takes `gandr-surface-lowering` as a dev-dependency, its `fixture` feature on, so a case can lower a unit over this crate's items. The `fixture` feature opens the test fixtures to the tests of `gandr-surface-lowering`.
 
 ## Provided features
 

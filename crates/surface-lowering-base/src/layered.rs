@@ -69,9 +69,10 @@ pub struct EntryCount(pub usize);
 /// - executable: none — a type-level block.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a table resumed after its closure reads its entries as
-///   the whole table, and a write over a closure's entry is the writer's own.
-/// - witness: `layered::tests::a_table_resumed_after_its_closure_reads_as_the_whole`
+/// - hypothesis: L3 — a document resumed after its closure reads each of its
+///   tables as the whole lowering's module does, at the closure's declarations
+///   and its own.
+/// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
 /// - witness: `layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
 #[derive(Clone)]
 pub struct Layered<Key, Value>
@@ -113,9 +114,8 @@ where
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a table resumed after a closure shares it and keeps
-    ///   its own entries at the keys the closure does not hold.
-    /// - witness: `layered::tests::a_table_resumed_after_its_closure_reads_as_the_whole`
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
     #[spec(ensures: |ret| matches!(ret.closure, Maybe::Present(ref shared) if Arc::ptr_eq(shared, closure))
         && ret.own.keys().all(|key| !closure.contains_key(key)))]
     #[inline]
@@ -153,9 +153,8 @@ where
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an entry is found in the own part and in the
-    ///   closure's, and a key neither holds answers nothing.
-    /// - witness: `layered::tests::a_table_resumed_after_its_closure_reads_as_the_whole`
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
     /// - witness: `layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
     #[spec(ensures: |ret| matches!(ret, Maybe::Present(_))
         == (self.own.contains_key(key)
@@ -329,9 +328,8 @@ where
     ///   clause could only compare by merging them again.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a table shared again holds every entry, and the
-    ///   closure's own part when it holds nothing past it.
-    /// - witness: `layered::tests::a_table_resumed_after_its_closure_reads_as_the_whole`
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
     #[inline]
     #[must_use]
     pub fn shared(self) -> Arc<BTreeMap<Key, Value>>
@@ -382,9 +380,9 @@ where
     /// - executable: none — the clause would restate the comparison.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a table resumed after its closure equals the one held
-    ///   whole, and one written over differs.
-    /// - witness: `layered::tests::a_table_resumed_after_its_closure_reads_as_the_whole`
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     /// - witness: `layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
     #[inline]
     fn eq(
@@ -911,43 +909,6 @@ mod tests
         assert_eq!(
             suspended,
             Layered::whole(BTreeMap::from([(0_u8, 'a'), (1_u8, 'b'), (2_u8, 'c')]))
-        );
-    }
-
-    /// A table resumed after a closure shares the closure's entries, keeps
-    /// its own at the keys the closure does not hold, and reads as the whole
-    /// table; shared again it holds every entry, and the closure's own part
-    /// as it is when it holds nothing past it.
-    #[test]
-    fn a_table_resumed_after_its_closure_reads_as_the_whole()
-    {
-        let values = |table: &Layered<u8, char>| table.values().copied().collect::<String>();
-        let closure = Arc::new(BTreeMap::from([(0_u8, 'a'), (1_u8, 'b')]));
-        let resumed = Layered::whole(BTreeMap::from([(1_u8, 'x'), (2_u8, 'c')])).after(&closure);
-        let Maybe::Present(ref held) = resumed.closure
-        else {
-            panic!("the table shares the closure's part")
-        };
-        assert!(Arc::ptr_eq(held, &closure), "shared, not copied");
-        assert_eq!(
-            "abc",
-            values(&resumed),
-            "the closure's entry stands at the key it holds"
-        );
-        assert!(matches!(resumed.get(&1_u8), Maybe::Present(&'b')));
-        assert!(matches!(resumed.get(&2_u8), Maybe::Present(&'c')));
-        assert!(matches!(resumed.get(&3_u8), Maybe::Absent(_)));
-        let whole = BTreeMap::from([(0_u8, 'a'), (1_u8, 'b'), (2_u8, 'c')]);
-        assert_eq!(resumed, Layered::whole(whole.clone()), "however it is held");
-        let every = resumed.shared();
-        assert_eq!(*every, whole);
-        assert!(!Arc::ptr_eq(&every, &closure));
-        assert!(
-            Arc::ptr_eq(
-                &Layered::whole(BTreeMap::new()).after(&closure).shared(),
-                &closure
-            ),
-            "a table holding nothing past its closure shares the closure's part as it is"
         );
     }
 

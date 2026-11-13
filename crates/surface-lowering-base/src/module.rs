@@ -12996,10 +12996,13 @@ impl<'source> LoweredModule<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two described data families each answer at their own
-    ///   declaration, and a codata family written in its own observation
-    ///   answers at its kind.
-    /// - witness: `gandr-surface-lowering::tests::described::each_family_answers_at_its_own_declaration_6908`
+    /// - hypothesis: L3 — a theory's sorts, operations, laws and circuit, a
+    ///   data family's operations and rules, and the constructors of a family
+    ///   with a function field answer at the types asserted.
+    /// - witness: `tests::described::a_theory_answers_at_every_member`
+    /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `tests::described::a_family_the_native_reading_owns_answers_at_its_signature`
+    /// - witness: `tests::described::a_codata_observation_s_type_answers_at_its_universe`
     #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
         && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
     #[inline]

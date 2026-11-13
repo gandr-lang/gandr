@@ -44,10 +44,11 @@
 //! | [`lower`] | the records the module pass and the lowering share: exits, runs and literals |
 //!
 //! `gandr-surface-lowering` names each module at its old path, and re-exports
-//! the modules its consumers read. Each module states its decisions, and its
-//! witnesses are this crate's own tests: a unit test beside its item, or a
-//! case of the integration target, `tests::<area>::<name>`, which lowers
-//! through `gandr-surface-lowering`.
+//! the modules its consumers read. Each module states its decisions. A witness
+//! of an item is a test of this crate, a unit test beside its item or a case
+//! of the integration target, `tests::<area>::<name>`. Or it is a test of
+//! `gandr-surface-lowering`, spelled with that package's name, because the case
+//! lowers a source and this crate does not lower.
 //!
 //! # References
 //! - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the seam test. A

@@ -1106,9 +1106,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a case answers the family first recorded for it, and
-    ///   a rebuilt case keeps it.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — a match over a unary family names each branch of its
+    ///   case by the constructor it binds.
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_case_names_the_family_it_eliminates_809`
     /// - witness: `origin::tests::a_carried_type_keeps_its_origin_and_its_labels`
     #[spec(ensures: self.eliminations.contains_key(&case))]
     #[inline]
@@ -1464,9 +1464,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a recorded variable answers its binder, and a value
-    ///   with no record answers nothing.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — a use under two binders of one name is recorded at
+    ///   the inner one.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_variable_keeps_its_binder`
     /// - witness: `origin::tests::an_elaborated_node_answers_where_its_source_is_written`
     #[spec(
         requires: self.bindings.last().is_none_or(|&(held, _)| held < id),
@@ -1496,8 +1496,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::record_binding`].
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — a recorded variable and a node the lowering did not
+    ///   mint as a written variable answer their exact binders.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_variable_keeps_its_binder`
     #[spec(ensures: |ret| ret == self.bindings.get(self.bindings.partition_point(|&(held, _)| held < id))
         .filter(|&&(held, _)| held == id)
         .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, binder)| Maybe::Present(binder)))]
@@ -1800,10 +1801,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a match root answers its record, the two alternatives
-    ///   of an or-pattern sharing one arm, and a computation that is no match
-    ///   root answers nothing.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — two matches of one module answer their own arms by
+    ///   root, and a computation that is no match root answers nothing.
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     #[spec(
         requires: self.cases.last().is_none_or(|&(held, _)| held < root),
         captures: before = self.cases.len(),
@@ -1832,7 +1832,7 @@ impl OriginTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_case`]. The predicate re-asks the
     ///   logarithmic search over the ascending match roots.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     #[spec(ensures: |ret| matches!(ret, Maybe::Present(_))
         == self.cases.binary_search_by_key(&root, |&(held, _)| held).is_ok())]
     #[inline]
@@ -1871,10 +1871,10 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a recorded opener answers its binder's origin, a
-    ///   rebuilt opener keeps it, and a bind with no record names none.
+    /// - hypothesis: L3 — a function's parameter and a `let` statement's name
+    ///   are answered by their own openers; a split statement records none.
+    /// - witness: `gandr-surface-lowering::lower::tests::each_named_binder_records_where_its_name_is_written`
     /// - witness: `origin::tests::an_elaborated_node_answers_where_its_source_is_written`
-    /// - witness: `origin::tests::a_placed_record_keeps_its_order_and_its_first_name`
     #[spec(
         requires: self.binders.last().is_none_or(|&(held, _)| held < opener),
         captures: before = self.binders.len(),
@@ -1908,9 +1908,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two lambdas placed before a recorded one fall in
-    ///   order, and a lambda placed twice keeps its first name.
-    /// - witness: `origin::tests::a_placed_record_keeps_its_order_and_its_first_name`
+    /// - hypothesis: L3 — a record of three fields names its innermost lambda
+    ///   after its outermost, below an arm body's binder recorded first.
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_record_names_every_field_binder_in_order`
     #[spec(
         captures: [before = find(&self.binders, opener)],
         ensures: find(&self.binders, opener) == match before {
@@ -2002,9 +2002,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a payload placed before a recorded result falls in
-    ///   order, and a binder placed twice keeps its first origin.
-    /// - witness: `origin::tests::a_placed_record_keeps_its_order_and_its_first_name`
+    /// - hypothesis: L3 — a scope's return clause and each operation clause,
+    ///   minting or not, record their binders where they are written.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
     #[spec(
         captures: before = self
             .clause_binders
@@ -2051,8 +2051,8 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_binder`].
+    /// - witness: `gandr-surface-lowering::lower::tests::each_named_binder_records_where_its_name_is_written`
     /// - witness: `origin::tests::an_elaborated_node_answers_where_its_source_is_written`
-    /// - witness: `origin::tests::a_placed_record_keeps_its_order_and_its_first_name`
     #[spec(ensures: |ret| ret == find(&self.binders, opener))]
     #[inline]
     pub fn binder(
@@ -2073,9 +2073,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fork answers its child's channel, and another
-    ///   computation answers nothing.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — the seat exchange's fork answers the child's end's
+    ///   name, not the parent's.
+    /// - witness: `gandr-surface-lowering::lower::session::tests::the_seat_exchange_lowers_both_ends`
     #[spec(
         requires: self.forks.last().is_none_or(|&(held, _)| held < fork),
         captures: [before = self.forks.len(), written = name.clone()],
@@ -2104,7 +2104,7 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_fork`].
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::session::tests::the_seat_exchange_lowers_both_ends`
     #[spec(ensures: |ret| ret == self.forks
         .get(self.forks.partition_point(|&(held, _)| held < fork))
         .filter(|&&(held, _)| held == fork)
@@ -2137,9 +2137,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a statement recorded twice is held twice, each time
-    ///   at its own names.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a statement between two magmas records both names
+    ///   where they are written.
+    /// - witness: `gandr-surface-lowering::lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     #[spec(
         captures: before = self.sides.len(),
         ensures: self.sides.len() == before.saturating_add(1)
@@ -2180,8 +2180,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a list moved along a universe path records its motive
+    ///   where it is written.
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     #[spec(
         captures: before = self.motives.len(),
         ensures: self.motives.len() == before.saturating_add(1)
@@ -2218,9 +2219,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the labels are held in the order recorded, and a
-    ///   relabel or a rebuilt action keeps their count.
-    /// - witness: `origin::tests::a_relabel_moves_every_label_naming_its_node`
+    /// - hypothesis: L3 — a record type's, a record's and a dependent arrow's
+    ///   labels are each recorded with what they label.
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::each_label_names_what_it_labels`
     /// - witness: `origin::tests::a_rebuilt_action_carries_its_endpoint_and_arm_labels_and_no_other`
     #[spec(
         captures: before = self.labels.len(),
@@ -2246,9 +2247,11 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both labels of a replaced value answer at its
-    ///   replacement, and the label of another value stays.
-    /// - witness: `origin::tests::a_relabel_moves_every_label_naming_its_node`
+    /// - hypothesis: L3 — a use instantiated at a binder a later instantiation
+    ///   replaces answers at the value that replaced both; an endpoint written
+    ///   in an offer the lowering rebuilds answers at the rebuilt offer.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+    /// - witness: `gandr-surface-lowering::lower::session::tests::each_endpoint_answers_at_its_action`
     #[spec(
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before,
@@ -2332,8 +2335,8 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — `-5` records the operator span beside the digit span.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
     #[spec(
         captures: before = self.covers.len(),
         ensures: self.covers.len() == before.saturating_add(1),
@@ -2370,8 +2373,10 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — `Cons`'s `S(n)` is framed under the family's
+    ///   parameter and the constructor's fields, and each type before it under
+    ///   the binders before that type.
+    /// - witness: `gandr-surface-lowering::lower::native::tests::each_data_type_and_stated_index_is_framed_under_its_telescope_931`
     #[spec(
         captures: before = self.framed.len(),
         ensures: self.framed.len() == before.saturating_add(1),
@@ -2409,9 +2414,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an omitted implicit answers at its hole, and another
-    ///   value answers nothing.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — a call omitting both implicits of `first` records one
+    ///   hole per implicit, each naming it.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     #[spec(
         requires: self.omitted.last().is_none_or(|&(held, _)| held < id),
         captures: before = self.omitted.len(),
@@ -2438,7 +2443,7 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_omitted`].
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     #[spec(ensures: |ret| match self.omitted.binary_search_by_key(&id, |&(held, _)| held) {
         | Ok(at) => matches!(ret, Maybe::Present(found) if self.omitted.get(at).is_some_and(|&(_, ref held)| held == found)),
         | Err(_) => matches!(ret, Maybe::Absent(origin::Absent::Unrecorded)),
@@ -2469,8 +2474,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a manifest component named in a later component and
+    ///   an instance's type named past its module each answer at their head.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_type_head_answers_at_what_it_stands_for`
     #[spec(
         captures: before = self.stand_ins.len(),
         ensures: self.stand_ins.len() == before.saturating_add(1),
@@ -2506,8 +2512,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — each of the three relations, written infix and as
+    ///   `Iso(A, B)`, answers at the type it lowers to.
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
     #[spec(
         captures: before = self.relations.len(),
         ensures: self.relations.len() == before.saturating_add(1),
@@ -2543,8 +2550,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a model type and a manifest one, each fixing its
+    ///   sorts in the order written, answer at the record they lower to.
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_model_type_is_recorded_as_written_2246`
     #[spec(
         captures: before = self.models.len(),
         ensures: self.models.len() == before.saturating_add(1),
@@ -2581,8 +2589,10 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a base written by a type member's name answers at the
+    ///   record it lowers to, and a record written in place answers at none; a
+    ///   top-level member's definition answers at the type it mints.
+    /// - witness: `gandr-surface-lowering::lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
     #[spec(
         captures: before = self.members.len(),
         ensures: self.members.len() == before.saturating_add(1),
@@ -2619,8 +2629,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a scope over `State` fixed at `Integer` answers at
+    ///   the scope with the theory and its one sort as written.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
     #[spec(
         captures: before = self.scope_theories.len(),
         ensures: self.scope_theories.len() == before.saturating_add(1),
@@ -2657,8 +2668,10 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a row over `State` fixed at `Integer`, labelled and
+    ///   whole, answers at the returner with the theory, its one sort and the
+    ///   instance's region; a host interface beside it records nothing.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_records_the_theory_and_sorts_each_entry_fixes_3230`
     #[spec(
         captures: before = self.row_theories.len(),
         ensures: self.row_theories.len() == before.saturating_add(1),
@@ -2683,8 +2696,10 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the pair recorded is the one the list holds.
-    /// - witness: `origin::tests::each_side_list_holds_its_records_in_the_order_written`
+    /// - hypothesis: L3 — a scope naming `Passing` and one writing no `with`
+    ///   each answer at the scope as written, and one writing its clauses is
+    ///   absent.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_the_model_answering_it_3196`
     #[spec(
         captures: before = self.scope_answers.len(),
         ensures: self.scope_answers.len() == before.saturating_add(1),
@@ -2734,9 +2749,9 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a scope's law answers at its rule, and another rule
-    ///   of the scope answers nothing.
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - hypothesis: L3 — a scope owing a rule and a stated law answers each
+    ///   name at its place.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
     #[spec(ensures: self.scope_laws.contains_key(&(scope, rule)))]
     #[inline]
     pub fn record_scope_law(
@@ -2761,7 +2776,7 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_scope_law`].
-    /// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
     #[spec(ensures: |ret| match self.scope_laws.get(&(scope, rule)) {
         | Some(held) => ret == Maybe::Present(held),
         | None => ret == Maybe::Absent(origin::Absent::Unrecorded),
@@ -2900,9 +2915,9 @@ pub enum Labelled
 /// - executable: none — the record holds no table to resolve its pattern in.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the two alternatives of an or-pattern are two records
-///   that share their arm and body.
-/// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+/// - hypothesis: L3 — a match with an or-pattern keeps one record per
+///   alternative, in source order.
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArmOrigin
 {
@@ -2939,8 +2954,10 @@ pub enum PatternReading
 /// - executable: none — the record holds no table to resolve its pattern in.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a pattern's span is held with its reading.
-/// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+/// - hypothesis: L3 — a match over a constructor pattern, a word pattern and a
+///   binder keeps one span per written pattern and one per constructor name and
+///   letter.
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PatternSpan
 {
@@ -2966,9 +2983,9 @@ pub struct PatternSpan
 /// - executable: none — the record holds no tree to check its nodes against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a match's record keeps its arms, its spans and the
-///   absence of its scrutinee as recorded.
-/// - witness: `origin::tests::a_keyed_record_answers_at_its_key_alone`
+/// - hypothesis: L3 — a match over nested constructors, a binder and a hole
+///   keeps each pattern's shape and arm.
+/// - witness: `gandr-surface-lowering::lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaseOrigin
 {
@@ -3413,267 +3430,6 @@ mod tests
         assert_eq!(
             second_table.declaration(first_token),
             Maybe::Present(second_origin)
-        );
-    }
-
-    /// Each keyed record answers at its own key and nowhere else: a variable's
-    /// binding, a fork's channel, an omitted implicit, a scope's law and a
-    /// match's arms, the match's family named once.
-    #[test]
-    fn a_keyed_record_answers_at_its_key_alone()
-    {
-        use alloc::string::String;
-        use alloc::vec;
-        use alloc::vec::Vec;
-
-        use gandr_core_term::pattern::Pattern;
-        use gandr_core_term::pattern::Patterns;
-        use gandr_kernel_term::ConstantIndex;
-        use gandr_kernel_term::RuleIndex;
-        use gandr_kernel_term::cover::Cover;
-
-        use super::ArmOrigin;
-        use super::CaseOrigin;
-        use super::ChannelName;
-        use super::Omitted;
-        use super::PatternReading;
-        use super::PatternSpan;
-        use super::scrutinised;
-
-        let mut arena = CoreArena::new();
-        let mut table = OriginTable::new();
-        let [variable, other] = [(); 2].map(|()| arena.value_unit());
-        let unit = arena.value_unit();
-        let [fork, match_root, unmatched] = [(); 3].map(|()| arena.computation_return(unit));
-        let binder = at(crate::fixture::node(2_usize)).span();
-        table.record_binding(variable, binder);
-        assert_eq!(table.binding(variable), Maybe::Present(binder));
-        assert_eq!(
-            table.binding(other),
-            Maybe::Absent(origin::Absent::Unrecorded),
-            "a value with no record keeps no binder"
-        );
-
-        table.record_fork(fork, ChannelName::from(String::from("child")));
-        assert_eq!(table.fork(fork).map(AsRef::as_ref), Maybe::Present("child"));
-        assert_eq!(
-            table.fork(match_root),
-            Maybe::Absent(origin::Absent::Unrecorded)
-        );
-
-        let omitted = Omitted::Implicit {
-            function: String::from("first"),
-            implicit: String::from("a"),
-        };
-        table.record_omitted(variable, omitted.clone());
-        assert_eq!(table.omitted(variable), Maybe::Present(&omitted));
-        assert_eq!(
-            table.omitted(other),
-            Maybe::Absent(origin::Absent::Unrecorded)
-        );
-
-        let law = gandr_theory_levitation::Name::from("unitL");
-        table.record_scope_law(fork, RuleIndex::from(1_usize), law.clone());
-        assert_eq!(
-            table.scope_law(fork, RuleIndex::from(1_usize)),
-            Maybe::Present(&law)
-        );
-        assert_eq!(
-            table.scope_law(fork, RuleIndex::from(0_usize)),
-            Maybe::Absent(origin::Absent::Unrecorded),
-            "another rule of the same scope answers nothing"
-        );
-
-        let mut patterns = Patterns::new();
-        let [left, right] = [(); 2].map(|()| patterns.mint(Pattern::Binder));
-        let case = CaseOrigin {
-            written: crate::fixture::node(5_usize),
-            scrutinee: crate::fixture::node(6_usize),
-            scrutinised: Maybe::Absent(scrutinised::Absent::Columns),
-            patterns,
-            arms: vec![
-                ArmOrigin {
-                    arm: 0,
-                    pattern: left,
-                    written: crate::fixture::node(7_usize),
-                    body: crate::fixture::node(8_usize),
-                },
-                ArmOrigin {
-                    arm: 0,
-                    pattern: right,
-                    written: crate::fixture::node(9_usize),
-                    body: crate::fixture::node(8_usize),
-                },
-            ],
-            spans: vec![PatternSpan {
-                pattern: left,
-                span: at(crate::fixture::node(7_usize)).span(),
-                reading: PatternReading::Matched,
-            }],
-            labelled: Vec::new(),
-            cover: Cover::new(),
-        };
-        table.record_case(match_root, case.clone());
-        assert_eq!(
-            table.case(match_root),
-            Maybe::Present(&case),
-            "an or-pattern's two alternatives share their arm and body"
-        );
-        assert_eq!(
-            table.case(unmatched),
-            Maybe::Absent(origin::Absent::Unrecorded),
-            "a computation that is no match root answers nothing"
-        );
-        table.record_elimination(match_root, ConstantIndex::from(4_usize));
-        table.record_elimination(match_root, ConstantIndex::from(5_usize));
-        assert_eq!(
-            table.elimination(match_root),
-            Maybe::Present(ConstantIndex::from(4_usize)),
-            "the first family named for a case wins"
-        );
-    }
-
-    /// A record that arrives out of mint order is placed where its key falls,
-    /// and a key placed twice keeps its first name.
-    #[test]
-    fn a_placed_record_keeps_its_order_and_its_first_name()
-    {
-        use super::ClauseBinder;
-        use super::ClausePlace;
-
-        let mut arena = CoreArena::new();
-        let mut table = OriginTable::new();
-        let unit = arena.value_unit();
-        let [outer, middle, inner] = [(); 3].map(|()| arena.computation_return(unit));
-        table.record_binder(inner, at(crate::fixture::node(3_usize)));
-        table.place_binder(outer, at(crate::fixture::node(1_usize)));
-        table.place_binder(middle, at(crate::fixture::node(2_usize)));
-        table.place_binder(outer, at(crate::fixture::node(9_usize)));
-        assert_eq!(
-            table.binders(),
-            [
-                (outer, at(crate::fixture::node(1_usize))),
-                (middle, at(crate::fixture::node(2_usize))),
-                (inner, at(crate::fixture::node(3_usize))),
-            ],
-            "each lambda falls in place among the recorded ones, the first name kept"
-        );
-        assert_eq!(
-            table.binder(middle),
-            Maybe::Present(at(crate::fixture::node(2_usize)))
-        );
-
-        let payload = ClauseBinder::Payload(ClausePlace::from(0_usize));
-        table.place_clause_binder(
-            inner,
-            ClauseBinder::Result,
-            at(crate::fixture::node(4_usize)),
-        );
-        table.place_clause_binder(outer, payload, at(crate::fixture::node(5_usize)));
-        table.place_clause_binder(
-            inner,
-            ClauseBinder::Result,
-            at(crate::fixture::node(8_usize)),
-        );
-        assert_eq!(
-            table.clause_binders(),
-            [
-                ((outer, payload), at(crate::fixture::node(5_usize))),
-                (
-                    (inner, ClauseBinder::Result),
-                    at(crate::fixture::node(4_usize))
-                ),
-            ],
-            "each clause binder falls in place, the first one written kept"
-        );
-    }
-
-    /// Each side list holds what is recorded in it, in the order recorded, a
-    /// node recorded twice held twice.
-    #[test]
-    fn each_side_list_holds_its_records_in_the_order_written()
-    {
-        use alloc::string::String;
-        use alloc::vec;
-
-        use gandr_core_term::effect::capability::Region;
-        use gandr_core_term::identity::Relation;
-
-        use super::RowTheory;
-        use super::ScopeAnswer;
-        use super::WrittenModel;
-
-        let mut arena = CoreArena::new();
-        let mut table = OriginTable::new();
-        let statement = arena.value_unit();
-        let transport = arena.computation_return(statement);
-        let ty = arena.value_type_unit();
-        let returner = arena.comp_type_returner(ty);
-        let [first, second] = [1_usize, 2].map(|position| at(crate::fixture::node(position)));
-        table.record_sides(statement, [first, second]);
-        table.record_sides(statement, [second, first]);
-        assert_eq!(
-            table.sides(),
-            [(statement, [first, second]), (statement, [second, first])],
-            "a statement recorded again is held again, at its own names"
-        );
-        table.record_motive(transport, first);
-        assert_eq!(table.motives(), [(transport, first)]);
-        table.record_cover(first.span(), second.span());
-        assert_eq!(table.covers(), [(first.span(), second.span())]);
-        table.record_framed(first.span(), vec![String::from("n")]);
-        assert_eq!(table.framed(), [(first.span(), vec![String::from("n")])]);
-        table.record_stand_in(ty, first);
-        assert_eq!(table.stand_ins(), [(ty, first)]);
-        table.record_relation(ty, Relation::Equivalence);
-        assert_eq!(table.relations(), [(ty, Relation::Equivalence)]);
-        let model = WrittenModel {
-            theory: gandr_theory_levitation::Name::from("State"),
-            sorts: vec![(gandr_theory_levitation::Name::from("S"), ty)],
-        };
-        table.record_model(ty, model.clone());
-        assert_eq!(table.models(), [(ty, model.clone())]);
-        table.record_member(ty, second);
-        assert_eq!(table.members(), [(ty, second)]);
-        table.record_scope_theory(transport, model.clone());
-        assert_eq!(table.scope_theories(), [(transport, model.clone())]);
-        let entry = RowTheory {
-            region: Region::Held,
-            model,
-        };
-        table.record_row_theory(returner, entry.clone());
-        assert_eq!(table.row_theories(), [(returner, entry)]);
-        table.record_scope_answer(transport, ScopeAnswer::InScope);
-        assert_eq!(table.scope_answers(), [(transport, ScopeAnswer::InScope)]);
-    }
-
-    /// A relabel moves every label naming one node to its replacement and
-    /// leaves the others as they were.
-    #[test]
-    fn a_relabel_moves_every_label_naming_its_node()
-    {
-        use super::Label;
-        use super::Labelled;
-
-        let mut arena = CoreArena::new();
-        let mut table = OriginTable::new();
-        let [replaced, kept, replacement] = [(); 3].map(|()| arena.value_unit());
-        let label = |position: usize, labelled| Label {
-            span: at(crate::fixture::node(position)).span(),
-            labelled,
-        };
-        table.record_label(label(1, Labelled::Value(replaced)));
-        table.record_label(label(2, Labelled::Value(kept)));
-        table.record_label(label(3, Labelled::Value(replaced)));
-        table.relabel(&Labelled::Value(replaced), &Labelled::Value(replacement));
-        assert_eq!(
-            table.labels(),
-            [
-                label(1, Labelled::Value(replacement)),
-                label(2, Labelled::Value(kept)),
-                label(3, Labelled::Value(replacement)),
-            ],
-            "both uses of the replaced value answer at its replacement"
         );
     }
 

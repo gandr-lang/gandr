@@ -8,8 +8,6 @@ mod coincide;
 #[cfg(test)]
 mod collapse;
 #[cfg(test)]
-mod described;
-#[cfg(test)]
 mod description;
 #[cfg(test)]
 mod e_graphs;

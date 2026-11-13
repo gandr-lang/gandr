@@ -1489,7 +1489,7 @@ pub enum Tail<'form>
 /// # Adequacy
 /// - hypothesis: L3 — `comp`'s sort binders bind and its morphisms do not;
 ///   every binder of `unitL` binds.
-/// - witness: `model::tests::each_binder_a_later_sort_or_the_tail_names_is_dependent`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[spec(ensures: |ret| ret.len() == telescope.len())]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -1624,7 +1624,7 @@ fn binder_vars<'term>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`dependence`].
-/// - witness: `model::tests::each_binder_a_later_sort_or_the_tail_names_is_dependent`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[spec(
     captures: before = into.len(),
     ensures: into.len() >= before,
@@ -1652,7 +1652,7 @@ fn sort_vars<'term>(
 /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands back
 ///   one theory, its two sorts and two operations, and the model its instance
 ///   checks against.
-/// - witness: `tests::model::a_lowered_theory_reads_its_description_and_its_model`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_lowered_theory_exposes_its_description_and_its_model`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LoweredTheory<'module>
 {
