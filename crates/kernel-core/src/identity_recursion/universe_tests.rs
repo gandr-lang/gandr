@@ -46,7 +46,7 @@ use crate::replay::ReplayBudget;
 #[test]
 fn a_universe_fibre_reads_its_data_codes_through_the_admission_log()
 {
-    let mut environment = crate::env::Environment::new();
+    let mut environment = crate::Environment::new();
     for _ in 0_u8 .. 2_u8 {
         let mut staging = environment.stage();
         let kind = staging

@@ -37,6 +37,13 @@ use gandr_kernel_term::ValueType;
 
 use crate::env::OutstandingCount;
 
+pub(crate) mod flow;
+pub(crate) mod identity;
+pub(crate) mod path;
+pub(crate) mod replay;
+pub(crate) mod ruled;
+pub(crate) mod session;
+
 /// The head former of a value type, as an error payload names it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ValueTypeHead
@@ -811,7 +818,7 @@ pub enum KernelError
     /// A ruled definition's body is not its rules' decision tree: its shape is
     /// not a fixpoint over cases, or a leaf is the right side of no rule
     /// whose left side matches it.
-    OperationBodyUnlinked(crate::ruled::OperationBodyFault),
+    OperationBodyUnlinked(crate::error::ruled::OperationBodyFault),
     /// A type of words is not the words its free cells mint: a cell is not a
     /// loop at one closed point of an earlier parameterless data declaration,
     /// or the declaration's table or rules are not the mint, or an earlier type
@@ -908,13 +915,13 @@ pub enum KernelError
         component: gandr_kernel_term::Component,
     },
     /// Session formation or finite relation replay failed.
-    Session(crate::session::SessionError),
+    Session(crate::error::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
-    Path(crate::path_universe::PathError),
+    Path(crate::error::path::PathError),
     /// A native universe-flow classifier or session simulation failed.
-    Flow(crate::flow_universe::FlowError),
+    Flow(crate::error::flow::FlowError),
     /// An element-identity formation, introduction or elimination failed.
-    Identity(crate::element_identity::IdentityError),
+    Identity(crate::error::identity::IdentityError),
     /// A value variable's de Bruijn index escaped the typing context.
     UnboundVariable
     {
@@ -1516,23 +1523,23 @@ mod tests
     use super::NonInferableForm;
     use super::RegisterFault;
     use super::ValueTypeMismatch;
-    use crate::element_identity::EndpointSide;
-    use crate::element_identity::IdentityError;
-    use crate::env::Environment;
+    use crate::Environment;
     use crate::env::OutstandingCount;
-    use crate::flow_universe::Boundary;
-    use crate::flow_universe::Family;
-    use crate::flow_universe::FlowError;
-    use crate::flow_universe::PatternPosition as FlowPattern;
+    use crate::error::flow::Boundary;
+    use crate::error::flow::Family;
+    use crate::error::flow::FlowError;
+    use crate::error::flow::PatternPosition as FlowPattern;
+    use crate::error::identity::EndpointSide;
+    use crate::error::identity::IdentityError;
+    use crate::error::path::Direction;
+    use crate::error::path::PathError;
+    use crate::error::path::PatternPosition as PathPattern;
+    use crate::error::replay::KernelVerdict;
+    use crate::error::ruled::OperationBodyFault;
+    use crate::error::session::SessionError;
     use crate::identity_recursion::Component;
     use crate::identity_recursion::EvaluationSide;
     use crate::levels::LevelContext;
-    use crate::path_universe::Direction;
-    use crate::path_universe::PathError;
-    use crate::path_universe::PatternPosition as PathPattern;
-    use crate::replay::KernelVerdict;
-    use crate::ruled::OperationBodyFault;
-    use crate::session::SessionError;
     use crate::witness::comp_type_witness;
     use crate::witness::value_type_witness;
 

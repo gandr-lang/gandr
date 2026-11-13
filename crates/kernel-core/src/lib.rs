@@ -45,7 +45,7 @@
 //! | condition                                              | where it is discharged                                                                             |
 //! | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 //! | static dispatch on a null-object seam that compiles away | [`check::check_declaration_with_memo`] is generic; every memo interaction is behind a compile-time activity constant |
-//! | the public admission entry cannot reach the opt-in entry | [`env::Environment::add_decl`] takes no memo and builds its own; the memo-taking entry admits nothing and returns no receipt |
+//! | the public admission entry cannot reach the opt-in entry | [`Environment::add_decl`] takes no memo and builds its own; the memo-taking entry admits nothing and returns no receipt |
 //! | a lifetime of one check call                            | [`check::check_declaration`] builds a memo and drops it. The environment's session keeps only content outcomes, each under its judgement's parameters |
 //! | the content-only key                                    | [`encoding`] and [`support`]: the id of the goal's record in the session's content table — direction, obligation, expected type, and the read binders as pairs of position and type — arena-free |
 //! | storage and policy outside the kernel crate             | the seam crate owns the table and its ordering; this crate holds a type parameter                  |
@@ -668,7 +668,7 @@
 //!   Mathematics_ 16 (2016), 875–897. `arXiv:1312.6454` — a section of a
 //!   cellular sheaf, which agrees on each meet of two cells.
 //!
-//! [`Environment::add_decl`]: crate::env::Environment::add_decl
+//! [`Environment::add_decl`]: crate::Environment::add_decl
 
 // Module documentation that predates the shape lint: 94 headings outside the
 // vocabulary, 41 decision records, 17 issue references and 41 budgets exceeded.
@@ -698,6 +698,7 @@ pub mod descent;
 pub mod element_identity;
 pub mod encoding;
 pub mod env;
+mod environment;
 pub mod error;
 pub mod flow_universe;
 pub mod fork;
@@ -707,6 +708,7 @@ mod hashed;
 pub mod higher_field;
 pub mod identity_recursion;
 pub mod levels;
+pub(crate) mod occurrence;
 pub mod path_universe;
 pub mod presented;
 pub mod replay;
@@ -753,18 +755,18 @@ pub use crate::encoding::encode_rewrite;
 pub use crate::encoding::support_key;
 pub use crate::env::Admission;
 pub use crate::env::AdmittedDeclaration;
-pub use crate::env::ArtifactRefusal;
-pub use crate::env::AxiomReport;
 pub use crate::env::CheckedId;
 pub use crate::env::Entries;
 pub use crate::env::EntryKind;
-pub use crate::env::Environment;
 pub use crate::env::OutstandingContent;
 pub use crate::env::OutstandingCount;
 pub use crate::env::StagedDeclaration;
 pub use crate::env::Staging;
-pub use crate::env::places;
 pub use crate::env::tallied;
+pub use crate::environment::ArtifactRefusal;
+pub use crate::environment::AxiomReport;
+pub use crate::environment::Environment;
+pub use crate::environment::places;
 pub use crate::error::CompTypeHead;
 pub use crate::error::CompTypeMismatch;
 pub use crate::error::CompTypeWitness;

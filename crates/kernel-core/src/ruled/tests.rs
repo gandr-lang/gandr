@@ -26,9 +26,9 @@ use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::Value;
 use quenchant_shape::shape::Maybe;
 
+use crate::Environment;
 use crate::env::Admission;
 use crate::env::CheckedId;
-use crate::env::Environment;
 use crate::error::KeepRefusal;
 use crate::error::KernelError;
 use crate::replay::EngineClaim;

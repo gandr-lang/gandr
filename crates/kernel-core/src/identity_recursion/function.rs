@@ -29,6 +29,8 @@ use super::same_type;
 use crate::conv::Convertibility;
 use crate::conv::equal_values;
 use crate::encoding::ContentTable;
+pub use crate::error::identity::Component;
+pub use crate::error::identity::EvaluationSide;
 use crate::path_universe::Dialogue;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -42,21 +44,6 @@ use crate::rewrite::substitute_computation;
 
 #[cfg(test)]
 pub mod tests;
-
-/// A zero-based position in kernel-generated constructor coverage.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Component(pub usize);
-
-/// Which endpoint's evaluation failed to replay.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EvaluationSide
-{
-    /// The source function.
-    Left,
-    /// The target function.
-    Right,
-}
 
 /// An untrusted returned value and the engine trace that must justify it.
 #[derive(Clone, Debug, Eq, PartialEq)]

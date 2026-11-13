@@ -63,9 +63,9 @@ use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::TermArena;
 use quenchant_shape::shape::Maybe;
 
-use crate::check::occurrence::Accessibility;
-use crate::check::occurrence::Stratification;
-use crate::check::occurrence::Variance;
+use crate::occurrence::Accessibility;
+use crate::occurrence::Stratification;
+use crate::occurrence::Variance;
 
 /// The kernel's build identity, which `build.rs` writes.
 const KERNEL_BUILD: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/kernel-build"));

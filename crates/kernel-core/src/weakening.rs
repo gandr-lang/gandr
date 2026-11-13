@@ -75,8 +75,8 @@ pub enum Read
 /// - hypothesis: L3 — a declaration whose check reads an entry its content does
 ///   not name is refused at that position, and a check after many unrelated
 ///   entries reads as many entries as after few.
-/// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
-/// - witness: `env::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
+/// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
 #[derive(Debug, Default)]
 pub struct Support
 {
@@ -110,7 +110,7 @@ impl Support
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Support`].
-    /// - witness: `env::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
+    /// - witness: `environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
     #[spec(ensures: self.stamps.len() >= usize::from(length) && self.joined != 0 && self.joined & 1 == 0)]
     pub fn open(
         &mut self,
@@ -193,7 +193,7 @@ impl Support
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Support`].
-    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     pub fn read(
         &self,
         position: ConstantIndex,

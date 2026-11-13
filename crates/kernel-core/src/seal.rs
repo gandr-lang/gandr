@@ -673,10 +673,10 @@ mod tests
     use gandr_kernel_term::ValueType;
 
     use super::unseal;
+    use crate::Environment;
     use crate::conv::Convertibility;
     use crate::conv::convertible_value_types;
     use crate::encoding::content_digest;
-    use crate::env::Environment;
 
     #[test]
     fn only_a_manifest_atom_unfolds()
