@@ -751,9 +751,6 @@ fn glob(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope
 {
-    /// Only the rows under the policy's floor: a pull request, whose rows at
-    /// and over it hotpath Cloud judges.
-    Band,
     /// Every row: a push, which hotpath Cloud does not judge.
     All,
 }
@@ -885,10 +882,10 @@ impl fmt::Display for Conclusion
     /// trivial.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a regressed band and a clear one; a swapped word
-    ///   posts the other check.
-    /// - witness: `tests::judge::a_regressed_band_writes_a_failed_check`
-    /// - witness: `tests::judge::a_clear_band_writes_a_passed_check`
+    /// - hypothesis: L3. A regressed push and a clear one. A swapped word posts
+    ///   the other check.
+    /// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
+    /// - witness: `tests::judge::a_clear_push_writes_a_passed_check`
     #[inline]
     fn fmt(
         &self,
@@ -970,10 +967,9 @@ fn rows_of<'runs>(
 /// - ensures: a row is judged in each family the policy fails the check on when
 ///   every run of both sides carries it, the policy does not ignore it, either
 ///   side's median calls reach `min_calls`, and the larger median share reaches
-///   [`SHARE_FLOOR`]; under [`Scope::Band`] only a row under the policy's floor
-///   is judged. It regresses on each judged metric whose median grew by at
-///   least `min_percent_change`, and, under the floor, whose least run on the
-///   commit exceeds the greatest on the base.
+///   [`SHARE_FLOOR`]. It regresses on each judged metric whose median grew by
+///   at least `min_percent_change`, and, under the floor, whose least run on
+///   the commit exceeds the greatest on the base.
 /// - provides: the check's verdict.
 /// - fails: never.
 /// - panics: none.
@@ -981,12 +977,10 @@ fn rows_of<'runs>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a measured regression of a row under the floor over
-///   disjoint runs, an equal one over overlapping runs, a row over the floor
-///   under both scopes, an ignored row, a rare row and a row under 0.1 %;
-///   dropping the disjointness, the floor, the scope, the ignore or the call
-///   floor changes a verdict.
+///   disjoint runs, an equal one over overlapping runs, a row over the floor on
+///   its median, an ignored row, a rare row and a row under 0.1 %. Dropping the
+///   disjointness, the floor, the ignore or the call floor changes a verdict.
 /// - witness: `judge::tests::a_sub_floor_row_regresses_only_over_disjoint_runs`
-/// - witness: `judge::tests::a_row_over_the_floor_is_the_clouds_on_a_pull_request`
 /// - witness: `judge::tests::an_ignored_or_rare_row_is_not_judged`
 #[must_use]
 #[inline]
@@ -997,6 +991,7 @@ pub fn judge(
     head: &[Run],
 ) -> Verdict
 {
+    let Scope::All = scope;
     let walls = |runs: &[Run]| {
         Spread::of(
             runs.iter()
@@ -1030,7 +1025,7 @@ pub fn judge(
                 .max(median(&after, Reading::Share))
                 .map_or(Share(0), |Amount(share)| Share(share));
             let banded = share < policy.floor;
-            if share < SHARE_FLOOR || (scope == Scope::Band && !banded) {
+            if share < SHARE_FLOOR {
                 continue;
             }
             let moves: Vec<Move> = judged
@@ -1555,7 +1550,7 @@ mod tests
     fn a_sub_floor_row_regresses_only_over_disjoint_runs()
     {
         let (base, head) = measured();
-        let verdict = judge(&policy!(TIMING), Scope::Band, &base, &head);
+        let verdict = judge(&policy!(TIMING), Scope::All, &base, &head);
         assert_eq!(
             names(&verdict),
             ["gandr_storage_schema::store::edit::Store::delete_part"],
@@ -1571,7 +1566,7 @@ mod tests
             at!("78", "23", "190"),
             at!("91", "27", "188"),
         ]);
-        let verdict = judge(&policy!(TIMING), Scope::Band, &overlapping, &head);
+        let verdict = judge(&policy!(TIMING), Scope::All, &overlapping, &head);
         assert_eq!(
             names(&verdict),
             Vec::<String>::new(),
@@ -1582,22 +1577,11 @@ mod tests
             Conclusion::Success,
             "no finding, no failure"
         );
-    }
-
-    #[test]
-    fn a_row_over_the_floor_is_the_clouds_on_a_pull_request()
-    {
-        let (base, _) = measured();
         let slower = side(&[
             at!("81", "25", "205"),
             at!("80", "25", "207"),
             at!("82", "25", "186"),
         ]);
-        assert_eq!(
-            names(&judge(&policy!(TIMING), Scope::Band, &base, &slower)),
-            Vec::<String>::new(),
-            "hotpath Cloud judges a row over the floor on a pull request"
-        );
         assert_eq!(
             names(&judge(&policy!(TIMING), Scope::All, &base, &slower)),
             ["gandr_storage_schema::store::edit::Store::add_part"],
@@ -1614,7 +1598,7 @@ mod tests
             "min_percent_total = 1\nignore = [\"gandr_storage_schema::*edit::Store::delete_part\"]\n",
         ));
         assert_eq!(
-            names(&judge(&ignoring, Scope::Band, &base, &head)),
+            names(&judge(&ignoring, Scope::All, &base, &head)),
             Vec::<String>::new()
         );
         let prefix = policy!(TIMING.replace(
@@ -1622,13 +1606,13 @@ mod tests
             "min_percent_total = 1\nignore = [\"gandr_storage_schema::store::edit\"]\n",
         ));
         assert_eq!(
-            names(&judge(&prefix, Scope::Band, &base, &head)).len(),
+            names(&judge(&prefix, Scope::All, &base, &head)).len(),
             1,
             "a pattern matches the whole name"
         );
         let rare = policy!(TIMING.replace("min_calls = 20", "min_calls = 400"));
         assert_eq!(
-            names(&judge(&rare, Scope::Band, &base, &head)),
+            names(&judge(&rare, Scope::All, &base, &head)),
             Vec::<String>::new(),
             "384 calls a side is under 400"
         );
@@ -1667,7 +1651,7 @@ mod tests
             base: &below,
             benchmark: "store-timing-band",
         };
-        let verdict = judge(&policy!(TIMING), Scope::Band, &base, &head);
+        let verdict = judge(&policy!(TIMING), Scope::All, &base, &head);
         let summary = Summary {
             subject,
             verdict: &verdict,
@@ -1709,7 +1693,7 @@ mod tests
             summary.contains("Wall time `5.14 ms → 5.14 ms` **+0%**"),
             "the wall line: {summary}"
         );
-        let clear = judge(&policy!(TIMING), Scope::Band, &base, &base);
+        let clear = judge(&policy!(TIMING), Scope::All, &base, &base);
         let written = Summary {
             subject,
             verdict: &clear,
