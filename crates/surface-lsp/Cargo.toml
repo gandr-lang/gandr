@@ -47,6 +47,9 @@ gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-lsp-base.workspace = true
+gandr-surface-lsp-core.workspace = true
+gandr-surface-lsp-diagnostics.workspace = true
+gandr-surface-lsp-navigation.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
@@ -70,6 +73,7 @@ expect-test.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
 gandr-surface-lsp = { workspace = true, features = ["client"] }
+gandr-surface-lsp-core = { workspace = true, features = ["fixture"] }
 gandr-workflow-sweep.workspace = true
 percent-encoding.workspace = true
 proptest.workspace = true
@@ -81,7 +85,7 @@ default = []
 client = []
 # A document's recheck timed and its allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
+hotpath = ["dep:hotpath", "gandr-surface-lsp-diagnostics/hotpath", "hotpath/hotpath"]
 # The instrument's layers: each recheck runs at the sink its client chose,
 # and the session compiles its recording sinks. While a watcher follows the
 # activity, each job of a recheck marks the activity ring, and one thread of
@@ -91,6 +95,8 @@ instrument = [
   "dep:gandr-core-fork",
   "gandr-core-fork/instrument",
   "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp-core/instrument",
+  "gandr-surface-lsp-diagnostics/instrument",
   "gandr-surface-session/instrument",
 ]
 

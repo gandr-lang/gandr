@@ -1,0 +1,65 @@
+[package]
+name = "gandr-surface-lsp-diagnostics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The diagnostics of gandr's language server: the recheck of a document, the kernel tiers, the repairs and fills of a hole, and the checkpoints a save keeps"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "lsp"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# A recheck runs a document's session over the incremental checker's memory
+# checkpoint store and the record plane's memory block store, through the
+# dispatcher's check verb, and maps the diagnostics model's reports onto the
+# protocol. A declaration's kernel tier is keyed by the kernel's constant
+# index. The corpus names the sources a sweep reads. `hotpath` profiles a
+# recheck for the benchmark report. With the `instrument` feature, each
+# recheck runs at the sink its client chose.
+[dependencies]
+anodized.workspace = true
+gandr-core-fork = { workspace = true, optional = true }
+gandr-core-incremental.workspace = true
+gandr-kernel-term.workspace = true
+gandr-storage-records.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-lsp-base.workspace = true
+gandr-surface-lsp-core.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-session.workspace = true
+gandr-surface-syntax.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# The corpus sweeps draw their samples through the sweep crate; the tests of
+# the core's heads read its fixtures.
+[dev-dependencies]
+gandr-surface-lsp-core = { workspace = true, features = ["fixture"] }
+gandr-workflow-sweep.workspace = true
+
+[features]
+default = []
+# A document's recheck timed and its allocations counted for the benchmark
+# report.
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# The instrument's layers, as in `gandr-surface-lsp`.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp-core/instrument",
+  "gandr-surface-session/instrument",
+]
+
+[lints]
+workspace = true

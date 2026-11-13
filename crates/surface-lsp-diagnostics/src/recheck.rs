@@ -1277,7 +1277,14 @@ impl Admitting
     }
 }
 
-impl<Poll> Job for (Admitting, &Poll)
+/// An admission to run, with what polls its retirement: the job a hub's
+/// subscription runs.
+///
+/// # Specification
+/// trivial.
+pub struct PolledAdmitting<'poll, Poll>(pub Admitting, pub &'poll Poll);
+
+impl<Poll> Job for PolledAdmitting<'_, Poll>
 where
     Poll: Retirement,
 {
@@ -1299,7 +1306,7 @@ where
     where
         Sink: Instrument,
     {
-        let (admitting, retirement) = self;
+        let PolledAdmitting(admitting, retirement) = self;
         admitting.run(retirement, sink)
     }
 }

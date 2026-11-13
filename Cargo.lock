@@ -1799,6 +1799,9 @@ dependencies = [
  "gandr-surface-lowering",
  "gandr-surface-lsp",
  "gandr-surface-lsp-base",
+ "gandr-surface-lsp-core",
+ "gandr-surface-lsp-diagnostics",
+ "gandr-surface-lsp-navigation",
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-render-remote",
@@ -1835,6 +1838,81 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gandr-surface-lsp-core"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "gandr-core-fork",
+ "gandr-core-incremental",
+ "gandr-storage-records",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-format",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-lsp-base",
+ "gandr-surface-parser",
+ "gandr-surface-pretty",
+ "gandr-surface-render-remote",
+ "gandr-surface-session",
+ "gandr-surface-syntax",
+ "gandr-workflow-sweep",
+ "pathdiff",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde_json",
+]
+
+[[package]]
+name = "gandr-surface-lsp-diagnostics"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-fork",
+ "gandr-core-incremental",
+ "gandr-kernel-term",
+ "gandr-storage-records",
+ "gandr-surface-corpus",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-lsp-base",
+ "gandr-surface-lsp-core",
+ "gandr-surface-parser",
+ "gandr-surface-pretty",
+ "gandr-surface-render-remote",
+ "gandr-surface-session",
+ "gandr-surface-syntax",
+ "gandr-workflow-sweep",
+ "hotpath",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gandr-surface-lsp-navigation"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-incremental",
+ "gandr-storage-records",
+ "gandr-surface-dispatcher",
+ "gandr-surface-lowering",
+ "gandr-surface-lsp-base",
+ "gandr-surface-lsp-core",
+ "gandr-surface-parser",
+ "gandr-surface-pretty",
+ "gandr-surface-render-remote",
+ "gandr-surface-session",
+ "gandr-surface-syntax",
+ "pulldown-cmark",
+ "quenchant-anodized",
+ "quenchant-shape",
  "serde_json",
 ]
 

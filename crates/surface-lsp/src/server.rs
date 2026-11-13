@@ -301,6 +301,7 @@ use crate::quiet::paced;
 use crate::reading::Reading;
 use crate::recheck::DocumentSession;
 use crate::recheck::Finished;
+use crate::recheck::PolledAdmitting;
 use crate::recheck::Readings;
 use crate::recheck::Rechecked;
 use crate::recheck::Taken;
@@ -4508,7 +4509,7 @@ impl Server
                         admissions
                             .generations
                             .submit(uri.clone(), submission, move |watch| {
-                                match subscription.run((admitting, watch)) {
+                                match subscription.run(PolledAdmitting(admitting, watch)) {
                                     Polled::Whole(finished) => Ok(finished),
                                     Polled::Retired(retired, ()) => Err(retired),
                                 }
@@ -9893,11 +9894,17 @@ impl Judging
         Poll: Retirement,
     {
         let subscription = core::mem::replace(&mut self.subscription, Subscription::SILENT);
-        subscription.run((self, retirement))
+        subscription.run(PolledJudging(self, retirement))
     }
 }
 
-impl<Poll> Job for (Judging, &Poll)
+/// A judgement to run, with what polls its retirement.
+///
+/// # Specification
+/// trivial.
+struct PolledJudging<'poll, Poll>(Judging, &'poll Poll);
+
+impl<Poll> Job for PolledJudging<'_, Poll>
 where
     Poll: Retirement,
 {
@@ -9918,7 +9925,7 @@ where
     where
         Sink: Instrument,
     {
-        let (judging, retirement) = self;
+        let PolledJudging(judging, retirement) = self;
         if let Demand::Retired(retired) = retirement.demand() {
             return Polled::Retired(retired, ());
         }

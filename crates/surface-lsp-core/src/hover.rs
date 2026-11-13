@@ -283,7 +283,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn table(&self) -> &TypeTable
+    pub const fn table(&self) -> &TypeTable
     {
         &self.table
     }
@@ -292,7 +292,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn names(&self) -> &Names
+    pub const fn names(&self) -> &Names
     {
         &self.names
     }
@@ -301,7 +301,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn signatures(&self) -> &Signatures
+    pub const fn signatures(&self) -> &Signatures
     {
         &self.signatures
     }
@@ -312,7 +312,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn opened(
+    pub fn opened(
         &self,
         referent: &Referent,
     ) -> Option<&Path>
@@ -327,7 +327,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn source_path(
+    pub fn source_path(
         &self,
         source: SourceIndex,
     ) -> Option<&Path>
@@ -340,7 +340,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn opened_paths(&self) -> &[PathBuf]
+    pub fn opened_paths(&self) -> &[PathBuf]
     {
         &self.opened
     }
@@ -350,7 +350,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn targets(&self) -> &[ImportTarget]
+    pub fn targets(&self) -> &[ImportTarget]
     {
         &self.targets
     }
@@ -371,7 +371,7 @@ impl Hovering
     ///   in each.
     /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
     #[spec(ensures: |ret| ret.is_none_or(|source| self.source_path(source) == Some(path)))]
-    pub(crate) fn source_at(
+    pub fn source_at(
         &self,
         path: &Path,
     ) -> Option<SourceIndex>
@@ -387,7 +387,7 @@ impl Hovering
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn found(&self) -> &Found
+    pub fn found(&self) -> &Found
     {
         self.found.get_or_init(|| Found::of(&self.table))
     }
