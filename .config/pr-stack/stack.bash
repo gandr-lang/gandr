@@ -118,8 +118,10 @@ stack_top() {
 # `stack_top` whose branch is fetched (`joins.jq`, #7188). A stacked change
 # waits on the top's stack, so it stacks only above a top that can merge,
 # with no hold, and only when its own commits and the top's stack change a
-# path in common. The shared paths reach jq on its input, one a line, so no
-# argument grows with them. Prints `{act, why}`.
+# path in common. A generated file that `.config/replay/artifacts.json`
+# names counts as no shared path (`shared.jq`, #7207): the later change
+# writes it again when its rebase replays it. The shared paths reach jq on
+# its input, one a line, so no argument grows with them. Prints `{act, why}`.
 top_joins() {
   local own=$1 top=$2 base number fork state
   base=$(jq -r .head <<< "$top")
@@ -128,8 +130,12 @@ top_joins() {
   state=$(top_reading "$number") || return 1
   comm -12 <(git diff --no-renames --name-only "$fork" HEAD | sort) \
     <(git diff --no-renames --name-only "$(git merge-base "origin/$trunk" "origin/$base")" "origin/$base" | sort) \
-    | jq -nRc --arg state "$state" --argjson held "$(jq '.held // false' <<< "$top")" \
-      '$state | fromjson | {draft, held: $held, merge, mergeable, shared: [inputs]}' \
+    | jq -nRc --slurpfile rows "$pr_stack_dir/../replay/artifacts.json" \
+      --slurpfile crates <(git ls-tree -d --name-only HEAD crates/ | jq -Rc 'ltrimstr("crates/")' | jq -sc .) \
+      '{shared: [inputs], rows: $rows[0], crates: $crates[0]}' \
+    | jq -c -f "$pr_stack_dir/shared.jq" \
+    | jq -c --arg state "$state" --argjson held "$(jq '.held // false' <<< "$top")" \
+      '. as $shared | $state | fromjson | {draft, held: $held, merge, mergeable, shared: $shared}' \
     | jq -c -f "$pr_stack_dir/joins.jq"
 }
 

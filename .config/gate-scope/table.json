@@ -175,7 +175,7 @@
       ],
       "check:gate-rows": [".config/claims/", ".config/gate-rows/", ".config/mise/"],
       "check:gh-budget": [".config/", ".github/"],
-      "check:gh-direct": [".config/", ".github/"],
+      "check:gh-direct": [".config/", ".github/", "crates/"],
       "check:hooks": ["prek.toml"],
       "check:host-lock": [".config/cases/", ".config/mise/"],
       "check:hotpath": [
@@ -228,7 +228,10 @@
         ".config/mise/disabled-tools.bash",
         ".config/mise/tasks/mise-tasks-ci.toml",
         ".config/pr-stack/",
-        ".github/workflows/"
+        ".config/replay/",
+        ".github/workflows/",
+        "crates/",
+        "ledger/references.sql"
       ],
       "check:pr-title": [".config/pr-title/"],
       "check:publish": [".cargo/", "Cargo.lock", "Cargo.toml", "crates/"],
@@ -279,7 +282,8 @@
         ".config/cases/",
         ".config/gh/budget.bash",
         ".config/pr-stack/",
-        ".config/replay/"
+        ".config/replay/",
+        "crates/"
       ],
       "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
       "check:service": [".config/cases/", ".config/service/"],

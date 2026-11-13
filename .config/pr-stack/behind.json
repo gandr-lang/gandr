@@ -28,6 +28,20 @@
     "output": "stacked on main, past #1"
   },
   {
+    "name": "#7207: a top whose stack shares only a generated file with the branch, the references ledger, takes no change above it, so the branch opens on the trunk by itself",
+    "top": "behind",
+    "lower": "generated",
+    "reading": {
+      "queued": true,
+      "draft": false,
+      "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
+      "checks": "PENDING",
+      "age": 60
+    },
+    "output": "stacked on main, past #1"
+  },
+  {
     "name": "#6760: a top not queued, BEHIND with its checks pending, is restacked onto the trunk, and the branch stacks on it",
     "top": "behind",
     "lower": "apart",

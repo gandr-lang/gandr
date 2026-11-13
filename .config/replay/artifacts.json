@@ -57,5 +57,19 @@
     "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/{crate}/Cargo.toml",
     "stale": [100],
     "record": "UPDATE_EXPECT=1 cargo nextest run --manifest-path crates/{crate}/Cargo.toml"
+  },
+  {
+    "name": "the crate map",
+    "paths": ["ledger/crates.dot", "ledger/README.md"],
+    "inputs": ["Cargo.toml", "crates/", "ledger/concerns.sql"],
+    "check": "mise run check:crate-map",
+    "record": "mise run ledger:crate-map"
+  },
+  {
+    "name": "the references ledger",
+    "paths": ["ledger/references.sql"],
+    "inputs": ["crates/", "corpus/", ".config/references/"],
+    "check": "mise run check:references",
+    "record": "mise run ledger:references"
   }
 ]
