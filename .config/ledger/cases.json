@@ -63,5 +63,48 @@
     "bodies": ["The lower entry.\n\nCloses #2", "Fixes #3"],
     "exit": 1,
     "stderr": "owing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on a `/// - owes:` line that owes the rest (#2635)\nledger check FAILED"
+  },
+  {
+    "name": "#6876: an old spelling whose removing issue reads open holds",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse", "3": "OPEN\tfalse" },
+    "superseded": [
+      {
+        "rule": "data_declaration",
+        "surface": "bare_type_params",
+        "issue": 3,
+        "reason": "an old head"
+      }
+    ],
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "#6876: an old spelling whose removing issue reads closed is refused",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse", "3": "CLOSED\tfalse" },
+    "superseded": [
+      {
+        "rule": "data_declaration",
+        "surface": "bare_type_params",
+        "issue": 3,
+        "reason": "an old head"
+      }
+    ],
+    "exit": 1,
+    "stderr": "ledger/syntax.json: the old spelling `bare_type_params` of `data_declaration` names #3 to remove it, and #3 does not stay open after this change; remove the spelling, or name the open issue that removes it\nledger check FAILED"
+  },
+  {
+    "name": "#6876: a pull request body that closes the removing issue of an old spelling the grammar keeps is refused",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse", "3": "OPEN\tfalse" },
+    "superseded": [
+      {
+        "rule": "data_declaration",
+        "surface": "bare_type_params",
+        "issue": 3,
+        "reason": "an old head"
+      }
+    ],
+    "body": "Closes #3.",
+    "exit": 1,
+    "stderr": "ledger/syntax.json: the old spelling `bare_type_params` of `data_declaration` names #3 to remove it, and #3 does not stay open after this change; remove the spelling, or name the open issue that removes it\nledger check FAILED"
   }
 ]

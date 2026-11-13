@@ -9,6 +9,8 @@
 # its `body` the pull request's body as `pr:open` gives it, its `bodies` the
 # bodies of a merge group's entries in the directory the queue gives (#6883),
 # and its `event` the body as a pull request's CI event holds it (#6767).
+# The scratch syntax ledger holds no old spelling, and a case's `superseded`
+# replaces its rows (#6876).
 # `check.bash` runs there, and its exit status and standard error are the
 # case's. The base of the change that a gate names is not the scratch
 # repository's, so the harness drops it.
@@ -33,6 +35,7 @@ git init --quiet "$repo"
 sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
 printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest.' '///' '/// - owes: #2' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
+echo '{"superseded": []}' > "$repo/ledger/syntax.json"
 git -C "$repo" add .
 git -C "$repo" -c user.name=ledger -c user.email=ledger@example.invalid -c commit.gpgSign=false \
   commit --quiet -m 'chore(repo): ledger base'
@@ -76,6 +79,9 @@ while IFS= read -r case; do
   for number in $(jq -r '.answers | keys[]' <<< "$case"); do
     jq -r --arg n "$number" '.answers[$n]' <<< "$case" > "$scratch/answers/$number"
   done
+  if jq -e 'has("superseded")' <<< "$case" > /dev/null; then
+    jq '{superseded: .superseded}' <<< "$case" > "$repo/ledger/syntax.json"
+  fi
   status=0
   env=(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/answers")
   if jq -e 'has("body")' <<< "$case" > /dev/null; then

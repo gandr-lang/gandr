@@ -2735,6 +2735,8 @@ INSERT INTO purpose VALUES('surface-grammar','model::Provenance','struct','Names
 INSERT INTO purpose VALUES('surface-grammar','model::Regex','struct','Holds a regular expression over grammar symbols, stored flat in pre-order, so a rule''s form is walked without a pointer to its own type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RegexShape','enum','Names the root of a regex subtree with its children as views, so a form is read one level deep.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RegexView','struct','Holds a borrowed subtree of a regex, so a form is walked by offset.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','model::Removal','enum','Names whether an adaptation record keeps an old spelling and which issue removes it, so the syntax ledger marks each old spelling.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','model::RemovalIssue','struct','Names the tracker issue that removes an old spelling, so check:ledger reads its state.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Rule','struct','Holds one grammar rule, a named form of one sort at one precedence, so a grammar is built from its rules.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::RuleName','struct','Names one grammar rule, so a rule is named in a refusal or a provenance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Sort','enum','Names a grammar sort, the closed set of things a hole can stand for, so a rule and a mold are keyed by it.',NULL,'fits','sound',NULL);

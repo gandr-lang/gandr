@@ -409,5 +409,7 @@
     {"label":"||","molds":1,"opening":1,"rules":1},
     {"label":"~","molds":1,"opening":1,"rules":1},
     {"label":"≅","molds":1,"opening":1,"rules":1}
+  ],
+  "superseded": [
   ]
 }

@@ -17,8 +17,10 @@
 # line stating the rest, and a `/// - owes: #n` references line naming an
 # open issue that owes it (crates/surface-corpus/README.md § Comments,
 # #4900).
-# The shared sources it was drawn from stay in `corpus`. Every finding is
-# printed before the gate fails.
+# The shared sources it was drawn from stay in `corpus`. An old spelling that
+# the grammar still parses, a row of `superseded` in `ledger/syntax.json`,
+# names an open issue that removes it (#6876). Every finding is printed
+# before the gate fails.
 #
 # The issues the rows rest on are read through `gh` in one GraphQL query of
 # aliases, a hundred issues a request (#4263): a check that read each issue
@@ -172,6 +174,7 @@ numbers=$({
   done < <(sqlite3 -separator '|' "$db" "
     SELECT id, exemplar FROM feature
     WHERE status = 'partial' AND exemplar IS NOT NULL;")
+  jq -r '.superseded[].issue' ledger/syntax.json
 } | tr -d ' #' | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')
 # shellcheck disable=SC2086
 [[ -z $numbers ]] || read_issues $numbers
@@ -232,6 +235,16 @@ done < <(sqlite3 -separator '|' "$db" "
   SELECT id, exemplar FROM feature
   WHERE status = 'partial' AND exemplar LIKE '%.gandr'
   ORDER BY id;")
+# An old spelling that the grammar still parses names the issue that removes
+# it (#6876). That issue stays open after this change, or the spelling has no
+# removal and the row is refused.
+while IFS=$'\t' read -r rule surface number; do
+  read_issue "$number"
+  if ! keeps_owing "$number"; then
+    echo "ledger/syntax.json: the old spelling \`$surface\` of \`$rule\` names #$number to remove it, and #$number does not stay open after this change; remove the spelling, or name the open issue that removes it" >&2
+    failed=1
+  fi
+done < <(jq -r '.superseded[] | [.rule, .surface, (.issue | tostring)] | @tsv' ledger/syntax.json)
 if (( failed )); then
   echo 'ledger check FAILED' >&2
   exit 1
