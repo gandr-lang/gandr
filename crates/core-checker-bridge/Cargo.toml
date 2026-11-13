@@ -23,6 +23,7 @@ publish.workspace = true
 # slot's resolution and readmission for the benchmark report.
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
 gandr-core-checker-base.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-nbe.workspace = true

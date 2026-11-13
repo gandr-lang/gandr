@@ -25,10 +25,13 @@
 //! readmits whole. Each extent is then the one a whole readmission draws.
 //!
 //! The witnesses of a formation are seeds of their first reader, and each
-//! keeps by its own key. A readmission whose edit touches that reader
-//! readmits whole, and so does a walk that places a formation elsewhere.
-//! The name of a witness counts the formations formed before it, so it
-//! cannot move until #7245 names it by its key.
+//! keeps by its own key. Each takes the name of its formation's content, so
+//! it can move. No reader names a witness by its kernel position, so a
+//! witness that retires edits each reader of its formation, and the first of
+//! them that crosses again forms it under the same name. A formation that
+//! reads a constant by its kernel position keeps no witness past the run,
+//! until #7261 names that constant by its admission key. A walk that places a
+//! kept formation below a later reader readmits whole.
 //!
 //! # References
 //!
@@ -82,11 +85,11 @@ quenchant_shape::reason_enum! {
             /// The record or the report has no content key for each of its
             /// declarations.
             Unkeyed,
-            /// An edit touches the first reader of a formation's witness.
-            /// The name of a witness counts the formations formed before
-            /// it, so the witness cannot move until #7245 names it by its
-            /// key.
-            Formed,
+            /// A formation past the run reads a datatype, an atom or an
+            /// axiom by its kernel position. A walk that keeps numbers these
+            /// otherwise than a whole readmission, so the formation's name
+            /// differs.
+            Positional,
             /// A seal of the report does not stay whole. The match keeps no
             /// record entry for one of its abstract types, or the reach
             /// holds a position of a record seal. An atom or a member that
@@ -467,21 +470,23 @@ fn leading_run(
 ///   handed on ([`Environment::handed_on`]) with the reach of the edit retired:
 ///   the entries of each record declaration past the run that the in-order
 ///   match leaves, of each declaration whose certificates unfold an edited one,
-///   of each seed whose first reader is edited, and of each entry that reads
-///   one of them. The first reader of a seed is the record declaration whose
-///   entry ranks least past the seed. The run keeps its ranks. Each kept place
-///   `p` past the run holds the record's entry it keeps, and that entry's
-///   kernel entry and the seeds below it, in their order of rank in the record,
-///   take the ranks from `p × STRIDE` on. The positions hold the module
-///   positions and the core bodies of the run alone, and no retired seed.
+///   of each seed whose first reader is edited, of each reader of a formation
+///   whose witness retires, and of each entry that reads one of them. The first
+///   reader of a seed is the record declaration whose entry ranks least past
+///   the seed. The run keeps its ranks. Each kept place `p` past the run holds
+///   the record's entry it keeps, and that entry's kernel entry and the seeds
+///   below it, in their order of rank in the record, take the ranks from `p ×
+///   STRIDE` on. The positions hold the module positions and the core bodies of
+///   the run alone, no retired seed and no formation whose witness retires;
+///   each reader of a kept formation stands at its module position in `report`.
 ///   Nothing past the run is read, retired or ranked when the run holds every
 ///   declaration of the record and of `report`. The record is unchanged.
 /// - fails: never; absent as [`keeping::Absent::Unkeyed`] without keys, as
-///   [`keeping::Absent::Formed`] when the reach holds a witness of a formation,
-///   as [`keeping::Absent::Sealed`] when a seal of `report` does not stay
-///   whole, as [`keeping::Absent::Unresumed`] when the record does not resume
-///   the run, and as [`keeping::Absent::Unranked`] when the kernel refuses the
-///   retirement or the rank rewrite.
+///   [`keeping::Absent::Positional`] when the name of a formation past the run
+///   reads a kernel position, as [`keeping::Absent::Sealed`] when a seal of
+///   `report` does not stay whole, as [`keeping::Absent::Unresumed`] when the
+///   record does not resume the run, and as [`keeping::Absent::Unranked`] when
+///   the kernel refuses the retirement or the rank rewrite.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -537,6 +542,17 @@ pub(super) fn keeping<'record>(
             || SourceRank::from(0_usize),
             |top| SourceRank::from(usize::from(top).saturating_add(1)),
         );
+    // The name of a formation past the run that reads a kernel position
+    // differs in a walk that keeps.
+    if record.positions.formations.values().any(|formation| {
+        matches!(formation.reads, super::NameReads::Position)
+            && formation
+                .witnesses
+                .iter()
+                .any(|&witness| rank_in_record(witness).is_some_and(|rank| rank >= floor))
+    }) {
+        return Maybe::Absent(keeping::Absent::Positional);
+    }
     let past = record.readmitted.get(run ..).unwrap_or_default();
     // Each declaration of the edited source past the run takes the first
     // record declaration past the run with its key that no earlier one took,
@@ -595,9 +611,21 @@ pub(super) fn keeping<'record>(
     // entry ranks least past it. A crossing that read a kept seed first took
     // it below itself, so the position of a seed no longer says where it
     // stands. A seed below the floor is read first in the run. The
-    // witnesses of a formation stand below their first reader too, and each
-    // keeps by its own key, which its content gives.
-    let witnesses = || record.positions.formations.values().flatten().copied();
+    // witnesses of a formation stand below their first reader too. No reader
+    // names a witness by its kernel position, so a witness that retires
+    // edits each reader of its formation. The first of them that crosses
+    // again forms it where a whole readmission forms it, under its name.
+    let readers_of: BTreeMap<ConstantIndex, &BTreeSet<ConstantIndex>> = record
+        .positions
+        .formations
+        .values()
+        .flat_map(|formation| {
+            formation
+                .witnesses
+                .iter()
+                .map(move |&witness| (witness, &formation.readers))
+        })
+        .collect();
     let seeds: BTreeSet<ConstantIndex> = record
         .positions
         .native
@@ -605,7 +633,7 @@ pub(super) fn keeping<'record>(
         .chain(record.positions.assumed.values())
         .copied()
         .chain(record.positions.models.iter().map(|model| model.position))
-        .chain(witnesses())
+        .chain(readers_of.keys().copied())
         .filter(|&seed| rank_in_record(seed).is_some_and(|rank| rank >= floor))
         .collect();
     let owner_by_rank: BTreeMap<SourceRank, ConstantIndex> = owner_at
@@ -671,6 +699,16 @@ pub(super) fn keeping<'record>(
                 moved = true;
             }
         }
+        // Each reader of a formation whose witness retires is edited.
+        for (witness, readers) in &readers_of {
+            if reach.contains(witness) || retiring.contains(witness) {
+                for &reader in *readers {
+                    if edited.insert(reader) {
+                        pending.push(reader);
+                    }
+                }
+            }
+        }
         // Each pass adds an edited declaration or a retired seed, or ends.
         if pending.is_empty() && !moved {
             break reach;
@@ -728,12 +766,6 @@ pub(super) fn keeping<'record>(
         {
             return Maybe::Absent(keeping::Absent::Sealed);
         }
-    }
-    // A witness moves only with an edit of its first reader. Its name counts
-    // the formations formed before it, so it cannot move until #7245 names
-    // it by its key.
-    if witnesses().any(|witness| reach.contains(&witness)) {
-        return Maybe::Absent(keeping::Absent::Formed);
     }
     // Each kept declaration's seeds take the ranks from its place's on, in
     // the order they were seeded, which is their order of rank in the record,
@@ -793,8 +825,35 @@ pub(super) fn keeping<'record>(
         let _past = positions.admitted.split_off(&entry.constant);
     }
     // The patched types formed name nodes of the record's arena; each
-    // crossing reads its formation again by its key.
-    positions.formed = BTreeSet::new();
+    // crossing reads its formation again by its key. A formation whose
+    // witness retires forms again at the first of its readers that crosses.
+    // Each kept reader takes its module position in the edited source.
+    positions.formed = BTreeMap::new();
+    let renames: BTreeMap<ConstantIndex, ConstantIndex> = kept_from
+        .into_iter()
+        .filter(|&(old, _)| !edited.contains(&old))
+        .collect();
+    let first_past = past.first().map(|entry| entry.constant);
+    positions.formations.retain(|_, formation| {
+        !formation
+            .witnesses
+            .iter()
+            .any(|witness| reach.contains(witness))
+    });
+    for formation in positions.formations.values_mut() {
+        formation.readers = formation
+            .readers
+            .iter()
+            .filter_map(|&old| {
+                if first_past.is_none_or(|first| old < first) {
+                    Some(old)
+                }
+                else {
+                    renames.get(&old).copied()
+                }
+            })
+            .collect();
+    }
     if !reach.is_empty() {
         positions
             .native
@@ -811,10 +870,7 @@ pub(super) fn keeping<'record>(
         positions,
         leading,
         held: kept,
-        renames: kept_from
-            .into_iter()
-            .filter(|&(old, _)| !edited.contains(&old))
-            .collect(),
+        renames,
         sealed,
     })
 }

@@ -2165,7 +2165,7 @@ impl Crossed
                 presentations: positions.presentations.clone(),
                 formed: positions.formed.clone(),
                 // The keys name content in the table, so the two carry on
-                // together; a resumed formation's export name counts past them.
+                // together.
                 formations: positions.formations.clone(),
                 content: positions.content.clone(),
                 // A walk that misplaces a formation records nothing.
@@ -3624,6 +3624,7 @@ where
                 (crossing, base, held(self.source, constant)),
             ) {
                 Ok(staged) => {
+                    self.positions.reads(constant, &staged.formations);
                     let staged_as = staged.declaration.declaration().clone();
                     let started = self.stopwatch.start();
                     return match self.environment.release(staged.declaration) {
@@ -4496,7 +4497,10 @@ where
                 vouch,
                 (crossing, base, held(source, constant)),
             ) {
-                Ok(staged) => break staged,
+                Ok(staged) => {
+                    positions.reads(constant, &staged.formations);
+                    break staged;
+                },
                 Err(Unstaged::Unseeded(seed)) => {
                     if let Err(outcome) =
                         seeded(environment, arena, source, positions, &seed, vouch)
@@ -4704,6 +4708,8 @@ struct Staged
     image: Maybe<gandr_kernel_term::ValueId, staged::Absent>,
     /// The replayed verdicts of its certificates.
     replayed: Vec<Replayed>,
+    /// The patched types whose formation crossed that the erasure read.
+    formations: Vec<ValueTypeId>,
 }
 
 quenchant_shape::reason_enum! {
@@ -4791,7 +4797,7 @@ enum Seed
     Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
     Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
     Unstaged::Unseeded(Seed::Model(..)) => !source.handled.is_empty() || *source.rows != crate::program::Rows::default(),
-    Unstaged::Unseeded(Seed::Formation(at)) => !positions.formed.contains(&at),
+    Unstaged::Unseeded(Seed::Formation(at)) => !positions.formed.contains_key(&at),
     Unstaged::Unseeded(Seed::Ahead(_)) => matches!(environment.next_rank(), Maybe::Present(_)),
 }))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -4813,7 +4819,7 @@ where
     let next = ConstantIndex::from(environment.entries().len());
     let ahead = positions.ahead(environment);
     let mut staging = environment.stage();
-    let (erased, unseeded, covered) = {
+    let (erased, unseeded, covered, formations) = {
         let restated = match offer {
             Offer::Definition { restated, .. } => restated,
             Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
@@ -4840,7 +4846,7 @@ where
                 Vec::new()
             },
         };
-        (erased, erasure.unseeded, covered)
+        (erased, erasure.unseeded, covered, erasure.formations)
     };
     let (erased, replayed) = match (erased, unseeded) {
         (Ok(crossing), _) => crossing,
@@ -4984,6 +4990,7 @@ where
         declaration,
         image,
         replayed,
+        formations,
     })
 }
 
@@ -5201,7 +5208,10 @@ where
                     vouch,
                     (&crossing, base, held(source, constant)),
                 ) {
-                    Ok(member) => staged.push(member),
+                    Ok(member) => {
+                        positions.reads(constant, &member.formations);
+                        staged.push(member);
+                    },
                     Err(unstaged) => {
                         // The block crosses whole or not at all: what staged is
                         // abandoned, latest first, and every member shares the
@@ -5730,7 +5740,10 @@ fn model_name(
 /// formation's key is the content of the record of the fixed values, then of
 /// the record of each round's meets, as the kernel would check each
 /// ([`formation_key`]). A patched type whose key an earlier formation holds
-/// crosses no witness: the kernel replayed that formation already.
+/// crosses no witness: the kernel replayed that formation already. Each
+/// witness takes the name of the formation's content ([`formation_segment`]),
+/// so a formation takes one name wherever and whenever a walk forms it,
+/// unless a record reads a constant by its kernel position ([`NameReads`]).
 ///
 /// # Specification
 /// - requires: `at` names a patched type of `arena`, whose base is a record
@@ -5738,11 +5751,10 @@ fn model_name(
 /// - ensures: on success `positions.formed` holds `at` and
 ///   `positions.formations` holds its key with each witness's position. The
 ///   kernel admitted every witness of a key no earlier formation held, and
-///   nothing for a key one held. In a walk that keeps, a formation that the
-///   place misplaces sets `positions.misplaced` and admits nothing: a kept
-///   formation whose witnesses rank past the next rank, or a new one below a
-///   kept witness. Otherwise the outcome of the first witness that did not
-///   cross.
+///   nothing for a key one held. In a walk that keeps, a formation whose name
+///   reads a kernel position, or a kept formation whose witnesses rank past the
+///   next rank, sets `positions.misplaced` and admits nothing. Otherwise the
+///   outcome of the first witness that did not cross.
 /// - fails: as above.
 /// - panics: none.
 ///
@@ -5812,49 +5824,50 @@ where
             round.iter().map(|(label, &value)| (label, value)),
         )?);
     }
-    let key = formation_key(
+    let (key, reads) = formation_key(
         environment,
         arena,
         (source, &mut *positions),
         &records,
         vouch,
     )?;
-    // A walk that keeps sets a next rank for each place. A kept formation
-    // whose witnesses rank past it stands below a later reader than a whole
-    // readmission places it. A new formation below a kept one takes another
-    // ordinal than a whole readmission gives. Either way the walk readmits
-    // whole, until #7245 names a witness by its key.
-    if let Maybe::Present(next) = environment.next_rank() {
-        let ahead = |witnesses: &Vec<ConstantIndex>| {
-            witnesses.iter().any(|&witness| {
-                environment
-                    .entries()
-                    .get(usize::from(witness))
-                    .map(gandr_kernel_core::AdmittedDeclaration::rank)
-                    .is_some_and(|rank| rank > next)
-            })
-        };
-        let misplaced = positions
-            .formations
-            .get(&key)
-            .map_or_else(|| positions.formations.values().any(ahead), ahead);
-        if misplaced {
-            positions.misplaced = true;
-            return Err(invariant());
-        }
+    // A walk that keeps sets a next rank for each place. It numbers the
+    // constants otherwise than a whole readmission, so a name that reads a
+    // kernel position differs. A kept formation whose witnesses rank past
+    // the next rank stands below a later reader than a whole readmission
+    // places it. Either way the walk readmits whole.
+    if let Maybe::Present(next) = environment.next_rank()
+        && (matches!(reads, NameReads::Position)
+            || positions.formations.get(&key).is_some_and(|formation| {
+                formation.witnesses.iter().any(|&witness| {
+                    environment
+                        .entries()
+                        .get(usize::from(witness))
+                        .map(gandr_kernel_core::AdmittedDeclaration::rank)
+                        .is_some_and(|rank| rank > next)
+                })
+            }))
+    {
+        positions.misplaced = true;
+        return Err(invariant());
     }
     if positions.formations.contains_key(&key) {
-        positions.formed.insert(at);
+        positions.formed.insert(at, key);
         return Ok(());
     }
-    let ordinal = crate::alloc::format!("{}", positions.formations.len());
+    let named = formation_segment(&positions.content, &key)?;
     let name = |part: &str, round: usize| {
-        let round = crate::alloc::format!("{round}");
+        let text = |text: &str| gandr_kernel_term::NameSegment::from_text(text.into());
         StructuredName::from(
-            ["formation", ordinal.as_str(), part, round.as_str()]
-                .into_iter()
-                .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
-                .collect::<Vec<_>>(),
+            [
+                text("formation"),
+                Some(named.clone()),
+                text(part),
+                text(&crate::alloc::format!("{round}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
         )
     };
     let mut witnesses = Vec::with_capacity(rounds.len().saturating_mul(2));
@@ -5927,8 +5940,12 @@ where
         )?;
         witnesses.push(restriction);
     }
-    positions.formations.insert(key, witnesses);
-    positions.formed.insert(at);
+    positions.formed.insert(at, key.clone());
+    positions.formations.insert(key, Formation {
+        witnesses,
+        readers: BTreeSet::new(),
+        reads,
+    });
     Ok(())
 }
 
@@ -5980,7 +5997,10 @@ fn record_of<'label>(
 /// Each record is staged and then abandoned, so the kernel admits nothing.
 /// The table compares the words of each record it files, so two keys are
 /// equal exactly when the checks they name have equal content; a digest only
-/// selects where the table looks.
+/// selects where the table looks. The table names each constant a record
+/// reads as the environment admitted it first, so a definition reads by its
+/// content. A record that reads a datatype, an atom or an axiom reads it by
+/// its kernel position, and the key says so.
 ///
 /// # Specification
 /// - requires: as [`stage`].
@@ -5995,19 +6015,20 @@ fn record_of<'label>(
 /// # Adequacy
 /// - hypothesis: L3 — as [`formed`].
 /// - witness: `gandr-core-checker-base::tests::module::equal_patched_types_share_one_formation_5748`
-#[spec(captures: entries = environment.entries().len(), ensures: |ret| environment.entries().len() == entries && ret.as_ref().map_or(true, |key| key.len() == records.len()))]
+#[spec(captures: entries = environment.entries().len(), ensures: |ret| environment.entries().len() == entries && ret.as_ref().map_or(true, |keyed| keyed.0.len() == records.len()))]
 fn formation_key<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
     (source, positions): (Source<'_>, &mut Positions),
     records: &[FormationRecord],
     vouch: &Vouch,
-) -> Result<Vec<gandr_kernel_core::ContentId>, Outcome>
+) -> Result<(Vec<gandr_kernel_core::ContentId>, NameReads), Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let invariant = || Outcome::Refused(Refusal::MachineInvariant);
     let mut key = Vec::with_capacity(records.len());
+    let mut reads = NameReads::Content;
     for record in records {
         let next = ConstantIndex::from(environment.entries().len());
         let base = ConstantIndex::from(usize::from(next).saturating_add(1));
@@ -6038,15 +6059,92 @@ where
             environment.abandon(staged.declaration);
             return Err(invariant());
         };
+        if gandr_kernel_core::env::references(environment.arena(), staged.declaration.declaration())
+            .iter()
+            .any(|&constant| {
+                environment
+                    .entries()
+                    .get(usize::from(constant))
+                    .is_some_and(|entry| {
+                        matches!(
+                            entry.key_name(),
+                            gandr_kernel_core::encoding::ConstantName::Position
+                        )
+                    })
+            })
+        {
+            reads = NameReads::Position;
+        }
+        positions.content.0.name_constants(environment.entries());
         key.push(gandr_kernel_core::support_key(
-            &mut positions.content,
+            &mut positions.content.0,
             environment.arena(),
             gandr_kernel_core::SupportGoal::CheckValue(body, declared),
             gandr_kernel_core::encoding::Telescope::Whole(&[]),
         ));
         environment.abandon(staged.declaration);
     }
-    Ok(key)
+    Ok((key, reads))
+}
+
+/// The name segment of the formation whose key is `key`: the 64 lowercase
+/// hexadecimal digits of the BLAKE3 digest of each record's name, in order.
+///
+/// A record's name reads its content and never its position in the table, so
+/// one formation takes one segment in each readmission that forms it.
+///
+/// # Specification
+/// - requires: `key` holds ids of `table`.
+/// - ensures: on success the segment of 64 lowercase hexadecimal digits of the
+///   digest of the names of `key`'s records, in order.
+/// - fails: [`Refusal::MachineInvariant`] when the table holds no name for a
+///   record of `key`.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Refused`] with [`Refusal::MachineInvariant`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`formed`].
+/// - witness: `bridge::tests::a_formation_takes_one_name_in_each_readmission_7245`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|segment| AsRef::<str>::as_ref(segment).len() == 64))]
+fn formation_segment(
+    table: &FormationTable,
+    key: &[gandr_kernel_core::ContentId],
+) -> Result<gandr_kernel_term::NameSegment, Outcome>
+{
+    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let mut hasher = blake3::Hasher::new();
+    for &id in key {
+        let Maybe::Present(name) = table.0.name(id)
+        else {
+            return Err(invariant());
+        };
+        let bytes: [u8; 32] = name.into();
+        hasher.update(&bytes);
+    }
+    let digest = hasher.finalize();
+    gandr_kernel_term::NameSegment::from_text(alloc::string::String::from(digest.to_hex().as_str()))
+        .ok_or_else(invariant)
+}
+
+/// The content table of the formation keys, which names each record by its
+/// content, for the length of one readmission and the records after it.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+struct FormationTable(gandr_kernel_core::ContentTable);
+
+impl Default for FormationTable
+{
+    /// A table that names its records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self(gandr_kernel_core::ContentTable::named())
+    }
 }
 
 /// Stage and admit the definition `body : declared`, with `crossing` naming
@@ -6238,21 +6336,45 @@ struct Positions
     /// The presented types the kernel admitted, whose terms its replay reads
     /// by their normal forms.
     presentations: Presentations,
-    /// The patched types whose formation the kernel replayed, by core node:
-    /// each crosses its witnesses once, or stands on an equal formation's
-    /// ([`formed`]).
-    formed: BTreeSet<ValueTypeId>,
-    /// The key of each formation whose witnesses the kernel admitted: the
-    /// content of its records ([`formation_key`]), with the kernel position
-    /// of each witness in admission order.
-    formations: BTreeMap<Vec<gandr_kernel_core::ContentId>, Vec<ConstantIndex>>,
+    /// The patched types whose formation the kernel replayed, by core node,
+    /// each with its formation's key: each crosses its witnesses once, or
+    /// stands on an equal formation's ([`formed`]).
+    formed: BTreeMap<ValueTypeId, Vec<gandr_kernel_core::ContentId>>,
+    /// Each formation whose witnesses the kernel admitted, by its key: the
+    /// content of its records ([`formation_key`]).
+    formations: BTreeMap<Vec<gandr_kernel_core::ContentId>, Formation>,
     /// The content of the checks the formation keys name, for the length of
-    /// one readmission.
-    content: gandr_kernel_core::ContentTable,
+    /// one readmission, each named by its content.
+    content: FormationTable,
     /// Whether a crossing of a walk that keeps reads a formation that its
-    /// place misplaces ([`formed`]). The walk then readmits whole, until
-    /// #7245 names a witness by its key.
+    /// place misplaces ([`formed`]). The walk then readmits whole.
     misplaced: bool,
+}
+
+/// A formation whose witnesses the kernel admitted.
+#[derive(Clone, Debug)]
+struct Formation
+{
+    /// The kernel position of each witness, in admission order.
+    witnesses: Vec<ConstantIndex>,
+    /// The module position of each declaration that read the formation when
+    /// it crossed. No reader names a witness by its kernel position, so a
+    /// walk that keeps reads here which declarations a moved witness edits.
+    readers: BTreeSet<ConstantIndex>,
+    /// What the formation's name reads.
+    reads: NameReads,
+}
+
+/// What the name of a formation reads ([`formation_segment`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NameReads
+{
+    /// The content of its records alone: one name in each readmission.
+    Content,
+    /// The kernel position of a datatype, an atom or an axiom that a record
+    /// reads. A walk that keeps numbers these otherwise than a whole
+    /// readmission, so the formation keeps no witness past the run.
+    Position,
 }
 
 impl Positions
@@ -6285,6 +6407,35 @@ impl Positions
                 || ConstantIndex::from(usize::MAX),
                 |least| ConstantIndex::from(usize::from(least).saturating_sub(1)),
             )
+    }
+
+    /// File `constant` as a reader of the formation of each patched type of
+    /// `read`.
+    ///
+    /// # Specification
+    /// - ensures: each formation whose patched type `read` holds and whose key
+    ///   `self.formed` holds files `constant` among its readers; nothing else
+    ///   changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an edit of a formation's first reader edits each
+    ///   reader the walk filed, and a whole readmission forms it again there.
+    /// - witness: `bridge::tests::a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200`
+    #[spec(ensures: read.iter().all(|at| self.formed.get(at).and_then(|key| self.formations.get(key)).is_none_or(|formation| formation.readers.contains(&constant))))]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+        read: &[ValueTypeId],
+    )
+    {
+        for at in read {
+            if let Some(key) = self.formed.get(at)
+                && let Some(formation) = self.formations.get_mut(key)
+            {
+                formation.readers.insert(constant);
+            }
+        }
     }
 
     /// The kernel positions of the seeds held that `environment` ranks past
@@ -7583,6 +7734,9 @@ struct Erasure<'source, 'positions>
     /// yet — a native operation's signature or a handled effect's free model
     /// — or holds ranked past the next rank, which stops it.
     unseeded: Option<Seed>,
+    /// The patched types whose formation crossed that the erasure read, so
+    /// the walk files the declaration as a reader of each.
+    formations: Vec<ValueTypeId>,
     /// The session's table, which names each image when the fold mints it,
     /// so the kernel's keys and the naming of a definition read the names.
     names: Option<gandr_kernel_core::MintNames<'source>>,
@@ -7624,6 +7778,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             restated: &[],
             ahead: &[],
             unseeded: None,
+            formations: Vec::new(),
             names: None,
         }
     }

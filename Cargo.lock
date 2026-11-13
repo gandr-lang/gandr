@@ -1196,6 +1196,7 @@ dependencies = [
 name = "gandr-core-checker-bridge"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "gandr-core-checker-base",
  "gandr-core-fork",
  "gandr-core-nbe",
