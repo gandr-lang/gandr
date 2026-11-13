@@ -242,6 +242,10 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
+## Superseded — 0 spellings
+
+An old spelling that the grammar still parses, so that a stale source reaches the decline of the elaborator. Each one names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open.
+
 ## Attributes — 20 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.

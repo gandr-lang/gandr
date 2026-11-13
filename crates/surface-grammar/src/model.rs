@@ -812,8 +812,31 @@ fn first_child(rest: &[RegexEntry]) -> RegexView<'_>
     }
 }
 
+/// The number of the tracker issue that removes an old spelling.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RemovalIssue(pub u32);
+
+/// Whether an adaptation keeps an old spelling that a unit removes.
+///
+/// An old spelling stays in the grammar only so that a stale source reaches
+/// the decline of the elaborator. Each one names the open issue that removes
+/// it: `ledger:syntax` writes the mark, and `check:ledger` refuses a mark
+/// whose issue does not stand open.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Removal
+{
+    /// The adaptation keeps a shape that the surface keeps.
+    Kept,
+    /// The adaptation keeps an old spelling, and this issue removes it.
+    By(RemovalIssue),
+}
+
 /// An adaptation record: where a rule's shape departs from the surface form
-/// it realises, and why. Audit data only; the gates never read it.
+/// it realises, and why.
+///
+/// The parser never reads it. The syntax ledger writes each record that keeps
+/// an old spelling, with the issue that removes it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Adaptation
 {
@@ -823,11 +846,13 @@ pub struct Adaptation
     pub surface: &'static str,
     /// Why the shape departs.
     pub reason: &'static str,
+    /// Whether the record keeps an old spelling, and what removes it.
+    pub removal: Removal,
 }
 
 impl Adaptation
 {
-    /// Records an adaptation.
+    /// Records an adaptation of a shape that the surface keeps.
     ///
     /// # Specification
     /// trivial.
@@ -843,6 +868,29 @@ impl Adaptation
             rule: rule.0,
             surface: surface.0,
             reason: reason.0,
+            removal: Removal::Kept,
+        }
+    }
+
+    /// Records an old spelling that the grammar still parses, with the issue
+    /// that removes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn superseded(
+        rule: RuleName,
+        surface: SurfaceForm,
+        reason: AdaptationReason,
+        removal: RemovalIssue,
+    ) -> Self
+    {
+        Self {
+            rule: rule.0,
+            surface: surface.0,
+            reason: reason.0,
+            removal: Removal::By(removal),
         }
     }
 }

@@ -132,12 +132,15 @@ use gandr_surface_features::FeatureLedger;
 use gandr_surface_features::FeaturesFault;
 use gandr_surface_features::ShownFeature;
 use gandr_surface_features::Status;
+use gandr_surface_grammar::Adaptation;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
+use gandr_surface_grammar::Removal;
+use gandr_surface_grammar::RemovalIssue;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::SPELLED;
@@ -579,6 +582,21 @@ struct AttributeRow
     schema: AttributeSchema,
 }
 
+/// One old spelling that the grammar still parses, as the ledger reads it
+/// off an adaptation record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SupersededRow
+{
+    /// The rule that still reads the old spelling.
+    rule: &'static str,
+    /// The surface form that the old spelling writes.
+    surface: &'static str,
+    /// The issue that removes the old spelling.
+    issue: RemovalIssue,
+    /// Why the grammar still parses it.
+    reason: &'static str,
+}
+
 /// The syntax ledger: every rule of the built-in grammar and every attribute
 /// of the lowering's registry, under the grammar's fingerprint.
 #[derive(Clone, Debug)]
@@ -594,6 +612,9 @@ pub struct SyntaxLedger
     attributes: Vec<AttributeRow>,
     /// One menu per label, the largest first.
     menus: Vec<Menu>,
+    /// One row per old spelling that the grammar still parses, in grammar
+    /// order.
+    superseded: Vec<SupersededRow>,
 }
 
 impl SyntaxLedger
@@ -704,6 +725,7 @@ impl SyntaxLedger
             menus: decisions::menus(&pbg)?,
             rules,
             attributes,
+            superseded: superseded(pbg.adaptations()),
         })
     }
 
@@ -748,17 +770,19 @@ impl SyntaxLedger
 
     /// The ledger for reading: a header naming the fingerprint and the
     /// counts, how to read a form, a table per sort, the internal rules, the
-    /// attributes, each rule's decision and each label's menu.
+    /// superseded spellings, the attributes, each rule's decision and each
+    /// label's menu.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the header names the fingerprint; every committed rule is one
     ///   table row under its sort's heading, the sorts in their declared order
     ///   and the rules in grammar order, and every internal rule one row of the
-    ///   internal table; every attribute is one row of the attribute table;
-    ///   every rule is one row of the decision table, in grammar order, and
-    ///   every label one row of the menu table, largest first. A `|` inside a
-    ///   cell is escaped. The text ends with one newline.
+    ///   internal table; every superseded spelling is one row of its table,
+    ///   with the issue that removes it; every attribute is one row of the
+    ///   attribute table; every rule is one row of the decision table, in
+    ///   grammar order, and every label one row of the menu table, largest
+    ///   first. A `|` inside a cell is escaped. The text ends with one newline.
     /// - provides: `syntax.md`.
     /// - fails: never.
     /// - panics: none.
@@ -897,6 +921,25 @@ impl SyntaxLedger
                 reason.evidence()
             )?;
         }
+        write!(out, "\n## Superseded — {}\n\n", Counted {
+            count: self.superseded.len(),
+            noun: "spelling"
+        })?;
+        out.push_str("An old spelling that the grammar still parses, so that a stale source reaches the decline of the elaborator. Each one names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open.\n");
+        if !self.superseded.is_empty() {
+            out.push_str("\n| Rule | Surface form | Removed by | Why the grammar keeps it |\n");
+            out.push_str("| ---- | ------------ | ---------- | ------------------------ |\n");
+            for row in &self.superseded {
+                writeln!(
+                    out,
+                    "| `{}` | `{}` | #{} | {} |",
+                    row.rule,
+                    row.surface,
+                    row.issue.0,
+                    row.reason.replace('|', "\\|")
+                )?;
+            }
+        }
         write!(out, "\n## Attributes — {}\n\n", Counted {
             count: self.attributes.len(),
             noun: "attribute"
@@ -985,8 +1028,10 @@ impl SyntaxLedger
     /// - ensures: one JSON object whose `fingerprint` is the grammar's, whose
     ///   `rules` hold one compact object per rule in grammar order, each with
     ///   its decision, whose `attributes` hold one per attribute in registry
-    ///   order and whose `menus` one per label, largest first, each element on
-    ///   a line of its own. The text ends with one newline.
+    ///   order, whose `menus` one per label, largest first, and whose
+    ///   `superseded` one per old spelling, with the number of the issue that
+    ///   removes it, each element on a line of its own. The text ends with one
+    ///   newline.
     /// - provides: `syntax.json`.
     /// - fails: never.
     /// - panics: none.
@@ -996,7 +1041,7 @@ impl SyntaxLedger
     ///   fingerprint, rule names and attribute names are the ledger's, and
     ///   whose lines hold one element each.
     /// - witness: `ledger::tests::both_files_carry_the_fingerprint_and_every_row`
-    #[spec(ensures: |ret| ret.ends_with("}\n") && ret.lines().count() == self.rules.len().saturating_add(self.attributes.len()).saturating_add(self.menus.len()).saturating_add(12))]
+    #[spec(ensures: |ret| ret.ends_with("}\n") && ret.lines().count() == self.rules.len().saturating_add(self.attributes.len()).saturating_add(self.menus.len()).saturating_add(self.superseded.len()).saturating_add(14))]
     #[inline]
     #[must_use]
     pub fn json(&self) -> String
@@ -1024,6 +1069,19 @@ impl SyntaxLedger
                 .to_string()
             })
             .collect();
+        let superseded: Vec<String> = self
+            .superseded
+            .iter()
+            .map(|row| {
+                json!({
+                    "rule": row.rule,
+                    "surface": row.surface,
+                    "issue": row.issue.0,
+                    "reason": row.reason,
+                })
+                .to_string()
+            })
+            .collect();
         let mut out = String::new();
         out.push_str("{\n  \"ledger\": \"syntax\",\n  \"generator\": \"");
         out.push_str(REGENERATE);
@@ -1037,6 +1095,8 @@ impl SyntaxLedger
         out.push_str(&elements(&attributes));
         out.push_str("  ],\n  \"menus\": [\n");
         out.push_str(&elements(&menus));
+        out.push_str("  ],\n  \"superseded\": [\n");
+        out.push_str(&elements(&superseded));
         out.push_str("  ]\n}\n");
         out
     }
@@ -1106,6 +1166,37 @@ fn elements(items: &[String]) -> String
         out.push('\n');
     }
     out
+}
+
+/// The adaptation records among `adaptations` that keep an old spelling, as
+/// ledger rows, in their order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one row per record whose removal names an issue, carrying that
+///   issue, in the order of `adaptations`; no row for a record of a shape that
+///   the surface keeps.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list that holds a kept record and a superseded one
+///   gives one row, with the issue of the superseded record.
+/// - witness: `ledger::tests::an_old_spelling_writes_the_issue_that_removes_it_6876`
+#[spec(ensures: |ret| ret.len() == adaptations.iter().filter(|record| matches!(record.removal, Removal::By(_))).count())]
+fn superseded(adaptations: &[Adaptation]) -> Vec<SupersededRow>
+{
+    adaptations
+        .iter()
+        .filter_map(|record| match record.removal {
+            Removal::By(issue) => Some(SupersededRow {
+                rule: record.rule,
+                surface: record.surface,
+                issue,
+                reason: record.reason,
+            }),
+            Removal::Kept => None,
+        })
+        .collect()
 }
 
 /// A rule row as a JSON object.
@@ -2061,13 +2152,17 @@ mod tests
     use gandr_surface_features::FeatureId;
     use gandr_surface_features::FeaturesFault;
     use gandr_surface_features::Status;
+    use gandr_surface_grammar::Adaptation;
+    use gandr_surface_grammar::AdaptationReason;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::PrecName;
     use gandr_surface_grammar::Provenance;
     use gandr_surface_grammar::Regex;
+    use gandr_surface_grammar::RemovalIssue;
     use gandr_surface_grammar::Rule;
     use gandr_surface_grammar::RuleName;
     use gandr_surface_grammar::Sort;
+    use gandr_surface_grammar::SurfaceForm;
     use gandr_surface_grammar::TileLabel;
     use gandr_surface_grammar::built_in;
     use gandr_surface_grammar::built_in_prec_table;
@@ -2085,6 +2180,7 @@ mod tests
     use super::spelled;
     use super::standing::Internal;
     use super::standing::standing;
+    use super::superseded;
     use super::tree;
 
     /// The committed exemplar directory.
@@ -2451,6 +2547,55 @@ mod tests
                 probe.name().0
             );
         }
+    }
+
+    /// #6876: an old spelling that the grammar still parses is a row of both
+    /// files, with the issue that removes it, and a shape the surface keeps is
+    /// not.
+    #[test]
+    fn an_old_spelling_writes_the_issue_that_removes_it_6876()
+    {
+        let mut ledger = SyntaxLedger::build().expect("the ledger builds");
+        ledger.superseded = superseded(&[
+            Adaptation::new(
+                RuleName("data_declaration"),
+                SurfaceForm("data_generator"),
+                AdaptationReason("a shape the surface keeps"),
+            ),
+            Adaptation::superseded(
+                RuleName("data_declaration"),
+                SurfaceForm("bare_type_params"),
+                AdaptationReason("the bare head `(a)` | its old spelling"),
+                RemovalIssue(6876),
+            ),
+        ]);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&ledger.json()).expect("the ledger is JSON");
+        assert_eq!(
+            parsed.get("superseded"),
+            Some(&serde_json::json!([{
+                "rule": "data_declaration",
+                "surface": "bare_type_params",
+                "issue": 6876_u32,
+                "reason": "the bare head `(a)` | its old spelling",
+            }])),
+            "the JSON holds the old spelling alone, with its issue"
+        );
+        let markdown = ledger.markdown();
+        assert!(
+            markdown.contains("\n## Superseded — 1 spelling\n"),
+            "the heading counts the old spelling"
+        );
+        assert!(
+            markdown.contains(
+                "| `data_declaration` | `bare_type_params` | #6876 | the bare head `(a)` \\| its old spelling |"
+            ),
+            "the row names the issue and escapes a bar"
+        );
+        assert!(
+            !markdown.contains("`data_generator`"),
+            "a shape the surface keeps has no row"
+        );
     }
 
     #[test]
