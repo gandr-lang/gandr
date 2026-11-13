@@ -2541,8 +2541,7 @@ impl Entries
 
     /// Give each live entry that `ranks` names its rank there, in the entries
     /// and in the tables kept beside them. An entry that holds its rank there
-    /// already is not written, so a rewrite that changes no rank copies no
-    /// shared part of the log.
+    /// already is not written.
     ///
     /// # Specification
     /// - requires: each position `ranks` names is live, and no two take one
@@ -2566,12 +2565,6 @@ impl Entries
         ranks: &BTreeMap<ConstantIndex, SourceRank>,
     )
     {
-        if ranks
-            .iter()
-            .all(|(&position, &rank)| self.live(position).is_none_or(|entry| entry.rank == rank))
-        {
-            return;
-        }
         let log = self.log_mut();
         for (&position, &rank) in ranks {
             let at = usize::from(position);

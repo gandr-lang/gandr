@@ -2401,17 +2401,19 @@ impl Environment
     /// shares with its record before it checks any, so each check reads the
     /// final environment below its rank. The rewrite moves no position, checks
     /// nothing and mints nothing, and it reads and writes nothing below
-    /// `floor`. A key holds the order of the ranks it reads and no rank's
-    /// value, so an entry whose inputs keep their order keeps its key.
+    /// `floor`. A rewrite that changes no rank writes nothing. A key holds the
+    /// order of the ranks it reads and no rank's value, so an entry whose
+    /// inputs keep their order keeps its key.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success, each live entry ranked at or above `floor` holds
     ///   the rank `ranks` names for it, each other entry holds its rank, and
     ///   every reader of ranks reads them: the rank table, the presented types,
-    ///   the types of words over each sort and the order of the twins; the key
-    ///   chain ends, so each later admission is recalled by its entry key
-    ///   alone. On refusal, the environment is unchanged. Either way the
+    ///   the types of words over each sort and the order of the twins. When a
+    ///   rank changes, the key chain ends, so each later admission is recalled
+    ///   by its entry key alone; when none changes, the environment is
+    ///   unchanged. On refusal, the environment is unchanged. Either way the
     ///   entries keep their number, and the arena mints nothing.
     /// - provides: the rank rewrite of a readmission that keeps each entry
     ///   outside the reach of an edit live.
@@ -2453,6 +2455,7 @@ impl Environment
         };
         let mut by_position: BTreeMap<ConstantIndex, SourceRank> = BTreeMap::new();
         let mut taken: BTreeMap<SourceRank, ConstantIndex> = BTreeMap::new();
+        let mut moved = false;
         for &(position, rank) in ranks {
             let Some(held) = self.entries.rank_of(position)
             else {
@@ -2467,6 +2470,7 @@ impl Environment
                 return Err(unkept(position));
             }
             let _fresh = taken.insert(rank, position);
+            moved |= held != rank;
         }
         if let Some(missing) = self
             .commits
@@ -2474,6 +2478,9 @@ impl Environment
             .find(|position| !by_position.contains_key(position))
         {
             return Err(unkept(missing));
+        }
+        if !moved {
+            return Ok(());
         }
         let length = self.entries.len();
         alloc::sync::Arc::make_mut(&mut self.commits).rerank((floor, &by_position), length);
