@@ -2095,6 +2095,7 @@ pub struct Ran
 
 /// The revision of a session's kept record, which a background build is
 /// keyed by: one more at each record that a whole admission keeps.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Revision(u64);
 
