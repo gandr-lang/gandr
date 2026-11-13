@@ -2414,7 +2414,9 @@ impl Entries
 
     /// These entries for one check: the log shared, and the buffer of the
     /// support taken from the entries, so the check opens a horizon and a
-    /// support of its own while the entries keep none.
+    /// support of its own while the entries keep none. The slots of the log
+    /// freeze first, so a change of the log beside the view copies the chunk
+    /// that it writes and no other slot (#7335).
     ///
     /// # Specification
     /// trivial.
@@ -2422,6 +2424,11 @@ impl Entries
     #[must_use]
     pub fn view(&mut self) -> Self
     {
+        // A freeze moves the slots admitted since the last one into a shared
+        // chunk, so the log that the view shares holds no slot of its own.
+        if let Some(log) = self.log.as_mut() {
+            alloc::sync::Arc::make_mut(log).family.freeze();
+        }
         Self {
             log: self.log.clone(),
             support: self.support.take(),
@@ -3862,8 +3869,44 @@ mod tests
     use gandr_kernel_term::Seam;
     use gandr_kernel_term::TermArena;
 
+    use super::Entries;
     use super::OutstandingCount;
+    use super::Slot;
     use super::StagedMarks;
+
+    /// A change of the log beside an open view copies the chunk that it
+    /// writes. The view keeps its own slot, and the two share each other
+    /// slot, so a commit beside open checks costs no copy of the module
+    /// (#7335).
+    #[test]
+    fn a_change_beside_a_view_copies_one_chunk_of_the_log_7335()
+    {
+        let count = 4096_usize;
+        let mut entries = Entries::default();
+        for _ in 0 .. count {
+            entries.vacate();
+        }
+        entries.reserve();
+        let view = entries.view();
+        entries.vacate_at(ConstantIndex::from(count));
+        let (Some(changed), Some(viewed)) = (entries.log(), view.log())
+        else {
+            panic!("the entries and the view each hold the log");
+        };
+        assert!(
+            matches!(viewed.family.get(count), Some(&Slot::Reserved)),
+            "the view keeps the slot that it shared"
+        );
+        assert!(
+            matches!(changed.family.get(count), Some(&Slot::Vacant)),
+            "the entries take the change"
+        );
+        let shared = usize::from(changed.family.shared_frozen(&viewed.family));
+        assert!(
+            shared >= count.saturating_sub(count / 8),
+            "the change shares each slot but its chunk, not {shared} of {count}"
+        );
+    }
 
     #[test]
     fn registration_resolution_preserves_multiplicity_and_order()
