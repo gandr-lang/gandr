@@ -11,14 +11,18 @@
 //! commit that takes the sum past the bound. The kernel gives a page its
 //! memory when the run first writes it.
 //!
-//! The address space is a second account beside the bound. Each thread that
-//! runs a program keeps a set of regions, so a process holds many sets at
-//! once. A host with a small address space cannot give each set the whole
-//! bound twice. So the regions of a process reserve together at most a
-//! quarter of its address space, the least of `RLIMIT_AS` and the host's user
-//! space. Each region asks the least of the bound and its share, the quarter
-//! divided by twice the host's width. The rest of the space stays for the
-//! executable, its libraries, the allocator and the thread stacks.
+//! The address space is a second account beside the bound. Each run that
+//! the process runs at once holds a set of regions, so a process holds many
+//! sets at once. An idle set waits in one pool of the process, and a run on
+//! any thread takes it. A run that a host starts inside another run's host
+//! call stands in the caller's regions above their committed ends, so it
+//! reserves no set ([`Reservation::above`], #7201). A host with a small
+//! address space cannot give each set the whole bound twice. So the regions
+//! of a process reserve together at most a quarter of its address space, the
+//! least of `RLIMIT_AS` and the host's user space. Each region asks the least
+//! of the bound and its share, the quarter divided by twice the host's width.
+//! The rest of the space stays for the executable, its libraries, the
+//! allocator and the thread stacks.
 //!
 //! The bound is a policy of the invocation. The driver binds it once with
 //! [`bind`], from `--memory`, before the first run. Without a binding, the
@@ -57,6 +61,7 @@ use core::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use gandr_runtime_stencils::CHUNK;
+use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Word;
 use gandr_runtime_stencils::Words;
 
@@ -1053,6 +1058,9 @@ pub(crate) struct Reservation
     /// The words the last run committed, which [`Self::release`] gives back
     /// past the first chunk.
     committed: *mut Word,
+    /// Whether the region lies in a caller's region above its committed end:
+    /// the caller owns the mapping and its account.
+    stacked: bool,
     /// The allocation that holds the region, on a host with no mapping.
     #[cfg(not(unix))]
     backing: alloc::vec::Vec<Word>,
@@ -1099,6 +1107,7 @@ impl Reservation
             base: core::ptr::null_mut(),
             words: Words(0),
             committed: core::ptr::null_mut(),
+            stacked: false,
             #[cfg(not(unix))]
             backing: alloc::vec::Vec::new(),
         }
@@ -1135,6 +1144,7 @@ impl Reservation
                 base,
                 words,
                 committed: base,
+                stacked: false,
             }
         })
     }
@@ -1153,8 +1163,42 @@ impl Reservation
             base,
             words,
             committed: base,
+            stacked: false,
             backing,
         })
+    }
+
+    /// The region from `limit`, a caller's committed end, to `end`, the end
+    /// of the caller's reservation: a run nested in the caller's host call
+    /// stands there, so it reserves no address space of its own.
+    ///
+    /// # Specification
+    /// - requires: `limit` is at or below `end`, both in one reservation, and
+    ///   the caller waits in a host call until the region drops.
+    /// - ensures: the region holds the words from `limit` to `end`; its drop
+    ///   leaves the caller's mapping and the account as they were.
+    /// - executable: none — the caller's mapping is the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a region stacked above a caller's committed end: it
+    ///   starts at that end, its release zeroes each page that it committed,
+    ///   and the caller's words below the end keep their values.
+    /// - witness: `regions::tests::a_stacked_region_stands_above_its_caller_and_gives_back_its_pages`
+    #[must_use]
+    pub(crate) fn above(
+        limit: *mut Word,
+        end: *mut Word,
+    ) -> Self
+    {
+        let words = Bytes::between(limit, end).words();
+        Self {
+            base: limit,
+            words,
+            committed: limit,
+            stacked: true,
+            #[cfg(not(unix))]
+            backing: alloc::vec::Vec::new(),
+        }
     }
 
     /// The region's first word.
@@ -1213,11 +1257,13 @@ impl Reservation
     }
 
     /// Give the host back the pages past the region's first chunk, which
-    /// the last run committed, so an idle region keeps one chunk.
+    /// the last run committed, so an idle region keeps one chunk. A stacked
+    /// region keeps none: its pages are its caller's.
     ///
     /// # Specification
-    /// - ensures: the pages past the first chunk read as zero when a later run
-    ///   writes them, and hold no memory until then.
+    /// - ensures: the pages past the first chunk, or past the base of a stacked
+    ///   region, read as zero when a later run writes them, and hold no memory
+    ///   until then.
     /// - executable: none — the pages' memory is the host's.
     ///
     /// # Adequacy
@@ -1225,9 +1271,15 @@ impl Reservation
     ///   it: the first keeps its value, and the second reads zero; a release
     ///   from the base, or none at all, changes one of them.
     /// - witness: `regions::tests::a_released_region_keeps_its_first_chunk_and_zeroes_the_rest`
+    /// - witness: `regions::tests::a_stacked_region_stands_above_its_caller_and_gives_back_its_pages`
     pub(crate) fn release(&mut self)
     {
-        let kept = self.base.wrapping_add(CHUNK.0.min(self.words.0));
+        let kept = if self.stacked {
+            self.base
+        }
+        else {
+            self.base.wrapping_add(CHUNK.0.min(self.words.0))
+        };
         if self.committed > kept {
             #[cfg(unix)]
             {
@@ -1249,13 +1301,17 @@ impl Reservation
 
 impl Drop for Reservation
 {
-    /// Unmap the region, and credit its words to the process's account.
+    /// Unmap the region, and credit its words to the process's account. A
+    /// stacked region does neither: its caller owns both.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn drop(&mut self)
     {
+        if self.stacked {
+            return;
+        }
         #[cfg(unix)]
         if !self.base.is_null() {
             // SAFETY: the mapping is this reservation's, and no run holds it
@@ -1268,6 +1324,118 @@ impl Drop for Reservation
             };
         }
         account().refund(self.words);
+    }
+}
+
+/// # Safety
+/// - unsafe invariants: a reservation of its own owns its mapping, which no
+///   other value unmaps, and one run at a time holds it; an idle set moves
+///   between threads only behind the pool's mutex. A stacked reservation never
+///   leaves its caller's thread.
+// SAFETY: as above.
+unsafe impl Send for Reservation
+{
+}
+
+/// The ends of the regions of a run that waits in a host call: each
+/// region's committed end and the end of its reservation.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Caller
+{
+    /// The heap's committed end and reservation end.
+    heap: (*mut Word, *mut Word),
+    /// The window region's committed end and reservation end.
+    windows: (*mut Word, *mut Word),
+}
+
+impl Caller
+{
+    /// The heap of a run nested in the caller's host call: the caller's heap
+    /// above its committed end.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn heap(self) -> Reservation
+    {
+        Reservation::above(self.heap.0, self.heap.1)
+    }
+
+    /// The window region of a run nested in the caller's host call, as
+    /// [`Self::heap`] is its heap.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn windows(self) -> Reservation
+    {
+        Reservation::above(self.windows.0, self.windows.1)
+    }
+}
+
+std::thread_local! {
+    /// The run that waits in a host call on this thread, if one does: a run
+    /// that its host starts there stands in its regions.
+    static CALLER: core::cell::Cell<Option<Caller>> = const { core::cell::Cell::new(None) };
+}
+
+/// The run that waits in a host call on this thread, if one does, beside a
+/// guard that marks none until it drops: a run that starts here runs until
+/// it ends or waits in a host call of its own, so a run that it starts
+/// without that wait never stands in a caller's regions that it uses.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub(crate) fn running() -> (Option<Caller>, Calling)
+{
+    let previous = CALLER.replace(None);
+    (previous, Calling { previous })
+}
+
+/// Mark the run over `runtime` as the one that waits in a host call on this
+/// thread, until the returned guard drops.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub(crate) fn calling(runtime: &Runtime) -> Calling
+{
+    let caller = Caller {
+        heap: (runtime.heap_limit(), runtime.heap_end()),
+        windows: (runtime.window_limit(), runtime.window_end()),
+    };
+    Calling {
+        previous: CALLER.replace(Some(caller)),
+    }
+}
+
+/// A run's wait in a host call: its drop gives the thread back the caller
+/// that it marked before.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug)]
+pub(crate) struct Calling
+{
+    /// The caller that the thread marked before.
+    previous: Option<Caller>,
+}
+
+impl Drop for Calling
+{
+    /// Mark the caller before as the one that waits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn drop(&mut self)
+    {
+        CALLER.set(self.previous);
     }
 }
 
@@ -1690,6 +1858,45 @@ mod tests
         let given = unsafe { past.read() };
         assert_eq!(Word::from(7_usize), kept);
         assert_eq!(Word::ZERO, given);
+    }
+
+    /// A region stacked above a caller's committed end starts there and
+    /// ends where the caller's reservation ends. Its release gives back each
+    /// page that it committed, its first chunk too, and its drop leaves the
+    /// caller's words and mapping as they were (#7201).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_stacked_region_stands_above_its_caller_and_gives_back_its_pages()
+    {
+        let caller = Reservation::of(Words(CHUNK.0.saturating_mul(3)));
+        let first = caller.base();
+        let limit = first.wrapping_add(CHUNK.0);
+        // SAFETY: the word lies inside the caller's first chunk.
+        unsafe {
+            first.write(Word::from(7_usize));
+        }
+        let mut stacked = Reservation::above(limit, caller.end());
+        assert_eq!(limit, stacked.base());
+        assert_eq!(caller.end(), stacked.end());
+        let past = limit.wrapping_add(CHUNK.0);
+        for word in [limit, past] {
+            // SAFETY: the word lies inside the stacked region, which the
+            // caller's mapping holds.
+            unsafe {
+                word.write(Word::from(9_usize));
+            }
+        }
+        stacked.hold(past.wrapping_add(1));
+        stacked.release();
+        drop(stacked);
+        // SAFETY: the caller's mapping stays its own until it drops.
+        let kept = unsafe { first.read() };
+        assert_eq!(Word::from(7_usize), kept);
+        for word in [limit, past] {
+            // SAFETY: as above.
+            let given = unsafe { word.read() };
+            assert_eq!(Word::ZERO, given);
+        }
     }
 
     /// On a Linux host the bound is at most `MemAvailable`, and its origin

@@ -92,7 +92,6 @@
 
 #[cfg(gandr_patcher)]
 use alloc::sync::Arc;
-use core::cell::RefCell;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -138,6 +137,7 @@ use crate::native::Emitted;
 #[cfg(gandr_patcher)]
 use crate::native::Native;
 use crate::regions;
+use crate::regions::Caller;
 use crate::regions::Held;
 use crate::regions::Memory;
 use crate::regions::Region;
@@ -506,6 +506,22 @@ impl Buffers
         }
     }
 
+    /// A set for a run nested in `caller`'s host call: its heap and its
+    /// window region stand above the caller's committed ends, and its frame
+    /// region is allocated at its bound.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stacked(caller: Caller) -> Self
+    {
+        Self {
+            heap: caller.heap(),
+            frames: Vec::with_capacity(FRAME_BOUND),
+            window: Vec::new(),
+            windows: caller.windows(),
+        }
+    }
+
     /// Record the committed ends that `runtime` reached, so the set gives
     /// their pages back when the run ends.
     ///
@@ -570,12 +586,10 @@ impl Buffers
 /// The frame region's bound, in words: past it the run declines.
 const FRAME_BOUND: usize = 1 << 23;
 
-std::thread_local! {
-    /// The calling thread's idle region sets. A run takes one and gives it
-    /// back when it ends, so a run nested in another run's host call takes a
-    /// set of its own.
-    static BUFFERS: RefCell<Vec<Buffers>> = const { RefCell::new(Vec::new()) };
-}
+/// The process's idle region sets. A run takes one and gives it back when it
+/// ends, so a run nested in another run's host call takes a set of its own,
+/// and a set that one thread gives back serves a run on any thread.
+static IDLE: std::sync::Mutex<Vec<Buffers>> = std::sync::Mutex::new(Vec::new());
 
 /// The code a run enters.
 #[derive(Clone, Copy, Debug)]
@@ -1412,14 +1426,17 @@ fn run_emitted(
     })
 }
 
-/// Run `code` once over a set of the calling thread's regions, and give the
-/// set back to the thread when the run ends.
+/// Run `code` once over a set of regions, and give the set back when the run
+/// ends.
 ///
-/// A set is taken from the thread's idle sets, or reserved for the memory
-/// bound when none is idle, and its pages past each region's first chunk go
-/// back to the host when the run ends. So a run that a host starts inside
-/// another run's reply, on the same thread, runs over a set of its own, and
-/// the outer run's regions stay as it left them.
+/// A run that a host starts inside another run's host call, on the same
+/// thread, stands in that run's regions above their committed ends: the
+/// caller waits, so its regions do not grow until the nested run ends. Any
+/// other run takes an idle set of the process, or reserves one for the memory
+/// bound when none is idle, and gives it back to the process. So the sets are
+/// at most the runs that the process runs at once, and a set that one thread
+/// gives back serves a run on any thread. A set's pages past each region's
+/// first chunk go back to the host when its run ends.
 ///
 /// # Specification
 /// trivial.
@@ -1430,7 +1447,8 @@ fn run_emitted(
 /// # Adequacy
 /// - hypothesis: L3 — a host that runs a program of its own inside its reply
 ///   resumes the outer run with that program's answer on each tier; one set for
-///   both runs aborts the process at the second borrow.
+///   both runs aborts the process at the second borrow, and a nested run that
+///   writes below its caller's committed end changes the caller's answer.
 /// - witness: `tests::seam::a_host_runs_a_program_of_its_own_inside_its_reply_2954`
 fn run(
     code: Code<'_>,
@@ -1438,12 +1456,20 @@ fn run(
 ) -> Result<Ran, Declined>
 {
     let memory = regions::bound();
-    let mut buffers = BUFFERS
-        .with_borrow_mut(Vec::pop)
-        .unwrap_or_else(|| Buffers::reserved(memory.bytes().words()));
+    let (caller, _running) = regions::running();
+    if let Some(caller) = caller {
+        let mut buffers = Buffers::stacked(caller);
+        let ran = run_over(&mut buffers, code, parts, memory);
+        buffers.release();
+        return ran;
+    }
+    let idle = IDLE.lock().ok().and_then(|mut idle| idle.pop());
+    let mut buffers = idle.unwrap_or_else(|| Buffers::reserved(memory.bytes().words()));
     let ran = run_over(&mut buffers, code, parts, memory);
     buffers.release();
-    BUFFERS.with_borrow_mut(|idle| idle.push(buffers));
+    if let Ok(mut idle) = IDLE.lock() {
+        idle.push(buffers);
+    }
     ran
 }
 

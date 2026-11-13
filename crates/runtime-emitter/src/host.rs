@@ -132,6 +132,7 @@ use crate::lower::Slot;
 use crate::lower::Window;
 use crate::lower::integer_word;
 use crate::lower::lower_suspended;
+use crate::regions;
 use crate::run::RunInputs;
 use crate::run::Tier;
 use crate::seam::HostRequest;
@@ -1205,7 +1206,13 @@ impl<'run, 'host> Calls<'run, 'host>
             payload: moved,
         };
         let mut values = HostValues::new(arena, self.store);
-        match offer.offer(request, &mut values) {
+        // A run that the host starts in its decision stands above this run's
+        // committed ends, and this run lays the reply only once it ends.
+        let offered = {
+            let _calling = regions::calling(runtime);
+            offer.offer(request, &mut values)
+        };
+        match offered {
             Offered::Resume(reply) => {
                 let mut laying = Laying {
                     store: self.store,
@@ -1277,6 +1284,7 @@ impl<'run, 'host> Calls<'run, 'host>
                     at,
                     captures: &fields,
                 };
+                let _calling = regions::calling(runtime);
                 offer.migrate(request, &mut values)
             },
             None => Migrated::Here,
@@ -1290,6 +1298,7 @@ impl<'run, 'host> Calls<'run, 'host>
                             .map_err(|_form| Refusal::Operands)?,
                     ),
                 };
+                let _calling = regions::calling(runtime);
                 migrate(
                     self.codes.tier(),
                     (self.arena, self.definitions, lowered),
