@@ -91,6 +91,7 @@ use gandr_kernel_check_memo::DigestWord;
 use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::Binders;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::DeBruijnIndex;
@@ -591,12 +592,16 @@ impl SupportContext
     {
         let Self { table, kept, .. } = job;
         self.table.join(arena, table);
-        self.kept.join(kept, |_, _| true).map_err(|disagreement| {
-            let (key, held, offered) = disagreement.into_parts();
-            crate::KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
-                crate::error::KeptOutcomes::new(key.digest(), held, offered),
-            ))
-        })
+        // The kept memo holds checked and formed outcomes alone. They name no
+        // node, so two of them agree exactly when they are equal.
+        self.kept
+            .join(kept, |_, _| true, PartialEq::eq)
+            .map_err(|disagreement| {
+                let (key, held, offered) = disagreement.into_parts();
+                crate::KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                    crate::error::KeptOutcomes::new(key.digest(), held, offered),
+                ))
+            })
     }
 
     /// Open the session of a goal's child at a fork point inside a check: as
@@ -1299,6 +1304,78 @@ pub enum NodeOutcome
         /// The keys of the obligations the formation owes.
         Owed,
     ),
+}
+
+impl NodeOutcome
+{
+    /// Whether `arena` holds each type that this outcome names.
+    ///
+    /// A forked part mints its own nodes on its own clone of the arena. After
+    /// the join, an outcome that names one of them names no node of `arena`,
+    /// so the join does not keep it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn stands_in(
+        &self,
+        arena: &TermArena,
+    ) -> bool
+    {
+        match *self {
+            Self::ValueType(id) => arena.value_type(id).is_some(),
+            Self::CompType(id) => arena.comp_type(id).is_some(),
+            Self::Checked | Self::Formed(..) => true,
+        }
+    }
+
+    /// Whether this outcome and `other` answer one goal alike.
+    ///
+    /// The arena does not share one node between two equal contents. So two
+    /// forked parts that answer one goal can name one type by two nodes, where
+    /// a serial run recalls the first. Two types agree when the session's
+    /// table places them at one content. Every other outcome agrees with an
+    /// equal outcome alone.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds each type that either outcome names, and
+    ///   `session` is the session of `arena`.
+    /// - ensures: true exactly when the two outcomes are equal, or name two
+    ///   types of one sort that the session's table places at one content.
+    /// - provides: the agreement of a forked check's join.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer places both types in the table. A
+    ///   predicate could restate it only by placing them again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two types minted apart with one content agree, and
+    ///   two types of two contents do not.
+    /// - witness: `support::tests::two_types_of_one_content_agree_and_two_of_two_contents_do_not`
+    #[inline]
+    #[must_use]
+    pub fn agrees(
+        &self,
+        other: &Self,
+        arena: &TermArena,
+        session: &mut SupportContext,
+    ) -> bool
+    {
+        match (self, other) {
+            (&Self::ValueType(held), &Self::ValueType(offered)) => {
+                held == offered
+                    || session.table.place(arena, AnyNode::ValueType(held))
+                        == session.table.place(arena, AnyNode::ValueType(offered))
+            },
+            (&Self::CompType(held), &Self::CompType(offered)) => {
+                held == offered
+                    || session.table.place(arena, AnyNode::CompType(held))
+                        == session.table.place(arena, AnyNode::CompType(offered))
+            },
+            _ => self == other,
+        }
+    }
 }
 
 /// The keys of the obligations that a formation owes the checker, each one
@@ -2224,6 +2301,33 @@ mod tests
             session.kept_checked(&keys[0], keys[0].names().0),
             super::Discharge::Held,
             "the session keeps the outcome of the first job alone"
+        );
+    }
+
+    #[test]
+    fn two_types_of_one_content_agree_and_two_of_two_contents_do_not()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        // The arena does not share a node between two equal contents.
+        let first = arena.value_type_product(&[unit, integer]);
+        let second = arena.value_type_product(&[unit, integer]);
+        let swapped = arena.value_type_product(&[integer, unit]);
+        assert_ne!(first, second, "the arena mints one content at two nodes");
+        let mut session = SupportContext::new();
+        let typed = super::NodeOutcome::ValueType;
+        assert!(
+            typed(first).agrees(&typed(second), &arena, &mut session),
+            "two nodes of one content agree"
+        );
+        assert!(
+            !typed(first).agrees(&typed(swapped), &arena, &mut session),
+            "two contents do not agree"
+        );
+        assert!(
+            !typed(first).agrees(&super::NodeOutcome::Checked, &arena, &mut session),
+            "a type and a check do not agree"
         );
     }
 

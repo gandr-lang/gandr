@@ -367,7 +367,8 @@ where
     }
 
     /// Fold `child`, a child that [`CheckMemo::fork_child`] opened, into this
-    /// memo, keeping each entry that `keep` answers for.
+    /// memo, keeping each entry that `keep` answers for, when `agree` answers
+    /// that its outcome agrees with the one this memo holds.
     ///
     /// # Specification
     /// - requires: `child` was opened by this memo's [`CheckMemo::fork_child`].
@@ -381,22 +382,26 @@ where
     ///
     /// # Errors
     /// As [`OverlaidMemo::join`]: [`Disagreement`] when the child keeps an
-    /// outcome under a support that this memo holds with another outcome.
+    /// outcome under a support that this memo holds with an outcome that
+    /// `agree` refuses.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo::join`].
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
     /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+    /// - witness: `overlay::tests::a_join_glues_two_outcomes_that_agree`
     #[inline]
-    fn join_child<Keep>(
+    fn join_child<Keep, Agree>(
         &mut self,
         _child: OverlaidMemo<Support, Outcome>,
         _keep: Keep,
+        _agree: Agree,
     ) -> Result<(), Disagreement<Support, Outcome>>
     where
         Keep: FnMut(&Support, &Outcome) -> bool,
+        Agree: FnMut(&Outcome, &Outcome) -> bool,
         Support: Clone,
-        Outcome: Clone + PartialEq,
+        Outcome: Clone,
     {
         Ok(())
     }
