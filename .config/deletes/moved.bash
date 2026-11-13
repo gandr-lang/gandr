@@ -151,22 +151,170 @@ crates_naming() {
     }' | sort
 }
 
-# `joined <fork> <base> <item>` prints each file at `<base>` that names
-# `<item>` and that names it nowhere at `<fork>`, one for each line. Such a
-# file is a new reader of the item. A reader is a Rust source of a crate that
-# can name the item (`crates_naming`), or of any crate when none is known,
-# and no other file (#7164): a script, a ledger row or a README is no reader.
-# A Rust source names the item by the whole word of its last segment (#7125).
-joined() {
-  local fork=$1 base=$2 item=$3 name crate crates
-  name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
-  mapfile -t crates < <(crates_naming "$base" "$item")
-  local -a sources=()
-  if (( ${#crates[@]} == 0 )); then
-    sources=(':(glob)crates/**/*.rs')
-  else
-    for crate in "${crates[@]}"; do sources+=(":(glob)$crate/**/*.rs"); done
+# `visibility <base> <record>` prints the reach that the visibility of an
+# item's record at `<base>` gives it in its own crate (#7209): `crate` for
+# `pub`, `pub(crate)` and `pub(in …)`, `super` for `pub(super)`, `module` for
+# a private item and `pub(self)`, and `package` where the reach is the
+# package's. The visibility stands before the item's keyword, past its doc
+# comments and attributes, from the record's `start` to its `line`. A
+# variant has the reach of its enum, and an associated item of an inherent
+# `impl` its own: the nearest line above with less indentation opens the
+# block that holds them. An item of a trait or of an `impl … for` has the
+# trait's reach, so it reads as `package`. So does each header that the
+# reading does not know, as an item that a macro writes.
+visibility() {
+  local base=$1 record=$2 file start line kind
+  IFS=$'\t' read -r file start line kind < <(jq -r '[.file, .start, .line, .kind] | @tsv' <<< "$record")
+  git show "$base:$file" 2> /dev/null | awk -v start="$start" -v line="$line" -v kind="$kind" '
+    function indent(s) { match(s, /^[ \t]*/); return RLENGTH }
+    function bare(s) { sub(/^[ \t]+/, "", s); return s }
+    function skipped(s) { s = bare(s); return s == "" || s ~ /^\/\// || s ~ /^#!?\[/ }
+    # The reach that a written visibility gives, or "" for none.
+    function written(h) {
+      if (h ~ /^pub\(super\)/) return "super"
+      if (h ~ /^pub\(self\)/) return "module"
+      if (h ~ /^pub(\(crate\)|\(in [^)]*\))?[ \t]/) return "crate"
+      if (h ~ /^pub/) return "package"
+      return ""
+    }
+    # The line that opens the block of the item, or "" for none.
+    function opener(   i) {
+      for (i = start - 1; i >= 1; i--) {
+        if (skipped(text[i]) || indent(text[i]) >= indent(text[line])) continue
+        return bare(text[i])
+      }
+      return ""
+    }
+    { text[NR] = $0 }
+    END {
+      if (start < 1 || line < start || line > NR) { print "package"; exit }
+      # The header: the lines of the item, past its attributes and comments.
+      depth = 0; header = ""
+      for (i = start; i <= line; i++) {
+        s = bare(text[i])
+        if (depth == 0 && s ~ /^\/\//) continue
+        if (depth > 0 || s ~ /^#!?\[/) {
+          depth += gsub(/\[/, "[", s) - gsub(/\]/, "]", s)
+          continue
+        }
+        header = header " " s
+      }
+      header = bare(header)
+      keyword = "^((const|async|unsafe|default)[ \t]+|extern[ \t]+(\"[^\"]*\"[ \t]+)?)*(fn|const|static|struct|enum|type|trait|union|mod)[ \t]"
+      if (kind == "variant") {
+        open = opener()
+        scope = written(open)
+        if (scope == "" && open ~ /^enum[ \t]/) scope = "module"
+        print (scope == "" ? "package" : scope)
+        exit
+      }
+      scope = written(header)
+      if (scope != "") { print scope; exit }
+      if (kind == "field") { print (header ~ /^[A-Za-z_][A-Za-z0-9_]*[ \t]*:/ ? "module" : "package"); exit }
+      if (header !~ keyword) { print "package"; exit }
+      if (kind !~ /^assoc-/) { print "module"; exit }
+      open = opener()
+      print (open ~ /^(unsafe[ \t]+)?impl[ \t<]/ && open !~ /[ \t]for[ \t]/ ? "module" : "package")
+    }'
+}
+
+# `reach <base> <item> [<record>]` prints the pathspecs of the Rust sources
+# that the visibility of `<item>` lets name it, one for each line (#7209).
+# `<record>` is the item's record at `<base>`, `{file, start, line, kind,
+# exported}`. An exported item, an item with no
+# record and an item whose reach `visibility` reads as `package` reach each
+# crate that can name its package (`crates_naming`), or each crate when none
+# is known. An item that its crate does not export reaches its crate, and a
+# private or `pub(super)` item its module or its parent's: the module's file
+# and the files below it, as the layout places them (`src/a/b.rs` and
+# `src/a/b/` for `a::b`). A crate with a `#[path]` attribute places a module
+# apart from that layout, so its items reach the whole crate. Each reach
+# holds the reach of Rust, so no reader drops out.
+reach() {
+  local base=$1 item=$2 record=${3:-} file exported crate scope dir
+  if [[ -n $record ]]; then
+    IFS=$'\t' read -r file exported < <(jq -r '[.file // "", .exported] | @tsv' <<< "$record")
+    if [[ $exported == false && $file == crates/*/* ]]; then
+      crate=${file#crates/}
+      crate=crates/${crate%%/*}
+      scope=$(visibility "$base" "$record")
+      if [[ $scope == module || $scope == super ]] && git grep -q -E '#\[path[[:space:]]*=' "$base" -- ":(glob)$crate/**/*.rs"; then
+        scope=crate
+      fi
+      case $scope in
+        module | super)
+          case ${file##*/} in
+            lib.rs | main.rs | mod.rs) dir=${file%/*} ;;
+            *) dir=${file%.rs} ;;
+          esac
+          [[ $scope == super ]] && dir=${dir%/*}
+          if [[ $dir == "$crate"/* ]]; then
+            printf '%s\n' ":(glob)$dir/**/*.rs" "$dir.rs"
+            return
+          fi
+          printf '%s\n' ":(glob)$crate/**/*.rs"
+          return
+          ;;
+        crate)
+          printf '%s\n' ":(glob)$crate/**/*.rs"
+          return
+          ;;
+      esac
+    fi
   fi
+  local -a crates
+  mapfile -t crates < <(crates_naming "$base" "$item")
+  if (( ${#crates[@]} == 0 )); then
+    printf '%s\n' ':(glob)crates/**/*.rs'
+  else
+    printf ':(glob)%s/**/*.rs\n' "${crates[@]}"
+  fi
+}
+
+# `within <file> <pathspec>…` succeeds when `<file>` is a Rust source of the
+# pathspecs of `reach`.
+within() {
+  local file=$1 spec dir
+  shift
+  for spec; do
+    if [[ $spec == ':(glob)'* ]]; then
+      dir=${spec#':(glob)'}
+      dir=${dir%'/**/*.rs'}
+      [[ $file == "$dir"/*.rs ]] && return 0
+    elif [[ $file == "$spec" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# `named <base> <segment> <changed> [<pathspec>…]` prints each file of the
+# list `<changed>` that holds `<segment>` at `<base>`, one for each line: the
+# files where `moved` reads the words of an item. With the pathspecs of an
+# item's reach, it prints the Rust sources within that reach alone (#7209),
+# so a ledger row or a workflow that holds the word names no item of a
+# crate.
+named() {
+  local base=$1 segment=$2 changed=$3 file
+  shift 3
+  git grep -l -F -e "$segment" "$base" -- $(< "$changed") 2> /dev/null | sed "s|^$base:||" | while IFS= read -r file; do
+    if (( $# == 0 )) || within "$file" "$@"; then printf '%s\n' "$file"; fi
+  done
+}
+
+# `joined <fork> <base> <item> [<pathspec>…]` prints each file at `<base>`
+# that names `<item>` and that names it nowhere at `<fork>`, one for each
+# line. Such a file is a new reader of the item. A reader is a Rust source
+# of the item's reach (`reach`, #7209), the pathspecs given or the reach of
+# its package when none are, and no other file (#7164): a script, a ledger
+# row or a README is no reader. A Rust source names the item by the whole
+# word of its last segment (#7125).
+joined() {
+  local fork=$1 base=$2 item=$3 name
+  shift 3
+  name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
+  local -a sources=("$@")
+  (( ${#sources[@]} )) || mapfile -t sources < <(reach "$base" "$item")
   joined_readers() {
     git grep -l -w -F -e "$name" "$1" -- "${sources[@]}" 2> /dev/null | sed "s|^$1:||" | sort -u
   }

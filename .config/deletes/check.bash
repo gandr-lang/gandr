@@ -101,11 +101,6 @@ segments=$(while IFS= read -r item; do
   jq -n -c --arg item "$item" --arg segment "$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")" '{($item): $segment}'
 done < "$scratch/deleted" | jq -s -c 'add // {}')
 mapfile -t named_by < <(jq -r '[.[]] | unique[]' <<< "$segments")
-# The files of the change that name each such row's item at the base.
-files=$(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$segments" | while IFS=$'\t' read -r item segment; do
-  mapfile -t named < <(git grep -l -F -e "$segment" "$base" -- $(< "$scratch/changed") 2> /dev/null | sed "s|^$base:||" || :)
-  jq -n -c --arg item "$item" '{($item): $ARGS.positional}' --args "${named[@]}"
-done | jq -s -c 'add // {}')
 
 # The architect's sign-offs: each comment that says `signed` on an issue the
 # body works, with the commit it names, the base that commit forks from, and
@@ -194,7 +189,7 @@ if [[ $mode == full ]]; then
     for unit in "${units[@]}"; do
       jq -s -c -L "$here" --arg unit "$(basename "$unit" .jsonl)" \
         'include "paths"; {root: ($unit | sub("\\.[a-z-]+$"; "")), kind: ($unit | capture("\\.(?<k>[a-z-]+)$").k),
-          items: [.[] | select(.record == "item") | {id: .path, kind, file: (.file | tree_path), start, end}]}' "$unit" \
+          items: [.[] | select(.record == "item") | {id: .path, kind, file: (.file | tree_path), start, end, line, exported}]}' "$unit" \
         || return 2
     done | jq -s -c '(map(select(.kind != "test")) | map({key: .root, value: [.items[].id]}) | from_entries) as $lib
       | [.[] | .root as $root | .kind as $kind | .items[]
@@ -286,6 +281,31 @@ if [[ $mode == full ]]; then
   done | jq -s -c 'add // {}')
 fi
 
+# The reach of each such row's item at the base (`reach`, #7209): the Rust
+# sources that its visibility lets name it. A full run reads the visibility
+# from the one record at the base that the item covers. The rows-only run
+# has no records, so each item reaches its package.
+declare -A reaches=()
+while IFS= read -r item; do
+  [[ $item == *::* ]] || continue
+  record=
+  if [[ -f $scratch/items-base.json ]]; then
+    record=$(jq -c -L "$root/.config/bodies" -L "$here" --arg item "$item" \
+      'include "account"; [.[] | select(.file != null and covers($item; {id, names: [.id]}))] | if length == 1 then .[0] else empty end' \
+      "$scratch/items-base.json")
+  fi
+  reaches[$item]=$(reach "$base" "$item" "$record")
+done < "$scratch/deleted"
+
+# The files of the change that name each such row's item at the base, within
+# the reach of an item of a crate (`named`, #7209).
+files=$(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$segments" | while IFS=$'\t' read -r item segment; do
+  sources=()
+  [[ -n ${reaches[$item]:-} ]] && mapfile -t sources <<< "${reaches[$item]}"
+  mapfile -t names < <(named "$base" "$segment" "$scratch/changed" "${sources[@]}")
+  jq -n -c --arg item "$item" '{($item): $ARGS.positional}' --args "${names[@]}"
+done | jq -s -c 'add // {}')
+
 # The item's half of each sign-off (#6852): the files that join the readers
 # of each deleted item below the signed commit, and the items whose record
 # at the base changes below it. The record read needs the base's records, so
@@ -297,7 +317,9 @@ signoffs=$(jq -c '.[]' <<< "$signoffs" | while IFS= read -r c; do
   while IFS= read -r item; do
     [[ -n $item ]] || continue
     jq -e --arg item "$item" '.body | contains($item)' <<< "$c" > /dev/null || continue
-    joins=$(joined "$fork" "$base" "$item" | jq -R . | jq -s -c --slurpfile j <(printf '%s' "$joins") --arg item "$item" '$j[0] + {($item): .}')
+    sources=()
+    [[ -n ${reaches[$item]:-} ]] && mapfile -t sources <<< "${reaches[$item]}"
+    joins=$(joined "$fork" "$base" "$item" "${sources[@]}" | jq -R . | jq -s -c --slurpfile j <(printf '%s' "$joins") --arg item "$item" '$j[0] + {($item): .}')
     [[ -f $scratch/items-base.json ]] || continue
     while IFS=$'\t' read -r file start end; do
       if reshaped "$fork" "$base" "$file" "$start" "$end"; then
