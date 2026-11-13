@@ -86,5 +86,187 @@
     "program": "stress.jq",
     "input": { "status": 1, "out_of_memory": false },
     "fails": true
+  },
+  {
+    "name": "#7308: a path that runs to its end gives its wall, its first line, its peak and its charged peak, and ends",
+    "program": "small-device.jq",
+    "input": {
+      "path": "run hello.gandr",
+      "cores": 1,
+      "memory": "64M",
+      "status": 0,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 1.047,
+      "first": 0.5,
+      "peak_kib": 27955,
+      "charged": 25165824,
+      "refusal": null
+    },
+    "output": "| run hello.gandr | 1 | 64 MiB | 1.05 s | 0.50 s | 27.3 MiB | 24.0 MiB | ends |"
+  },
+  {
+    "name": "#7308: a path that the kernel kills in its scope stops at the memory bound",
+    "program": "small-device.jq",
+    "input": {
+      "path": "check --recheck cost.gandr",
+      "cores": 2,
+      "memory": "64M",
+      "status": 137,
+      "ended": 0,
+      "oom_kills": 1,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 2.3,
+      "first": 0.11,
+      "peak_kib": 65536,
+      "charged": 67108864,
+      "refusal": null
+    },
+    "output": "| check --recheck cost.gandr | 2 | 64 MiB | 2.30 s | 0.11 s | 64.0 MiB | 64.0 MiB | stopped at 64 MiB: the kernel kills it |"
+  },
+  {
+    "name": "#7308: a kill that the scope records stops the path though the status is another",
+    "program": "small-device.jq",
+    "input": {
+      "path": "cold check functions.gandr",
+      "cores": 1,
+      "memory": "256M",
+      "status": 1,
+      "ended": 0,
+      "oom_kills": 2,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 0.4,
+      "first": null,
+      "peak_kib": 262144,
+      "charged": 268435456,
+      "refusal": null
+    },
+    "output": "| cold check functions.gandr | 1 | 256 MiB | 0.40 s | none | 256.0 MiB | 256.0 MiB | stopped at 256 MiB: the kernel kills it |"
+  },
+  {
+    "name": "#7308: a path whose allocation fails names the allocation, where the kernel keeps no charged peak",
+    "program": "small-device.jq",
+    "input": {
+      "path": "run hello.gandr",
+      "cores": 1,
+      "memory": "1G",
+      "status": 134,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": true,
+      "allocation": "1048576 bytes",
+      "wall": 0.07,
+      "first": 0.06,
+      "peak_kib": 1048000,
+      "charged": null,
+      "refusal": null
+    },
+    "output": "| run hello.gandr | 1 | 1 GiB | 0.07 s | 0.06 s | 1023.4 MiB | none | stopped at 1 GiB: an allocation of 1048576 bytes fails |"
+  },
+  {
+    "name": "#7308: a path past the wall-clock limit is past the limit, not stopped by memory",
+    "program": "small-device.jq",
+    "input": {
+      "path": "host far for offers.gandr",
+      "cores": 2,
+      "memory": "1G",
+      "status": 124,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 300.01,
+      "first": 0.2,
+      "peak_kib": 40000,
+      "charged": 31457280,
+      "refusal": null
+    },
+    "output": "| host far for offers.gandr | 2 | 1 GiB | 300.01 s | 0.20 s | 39.1 MiB | 30.0 MiB | past the limit |"
+  },
+  {
+    "name": "#7308: a host that refuses the migration quotes its refusal and the issue that owes it, though it exits as it must",
+    "program": "small-device.jq",
+    "input": {
+      "path": "host far for offers.gandr",
+      "cores": 1,
+      "memory": "256M",
+      "status": 0,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 3.1,
+      "first": 0.3,
+      "peak_kib": 34000,
+      "charged": 20971520,
+      "refusal": "far: Unanswered",
+      "owed": "#3546"
+    },
+    "output": "| host far for offers.gandr | 1 | 256 MiB | 3.10 s | 0.30 s | 33.2 MiB | 20.0 MiB | refused, owed by #3546: far: Unanswered |"
+  },
+  {
+    "name": "#7308: a refusal that no issue owes is quoted alone",
+    "program": "small-device.jq",
+    "input": {
+      "path": "host far for offers.gandr",
+      "cores": 2,
+      "memory": "64M",
+      "status": 0,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 0.88,
+      "first": 0.39,
+      "peak_kib": 38400,
+      "charged": 15728640,
+      "refusal": "far: Unanswered",
+      "owed": null
+    },
+    "output": "| host far for offers.gandr | 2 | 64 MiB | 0.88 s | 0.39 s | 37.5 MiB | 15.0 MiB | refused: far: Unanswered |"
+  },
+  {
+    "name": "#7308: a path that exits with another status than its end gives the status",
+    "program": "small-device.jq",
+    "input": {
+      "path": "check --recheck cost.gandr",
+      "cores": 1,
+      "memory": "1G",
+      "status": 1,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 0.9,
+      "first": 0.02,
+      "peak_kib": 98000,
+      "charged": 52428800,
+      "refusal": null
+    },
+    "output": "| check --recheck cost.gandr | 1 | 1 GiB | 0.90 s | 0.02 s | 95.7 MiB | 50.0 MiB | exits 1 |"
+  },
+  {
+    "name": "#7308: a memory bound that the scope does not spell is refused",
+    "program": "small-device.jq",
+    "input": {
+      "path": "run hello.gandr",
+      "cores": 1,
+      "memory": "64K",
+      "status": 0,
+      "ended": 0,
+      "oom_kills": 0,
+      "out_of_memory": false,
+      "allocation": null,
+      "wall": 1,
+      "first": 1,
+      "peak_kib": 1,
+      "charged": null,
+      "refusal": null
+    },
+    "fails": true
   }
 ]

@@ -3465,7 +3465,9 @@ if [[ -n ${usage_title:-} ]]; then flags+=(--title "$usage_title"); fi
 # would send a seat to rerun larger on a host it could exhaust. `bound.jq`
 # decides a run past either bound. `row.jq` writes Catt's finished run's row,
 # `stress.jq` what `bench:stress` prints for gandr's bounded check, and
-# `dimension.jq` names an example's built-ins past n = 3. Each case in
+# `dimension.jq` names an example's built-ins past n = 3. `small-device.jq`
+# writes the row of a path that `bench:small-device` runs under a bound, and
+# names why it stopped (#7308). Each case in
 # `.config/bench/cases.json` holds a recorded run or an example's text, and
 # the row, the outcome or the built-ins it must give. Each case in
 # `.config/bench/timed.json` runs a command under `timed.py`, the timer
@@ -3480,13 +3482,13 @@ if [[ -n ${usage_title:-} ]]; then flags+=(--title "$usage_title"); fi
 # measure that reads its stdin as ssh does still gives each hotpath width, and
 # a failed measure pages once for its head.
 ["check:bench"]
-description = "The bench harness writes each recorded run's row or outcome, past bound where a bound was met, and names each recorded example's built-ins past n = 3, the stress timer reports each recorded command's status and peak, the scaling account reads each recorded measure and writes each recorded account, and its pass measures each width and pages a failed measure once"
+description = "The bench harness writes each recorded run's row or outcome, past bound where a bound was met, names each recorded example's built-ins past n = 3 and writes each small-device row with its stop, the stress timer reports each recorded command's status and peak, the scaling account reads each recorded measure and writes each recorded account, and its pass measures each width and pages a failed measure once"
 tools.jq = "1.8.1"
 tools.python = "3.15.2"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq --raw stress.jq
+.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq --raw stress.jq --raw small-device.jq
 .config/cases/run.bash bench .config/bench/scaling.json --programs .config/bench --mode c
 .config/bench/scaling-cases.bash
 python .config/bench/timed.py --cases .config/bench/timed.json
