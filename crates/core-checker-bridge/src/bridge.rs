@@ -556,6 +556,7 @@ use gandr_kernel_core::AxiomReport;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::KeptKeys;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
@@ -2809,9 +2810,11 @@ where
 ///   record keeps ([`keep::keeping()`]) is kept in place when the kernel keeps
 ///   it ([`Environment::keep_in_place`]); a refused keep retires the entry's
 ///   unit, and the place crosses as each other place does, at the rank of its
-///   place. The record of every declaration carries `keys`. A crossing the
-///   kernel rejects, or a record that keeps nothing, answers
-///   [`Walked::Misplaced`]; a poll that retires the walk answers no record.
+///   place. On an environment that forks, the key checks of each run of kept
+///   places fork ([`keep::keep_in_run`]), and the keeps stay in rank order. The
+///   record of every declaration carries `keys`. A crossing the kernel rejects,
+///   or a record that keeps nothing, answers [`Walked::Misplaced`]; a poll that
+///   retires the walk answers no record.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2822,6 +2825,7 @@ where
 /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+/// - witness: `bridge::tests::a_forked_kept_readmission_answers_as_a_serial_one_7217`
 #[spec(ensures: |ret| match ret {
     Walked::Done(Polled::Whole((ref readmission, ref recorded))) => readmission.readmitted().len() == report.judged().len()
         && (!matches!(resume, Resume::Whole)
@@ -2935,6 +2939,7 @@ where
     else {
         crossed::Absent::Unasked
     });
+    let mut checked = KeptKeys::default();
     let mut index = from;
     loop {
         if boundary == Some(index) {
@@ -2979,16 +2984,19 @@ where
         }
         // A walk that keeps crosses each declaration, and each seed it
         // reads first, at the ranks of its place.
-        let held = match keeping {
+        let (held, run) = match keeping {
             Some((ref kept, ..)) => {
                 environment.ranking_from(SourceRank::from(
                     place
                         .saturating_mul(keep::STRIDE)
                         .saturating_add(keep::CROSSING),
                 ));
-                kept.get(place).copied().flatten()
+                (
+                    kept.get(place).copied().flatten(),
+                    kept.get(place ..).unwrap_or_default(),
+                )
             },
-            None => None,
+            None => (None, Default::default()),
         };
         // A data declaration whose fields name later declarations leads the
         // mutual block they reach, which crosses whole.
@@ -3011,7 +3019,7 @@ where
                     .get(place .. place.saturating_add(block.len()))
                     .unwrap_or_default();
                 if let Maybe::Present(first) = keep::unit_of(held)
-                    && environment.keep_in_place(first).is_ok()
+                    && keep::keep_in_run(&mut environment, &mut checked, (run, first)).is_ok()
                 {
                     for (member, entry) in members.iter().zip(held.iter().copied().flatten()) {
                         readmitted.push(keep::keep_entry(
@@ -3072,7 +3080,8 @@ where
             match keep::position_of(&entry.outcome) {
                 Maybe::Present(position) => {
                     if !matches!(entry.took, Maybe::Absent(timed::Absent::Block))
-                        && environment.keep_in_place(position).is_ok()
+                        && keep::keep_in_run(&mut environment, &mut checked, (run, position))
+                            .is_ok()
                     {
                         readmitted.push(keep::keep_entry(
                             &mut positions,

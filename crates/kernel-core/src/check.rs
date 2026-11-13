@@ -8973,7 +8973,7 @@ pub(crate) fn synth_closed_value(
 }
 
 #[cfg(test)]
-mod tests
+pub(crate) mod tests
 {
     use alloc::vec;
     use alloc::vec::Vec;
@@ -11656,7 +11656,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    struct InOrder;
+    pub struct InOrder;
 
     impl crate::fork::ObligationFork for InOrder
     {
@@ -11688,7 +11688,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    struct Backwards;
+    pub struct Backwards;
 
     impl crate::fork::ObligationFork for Backwards
     {
@@ -11720,7 +11720,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    struct Threads;
+    pub struct Threads;
 
     impl crate::fork::ObligationFork for Threads
     {
@@ -11784,8 +11784,21 @@ mod tests
     ///
     /// # Specification
     /// trivial.
+    #[derive(Default)]
     #[repr(transparent)]
-    struct Counting(core::sync::atomic::AtomicUsize);
+    pub struct Counting(core::sync::atomic::AtomicUsize);
+
+    impl Counting
+    {
+        /// How many parts the fork was handed.
+        ///
+        /// # Specification
+        /// trivial.
+        pub fn parts(&self) -> usize
+        {
+            self.0.load(core::sync::atomic::Ordering::Relaxed)
+        }
+    }
 
     impl crate::fork::ObligationFork for Counting
     {

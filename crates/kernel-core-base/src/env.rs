@@ -1768,6 +1768,40 @@ pub struct EntryLog
     vacancies: usize,
     /// How many slots are reserved for a release whose commit has not come.
     reservations: usize,
+    /// The state of what a key check reads of this log: each write that a
+    /// key check reads takes a new stamp.
+    stamp: Stamp,
+}
+
+/// The source of each [`Stamp`]: every write that takes a stamp takes the
+/// next one.
+static STAMPS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(1);
+
+/// One state of what a key check reads of a log.
+///
+/// The log is an entry log, or a table that a key check reads beside it. Each
+/// write that a key check reads takes a stamp that no other write in the
+/// process takes, so two equal stamps name one state of what a key check
+/// reads. A rename writes a name, which no key check reads, and keeps the
+/// stamp.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Stamp(u64);
+
+impl Stamp
+{
+    /// A stamp that no earlier write took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn next() -> Self
+    {
+        Self(STAMPS.fetch_add(1, core::sync::atomic::Ordering::Relaxed))
+    }
 }
 
 /// The slot at one position of the entries.
@@ -2133,6 +2167,20 @@ impl Entries
         self.log.as_deref()
     }
 
+    /// The state of what a key check reads of the entries and the tables kept
+    /// beside them: the stamp of the last write that a key check reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn stamp(&self) -> Stamp
+    {
+        self.log
+            .as_deref()
+            .map_or_else(Stamp::default, |log| log.stamp)
+    }
+
     /// The rank the check that runs reads below, with its presentations:
     /// none until a check opens one.
     ///
@@ -2345,12 +2393,26 @@ impl Entries
         self.support = view.support;
     }
 
-    /// The log, to change: shared with no clone or reading after.
+    /// The log, to change: shared with no clone or reading after. The change
+    /// takes a new stamp.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn log_mut(&mut self) -> &mut EntryLog
+    {
+        let log = self.log_named();
+        log.stamp = Stamp::next();
+        log
+    }
+
+    /// The log, to change a name alone, which no key check reads: shared with
+    /// no clone or reading after, at the stamp it holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn log_named(&mut self) -> &mut EntryLog
     {
         alloc::sync::Arc::make_mut(self.log.get_or_insert_with(alloc::sync::Arc::default))
     }
@@ -2603,7 +2665,7 @@ impl Entries
     )
     {
         if let Some(entry) = self
-            .log_mut()
+            .log_named()
             .family
             .get_mut(usize::from(position))
             .and_then(Slot::admitted_mut)

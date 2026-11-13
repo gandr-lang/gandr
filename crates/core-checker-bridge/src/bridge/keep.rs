@@ -29,7 +29,10 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::KeptKeys;
+use gandr_kernel_core::KernelError;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::SourceRank;
 use quenchant_shape::shape::Maybe;
@@ -56,6 +59,9 @@ pub(super) const STRIDE: usize = 1 << 20_u32;
 /// of the place, so that a crossing after a refused keep reads them below
 /// itself, as a fresh admission reads a seed its first reader admitted.
 pub(super) const CROSSING: usize = STRIDE >> 1_u32;
+
+/// The most places that one run of kept units holds ([`run_firsts`]).
+const RUN: usize = 4096;
 
 quenchant_shape::reason_enum! {
     /// Why a readmission keeps nothing of a record and crosses each
@@ -143,6 +149,59 @@ pub(super) const fn position_of(outcome: &Outcome) -> Maybe<ConstantIndex, entry
         | Outcome::Refused(_)
         | Outcome::Rejected(_) => Maybe::Absent(entry::Absent::Unadmitted),
     }
+}
+
+/// The kernel position of each entry that `held` keeps before the first
+/// place that the walk crosses, over [`RUN`] places at most. `held` holds the
+/// entries that the record keeps, from one place of the walk on.
+///
+/// # Specification
+/// trivial.
+fn run_firsts(held: &[Option<&Readmitted>]) -> Vec<ConstantIndex>
+{
+    held.iter()
+        .take(RUN)
+        .map_while(|entry| *entry)
+        .filter_map(|entry| match position_of(&entry.outcome) {
+            Maybe::Present(position) => Some(position),
+            Maybe::Absent(_) => None,
+        })
+        .collect()
+}
+
+/// Keep in place the unit whose first member stands at `first`, with the
+/// key check that `checked` holds for it.
+///
+/// When the environment forks and `checked` holds no check of the unit at the
+/// state that the environment is in, the walk first checks the keys of the
+/// run from this place on through the fork. `held` holds the entries that the
+/// record keeps from this place on. An environment that does not fork keeps
+/// the unit as [`Environment::keep_in_place`] keeps it.
+///
+/// # Specification
+/// - ensures: what [`Environment::keep_in_place`] at `first` gives.
+/// - fails: as [`Environment::keep_in_place`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a kept readmission on a fork answers as on no fork.
+/// - witness: `bridge::tests::a_forked_kept_readmission_answers_as_a_serial_one_7217`
+pub(super) fn keep_in_run(
+    environment: &mut Environment,
+    checked: &mut KeptKeys,
+    (held, first): (&[Option<&Readmitted>], ConstantIndex),
+) -> Result<CheckedId, KernelError>
+{
+    if !environment.forks_kept_keys() {
+        return environment.keep_in_place(first);
+    }
+    if !checked.covers(first) || !environment.holds_kept_keys(checked) {
+        *checked = environment.check_kept_keys(&run_firsts(held));
+    }
+    environment.keep_checked_in_place(first, checked)
 }
 
 /// The first kernel position of the mutual block that `held`, the entries

@@ -2670,6 +2670,32 @@ impl Environment
         first: ConstantIndex,
     ) -> Result<CheckedId, KernelError>
     {
+        let answer = self.holds_in_place(first)?;
+        Ok(self.apply_in_place(first, answer))
+    }
+
+    /// Whether the live unit whose first member stands at `first` can stay in
+    /// place: the key check of [`Self::keep_in_place`], by lookup when the
+    /// held keys answer for it. It reads the environment and writes nothing.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` exactly when [`Self::keep_in_place`] at `first` keeps
+    ///   the unit now, with how the check answers.
+    /// - fails: as [`Self::keep_in_place`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::keep_in_place`].
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    /// - witness: `environment::tests::a_held_key_answers_until_an_admission_below_it_7197`
+    fn holds_in_place(
+        &self,
+        first: ConstantIndex,
+    ) -> Result<Answer, KernelError>
+    {
         self.settled()?;
         let Some(entry) = self.entries.live(first)
         else {
@@ -2688,12 +2714,32 @@ impl Environment
             });
         }
         if self.answers_by_lookup(unit) {
-            return Ok(CheckedId::new(first));
+            return Ok(Answer::Lookup);
         }
         let ranks = self.unit_ranks(unit);
-        self.check_in_place(first, &ranks)?;
-        self.key_through(unit, &ranks);
-        Ok(CheckedId::new(first))
+        self.holds_its_key(entry, (first, &ranks))?;
+        Ok(Answer::Check(ranks))
+    }
+
+    /// The writes of a keep whose key check passed: after a full check, the
+    /// name of a twin and the watermark through the unit. A lookup writes
+    /// nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn apply_in_place(
+        &mut self,
+        first: ConstantIndex,
+        answer: Answer,
+    ) -> CheckedId
+    {
+        if let Answer::Check(ranks) = answer
+            && let Some(unit) = self.entries.live(first).map(AdmittedDeclaration::unit)
+        {
+            self.name_in_place(first);
+            self.key_through(unit, &ranks);
+        }
+        CheckedId::new(first)
     }
 
     /// Whether the held keys of `unit` answer for its check by lookup: the
@@ -2765,11 +2811,26 @@ impl Environment
             return Err(KernelError::UnboundConstant { index: first });
         };
         self.holds_its_key(entry, (first, ranks))?;
+        self.name_in_place(first);
+        Ok(())
+    }
+
+    /// The name that a keep gives after a full key check: a plain definition
+    /// kept alone takes the name that a fresh admission at its rank gives.
+    ///
+    /// # Specification
+    /// trivial.
+    fn name_in_place(
+        &mut self,
+        first: ConstantIndex,
+    )
+    {
         // A twin's order among the plain definitions of its content is in its
         // name: the kept twin takes the order of its rank among those live now.
-        if matches!(entry.unit().shape, UnitShape::Lone)
+        if let Some(entry) = self.entries.live(first)
+            && matches!(entry.unit().shape, UnitShape::Lone)
             && let ConstantName::Definition { declared, body, .. } = entry.key_name()
-            && let Some(&rank) = ranks.first()
+            && let Some(rank) = self.entries.rank_of(first)
         {
             let held = entry.key_name();
             let named = crate::encoding::name_definition(
@@ -2783,7 +2844,6 @@ impl Environment
                 self.entries.rename(first, named);
             }
         }
-        Ok(())
     }
 
     /// Raise the watermark through `unit`, whose key holds at `ranks`. Each
@@ -2828,6 +2888,169 @@ impl Environment
             for &member in &gap_ranks {
                 commits.keyed(member);
             }
+        }
+    }
+
+    /// The key checks of the units whose first members stand at `firsts`,
+    /// made through this environment's fork at the state it is in now.
+    ///
+    /// A readmission that keeps reaches a run of kept units between two
+    /// crossings. Each key check reads the environment below its unit and
+    /// writes nothing, so the checks of a run fork. A unit that its held keys
+    /// answer for by lookup stays out of the fork. The keeps that use the
+    /// checks stay in rank order ([`Self::keep_checked_in_place`]).
+    ///
+    /// # Specification
+    /// - ensures: the checks hold each of `firsts`, at the state the
+    ///   environment is in now. Each unit that no lookup answers for holds the
+    ///   verdict that [`Self::keep_in_place`] gives now, when the environment
+    ///   holds a fork of two workers or more, [`FORKED_KEYS`] such units or
+    ///   more stand in `firsts` and no check is open. Each other unit holds no
+    ///   verdict. The environment is unchanged.
+    /// - panics: a panic of a key check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the keys of a run checked in the serial order, in the
+    ///   reverse order and on threads of their own give the verdicts of the
+    ///   keeps in rank order, and checks made before a retirement give the
+    ///   verdicts of the keeps after it.
+    /// - witness: `environment::tests::forked_key_checks_give_the_verdicts_of_keeps_in_rank_order_7217`
+    #[inline]
+    #[must_use]
+    pub fn check_kept_keys(
+        &self,
+        firsts: &[ConstantIndex],
+    ) -> KeptKeys
+    {
+        let unchecked = || KeptKeys {
+            mark: Some(self.key_mark()),
+            checked: firsts.iter().map(|&first| (first, None)).collect(),
+        };
+        let Some(fork) = self.forking.forking()
+        else {
+            return unchecked();
+        };
+        let workers = core::num::NonZeroUsize::from(fork.workers()).get();
+        if workers < 2 || self.entries.check_horizon().is_some() {
+            return unchecked();
+        }
+        let stale: Vec<ConstantIndex> = firsts
+            .iter()
+            .copied()
+            .filter(|&first| {
+                !self
+                    .entries
+                    .live(first)
+                    .is_some_and(|entry| self.answers_by_lookup(entry.unit()))
+            })
+            .collect();
+        if stale.len() < FORKED_KEYS {
+            return unchecked();
+        }
+        let parts = workers
+            .min(stale.len().checked_div(KEYS_PER_PART).unwrap_or(1))
+            .max(1);
+        let mut jobs: Vec<KeyPart<'_>> = stale
+            .chunks(stale.len().div_ceil(parts))
+            .map(|firsts| KeyPart {
+                environment: self,
+                firsts,
+                verdicts: Vec::new(),
+            })
+            .collect();
+        {
+            let mut parts: Vec<&mut dyn crate::fork::Job> = jobs
+                .iter_mut()
+                .map(|part| -> &mut dyn crate::fork::Job { part })
+                .collect();
+            fork.run_jobs(&mut parts);
+        }
+        let mut checked: BTreeMap<_, _> = firsts.iter().map(|&first| (first, None)).collect();
+        for part in jobs {
+            for (&first, verdict) in part.firsts.iter().zip(part.verdicts) {
+                let _checked = checked.insert(first, Some(verdict));
+            }
+        }
+        KeptKeys {
+            mark: Some(self.key_mark()),
+            checked,
+        }
+    }
+
+    /// Whether this environment forks the key checks of a run of kept units:
+    /// it holds a fork of two workers or more.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forks_kept_keys(&self) -> bool
+    {
+        self.forking
+            .forking()
+            .is_some_and(|fork| core::num::NonZeroUsize::from(fork.workers()).get() >= 2)
+    }
+
+    /// Whether `keys` were checked at the state this environment is in: no
+    /// write since changed what a key check reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn holds_kept_keys(
+        &self,
+        keys: &KeptKeys,
+    ) -> bool
+    {
+        keys.mark == Some(self.key_mark())
+    }
+
+    /// [`Self::keep_in_place`], with the key check that `keys` holds for
+    /// `first` in place of a new one while `keys` hold
+    /// ([`Self::holds_kept_keys`]). The keep takes the check out of `keys`.
+    ///
+    /// # Specification
+    /// - ensures: what [`Self::keep_in_place`] at `first` gives.
+    /// - fails: as [`Self::keep_in_place`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::check_kept_keys`]; a keep after a write
+    ///   that changes what a key check reads checks its key again.
+    /// - witness: `environment::tests::forked_key_checks_give_the_verdicts_of_keeps_in_rank_order_7217`
+    #[inline]
+    pub fn keep_checked_in_place(
+        &mut self,
+        first: ConstantIndex,
+        keys: &mut KeptKeys,
+    ) -> Result<CheckedId, KernelError>
+    {
+        match keys.checked.remove(&first).flatten() {
+            Some(verdict) if self.holds_kept_keys(keys) => {
+                self.settled()?;
+                let answer = verdict?;
+                Ok(self.apply_in_place(first, answer))
+            },
+            Some(_) | None => self.keep_in_place(first),
+        }
+    }
+
+    /// The state of what a key check reads: the entries, the generative
+    /// admissions, the manifest and the keying.
+    ///
+    /// # Specification
+    /// trivial.
+    fn key_mark(&self) -> KeyMark
+    {
+        KeyMark {
+            entries: self.entries.stamp(),
+            generative: self.commits.generative_stamp,
+            manifest: self.manifest.len(),
+            keying: self.verdicts.keying(),
         }
     }
 
@@ -3630,6 +3853,111 @@ impl Environment
     }
 }
 
+/// The fewest kept units whose key checks fork
+/// ([`Environment::check_kept_keys`]).
+const FORKED_KEYS: usize = 64;
+
+/// The fewest key checks in one part of a forked run.
+const KEYS_PER_PART: usize = 16;
+
+/// How the key check of a kept unit answers ([`Environment::keep_in_place`]).
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+enum Answer
+{
+    /// The held keys answer for the check, and the keep writes nothing.
+    Lookup,
+    /// The key check holds at the unit's ranks, and the keep names a twin and
+    /// raises the watermark through them.
+    Check(Vec<SourceRank>),
+}
+
+/// The key checks of a run of units kept in place, made at one state of the
+/// environment ([`Environment::check_kept_keys`]). A keep uses a verdict only
+/// while the environment stays at that state.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub struct KeptKeys
+{
+    /// The state of the environment the checks read: none when nothing was
+    /// checked.
+    mark: Option<KeyMark>,
+    /// Each unit asked about, by the position of its first member, with its
+    /// verdict when the run forked.
+    checked: BTreeMap<ConstantIndex, Option<Result<Answer, KernelError>>>,
+}
+
+impl KeptKeys
+{
+    /// Whether the checks were asked about the unit whose first member stands
+    /// at `first`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn covers(
+        &self,
+        first: ConstantIndex,
+    ) -> bool
+    {
+        self.checked.contains_key(&first)
+    }
+}
+
+/// The state of what a key check reads.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct KeyMark
+{
+    /// The entries and the tables kept beside them.
+    entries: crate::env::Stamp,
+    /// The generative admissions that a generative unit's key counts.
+    generative: crate::env::Stamp,
+    /// How many atoms the manifest holds.
+    manifest: usize,
+    /// Whether the environment keys its admissions.
+    keying: crate::verdict::Keying,
+}
+
+/// The key checks of one part of a forked run, each on the shared
+/// environment.
+///
+/// # Specification
+/// trivial.
+struct KeyPart<'env>
+{
+    /// The environment that each check reads.
+    environment: &'env Environment,
+    /// The first member of each unit to check, in run order.
+    firsts: &'env [ConstantIndex],
+    /// The verdict of each unit, once the part ran.
+    verdicts: Vec<Result<Answer, KernelError>>,
+}
+
+impl crate::fork::Job for KeyPart<'_>
+{
+    /// Check the key of each unit of the part.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(&mut self)
+    {
+        self.verdicts = self
+            .firsts
+            .iter()
+            .map(|&first| self.environment.holds_in_place(first))
+            .collect();
+    }
+}
+
 /// How a released check answers.
 ///
 /// # Specification
@@ -3661,6 +3989,8 @@ struct CommitLog
     /// The positions of the generative admissions, by their content key:
     /// the earlier ones with one content are what a new one's key counts.
     generative: BTreeMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
+    /// The state of `generative`: each write takes a new stamp.
+    generative_stamp: crate::env::Stamp,
     /// The position of the entry that holds each rank.
     ranked: BTreeMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
@@ -3812,6 +4142,7 @@ impl CommitLog
     )
     {
         self.generative.entry(content).or_default().push(position);
+        self.generative_stamp = crate::env::Stamp::next();
     }
 
     /// Take the rows of the entry admitted at `position` and `rank`, which
@@ -4056,6 +4387,7 @@ impl CommitLog
             positions.retain(|&position| live(position));
             !positions.is_empty()
         });
+        self.generative_stamp = crate::env::Stamp::next();
     }
 
     /// Hold each rank of `ranks` at its position, in place of every rank held
@@ -4195,6 +4527,7 @@ impl CommitLog
             .iter()
             .find(|&(_, &position)| position >= first)
             .map(|(&rank, _)| rank);
+        self.generative_stamp = crate::env::Stamp::next();
         self.ranked.retain(|_, &mut position| position < first);
         if let Some(least) = least {
             self.stale_from(least);
@@ -8051,6 +8384,104 @@ mod tests
             environment.keep_in_place(a),
             Err(KernelError::Retired { position: a }),
             "a retired entry is not kept in place"
+        );
+    }
+
+    /// #7217: the key checks of a run of kept units fork in the serial order,
+    /// in the reverse order and on threads of their own. Each fork gives each
+    /// keep the verdict of the keeps in rank order. The readmission retires
+    /// `z`, below every unit, so no held key answers for a unit by lookup.
+    /// Every third unit names `a`, and the readmission retires `a` too, so the
+    /// run keeps some units and refuses others. Checks made before the
+    /// retirement of `a` do not hold after it, and each keep then checks its
+    /// key again.
+    #[test]
+    fn forked_key_checks_give_the_verdicts_of_keeps_in_rank_order_7217()
+    {
+        use crate::check::tests::Backwards;
+        use crate::check::tests::Counting;
+        use crate::check::tests::InOrder;
+        use crate::check::tests::Threads;
+        use crate::fork::ObligationFork;
+        use crate::fork::SharedFork;
+
+        // Each data type stands at a level of its own, so no unit is a twin
+        // of another, and each retirement refuses the readers of its entry
+        // alone.
+        let data = |level: u64| Generated::Lone(Member::Data(LevelConstant::from(level), vec![]));
+        let mut environment = keyed();
+        let z = admit_generated(&mut environment, &data(1000), &[], None).expect("`z` admits");
+        let a = admit_generated(&mut environment, &data(0), &[], None).expect("`a` admits");
+        let mut firsts = Vec::new();
+        for unit in 0_u64 .. 96 {
+            let generated = if unit.is_multiple_of(3) {
+                Generated::Lone(Member::Axiom(Field::Earlier(0)))
+            }
+            else {
+                data(unit)
+            };
+            firsts.extend(
+                admit_generated(&mut environment, &generated, &a, None).expect("each unit admits"),
+            );
+        }
+        let (Some(&z), Some(&a)) = (z.first(), a.first())
+        else {
+            panic!("each admission takes a position");
+        };
+        assert_eq!(environment.retire(&[z]), Ok(()));
+        let unretired = environment.clone();
+        assert_eq!(environment.retire(&[a]), Ok(()));
+        let mut serial = environment.clone();
+        let verdicts: Vec<_> = firsts
+            .iter()
+            .map(|&first| serial.keep_in_place(first))
+            .collect();
+        assert!(
+            verdicts.iter().any(Result::is_ok) && verdicts.iter().any(Result::is_err),
+            "the run keeps some units and refuses the readers of `a`"
+        );
+        let keep = |environment: &mut Environment, mut checked: super::KeptKeys| -> Vec<_> {
+            firsts
+                .iter()
+                .map(|&first| environment.keep_checked_in_place(first, &mut checked))
+                .collect()
+        };
+        let counting = alloc::sync::Arc::new(Counting::default());
+        let forks: [alloc::sync::Arc<dyn ObligationFork + Send>; 4] = [
+            alloc::sync::Arc::new(InOrder),
+            alloc::sync::Arc::new(Backwards),
+            alloc::sync::Arc::new(Threads),
+            alloc::sync::Arc::<Counting>::clone(&counting),
+        ];
+        for fork in forks {
+            let mut forked = environment.clone().forking(SharedFork::through(fork));
+            let checked = forked.check_kept_keys(&firsts);
+            assert_eq!(
+                keep(&mut forked, checked),
+                verdicts,
+                "a forked run gives the verdicts of the keeps in rank order"
+            );
+        }
+        assert_eq!(
+            counting.parts(),
+            4,
+            "a run of 96 units forks into one part for each of the four workers"
+        );
+        let before = alloc::sync::Arc::new(Counting::default());
+        let mut early = unretired.forking(SharedFork::through(
+            alloc::sync::Arc::<Counting>::clone(&before),
+        ));
+        let checked = early.check_kept_keys(&firsts);
+        assert_eq!(
+            before.parts(),
+            4,
+            "the checks before the retirement of `a` fork"
+        );
+        assert_eq!(early.retire(&[a]), Ok(()));
+        assert_eq!(
+            keep(&mut early, checked),
+            verdicts,
+            "checks made before the retirement do not hold after it"
         );
     }
 

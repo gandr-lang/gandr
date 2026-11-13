@@ -10279,6 +10279,115 @@ fn a_kept_readmission_answers_as_a_whole_one_6846()
     }
 }
 
+/// Runs each part on a scoped thread of its own, and counts the parts.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct CountedThreads(core::sync::atomic::AtomicUsize);
+
+impl gandr_kernel_core::fork::ObligationFork for CountedThreads
+{
+    /// Each part on a scoped thread of its own, counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn run_jobs(
+        &self,
+        jobs: &mut [&mut dyn gandr_kernel_core::fork::Job],
+    )
+    {
+        extern crate std;
+        let _before = self
+            .0
+            .fetch_add(jobs.len(), core::sync::atomic::Ordering::Relaxed);
+        std::thread::scope(|scope| {
+            for job in jobs.iter_mut() {
+                let _running = scope.spawn(move || job.run());
+            }
+        });
+    }
+
+    /// Four workers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn workers(&self) -> gandr_kernel_core::fork::ForkWidth
+    {
+        gandr_kernel_core::fork::ForkWidth::from(core::num::NonZeroUsize::MIN.saturating_add(3))
+    }
+}
+
+/// #7217: for each class of edit, a readmission that keeps answers on a fork
+/// as it answers on no fork: entry by entry, to the bytes of its export, and
+/// in the count of the entries it keeps. The fork checks the keys of each run
+/// of kept units on threads of their own. Each class runs four generated
+/// modules of 160 declarations, drawn by a fixed seed, so that a run is long
+/// enough to fork.
+#[test]
+fn a_forked_kept_readmission_answers_as_a_serial_one_7217()
+{
+    let fork = alloc::sync::Arc::new(CountedThreads(core::sync::atomic::AtomicUsize::new(0)));
+    let forked = Recall::recheck().forking(gandr_kernel_core::fork::SharedFork::through(
+        alloc::sync::Arc::<CountedThreads>::clone(&fork),
+    ));
+    for (class, edit) in module_edits().into_iter().enumerate() {
+        let mut runner = proptest::test_runner::TestRunner::new_with_rng(
+            ProptestConfig::with_cases(4),
+            proptest::test_runner::TestRng::deterministic_rng(
+                proptest::test_runner::RngAlgorithm::ChaCha,
+            ),
+        );
+        let ran = runner.run(
+            &(proptest::collection::vec(drawn(), 160), edit),
+            |(draws, edit)| {
+                let mut module = generated(&draws);
+                let (mut arena, report, keys) = keyed_module(&module);
+                let (_, record) = super::readmit_keeping(
+                    &mut arena,
+                    &report,
+                    (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+                    &Recall::recheck(),
+                    &Unretired,
+                    &mut Untimed,
+                )
+                .whole();
+                edited(&mut module, edit, Named(160));
+                let readmitted = |recall: &Recall| {
+                    let (mut arena, report, keys) = keyed_module(&module);
+                    let (kept, _) = super::readmit_keeping(
+                        &mut arena,
+                        &report,
+                        (&keys, held(&record)),
+                        recall,
+                        &Unretired,
+                        &mut Untimed,
+                    )
+                    .whole();
+                    (
+                        agreed(&kept),
+                        kept.export(names_of(&module)),
+                        usize::from(kept.kept()),
+                    )
+                };
+                prop_assert_eq!(
+                    readmitted(&forked),
+                    readmitted(&Recall::recheck()),
+                    "class {}: the forked readmission answers as the serial one after {:?}",
+                    class,
+                    edit
+                );
+                Ok(())
+            },
+        );
+        assert!(ran.is_ok(), "class {class}: {ran:?}");
+    }
+    assert!(
+        fork.0.load(core::sync::atomic::Ordering::Relaxed) > 0,
+        "a run of kept units forks its key checks"
+    );
+}
+
 /// #6846: a readmission retires the reach of an edit and no suffix of the
 /// entries. The edit of `n2`'s literal leaves `n3`, after it, live at the
 /// kernel position it took, and the readmission offers the kernel `n2`

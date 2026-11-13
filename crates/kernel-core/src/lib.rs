@@ -778,6 +778,7 @@ pub use crate::environment::ArtifactRefusal;
 pub use crate::environment::AxiomReport;
 pub use crate::environment::Environment;
 pub use crate::environment::Hold;
+pub use crate::environment::KeptKeys;
 pub use crate::environment::Released;
 pub use crate::environment::next_rank;
 pub use crate::environment::places;
