@@ -1,11 +1,11 @@
 //! The committed ledger and the difference a run owes against it. The
-//! ledger's reading, verdict and writing are `gandr-workflow-ledger`'s; a key
-//! here is the whole line a finding owes.
+//! ledger's reading, verdict and writing are `gandr-workflow-debt-ledger`'s; a
+//! key here is the whole line a finding owes.
 
 use anodized::spec;
-use gandr_workflow_ledger::Header;
-use gandr_workflow_ledger::Ledger;
-use gandr_workflow_ledger::LedgerError;
+use gandr_workflow_debt_ledger::Header;
+use gandr_workflow_debt_ledger::Ledger;
+use gandr_workflow_debt_ledger::LedgerError;
 
 use crate::comments::judge::Finding;
 
@@ -137,7 +137,7 @@ pub fn discrepancies(
     ledger: crate::comments::shape::Text<'_>,
 ) -> Result<Vec<Discrepancy>, LedgerError>
 {
-    let held = Ledger::<String>::read(gandr_workflow_ledger::Text(ledger.0))?;
+    let held = Ledger::<String>::read(gandr_workflow_debt_ledger::Text(ledger.0))?;
     let verdict = held.check(found, |finding| finding.line().0.to_owned());
     let mut rows: Vec<Discrepancy> = verdict
         .new
@@ -158,7 +158,7 @@ pub fn discrepancies(
 }
 
 /// The ledger text of `found`: the header, then one sorted line per finding,
-/// as `gandr_workflow_ledger::write` writes it; the bytes
+/// as `gandr_workflow_debt_ledger::write` writes it; the bytes
 /// `CORPUS_COMMENTS_WRITE_LEDGER=1` commits.
 ///
 /// # Specification
@@ -167,7 +167,7 @@ pub fn discrepancies(
 #[must_use]
 pub fn ledger_text(found: &[Finding]) -> String
 {
-    gandr_workflow_ledger::write(HEADER, found.iter().map(|finding| finding.line().0))
+    gandr_workflow_debt_ledger::write(HEADER, found.iter().map(|finding| finding.line().0))
 }
 
 #[cfg(test)]

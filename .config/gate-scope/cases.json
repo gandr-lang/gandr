@@ -649,14 +649,14 @@
       ],
       "packages": [
         {
-          "name": "gandr-workflow-ledger",
-          "dir": "crates/workflow-ledger",
+          "name": "gandr-workflow-debt-ledger",
+          "dir": "crates/workflow-debt-ledger",
           "deps": []
         },
         {
           "name": "gandr-workflow-prose",
           "dir": "crates/workflow-prose",
-          "deps": ["gandr-workflow-ledger"]
+          "deps": ["gandr-workflow-debt-ledger"]
         },
         {
           "name": "gandr-core-term",

@@ -1,12 +1,12 @@
-//! `gandr-ledger`: the ledger tasks of gandr's surface, one verb each.
+//! `ledger`: the ledger tasks of gandr's surface, one verb each.
 //!
 //! | Invocation | Prints | Exits `1` when |
 //! | --- | --- | --- |
-//! | `gandr-ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar | never |
-//! | `gandr-ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found | an exemplar does not hold |
-//! | `gandr-ledger recovery <directory>` | the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count swept | a mutant is marked elsewhere |
-//! | `gandr-ledger list [--area <area>] [--status <status>] [--root <directory>]` | one line for each feature, `<id> [<status>] <name>: <line>` | never |
-//! | `gandr-ledger show <id> [--root <directory>]` | the feature's row, each of its exemplars' sources whole, then its corpus paths | never |
+//! | `ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar | never |
+//! | `ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found | an exemplar does not hold |
+//! | `ledger recovery <directory>` | the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count swept | a mutant is marked elsewhere |
+//! | `ledger list [--area <area>] [--status <status>] [--root <directory>]` | one line for each feature, `<id> [<status>] <name>: <line>` | never |
+//! | `ledger show <id> [--root <directory>]` | the feature's row, each of its exemplars' sources whole, then its corpus paths | never |
 //!
 //! The binary exits with one of three codes:
 //!
@@ -38,7 +38,7 @@ const FAULTED: u8 = 2;
 
 /// The ledger tasks of gandr's surface.
 #[derive(Debug, clap::Parser)]
-#[command(name = "gandr-ledger", version, about)]
+#[command(name = "ledger", version, about)]
 enum Cli
 {
     /// The syntax ledger: every rule of the built-in grammar and every
@@ -90,7 +90,7 @@ enum Cli
     /// uses before writing it.
     Show
     {
-        /// The feature's id, as `gandr-ledger list` prints it.
+        /// The feature's id, as `ledger list` prints it.
         id: String,
         /// The tree holding `ledger/features.sql` and the paths it names.
         #[arg(long, value_name = "DIRECTORY", default_value = ".")]
@@ -227,11 +227,11 @@ fn main() -> ExitCode
 ///   otherwise. A list prints each feature it matched as `<id> [<status>]
 ///   <name>: <line>`, a show prints the feature's row, its exemplars' sources
 ///   and its corpus paths, and both exit zero. A ledger that cannot be
-///   generated, written, listed, read or answer is `gandr-ledger: <fault>` on
+///   generated, written, listed, read or answer is `ledger: <fault>` on
 ///   standard error and exits two.
-/// - provides: `gandr-ledger syntax --write <directory>`, `gandr-ledger
-///   exemplars <directory>`, `gandr-ledger recovery <directory>`, `gandr-ledger
-///   list` and `gandr-ledger show <id>`.
+/// - provides: `ledger syntax --write <directory>`, `ledger exemplars
+///   <directory>`, `ledger recovery <directory>`, `ledger list` and `ledger
+///   show <id>`.
 /// - fails: the first write error on either stream.
 /// - panics: none.
 ///
@@ -297,7 +297,7 @@ fn ran(
             Ok(ExitCode::SUCCESS)
         },
         Err(fault) => {
-            writeln!(stderr, "gandr-ledger: {fault}")?;
+            writeln!(stderr, "ledger: {fault}")?;
             Ok(ExitCode::from(FAULTED))
         },
     }

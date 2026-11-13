@@ -1203,7 +1203,7 @@ tools.jq = "1.8.1"
 run = ".config/ledger/syntax-cases.bash"
 
 # One exemplar per committed rule of the syntax ledger and per attribute
-# (`corpus/ledger/{syntax,attributes}`), verified by `gandr-ledger`: the files
+# (`corpus/ledger/{syntax,attributes}`), verified by `ledger`: the files
 # and the rules match by name, each exemplar parses with no obligation and
 # holds a tile of its rule, and each attribute exemplar lowers with its
 # attribute filed. Every features exemplar states only `checks`, `runs` or

@@ -1527,7 +1527,7 @@ dependencies = [
  "gandr-surface-syntax",
  "gandr-theory-cellular-sheaves",
  "gandr-theory-probability",
- "gandr-workflow-ledger",
+ "gandr-workflow-debt-ledger",
  "quenchant-anodized",
  "quenchant-shape",
 ]
@@ -2217,6 +2217,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-debt-ledger"
+version = "0.0.0"
+
+[[package]]
 name = "gandr-workflow-github"
 version = "0.0.0"
 
@@ -2246,10 +2250,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gandr-workflow-ledger"
-version = "0.0.0"
-
-[[package]]
 name = "gandr-workflow-ledger-tasks"
 version = "0.0.0"
 dependencies = [
@@ -2275,7 +2275,7 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "clap",
- "gandr-workflow-ledger",
+ "gandr-workflow-debt-ledger",
  "quenchant-shape",
  "serde",
  "serde_json",

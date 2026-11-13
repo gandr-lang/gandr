@@ -1,4 +1,4 @@
-# gandr-workflow-ledger
+# gandr-workflow-debt-ledger
 
 The debt ledger two workflow gates share: the findings a gate has committed to owe, one key per line. The gate refuses a new finding, and a fixed one leaves its line stale. It sits in the workflow category, outside the language, and guards neither integrity nor validity.
 
@@ -11,7 +11,7 @@ The debt ledger two workflow gates share: the findings a gate has committed to o
 
 ## Synopsis
 
-**What.** `gandr-workflow-ledger` is a library. `Ledger::read` reads a ledger's text, `Ledger::check` compares a check's findings with it, and `write` gives the text that regenerates it.
+**What.** `gandr-workflow-debt-ledger` is a library. `Ledger::read` reads a ledger's text, `Ledger::check` compares a check's findings with it, and `write` gives the text that regenerates it.
 
 **Why.** The corpus comment gate (`corpus/uncommented.ledger`) and the prose check (`corpus/prose.ledger`) keep the same discipline: a finding the ledger holds passes, a new one refuses, a held line no finding carries is stale and refuses, and a write mode regenerates the file. Each kept its own reader, comparison and writer; one module gives both the same reading and the same verdict.
 
@@ -30,7 +30,7 @@ None: the caller reads and writes the file.
 ## Examples
 
 ```sh
-cargo nextest run -p gandr-workflow-ledger
+cargo nextest run -p gandr-workflow-debt-ledger
 ```
 
 ## Dependencies

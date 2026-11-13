@@ -96,10 +96,10 @@ digraph crates {
     label = "workflow";
     "workflow-build-state";
     "workflow-coverage-guard";
+    "workflow-debt-ledger";
     "workflow-github";
     "workflow-hotpath-guard";
     "workflow-lane-budget";
-    "workflow-ledger";
     "workflow-ledger-tasks";
     "workflow-prose";
     "workflow-spec-cost";
@@ -417,7 +417,7 @@ digraph crates {
   "workflow-ledger-tasks" -> "surface-parser";
   "workflow-ledger-tasks" -> "surface-syntax";
   "workflow-ledger-tasks" -> "theory-graphs";
-  "workflow-prose" -> "workflow-ledger";
+  "workflow-prose" -> "workflow-debt-ledger";
   "workflow-spec-cost" -> "workflow-test-timing";
   "workflow-sweep" -> "surface-format";
   "workflow-sweep" -> "surface-grammar";

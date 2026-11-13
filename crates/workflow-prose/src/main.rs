@@ -23,9 +23,9 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use gandr_workflow_ledger::Ledger;
-use gandr_workflow_ledger::LedgerError;
-use gandr_workflow_ledger::Standing;
+use gandr_workflow_debt_ledger::Ledger;
+use gandr_workflow_debt_ledger::LedgerError;
+use gandr_workflow_debt_ledger::Standing;
 use gandr_workflow_prose::Finding;
 use gandr_workflow_prose::Glossary;
 use gandr_workflow_prose::Key;
@@ -300,13 +300,13 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         message: error.to_string(),
     };
     if cli.write {
-        let text = gandr_workflow_ledger::write(ledger::HEADER, findings.iter().map(Key::of));
+        let text = gandr_workflow_debt_ledger::write(ledger::HEADER, findings.iter().map(Key::of));
         let lines = text.lines().filter(|line| !line.starts_with('#')).count();
         std::fs::write(&ledger_path, text).map_err(io(ledger_path))?;
         writeln!(out, "prose: wrote {lines} ledger lines").map_err(output)?;
         return Ok(Outcome::Agreed);
     }
-    let committed = Ledger::<Key>::read(gandr_workflow_ledger::Text(
+    let committed = Ledger::<Key>::read(gandr_workflow_debt_ledger::Text(
         &std::fs::read_to_string(&ledger_path).map_err(io(ledger_path))?,
     ))
     .map_err(|LedgerError::Unread { line }| ProseError::Ledger { line })?;

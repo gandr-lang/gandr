@@ -5,7 +5,7 @@
 //! The crate stands above `gandr-surface-dispatcher`. It reads the
 //! dispatcher's composition, walk and pool, and no crate of the shipped
 //! toolchain reads it. So an edit of a ledger task rebuilds this crate and its
-//! binary alone. The binary `gandr-ledger` runs a [`LedgerTask`] for each of
+//! binary alone. The binary `ledger` runs a [`LedgerTask`] for each of
 //! its five verbs, and the task files run the binary. The `ledger` module
 //! states how each ledger is built and checked.
 

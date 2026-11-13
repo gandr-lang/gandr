@@ -71,10 +71,10 @@ members = [
   "crates/theory-virtual-doctrines",
   "crates/workflow-build-state",
   "crates/workflow-coverage-guard",
+  "crates/workflow-debt-ledger",
   "crates/workflow-github",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
-  "crates/workflow-ledger",
   "crates/workflow-ledger-tasks",
   "crates/workflow-prose",
   "crates/workflow-spec-cost",
@@ -1185,6 +1185,14 @@ path = "crates/theory-spec-combinators"
 path = "crates/theory-stone-duality"
 default-features = false
 
+# The debt ledger the workflow checks share: the committed findings, one key
+# per line, a new finding refusing and a fixed one leaving its line stale.
+# consumers:
+# - surface-corpus (dev)
+# - workflow-prose
+[workspace.dependencies.gandr-workflow-debt-ledger]
+path = "crates/workflow-debt-ledger"
+
 # The workflow crates' one `gh` runner and the error family its failures
 # share.
 # consumers:
@@ -1195,17 +1203,9 @@ default-features = false
 [workspace.dependencies.gandr-workflow-github]
 path = "crates/workflow-github"
 
-# The debt ledger the workflow checks share: the committed findings, one key
-# per line, a new finding refusing and a fixed one leaving its line stale.
-# consumers:
-# - surface-corpus (dev)
-# - workflow-prose
-[workspace.dependencies.gandr-workflow-ledger]
-path = "crates/workflow-ledger"
-
 # The ledger tasks of the surface: the syntax ledger's writer, the exemplars
 # gate, the recovery sweep, and the features ledger's list and show, run by
-# the `gandr-ledger` binary.
+# the `ledger` binary.
 # consumers:
 # - surface-driver (dev)
 [workspace.dependencies.gandr-workflow-ledger-tasks]
