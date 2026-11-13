@@ -16,8 +16,10 @@
 # absent binary.
 set -euo pipefail
 # The scope reads the change against the scratch workspace's fork, never
-# against the base of the gate that runs the check (`GATE_BASE`, #6894).
-unset GATE_BASE
+# against the base of the gate that runs the check (`GATE_BASE`, #6894). The
+# scratch workspace defines no nextest profile, so its suites run without the
+# caller's `NEXTEST_PROFILE` (#7075).
+unset GATE_BASE NEXTEST_PROFILE
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 scope="$here/../gate-scope/test-scope.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-watch-each-red.XXXXXX")
