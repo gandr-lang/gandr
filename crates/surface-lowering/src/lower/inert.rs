@@ -44,14 +44,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
     /// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
     #[spec(ensures: |ret| ret == Inertness::Content
-        || self.cx.collected.inert.contains(&slot)
-        || self.cx.collected.slots.get(usize::from(slot)).is_some_and(|entry| matches!(entry.role, Role::Declared)))]
-    pub(super) fn inertness(
+        || self.cx().collected.inert.contains(&slot)
+        || self.cx().collected.slots.get(usize::from(slot)).is_some_and(|entry| matches!(entry.role, Role::Declared)))]
+    #[inline]
+    pub fn inertness(
         &self,
         slot: SlotIndex,
     ) -> Inertness
     {
-        if self.cx.collected.inert.contains(&slot) {
+        if self.cx().collected.inert.contains(&slot) {
             return Inertness::Inert;
         }
         let Some(&DeclarationSlot {
@@ -59,12 +60,12 @@ impl<'source> Lowerer<'_, 'source>
             container: Container::Module(module),
             name,
             ..
-        }) = self.cx.collected.slots.get(usize::from(slot))
+        }) = self.cx().collected.slots.get(usize::from(slot))
         else {
             return Inertness::Content;
         };
         let Some(Maybe::Present(model)) = self
-            .cx
+            .cx()
             .collected
             .structures
             .get(usize::from(module))
@@ -73,7 +74,7 @@ impl<'source> Lowerer<'_, 'source>
             return Inertness::Content;
         };
         let inert = matches!(
-            self.cx.collected.models.get(&model),
+            self.cx().collected.models.get(&model),
             Maybe::Present(signature) if signature.components.iter().any(|component| {
                 component.inert && component.name.as_ref() == name.as_ref()
             })
@@ -115,30 +116,31 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| match ret {
         | Err(LoweringRefusal::InertRead { span, reached: read, .. }) => span == site.at.span
             && match reached {
-                | Read::Slot(slot) => self.cx.collected.slots.get(usize::from(slot)).is_some_and(|entry| entry.name == read),
+                | Read::Slot(slot) => self.cx().collected.slots.get(usize::from(slot)).is_some_and(|entry| entry.name == read),
                 | Read::Selected(name) => name == read,
             },
         | Err(_) => false,
         | Ok(()) => true,
     })]
-    pub(super) fn inert_read(
+    #[inline]
+    pub fn inert_read(
         &self,
         site: Site,
         reached: Read<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let read = match reached {
-            Read::Slot(slot) => match self.cx.collected.slots.get(usize::from(slot)) {
+            Read::Slot(slot) => match self.cx().collected.slots.get(usize::from(slot)) {
                 Some(entry) if self.inertness(slot) == Inertness::Inert => entry.name,
                 Some(_) | None => return Ok(()),
             },
             Read::Selected(name) => name,
         };
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Ok(());
         };
-        match self.cx.collected.slots.get(usize::from(own)) {
+        match self.cx().collected.slots.get(usize::from(own)) {
             Some(entry) if self.inertness(own) == Inertness::Content => {
                 Err(LoweringRefusal::InertRead {
                     span: site.at.span,

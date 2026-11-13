@@ -99,27 +99,30 @@ impl<'source> Lowerer<'_, 'source>
     ///   `Nat`, and with no prelude, each asserted as the term it lowers to.
     /// - witness: `lower::natural::tests::a_numeral_at_nat_is_its_binary_constructor_term_3287`
     /// - witness: `lower::natural::tests::a_numeral_at_a_source_s_own_nat_stays_an_integer_3287`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx.classifiers.contains_key(&site.at.node))]
-    pub(super) fn annotated_natural(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx().classifiers.contains_key(&site.at.node))]
+    #[inline]
+    pub fn annotated_natural(
         &mut self,
         site: Site,
         frame: Frame,
     ) -> Result<Maybe<Naturals, numeral::Absent>, LoweringRefusal<'source>>
     {
-        let Some(&written) = self.cx.classifiers.get(&site.at.node)
+        let Some(&written) = self.cx().classifiers.get(&site.at.node)
         else {
             return Ok(Maybe::Absent(numeral::Absent::Unannotated));
         };
-        let (Some(node), Some(fragment)) =
-            (self.cx.tree.node(written), self.cx.tree.fragment(written))
+        let (Some(node), Some(fragment)) = (
+            self.cx().tree.node(written),
+            self.cx().tree.fragment(written),
+        )
         else {
             return Ok(Maybe::Absent(numeral::Absent::Unannotated));
         };
-        let Some(prelude) = self.cx.collected.unit.prelude()
+        let Some(prelude) = self.cx().collected.unit.prelude()
         else {
             return Ok(Maybe::Absent(numeral::Absent::Unpreluded));
         };
-        let Maybe::Present(naturals) = self.naturals(prelude)
+        let Maybe::Present(naturals) = self.shared().naturals(prelude)
         else {
             return Ok(Maybe::Absent(numeral::Absent::Unpreluded));
         };
@@ -159,14 +162,14 @@ impl<'source> Lowerer<'_, 'source>
     {
         let generator = |name: &'static str| {
             let Some(Bare::One(constructor)) =
-                self.cx
+                self.cx()
                     .collected
                     .bare_constructor(prelude, SurfaceName::from(name), |_| true)
             else {
                 return None;
             };
             let family = self
-                .cx
+                .cx()
                 .collected
                 .slots
                 .get(usize::from(constructor.family))?;
@@ -176,11 +179,11 @@ impl<'source> Lowerer<'_, 'source>
             })
         };
         let nat = self
-            .cx
+            .cx()
             .collected
             .by_name
             .get(&(Container::TopLevel(prelude), SurfaceName::from("Nat")))
-            .and_then(|&slot| self.cx.collected.slots.get(usize::from(slot)))
+            .and_then(|&slot| self.cx().collected.slots.get(usize::from(slot)))
             .map(|slot| slot.constant);
         match (
             nat,

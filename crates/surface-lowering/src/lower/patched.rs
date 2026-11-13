@@ -227,7 +227,8 @@ impl<'source> Lowerer<'_, 'source>
         | Bracket::Faces(ref faces) => !faces.is_empty(),
         | Bracket::Stage => true,
     }))]
-    pub(super) fn bracket(
+    #[inline]
+    pub fn bracket(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
@@ -236,7 +237,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(_) = cursor.at(TileName::DOT) {
             let mut fixed = Vec::new();
             while let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
-                let key = match self.cx.dotted(site, cursor)? {
+                let key = match self.cx().dotted(site, cursor)? {
                     Key::Index(_, name, at) => {
                         return Err(LoweringRefusal::UnresolvedName {
                             span: at.span,
@@ -304,8 +305,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   each patched at two of three fields, and a field the base lacks.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
-    pub(super) fn patched_fields(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Patched { .. })))]
+    #[inline]
+    pub fn patched_fields(
         &mut self,
         site: Site,
         frame: Frame,
@@ -371,8 +373,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
     /// - witness: `lower::patched::tests::a_system_of_faces_keeps_each_later_face_s_value_on_its_meet`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
-    pub(super) fn patched_faces(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Patched { .. })))]
+    #[inline]
+    pub fn patched_faces(
         &mut self,
         site: Site,
         frame: Frame,
@@ -383,9 +386,9 @@ impl<'source> Lowerer<'_, 'source>
         let (entries, held) = self.base_record(site, frame, base)?;
         let unnamed = |face: Placed| LoweringRefusal::UnresolvedName {
             span: face.span,
-            name: self.cx.name_at(face),
+            name: self.cx().name_at(face),
         };
-        let Some(record) = held.and_then(|held| self.cx.collected.record_faces.get(&held))
+        let Some(record) = held.and_then(|held| self.cx().collected.record_faces.get(&held))
         else {
             return Err(faces.first().map_or_else(
                 || site.fault(site.at.span, FormFault::MisplacedTile),
@@ -404,7 +407,7 @@ impl<'source> Lowerer<'_, 'source>
         // value writes, in written order.
         let mut arms: Vec<(usize, Vec<Entry<'source>>)> = Vec::with_capacity(faces.len());
         for &(face, value) in faces {
-            let named = self.cx.name_at(face);
+            let named = self.cx().name_at(face);
             let Some(&mut (cell, ref mut written_at)) = named_faces.get_mut(&named)
             else {
                 return Err(unnamed(face));
@@ -421,7 +424,7 @@ impl<'source> Lowerer<'_, 'source>
                 });
             }
             *written_at = Some(face.span);
-            let written = self.face_value(site, value)?;
+            let written = self.shared().face_value(site, value)?;
             for entry in &written {
                 let Key::Label(label, at) = entry.key
                 else {
@@ -445,7 +448,10 @@ impl<'source> Lowerer<'_, 'source>
                 .filter(|&&decision| decision == Membership::Inside)
                 .count();
             if written.len() != held_labels {
-                let form = self.cx.form_at(value)?.map_or(site.name, |(name, _)| name);
+                let form = self
+                    .cx()
+                    .form_at(value)?
+                    .map_or(site.name, |(name, _)| name);
                 return Err(LoweringRefusal::MalformedForm {
                     span: value.span,
                     form,
@@ -593,15 +599,16 @@ impl<'source> Lowerer<'_, 'source>
     ///   selection off a name written at a type member.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.cx.form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
-    pub(super) fn member_definition(
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.cx().form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
+    #[inline]
+    pub fn member_definition(
         &mut self,
         frame: Frame,
         at: Placed,
     ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>
     {
         let Some((name, Former::TypeHead | Former::Name | Former::Constructor)) =
-            self.cx.form_at(at)?
+            self.cx().form_at(at)?
         else {
             return Ok(None);
         };
@@ -610,7 +617,7 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::ValueType(frame),
         };
-        Ok(match self.stated_named(named, self.cx.name_at(at))? {
+        Ok(match self.stated_named(named, self.cx().name_at(at))? {
             Maybe::Present(stated) => match stated.meaning {
                 TypeMeaning::Manifest(defined) => Some((defined.node, stated.held)),
                 TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
@@ -698,7 +705,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
     /// - witness: `lower::patched::tests::a_system_of_faces_keeps_each_later_face_s_value_on_its_meet`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
-    pub(super) fn mint_patched_type(
+    #[inline]
+    pub fn mint_patched_type(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
         (fixed, meets): (&BTreeMap<FieldLabel, NodeIndex>, &[(FieldLabel, NodeIndex)]),
@@ -712,13 +720,13 @@ impl<'source> Lowerer<'_, 'source>
             minted @ (Maybe::Present(_) | Maybe::Absent(_)) => return minted,
         };
         if let Some(member) = member
-            && let Maybe::Present(name) = self.cx.origin_at(member)
+            && let Maybe::Present(name) = self.cx().origin_at(member)
         {
             sink.origins.record_member(base, name);
         }
         let mut values = BTreeMap::new();
         for (label, &value) in fixed {
-            match self.cx.value_at(value) {
+            match self.cx().value_at(value) {
                 Maybe::Present(id) => {
                     let _first = values.insert(label.clone(), id);
                 },
@@ -727,7 +735,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut met = Vec::with_capacity(meets.len());
         for &(ref label, value) in meets {
-            match self.cx.value_at(value) {
+            match self.cx().value_at(value) {
                 Maybe::Present(id) => met.push((label.clone(), id)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -765,12 +773,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
     {
         let declined = || site.out(FragmentBoundary::Unadmitted(Unbuilt::FixedValue));
-        let Some((name, Former::Telescope)) = self.cx.form_at(value)?
+        let Some((name, Former::Telescope)) = self.cx().form_at(value)?
         else {
             return Err(declined());
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, value.node, &mut pieces)?;
+        read_pieces(self.cx().pbg, self.cx().tree, value.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(name));
         }
@@ -797,21 +805,22 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// trivial.
-    pub(super) fn patched_at(
+    #[inline]
+    pub fn patched_at(
         &self,
         declared: NodeIndex,
     ) -> Result<Maybe<(), ()>, LoweringRefusal<'source>>
     {
-        let Some(tree) = self.cx.tree.node(declared)
+        let Some(tree) = self.cx().tree.node(declared)
         else {
             return Ok(Maybe::Absent(()));
         };
-        let Some((_, Former::StagedType)) = self.cx.form_at(Placed::of(declared, tree))?
+        let Some((_, Former::StagedType)) = self.cx().form_at(Placed::of(declared, tree))?
         else {
             return Ok(Maybe::Absent(()));
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, declared, &mut pieces)?;
+        read_pieces(self.cx().pbg, self.cx().tree, declared, &mut pieces)?;
         Ok(if bracket_of(&pieces.pieces) == Written::Stage {
             Maybe::Absent(())
         }

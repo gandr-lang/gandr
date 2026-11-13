@@ -145,25 +145,26 @@ impl Lowerer<'_, '_>
     ///   string, one of an integer argument and one with no signature are
     ///   refused at their names; a module's member named `main` is no entry.
     /// - witness: `lower::entry::tests::a_main_of_another_type_is_refused_by_name_1881`
-    pub(super) fn refuse_misshapen_entries(
+    #[inline]
+    pub fn refuse_misshapen_entries(
         &mut self,
         sink: &Sink<'_>,
     )
     {
-        let top = Container::TopLevel(self.cx.current.source);
+        let top = Container::TopLevel(self.cx().current.source);
         let misshapen: Vec<(SlotIndex, ByteSpan)> = self
-            .cx
+            .cx()
             .collected
             .slots
             .iter()
             .enumerate()
-            .skip(self.cx.current.slots)
+            .skip(self.cx().current.slots)
             .filter(|&(_, slot)| {
                 slot.role == Role::Declared && slot.container == top && slot.name.as_ref() == ENTRY
             })
             .filter_map(|(position, slot)| {
                 let position = SlotIndex::from(position);
-                match self.own_outcome(position, slot) {
+                match self.shared().own_outcome(position, slot) {
                     Maybe::Present(
                         DeclarationOutcome::Completed { declared_type, .. }
                         | DeclarationOutcome::Uncompleted { declared_type },
@@ -184,7 +185,7 @@ impl Lowerer<'_, '_>
             .collect();
         for (position, span) in misshapen {
             let _first = self
-                .cx
+                .cx_mut()
                 .faults
                 .insert(position, LoweringRefusal::EntryType { span });
         }

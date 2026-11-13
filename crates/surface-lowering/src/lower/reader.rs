@@ -78,16 +78,17 @@ impl Lowerer<'_, '_>
     /// - witness: `lower::reader::tests::a_source_s_own_from_nat_lends_no_reader_4528`
     /// - witness: `lower::reader::tests::a_model_of_from_neg_lends_a_negative_reader_4732`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() != pair.get(1)))]
-    pub(super) fn literal_readers(&self) -> Vec<LiteralReader>
+    #[inline]
+    pub fn literal_readers(&self) -> Vec<LiteralReader>
     {
-        let Some(prelude) = self.cx.collected.unit.prelude()
+        let Some(prelude) = self.cx().collected.unit.prelude()
         else {
             return Vec::new();
         };
         let mut readers = Vec::new();
         for (theory, member, reads) in READING {
             let Some(&theory) = self
-                .cx
+                .cx()
                 .collected
                 .by_name
                 .get(&(Container::TopLevel(prelude), SurfaceName::from(theory)))
@@ -95,13 +96,13 @@ impl Lowerer<'_, '_>
                 continue;
             };
             let mut answering = BTreeSet::from([theory]);
-            for (&including, reached) in &self.cx.collected.included {
+            for (&including, reached) in &self.cx().collected.included {
                 if reached.iter().any(|&(included, _)| included == theory) {
                     let _fresh = answering.insert(including);
                 }
             }
             readers.extend(
-                self.cx
+                self.cx()
                     .collected
                     .structures
                     .iter()
@@ -111,7 +112,7 @@ impl Lowerer<'_, '_>
                             && matches!(structure.stratum, Stratum::Module)
                             && match structure.model {
                                 Maybe::Present(model) => self
-                                    .cx
+                                    .cx()
                                     .collected
                                     .model_theories
                                     .get(&model)
@@ -121,11 +122,11 @@ impl Lowerer<'_, '_>
                     })
                     .filter_map(|(at, _)| {
                         let module = Container::Module(StructureIndex::from(at));
-                        self.cx
+                        self.cx()
                             .collected
                             .by_name
                             .get(&(module, SurfaceName::from(member)))
-                            .and_then(|&slot| self.cx.collected.slots.get(usize::from(slot)))
+                            .and_then(|&slot| self.cx().collected.slots.get(usize::from(slot)))
                             .filter(|declared| matches!(declared.refusal, Maybe::Absent(_)))
                             .map(|declared| LiteralReader {
                                 by: declared.constant,

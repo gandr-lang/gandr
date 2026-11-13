@@ -84,23 +84,24 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     #[spec(ensures: |ret| match ret {
-        | Err(LoweringRefusal::ProjectionFromApplication { span, functor }) => span == target.span && self.cx.collected.functors.iter().any(|found| found.name == functor),
+        | Err(LoweringRefusal::ProjectionFromApplication { span, functor }) => span == target.span && self.cx().collected.functors.iter().any(|found| found.name == functor),
         | Err(_) | Ok(()) => true,
     })]
-    pub(super) fn refuse_applied(
+    #[inline]
+    pub fn refuse_applied(
         &self,
         target: Placed,
         chain: &mut Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        read_pieces(self.cx.pbg, self.cx.tree, target.node, chain)?;
+        read_pieces(self.cx().pbg, self.cx().tree, target.node, chain)?;
         let Some(&(Piece::Operand(head) | Piece::Tile { at: head, .. })) = chain.pieces.first()
         else {
             return Ok(());
         };
-        let name = self.cx.name_at(head);
+        let name = self.cx().name_at(head);
         if self
-            .cx
+            .cx()
             .collected
             .functors
             .iter()
@@ -144,8 +145,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(parameter) => self.cx.collected.structures.get(usize::from(parameter)).is_some_and(|structure| matches!(structure.stratum,
-            Stratum::Parameter(functor) if self.cx.collected.functors.get(usize::from(functor))
+        | Maybe::Present(parameter) => self.cx().collected.structures.get(usize::from(parameter)).is_some_and(|structure| matches!(structure.stratum,
+            Stratum::Parameter(functor) if self.cx().collected.functors.get(usize::from(functor))
                 .is_some_and(|found| found.parameter == parameter && found.parameter_name == head))),
         | Maybe::Absent(_) => true,
     })]
@@ -155,19 +156,19 @@ impl<'source> Lowerer<'_, 'source>
         head: SurfaceName<'source>,
     ) -> Maybe<StructureIndex, parameter_path::Absent>
     {
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Maybe::Absent(parameter_path::Absent::Outside);
         };
-        let mut container = self.cx.collected.slots.get(usize::from(own)).map_or_else(
-            || self.cx.collected.top(site.at.span.start()),
+        let mut container = self.cx().collected.slots.get(usize::from(own)).map_or_else(
+            || self.cx().collected.top(site.at.span.start()),
             |slot| slot.container,
         );
         while let Container::Module(module) = container
-            && let Some(structure) = self.cx.collected.structures.get(usize::from(module))
+            && let Some(structure) = self.cx().collected.structures.get(usize::from(module))
         {
             if let Stratum::Functor(functor) | Stratum::Parameter(functor) = structure.stratum {
-                return match self.cx.collected.functors.get(usize::from(functor)) {
+                return match self.cx().collected.functors.get(usize::from(functor)) {
                     Some(found) if found.parameter_name == head => Maybe::Present(found.parameter),
                     Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
                 };
@@ -198,13 +199,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present((parameter, outer)) => matches!(container, Container::Module(module)
-            if self.cx.collected.structures.get(usize::from(module)).is_some_and(|structure| structure.container == outer
+            if self.cx().collected.structures.get(usize::from(module)).is_some_and(|structure| structure.container == outer
                 && matches!(structure.stratum, Stratum::Functor(functor)
-                    if self.cx.collected.functors.get(usize::from(functor)).is_some_and(|found| found.parameter == parameter
+                    if self.cx().collected.functors.get(usize::from(functor)).is_some_and(|found| found.parameter == parameter
                         && matches!(found.scope, BodyScope::Domain { .. } | BodyScope::Path { .. }))))),
         | Maybe::Absent(_) => true,
     })]
-    pub(super) fn domain_scope(
+    #[inline]
+    pub fn domain_scope(
         &self,
         container: Container,
     ) -> Maybe<(StructureIndex, Container), parameter_path::Absent>
@@ -213,7 +215,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(parameter_path::Absent::Outside);
         };
-        let Some(structure) = self.cx.collected.structures.get(usize::from(module))
+        let Some(structure) = self.cx().collected.structures.get(usize::from(module))
         else {
             return Maybe::Absent(parameter_path::Absent::Outside);
         };
@@ -221,7 +223,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(parameter_path::Absent::Outside);
         };
-        match self.cx.collected.functors.get(usize::from(functor)) {
+        match self.cx().collected.functors.get(usize::from(functor)) {
             Some(found)
                 if matches!(
                     found.scope,
@@ -255,14 +257,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the abstract type of a functor's parameter that is
     ///   never applied answers at its universe in the parameter's signature.
     /// - witness: `tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
-    pub(super) fn parameter_kind(
+    #[inline]
+    pub fn parameter_kind(
         &self,
         atom: gandr_kernel_term::ConstantIndex,
         sink: &mut Sink<'_>,
     ) -> Option<ValueTypeId>
     {
         let kind = self
-            .cx
+            .cx()
             .collected
             .functors
             .iter()
@@ -270,7 +273,7 @@ impl<'source> Lowerer<'_, 'source>
             .find_map(|component| match component.form {
                 ParameterForm::Abstract(kind)
                     if self
-                        .cx
+                        .cx()
                         .collected
                         .slots
                         .get(usize::from(component.slot))
@@ -284,7 +287,7 @@ impl<'source> Lowerer<'_, 'source>
                 | ParameterForm::Derived(_) => None,
             })?;
         match kind {
-            Maybe::Present(written) => match self.cx.value_type_at(written.node) {
+            Maybe::Present(written) => match self.cx().value_type_at(written.node) {
                 Maybe::Present(stated) => Some(stated),
                 Maybe::Absent(_) => None,
             },
@@ -320,11 +323,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
-        | Ok(Read::Unread) => matches!(self.parameter_named(site, self.cx.name_at(head)), Maybe::Absent(_)),
-        | Ok(Read::Planned) => matches!(self.cx.plans.get(site.at.node), Some(&super::Plan::Constant(_))),
+        | Ok(Read::Unread) => matches!(self.shared().parameter_named(site, self.cx().name_at(head)), Maybe::Absent(_)),
+        | Ok(Read::Planned) => matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Constant(_))),
         | Err(_) => true,
     })]
-    pub(super) fn parameter_value(
+    #[inline]
+    pub fn parameter_value(
         &mut self,
         site: Site,
         head: Placed,
@@ -332,12 +336,12 @@ impl<'source> Lowerer<'_, 'source>
         deeper: Deeper,
     ) -> Result<Read, LoweringRefusal<'source>>
     {
-        let name = self.cx.name_at(head);
-        let Maybe::Present(parameter) = self.parameter_named(site, name)
+        let name = self.cx().name_at(head);
+        let Maybe::Present(parameter) = self.shared().parameter_named(site, name)
         else {
             return Ok(Read::Unread);
         };
-        let member = self.cx.name_at(selected);
+        let member = self.cx().name_at(selected);
         let unknown = LoweringRefusal::UnknownMember {
             span: selected.span,
             module: name,
@@ -346,7 +350,7 @@ impl<'source> Lowerer<'_, 'source>
         if deeper.0 {
             return Err(unknown);
         }
-        let Some(slot) = self.parameter_export(parameter, member)
+        let Some(slot) = self.shared().parameter_export(parameter, member)
         else {
             return Err(unknown);
         };
@@ -375,17 +379,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     /// - witness: `tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
-    pub(super) fn parameter_export(
+    #[inline]
+    pub fn parameter_export(
         &self,
         parameter: StructureIndex,
         member: SurfaceName<'source>,
     ) -> Option<SlotIndex>
     {
-        let structure = self.cx.collected.structures.get(usize::from(parameter))?;
+        let structure = self.cx().collected.structures.get(usize::from(parameter))?;
         structure.exports.iter().find_map(|&export| match export {
             Member::Slot(slot)
                 if self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(slot))
@@ -421,11 +426,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
-        | Ok(Read::Unread) => matches!(self.parameter_named(site, self.cx.name_at(head)), Maybe::Absent(_)),
-        | Ok(Read::Planned) => matches!(self.cx.plans.get(site.at.node), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
+        | Ok(Read::Unread) => matches!(self.shared().parameter_named(site, self.cx().name_at(head)), Maybe::Absent(_)),
+        | Ok(Read::Planned) => matches!(self.cx().plans.get(site.at.node), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
         | Err(_) => true,
     })]
-    pub(super) fn parameter_type(
+    #[inline]
+    pub fn parameter_type(
         &mut self,
         site: Site,
         head: Placed,
@@ -433,12 +439,12 @@ impl<'source> Lowerer<'_, 'source>
         deeper: Deeper,
     ) -> Result<Read, LoweringRefusal<'source>>
     {
-        let name = self.cx.name_at(head);
-        let Maybe::Present(parameter) = self.parameter_named(site, name)
+        let name = self.cx().name_at(head);
+        let Maybe::Present(parameter) = self.shared().parameter_named(site, name)
         else {
             return Ok(Read::Unread);
         };
-        let member = self.cx.name_at(selected);
+        let member = self.cx().name_at(selected);
         let unknown = LoweringRefusal::UnknownMember {
             span: selected.span,
             module: name,
@@ -448,7 +454,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(unknown);
         }
         let Some(stated) = self
-            .cx
+            .cx()
             .collected
             .structures
             .get(usize::from(parameter))
@@ -485,24 +491,25 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::an_instance_can_be_an_argument`
     #[spec(
-        captures: before_count = self.cx.renamings.len(),
-        ensures: self.cx.renamings.len() >= before_count && self.cx.renamings.len() <= self.cx.collected.instances.len(),
+        captures: before_count = self.cx().renamings.len(),
+        ensures: self.cx().renamings.len() >= before_count && self.cx().renamings.len() <= self.cx().collected.instances.len(),
     )]
-    pub(super) fn rename_instances_before(
+    #[inline]
+    pub fn rename_instances_before(
         &mut self,
         before: Maybe<ByteOffset, renamed_through::Absent>,
         sink: &mut Sink<'_>,
     )
     {
-        while let Some(instance) = self.cx.collected.instances.get(self.cx.renamings.len()) {
+        while let Some(instance) = self.cx().collected.instances.get(self.cx().renamings.len()) {
             if let Maybe::Present(offset) = before
                 && instance.declared_by.span.start() >= offset
             {
                 return;
             }
-            let index = InstanceIndex(self.cx.renamings.len());
-            let renaming = self.instance_renaming(index, sink);
-            self.cx.renamings.push(renaming);
+            let index = InstanceIndex(self.cx().renamings.len());
+            let renaming = self.shared().instance_renaming(index, sink);
+            self.cx_mut().renamings.push(renaming);
             self.instance_manifests(index, sink);
         }
     }
@@ -527,7 +534,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::an_instance_names_its_argument_s_operations_2179`
     /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    #[spec(ensures: |ret| ret.is_ok() || self.cx.collected.instances.get(usize::from(index)).is_some())]
+    #[spec(ensures: |ret| ret.is_ok() || self.cx().collected.instances.get(usize::from(index)).is_some())]
     fn instance_renaming(
         &self,
         index: InstanceIndex,
@@ -535,32 +542,32 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Renaming, LoweringRefusal<'source>>
     {
         let mut renaming = Renaming::new();
-        let Some(instance) = self.cx.collected.instances.get(usize::from(index))
+        let Some(instance) = self.cx().collected.instances.get(usize::from(index))
         else {
             return Ok(renaming);
         };
         let Some(functor) = self
-            .cx
+            .cx()
             .collected
             .functors
             .get(usize::from(instance.functor))
         else {
             return Ok(renaming);
         };
-        let Maybe::Present(origin) = self.cx.origin_at(instance.declared_by.node)
+        let Maybe::Present(origin) = self.cx().origin_at(instance.declared_by.node)
         else {
             return Ok(renaming);
         };
         for template in usize::from(functor.body_first) .. usize::from(functor.end) {
             let (Some(slot), Maybe::Present(image)) = (
-                self.cx.collected.slots.get(template),
+                self.cx().collected.slots.get(template),
                 instance.image(functor, SlotIndex::from(template)),
             )
             else {
                 continue;
             };
             let read = instance.renamed.get(&image).copied().unwrap_or(image);
-            let Some(mirror) = self.cx.collected.slots.get(usize::from(read))
+            let Some(mirror) = self.cx().collected.slots.get(usize::from(read))
             else {
                 continue;
             };
@@ -577,8 +584,8 @@ impl<'source> Lowerer<'_, 'source>
                     parameter, member, ..
                 } => {
                     if let (Some(stand_in), Some(read)) = (
-                        self.cx.collected.slots.get(usize::from(parameter)),
-                        self.cx.collected.slots.get(usize::from(member)),
+                        self.cx().collected.slots.get(usize::from(parameter)),
+                        self.cx().collected.slots.get(usize::from(member)),
                     ) {
                         renaming.constant(stand_in.constant, read.constant);
                     }
@@ -589,7 +596,7 @@ impl<'source> Lowerer<'_, 'source>
                     ..
                 } => {
                     let read = self.argument_type(argument, sink, origin)?;
-                    if let Some(stand_in) = self.cx.collected.slots.get(usize::from(parameter)) {
+                    if let Some(stand_in) = self.cx().collected.slots.get(usize::from(parameter)) {
                         renaming.atom(stand_in.constant, read);
                     }
                 },
@@ -632,7 +639,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<ValueTypeId, LoweringRefusal<'source>>
     {
         let unlowered = || {
-            self.cx
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(argument.held))
@@ -661,12 +668,12 @@ impl<'source> Lowerer<'_, 'source>
             return Err(refusal);
         }
         match argument.meaning {
-            TypeMeaning::Manifest(defined) => match self.cx.value_type_at(defined.node) {
+            TypeMeaning::Manifest(defined) => match self.cx().value_type_at(defined.node) {
                 Maybe::Present(id) => Ok(id),
                 Maybe::Absent(_) => Err(unlowered()),
             },
             TypeMeaning::Sealed => {
-                let Some(atom) = self.cx.collected.slots.get(usize::from(argument.held))
+                let Some(atom) = self.cx().collected.slots.get(usize::from(argument.held))
                 else {
                     return Err(unlowered());
                 };
@@ -678,7 +685,7 @@ impl<'source> Lowerer<'_, 'source>
                 Ok(id)
             },
             TypeMeaning::Instantiated { defined, instance } => {
-                match self.cx.instance_types.get(&(instance, defined.node)) {
+                match self.cx().instance_types.get(&(instance, defined.node)) {
                     Some(&InstanceType::Value(id)) => Ok(id),
                     Some(&InstanceType::Computation(_)) | None => Err(unlowered()),
                 }
@@ -705,8 +712,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::a_transparent_result_reads_the_argument_through`
     /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
-        captures: before = self.cx.instance_types.len(),
-        ensures: self.cx.instance_types.len() >= before,
+        captures: before = self.cx().instance_types.len(),
+        ensures: self.cx().instance_types.len() >= before,
     )]
     fn instance_manifests(
         &mut self,
@@ -714,17 +721,17 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        let Some(instance) = self.cx.collected.instances.get(usize::from(index))
+        let Some(instance) = self.cx().collected.instances.get(usize::from(index))
         else {
             return;
         };
-        let Maybe::Present(origin) = self.cx.origin_at(instance.declared_by.node)
+        let Maybe::Present(origin) = self.cx().origin_at(instance.declared_by.node)
         else {
             return;
         };
         let mut written = Vec::new();
         for &image in instance.images.values() {
-            if let Some(structure) = self.cx.collected.structures.get(usize::from(image)) {
+            if let Some(structure) = self.cx().collected.structures.get(usize::from(image)) {
                 for stated in structure.types.iter().chain(&structure.type_members) {
                     if let TypeMeaning::Instantiated { defined, instance } = stated.meaning
                         && instance == index
@@ -734,16 +741,20 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
         }
-        let Some(Ok(renaming)) = self.cx.renamings.get(usize::from(index)).cloned()
+        let Some(Ok(renaming)) = self.cx().renamings.get(usize::from(index)).cloned()
         else {
             return;
         };
         for defined in written {
-            if self.cx.instance_types.contains_key(&(index, defined.node)) {
+            if self
+                .cx()
+                .instance_types
+                .contains_key(&(index, defined.node))
+            {
                 continue;
             }
-            if self.cx.computation_members.contains(&defined.node) {
-                let Maybe::Present(template) = self.cx.comp_type_at(defined.node)
+            if self.cx().computation_members.contains(&defined.node) {
+                let Maybe::Present(template) = self.cx().comp_type_at(defined.node)
                 else {
                     continue;
                 };
@@ -751,19 +762,19 @@ impl<'source> Lowerer<'_, 'source>
                 let renamed = rename_value(sink, &renaming, code, origin);
                 if let Some(&Value::QuoteComputation(renamed)) = sink.arena.value(renamed) {
                     let _fresh = self
-                        .cx
+                        .cx_mut()
                         .instance_types
                         .insert((index, defined.node), InstanceType::Computation(renamed));
                 }
                 continue;
             }
-            let Maybe::Present(template) = self.cx.value_type_at(defined.node)
+            let Maybe::Present(template) = self.cx().value_type_at(defined.node)
             else {
                 continue;
             };
             let renamed = rename_type(sink, &renaming, template, origin);
             let _fresh = self
-                .cx
+                .cx_mut()
                 .instance_types
                 .insert((index, defined.node), InstanceType::Value(renamed));
         }
@@ -802,24 +813,25 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     #[spec(
-        captures: before = self.cx.instantiated.len(),
-        ensures: self.cx.instantiated.len() >= before,
+        captures: before = self.cx().instantiated.len(),
+        ensures: self.cx().instantiated.len() >= before,
     )]
-    pub(super) fn mint_instances(
+    #[inline]
+    pub fn mint_instances(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        for position in self.cx.current.instances .. self.cx.collected.instances.len() {
-            let Some(instance) = self.cx.collected.instances.get(position).cloned()
+        for position in self.cx().current.instances .. self.cx().collected.instances.len() {
+            let Some(instance) = self.cx().collected.instances.get(position).cloned()
             else {
                 continue;
             };
-            if self.cx.untranslated.contains(&InstanceIndex(position)) {
+            if self.cx().untranslated.contains(&InstanceIndex(position)) {
                 continue;
             }
             let Some(template) = self
-                .cx
+                .cx()
                 .collected
                 .functors
                 .get(usize::from(instance.functor))
@@ -828,7 +840,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let functor = &template;
-            let Maybe::Present(origin) = self.cx.origin_at(instance.declared_by.node)
+            let Maybe::Present(origin) = self.cx().origin_at(instance.declared_by.node)
             else {
                 continue;
             };
@@ -844,21 +856,23 @@ impl<'source> Lowerer<'_, 'source>
                         },
                     ..
                 } = matched
-                    && let Some(refusal) = self.computation_refusal(defined)
+                    && let Some(refusal) = self.shared().computation_refusal(defined)
                 {
                     let _first = self
-                        .cx
+                        .cx_mut()
                         .instantiated
                         .insert(witness, DeclarationOutcome::Refused(refusal));
                 }
             }
-            let Some(Ok(renaming)) = self.cx.renamings.get(position).map(Result::as_ref)
+            let Some(Ok(renaming)) = self.cx().renamings.get(position).map(Result::as_ref)
             else {
                 continue;
             };
             let mut outcomes = Vec::new();
             for (component, &matched) in functor.components.iter().zip(&instance.matched) {
-                let checked = self.witness_outcome(*component, matched, renaming, sink, origin);
+                let checked = self
+                    .shared()
+                    .witness_outcome(*component, matched, renaming, sink, origin);
                 let witness = match matched {
                     Matched::Value { witness, .. }
                     | Matched::Abstract { witness, .. }
@@ -870,7 +884,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             for template in usize::from(functor.body_first) .. usize::from(functor.end) {
                 let (Some(slot), Maybe::Present(image)) = (
-                    self.cx.collected.slots.get(template),
+                    self.cx().collected.slots.get(template),
                     instance.image(functor, SlotIndex::from(template)),
                 )
                 else {
@@ -879,7 +893,8 @@ impl<'source> Lowerer<'_, 'source>
                 if instance.renamed.contains_key(&image) {
                     continue;
                 }
-                let Maybe::Present(own) = self.own_outcome(SlotIndex::from(template), slot)
+                let Maybe::Present(own) =
+                    self.shared().own_outcome(SlotIndex::from(template), slot)
                 else {
                     continue;
                 };
@@ -926,7 +941,7 @@ impl<'source> Lowerer<'_, 'source>
                 outcomes.push((image, renamed));
             }
             for (slot, outcome) in outcomes {
-                let _first = self.cx.instantiated.insert(slot, outcome);
+                let _first = self.cx_mut().instantiated.insert(slot, outcome);
             }
         }
     }
@@ -963,9 +978,9 @@ impl<'source> Lowerer<'_, 'source>
                 Matched::Value { member, .. },
             ) => {
                 let stated = match component.form {
-                    ParameterForm::Value(typed) => self.cx.value_type_at(typed.node),
+                    ParameterForm::Value(typed) => self.cx().value_type_at(typed.node),
                     ParameterForm::Derived(_) => self
-                        .cx
+                        .cx()
                         .modelled
                         .get(&component.slot)
                         .copied()
@@ -975,7 +990,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                 };
                 let (Maybe::Present(stated), Some(read)) =
-                    (stated, self.cx.collected.slots.get(usize::from(member)))
+                    (stated, self.cx().collected.slots.get(usize::from(member)))
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
@@ -993,7 +1008,7 @@ impl<'source> Lowerer<'_, 'source>
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
                 let declared_type = match kind {
-                    Maybe::Present(written) => match self.cx.value_type_at(written.node) {
+                    Maybe::Present(written) => match self.cx().value_type_at(written.node) {
                         Maybe::Present(stated) => rename_type(sink, renaming, stated, origin),
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
@@ -1016,7 +1031,7 @@ impl<'source> Lowerer<'_, 'source>
             (ParameterForm::Manifest(defined), Matched::Manifest { argument, .. }) => {
                 let (Ok(read), Maybe::Present(stated)) = (
                     self.argument_type(argument, sink, origin),
-                    self.cx.value_type_at(defined.node),
+                    self.cx().value_type_at(defined.node),
                 )
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);

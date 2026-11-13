@@ -150,27 +150,29 @@ impl<'source> Lowerer<'_, 'source>
     ///   its laws to proofs resting on the host's.
     /// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
     /// - witness: `lower::generic::tests::a_derived_law_lowers_to_its_proof_2302`
-    #[spec(ensures: self.cx.generic.is_none_or(|slot| self.cx.collected.slots.get(usize::from(slot)).is_some_and(|entry| entry.role == Role::Generic)))]
-    pub(super) fn mark_generic(&mut self)
+    #[spec(ensures: self.cx().generic.is_none_or(|slot| self.cx().collected.slots.get(usize::from(slot)).is_some_and(|entry| entry.role == Role::Generic)))]
+    #[inline]
+    pub fn mark_generic(&mut self)
     {
-        let Some(prelude) = self.cx.collected.unit.prelude()
+        let Some(prelude) = self.cx().collected.unit.prelude()
         else {
             return;
         };
-        if self.cx.current.source != prelude {
+        if self.cx().current.source != prelude {
             return;
         }
         let path = NamePath::from(alloc::vec::Vec::from([
             Segment::from(MODULE),
             Segment::from(MEMBER),
         ]));
-        let Some(&slot) = self.cx.exported.get(&path)
+        let Some(&slot) = self.cx().exported.get(&path)
         else {
             return;
         };
-        if let Some(entry) = self.cx.collected.slots.get_mut(usize::from(slot)) {
+        let cx = self.cx_mut();
+        if let Some(entry) = cx.collected.slots.get_mut(usize::from(slot)) {
             entry.role = Role::Generic;
-            self.cx.generic = Some(slot);
+            cx.generic = Some(slot);
         }
         for (module, base) in HOSTED {
             for (member, statement) in LAWS {
@@ -178,10 +180,11 @@ impl<'source> Lowerer<'_, 'source>
                     Segment::from(module),
                     Segment::from(member),
                 ]));
-                if let Some(&slot) = self.cx.exported.get(&path)
-                    && let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+                let cx = self.cx_mut();
+                if let Some(&slot) = cx.exported.get(&path)
+                    && let Some(entry) = cx.collected.slots.get(usize::from(slot))
                 {
-                    self.cx.hosted.push((base, statement, entry.constant));
+                    cx.hosted.push((base, statement, entry.constant));
                 }
             }
         }
@@ -209,8 +212,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
     /// - witness: `lower::generic::tests::a_derived_law_lowers_to_its_proof_2302`
     /// - witness: `lower::generic::tests::a_source_s_own_eq_module_is_no_derivation_2302`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx.generic.is_some())]
-    pub(super) fn generic_head(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx().generic.is_some())]
+    #[inline]
+    pub fn generic_head(
         &mut self,
         site: Site,
         head: Placed,
@@ -221,10 +225,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unspelled;
         };
-        if self.names_generic(site, module, member).is_some() {
+        if self.shared().names_generic(site, module, member).is_some() {
             return Ok(Maybe::Present(Derivation::Equality));
         }
-        let written = self.cx.text_at(member);
+        let written = self.cx().text_at(member);
         let Some(&(_, statement)) = LAWS.iter().find(|&&(name, _)| written.as_ref() == name)
         else {
             return unspelled;
@@ -233,7 +237,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unspelled;
         };
-        if self.names_generic(site, inner, derivation).is_some() {
+        if self
+            .shared()
+            .names_generic(site, inner, derivation)
+            .is_some()
+        {
             return Ok(Maybe::Present(Derivation::Law(statement)));
         }
         unspelled
@@ -261,29 +269,30 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn linked_selection(
+    #[inline]
+    pub fn linked_selection(
         &mut self,
         site: Site,
         head: Placed,
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(head.node)
+        let Some(node) = self.cx().tree.node(head.node)
         else {
             return Ok(None);
         };
         let Shape::Form {
             former: Former::Projection,
             ..
-        } = shape_of(self.cx.pbg, node)?
+        } = shape_of(self.cx().pbg, node)?
         else {
             return Ok(None);
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut scratch);
         let linked = read
             .and_then(|()| Context::link(Site { at: head, ..site }, &scratch.pieces, head.span));
         let repaired = matches!(scratch.repair, Maybe::Present(_));
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         // A head the selection cannot read is the projection's to refuse.
         Ok(linked.ok().filter(|_| !repaired))
     }
@@ -303,7 +312,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::generic_head`].
     /// - witness: `lower::generic::tests::a_source_s_own_eq_module_is_no_derivation_2302`
-    #[spec(ensures: |ret| ret.is_none() || ret == self.cx.generic)]
+    #[spec(ensures: |ret| ret.is_none() || ret == self.cx().generic)]
     fn names_generic(
         &self,
         site: Site,
@@ -311,26 +320,26 @@ impl<'source> Lowerer<'_, 'source>
         member: Placed,
     ) -> Option<SlotIndex>
     {
-        let generic = self.cx.generic?;
-        let simple = self.cx.tree.node(module.node).is_some_and(|node| {
+        let generic = self.cx().generic?;
+        let simple = self.cx().tree.node(module.node).is_some_and(|node| {
             matches!(
-                shape_of(self.cx.pbg, node),
+                shape_of(self.cx().pbg, node),
                 Ok(Shape::Form {
                     former: Former::Name | Former::Constructor,
                     ..
                 })
             )
         });
-        let (module_text, member_text) = (self.cx.text_at(module), self.cx.text_at(member));
+        let (module_text, member_text) = (self.cx().text_at(module), self.cx().text_at(member));
         if !simple || module_text.as_ref() != MODULE || member_text.as_ref() != MEMBER {
             return None;
         }
-        let source = self.cx.collected.unit.source_at(site.at.span.start());
+        let source = self.cx().collected.unit.source_at(site.at.span.start());
         if let Maybe::Present(_) = self
-            .cx
+            .cx()
             .collected
             .imports
-            .aliased(source, self.cx.name_at(module))
+            .aliased(source, self.cx().name_at(module))
         {
             return None;
         }
@@ -339,10 +348,10 @@ impl<'source> Lowerer<'_, 'source>
             Segment::from(MEMBER),
         ]));
         let governed = matches!(
-            self.cx.recognition.resolve_path(&path),
+            self.cx().recognition.resolve_path(&path),
             PathResolution::Complete(Recognized::ModuleComponent)
         );
-        (governed && self.cx.exported.get(&path) == Some(&generic)).then_some(generic)
+        (governed && self.cx().exported.get(&path) == Some(&generic)).then_some(generic)
     }
 
     /// Classify `Eq.generic(T)`, or one of its laws, at `site`, the cursor at
@@ -372,8 +381,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
     /// - witness: `lower::generic::tests::a_derived_law_lowers_to_its_proof_2302`
     /// - witness: `lower::generic::tests::a_misplaced_generic_is_refused_at_the_call_2302`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Generic)))]
-    pub(super) fn generic_call(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Generic)))]
+    #[inline]
+    pub fn generic_call(
         &mut self,
         site: Site,
         derivation: Derivation,
@@ -382,14 +392,14 @@ impl<'source> Lowerer<'_, 'source>
     {
         let misplaced = LoweringRefusal::GenericMisplaced { span: site.at.span };
         let frame = self.require(site, Produced::Value)?;
-        let [argument] = exactly(site, &mut cursor, &mut self.cx.operands)?;
-        let Maybe::Present(owner) = self.cx.collected.owner_of(site.at.node)
+        let [argument] = exactly(site, &mut cursor, &mut self.cx_mut().operands)?;
+        let Maybe::Present(owner) = self.cx().collected.owner_of(site.at.node)
         else {
             return Err(misplaced);
         };
         let whole = site.reading == Reading::Value(Frame::Outermost)
             && self
-                .cx
+                .cx()
                 .collected
                 .slots
                 .get(usize::from(owner))
@@ -403,7 +413,7 @@ impl<'source> Lowerer<'_, 'source>
         if !whole {
             return Err(misplaced);
         }
-        let Some(node) = self.cx.tree.node(argument)
+        let Some(node) = self.cx().tree.node(argument)
         else {
             return Err(misplaced);
         };
@@ -411,18 +421,18 @@ impl<'source> Lowerer<'_, 'source>
         let Shape::Form {
             former: Former::Name | Former::Constructor,
             ..
-        } = shape_of(self.cx.pbg, node)?
+        } = shape_of(self.cx().pbg, node)?
         else {
             return Err(misplaced);
         };
-        let name = self.cx.name_at(at);
+        let name = self.cx().name_at(at);
         let Maybe::Present(Resolved::Declaration { constant, .. }) =
             self.resolve_name(Site { at, ..site }, frame, name)?
         else {
             return Err(misplaced);
         };
         let data = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(constant))
@@ -438,7 +448,7 @@ impl<'source> Lowerer<'_, 'source>
         if !data {
             return Err(misplaced);
         }
-        let _first = self.cx.requested.insert(owner, Requested {
+        let _first = self.cx_mut().requested.insert(owner, Requested {
             derivation,
             data: constant,
             named: at.span,
@@ -474,15 +484,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::generic::tests::a_derived_law_lowers_to_its_proof_2302`
     /// - witness: `lower::generic::tests::an_uncovered_declaration_is_refused_at_its_name_2302`
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
-    pub(super) fn mint_generics(
+    #[inline]
+    pub fn mint_generics(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
         let requested: Vec<(SlotIndex, Requested<'source>)> = self
-            .cx
+            .cx()
             .requested
-            .range(SlotIndex::from(self.cx.current.slots) ..)
+            .range(SlotIndex::from(self.cx().current.slots) ..)
             .map(|(&slot, &request)| (slot, request))
             .collect();
         if requested.is_empty() {
@@ -493,7 +504,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .any(|&(_, request)| matches!(request.derivation, Derivation::Law(_)))
         {
-            self.cx
+            self.cx()
                 .hosted
                 .iter()
                 .map(|&(base, stated, constant)| {
@@ -505,12 +516,12 @@ impl<'source> Lowerer<'_, 'source>
             Vec::new()
         };
         // Each declaration the derivations reach, read off its levitated code.
-        let coded = self.coded(
+        let coded = self.shared().coded(
             sink.arena,
             requested.iter().map(|&(_, request)| request.data),
         );
         for (slot, request) in requested {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -522,7 +533,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(Half {
                     operand: Operand::Written(written),
                     ..
-                }) => self.cx.value_type_at(written.node),
+                }) => self.cx().value_type_at(written.node),
                 Maybe::Present(_) | Maybe::Absent(_) => {
                     Maybe::Absent(super::lowered::Absent::Unminted)
                 },
@@ -569,17 +580,20 @@ impl<'source> Lowerer<'_, 'source>
                     for &(case, family) in derived.cases() {
                         sink.origins.record_elimination(case, family);
                     }
-                    let _first = self.cx.generics.insert(slot, (declared, derived.body()));
+                    let _first = self
+                        .cx_mut()
+                        .generics
+                        .insert(slot, (declared, derived.body()));
                 },
                 Err(fault) => {
-                    let _first = self
-                        .cx
-                        .faults
-                        .insert(slot, LoweringRefusal::GenericUncovered {
-                            span: request.named,
-                            data: request.name,
-                            fault,
-                        });
+                    let _first =
+                        self.cx_mut()
+                            .faults
+                            .insert(slot, LoweringRefusal::GenericUncovered {
+                                span: request.named,
+                                data: request.name,
+                                fault,
+                            });
                 },
             }
         }
@@ -663,20 +677,21 @@ impl<'source> Lowerer<'_, 'source>
     fn code_names(&self) -> BTreeMap<Name, TypeBinding>
     {
         let natives: BTreeMap<NodeIndex, &NativeFamily> = self
-            .cx
+            .cx()
             .collected
             .natives
             .iter()
             .map(|native| (native.named.node, native))
             .collect();
         let mut names = BTreeMap::new();
-        let prelude = self.cx.collected.unit.prelude();
+        let prelude = self.cx().collected.unit.prelude();
         let preluded = |slot: &&DeclarationSlot<'source>| {
             prelude.is_some_and(|prelude| {
-                self.cx.collected.unit.source_at(slot.named.span.start()) == prelude
+                self.cx().collected.unit.source_at(slot.named.span.start()) == prelude
             })
         };
-        let (laid, written): (Vec<_>, Vec<_>) = self.cx.collected.slots.iter().partition(preluded);
+        let (laid, written): (Vec<_>, Vec<_>) =
+            self.cx().collected.slots.iter().partition(preluded);
         for slot in written.into_iter().chain(laid) {
             let Maybe::Present(Half {
                 operand: Operand::Data(_),
@@ -685,8 +700,11 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let (name, arity) = if let Maybe::Present(entry) =
-                self.cx.collected.descriptions.get(&slot.introduced_by.node)
+            let (name, arity) = if let Maybe::Present(entry) = self
+                .cx()
+                .collected
+                .descriptions
+                .get(&slot.introduced_by.node)
             {
                 (&entry.description.id.name, entry.parameters.len())
             }
@@ -746,7 +764,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let unknown = Uncovered::Unknown(position);
         let slot = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(position))
@@ -758,10 +776,14 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unknown);
         };
-        let Maybe::Present(entry) = self.cx.collected.descriptions.get(&slot.introduced_by.node)
+        let Maybe::Present(entry) = self
+            .cx()
+            .collected
+            .descriptions
+            .get(&slot.introduced_by.node)
         else {
             return Err(self
-                .cx
+                .cx()
                 .collected
                 .natives
                 .iter()
@@ -785,7 +807,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unknown);
         };
-        let Maybe::Present(kind) = self.cx.value_type_at(classifier.node)
+        let Maybe::Present(kind) = self.cx().value_type_at(classifier.node)
         else {
             return Err(unknown);
         };

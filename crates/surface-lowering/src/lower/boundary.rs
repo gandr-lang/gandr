@@ -129,20 +129,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   refused at the payload.
     /// - witness: `lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
     /// - witness: `lower::boundary::tests::a_check_naming_no_admission_is_refused_at_its_payload_2901`
-    pub(super) fn mint_boundaries(
+    #[inline]
+    pub fn mint_boundaries(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
         let checks: Vec<(SlotIndex, BoundarySlot)> = self
-            .cx
+            .cx()
             .collected
             .boundaries
-            .range(SlotIndex::from(self.cx.current.slots) ..)
+            .range(SlotIndex::from(self.cx().current.slots) ..)
             .map(|(&slot, check)| (slot, check.clone()))
             .collect();
         for (slot, check) in checks {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -157,11 +158,11 @@ impl<'source> Lowerer<'_, 'source>
                 Origin::new(entry.named.node, entry.named.span).inserted(Insertion::Derived);
             match self.boundary_check(&check, rows, sink, origin) {
                 Ok(Maybe::Present(minted)) => {
-                    let _first = self.cx.derivations.insert(slot, minted);
+                    let _first = self.cx_mut().derivations.insert(slot, minted);
                 },
                 Ok(Maybe::Absent(_)) => {},
                 Err(refusal) => {
-                    let _first = self.cx.faults.insert(slot, refusal);
+                    let _first = self.cx_mut().faults.insert(slot, refusal);
                 },
             }
         }
@@ -197,7 +198,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Result<Maybe<(ValueTypeId, ValueId), super::lowered::Absent>, LoweringRefusal<'source>>
     {
-        let Maybe::Present(payload) = self.cx.value_at(rows.node)
+        let Maybe::Present(payload) = self.cx().value_at(rows.node)
         else {
             return Ok(Maybe::Absent(super::lowered::Absent::Unminted));
         };
@@ -213,7 +214,7 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::ATTRIBUTE,
             reading: Reading::Value(Frame::Outermost),
         };
-        let home = self.boundary_home(site);
+        let home = self.shared().boundary_home(site);
         let admit = self.declared(site, home, SurfaceName::from(ADMIT_BLOCK))?;
         let admission = self.declared(site, home, SurfaceName::from(ADMISSION))?;
         let mut members = self.constructed(
@@ -235,7 +236,7 @@ impl<'source> Lowerer<'_, 'source>
                 origin,
             )?;
             for parameter in operation.parameters.iter().rev() {
-                let spelled = String::from(self.cx.name_at(parameter.named).as_ref());
+                let spelled = String::from(self.cx().name_at(parameter.named).as_ref());
                 let name = sink
                     .arena
                     .value_literal(Literal::Text(StringLiteral::new(spelled)));
@@ -339,18 +340,18 @@ impl<'source> Lowerer<'_, 'source>
     {
         let admit = SurfaceName::from(ADMIT_BLOCK);
         let declares = |source: SourceIndex| {
-            self.cx
+            self.cx()
                 .collected
                 .by_name
                 .contains_key(&(Container::TopLevel(source), admit))
         };
-        let own = self.cx.collected.unit.source_at(site.at.span.start());
+        let own = self.cx().collected.unit.source_at(site.at.span.start());
         if declares(own) {
             return Home::Own;
         }
         let reached =
             |source: SourceIndex| {
-                self.cx.collected.imports.of(source).filter_map(|import| {
+                self.cx().collected.imports.of(source).filter_map(|import| {
                     match import.resolution() {
                         ImportResolution::Path(ImportTarget::Source(target)) => {
                             Some((target, import.span()))
@@ -416,19 +417,19 @@ impl<'source> Lowerer<'_, 'source>
             };
         };
         let slot = match self
-            .cx
+            .cx()
             .collected
             .by_name
             .get(&(Container::TopLevel(source), name))
         {
             Some(&slot) => slot,
-            None => match self.cx.collected.imported_slot(source, name) {
+            None => match self.cx().collected.imported_slot(source, name) {
                 Ok(Maybe::Present((slot, _))) => slot,
                 Ok(Maybe::Absent(_)) | Err(_) => return Err(unresolved),
             },
         };
         let Some(constant) = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(slot))
@@ -436,7 +437,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unresolved);
         };
-        self.cx.collected.reach(import);
+        self.cx_mut().collected.reach(import);
         Ok(constant)
     }
 
@@ -481,14 +482,14 @@ impl<'source> Lowerer<'_, 'source>
             name,
         };
         let found = match home {
-            Home::Own => match Native::new(self).named_constructor(site, name)? {
+            Home::Own => match Native::new(self.host()).named_constructor(site, name)? {
                 Maybe::Present(found) => found,
                 Maybe::Absent(_) => return Err(unresolved),
             },
             Home::Reached { source, import } => {
-                let bare = match self.cx.collected.bare_constructor(source, name, |_| true) {
+                let bare = match self.cx().collected.bare_constructor(source, name, |_| true) {
                     Some(bare) => bare,
-                    None => match self.cx.collected.imported_constructor(source, name) {
+                    None => match self.cx().collected.imported_constructor(source, name) {
                         Ok(Maybe::Present((bare, _))) => bare,
                         Ok(Maybe::Absent(_)) => return Err(unresolved),
                         Err(ambiguity) => {
@@ -508,7 +509,7 @@ impl<'source> Lowerer<'_, 'source>
                         second,
                         more,
                     } => {
-                        return Err(NativeRef::over(&self.cx).ambiguous_constructor(
+                        return Err(NativeRef::over(self.cx()).ambiguous_constructor(
                             site.at.span,
                             name,
                             first,
@@ -517,12 +518,12 @@ impl<'source> Lowerer<'_, 'source>
                         ));
                     },
                 };
-                self.cx.collected.reach(import);
+                self.cx_mut().collected.reach(import);
                 found
             },
         };
         let Some(family) = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(found.family))
