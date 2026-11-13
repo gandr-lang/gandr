@@ -140,10 +140,10 @@ done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
     moved "$fork" "$sha" "$from" "$head" "${named_by[@]}" \
       | jq -R -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" --argjson segments "$segments" \
         '[split("\n")[] | select(. != "") | split("\t") | {segment: .[0], file: .[1]}] as $moved
-         | $c + {sha: $sha, fork: $fork, joined: {}, reshaped: [],
+         | $c + {sha: $sha, fork: $fork, reshaped: [],
              changed: ($segments | map_values(. as $s | [$moved[] | select(.segment == $s) | .file]))}'
   else
-    jq -c --arg sha "$sha" '. + {sha: (if $sha == "" then null else $sha end), fork: null, changed: null, joined: {}, reshaped: []}' <<< "$comment"
+    jq -c --arg sha "$sha" '. + {sha: (if $sha == "" then null else $sha end), fork: null, changed: null, reshaped: []}' <<< "$comment"
   fi
 done | jq -s -c .)
 
@@ -306,31 +306,30 @@ files=$(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$segments" | while IFS
   jq -n -c --arg item "$item" '{($item): $ARGS.positional}' --args "${names[@]}"
 done | jq -s -c 'add // {}')
 
-# The item's half of each sign-off (#6852): the files that join the readers
-# of each deleted item below the signed commit, and the items whose record
-# at the base changes below it. The record read needs the base's records, so
-# the merge queue's rows-only run binds the readers alone.
-signoffs=$(jq -c '.[]' <<< "$signoffs" | while IFS= read -r c; do
-  fork=$(jq -r '.fork // empty' <<< "$c")
-  if [[ -z $fork || $fork == "$(git rev-parse "$base")" ]]; then printf '%s\n' "$c"; continue; fi
-  joins='{}' reshapes='[]'
-  while IFS= read -r item; do
-    [[ -n $item ]] || continue
-    jq -e --arg item "$item" '.body | contains($item)' <<< "$c" > /dev/null || continue
-    sources=()
-    [[ -n ${reaches[$item]:-} ]] && mapfile -t sources <<< "${reaches[$item]}"
-    joins=$(joined "$fork" "$base" "$item" "${sources[@]}" | jq -R . | jq -s -c --slurpfile j <(printf '%s' "$joins") --arg item "$item" '$j[0] + {($item): .}')
-    [[ -f $scratch/items-base.json ]] || continue
-    while IFS=$'\t' read -r file start end; do
-      if reshaped "$fork" "$base" "$file" "$start" "$end"; then
-        reshapes=$(jq -c --arg item "$item" '. + [$item] | unique' <<< "$reshapes")
-        break
-      fi
-    done < <(jq -r -L "$root/.config/bodies" -L "$here" --arg item "$item" \
-      'include "account"; .[] | select(.file != null and covers($item; {id, names: [.id]})) | [.file, .start, .end] | @tsv' "$scratch/items-base.json")
-  done < "$scratch/deleted"
-  jq -c --argjson j "$joins" --argjson r "$reshapes" '. + {joined: $j, reshaped: $r}' <<< "$c"
-done | jq -s -c .)
+# The item's half of each sign-off (#6852): the items whose record at the
+# base changes below the signed commit. The read needs the base's records,
+# so the merge queue's rows-only run binds the change's half alone. A source
+# that joins an item's readers at the base binds nothing here: the build of
+# the merge group refuses a source that names a removed item (#7218).
+if [[ -f $scratch/items-base.json ]]; then
+  signoffs=$(jq -c '.[]' <<< "$signoffs" | while IFS= read -r c; do
+    fork=$(jq -r '.fork // empty' <<< "$c")
+    if [[ -z $fork || $fork == "$(git rev-parse "$base")" ]]; then printf '%s\n' "$c"; continue; fi
+    reshapes='[]'
+    while IFS= read -r item; do
+      [[ -n $item ]] || continue
+      jq -e --arg item "$item" '.body | contains($item)' <<< "$c" > /dev/null || continue
+      while IFS=$'\t' read -r file start end; do
+        if reshaped "$fork" "$base" "$file" "$start" "$end"; then
+          reshapes=$(jq -c --arg item "$item" '. + [$item] | unique' <<< "$reshapes")
+          break
+        fi
+      done < <(jq -r -L "$root/.config/bodies" -L "$here" --arg item "$item" \
+        'include "account"; .[] | select(.file != null and covers($item; {id, names: [.id]})) | [.file, .start, .end] | @tsv' "$scratch/items-base.json")
+    done < "$scratch/deleted"
+    jq -c --slurpfile r <(printf '%s' "$reshapes") '. + {reshaped: $r[0]}' <<< "$c"
+  done | jq -s -c .)
+fi
 
 # The readings go to jq as files: the held set names each file of the corpus,
 # past the kernel's limit for one argument.
