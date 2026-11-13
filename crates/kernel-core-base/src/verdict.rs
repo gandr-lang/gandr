@@ -1478,7 +1478,6 @@ impl Verdicts
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub const fn build(&self) -> Maybe<BuildIdentity, keyed::Absent>
     {
         self.build

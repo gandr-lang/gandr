@@ -5106,6 +5106,12 @@ impl ArtifactRefusal
     }
 }
 
+/// An entry's content key and entry key, each absent with its reason.
+type EntryKeys = (
+    Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+);
+
 /// What the check of one lone declaration hands its commit: the declaration,
 /// its place, its keys, its name and its outcome. The check reads its view
 /// alone, and the commit alone writes the environment.
@@ -5121,13 +5127,7 @@ struct Lone
         bool,
     ),
     /// Its own content key and entry key, and how it finds its chain key.
-    keys: (
-        (
-            Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
-            Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-        ),
-        crate::releases::Chained,
-    ),
+    keys: (EntryKeys, crate::releases::Chained),
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// What its check charged.
@@ -5171,13 +5171,7 @@ pub struct Pending
         bool,
     ),
     /// Its own content key and entry key, and how it finds its chain key.
-    keys: (
-        (
-            Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
-            Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-        ),
-        crate::releases::Chained,
-    ),
+    keys: (EntryKeys, crate::releases::Chained),
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// The arena's mark past its content, and the mark that a refusal
