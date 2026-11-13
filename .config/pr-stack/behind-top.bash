@@ -8,7 +8,9 @@
 #   `current` forks it from the trunk after `trunk B`.
 # - `lower`: `apart` has the lower edit another file; `clashes` has it edit
 #   `f.txt` too; `elsewhere` has it edit another file and leave `s.txt`, the
-#   path that the upper shares with the other two (#7188).
+#   path that the upper shares with the other two (#7188); `generated` has
+#   it leave `s.txt` and write `ledger/references.sql`, which the upper
+#   writes too, a generated file (#7207).
 # - `reading`: what `top_reading` reads for the lower (`joins.jq`'s and
 #   `bound.jq`'s input).
 # - `restacked` (#3877): the upper is stacked on the lower once, and the
@@ -56,8 +58,11 @@ scenario() {
   # The lower's own commit edits the first line of `s.txt` and the upper's the
   # last, so the upper shares a path with the lower's stack and stacks on it
   # (#7188), and the rebase merges the two edits clean. An `elsewhere` lower
-  # leaves `s.txt` as it is, so the two share no path.
-  if [[ $3 != elsewhere ]]; then printf '%s\n' x 2 3 4 5 6 7 8 9 > s.txt && git add s.txt; fi
+  # leaves `s.txt` as it is, so the two share no path. A `generated` lower
+  # leaves it too and writes the references ledger, which the upper writes,
+  # so the two share a generated file alone (#7207).
+  if [[ $3 != elsewhere && $3 != generated ]]; then printf '%s\n' x 2 3 4 5 6 7 8 9 > s.txt && git add s.txt; fi
+  if [[ $3 == generated ]]; then mkdir -p ledger && printf '%s\n' lower > ledger/references.sql && git add ledger/references.sql; fi
   if [[ $3 == clashes ]]; then commit f.txt x "lower's own"; else commit l.txt l "lower's own"; fi
   git push --quiet origin lower
   git switch --quiet main
@@ -67,6 +72,7 @@ scenario() {
   fi
   git switch --quiet --create upper
   printf '%s\n' 1 2 3 4 5 6 7 8 y > s.txt && git add s.txt
+  mkdir -p ledger && printf '%s\n' upper > ledger/references.sql && git add ledger/references.sql
   commit f.txt c "upper's own"
   git fetch --quiet origin
 }

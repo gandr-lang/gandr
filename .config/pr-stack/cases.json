@@ -4848,5 +4848,54 @@
       "shared": ["a"]
     },
     "output": "{\"act\":\"alone\",\"why\":\"it is a draft, held\"}"
+  },
+  {
+    "name": "#7207: two changes that share only the references ledger, a generated file, share no path",
+    "program": "shared.jq",
+    "input": {
+      "shared": ["ledger/references.sql"],
+      "rows": [
+        {
+          "name": "the references ledger",
+          "paths": ["ledger/references.sql"],
+          "inputs": ["crates/"]
+        }
+      ],
+      "crates": ["a"]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#7207: a hand-written file beside the generated ones stays shared, as `crates/README.md` does beside the crate map",
+    "program": "shared.jq",
+    "input": {
+      "shared": ["crates/README.md", "ledger/README.md", "ledger/crates.dot"],
+      "rows": [
+        {
+          "name": "the crate map",
+          "paths": ["ledger/crates.dot", "ledger/README.md"],
+          "inputs": ["crates/"]
+        }
+      ],
+      "crates": ["a"]
+    },
+    "output": "[\"crates/README.md\"]"
+  },
+  {
+    "name": "#7207: a row for each crate holds the files under its directory, and a crate it does not name keeps its path",
+    "program": "shared.jq",
+    "input": {
+      "shared": ["crates/a/tests/golden/x.txt", "crates/b/src/lib.rs"],
+      "rows": [
+        {
+          "each": "crate",
+          "name": "the goldens of {crate}",
+          "paths": ["crates/{crate}/tests/golden/"],
+          "inputs": ["crates/{crate}/"]
+        }
+      ],
+      "crates": ["a", "b"]
+    },
+    "output": "[\"crates/b/src/lib.rs\"]"
   }
 ]
