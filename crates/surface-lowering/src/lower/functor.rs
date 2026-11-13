@@ -379,6 +379,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     /// - witness: `tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn parameter_export(
         &self,

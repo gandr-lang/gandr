@@ -574,6 +574,7 @@ use gandr_surface_lowering_base::lower::LabelRead;
 use gandr_surface_lowering_base::lower::LabelSite;
 use gandr_surface_lowering_base::lower::Listed;
 use gandr_surface_lowering_base::lower::Lowered;
+use gandr_surface_lowering_base::lower::MODEL;
 use gandr_surface_lowering_base::lower::Parameter;
 use gandr_surface_lowering_base::lower::Plan;
 use gandr_surface_lowering_base::lower::Produced;
@@ -600,6 +601,7 @@ use gandr_surface_lowering_base::lower::exhausted;
 use gandr_surface_lowering_base::lower::families::Families as _;
 use gandr_surface_lowering_base::lower::literal;
 pub use gandr_surface_lowering_base::lower::lowered;
+use gandr_surface_lowering_base::lower::multiplicity_one;
 pub use gandr_surface_lowering_base::lower::named;
 use gandr_surface_lowering_base::lower::parse_literal;
 pub use gandr_surface_lowering_base::lower::recursion;
@@ -693,6 +695,8 @@ use crate::lower::exits::Exits;
 use crate::lower::exits::ExitsRef;
 use crate::lower::identity::Identities;
 use crate::lower::identity::IdentitiesRef;
+use crate::lower::model::Models;
+use crate::lower::model::ModelsRef;
 use crate::lower::native::Native;
 use crate::lower::native::NativeRef;
 use crate::module::BodyScope;
@@ -1229,40 +1233,6 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// Mint the multiplicity one a linear arrow leaves unwritten, recorded as
-/// inserted at `origin`.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the non-negative integer literal `1`, the multiplicity the
-///   checker admits.
-/// - fails: never; the absence is unreachable, as `1` is decimal text.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::linear_arrow`].
-/// - witness: `lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
-#[spec(ensures: |ret| matches!(ret, Maybe::Present(_) | Maybe::Absent(lowered::Absent::Unminted)))]
-fn multiplicity_one(
-    sink: &mut Sink<'_>,
-    origin: Origin,
-) -> Maybe<ValueId, lowered::Absent>
-{
-    let Some(magnitude) = Magnitude::from_decimal_text(String::from("1"))
-    else {
-        return Maybe::Absent(lowered::Absent::Unminted);
-    };
-    let id = sink
-        .arena
-        .value_literal(Literal::Integer(IntegerLiteral::new(
-            Sign::NonNegative,
-            magnitude,
-        )));
-    sink.origins
-        .record_value(id, origin.inserted(Insertion::Multiplicity));
-    Maybe::Present(id)
-}
-
 /// A recursive tail's own name, from the reading of its body to the frame
 /// that binds it.
 ///
@@ -1281,10 +1251,6 @@ struct OwnName
 /// The continuation type's head, resolved after every binder and earlier
 /// declaration at two arguments.
 const STACK: &str = "Stack";
-
-/// The head of a theory's models as a type, resolved after every binder and
-/// earlier declaration at one argument.
-const MODEL: &str = "Model";
 
 /// The infix spellings that call the prelude's declaration of their row's
 /// name, its model resolved from the operands (`crate::prelude`): `==` the
@@ -1466,69 +1432,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
     const fn shared(&self) -> &Self
     {
         self
-    }
-}
-
-/// The native family's calls that a body of the model or arity family makes
-/// through its host, while the body stands in the lowering.
-impl<'source> Lowerer<'_, 'source>
-{
-    /// The native family's `called_result`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn called_result(
-        &mut self,
-        site: Site,
-        frame: Frame,
-        call: Placed,
-    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
-    {
-        Native::new(self).called_result(site, frame, call)
-    }
-
-    /// The native family's `held_at`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn held_at(
-        &mut self,
-        stated: NodeIndex,
-    ) -> Result<native::Holds, LoweringRefusal<'source>>
-    {
-        Native::new(self).held_at(stated)
-    }
-
-    /// The native family's `relocate_value_type`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn relocate_value_type(
-        &self,
-        ty: ValueTypeId,
-        frame: Frame,
-        telescope: Telescope,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ValueTypeId
-    {
-        NativeRef::over(&self.cx).relocate_value_type(ty, frame, telescope, sink, origin)
-    }
-
-    /// The native family's `written_telescope`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn written_telescope(
-        &mut self,
-        node: NodeIndex,
-    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
-    {
-        Native::new(self).written_telescope(node)
     }
 }
 
@@ -2043,22 +1946,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint(sink)?;
         Native::new(self).mint_joints(sink);
         self.mint_abstracts(sink);
-        self.mint_models(sink);
-        self.match_signatures(sink);
+        Models::new(self).mint_models(sink);
+        Models::new(self).match_signatures(sink);
         self.check_requirements();
         self.mint_requirements(sink);
-        self.check_families(sink);
-        self.check_sorts();
+        Models::new(self).check_families(sink);
+        Models::new(self).check_sorts();
         Native::new(self).mint_data(sink);
         self.mint_descriptions(sink)?;
         self.mint_presentations(sink)?;
         self.mint_operations(sink);
-        self.mint_derived_rules(sink);
-        self.refuse_derived_components();
+        Models::new(self).mint_derived_rules(sink);
+        Models::new(self).refuse_derived_components();
         self.mint_boundaries(sink);
         self.mint_generics(sink);
-        self.mint_reducts(sink);
-        self.mint_forgets(sink);
+        Models::new(self).mint_reducts(sink);
+        Models::new(self).mint_forgets(sink);
         self.mint_instances(sink);
         self.mint_paths(sink);
         self.refuse_misshapen_entries(sink);
@@ -3752,7 +3655,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         for &defined in &members {
-            let _reading = self.member_reading(defined, Frame::Outermost)?;
+            let _reading = Models::new(self).member_reading(defined, Frame::Outermost)?;
         }
         for slot in self.cx.collected.slots.iter().skip(from.slots) {
             if slot.role == Role::Generic {
@@ -3821,9 +3724,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         Native::new(self).seed_data(&mut seeds);
-        self.seed_families(&mut seeds)?;
+        Models::new(self).seed_families(&mut seeds)?;
         for defined in members {
-            let reading = self.member_reading(defined, Frame::Outermost)?;
+            let reading = Models::new(self).member_reading(defined, Frame::Outermost)?;
             seeds.push((defined, reading));
         }
         self.seed_descriptions(&mut seeds)?;
@@ -4293,6 +4196,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ),
         ensures: |_| usize::from(self.cx.collected.owner.count()) == before.0
             && self.cx.collected.owner_of(anchor) == before.1,
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     pub(super) fn own_written(
         &mut self,
@@ -4769,12 +4676,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Call => self.call(site, cursor),
             Former::Case => Native::new(self).case(site, cursor),
             Former::If => self.conditional(site, cursor),
-            Former::Telescope => self.telescope(site, cursor),
+            Former::Telescope => Models::new(self).telescope(site, cursor),
             Former::List => self.list(site, cursor),
-            Former::PackModel => self.pack_model(site, cursor),
-            Former::ForgetModel => self.forget_model(site, cursor),
-            Former::Injection => self.injection(site, cursor),
-            Former::LazyRecord => self.copattern(site, cursor),
+            Former::PackModel => Models::new(self).pack_model(site, cursor),
+            Former::ForgetModel => Models::new(self).forget_model(site, cursor),
+            Former::Injection => Models::new(self).injection(site, cursor),
+            Former::LazyRecord => Models::new(self).copattern(site, cursor),
             Former::Binary | Former::Unary => self.operator(site, pieces),
             Former::Projection => self.projection(site, pieces),
             Former::TypeHead => self.type_head(site, cursor),
@@ -4783,19 +4690,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::TypeApplication => self.type_application(site, cursor),
             Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             Former::ArrowType => self.arrow(site, cursor),
-            Former::LinearArrowType => self.linear_arrow(site, cursor),
+            Former::LinearArrowType => Models::new(self).linear_arrow(site, cursor),
             Former::ProductType => self.chain(site, cursor, Former::ProductType),
             Former::SumType => self.chain(site, cursor, Former::SumType),
             Former::LazyProductType => self.chain(site, cursor, Former::LazyProductType),
-            Former::TelescopeType => self.telescope_type(site, cursor),
-            Former::LabelledSumType => self.labelled_sum_type(site, cursor),
-            Former::LazyRecordType => self.lazy_record_type(site, cursor),
+            Former::TelescopeType => Models::new(self).telescope_type(site, cursor),
+            Former::LabelledSumType => Models::new(self).labelled_sum_type(site, cursor),
+            Former::LazyRecordType => Models::new(self).lazy_record_type(site, cursor),
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             Former::PathType => Identities::new(self).path_type(site, cursor, Relating::Path),
             Former::BridgeType => Identities::new(self).path_type(site, cursor, Relating::Bridge),
             Former::FlowType => Identities::new(self).supplied_flow(site, cursor),
             Former::RelationType => Identities::new(self).relation_type(site, cursor),
-            Former::ManifestType => self.manifest_model(site, cursor),
+            Former::ManifestType => Models::new(self).manifest_model(site, cursor),
             Former::CapabilityType => Capability::new(self).capability_type(site, cursor),
             Former::AtType => Capability::new(self).at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
@@ -6629,7 +6536,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.resolved(site.at.span, resolved);
                 let plan = self.resolved_term(site, frame, resolved)?;
                 self.plan(site, plan);
-                self.opened_model(site)
+                ModelsRef::new(self).opened_model(site)
             },
             Maybe::Absent(_) => {
                 if name.as_ref() == identity::NIL {
@@ -6687,6 +6594,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
     #[spec(ensures: |ret| ret.is_err() || self.cx.classified_ahead.contains(&label.node))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn pun(
         &mut self,
         label: Placed,
@@ -6714,7 +6625,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`Self::stated_type`] reads it, or a type atom, or `Type` for the
     ///   value universe at the fuss-free level, stands as a type, which a value
     ///   position quotes; otherwise a module declared before it stands as its
-    ///   model, as [`Self::module_value`] packs it.
+    ///   model, as `Models::module_value` packs it.
     /// - provides: the term-position spelling of a type, of a nullary
     ///   constructor, and of a declaration named with a capital.
     /// - fails: yields the wrong-sort refusal for a resolved name or a type
@@ -6812,7 +6723,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             },
             Maybe::Absent(_) => {
-                if self.module_value(site, name)? == Maybe::Present(()) {
+                if Models::new(self).module_value(site, name)? == Maybe::Present(()) {
                     return Ok(());
                 }
                 return Err(LoweringRefusal::UnresolvedName {
@@ -6876,7 +6787,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   read; [`LoweringRefusal::ImplicitUnsupplied`] for a declaration with
     ///   implicits named anywhere but a call supplying them; the wrong-sort
     ///   refusal for a flattened model implicit, which is its components and no
-    ///   value ([`Self::unflattened`]).
+    ///   value (`ModelsRef::unflattened`).
     /// - panics: none.
     ///
     /// # Errors
@@ -6915,7 +6826,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         resolved: Resolved,
     ) -> Result<Plan, LoweringRefusal<'source>>
     {
-        self.unflattened(site, resolved)?;
+        ModelsRef::new(self).unflattened(site, resolved)?;
         match resolved {
             Resolved::Binder(bound) if self.cx.in_type.contains(&site.at.node) => {
                 let telescope = self.name_in_type(site.at.node, bound.binder);
@@ -7076,6 +6987,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   arrow.
     /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
     #[spec(ensures: |ret| ret == self.cx.scope.binds(binder, self.telescope_at(node)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn names_own_binder(
         &self,
         node: NodeIndex,
@@ -7445,7 +7360,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a parenthesised expression in term position.
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
     ///   answer its position states passed on; a comma list is read as a pair;
-    ///   a labelled group as [`Self::labelled_outputs`] reads it; `()` ending a
+    ///   a labelled group as `Models::labelled_outputs` reads it; `()` ending a
     ///   body of no outputs returns none; `(e : T)` is read as
     ///   `Native::annotated` reads it, adopting a constructor that takes `T` as
     ///   its classifier, or the value an ascription its position makes carries,
@@ -7488,7 +7403,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let list = cursor.clone();
         let _open = cursor.tile(TileName::PAREN_OPEN);
         if let Maybe::Present(_) = cursor.at(TileName::DOT) {
-            return self.labelled_outputs(site, list);
+            return Models::new(self).labelled_outputs(site, list);
         }
         let run = cursor.operands();
         if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
@@ -7500,7 +7415,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         if let Run::Empty(_) = run {
             // `()` ending a body of no outputs returns none.
-            if self
+            if Models::new(self)
                 .answered_outputs(site)?
                 .is_some_and(|outputs| outputs.is_empty())
             {
@@ -7669,7 +7584,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `cursor` stands at the `(` of a parenthesised expression
     ///   whose first member a comma follows.
     /// - ensures: ending a body whose written result is a group of outputs, as
-    ///   [`Self::answered_outputs`] reads it, the tuple stands as a computation
+    ///   `Models::answered_outputs` reads it, the tuple stands as a computation
     ///   and is planned as the return of its members; otherwise it stands as a
     ///   value and is planned over them as one tuple, as one `*` chain is one
     ///   product. Either way every member is read as a value under its own
@@ -7720,7 +7635,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             name: FormName::TUPLE,
             ..site
         };
-        let outputs = self.answered_outputs(site)?;
+        let outputs = Models::new(self).answered_outputs(site)?;
         let produced = match outputs {
             Some(_) => Produced::Computation,
             None => Produced::Value,
@@ -7930,6 +7845,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_listed_constructor_takes_the_element_type_1544`
     /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(_, ref answered)| answered.is_none() || !self.cx.classifiers.contains_key(&site.at.node)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn stated_value(
         &mut self,
         site: Site,
@@ -7971,11 +7890,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   product of as many positional components as `members`, each member
     ///   takes its component as [`Self::classify_member`] gives it; otherwise
     ///   no member changes.
-    /// - fails: as [`Self::stated_value`] and [`Self::stated_entries`].
+    /// - fails: as [`Self::stated_value`] and `Models::stated_entries`.
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`Self::stated_value`] and [`Self::stated_entries`].
+    /// As [`Self::stated_value`] and `Models::stated_entries`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::classify_member`], for the tuple and for
@@ -7984,6 +7903,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         captures: before = (self.cx.classifiers.len(), self.cx.inherited.len()),
         ensures: |ret| ret.is_err() || (self.cx.classifiers.len() >= before.0 && self.cx.inherited.len() >= before.1),
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     fn classify_members(
         &mut self,
@@ -7994,8 +7917,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let (stated, answered) = self.stated_value(site)?;
         if let Some(stated) = stated
-            && let Maybe::Present(components) =
-                self.stated_entries(site, stated, Former::TelescopeType, arity::Thunked(false))?
+            && let Maybe::Present(components) = Models::new(self).stated_entries(
+                site,
+                stated,
+                Former::TelescopeType,
+                arity::Thunked(false),
+            )?
             && components.len() == members.end.saturating_sub(members.start)
             && components
                 .iter()
@@ -8313,7 +8240,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   function space is answered, as for that space's arrows past no domain;
     ///   nothing for an unanswered position, an answer over a loop or a
     ///   returner, an alias with no domain left and any other type.
-    /// - fails: as `Native::unwrapped` and [`Self::alias_domains`].
+    /// - fails: as `Native::unwrapped` and `Models::alias_domains`.
     /// - panics: none.
     ///
     /// # Errors
@@ -8371,7 +8298,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `answer` answers a lambda in term position.
     /// - ensures: as [`Self::answered_arrow`] for a position `answer` answers.
-    /// - fails: as `Native::unwrapped` and [`Self::alias_domains`].
+    /// - fails: as `Native::unwrapped` and `Models::alias_domains`.
     /// - panics: none.
     ///
     /// # Errors
@@ -8418,7 +8345,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if former != Former::ArrowType {
                 return Ok(None);
             }
-            let bound = self.binder_type(domain, answer.frame)?.unwrap_or(domain);
+            let bound = Models::new(self)
+                .binder_type(domain, answer.frame)?
+                .unwrap_or(domain);
             self.own_written(bound, answer.node);
             return Ok(Some((bound, native::Answer {
                 node: codomain,
@@ -8430,7 +8359,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if !self.boxes(written)?.0 {
             return Ok(None);
         }
-        let Some(domains) = self.alias_domains(domain, answer.frame)?
+        let Some(domains) = Models::new(self).alias_domains(domain, answer.frame)?
         else {
             return Ok(None);
         };
@@ -9149,7 +9078,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             self.let_statement(cursor, at, frame)?
                         }
                         else {
-                            self.module_statement(cursor, at, frame)?
+                            Models::new(self).module_statement(cursor, at, frame)?
                         };
                         match self.cx.statements.last() {
                             Some(&Statement { bound, .. }) => {
@@ -9349,7 +9278,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   statement recorded with the tile at `statement`; the frame binding the
     ///   statement's names over `frame`, which the rest of the block reads
     ///   under, is returned. A tuple pattern `(x, y, …)` of a call whose result
-    ///   is a group of as many outputs, as [`Self::called_outputs`] reads it,
+    ///   is a group of as many outputs, as `Models::called_outputs` reads it,
     ///   binds each output to its component's name, in order, and the statement
     ///   is recorded as that bind of outputs; any other tuple pattern binds the
     ///   returned tuple under a nameless binder and each component's name over
@@ -9357,7 +9286,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   annotated `: A` reads `A` in `frame` and binds over it, and the
     ///   statement is recorded as the bind of `c` ascribed `-F A`. A name
     ///   written with no type is recorded with `frame` and `c`, which
-    ///   [`Self::ran_type`] reads its type off.
+    ///   `Models::ran_type` reads its type off.
     /// - fails: yields the unadmitted refusal for a binder pattern other than a
     ///   name, a wildcard or a tuple of those, and a fault naming the statement
     ///   for a hole or a tile out of shape.
@@ -9426,7 +9355,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.read(bound.node, Reading::Computation(frame));
             let arity = gandr_core_term::ComponentCount::from(names.len());
             let outputs = match annotation {
-                None => self.called_outputs(frame, bound, run.node)?,
+                None => Models::new(self).called_outputs(frame, bound, run.node)?,
                 Some(_) => None,
             };
             // A pattern of a call returning outputs binds every one of them.
@@ -10390,7 +10319,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A call of a function returning a group of outputs, standing as one
         // value, is the record of its outputs.
         if let Reading::Value(frame) = site.reading
-            && let Some(outputs) = self.called_outputs(frame, site.at, site.at.node)?
+            && let Some(outputs) = Models::new(self).called_outputs(frame, site.at, site.at.node)?
         {
             let labels = outputs
                 .iter()
@@ -10880,7 +10809,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   composite of two paths, or of two flows where a flow is answered, as
     ///   [`Identities::derive`] plans it; the cons `g ∷ p` is a word, as
     ///   `Native::cons` plans it; `left |> right` plugs every output of `left`
-    ///   into `right`, as [`Self::plug`] plans it.
+    ///   into `right`, as `Models::plug` plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Identities::derive`] does, and the
     ///   cons as `Native::cons` does.
@@ -10930,7 +10859,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ] = pieces.pieces.as_slice()
             && label == TileName::PLUG
         {
-            return self.plug(site, left, right);
+            return Models::new(self).plug(site, left, right);
         }
         // `-n` written on a natural literal is one negative literal: a value,
         // primitive at `Integer` and read through `FromNeg` at another type.
@@ -11040,19 +10969,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   multi-output constructor is its port `l`, as `Native::port` reads it;
     ///   a selection by position projects the entry at that place of the type
     ///   written for its operand, or of the pair the operand is when no type is
-    ///   written, as [`Self::positional`] reads it; a selection read as a
+    ///   written, as `Models::positional` reads it; a selection read as a
     ///   computation off a name whose written type is a thunked lazy record
     ///   over labels observes the entry its label names; a selection off a name
     ///   whose written type is a type over labels projects the entry its label
-    ///   names, as [`Self::selection`] reads it; a selection off a name whose
+    ///   names, as `Models::selection` reads it; a selection off a name whose
     ///   written type is a data family without indices reads the field its
     ///   label names off every constructor, as `Native::data_field` reads it; a
     ///   selection off a flattened model implicit is the parameter of the
-    ///   component it names, as [`Self::flattened_member`] reads it; a
+    ///   component it names, as `Models::flattened_member` reads it; a
     ///   selection off a value no written type states, a chain of selections
     ///   ending at a binder's or a declaration's name not capitalised, or one
     ///   link off a name written at a patched type, projects the field its
-    ///   label names of the record the value is, as [`Self::field`] reads it. A
+    ///   label names of the record the value is, as `Models::field` reads it. A
     ///   chain of selections whose head is a capitalised name is a path: inside
     ///   a functor whose parameter the head names, a one-link path is that
     ///   parameter's value component, as [`Self::parameter_value`] reads it; a
@@ -11128,7 +11057,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let [_, Piece::Tile { label, .. }, ..] = *pieces.pieces.as_slice()
             && label == TileName::SUB_RECORD_OPEN
         {
-            return self.sub_record(site, pieces);
+            return Models::new(self).sub_record(site, pieces);
         }
         // `Family.Constructor` names a constructor of the family.
         if let Maybe::Present(constructor) =
@@ -11146,21 +11075,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         // `f(a, …).l` selects the output `l` of a call returning a group.
-        if self.selected_output(site, pieces)? == arity::Planned(true) {
+        if Models::new(self).selected_output(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         // An observation by position of a thunked lazy product or codata
         // family comes before the positional selection of a pair.
-        if self.observation(site, pieces)? == arity::Planned(true) {
+        if Models::new(self).observation(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.positional(site, pieces)? == arity::Planned(true) {
+        if Models::new(self).positional(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.selection(site, pieces)? == arity::Planned(true) {
+        if Models::new(self).selection(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.model_member(site, pieces)? == arity::Planned(true) {
+        if Models::new(self).model_member(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         if Native::new(self).data_field(site, pieces)? == arity::Planned(true) {
@@ -11197,7 +11126,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         // A selection off a value no module governs is the field of a record.
-        if self.field(site, pieces)? == arity::Planned(true) {
+        if Models::new(self).field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         let _frame = self.require(site, Produced::Value)?;
@@ -11233,7 +11162,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     former: Former::Parenthesized,
                     ..
                 } => {
-                    let Some(inner) = self.ungrouped_target(target, site.at.node)?
+                    let Some(inner) = Models::new(self).ungrouped_target(target, site.at.node)?
                     else {
                         return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                     };
@@ -12085,7 +12014,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   is that parameter's type component, as [`Self::parameter_type`] reads
     ///   it; a one-link path whose head names a binder held at a theory's model
     ///   type is the carrier the model gives the sort the link names, as
-    ///   [`Self::carrier`] reads it; otherwise it is resolved through the
+    ///   `Models::carrier` reads it; otherwise it is resolved through the
     ///   outermost scope at the depth that binds it: a path ending at an
     ///   exported type component stands for what the component reads — the type
     ///   a manifest component or a type member names, the type member a
@@ -12175,7 +12104,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   when it writes one.
     /// - ensures: as [`Self::type_path`], each reading of an unapplied path the
     ///   same; an applied path ending at a type family a module exports expands
-    ///   it over the arguments, as [`Self::expansion`] reads it, and one ending
+    ///   it over the arguments, as `Models::expansion` reads it, and one ending
     ///   at a data family a module exports, or at the type an import's alias
     ///   names, stands applied to them. A path whose qualifier an import of a
     ///   `std` module binds and whose member that module homes as a former,
@@ -12273,7 +12202,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return unapplied(site, applied);
         }
         if let &[(_, member)] = links.as_slice()
-            && self.carrier(site, head, member)? == arity::Planned(true)
+            && Models::new(self).carrier(site, head, member)? == arity::Planned(true)
         {
             return unapplied(site, applied);
         }
@@ -12327,7 +12256,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the stated type, read at `site`'s own reading, when the
     ///   component is declared strictly before the declaration `site` belongs
     ///   to; applied, a type family's expansion over the arguments, as
-    ///   [`Self::expansion`] reads it.
+    ///   `Models::expansion` reads it.
     /// - provides: a type path's reading, in a type and where a value is read.
     /// - fails: yields the unadmitted refusal for a component the exports do
     ///   not hold, and [`LoweringRefusal::ForwardMemberReference`] for one
@@ -12377,7 +12306,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .cx
                     .expansions
                     .insert(site.at.node, (site.at.span, site.reading.frame()));
-                self.expansion(site, family, stated.held, applied)
+                Models::new(self).expansion(site, family, stated.held, applied)
             },
             (
                 Some(_),
@@ -13065,7 +12994,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .cx
                     .expansions
                     .insert(site.at.node, (site.at.span, site.reading.frame()));
-                return self.expansion(site, family, held, applied);
+                return Models::new(self).expansion(site, family, held, applied);
             },
             Ok(Maybe::Present(_) | Maybe::Absent(_)) => {},
             Err(refusal) => {
@@ -13120,7 +13049,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   named `Stack` and applied to two the continuation type
     ///   [`Self::stack_type`] plans, one named `Iso` and applied to two the
     ///   quasi-inverse `A ≅ B` [`Identities::relation_of`] plans, one named
-    ///   `Model` and applied to one the bundled record [`Self::model_type`]
+    ///   `Model` and applied to one the bundled record `Models::model_type`
     ///   plans with its manifest sorts, one named `Terms` and applied to one
     ///   the theory's terms `Native::terms_type` plans; any other head applied
     ///   to one argument resolves against the unary table, stands at the sort
@@ -13186,7 +13115,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let (Some(argument), 1_usize) = (first, count)
             && name.as_ref() == MODEL
         {
-            return self.model_type(site, argument, manifests);
+            return Models::new(self).model_type(site, argument, manifests);
         }
         if let Some(&(sort, _)) = manifests.first() {
             return Err(site.fault(sort.span, FormFault::MisplacedTile));
@@ -13626,7 +13555,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a type is read, which computes a code only once applied (#690); the
     ///   wrong-sort refusal where the position reads neither a value nor the
     ///   sort of the decode's universe, and for a flattened model implicit,
-    ///   which is its components and no value ([`Self::unflattened`]);
+    ///   which is its components and no value (`ModelsRef::unflattened`);
     ///   propagates [`LoweringRefusal::BudgetExceeded`] from the walk of the
     ///   code's type.
     /// - panics: none.
@@ -13694,7 +13623,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         lists: Lists,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        self.unflattened(site, resolved)?;
+        ModelsRef::new(self).unflattened(site, resolved)?;
         let again = match lists {
             Lists::Again(again) => Some(again),
             Lists::Bare | Lists::Called => None,
@@ -14170,7 +14099,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // `-F (A, B)` as `-> (A, B)`.
         if former == TypeFormer::Returner
             && let Some(tree) = self.cx.tree.node(argument)
-            && self.written_group(Placed::of(argument, tree), frame)?.0
+            && Models::new(self)
+                .written_group(Placed::of(argument, tree), frame)?
+                .0
         {
             self.read(argument, Reading::Result(frame));
             self.plan(site, Plan::Transparent(argument));
@@ -14207,7 +14138,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   reads it as written as a computation type: a type operator's argument
     ///   or a type family's body writes the box as `=>` did. Any other arrow
     ///   stands as a computation type: one whose domain is one binder is the
-    ///   dependent arrow [`Self::dependent_arrow`] plans, and the rest read
+    ///   dependent arrow `Models::dependent_arrow` plans, and the rest read
     ///   their domain as a value type and their codomain as a computation type.
     ///   Each is planned over both operands.
     /// - provides: the function type of the fragment, the box of a function
@@ -14279,7 +14210,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // bare domain stays the static Pi, whose classifier the checker reads.
         if boxes
             && kind
-            && self.telescope_function(site, frame, domain, codomain)? == arity::Planned(true)
+            && Models::new(self).telescope_function(site, frame, domain, codomain)?
+                == arity::Planned(true)
         {
             return Ok(());
         }
@@ -14293,7 +14225,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.boxed(site, frame, domain, codomain);
         }
         if !value_typed
-            && self.dependent_arrow(site, frame, domain, codomain)? == arity::Planned(true)
+            && Models::new(self).dependent_arrow(site, frame, domain, codomain)?
+                == arity::Planned(true)
         {
             return Ok(());
         }
@@ -14597,6 +14530,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |halves| halves.is_none_or(|[first, second]| first != operand && second != operand)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn chained(
         &mut self,
         site: Site,
@@ -14677,7 +14614,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         codomain: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if self.telescope_function(site, frame, domain, codomain)? == arity::Planned(true) {
+        if Models::new(self).telescope_function(site, frame, domain, codomain)?
+            == arity::Planned(true)
+        {
             return Ok(());
         }
         let start = self.cx.operands.entries().len();
@@ -14713,7 +14652,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: nothing beyond a well-formed tree.
     /// - ensures: [`Reading::Result`] under `frame` for a written group, as
-    ///   [`Self::written_group`] reads it, and for a returner type whose first
+    ///   `Models::written_group` reads it, and for a returner type whose first
     ///   piece is `[`; [`Reading::ValueType`] under `frame` otherwise, so a
     ///   written computation type such as `-F B` is refused as a value type and
     ///   a staged box `A -> (B -> C)` keeps its output a box.
@@ -14722,7 +14661,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`Self::written_group`].
+    /// As `Models::written_group`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a box returning a group, one under a row, a plain
@@ -14730,6 +14669,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
     /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
     #[spec(ensures: |ret| matches!(ret, Err(_) | Ok(Reading::Result(_) | Reading::ValueType(_))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn box_output(
         &mut self,
         codomain: Placed,
@@ -14751,7 +14694,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             false
         };
-        if rowed || self.written_group(codomain, frame)?.0 {
+        if rowed || Models::new(self).written_group(codomain, frame)?.0 {
             return Ok(Reading::Result(frame));
         }
 
@@ -14777,6 +14720,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         | Maybe::Present(id) => sink.arena.comp_type(id).is_some(),
         | Maybe::Absent(_) => true,
     })]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn box_returns(
         &self,
         codomain: NodeIndex,
@@ -15331,7 +15278,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a parenthesised type.
     /// - ensures: where a result is read, a group of no entry, of several, or
-    ///   of one labelled entry is the outputs, as [`Self::output_group`] reads
+    ///   of one labelled entry is the outputs, as `Models::output_group` reads
     ///   them; otherwise the one operand is read at the form's own reading and
     ///   adopted; where a value is read, a `:` after the operand makes the form
     ///   the annotation of that operand, read as `Native::annotated` reads the
@@ -15379,7 +15326,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A group written as a function's result is its outputs, as the group
         // before an arrow is its inputs: `-> (q : Nat, r : Nat)`, `-> ()`.
         if let Reading::Result(frame) = site.reading
-            && self.output_group(site, frame)? == arity::Planned(true)
+            && Models::new(self).output_group(site, frame)? == arity::Planned(true)
         {
             return Ok(());
         }
@@ -16213,6 +16160,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// trivial.
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn labelled(
         &mut self,
         written: ByteSpan,
@@ -16522,7 +16473,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Some(planned) = self.cx.planned_models.remove(&position)
         {
             for slot in planned {
-                self.mint_model(slot, sink, origin);
+                Models::new(self).mint_model(slot, sink, origin);
             }
         }
         // A type a term quotes was minted in its telescope, which counts a
@@ -16571,7 +16522,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Bridge::Inserted(Insertion::Nested | Insertion::Bound | Insertion::Endpoint),
                 Maybe::Present(Lowered::Computation(call)),
                 Some(labels),
-            ) => Self::mint_record_of_outputs(call, labels, sink, origin),
+            ) => ModelsRef::<Self>::mint_record_of_outputs(call, labels, sink, origin),
             (_, minted, _) => minted,
         };
         // A call of no arguments is its head's force, so that force is the
@@ -16967,10 +16918,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_reapplied(code, (arguments, again), universe, sink, (origin, head))
             },
             Plan::Carrier(code, selected, ref label) => {
-                self.mint_carrier(code, selected, label.as_ref(), sink, origin)
+                ModelsRef::new(self).mint_carrier(code, selected, label.as_ref(), sink, origin)
             },
             Plan::FixedCarrier(code, written) => {
-                self.mint_fixed_carrier(code, written, sink, origin)
+                ModelsRef::new(self).mint_fixed_carrier(code, written, sink, origin)
             },
             Plan::Called(code, arguments) => {
                 let head = self.written_head(origin);
@@ -16990,31 +16941,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map(Lowered::Value),
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
             Plan::ReturnAll(members) => self.mint_return_all(members, sink, origin),
-            Plan::SelectedOutput { call, arity, index } => {
-                self.mint_selected_output((call, arity, arity::Place(index)), sink, origin)
-            },
+            Plan::SelectedOutput { call, arity, index } => ModelsRef::new(self)
+                .mint_selected_output((call, arity, arity::Place(index)), sink, origin),
             Plan::Plugged { left, right, arity } => {
-                self.mint_plugged((left, right, arity), sink, origin)
+                ModelsRef::new(self).mint_plugged((left, right, arity), sink, origin)
             },
             Plan::List(elements) => self.mint_list(elements, sink, origin),
-            Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
+            Plan::Record(ref fields) => ModelsRef::new(self).mint_record(fields, sink, origin),
             Plan::RecordUpdate(base, ref fields) => {
-                self.mint_record_update(base, fields, sink, origin)
+                ModelsRef::new(self).mint_record_update(base, fields, sink, origin)
             },
-            Plan::Injection(summand, body) => self.mint_injection(summand, body, sink, origin),
+            Plan::Injection(summand, body) => {
+                ModelsRef::new(self).mint_injection(summand, body, sink, origin)
+            },
             Plan::ValueFunction(domains, codomain) => {
                 self.mint_value_function(domains, codomain, sink, origin)
             },
             Plan::Telescope(entries, codomain) => {
-                self.mint_telescope(entries, codomain, sink, origin)
+                ModelsRef::new(self).mint_telescope(entries, codomain, sink, origin)
             },
             Plan::DependentArrow(entries, codomain) => {
-                self.mint_dependent_arrow(entries, codomain, sink, origin)
+                ModelsRef::new(self).mint_dependent_arrow(entries, codomain, sink, origin)
             },
             Plan::LinearArrow(entries, codomain, boxed) => {
-                self.mint_linear_arrow(entries, codomain, boxed, sink, origin)
+                ModelsRef::new(self).mint_linear_arrow(entries, codomain, boxed, sink, origin)
             },
-            Plan::Returns(entries) => self.mint_returns(
+            Plan::Returns(entries) => ModelsRef::new(self).mint_returns(
                 entries,
                 gandr_core_term::effect::EffectRow::EMPTY,
                 sink,
@@ -17034,7 +16986,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 NativeRef::over(&self.cx).mint_codata(constant, arguments, sink, origin)
             },
             Plan::Expansion(family, arguments) => {
-                let expanded = self.mint_expansion(family, arguments, sink, origin);
+                let expanded = ModelsRef::new(self).mint_expansion(family, arguments, sink, origin);
                 let context = |lowerer: &Self, frame| -> Vec<String> {
                     lowerer
                         .cx
@@ -17074,17 +17026,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.computation(id, origin)
             }),
             Plan::Product(components) => self.mint_product(components, sink, origin),
-            Plan::RecordType(ref fields, binders, last, labelled) => {
-                self.mint_labelled_type(fields, binders, (last, labelled), sink, origin)
+            Plan::RecordType(ref fields, binders, last, labelled) => ModelsRef::new(self)
+                .mint_labelled_type(fields, binders, (last, labelled), sink, origin),
+            Plan::Sum(summands, labels) => {
+                ModelsRef::new(self).mint_sum(summands, labels, sink, origin)
             },
-            Plan::Sum(summands, labels) => self.mint_sum(summands, labels, sink, origin),
-            Plan::With(entries, labels) => self.mint_with(entries, labels, sink, origin),
-            Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
+            Plan::With(entries, labels) => {
+                ModelsRef::new(self).mint_with(entries, labels, sink, origin)
+            },
+            Plan::Copattern(clauses) => ModelsRef::new(self).mint_copattern(clauses, sink, origin),
             Plan::Observe(subject, observed, thunked) => {
-                self.mint_observe(subject, observed, thunked, sink, origin)
+                ModelsRef::new(self).mint_observe(subject, observed, thunked, sink, origin)
             },
             Plan::Select(subject, selected, ref labelled) => {
-                self.mint_select(subject, selected, labelled.as_ref(), sink, origin)
+                ModelsRef::new(self).mint_select(subject, selected, labelled.as_ref(), sink, origin)
             },
             Plan::Field(subject, ref label) => self.cx.value_at(subject).map(|held| {
                 let id = sink
@@ -17094,7 +17049,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Lowered::Computation(id)
             }),
             Plan::SubRecord(subject, ref selected) => {
-                self.mint_sub_record(subject, selected, sink, origin)
+                ModelsRef::new(self).mint_sub_record(subject, selected, sink, origin)
             },
             Plan::Projected(projected) => {
                 NativeRef::over(&self.cx).mint_projected(projected, sink, origin)
@@ -17174,8 +17129,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Relation(relation, left, right) => {
                 IdentitiesRef::new(self).mint_relation(relation, [left, right], sink, origin)
             },
-            Plan::Bundle(ref signature) => self.mint_model_type(signature, sink, origin),
-            Plan::Packed(ref packed) => self.mint_packed(packed, sink, origin),
+            Plan::Bundle(ref signature) => {
+                ModelsRef::new(self).mint_model_type(signature, sink, origin)
+            },
+            Plan::Packed(ref packed) => ModelsRef::new(self).mint_packed(packed, sink, origin),
             Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
@@ -17263,6 +17220,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn mint_code(
         &self,
         code: Code,
@@ -17284,7 +17245,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 // A family's body is never checked where it is written, so a
                 // parameter it names alone answers at its kind.
                 if written.is_empty()
-                    && let Some(kind) = self.family_parameter_kind(binder)
+                    && let Some(kind) = ModelsRef::new(self).family_parameter_kind(binder)
                 {
                     sink.origins.record_label(Label {
                         span: origin.span(),
@@ -19435,7 +19396,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Some(&(ref supplied, place)) =
                 held.and_then(|key| self.cx.components.get(&key))
             {
-                match self.mint_supplied(supplied, place, under, sink, origin) {
+                match ModelsRef::new(self).mint_supplied(supplied, place, under, sink, origin) {
                     Maybe::Present(id) => id,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 }
@@ -19682,7 +19643,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   each parameter's arrow dependent exactly when a later parameter's type
     ///   or the result names it, and plain otherwise, each parameter of a
     ///   flattened model implicit at its component's type
-    ///   ([`Self::flattened_domains`]), and each instance a label of the
+    ///   (`ModelsRef::flattened_domains`), and each instance a label of the
     ///   result's row binds at the durable capability of the label's whole
     ///   interface, at the label's region binder; nothing is minted when a type
     ///   is unstated or did not lower.
@@ -19785,7 +19746,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let domains = match flattened.entry(written) {
                         Entry::Occupied(held) => held.into_mut(),
                         Entry::Vacant(free) => {
-                            match self.flattened_domains(written, sink, origin) {
+                            match ModelsRef::new(self).flattened_domains(written, sink, origin) {
                                 Maybe::Present(domains) => free.insert(domains),
                                 Maybe::Absent(reason) => return Maybe::Absent(reason),
                             }
@@ -21440,6 +21401,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Stratum::Instance(_) => ret == self.cx.instantiated.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     fn outcome(
         &self,

@@ -41,6 +41,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::identity::back;
 use gandr_core_term::identity::then;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering_base::lower::families::Families;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::TermView;
@@ -51,6 +52,8 @@ use super::Context;
 use super::Members;
 use super::Minting;
 use super::Missing;
+use super::Models;
+use super::ModelsRef;
 use super::Projected;
 use super::bundle_dependence;
 use crate::derive::Fired;
@@ -60,7 +63,6 @@ use crate::derive::Step;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
 use crate::lower::Lowered;
-use crate::lower::Lowerer;
 use crate::lower::Reading;
 use crate::lower::Sink;
 use crate::lower::Site;
@@ -100,7 +102,7 @@ struct Proving<'proof, 'source, 'model>
     run: SlotIndex,
 }
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
 {
     /// Mint each derived rule the current source declares.
     ///
@@ -117,7 +119,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a group's inverse of a product mints its lemmas and
     ///   itself, which the checker accepts.
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[inline]
     pub fn mint_derived_rules(
         &mut self,
@@ -186,7 +188,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a model writing the derived associator is refused at
     ///   it by name, and a model writing only its rules' witnesses holds no
     ///   such refusal.
-    /// - witness: `tests::modules::models::a_model_writing_a_derived_rule_is_refused_naming_it_4106`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_writing_a_derived_rule_is_refused_naming_it_4106`
     #[spec(
         captures: [slots = self.cx().collected.slots.len(), faults = self.cx().faults.len()],
         ensures: self.cx().collected.slots.len() == slots && self.cx().faults.len() >= faults,
@@ -277,7 +279,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ty, proof)| sink.arena.value_type(ty).is_some() && sink.arena.value(proof).is_some()))]
     fn derived_rule(
         &mut self,
@@ -350,7 +352,10 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok((declared, body))
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// The proof of the law `derived` states, under the model `minting`
     /// reads: `thunk(λx₁ … λxₙ. return p)`.
     ///
@@ -366,8 +371,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - hypothesis: L3 — as [`Models::mint_derived_rules`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value(id).is_some()))]
     fn proof(
         &self,
@@ -452,8 +457,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - hypothesis: L3 — as [`Models::mint_derived_rules`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&leg| leg.is_none_or(|(start, path)| sink.arena.value(start).is_some() && sink.arena.value(path).is_some())))]
     fn leg(
         &self,
@@ -506,8 +511,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - hypothesis: L3 — as [`Models::mint_derived_rules`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value(id).is_some()))]
     fn step(
         &self,
@@ -608,8 +613,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - hypothesis: L3 — as [`Models::mint_derived_rules`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| matches!(sink.arena.value(id), Some(&Value::Returned(_)))))]
     fn carried_up(
         &self,
@@ -668,8 +673,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_derived_rules`].
-    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    /// - hypothesis: L3 — as [`Models::mint_derived_rules`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |values| values.len() == telescope.len() && values.iter().all(|&id| sink.arena.value(id).is_some())))]
     fn matched(
         &self,
@@ -706,7 +711,7 @@ impl<'source> Lowerer<'_, 'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the group's laws read by the steps that fire them.
-/// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
 fn law_telescope<'signature, 'source>(
     signature: &'signature ModelSignature,
     name: &Name,
@@ -742,7 +747,7 @@ fn law_telescope<'signature, 'source>(
 /// # Adequacy
 /// - hypothesis: L3 — the group's laws and lemmas applied by the steps that
 ///   fire them.
-/// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+/// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
 #[spec(ensures: |ret| matches!(sink.arena.value(ret), Some(&Value::Returned(_))))]
 fn applied(
     head: ValueId,

@@ -119,6 +119,8 @@ use super::arguments;
 use super::arity;
 use super::capability::Capability;
 use super::model;
+use super::model::Models;
+use super::model::ModelsRef;
 use super::named;
 use super::stated;
 use crate::by_form::At;
@@ -395,7 +397,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   in a frame extending the one before it, its type, when written, read
     ///   as a value type under that frame and recorded on its parameter, a
     ///   model implicit flattened into one parameter per component
-    ///   ([`Self::flatten_implicit`]), an instance bound as its interface's
+    ///   (`Models::flatten_implicit`), an instance bound as its interface's
     ///   capability at a region binder of its own
     ///   ([`crate::lower::capability::Capability::instance_parameter`]), and a
     ///   recursive tail's own name bound before the entry after the kept ones
@@ -403,7 +405,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   a clause tail's `:` when it writes no list, and the frame the last
     ///   entry bound is returned. Otherwise nothing changes and `frame` is
     ///   returned.
-    /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
+    /// - fails: a binder's own refusal; a model type's (`Models::model_slot`);
     ///   an instance's
     ///   ([`crate::lower::capability::Capability::instance_parameter`]); a
     ///   fault at the parameter list when it ends before its `)`.
@@ -449,9 +451,9 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
-                frame = self.flatten_implicit(entry, declared, &slot, frame)?;
+                frame = Models::new(self).flatten_implicit(entry, declared, &slot, frame)?;
                 if let Maybe::Present(owner) = owner {
-                    let spelled = self.written_slot(entry, declared, &slot);
+                    let spelled = ModelsRef::new(self).written_slot(entry, declared, &slot);
                     let held = self.cx_mut().written_slots.entry(owner).or_default();
                     if !held.iter().any(|&(at, _)| at == written) {
                         held.push((written, spelled));
@@ -505,18 +507,18 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `entry` is an entry of the declaration's merged telescope.
-    /// - ensures: the written type and [`Self::model_slot`]'s answer for an
+    /// - ensures: the written type and `Models::model_slot`'s answer for an
     ///   implicit written at a model type whose slot states a component;
     ///   nothing for an explicit parameter, an implicit written at any other
     ///   type, and one written at no type.
-    /// - fails: as [`Self::model_slot`].
+    /// - fails: as `Models::model_slot`.
     /// - panics: none.
     ///
     /// # Errors
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::model_slot`].
+    /// - hypothesis: L3 — as `Models::model_slot`.
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|&(_, ref slot)| !slot.components().is_empty())))]
     #[expect(
@@ -534,7 +536,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        Ok(self
+        Ok(Models::new(self)
             .model_slot(site, declared)?
             .filter(|slot| !slot.components().is_empty())
             .map(|slot| (declared, slot)))
@@ -1448,8 +1450,8 @@ impl<'source> Lowerer<'_, 'source>
     /// Pass the model implicit `implicit` of `function`, whose slot is
     /// `slot`, at the call `site` read under `frame`: one operand per
     /// component, the value the resident `value` supplies when it is written
-    /// ([`Self::supply_model`]) and a hole the call nominates otherwise, with
-    /// the slot's candidates planned ([`Self::model_candidates`]).
+    /// (`Models::supply_model`) and a hole the call nominates otherwise, with
+    /// the slot's candidates planned (`Models::model_candidates`).
     ///
     /// # Specification
     /// - requires: the operands so far are the call's arguments before the
@@ -1459,8 +1461,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   place, or with a hole nominated as the implicit's; an omitted slot
     ///   whose call a declaration makes is planned at the call, its holes kept
     ///   with the candidates' names.
-    /// - fails: the refusals [`Self::supply_model`] and
-    ///   [`Self::model_candidates`] yield; the budget refusal once no hole can
+    /// - fails: the refusals `Models::supply_model` and
+    ///   `Models::model_candidates` yield; the budget refusal once no hole can
     ///   be nominated.
     /// - panics: none.
     ///
@@ -1493,7 +1495,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let supplied = match value {
-            Some(value) => Some(Arc::new(self.supply_model(
+            Some(value) => Some(Arc::new(Models::new(self).supply_model(
                 site,
                 frame,
                 (implicit, slot),
@@ -1534,10 +1536,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `holes` holds one hole per component of `slot`, in signature
     ///   order.
     /// - ensures: when a declaration holds `site`, each hole kept with the
-    ///   names of the candidates [`Self::model_candidates`] finds, and one slot
+    ///   names of the candidates `Models::model_candidates` finds, and one slot
     ///   planned at `site` holding the holes, the sorts `slot` fixes and the
     ///   candidates; nothing kept or planned otherwise.
-    /// - fails: the refusals [`Self::model_candidates`] yields.
+    /// - fails: the refusals `Models::model_candidates` yields.
     /// - panics: none.
     /// - executable: none — the effect is a slot planned in the lowerer's table
     ///   of slots, whose contents before the call the predicate cannot read.
@@ -1551,6 +1553,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   theory.
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     /// - witness: `lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn plan_slot(
         &mut self,
@@ -1572,7 +1578,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
-        let candidates = self.model_candidates(site, slot)?;
+        let candidates = Models::new(self).model_candidates(site, slot)?;
         let names: Vec<String> = candidates
             .iter()
             .map(|&(name, _)| String::from(name.as_ref()))

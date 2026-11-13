@@ -67,6 +67,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering_base::lower::families::Families;
 pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::ComponentPlace;
 use gandr_surface_lowering_base::lower::model::flattened::FlatComponent;
 pub(in crate::lower) use gandr_surface_lowering_base::lower::model::flattened::Flattened;
@@ -83,6 +84,8 @@ use quenchant_shape::shape::Maybe;
 use super::Fields;
 use super::Members;
 use super::Minting;
+use super::Models;
+use super::ModelsRef;
 use crate::by_form::FormStretch;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -94,7 +97,6 @@ use crate::form::TileName;
 use crate::form::Universe;
 use crate::form::read_pieces;
 use crate::lower::Code;
-use crate::lower::Lowerer;
 use crate::lower::Parameter;
 use crate::lower::Plan;
 use crate::lower::Produced;
@@ -121,7 +123,7 @@ use crate::resolve::Frame;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
 {
     /// The theory the type `declared` names when it is a model type,
     /// `Model(S)` or `Model(S) with sort x = A …`.
@@ -142,8 +144,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a model implicit binds its components, a manifest one
     ///   all but the sorts it fixes, and an implicit at any other type binds as
     ///   written.
-    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
-    /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|slot| !slot.theories.is_empty())))]
     #[inline]
     pub fn model_slot(
@@ -221,7 +223,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a module packed for a definition's signature and
     ///   passed for a parameter, each at a model type fixing every sort or only
     ///   some, drops the fixed sorts; one at the unfixed model type keeps them.
-    /// - witness: `tests::modules::models::a_module_packs_at_a_model_type_fixing_its_sorts_4826`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_module_packs_at_a_model_type_fixing_its_sorts_4826`
     pub(in crate::lower) fn expected_fixed(
         &mut self,
         site: Site,
@@ -294,14 +296,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::model_slot`], and a scope over `State`
     ///   fixing its state names a model of it; one over a theory another source
     ///   declares at a dotted path names a module of it.
-    /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
-    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
-    /// - witness: `tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| !slot.theories.is_empty() && slot.fixed.len() <= sorts.len()))]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn theory_slot(
         &mut self,
@@ -346,12 +344,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a scope over `State` naming a state-passing module
     ///   runs, and one naming no module is refused at the name.
-    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |supplied| matches!(*supplied, Supplied::Module(_))))]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn named_model(
         &mut self,
@@ -368,14 +362,16 @@ impl<'source> Lowerer<'_, 'source>
     /// The model answering the capability scope at `site` over `theory`,
     /// which names none: one hole per component of `slot`, each nominated as
     /// the scope's, the slot planned at the scope with every module of the
-    /// theory in scope ([`Self::plan_slot`]).
+    /// theory in scope
+    /// ([`Families::plan_slot`]).
+    ///
     ///
     /// # Specification
     /// - requires: `slot` is the theory's slot at the scope's manifest sorts.
     /// - ensures: one hole per component of `slot`, in signature order, each
     ///   nominated as answering a scope over `theory`, kept and planned as
-    ///   [`Self::plan_slot`] keeps and plans them.
-    /// - fails: the refusals [`Self::plan_slot`] yields; the budget refusal
+    ///   [`Families::plan_slot`] keeps and plans them.
+    /// - fails: the refusals [`Families::plan_slot`] yields; the budget refusal
     ///   once no hole can be nominated.
     /// - panics: none.
     ///
@@ -386,16 +382,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a scope over `State` writing no `with` runs as one
     ///   naming the one model in scope; with none in scope it is refused, and
     ///   with two it is refused naming both.
-    /// - witness: `lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
     #[spec(ensures: |ret| match ret {
         | Ok(Supplied::Nominated(ref holes)) => holes.len() == slot.components().len(),
         | Ok(Supplied::Module(_) | Supplied::Bound(_)) => false,
         | Err(_) => true,
     })]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn answering_model(
         &mut self,
@@ -412,7 +404,10 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(Supplied::Nominated(holes))
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// The slot `slot`'s carrier, its one unfixed unindexed sort, beside the
     /// type `supplied` gives it.
     ///
@@ -427,12 +422,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a state-passing module's carrier is the function type
     ///   it writes.
-    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((_, id)) if sink.arena.value_type(id).is_some()))]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn supplied_carrier(
         &self,
@@ -490,12 +481,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `State`'s `get` and `put` at an integer state and a
     ///   state-passing carrier, as the module's members are declared.
-    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn operation_domain(
         &self,
@@ -528,7 +515,10 @@ impl<'source> Lowerer<'_, 'source>
         self.mint_form(form, &minting, sink)
             .map_or(unminted, Maybe::Present)
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
     /// Bind the model implicit `entry`, written at the model type `declared`
     /// whose slot is `slot`, as one parameter per component under `frame`.
     ///
@@ -549,7 +539,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's model implicit binds its sort, its zero,
     ///   its step and its reading, in order.
-    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(
         captures: before = self.cx().parameters.mark(),
         ensures: |ret| ret.is_err() || usize::from(self.cx().parameters.mark()) == usize::from(before).saturating_add(slot.components().len()),
@@ -597,13 +587,16 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(frame)
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// The model implicit `entry`, whose slot is `slot`, as its declaration
     /// writes it.
     ///
     /// # Specification
-    /// - requires: `slot` is [`Self::model_slot`]'s answer for `entry`'s type,
-    ///   which `declared` writes.
+    /// - requires: `slot` is [`Models::model_slot`]'s answer for `entry`'s
+    ///   type, which `declared` writes.
     /// - ensures: the implicit's name and where it and `declared` are written,
     ///   the theory's, each component's name with whether it is a sort, in
     ///   signature order, and each fixed sort beside its type's node.
@@ -613,9 +606,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's implicit writes its theory and its four
     ///   components, the first a sort.
-    /// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
     #[spec(ensures: |ret| ret.components.len() == slot.components().len() && ret.fixed.len() == slot.fixed.len())]
     #[inline]
+    #[must_use]
     pub fn written_slot(
         &self,
         entry: TelescopeEntry<'source>,
@@ -660,7 +654,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a model implicit named alone is refused, its
     ///   components read.
-    /// - witness: `lower::implicit::tests::a_model_implicit_named_alone_is_refused_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_named_alone_is_refused_739`
     #[spec(ensures: |ret| ret.is_ok() || matches!(resolved, Resolved::Binder(bound) if self.cx().flattened.contains_key(&bound.binder)))]
     #[inline]
     pub fn unflattened(
@@ -696,7 +690,10 @@ impl<'source> Lowerer<'_, 'source>
     {
         self.cx().flattened.get(&binder).cloned()
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
     /// Classify `s.x`, written at `site` with the model implicit `s` at
     /// `head` flattened as `flattened`, where a type is read: the sort `x`.
     ///
@@ -718,8 +715,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's carrier read off its model implicit, and
     ///   a fixed one.
-    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
-    /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
     #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Decode(..) | Plan::FixedCarrier(..)))))]
     pub(in crate::lower) fn flattened_sort(
         &mut self,
@@ -813,7 +810,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's step and reading read off its model
     ///   implicit and run.
-    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(..)))))]
     pub(in crate::lower) fn flattened_member(
         &mut self,
@@ -898,8 +895,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a module supplied by name runs as its pack does, a
     ///   module of an including theory passes its reduct, a model implicit
     ///   passes itself on, and a value is refused.
-    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
-    /// - witness: `lower::implicit::tests::a_model_implicit_supplied_by_a_value_is_refused_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_supplied_by_a_value_is_refused_739`
     #[spec(ensures: |ret| match ret {
         Ok(Supplied::Bound(ref variables)) => variables.len() == slot.components().len(),
         Ok(Supplied::Module(_) | Supplied::Nominated(_)) | Err(_) => true,
@@ -990,7 +987,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's slot plans its two modules, one through
     ///   an include, and leaves a module of another theory out.
-    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(_, ref supplied)| matches!(*supplied, Supplied::Module(_)))))]
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
     #[inline]
@@ -1052,7 +1049,10 @@ impl<'source> Lowerer<'_, 'source>
         }
         Ok(candidates)
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// Mint the value `supplied` passes for the component at `place` of its
     /// slot, raised past `under` binders a standing supply opens.
     ///
@@ -1069,13 +1069,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::supply_model`].
-    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    /// - hypothesis: L3 — as [`Models::supply_model`].
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value(id).is_some()))]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn mint_supplied(
         &self,
@@ -1159,19 +1155,23 @@ impl<'source> Lowerer<'_, 'source>
             },
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
+{
     /// File the model slot `planned` a call omits with its declaration's,
-    /// each candidate's components minted as [`Self::mint_supplied`] mints a
-    /// supply's, carrying the call's `origin`.
+    /// each candidate's components minted as
+    /// [`ModelsRef::mint_supplied`]
+    /// mints a supply's, carrying the call's `origin`.
     ///
     /// # Specification
     /// - requires: the call's own plan has been minted.
     /// - ensures: one slot filed under the caller, its holes the call's and the
     ///   code of each type its model type fixes a sort to, each candidate
     ///   holding one minted value per hole, in place order, and the code of its
-    ///   own sort of each fixed name ([`Self::packed_sort`]), up to the first
-    ///   it has none of, so that the checker refutes it; nothing filed when a
-    ///   candidate's component or a fixed type did not lower.
+    ///   own sort of each fixed name ([`ModelsRef::packed_sort`]), up to the
+    ///   first it has none of, so that the checker refutes it; nothing filed
+    ///   when a candidate's component or a fixed type did not lower.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the effect is a slot filed in the lowerer's table
@@ -1183,8 +1183,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::model_candidates`]; a manifest slot files
     ///   the code of its fixed type and each candidate's own.
-    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
-    /// - witness: `lower::implicit::tests::an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317`
     #[inline]
     pub fn mint_model(
         &mut self,
@@ -1258,7 +1258,10 @@ impl<'source> Lowerer<'_, 'source>
                 candidates,
             });
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// The types of the parameters a model implicit written at `declared`
     /// binds, one per component, each read under the ones before it.
     ///
@@ -1280,7 +1283,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's implicit's parameters are its sort's
     ///   universe, then its zero, step and reading over the sort's variable.
-    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(ref domains) if !domains.is_empty()))]
     #[inline]
     pub fn flattened_domains(

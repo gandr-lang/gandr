@@ -1800,6 +1800,7 @@ dependencies = [
  "gandr-surface-lowering-capability",
  "gandr-surface-lowering-exits",
  "gandr-surface-lowering-identity",
+ "gandr-surface-lowering-model",
  "gandr-surface-lowering-native",
  "gandr-surface-parser",
  "gandr-surface-syntax",
@@ -1883,6 +1884,21 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-surface-lowering-base",
  "gandr-surface-syntax",
+ "quenchant-anodized",
+ "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-surface-lowering-model"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-surface-lowering-base",
+ "gandr-surface-syntax",
+ "gandr-theory-levitation",
+ "hotpath",
  "quenchant-anodized",
  "quenchant-shape",
 ]

@@ -97,6 +97,7 @@ pub mod families;
 pub mod generic;
 pub mod identity;
 pub mod implicit;
+pub mod inert;
 pub mod loops;
 pub mod method;
 pub mod model;
@@ -122,6 +123,10 @@ pub use runs::RunSpelling;
 
 /// Reflexivity's spelling, which no pattern may take.
 pub const HERE: &str = "here";
+
+/// The head of a theory's models as a type, resolved after every binder and
+/// earlier declaration at one argument.
+pub const MODEL: &str = "Model";
 
 quenchant_shape::reason_enum! {
     /// Why a lexeme denotes no literal.
@@ -2924,6 +2929,41 @@ pub fn exactly<'source, const N: usize>(
     written.truncate(start);
     read?;
     exact.ok_or_else(|| site.out(FragmentBoundary::Arity(OperandCount::from(count))))
+}
+
+/// Mint the multiplicity one a linear arrow leaves unwritten, recorded as
+/// inserted at `origin`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the non-negative integer literal `1`, the multiplicity the
+///   checker admits.
+/// - fails: never; the absence is unreachable, as `1` is decimal text.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as `Models::linear_arrow` of the model family.
+/// - witness: `gandr-surface-lowering::lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
+#[spec(ensures: |ret| matches!(ret, Maybe::Present(_) | Maybe::Absent(lowered::Absent::Unminted)))]
+#[inline]
+pub fn multiplicity_one(
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<ValueId, lowered::Absent>
+{
+    let Some(magnitude) = Magnitude::from_decimal_text(String::from("1"))
+    else {
+        return Maybe::Absent(lowered::Absent::Unminted);
+    };
+    let id = sink
+        .arena
+        .value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            magnitude,
+        )));
+    sink.origins
+        .record_value(id, origin.inserted(Insertion::Multiplicity));
+    Maybe::Present(id)
 }
 
 /// Read a comma-separated operand list between the tiles `open` and `close`

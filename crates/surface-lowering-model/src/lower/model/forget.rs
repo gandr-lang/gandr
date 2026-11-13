@@ -36,11 +36,14 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_lowering_base::lower::families::Families;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Bundled;
 use super::Missing;
+use super::Models;
+use super::ModelsRef;
 use super::packed_record;
 use super::reduct::Destructured;
 use crate::error::FormFault;
@@ -51,7 +54,6 @@ use crate::form::TileName;
 use crate::form::Universe;
 use crate::lower::Code;
 use crate::lower::Lowered;
-use crate::lower::Lowerer;
 use crate::lower::Plan;
 use crate::lower::Produced;
 use crate::lower::Reading;
@@ -67,7 +69,7 @@ use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::unbuilt::Unbuilt;
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
 {
     /// Classify the forgetting map written out, `forget[sort C₁ = A₁, …, sort
     /// Cₙ = Aₙ](m) at Model(T)`.
@@ -99,8 +101,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   pairing's two in the order the signature states them though written
     ///   the other way, a sort the theory does not have, a bracket entry that
     ///   is no binding, and a map onto a type that is no theory's models.
-    /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
-    /// - witness: `tests::modules::models::a_written_forgetting_map_names_only_its_theory_s_sorts_2130`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_forgetting_map_names_only_its_theory_s_sorts_2130`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Called(Code::Constant(_), _))))]
     #[inline]
     pub fn forget_model(
@@ -236,7 +238,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a counter's map, which the checker accepts and
     ///   inserts where a counter whose carrier is manifest is asked for a
     ///   counter.
-    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
     #[inline]
     pub fn mint_forgets(
         &mut self,
@@ -277,7 +279,10 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// The type and body of the forgetting slot `slot`, every node of both
     /// carrying `origin` marked [`Insertion::Derived`], beside the sorts it
     /// puts back in signature order.
@@ -302,9 +307,9 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_forgets`].
-    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
-    /// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
+    /// - hypothesis: L3 — as [`Models::mint_forgets`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ty, body, ref sorts)| sink.arena.value_type(ty).is_some() && sink.arena.value(body).is_some() && !sorts.is_empty()))]
     fn forget(
         &self,

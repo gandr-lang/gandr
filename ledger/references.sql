@@ -473,6 +473,7 @@ INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surfa
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-capability','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-exits','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-identity','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-model','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-native','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-56f5-7082-acef-f7c1b85fc0a2','kernel-check-memo','overlay','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7','surface-grammar','mold','lineage',NULL,NULL,NULL);
@@ -551,9 +552,9 @@ INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','kerne
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-corpus','refusal','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-diagnostics','culprit','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-grammar','surface::circuit','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering','lower::model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering-base','lower::capability::theory','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering-base','model','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering-model','lower::model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','theory-levitation','desc','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a1a9-7643-b2d9-98059c9273fb','runtime-emitter','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-checker-base','solution','exemplar',NULL,NULL,NULL);
@@ -676,8 +677,8 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surfa
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-diagnostics','message','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-dispatcher','strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-driver','verdicts','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-lowering','lower::model::derived','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-lowering','lower::ua','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-lowering-model','lower::model::derived','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-pretty','former','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surface-session','edit','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-circuit-algebras','interface','background',NULL,NULL,NULL);

@@ -3211,6 +3211,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::LabelRead','enum','Na
 INSERT INTO purpose VALUES('surface-lowering-base','lower::LabelSite','struct','Holds a label the source writes against an entry, kept while the lowering plans so the label can answer what its entry lowers to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::Listed','enum','Names where a function''s parameter is written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::Lowered','enum','Names a node''s lowered core node, at the sort its own form produced.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::MODEL','constant','Holds the head of a theory''s models as a type, which a model type''s application names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::Parameter','struct','Holds one parameter of a function tail.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::Plan','enum','Names what the mint sweep does for one node, decided by the classification.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::Produced','enum','Names the sort a former produces before positional bridges.',NULL,'fits','sound',NULL);
@@ -3310,6 +3311,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::identity::Transported
 INSERT INTO purpose VALUES('surface-lowering-base','lower::identity::Typed','enum','Names what a derived operation''s path operand reads its type off when its own form spells none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::identity::Typings','struct','Holds what the paths of a synthesised derived operation read their types off.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::implicit::Nomination','enum','Names what a nominated hole stands for.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::inert::Read','enum','Names what a read resolved to: a declaration by its slot, or an inert component by its name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::loops::Carried','struct','Holds the held slots a pass hands the loop''s next pass, where the pass stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::loops::Carry','enum','Names what a loop threads through its passes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::loops::Reentry','struct','Holds where a pass through a loop''s body runs the loop again from.',NULL,'fits','sound',NULL);
@@ -3329,6 +3331,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::model::flattened::Mod
 INSERT INTO purpose VALUES('surface-lowering-base','lower::model::flattened::PlannedModel','struct','Holds a model slot that a call omits, as the call plans it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::model::flattened::Supplied','enum','Names what a supply passes for a flattened model implicit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::model::flattened::WrittenSlot','struct','Holds a model implicit as its declaration writes it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::multiplicity_one','function','Mints the multiplicity one that a linear arrow leaves unwritten.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Answer','struct','Holds the computation type that a position answers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Argued','struct','Holds the place a value argument takes in a data family''s application.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::ArmAt','struct','Holds an arm of a match, by its position in source order.',NULL,'fits','sound',NULL);
@@ -3345,6 +3348,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Depth','struc
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Descent','struct','Holds a recursive call as its call form read it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::FieldOf','struct','Holds a field of a written constructor, as `Classifier::Field` reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Fielded','struct','Holds where the mint names the wildcards of the classifier it inserts for a constructor written in a field.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Holds','enum','Names what a place inside a type holds: a code, or a value that is no code.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::LoopArm','struct','Holds one loop arm of a match, `loop => e`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Over','enum','Names what a position answers of the type its answer''s node writes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::ParameterAt','struct','Holds a recursive function''s parameter, by its position in the function''s parameter list.',NULL,'fits','sound',NULL);
