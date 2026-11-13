@@ -285,13 +285,13 @@
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": {},
-          "joined": { "v::hom::DirectedHom::new": ["ledger/purposes.sql"] },
+          "joined": { "v::hom::DirectedHom::new": ["crates/theory-v/src/reader.rs"] },
           "reshaped": ["v::hom::DirectedHom::new"]
         }
       ],
       "architects": { "agent-shade": "(architect" }
     },
-    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: `ledger/purposes.sql` joins the readers of the item at the base; the record of the item at the base changes; the architect reads that and signs again"
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: `crates/theory-v/src/reader.rs` joins the readers of the item at the base; the record of the item at the base changes; the architect reads that and signs again"
   },
   {
     "name": "#6852: a signed commit that no fetch reaches, or that shares no commit with the base, never holds, and the refusal names the cause",

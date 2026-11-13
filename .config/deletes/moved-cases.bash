@@ -8,10 +8,10 @@
 # of another cell of a line that names the item moves nothing, as the `since`
 # cells of pull request 7017 did (#7025). A change to a word that names the
 # item moves it, and so does a new file that names the item. The item's half
-# holds the rest: a row below that names the item joins its readers, and an
-# edit below of the item's own lines changes its record at the base. A head
-# that does not hold the group's base reads its change from their merge base
-# (#6999).
+# holds the rest: a Rust source of a crate below that names the item joins
+# its readers, and a row or a script does not (#7164). An edit below of the
+# item's own lines changes its record at the base. A head that does not hold
+# the group's base reads its change from their merge base (#6999).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/moved.bash"
@@ -82,7 +82,8 @@ got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$other" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#7025: a new file that names the item nowhere moves nothing" "$got"
 
 # The item's half: a reader row that names the variant lands below the
-# signed deletion. The change's words hold, and the row joins the readers.
+# signed deletion. The change's words hold, and a row is no reader: only a
+# Rust source of a crate reads the item (#7164).
 git -C "$repo" checkout --quiet landing
 printf "INSERT INTO reader VALUES ('Gone');\n" > "$repo/ledger/readers.sql"
 reader=$(commit reader)
@@ -93,7 +94,7 @@ fork2=$(git -C "$repo" merge-base "$signed" "$reader")
 got=$(cd "$repo" && moved "$fork2" "$signed" "$reader" "$restacked" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#6852: a row below that names the item moves no word of the change" "$got"
 got=$(cd "$repo" && joined "$fork2" "$reader" Gone | tr '\n' ' ')
-[[ $got == 'ledger/readers.sql ' ]] || fail "#6852: a row below that names the item joins its readers at the base, so the sign-off turns stale with that file named" "$got"
+[[ -z $got ]] || fail "#7164: a row below that names the item is no reader, so the sign-off holds" "$got"
 got=$(cd "$repo" && joined "$fork2" "$base" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#6852: a landing below that names the item nowhere adds no reader" "$got"
 
@@ -102,7 +103,8 @@ got=$(cd "$repo" && joined "$fork2" "$base" Gone | tr '\n' ' ')
 # `gandr-far` names `gandr-user`. The name of `gandr-item-base` only starts
 # with the item's package, and `gandr-other` names `gandr-item-base` alone.
 # A landing below adds a file with `receive` to each crate but the item's,
-# which gets one with `receiver`, and a ledger row with `receive`.
+# which gets one with `receiver`. It also adds `receive` to a README of
+# `gandr-user`, to a ledger row and to the comment of a script.
 crates_repo=$work/crates
 git init --quiet --initial-branch landing "$crates_repo"
 git -C "$crates_repo" config user.email cases@example.invalid
@@ -127,19 +129,22 @@ printf '// receive\n' > "$crates_repo/crates/far/src/c.rs"
 printf 'fn receive() {}\n' > "$crates_repo/crates/item-base/src/d.rs"
 printf 'fn receive() {}\n' > "$crates_repo/crates/other/src/e.rs"
 printf "INSERT INTO reader VALUES ('receive');\n" > "$crates_repo/ledger/readers.sql"
+printf 'receive\n' > "$crates_repo/crates/user/README.md"
+mkdir -p "$crates_repo/.config"
+printf '# so the receive process holds no worktree\n' > "$crates_repo/.config/held.bash"
 crates_base=$(crates_commit readers)
 got=$(cd "$crates_repo" && crates_naming "$crates_base" 'gandr_item::session::receive' | tr '\n' ' ')
 [[ $got == 'crates/far crates/item crates/user ' ]] \
   || fail "#7125: the crates that can name an item are its own and each crate that names one of them, to a fixed point; a name that only starts with the package names another" "$got"
 got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_item::session::Program::<'"'"'arena>::receive' | tr '\n' ' ')
-[[ $got == 'crates/far/src/c.rs crates/user/src/b.rs ledger/readers.sql ' ]] \
-  || fail "#7125: a reader names the whole word, in a crate that can name the item or outside crates/" "$got"
+[[ $got == 'crates/far/src/c.rs crates/user/src/b.rs ' ]] \
+  || fail "#7164: a reader is a Rust source of a crate that can name the item, by the whole word; a README, a ledger row and a script are none" "$got"
 got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_item::session::tests::receive' | tr '\n' ' ')
-[[ $got == 'ledger/readers.sql ' ]] \
+[[ -z $got ]] \
   || fail "#7125: an item of a test module is read in its own crate alone" "$got"
 got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_gone::receive' | tr '\n' ' ')
-[[ $got == 'crates/far/src/c.rs crates/item-base/src/d.rs crates/other/src/e.rs crates/user/src/b.rs ledger/readers.sql ' ]] \
-  || fail "#7125: an item whose crate the base lacks is read in every file, by the whole word" "$got"
+[[ $got == 'crates/far/src/c.rs crates/item-base/src/d.rs crates/other/src/e.rs crates/user/src/b.rs ' ]] \
+  || fail "#7164: an item whose crate the base lacks is read in the Rust sources of every crate, by the whole word" "$got"
 
 # An edit below of the item's own line changes its record at the base, and an
 # edit of another line of the same file does not.
@@ -239,4 +244,4 @@ git -C "$served_origin" gc --quiet --prune=now
   || fail "#7012: a signed commit that a pushed ref holds is served, so the sign-off holds" "not served"
 
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a row below that names the item joins its readers; a reader names the whole word within the crates that can name the item; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a reader is a Rust source of a crate that can name the item, by the whole word, and a row, a README or a script is none; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"
