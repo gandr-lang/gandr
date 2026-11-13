@@ -14,11 +14,12 @@
 //! once and does other work when the other party holds it, so no party waits
 //! for a claim.
 //!
-//! **A task spins, then leaves.** A task that finds its ring empty polls up to
-//! its spin budget. Then it gives the claim back, clears the lane's attendance
-//! and ends. Its worker goes back to the pool, and the pool parks the worker.
-//! The calling thread starts a task again for a lane that it hands a job while
-//! no task attends the lane. A sequentially consistent fence on each side
+//! **A task spins, then leaves.** A lane has no task until the calling thread
+//! hands it a job. A task that finds its ring empty polls up to its spin
+//! budget. Then it gives the claim back, clears the lane's attendance and
+//! ends. Its worker goes back to the pool, and the pool parks the worker. The
+//! calling thread starts a task for a lane that it hands a job while no task
+//! attends the lane. A sequentially consistent fence on each side
 //! orders the write of the job before the read of the attendance, and the
 //! clear of the attendance before the read of the ring. So at least one of the
 //! two parties sees the write of the other, and no job waits for a task that
@@ -301,12 +302,12 @@ where
 {
 }
 
-/// A lane whose rings each hold [`DEPTH`] values, attended by the task that
-/// the schedule starts for it, and the calling thread's ends of it.
+/// A lane whose rings each hold [`DEPTH`] values, which no task attends until
+/// the schedule hands it a job, and the calling thread's ends of it.
 ///
 /// # Specification
-/// - ensures: the rings are empty, the claim is free, the lane is attended, and
-///   the feed holds no job.
+/// - ensures: the rings are empty, the claim is free, no task attends the lane,
+///   and the feed holds no job.
 /// - panics: none.
 /// - executable: none — the rings' state is `rtrb`'s, which no postcondition
 ///   reads apart from the count of held jobs.
@@ -324,7 +325,7 @@ pub fn open<Job, Out>() -> (Lane<Job, Out>, Feed<Job, Out>)
         Lane {
             control: Control {
                 claimed: AtomicBool::new(false),
-                attended: AtomicBool::new(true),
+                attended: AtomicBool::new(false),
             },
             runner: UnsafeCell::new(Runner {
                 jobs: taken,
