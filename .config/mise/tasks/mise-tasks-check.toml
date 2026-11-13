@@ -3008,6 +3008,9 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/claims/ceilings.json)
+# The issues that a `spelling: replaces` line cites (#7138, `spelled.bash`):
+# a body with no such line gives nothing and exits 0, so `pr:open` goes on.
+.config/claims/spelled-cases.bash || failed=1
 # `epic:deps` over a stubbed `gh` (#4903): a dependency GitHub refuses is
 # named and the run goes on.
 .config/claims/epic-deps.bash || failed=1
