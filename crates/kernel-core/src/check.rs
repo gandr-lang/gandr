@@ -270,7 +270,6 @@
 //!   each refusal of a record field's value or a restriction's fixed value, for
 //!   the replay of a patched type's formation and of its meets.
 
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
@@ -349,6 +348,7 @@ use crate::rewrite::substitute_value_type;
 use crate::seal;
 use crate::stage_order::StageOrder;
 use crate::support::Discharge;
+use crate::support::DrainLedger;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
 use crate::support::Opened;
@@ -1444,6 +1444,57 @@ struct Recording<'session, M>
     census: &'session mut ExpansionCensus,
     /// The code obligations the formation walk deferred.
     owed: &'session mut Vec<CodeObligation>,
+}
+
+/// What a walk of the checker machine carries from one goal to the next,
+/// beside its frames, its context and its [`Recording`]. A goal's child that
+/// runs on a frame stack of its own walks on from its parent's walk, and
+/// gives its walk back at the join.
+struct Walk
+{
+    /// The stages this run's structural fixpoints and their cases mint, from
+    /// those the goal was owed under.
+    stages: StageOrder,
+    /// The case a structural fixpoint opens with, read as that fixpoint
+    /// against its type's rules, until the case is met. The goals between the
+    /// two — the fixpoint's lambda and the case itself — are neither recalled
+    /// nor memoized: a bare `λg. λy. case y` in a context of the same types is
+    /// the same goal, and it owes the case's own obligation, which the root
+    /// does not.
+    root: Maybe<(ComputationId, respect::Reading), respect::root::Absent>,
+    /// How many fixpoint bodies the current goal stands under. A goal under
+    /// one is neither recalled nor memoized: whether a constructor with no
+    /// recursive field stands below a stage depends on every value in scope,
+    /// beyond the binders its support reaches, and a stage is this run's own.
+    /// A goal owed under a stage stands under the body that minted it.
+    staged_bodies: usize,
+    /// The context slot and type of the self binder of the declaration's own
+    /// structural fixpoint, the one its body thunks, while it is in scope:
+    /// its constant in a case's field types reads as that binder.
+    own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned>,
+    /// The judgement's parameters as the kept memo names them. The walk names
+    /// them at its first miss.
+    parameters: KeptParameters,
+}
+
+impl Walk
+{
+    /// The walk of a goal owed under `stages`, at its start.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn starting(stages: StageOrder) -> Self
+    {
+        let staged_bodies = usize::from(stages != StageOrder::default());
+        Self {
+            stages,
+            root: Maybe::Absent(respect::root::Absent::Unmarked),
+            staged_bodies,
+            own_fixpoint: Maybe::Absent(recursion::Unowned::Outside),
+            parameters: KeptParameters::Unnamed,
+        }
+    }
 }
 
 /// A pending type-formation obligation — the goal of the [`type_level`] walk.
@@ -2785,16 +2836,17 @@ enum Frame
     Pending(Vec<Goal>, Produced),
     /// Discharge the remaining goals of a record's fields, or of a
     /// restriction's fixed values, in order, then yield the checked answer.
-    /// A refusal raised under this frame names the field at `index` among the
-    /// labels of `holder` ([`run`]).
+    /// A refusal raised under this frame names the field checked now, the
+    /// last of the `begun` first labels of `holder` ([`run`]).
     Fields
     {
         /// The goals still to discharge, the next last.
         remaining: Vec<Goal>,
         /// The record literal or the restriction whose fields these are.
         holder: ValueId,
-        /// The position, among the holder's labels, of the field checked now.
-        index: usize,
+        /// How many of the holder's fields began their check, in the order of
+        /// its labels. Each field has one goal.
+        begun: usize,
     },
     /// Accumulate inferred record field types without recursive checking.
     RecordField
@@ -3785,7 +3837,7 @@ fn machine<M>(
     judgement: Judgement<'_>,
     mut context: Vec<ValueTypeId>,
     initial: Goal,
-    mut stages: StageOrder,
+    walk: &mut Walk,
     recording: Recording<'_, M>,
     frames: &mut Vec<Frame>,
 ) -> Result<Produced, KernelError>
@@ -3803,35 +3855,19 @@ where
     // last; empty when the memo is inactive.
     let mut barriers: Vec<Opened> = Vec::new();
     let mut goal = initial;
-    // The case a structural fixpoint opens with, read as that fixpoint against
-    // its type's rules, until the case is met. The goals between the two —
-    // the fixpoint's lambda and the case itself — are neither recalled nor
-    // memoized: a bare `λg. λy. case y` in a context of the same types is the
-    // same goal, and it owes the case's own obligation, which the root does
-    // not.
-    let mut root: Maybe<(ComputationId, respect::Reading), respect::root::Absent> =
-        Maybe::Absent(respect::root::Absent::Unmarked);
-    // The stages this run's structural fixpoints and their cases mint, from
-    // those the goal was owed under, and how many fixpoint bodies the current
-    // goal stands under. A goal under one is neither recalled nor memoized:
-    // whether a constructor with no recursive field stands below a stage
-    // depends on every value in scope, beyond the binders its support reaches,
-    // and a stage is this run's own. A goal owed under a stage stands under
-    // the body that minted it.
-    let mut staged_bodies = usize::from(stages != StageOrder::default());
-    // The context slot and type of the self binder of the declaration's own
-    // structural fixpoint, the one its body thunks, while it is in scope:
-    // its constant in a case's field types reads as that binder.
-    let mut own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned> =
-        Maybe::Absent(recursion::Unowned::Outside);
+    // The walk this goal stands in, handed back at the run's end.
+    let Walk {
+        mut stages,
+        mut root,
+        mut staged_bodies,
+        mut own_fixpoint,
+        mut parameters,
+    } = core::mem::replace(walk, Walk::starting(StageOrder::default()));
     // The evidence values and evaluation components of the higher identity
     // being checked, copied out of the arena the obligations then mint into;
     // refilled per goal, so the walk allocates them once.
     let mut owed_values: Vec<ValueId> = Vec::new();
     let mut owed_components: Vec<gandr_kernel_term::EvaluationComponent> = Vec::new();
-    // The judgement's parameters as the kept memo names them. The walk names
-    // them at its first miss.
-    let mut parameters = KeptParameters::Unnamed;
     'expand: loop {
         // Ask the memo this goal's question before reading the node, and take
         // an entry whose recorded binders this context agrees with. When the
@@ -3896,11 +3932,7 @@ where
                             },
                         )?;
                         goals.reverse();
-                        if let Some(next) = goals.pop() {
-                            frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
-                            goal = next;
-                            continue 'expand;
-                        }
+                        frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
                         Produced::ValueType(datatype)
                     },
                     Value::Record(ref values) => {
@@ -4487,11 +4519,7 @@ where
                     )?;
                     frames.push(Frame::ConvertValue(base));
                     goals.reverse();
-                    if let Some(next) = goals.pop() {
-                        frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
-                        goal = next;
-                        continue 'expand;
-                    }
+                    frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
                     Produced::ValueType(datatype)
                 },
                 // An introduction form reads the head of the type it checks
@@ -4557,7 +4585,7 @@ where
                                 });
                             }
                         }
-                        let mut goals = values
+                        let goals = values
                             .iter()
                             .rev()
                             .map(|(label, value)| {
@@ -4566,15 +4594,11 @@ where
                                 })
                             })
                             .collect::<Vec<_>>();
-                        if let Some(next) = goals.pop() {
-                            frames.push(Frame::Fields {
-                                remaining: goals,
-                                holder: id,
-                                index: 0,
-                            });
-                            goal = next;
-                            continue 'expand;
-                        }
+                        frames.push(Frame::Fields {
+                            remaining: goals,
+                            holder: id,
+                            begun: 0,
+                        });
                         Produced::Checked
                     },
                     Value::ListNil => match arena.value_type(expected) {
@@ -4652,17 +4676,13 @@ where
                             (Some(&ValueType::Product(ref parts)), _)
                                 if parts.len() == components.len() =>
                             {
-                                let mut goals = components
+                                let goals = components
                                     .iter()
                                     .zip(parts.iter())
                                     .rev()
                                     .map(|(&component, &part)| Goal::CheckValue(component, part))
                                     .collect::<Vec<_>>();
-                                if let Some(next) = goals.pop() {
-                                    frames.push(Frame::Pending(goals, Produced::Checked));
-                                    goal = next;
-                                    continue 'expand;
-                                }
+                                frames.push(Frame::Pending(goals, Produced::Checked));
                                 Produced::Checked
                             },
                             (Some(&ValueType::Sigma { first, second }), &[left, right]) => {
@@ -4745,7 +4765,7 @@ where
                         let program = alloc::sync::Arc::clone(program);
                         owed_values.clear();
                         owed_values.extend_from_slice(evidence);
-                        let mut goals = crate::element_identity::higher_obligations(
+                        let goals = crate::element_identity::higher_obligations(
                             arena,
                             crate::identity_recursion::Interfaces::of(judgement.entries),
                             expected,
@@ -4756,11 +4776,7 @@ where
                         .rev()
                         .map(|(guard, fibre)| Goal::CheckValue(guard, fibre))
                         .collect::<Vec<_>>();
-                        if let Some(next) = goals.pop() {
-                            frames.push(Frame::Pending(goals, Produced::Checked));
-                            goal = next;
-                            continue 'expand;
-                        }
+                        frames.push(Frame::Pending(goals, Produced::Checked));
                         Produced::Checked
                     },
                     // A higher evaluation replays every component's dialogues
@@ -5269,12 +5285,8 @@ where
                                     ));
                                 },
                             };
-                        let mut goals = returned_goals(arena, session, &results, &values);
-                        if let Some(next) = goals.pop() {
-                            frames.push(Frame::Pending(goals, Produced::Checked));
-                            goal = next;
-                            continue 'expand;
-                        }
+                        let goals = returned_goals(arena, session, &results, &values);
+                        frames.push(Frame::Pending(goals, Produced::Checked));
                         Produced::Checked
                     },
                     Computation::BindAll { bound, arity, body } => {
@@ -5287,8 +5299,7 @@ where
                     // anything.
                     Computation::With(_) => {
                         let shape = codata::read(arena, session, judgement, expected)?;
-                        let mut goals = match (arena.comp_type(shape), read_computation(arena, id)?)
-                        {
+                        let goals = match (arena.comp_type(shape), read_computation(arena, id)?) {
                             (
                                 Some(&CompType::With(ref types)),
                                 &Computation::With(ref components),
@@ -5306,11 +5317,7 @@ where
                                 ));
                             },
                         };
-                        if let Some(next) = goals.pop() {
-                            frames.push(Frame::Pending(goals, Produced::Checked));
-                            goal = next;
-                            continue 'expand;
-                        }
+                        frames.push(Frame::Pending(goals, Produced::Checked));
                         Produced::Checked
                     },
                     Computation::Case {
@@ -5424,6 +5431,13 @@ where
                         under.clone_from(&stages);
                     }
                 }
+                *walk = Walk {
+                    stages,
+                    root,
+                    staged_bodies,
+                    own_fixpoint,
+                    parameters,
+                };
                 return Ok(produced);
             };
             match frame {
@@ -5438,13 +5452,13 @@ where
                 Frame::Fields {
                     mut remaining,
                     holder,
-                    index,
+                    begun,
                 } => {
                     if let Some(next) = remaining.pop() {
                         frames.push(Frame::Fields {
                             remaining,
                             holder,
-                            index: index.saturating_add(1),
+                            begun: begun.saturating_add(1),
                         });
                         goal = next;
                         continue 'expand;
@@ -5680,11 +5694,7 @@ where
                             frames.push(Frame::Respect(case, reading));
                         }
                         goals.reverse();
-                        if let Some(next) = goals.pop() {
-                            frames.push(Frame::Pending(goals, Produced::CompType(result)));
-                            goal = next;
-                            continue 'expand;
-                        }
+                        frames.push(Frame::Pending(goals, Produced::CompType(result)));
                         produced = Produced::CompType(result);
                     }
                 },
@@ -6067,20 +6077,14 @@ where
                     };
                     context = component.context;
                     frames.push(Frame::Components { outer, remaining });
-                    let mut goals = component
+                    let goals = component
                         .checks
                         .into_iter()
                         .rev()
                         .map(|(value, ty)| Goal::CheckValue(value, ty))
                         .collect::<Vec<_>>();
-                    let Some(next) = goals.pop()
-                    else {
-                        produced = Produced::Checked;
-                        continue;
-                    };
                     frames.push(Frame::Pending(goals, Produced::Checked));
-                    goal = next;
-                    continue 'expand;
+                    produced = Produced::Checked;
                 },
                 // Transport's input checks at the motive instantiated at the
                 // source endpoint, and it returns at the motive instantiated
@@ -6807,7 +6811,7 @@ where
                         .filter(|&(label, _)| !fixed.contains_key(label))
                         .map(|(label, &ty)| (label.clone(), ty))
                         .collect();
-                    let mut goals = fixed
+                    let goals = fixed
                         .iter()
                         .rev()
                         .filter_map(|(label, &value)| {
@@ -6816,15 +6820,11 @@ where
                         .collect::<Vec<_>>();
                     let kept = arena.value_type_record(kept);
                     frames.push(Frame::RestrictConverts { restriction, kept });
-                    if let Some(next) = goals.pop() {
-                        frames.push(Frame::Fields {
-                            remaining: goals,
-                            holder: restriction,
-                            index: 0,
-                        });
-                        goal = next;
-                        continue 'expand;
-                    }
+                    frames.push(Frame::Fields {
+                        remaining: goals,
+                        holder: restriction,
+                        begun: 0,
+                    });
                     produced = Produced::Checked;
                 },
                 // Each fixed field replays its conversion here: the kernel
@@ -7368,7 +7368,7 @@ where
         judgement,
         context,
         initial,
-        stages,
+        &mut Walk::starting(stages),
         recording,
         &mut frames,
     )
@@ -7410,8 +7410,9 @@ fn field_refused(
         return refusal;
     };
     let Some((holder, index)) = frames.iter().rev().find_map(|frame| {
-        if let Frame::Fields { holder, index, .. } = *frame {
-            Some((holder, index))
+        if let Frame::Fields { holder, begun, .. } = *frame {
+            // The field checked now is the last whose check began.
+            Some((holder, begun.checked_sub(1)?))
         }
         else {
             None
@@ -8369,16 +8370,21 @@ fn drain_code_obligations<M>(
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
+    // The drains of the check's forked children took their obligations
+    // already, so this drain goes on from what they checked: their count
+    // stands against the ceiling, and a key they met is not checked again.
     if let Some(fork) = judgement.forking.fork()
         && owed.len() >= FORKED_DRAIN
-        && let Some(ledger) = drain_forked(arena, judgement, fork, memo, session, census, &owed)?
+        && let Some(parts) = drain_forked(arena, judgement, fork, memo, session, census, &owed)?
     {
-        ledger.record(memo, session);
+        let mut ledger = session.take_drained();
+        ledger.fold(parts);
+        record_drained(ledger, memo, session);
         return Ok(());
     }
-    let mut ledger = DrainLedger::default();
+    let mut ledger = session.take_drained();
     drain_into(arena, judgement, memo, session, census, owed, &mut ledger)?;
-    ledger.record(memo, session);
+    record_drained(ledger, memo, session);
     Ok(())
 }
 
@@ -8390,64 +8396,24 @@ const FORKED_DRAIN: usize = 64;
 /// The fewest obligations one part of a forked drain checks.
 const FORKED_PART: usize = 16;
 
-/// What one drain checked: its count against the ceiling, and the keys whose
-/// verdicts it records when the whole drain passes.
+/// Record the verdict of each key `ledger` checked in `memo`, and keep it in
+/// `session` under its parameters.
 ///
 /// # Specification
 /// trivial.
-#[derive(Debug, Default)]
-struct DrainLedger
+#[inline]
+fn record_drained<M>(
+    ledger: DrainLedger,
+    memo: &mut M,
+    session: &mut SupportContext,
+) where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
 {
-    /// How many obligations the drain took from its worklist.
-    drained: usize,
-    /// The keys of the obligations the drain checked, each with the
-    /// parameters its verdict is kept under. A check owes obligations of its
-    /// own, so its verdict holds only when the whole drain passes.
-    passed: Vec<(NodeSupport, Option<RecordName>)>,
-    /// The names of the keys the drain met. A key it met already is not
-    /// checked again.
-    seen: BTreeSet<(RecordName, RecordName)>,
-}
-
-impl DrainLedger
-{
-    /// Add the keys that `part` checked and this ledger did not meet, in the
-    /// order the part checked them.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fold(
-        &mut self,
-        part: Self,
-    )
-    {
-        for (key, named) in part.passed {
-            if self.seen.insert(key.names()) {
-                self.passed.push((key, named));
-            }
+    for (key, named) in ledger.into_passed() {
+        if let Some(named) = named {
+            session.keep(&key, named, &NodeOutcome::Checked);
         }
-    }
-
-    /// Record each checked key's verdict in `memo`, and keep it in `session`
-    /// under its parameters.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn record<M>(
-        self,
-        memo: &mut M,
-        session: &mut SupportContext,
-    ) where
-        M: CheckMemo<NodeSupport, NodeOutcome>,
-    {
-        for (key, named) in self.passed {
-            if let Some(named) = named {
-                session.keep(&key, named, &NodeOutcome::Checked);
-            }
-            let _recorded = memo.remember(key, NodeOutcome::Checked);
-        }
+        let _recorded = memo.remember(key, NodeOutcome::Checked);
     }
 }
 
@@ -8498,19 +8464,14 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     while let Some(obligation) = owed.pop() {
-        if ledger.drained >= usize::from(MAX_CODE_OBLIGATIONS) {
+        if !ledger.take(usize::from(MAX_CODE_OBLIGATIONS)) {
             return Err(KernelError::CodeObligationCeiling {
                 ceiling: MAX_CODE_OBLIGATIONS,
             });
         }
-        // The preceding ceiling guard bounds this increment.
-        ledger.drained = usize::from(arith::add(
-            arith::Int::from(ledger.drained),
-            arith::Int::from(1_usize),
-        ));
         if matches!(M::ACTIVITY, MemoActivity::Active) {
             let key = obligation.key(arena, session);
-            if !ledger.seen.insert(key.names()) {
+            if !ledger.meets(&key) {
                 continue;
             }
             let named = KeptParameters::Unnamed.name(
@@ -8518,7 +8479,7 @@ where
                 &obligation.scope().reading(judgement),
                 session,
             );
-            ledger.passed.push((key, named));
+            ledger.pass(key, named);
         }
         match obligation {
             CodeObligation::Universe {
@@ -8732,9 +8693,10 @@ impl crate::fork::Job for DrainPart<'_>
 /// fork's width, with [`FORKED_PART`] obligations or more in each.
 ///
 /// # Specification
-/// - requires: as [`drain_code_obligations`].
+/// - requires: as [`drain_code_obligations`]. The obligations that the
+///   session's forked children drained count as drained before.
 /// - ensures: a ledger of the keys the parts checked, each one time, when each
-///   part passed and the parts drained no more than the ceiling. The arena, the
+///   part passed and all drained no more than the ceiling. The arena, the
 ///   session, the memo and the census then hold the parts' folds, and the memo
 ///   keeps no outcome that names a node of a part's own. None when the fork's
 ///   width or the size of `owed` gives fewer than two runs, when the memo
@@ -8812,8 +8774,8 @@ where
     fork.run_jobs(&mut jobs);
     let passed = parts
         .iter()
-        .try_fold(0_usize, |sum, part| match part.answer {
-            Some(Ok(())) => sum.checked_add(part.ledger.drained),
+        .try_fold(session.drained(), |sum, part| match part.answer {
+            Some(Ok(())) => sum.checked_add(part.ledger.drained()),
             Some(Err(_)) | None => None,
         })
         .is_some_and(|drained| drained <= usize::from(MAX_CODE_OBLIGATIONS));

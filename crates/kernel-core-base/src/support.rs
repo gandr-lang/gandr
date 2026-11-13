@@ -151,6 +151,9 @@ pub struct SupportContext
     /// The names of the keys of the obligations this declaration's check owes.
     /// Its drain checks each of them before the declaration is admitted.
     owing: BTreeSet<(RecordName, RecordName)>,
+    /// What the drains of this check's forked children checked. The check's
+    /// own drain goes on from it, and records its keys when it passes.
+    drained: DrainLedger,
 }
 
 impl Default for SupportContext
@@ -169,6 +172,7 @@ impl Default for SupportContext
             open: Vec::new(),
             kept: KeptMemo::default(),
             owing: BTreeSet::new(),
+            drained: DrainLedger::default(),
         }
     }
 }
@@ -311,6 +315,131 @@ pub enum Discharge
     Open,
 }
 
+/// What a drain of a check's code obligations checked: how many obligations
+/// it took against the ceiling, and the keys whose verdicts the check records
+/// when its whole drain passes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+pub struct DrainLedger
+{
+    /// How many obligations the drain took from its worklist.
+    drained: usize,
+    /// The keys of the obligations the drain checked, each with the
+    /// parameters its verdict is kept under. A check owes obligations of its
+    /// own, so its verdict holds only when the whole drain passes.
+    passed: Vec<(NodeSupport, Option<RecordName>)>,
+    /// The names of the keys the drain met. A key it met already is not
+    /// checked again.
+    seen: BTreeSet<(RecordName, RecordName)>,
+}
+
+impl DrainLedger
+{
+    /// How many obligations the drain took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn drained(&self) -> usize
+    {
+        self.drained
+    }
+
+    /// Take one more obligation, when the drain took fewer than `ceiling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true, and one more obligation taken, when fewer than
+    ///   `ceiling` were taken; false, and the count as it was, otherwise.
+    /// - provides: the ceiling of a drain.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a drain at its ceiling refuses its next obligation.
+    /// - witness: `gandr-kernel-core::check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+    #[spec(captures: before = self.drained, ensures: |ret| if ret {
+        self.drained == before.saturating_add(1) && before < ceiling
+    } else {
+        self.drained == before && before >= ceiling
+    })]
+    #[inline]
+    pub fn take(
+        &mut self,
+        ceiling: usize,
+    ) -> bool
+    {
+        if self.drained >= ceiling {
+            return false;
+        }
+        self.drained = self.drained.saturating_add(1);
+        true
+    }
+
+    /// Meet `key`: true when the drain did not meet it before, so it checks
+    /// it now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn meets(
+        &mut self,
+        key: &NodeSupport,
+    ) -> bool
+    {
+        self.seen.insert(key.names())
+    }
+
+    /// Hold `key`, which the drain met first and checks now, to record its
+    /// verdict under the parameters `named` when the drain passes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn pass(
+        &mut self,
+        key: NodeSupport,
+        named: Option<RecordName>,
+    )
+    {
+        self.passed.push((key, named));
+    }
+
+    /// Add what `part` checked: its count, and each key it checked that this
+    /// ledger did not meet, in the order the part checked them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn fold(
+        &mut self,
+        part: Self,
+    )
+    {
+        self.drained = self.drained.saturating_add(part.drained);
+        for (key, named) in part.passed {
+            if self.seen.insert(key.names()) {
+                self.passed.push((key, named));
+            }
+        }
+    }
+
+    /// The keys the drain checked, each with the parameters its verdict is
+    /// kept under, in the order the drain met them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_passed(self) -> Vec<(NodeSupport, Option<RecordName>)>
+    {
+        self.passed
+    }
+}
+
 impl SupportContext
 {
     /// A session over nothing.
@@ -365,6 +494,7 @@ impl SupportContext
         self.rewrites = RewriteMemo::new();
         self.open.clear();
         self.owing.clear();
+        self.drained = DrainLedger::default();
         self.read.clear();
     }
 
@@ -420,6 +550,7 @@ impl SupportContext
             open: Vec::new(),
             kept: self.kept.fork(),
             owing: BTreeSet::new(),
+            drained: DrainLedger::default(),
         }
     }
 
@@ -466,6 +597,154 @@ impl SupportContext
                 crate::error::KeptOutcomes::new(key.digest(), held, offered),
             ))
         })
+    }
+
+    /// Open the session of a goal's child at a fork point inside a check: as
+    /// [`Self::fork`], with a mirror of the innermost open goal under the
+    /// child's own accruals. What the child reads and owes joins the mirror,
+    /// and [`Self::join_goal`] joins the mirror into that goal, as a serial
+    /// walk joins a closed subgoal into it.
+    ///
+    /// The mirror is the innermost open goal, empty, and each barrier above
+    /// it. A read past a barrier joins nothing on either walk, and an owed key
+    /// passes each barrier on both. With no goal open, the mirror is empty.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::fork`].
+    /// - ensures: as [`Self::fork`]; the child's open accruals are the mirror.
+    /// - provides: the session a goal's forked child checks in.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::fork`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::join_goal`].
+    /// - witness: `support::tests::a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does`
+    #[must_use]
+    #[inline]
+    pub fn fork_goal(
+        &mut self,
+        arena: &TermArena,
+    ) -> Self
+    {
+        let mut child = self.fork(arena);
+        let mirrored = self.open.get(self.mirrored() ..).unwrap_or_default();
+        child
+            .open
+            .extend(mirrored.iter().map(|accrual| match *accrual {
+                Accrual::Goal { depth, .. } => Accrual::Goal {
+                    depth,
+                    reads: Reads::closed(),
+                    owed: Vec::new(),
+                },
+                Accrual::Barrier => Accrual::Barrier,
+            }));
+        child
+    }
+
+    /// Fold `child`, a goal's child forked by [`Self::fork_goal`], into this
+    /// session: as [`Self::join`], and the mirror's reads and owed keys into
+    /// the innermost open goal, and the keys of the obligations the child owes
+    /// into this check's.
+    ///
+    /// The child's accruals above the mirror close into it first, so a child
+    /// that refused still counts what it read.
+    ///
+    /// # Specification
+    /// - requires: `child` was forked from this session by [`Self::fork_goal`],
+    ///   and this session's open accruals did not change since. `arena` is this
+    ///   session's arena.
+    /// - ensures: as [`Self::join`]. The innermost open goal gains the binders
+    ///   and the keys that the child's subgoals give it on a serial walk, and
+    ///   [`Self::owes`] holds for each obligation the child owes.
+    /// - provides: the fold of a goal's child at its join.
+    /// - fails: as [`Self::join`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::join`].
+    ///
+    /// # Errors
+    /// As [`Self::join`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child's reads and owed keys under a goal, under a
+    ///   barrier and with no goal open, against the serial walk.
+    /// - witness: `support::tests::a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does`
+    #[inline]
+    pub fn join_goal(
+        &mut self,
+        arena: &TermArena,
+        mut child: Self,
+    ) -> Result<(), crate::KernelError>
+    {
+        let mirror = self.open.len().saturating_sub(self.mirrored());
+        while child.open.len() > mirror {
+            let _inner = child.close_innermost();
+        }
+        let owing = core::mem::take(&mut child.owing);
+        let drained = core::mem::take(&mut child.drained);
+        let mirrored = core::mem::take(&mut child.open);
+        self.join(arena, child)?;
+        // A barrier of the mirror stopped each read, as the barrier above
+        // this session's goal stops it.
+        if let Some(Accrual::Goal { depth, reads, owed }) = mirrored.into_iter().next() {
+            accrue(&mut self.open, &reads, depth);
+            owe_into(&mut self.open, &owed);
+        }
+        self.owing.extend(owing);
+        self.drained.fold(drained);
+        Ok(())
+    }
+
+    /// Add what the drain of a forked child checked to what this check's
+    /// children drained.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn fold_drained(
+        &mut self,
+        ledger: DrainLedger,
+    )
+    {
+        self.drained.fold(ledger);
+    }
+
+    /// Take what this check's forked children drained, for the check's own
+    /// drain to go on from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn take_drained(&mut self) -> DrainLedger
+    {
+        core::mem::take(&mut self.drained)
+    }
+
+    /// How many obligations the drains of this check's forked children took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn drained(&self) -> usize
+    {
+        self.drained.drained()
+    }
+
+    /// Where the mirror of a goal's forked child starts on this session's
+    /// stack: at the innermost open goal, or past each accrual when no goal
+    /// is open.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mirrored(&self) -> usize
+    {
+        self.open
+            .iter()
+            .rposition(|accrual| matches!(*accrual, Accrual::Goal { .. }))
+            .unwrap_or(self.open.len())
     }
 
     /// Name `parameters` in this session's table, as
@@ -924,9 +1203,9 @@ impl SupportContext
         }
     }
 
-    /// Close every accrual unjoined and forget the obligations owed, so a
-    /// declaration's check opens on an empty stack whatever an earlier refusal
-    /// left on it.
+    /// Close every accrual unjoined and forget the obligations owed and what
+    /// a forked child drained, so a declaration's check opens on an empty
+    /// stack whatever an earlier refusal left on it.
     ///
     /// # Specification
     /// trivial.
@@ -935,6 +1214,7 @@ impl SupportContext
     {
         self.open.clear();
         self.owing.clear();
+        self.drained = DrainLedger::default();
     }
 }
 
@@ -2140,6 +2420,78 @@ mod tests
             session.close(goal),
             "a subgoal left open closes into its goal, so what it read still counts"
         );
+    }
+
+    #[test]
+    fn a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let binders = [unit_type; 4];
+        let mut keyed = SupportContext::new();
+        let key = NodeSupport::recorded(
+            &arena,
+            &mut keyed,
+            SupportGoal::Obligation(crate::encoding::ObligationGoal::Data(unit_type)),
+            &[],
+            &Reads::closed(),
+        );
+        // The child opens a subgoal under four binders, reads two of them and
+        // owes the key. It closes the subgoal, or leaves it open as a refused
+        // child does.
+        let child_walk = |session: &mut SupportContext, closes: bool| {
+            let subgoal = session.open(&binders);
+            session.read(&reading(&[1, 3]), &binders);
+            session.owe_obligation(&key);
+            if closes {
+                let _reads = session.close(subgoal);
+            }
+        };
+        for (barred, closes) in [(false, true), (false, false), (true, true)] {
+            let mut walks = [keyed.carried(), keyed.carried()].map(|mut session| {
+                let goal = session.open(&binders[.. 2]);
+                session.read(&reading(&[0]), &binders[.. 2]);
+                let barrier = barred.then(|| session.open_barrier());
+                (session, goal, barrier)
+            });
+            let [(ref mut serial, ..), (ref mut forked, ..)] = walks;
+            child_walk(serial, closes);
+            let mut child = forked.fork_goal(&arena);
+            child_walk(&mut child, closes);
+            forked
+                .join_goal(&arena, child)
+                .expect("a serial child's join glues");
+            let [serial, forked] = walks.map(|(mut session, goal, barrier)| {
+                if let Some(barrier) = barrier {
+                    let _reads = session.close(barrier);
+                }
+                let owes = session.owes(&key);
+                let (reads, owed) = session.close_owing(goal).expect("the goal is open");
+                (reads, owed.keys().to_vec(), owes)
+            });
+            assert_eq!(
+                serial, forked,
+                "a goal whose child ran forked reads, owes and holds what the serial walk gives it \
+                 (under a barrier: {barred}, the child's subgoal closed: {closes})"
+            );
+            assert_eq!(
+                super::Discharge::Held,
+                forked.2,
+                "the check owes what its forked child owes"
+            );
+            let read = if barred {
+                reading(&[0])
+            }
+            else {
+                reading(&[0, 1])
+            };
+            assert_eq!(
+                (read, alloc::vec![key.clone()]),
+                (forked.0, forked.1),
+                "the child's read joins the goal lowered past its binders unless a barrier stops \
+                 it, and its key passes the barrier"
+            );
+        }
     }
 
     #[test]
