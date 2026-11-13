@@ -52,25 +52,32 @@
           "id": "v::boundary::Refl",
           "kind": "item",
           "names": ["v::boundary::Refl"],
-          "origin": 701
+          "origin": 701,
+          "moved": { "act": "moved", "at": "v::refl::Refl" }
         },
         {
           "id": "v::boundary::Refl::0",
           "kind": "item",
           "names": ["v::boundary::Refl::0"],
-          "origin": 701
+          "origin": 701,
+          "moved": { "act": "moved", "at": "v::refl::Refl::0" }
         },
         {
           "id": "<v::boundary::Refl as core::convert::From<bool>>::from",
           "kind": "item",
           "names": ["<v::boundary::Refl as core::convert::From<bool>>::from"],
-          "origin": 701
+          "origin": 701,
+          "moved": { "act": "moved", "at": "<v::refl::Refl as core::convert::From<bool>>::from" }
         },
         {
           "id": "v::boundary::<impl core::convert::From<v::boundary::Refl> for bool>::from",
           "kind": "item",
           "names": ["v::boundary::<impl core::convert::From<v::boundary::Refl> for bool>::from"],
-          "origin": 701
+          "origin": 701,
+          "moved": {
+            "act": "moved",
+            "at": "v::refl::<impl core::convert::From<v::refl::Refl> for bool>::from"
+          }
         },
         {
           "id": "kept.txt:v::boundary::Other",
@@ -447,5 +454,105 @@
       "architects": { "agent-shade": "(architect" }
     },
     "output": ""
+  },
+  {
+    "name": "#7058: an item and a test whose bodies stand at items that the head adds need no row and no sign-off, while a ledger row still needs its row",
+    "input": {
+      "body": "Advances #1\n",
+      "title": "refactor(surface): move the hom",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": { "act": "moved", "at": "v::directed::DirectedHom" }
+        },
+        {
+          "id": "v::hom::shift",
+          "kind": "item",
+          "names": ["v::hom::shift"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": { "act": "renamed", "at": "v::directed::step" }
+        },
+        {
+          "id": "v::hom::tests::holds",
+          "kind": "test",
+          "names": ["v::hom::tests::holds"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": { "act": "moved", "at": "v::directed::tests::holds" }
+        },
+        {
+          "id": "purpose:vd,hom::DirectedHom,struct",
+          "kind": "ledger",
+          "names": ["purpose:vd,hom::DirectedHom,struct"],
+          "file": "ledger/purposes.sql",
+          "origin": 700
+        }
+      ],
+      "held": ["v::directed::DirectedHom", "v::directed::step", "v::directed::tests::holds"],
+      "tests": [],
+      "features": {},
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the change takes 1 things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)\na `refactor` pull request carries `## Preserved and changed`: one table of the behaviour it keeps, with the test that passes before and after, and one of the behaviour or test it changes, with the reason"
+  },
+  {
+    "name": "#7058: a `moved` row of an item whose body stands nowhere in the head is refused, and a `deleted` row of an item that the check reads as moved is refused",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::changed`|#700|moved|—|—|—|`v::directed::changed`|none|—|\n|`v::hom::DirectedHom`|#700 (#640)|deleted|a hom|#640; README: none; none found|no consumer|none|none|—|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::changed",
+          "kind": "item",
+          "names": ["v::hom::changed"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": null
+        },
+        {
+          "id": "v::hom::DirectedHom",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700,
+          "moved": { "act": "moved", "at": "v::directed::DirectedHom" }
+        }
+      ],
+      "held": ["v::directed::changed", "v::directed::DirectedHom"],
+      "tests": [],
+      "features": {},
+      "lonely": [],
+      "files": { "v::hom::DirectedHom": ["crates/vd/src/hom.rs"] },
+      "signoffs": [],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "`v::hom::changed` stands nowhere in the head with the same body, and the row of `v::hom::changed` says `moved`: no item that the head adds has its tokens, so the row says `deleted`, `merged` or `narrowed`, with the architect's sign-off (#7058)\n`v::hom::DirectedHom` stands at `v::directed::DirectedHom` with the same body, and its row says `deleted`: the row says `moved`, or it leaves, since the check reads the move (#7058)\nthe `deleted` row of `v::hom::DirectedHom` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
+  },
+  {
+    "name": "#7058: a `merged` row of an item whose body stands nowhere in the head needs the architect's sign-off, and so does a `narrowed` row in the merge queue",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::join`|#700|merged|—|—|—|`v::hom::compose`|`composes`|—|\n|`v::hom::wide`|#700|narrowed|—|—|—|`v::hom::wide`|`wide_holds`|—|\n",
+      "title": "",
+      "mode": "rows",
+      "left": [],
+      "held": [],
+      "tests": [],
+      "features": {},
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the `merged` row of `v::hom::join` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`\nthe `narrowed` row of `v::hom::wide` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   }
 ]

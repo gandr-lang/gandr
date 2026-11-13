@@ -11,10 +11,12 @@
 #   mode        "full" reads both sides of the change; "rows" reads the body,
 #               the sign-offs and the consumers alone, as the merge queue does
 #   left        each thing of the base that the head lacks: {id, kind, names,
-#               origin}. `kind` is `item`, `test`, `ledger`, `kept` or
+#               origin, moved}. `kind` is `item`, `test`, `ledger`, `kept` or
 #               `file`; `names` are the spellings that a row may give for it;
 #               `origin` is the pull request of the commit that adds it, or
-#               null
+#               null; `moved` is `{act, at}` when the body of an item or a
+#               test stands at an item that the head adds (`acts.bash`,
+#               #7058), or null
 #   held        each id of the head, of the same kinds
 #   tests       each test whose text differs between the base and the head:
 #               {id, name}
@@ -22,8 +24,8 @@
 #               of its README's `## Provided features`: {base, head}
 #   lonely      the crates that no other crate names, each as its library
 #               name and its directory
-#   files       for each `deleted` row's item, the files of the change that
-#               name it at the base
+#   files       for each `deleted`, `merged` or `narrowed` row's item, the
+#               files of the change that name it at the base
 #   signoffs    each comment of the issues the body works that says `signed`:
 #               {author, body, sha, fork, changed, joined, reshaped};
 #               `changed` maps each item to the files whose words that name
@@ -69,13 +71,16 @@ def featured($in; $held):
 | ([($in.held // [])[] | {key: ., value: true}] | from_entries) as $held
 | featured($in; $held) as $featured
 | (
-    # A change that takes things out needs the section.
-    (if $full and $rows == null and ($in.left | length) > 0 then
-       "the change takes \($in.left | length) things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)"
-     else empty end),
+    # A change that takes things out needs the section. A thing whose body
+    # stands at another path of the head needs no row (#7058).
+    ([$in.left[] | select(.moved == null)] as $owed
+     | if $full and $rows == null and ($owed | length) > 0 then
+         "the change takes \($owed | length) things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)"
+       else empty end),
     # Each thing that leaves has its row.
     (if $full and $rows != null then
        $in.left[] as $thing
+       | select($thing.moved == null)
        | select([$rs[] | .item as $item | select($item | answered) | covers($item; $thing)] | any | not)
        | "`\($thing.id)` (\($thing.kind)) leaves the tree with no row in `## Deletes`"
      else empty end),
@@ -90,6 +95,18 @@ def featured($in; $held):
            (if $full and (.act | IN("deleted", "moved", "renamed", "merged")) and ($held[$item] // false) then
               "`\($item)` is still in the head, and its row says `\(.act)`"
             else empty end),
+           # The check computes the act of an item or a test from the bodies
+           # (#7058). A row that says `moved` or `renamed` names a body that
+           # stands in the head, and a row that asks a sign-off names a body
+           # that stands nowhere in the head.
+           ([$in.left[] | select(.kind | IN("item", "test")) | select(covers($item; .))] as $things
+            | (if $full and ($row.act | IN("moved", "renamed")) then
+                 $things[] | select(.moved == null)
+                 | "`\(.id)` stands nowhere in the head with the same body, and the row of `\($item)` says `\($row.act)`: no item that the head adds has its tokens, so the row says `deleted`, `merged` or `narrowed`, with the architect's sign-off (#7058)"
+               else empty end),
+              (if $full and ($row.act | IN("deleted", "merged", "narrowed")) and ($things | length) > 0 and all($things[]; .moved != null) then
+                 "`\($item)` stands at `\($things[0].moved.at)` with the same body, and its row says `\($row.act)`: the row says `\($things[0].moved.act)`, or it leaves, since the check reads the move (#7058)"
+               else empty end)),
            (if $full and .act == "restored" and (($held[$item] // false) | not) then
               "`\($item)` is not in the head, and its row says `restored`"
             else empty end),
@@ -118,16 +135,19 @@ def featured($in; $held):
                 | select(.library as $lib | .dir as $dir
                     | ($item | startswith($lib + "::"))
                       or any($in.left[] | select(covers($item; .)); (.file // "") | startswith("crates/" + $dir + "/")))
-                | "no other crate names `\(.dir)`, so its items wait for their consumer: the row of `\($item)` is refused, and the dead-weight row reads `find the consumer`"),
-              # The architect's sign-off, with both halves still in place.
-              (($in.files[$item] // []) as $files
-               | select([$in.signoffs[]? as $c | signs($c; $item; $files; $in.architects)] | any | not)
-               | [$in.signoffs[]? | select(signer(.; $in.architects) and (.body | contains($item)) and (.body | test("\\bsigned\\b")))] as $own
-               | if ($own | length) > 0 then
-                   "the architect's sign-off of `\($item)` is stale: \([moves($own[-1]; $item; $files)] | join("; ")); the architect reads that and signs again"
-                 else
-                   "the `deleted` row of `\($item)` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
-                 end)
+                | "no other crate names `\(.dir)`, so its items wait for their consumer: the row of `\($item)` is refused, and the dead-weight row reads `find the consumer`")
+            else empty end),
+           # The architect's sign-off, with both halves still in place: the
+           # architect reads each item that stands nowhere in the head (#7058).
+           (if .act | IN("deleted", "merged", "narrowed") then
+              ($in.files[$item] // []) as $files
+              | select([$in.signoffs[]? as $c | signs($c; $item; $files; $in.architects)] | any | not)
+              | [$in.signoffs[]? | select(signer(.; $in.architects) and (.body | contains($item)) and (.body | test("\\bsigned\\b")))] as $own
+              | if ($own | length) > 0 then
+                  "the architect's sign-off of `\($item)` is stale: \([moves($own[-1]; $item; $files)] | join("; ")); the architect reads that and signs again"
+                else
+                  "the `\($row.act)` row of `\($item)` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
+                end
             else empty end)
          end)),
     # A test whose text changes states what it no longer asserts.

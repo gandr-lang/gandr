@@ -17,6 +17,12 @@
 # each package's records by each input that they read, and a `cargo dylint`
 # run builds each package that it does not hold (#6823).
 #
+# The check computes the act of each item and test that leaves its place
+# (`acts.bash`, #7058). One whose body stands at an item that the head adds
+# is moved or renamed, and it needs no row and no sign-off. One whose body
+# stands nowhere in the head keeps its row, and that row asks the
+# architect's sign-off.
+#
 # With `--rows-only`, as in the merge queue, it reads no records and no
 # Cargo metadata: it reads the body's rows and the architect's sign-offs, so
 # a body edited or a head pushed past a sign-off is refused. `--head <rev>`
@@ -85,16 +91,17 @@ if [[ $mode == full ]]; then
   lonely=$(jq -c '. as $all | [.[] | select(.binary | not) | .name as $n | select([$all[] | select(.name != $n) | .deps[] | select(. == $n)] | length == 0) | {library, dir}]' <<< "$packages")
 fi
 
-# The rows of the body, as the rule reads them.
+# The rows of the body, as the rule reads them: the items of the rows that
+# ask the architect's sign-off (#7058).
 jq -n -r -L "$root/.config/claims" -L "$here" --rawfile body "$body" \
-  'include "account"; $body | deletes_rows // [] | .[] | select(.act == "deleted") | .item' > "$scratch/deleted" 2> /dev/null || : > "$scratch/deleted"
-# The last segment of each `deleted` row's item: the word that names it.
+  'include "account"; $body | deletes_rows // [] | .[] | select(.act | IN("deleted", "merged", "narrowed")) | .item' > "$scratch/deleted" 2> /dev/null || : > "$scratch/deleted"
+# The last segment of each such row's item: the word that names it.
 segments=$(while IFS= read -r item; do
   [[ -n $item ]] || continue
   jq -n -c --arg item "$item" --arg segment "$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")" '{($item): $segment}'
 done < "$scratch/deleted" | jq -s -c 'add // {}')
 mapfile -t named_by < <(jq -r '[.[]] | unique[]' <<< "$segments")
-# The files of the change that name each `deleted` row's item at the base.
+# The files of the change that name each such row's item at the base.
 files=$(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$segments" | while IFS=$'\t' read -r item segment; do
   mapfile -t named < <(git grep -l -F -e "$segment" "$base" -- $(< "$scratch/changed") 2> /dev/null | sed "s|^$base:||" || :)
   jq -n -c --arg item "$item" '{($item): $ARGS.positional}' --args "${named[@]}"
@@ -200,6 +207,9 @@ if [[ $mode == full ]]; then
     inventory "$scratch/records-$side" > "$scratch/items-$side.json" \
       || { echo "check:deletes: a record of the $side names a file that leaves the tree" >&2; exit 2; }
   done
+  # The act of each item and test that leaves and whose body stands at an
+  # item that the head adds (`acts.bash`, #7058).
+  "$here/acts.bash" "$base" "$scratch/items-base.json" "$scratch/items-head.json" > "$scratch/acts.json"
   # The keys of each ledger table at a revision, as `<table>:<key>,<key>`.
   ledger_keys() {
     local rev=$1 file table
@@ -242,7 +252,8 @@ if [[ $mode == full ]]; then
           id=$(jq -r .id <<< "$item")
           file=$(jq -r .file <<< "$item")
           segment=$(sed -E 's/.*:://; s/[<>]//g' <<< "$id")
-          jq -c --argjson origin "$(origin "$segment" "$file")" '{id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin}' <<< "$item"
+          jq -c --argjson origin "$(origin "$segment" "$file")" --slurpfile acts "$scratch/acts.json" \
+            '{id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin, moved: ($acts[0][.id] // null)}' <<< "$item"
         done
     comm -23 "$scratch/ledger-base" "$scratch/ledger-head" | while IFS= read -r key; do
       table=${key%%:*}
@@ -316,4 +327,4 @@ if [[ -n $findings ]]; then
   echo "check:deletes: account for each thing above in the body's \`## Deletes\` (#6817), then run the task again; ${SECONDS}s" >&2
   exit 1
 fi
-echo "check:deletes OK: $(jq length <<< "$left") things leave the tree, each with its row${cached:-}; ${SECONDS}s"
+echo "check:deletes OK: $(jq length <<< "$left") things leave the tree, $(jq '[.[] | select(.moved != null)] | length' <<< "$left") of them moved or renamed with the same body and each other with its row${cached:-}; ${SECONDS}s"
