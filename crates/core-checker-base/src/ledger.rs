@@ -115,8 +115,8 @@ impl Absence
 /// [`Absence`] has no public constructor.
 ///
 /// ```compile_fail
-/// use gandr_core_checker::CheckRefusal;
-/// use gandr_core_checker::ObligationEntry;
+/// use gandr_core_checker_base::CheckRefusal;
+/// use gandr_core_checker_base::ObligationEntry;
 ///
 /// fn owe(refusal: CheckRefusal) -> ObligationEntry
 /// {
@@ -125,7 +125,7 @@ impl Absence
 /// ```
 ///
 /// ```compile_fail
-/// use gandr_core_checker::Absence;
+/// use gandr_core_checker_base::Absence;
 ///
 /// let forge = Absence::new;
 /// ```
@@ -133,8 +133,8 @@ impl Absence
 /// The positive control: the one conversion that does exist.
 ///
 /// ```
-/// use gandr_core_checker::Absence;
-/// use gandr_core_checker::ObligationEntry;
+/// use gandr_core_checker_base::Absence;
+/// use gandr_core_checker_base::ObligationEntry;
 ///
 /// fn owe(absence: Absence) -> ObligationEntry
 /// {

@@ -22,6 +22,12 @@ cutoff = 2019
 name = "core-checker"
 
 [[crate]]
+name = "core-checker-base"
+
+[[crate]]
+name = "core-checker-bridge"
+
+[[crate]]
 name = "core-incremental"
 
 [[crate]]

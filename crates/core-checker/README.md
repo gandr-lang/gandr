@@ -8,6 +8,7 @@ This crate gives the core judgement one name for its consumers. It re-exports th
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -41,6 +42,10 @@ The crate rustdoc's example lives in [`src/lib.rs`](src/lib.rs).
 | Staged programs and their forks | [`staging`](src/staging.rs) |
 | The elaboration session | [`elaborating`](src/elaborating.rs) |
 | Measurement dependencies and the admission observer | [`examples/staging_templates.rs`](examples/staging_templates.rs) |
+
+## References
+
+- `Wood-2024-framework_semiringannotated_type_systems` — dependency: the usage annotations of λR and their subusaging, which the access rules read, § 4.2
 
 ## License
 

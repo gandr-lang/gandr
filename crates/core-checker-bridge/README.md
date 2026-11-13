@@ -40,6 +40,8 @@ The kernel bridge of the core checking judgement. The kernel re-derives each dec
 
 ## References
 
+- `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: a family is one descent datum.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a resumed readmission signs only its own checks.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: one skeleton replays every certificate.
 

@@ -89,13 +89,12 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 ## References
 
 - `Cockx-2018-elaborating_dependent_copattern_matching` — exemplar: Cockx and Abel, _ICFP_, 2018 — the solution step.
-- `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's sphere eliminator, in `loops`.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: separation at a fork, its halves sharing an interface only to read it.
 - `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule reads its type at its weak head.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: one transport per solved equation.
-- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: a family is one descent datum.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a certified stratum persists in the store.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a recalled stratum is believed only once it is replayed.
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
 - `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban — a fill computes to its induction, and nothing adjoins a cell.
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signature type of § 2.2.
