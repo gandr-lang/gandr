@@ -16,6 +16,9 @@
 #   now     under `take`, the time of the take in seconds
 #   issue   under `gate`, `take` and `release`, `{number, state, labels, body}` as GitHub
 #           holds it, or null when the read failed
+#   signed  under `take`, for an issue under `shape:signed`, `{marker, frame}`:
+#           the digest of its newest frame marker, or null for none, and the
+#           frame's digest now; null when either read failed
 #
 # Output: under `branch`, `{lane, number}`, or null for a branch that works no
 # unit. Under `gate`, `{verdict}`: `none` for no unit, `held` when the lane
@@ -23,8 +26,9 @@
 # write and the `line` the gate prints, and `unread` or `refused` with the
 # `line` the gate prints. Under `take`, `{verdict}`: `write` with the
 # `body` to write, `held` when the lane holds the claim already, or `refused`
-# with the `line` `claim:take` prints. Under `release`, it is `release` when
-# the lane holds the claim, or `refused` with the line `claim:release` prints.
+# with the `line` `claim:take` prints, and `stale` for a frame that differs.
+# Under `release`, it is `release` when the lane holds the claim, or
+# `refused` with the line `claim:release` prints.
 #
 # An issue under `status:claimed` with no claim marker lost its marker to an
 # edit of its body (#6210). The label stands, so a lane holds it. The gate of
@@ -36,6 +40,13 @@
 # 2 hours (`kept`). `claim:take` refuses the issue to every other lane in that
 # time, as `claim:next` passes it over, so a pool's pins never give a unit of
 # several landings to a second lane between two landings (#6954).
+#
+# A signed unit answers the unit frame that its sign-off names (#7018).
+# `unit:sign` writes the frame's digest in a marker comment, and `claim:take`
+# refuses a unit under `shape:signed` whose newest marker is absent or names
+# another frame. Its `stale` holds both digests, so the task pages the
+# architect, who writes the sections again. A unit with no label takes its
+# claim, since its claim writes the sections.
 
 include "markers";
 
@@ -91,6 +102,12 @@ elif .step == "take" then
         elif ([.issue.body | kept($now) | .lane != $lane] | any) then
           (.issue.body | kept($now)) as $kept
           | {verdict: "refused", line: "claim:take: \($kept.lane) released #\(.issue.number) at \($kept.at | todate), and keeps it until \($kept.at + 7200 | todate) for its next landing. To move it, the coordinator runs `claim:take \(.issue.number) --lane \($kept.lane)`, then `claim:release \($kept.lane) \(.issue.number) --forgo`, then `claim:take \(.issue.number) --lane \($lane)` (#6954)"}
+        elif (.issue.labels | index("shape:signed")) and .signed == null then
+          {verdict: "refused", line: "claim:take: #\(.issue.number) carries shape:signed, and its frame marker or the frame now does not read; claim it again (#7018)"}
+        elif (.issue.labels | index("shape:signed")) and .signed.marker != .signed.frame then
+          .signed as $signed
+          | {verdict: "refused", stale: $signed,
+             line: "claim:take: #\(.issue.number) carries shape:signed \(if $signed.marker == null then "with no frame marker" else "at the frame \($signed.marker)" end), and the unit frame now is \($signed.frame). The architect writes its sections again, and the coordinator signs them through `unit:sign \(.issue.number)` (#7018)"}
         # A body without the label keeps no lapsed lane's marker (#5531).
         else {verdict: "write", body: (.issue as $issue | $issue.body | claiming($lane; $issue.labels))}
         end

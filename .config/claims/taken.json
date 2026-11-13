@@ -300,6 +300,92 @@
     }
   },
   {
+    "name": "#7018: claim:take claims a signed unit whose newest marker names the frame now",
+    "input": {
+      "step": "take",
+      "lane": "flex-a",
+      "issue": {
+        "number": 6891,
+        "state": "open",
+        "labels": ["kind:feature", "shape:signed"],
+        "body": "Text.\n"
+      },
+      "signed": { "marker": "305433645eae", "frame": "305433645eae" }
+    },
+    "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=flex-a -->\n" }
+  },
+  {
+    "name": "#7018: claim:take refuses a signed unit with no frame marker, and names the frame now",
+    "input": {
+      "step": "take",
+      "lane": "flex-a",
+      "issue": {
+        "number": 6891,
+        "state": "open",
+        "labels": ["kind:feature", "shape:signed"],
+        "body": "Text.\n"
+      },
+      "signed": { "marker": null, "frame": "305433645eae" }
+    },
+    "output": {
+      "verdict": "refused",
+      "stale": { "marker": null, "frame": "305433645eae" },
+      "line": "claim:take: #6891 carries shape:signed with no frame marker, and the unit frame now is 305433645eae. The architect writes its sections again, and the coordinator signs them through `unit:sign 6891` (#7018)"
+    }
+  },
+  {
+    "name": "#7018: claim:take refuses a signed unit whose newest marker names an older frame, and names both",
+    "input": {
+      "step": "take",
+      "lane": "flex-a",
+      "issue": {
+        "number": 6891,
+        "state": "open",
+        "labels": ["kind:feature", "shape:signed"],
+        "body": "Text.\n"
+      },
+      "signed": { "marker": "0123456789ab", "frame": "305433645eae" }
+    },
+    "output": {
+      "verdict": "refused",
+      "stale": { "marker": "0123456789ab", "frame": "305433645eae" },
+      "line": "claim:take: #6891 carries shape:signed at the frame 0123456789ab, and the unit frame now is 305433645eae. The architect writes its sections again, and the coordinator signs them through `unit:sign 6891` (#7018)"
+    }
+  },
+  {
+    "name": "#7018: claim:take refuses a signed unit whose frame does not read, and pages no one",
+    "input": {
+      "step": "take",
+      "lane": "flex-a",
+      "issue": {
+        "number": 6891,
+        "state": "open",
+        "labels": ["kind:feature", "shape:signed"],
+        "body": "Text.\n"
+      },
+      "signed": null
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "claim:take: #6891 carries shape:signed, and its frame marker or the frame now does not read; claim it again (#7018)"
+    }
+  },
+  {
+    "name": "#7018: the lane that holds a signed unit of an older frame keeps it",
+    "input": {
+      "step": "take",
+      "lane": "flex-a",
+      "issue": {
+        "number": 6891,
+        "state": "open",
+        "labels": ["status:claimed", "shape:signed"],
+        "body": "Text.\n\n<!-- claim: lane=flex-a -->\n"
+      },
+      "signed": { "marker": null, "frame": "305433645eae" }
+    },
+    "output": { "verdict": "held" }
+  },
+  {
     "name": "#6097: claim:release leaves another lane's claim unchanged and names its holder",
     "input": {
       "step": "release",

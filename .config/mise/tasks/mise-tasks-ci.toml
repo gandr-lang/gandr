@@ -2784,7 +2784,10 @@ echo "issue:edit: wrote the body of #$number with its claim markers"
 # The lane is `--lane`, else the lane of the branch it runs on,
 # `<lane>-<n>-…` (`.config/claims/taken.jq`). It refuses a closed issue, an
 # issue another lane claims, and an issue another lane released in the last 2
-# hours (#6954). It does nothing for an issue the lane holds.
+# hours (#6954). It refuses a unit under `shape:signed` whose newest frame
+# marker is absent or names another frame (#7018): it prints the rows that
+# `unit:check` refuses at the frame now and pages the architect once for the
+# unit (`frame.bash`). It does nothing for an issue the lane holds.
 # The gate refuses a unit branch whose issue holds no claim of its lane and
 # names this task.
 ["claim:take"]
@@ -2818,11 +2821,28 @@ if ! lanes_has "$lane"; then
 fi
 repo=${GH_REPO:-'{owner}/{repo}'}
 read_issue() { gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}'; }
-decision=$(read_issue | jq -c --arg lane "$lane" --argjson now "$(date +%s)" '{step: "take", lane: $lane, now: $now, issue: .}' \
+issue=$(read_issue)
+# A signed unit's newest frame marker and the frame now (#7018), read only
+# for an issue under `shape:signed`; a failed read leaves `signed` null.
+source "$claims/frame.bash"
+signed=null
+if jq -e '.labels | index("shape:signed")' <<< "$issue" > /dev/null; then
+  signed=$(unit_frame_signed "$root" "$repo" "$number") || signed=null
+fi
+decision=$(jq -c --arg lane "$lane" --argjson now "$(date +%s)" --argjson signed "$signed" \
+  '{step: "take", lane: $lane, now: $now, issue: ., signed: $signed}' <<< "$issue" \
   | jq -c -L "$claims" -f "$claims/taken.jq")
 case $(jq -r .verdict <<< "$decision") in
   refused)
-    jq -r .line <<< "$decision" >&2
+    line=$(jq -r .line <<< "$decision")
+    echo "$line" >&2
+    # A unit signed at another frame: `unit:check` names the rows that the
+    # frame now refuses, and the architect is paged once for the unit.
+    if jq -e '.stale' <<< "$decision" > /dev/null; then
+      mise run --quiet unit:check "$number" >&2 || :
+      unit_frame_page "$number" "$(jq -r .stale.frame <<< "$decision")" \
+        "frame #$number: signed $(jq -r '.stale.marker // "with no marker"' <<< "$decision"), frame now $(jq -r .stale.frame <<< "$decision"); its sections again, then unit:sign"
+    fi
     exit 1
     ;;
   held)
