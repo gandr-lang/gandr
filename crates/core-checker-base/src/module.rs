@@ -2083,6 +2083,124 @@ where
     run.finish(context)
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a run decides a declaration in place of taking its decision.
+    pub mod taken {
+        /// The reason a run takes no decision of a declaration.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The caller holds no standing decision of the declaration.
+            Unheld,
+        }
+    }
+}
+
+/// A decision that a run takes from its caller in place of its own.
+///
+/// It holds the verdict of a declaration that the caller entered into the
+/// context, and the failure, the elaboration and the suspension that its
+/// judgement kept.
+///
+/// # Specification
+/// - executable: none — a data type; the witness takes each accepted
+///   declaration of a module from the report of a whole run.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ModuleRun::judge_taking`].
+/// - witness: `module::tests::a_run_that_takes_each_accepted_declaration_reports_as_the_whole_run_6620`
+#[derive(Clone, Debug)]
+pub struct Taken
+{
+    /// The verdict.
+    verdict: Verdict,
+    /// The failure of the run that refused the body, when the judgement kept
+    /// one.
+    failure: Maybe<Failure, kept::Absent>,
+    /// What elaborating the body did, when the judgement kept it.
+    elaboration: Maybe<NestedElaboration, elaborated::Absent>,
+    /// What the declaration waits on, when its verdict is suspended.
+    suspension: Maybe<Suspension, waits::Absent>,
+}
+
+impl Taken
+{
+    /// The decision `verdict`, beside the `failure`, the `elaboration` and the
+    /// `suspension` that its judgement kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        verdict: Verdict,
+        (failure, elaboration, suspension): (
+            Maybe<Failure, kept::Absent>,
+            Maybe<NestedElaboration, elaborated::Absent>,
+            Maybe<Suspension, waits::Absent>,
+        ),
+    ) -> Self
+    {
+        Self {
+            verdict,
+            failure,
+            elaboration,
+            suspension,
+        }
+    }
+}
+
+/// What a run asks of each declaration that it judges alone, before it decides
+/// the declaration.
+pub trait Taking
+{
+    /// The decision of `declaration` that the caller holds, which this call
+    /// enters into `context`; or why the run decides the declaration.
+    ///
+    /// # Specification
+    /// - requires: the run has judged each declaration before `declaration`.
+    /// - ensures: on a decision, `context` holds `declaration` as the judgement
+    ///   that gave the decision left it: admitted at its position, with its
+    ///   type, its definition, its home and its stages; on an absence,
+    ///   `context` is unchanged.
+    /// - panics: none.
+    /// - executable: none — a trait method whose implementors are untrusted;
+    ///   the run's report is the check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run that takes each accepted declaration from the
+    ///   report of a whole run reports as that run.
+    /// - witness: `module::tests::a_run_that_takes_each_accepted_declaration_reports_as_the_whole_run_6620`
+    fn take(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+        declaration: &Declaration,
+    ) -> Maybe<Taken, taken::Absent>;
+}
+
+/// The caller that holds no decision, so the run decides each declaration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Deciding;
+
+impl Taking for Deciding
+{
+    /// No decision: the run decides `_declaration`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take(
+        &mut self,
+        _context: &mut CheckingContext<'_>,
+        _declaration: &Declaration,
+    ) -> Maybe<Taken, taken::Absent>
+    {
+        Maybe::Absent(taken::Absent::Unheld)
+    }
+}
+
 /// A module run part way: the verdicts of the declarations judged so far and
 /// the schedule's state after the last of them, so that judging the rest
 /// later continues the run.
@@ -2212,12 +2330,60 @@ impl ModuleRun
         &mut self,
         context: &mut CheckingContext<'_>,
         declarations: &[Declaration],
-        mut settle: Settle,
+        settle: Settle,
         retirement: &Poll,
     ) -> Polled<(), Poll::Retired, ()>
     where
         Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
         Poll: Retirement,
+    {
+        self.judge_taking(context, declarations, settle, (retirement, &mut Deciding))
+    }
+
+    /// Judge `declarations` as [`judge_retiring`](Self::judge_retiring) does,
+    /// but take from `taking` the decision of each declaration that the run
+    /// judges alone and that `taking` holds. The run decides each other
+    /// declaration.
+    ///
+    /// # Specification
+    /// - requires: as [`judge`](Self::judge); each decision that `taking` gives
+    ///   is the decision that a judgement of the declaration gives at this
+    ///   point of the run.
+    /// - ensures: as [`judge_retiring`](Self::judge_retiring). A taken
+    ///   declaration keeps its laws, its operation's rules and its matches in
+    ///   `context`, as its judgement keeps them. The run keeps its failure, its
+    ///   elaboration and its suspension as `taking` gives them, and keeps no
+    ///   support of it. A run that keeps typings takes nothing, and nor does a
+    ///   member of a mutual block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run that takes each accepted declaration of a
+    ///   module from the report of a whole run, and decides the owed and the
+    ///   refused ones, reports the verdicts, the definitions, the failures and
+    ///   the ledger of the whole run.
+    /// - witness: `module::tests::a_run_that_takes_each_accepted_declaration_reports_as_the_whole_run_6620`
+    #[spec(
+        captures: before = self.judged.len(),
+        ensures: |ret| if matches!(ret, Polled::Whole(())) {
+            self.judged.len() == before.saturating_add(declarations.len())
+        } else {
+            self.judged.len() < before.saturating_add(declarations.len())
+        },
+    )]
+    #[inline]
+    pub fn judge_taking<Settle, Poll, Take>(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+        declarations: &[Declaration],
+        mut settle: Settle,
+        (retirement, taking): (&Poll, &mut Take),
+    ) -> Polled<(), Poll::Retired, ()>
+    where
+        Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
+        Poll: Retirement,
+        Take: Taking,
     {
         for (index, declaration) in declarations.iter().enumerate() {
             if let Demand::Retired(retired) = retirement.demand() {
@@ -2231,32 +2397,61 @@ impl ModuleRun
                 Some(_) => Run::Typed,
                 None => Run::Judged,
             };
-            let decision = match self.supported {
-                // A member of an open block reads its siblings before they
-                // stand, as no judgement of one declaration alone does.
-                Some(ref mut supported) if membership == Membership::Alone => {
-                    #[cfg(feature = "instrument")]
-                    let before = context.tally();
-                    context.start_support();
-                    let decision = decide(context, declaration, kind);
-                    let support = context.finish_support();
-                    let entered = entered(context, declaration, decision.verdict);
-                    let kept = Supported::new(
-                        (decision.verdict, support, entered),
-                        Maybe::Absent(kept::Absent::Reported),
-                        (
-                            Maybe::Absent(elaborated::Absent::Reported),
-                            Maybe::Absent(waits::Absent::Reported),
-                        ),
-                    );
-                    // The counts layer charges these consults to the item a
-                    // pass takes the verdict for.
-                    #[cfg(feature = "instrument")]
-                    let kept = kept.consulting(context.tally().since(before));
-                    let _replaced = supported.insert(declaration.constant(), kept);
-                    decision
+            let taken = if membership == Membership::Alone && self.typed.is_none() {
+                taking.take(context, declaration)
+            }
+            else {
+                Maybe::Absent(taken::Absent::Unheld)
+            };
+            let (decision, suspension) = match taken {
+                Maybe::Present(taken) => {
+                    let constant = declaration.constant();
+                    context.keep_laws(constant, declaration.laws().to_vec());
+                    context.keep_operation_rules(constant, declaration.operation_rules().clone());
+                    context.keep_covers(constant, declaration.covers().to_vec());
+                    (
+                        Decision {
+                            verdict: taken.verdict,
+                            failure: taken.failure,
+                            typings: Maybe::Absent(typed::Absent::Unasked),
+                            elaboration: taken.elaboration,
+                            filled: Maybe::Absent(filled::Absent::Unfilled),
+                            residue: Residue::default(),
+                        },
+                        taken.suspension,
+                    )
                 },
-                Some(_) | None => decide(context, declaration, kind),
+                Maybe::Absent(_) => {
+                    let decision = match self.supported {
+                        // A member of an open block reads its siblings before
+                        // they stand, as no judgement of one declaration alone
+                        // does.
+                        Some(ref mut supported) if membership == Membership::Alone => {
+                            #[cfg(feature = "instrument")]
+                            let before = context.tally();
+                            context.start_support();
+                            let decision = decide(context, declaration, kind);
+                            let support = context.finish_support();
+                            let entered = entered(context, declaration, decision.verdict);
+                            let kept = Supported::new(
+                                (decision.verdict, support, entered),
+                                Maybe::Absent(kept::Absent::Reported),
+                                (
+                                    Maybe::Absent(elaborated::Absent::Reported),
+                                    Maybe::Absent(waits::Absent::Reported),
+                                ),
+                            );
+                            // The counts layer charges these consults to the
+                            // item a pass takes the verdict for.
+                            #[cfg(feature = "instrument")]
+                            let kept = kept.consulting(context.tally().since(before));
+                            let _replaced = supported.insert(declaration.constant(), kept);
+                            decision
+                        },
+                        Some(_) | None => decide(context, declaration, kind),
+                    };
+                    (decision, Maybe::Absent(waits::Absent::Unsuspended))
+                },
             };
             if let Some(ref mut typed) = self.typed {
                 if let Verdict::Refused(refusal) = decision.verdict {
@@ -2279,12 +2474,15 @@ impl ModuleRun
             match decision.verdict {
                 Verdict::Owed(entry) => self.ledger.record(entry),
                 Verdict::Suspended(declared) => {
-                    let suspension = Suspension::new(
-                        declared,
-                        decision.residue,
-                        &context.deferrals().owed,
-                        &self.suspensions,
-                    );
+                    let suspension = match suspension {
+                        Maybe::Present(taken) => taken,
+                        Maybe::Absent(_) => Suspension::new(
+                            declared,
+                            decision.residue,
+                            &context.deferrals().owed,
+                            &self.suspensions,
+                        ),
+                    };
                     self.suspensions.insert(declaration.constant(), suspension);
                 },
                 Verdict::Data
