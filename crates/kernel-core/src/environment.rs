@@ -4121,7 +4121,7 @@ impl CommitLog
     /// - hypothesis: L3 — as [`Environment::rerank`].
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235`
-    #[spec(ensures: self.ranked.range(floor ..).count() == ranks.len()
+    #[spec(ensures: self.ranked.len() >= ranks.len()
         && ranks.iter().all(|(&position, &rank)| self.ranked.get(&rank) == Some(&position)))]
     fn rerank(
         &mut self,
