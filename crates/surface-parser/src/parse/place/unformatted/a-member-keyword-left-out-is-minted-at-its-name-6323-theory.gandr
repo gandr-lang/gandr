@@ -1,0 +1,4 @@
+theory Theory where
+  sort Nat : Type;
+  add(m : Nat, n : Nat) -> Nat;
+  oper succ : (n : Nat) --> Nat;
