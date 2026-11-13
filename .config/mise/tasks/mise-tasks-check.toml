@@ -2388,6 +2388,24 @@ run = ".config/build-state/restamp.bash"
 description = "A pull request's recovery sweep holds the records its change touches, and every record for the parser or a removed source"
 run = ".config/recovery/change-cases.bash"
 
+# A re-record of the recovery records takes every row as the truth (#6806),
+# so a dropped row whose obligations rise passes the sweep. The gate runs
+# `.config/recovery/rise-cases.bash`, then `.config/recovery/rise.bash`
+# against `GATE_BASE`: each record that the change modifies, whose source it
+# does not edit, is compared with the base's row by row. A rise that
+# `tests/recovery-owed.tsv` does not list is refused with its counts.
+["check:recovery-rise"]
+description = "A dropped row of a recovery record whose obligations rise against the change's base is refused unless the owed list names it"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/recovery/rise-cases.bash
+if [[ -n ${GATE_BASE:-} ]]; then
+  .config/recovery/rise.bash "$GATE_BASE"
+  echo "recovery-rise: no dropped row of a changed record rises against ${GATE_BASE:0:12} unlisted"
+fi
+'''
+
 # The generated artifacts a replay can leave stale (#6144):
 # `.config/replay/cases.bash` reads each case of `.config/replay/cases.json`
 # through `due.jq` against the committed `artifacts.json`. A case gives the
