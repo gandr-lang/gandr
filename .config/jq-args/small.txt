@@ -139,6 +139,7 @@
 --argjson interval
 --argjson issue
 --argjson labels
+--argjson landing
 --argjson limit
 --argjson n
 --argjson now
@@ -147,6 +148,7 @@
 --argjson own
 --argjson parent
 --argjson pr
+--argjson pushes
 --argjson ran
 --argjson red
 --argjson retry_at
@@ -157,6 +159,7 @@
 --argjson since
 --argjson stale
 --argjson start
+--argjson states
 --argjson threshold
 --argjson token
 --argjson upto

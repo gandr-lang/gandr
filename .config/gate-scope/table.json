@@ -81,7 +81,7 @@
       ".config/mise/tasks/mise-tasks-check.toml",
       ".github/actions/",
       ".github/docker/",
-      ".github/workflows/ci.yml",
+      ".github/workflows/landing-checks.yml",
       ".mise/locks/",
       "mise.lock",
       "mise.toml"
@@ -130,7 +130,11 @@
         "library/"
       ],
       "check:commits": [".config/commits/", ".config/pr-stack/", "commitlint.config.mjs"],
-      "check:coverage": [".config/cases/", ".config/coverage/", ".github/workflows/coverage.yml"],
+      "check:coverage": [
+        ".config/cases/",
+        ".config/coverage/",
+        ".github/workflows/report-coverage.yml"
+      ],
       "check:crate-lead": [".config/cases/", ".config/crate-lead/", "crates/"],
       "check:crate-map": [
         ".cargo/",
@@ -173,7 +177,7 @@
       "check:hotpath": [
         ".config/cases/",
         ".config/hotpath/",
-        ".github/workflows/ci.yml",
+        ".github/workflows/landing-checks.yml",
         "hotpath/"
       ],
       "check:issues": [
@@ -191,8 +195,8 @@
       "check:landing-queue": [
         ".config/cases/",
         ".config/landing/",
-        ".github/workflows/ci.yml",
-        ".github/workflows/nightly.yml"
+        ".github/workflows/landing-checks.yml",
+        ".github/workflows/nightly-sweeps.yml"
       ],
       "check:landing-rebase": [".config/cases/", ".config/landing/"],
       "check:ledger": [
@@ -209,7 +213,11 @@
       "check:merge-driver": [".config/merge-driver/", "crates/surface-lowering/"],
       "check:merge-residue": [".config/merge-residue/"],
       "check:mutants": [".config/cases/", ".config/mutants/"],
-      "check:nightly": [".config/cases/", ".config/nightly/", ".github/workflows/nightly.yml"],
+      "check:nightly": [
+        ".config/cases/",
+        ".config/nightly/",
+        ".github/workflows/nightly-sweeps.yml"
+      ],
       "check:pr-stack": [
         ".config/cases/",
         ".config/gh/",
@@ -308,13 +316,14 @@
         ".cargo/",
         ".config/cases/",
         ".config/witnesses/",
-        ".github/workflows/ci.yml",
+        ".github/workflows/landing-checks.yml",
         "Cargo.lock",
         "Cargo.toml",
         "crates/"
       ],
       "check:workflow-hashing": [".config/cases/", ".config/workflow-contexts/", ".github/"],
-      "check:workflow-hashing-shell": [".config/cases/", ".config/workflow-contexts/", ".github/"]
+      "check:workflow-hashing-shell": [".config/cases/", ".config/workflow-contexts/", ".github/"],
+      "check:workflow-names": [".config/cases/", ".config/workflow-names/", ".github/workflows/"]
     }
   },
   "paths": [

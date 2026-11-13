@@ -61,7 +61,7 @@
         ".config/coverage/cases.json",
         ".config/coverage/jobs.jq",
         ".config/mise/tasks/mise-tasks-check.toml",
-        ".github/workflows/coverage.yml"
+        ".github/workflows/report-coverage.yml"
       ]
     },
     "output": ["check:claims", "check:typos"]
@@ -1294,13 +1294,13 @@
     "program": "format.jq",
     "input": {
       "changed": [
-        ".github/workflows/ci.yml",
+        ".github/workflows/landing-checks.yml",
         ".config/gate-scope/format.bash",
         "crates/core-term/src/lib.rs"
       ],
       "tracked": [
         ".config/gate-scope/format.bash",
-        ".github/workflows/ci.yml",
+        ".github/workflows/landing-checks.yml",
         "contrib/gandr-vscode/src/extension.ts",
         "crates/core-term/src/lib.rs",
         "treefmt.toml"
@@ -1308,7 +1308,7 @@
     },
     "output": [
       ".config/gate-scope/format.bash",
-      ".github/workflows/ci.yml",
+      ".github/workflows/landing-checks.yml",
       "crates/core-term/src/lib.rs"
     ]
   },

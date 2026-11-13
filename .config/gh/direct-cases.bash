@@ -91,5 +91,29 @@ commit_file .config/one/read.bash "$(printf '%s\n' '# the read' "$read_line")"
 git -C "$work/repo" mv .config/one .config/two
 git -C "$work/repo" commit -q -m move
 expect_pass "an old read of a script that the change moves"
+
+init
+commit_file .config/old.bash "$(printf '%s\n' 'one=1' 'two=2' 'three=3' 'four=4' "$read_line")"
+git -C "$work/repo" mv .config/old.bash .config/new.bash
+git -C "$work/repo" commit -q -m rename
+expect_pass "an old read in a file the change renames"
+
+init
+commit_file .config/old.bash "$(printf '%s\n' 'one=1' 'two=2' 'three=3' 'four=4' 'five=5')"
+git -C "$work/repo" mv .config/old.bash .config/new.bash
+printf '%s\n' "$read_line" >> "$work/repo/.config/new.bash"
+git -C "$work/repo" add -- .config/new.bash
+git -C "$work/repo" commit -q -m rename
+expect_fail "a read the change adds to a file it renames"
+
+init
+commit_file .config/old.bash "$(piece g 'h run list --workflow old.yml')"
+commit_file .config/old.bash "$(piece g 'h run list --workflow new.yml')"
+expect_pass "a read whose arguments the change edits"
+
+init
+commit_file .config/old.bash "$(piece g 'h run list --workflow old.yml')"
+commit_file .config/old.bash "$(printf '%s\n%s' "$(piece g 'h run list --workflow new.yml')" "$read_line")"
+expect_fail "a read of another command beside an edited read"
 ((fail == 0))
 printf 'gh-direct cases OK\n'

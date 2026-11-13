@@ -1,6 +1,6 @@
 # The verdicts of the integration cycle (#5440), which `cycle.jq`,
 # `brake.jq` and `hollow.jq` include. The input is the dispatched runs of
-# ci.yml on `integration`, newest first. A verdict is a run that completed with
+# landing-checks.yml on `integration`, newest first. A verdict is a run that completed with
 # a pass or a failure. A cancelled run gives no verdict.
 #
 # A hollow failure gives no verdict either, once for its head (#6887). It is a

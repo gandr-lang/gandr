@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # An epic closes itself when every issue it is blocked by and every sub-issue
-# it holds is closed (#3398, #4972), run by `.github/workflows/epics.yml` on
+# it holds is closed (#3398, #4972), run by `.github/workflows/tracker-close-epics.yml` on
 # every closed issue, or by hand:
 #
 #   epics.sh <issue> [--dry-run]

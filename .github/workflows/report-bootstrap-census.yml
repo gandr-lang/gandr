@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: Census
+name: report-bootstrap-census
 
 # The bootstrap census (#2896): weekly, `ledger/census.md` against the census
 # of main (`mise run report:bootstrap-census`). Report-only, never a gate: a
@@ -33,9 +33,9 @@ env:
   CARGO_TERM_COLOR: always
   MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
   MISE_CARGO_BINSTALL_NATIVE: "true"
-  # Must match ci.yml and the image. The image checks the list at build time.
+  # Must match landing-checks.yml and the image. The image checks the list at build time.
   MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
-  # Must match ci.yml: a job's mise writes no line of `mise.lock` (#6976).
+  # Must match landing-checks.yml: a job's mise writes no line of `mise.lock` (#6976).
   MISE_LOCKFILE_MODE: merge
   # Empty selects the bare runner. A set value selects the pin-file tag,
   # and only a published tag is used: this workflow does not publish.
@@ -49,7 +49,7 @@ jobs:
   template:
     if: false
     needs: ci-image-ref
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: &linux ubuntu-24.04-arm
     permissions: &image-read-permissions
       contents: read

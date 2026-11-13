@@ -29,9 +29,9 @@
 # the workflow's `on.push`, holds `landing`.
 #
 # Input: `{jobs, landing, states, pushes}`. `jobs` is
-# `.github/workflows/ci.yml`'s `jobs`, anchors expanded. `landing` is the
+# `.github/workflows/landing-checks.yml`'s `jobs`, anchors expanded. `landing` is the
 # list of tasks that `check:landing` depends on. `states` is the build states
-# that `.github/workflows/nightly.yml` restores, none when absent. `pushes`
+# that `.github/workflows/nightly-sweeps.yml` restores, none when absent. `pushes`
 # is the branches of `on.push`, none when absent.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 

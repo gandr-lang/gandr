@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs a command of the night in the night's tree, and gives that tree to the
-# step as its output `tree` (#6868). `nightly.yml`'s `sweeps` runs its sweeps
+# step as its output `tree` (#6868). `nightly-sweeps.yml`'s `sweeps` runs its sweeps
 # and its recovery sweep through it, and its uploads read the tree.
 #
 # On a hosted runner the tree is the job's checkout, and the command runs in

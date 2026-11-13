@@ -35,7 +35,7 @@
 #   first step; its payload stays what most jobs run (ci.Dockerfile).
 # - A merge group on `landing` runs the blocking set alone (#5438, #5439).
 #   The set is the run's setup, the formatting of the change, Clippy, the
-#   compiler policy and the brake. `pr-title.yml` lints the title and each
+#   compiler policy and the brake. `landing-title-and-deletes.yml` lints the title and each
 #   entry's authored commits, and checks the ledger against the issues the
 #   group closes (#6883). The Clippy job runs the formatting first, and it
 #   and the compiler policy run the tasks of `check:landing`. The two lints
@@ -48,10 +48,10 @@
 #   no Clippy, because its lane ran `check:landing` before `pr:open`.
 #   `check:landing-queue` holds the jobs to these rules.
 # - The integration cycle dispatches this workflow on `integration` with the
-#   input `cycle` (`integration.yml`, #5440). That run tests every lane that
+#   input `cycle` (`landing-integration-cycle.yml`, #5440). That run tests every lane that
 #   a merge group tests on Linux, with no fail-fast. It runs no macOS, no
 #   obligations, no mutants and no hotpath lane.
-name: CI
+name: landing-checks
 
 on:
   pull_request: {}
@@ -165,7 +165,7 @@ jobs:
     # arm64, measured on the enforcing lane (#702): the suite 27% and a
     # warm rebuild 9% faster than ubuntu-latest's x86-64, and Linux arm64
     # runs native code through the emitter's arm64 patcher. Every lane that
-    # can runs on arm64; macOS's runners are arm64 too. coverage.yml's x86-64
+    # can runs on arm64; macOS's runners are arm64 too. report-coverage.yml's x86-64
     # Linux run is the one job that compiles and runs the emitter's x86-64
     # patcher and memory placement, so the image is published for both.
     # The integration cycle runs on the self-hosted runner with the label
@@ -597,7 +597,7 @@ jobs:
         shell: bash
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
-          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/") or (startswith("corpus/") and endswith(".gandr"))) | tostring)' >> "$GITHUB_OUTPUT"
+          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/landing-checks.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/") or (startswith("corpus/") and endswith(".gandr"))) | tostring)' >> "$GITHUB_OUTPUT"
       # A group on `landing` lints only what its change reaches against the
       # group's own base (#6894). Its base on main, which the steps above
       # read, holds every landing since main's head too.
@@ -726,7 +726,7 @@ jobs:
         run: |
           for wait in 0 15 15 30 60 60 60 60; do
             sleep "$wait"
-            read -r id status < <(gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs" \
+            read -r id status < <(gh api --method GET "repos/$GH_REPO/actions/workflows/landing-checks.yml/runs" \
               -f event=merge_group -f head_sha="$CI_SHA" \
               --jq '.workflow_runs[0] // {} | "\(.id // "") \(.status // "")"')
             [[ -z $id || $status == completed ]] && break
@@ -745,7 +745,7 @@ jobs:
         env:
           CI_QUEUE_BASE: ${{ github.event.merge_group.base_ref || github.event.repository.default_branch }}
         run: >-
-          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
+          gh api --method GET "repos/$GH_REPO/actions/workflows/landing-checks.yml/runs"
           -f event=merge_group -f status=success -f per_page=30
           --jq '[.workflow_runs[] | select(.head_branch | startswith("gh-readonly-queue/" + (env.CI_QUEUE_BASE | ltrimstr("refs/heads/")) + "/"))][0] // {} | "run-id=\(.id // "")\ncompleted=\(.updated_at // "")"'
           >> "$GITHUB_OUTPUT"
@@ -850,7 +850,7 @@ jobs:
           private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
           # The brake's need, no more: read the runs of the cycle.
           permission-actions: read
-      # No cache, as in pr-title.yml: the shared cache holds every tool of
+      # No cache, as in landing-title-and-deletes.yml: the shared cache holds every tool of
       # CI, and this job installs none of mise.toml's.
       - name: install mise
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
@@ -880,7 +880,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ./.github/workflows/ci-image.yml # zizmor: ignore[self-repository]
+    uses: ./.github/workflows/build-ci-image.yml # zizmor: ignore[self-repository]
 
   # The enforcing run is the full test pass on each platform. The plain lane
   # compiles and runs only what enforcement removes, the corpus roots; the
@@ -2142,14 +2142,14 @@ jobs:
                variables: ({repo: $repo, sha: $sha, at: $at}
                   + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "o\(.key)": .value.output}) | add))}' *.json \
             | gh api graphql --input - --silent
-          gh workflow run hotpath-guard.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA"
+          gh workflow run report-hotpath-regressions.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA"
 
   # A landing's hotpath verdicts become ledger rows (`mise run
   # ci:hotpath-landed`): each push to `landing` reads the `hotpath /
   # <benchmark>` checks `hotpath-judged` posts on its commit, once they are
   # posted, and adds a row per red check or improvement for each pull request
   # the push lands to the landed-deltas tracking issue, linking the issue the
-  # hotpath guard workflow filed (#6993). Nothing needs this job.
+  # report-hotpath-regressions workflow filed (#6993). Nothing needs this job.
   hotpath-landed:
     name: add the landings' hotpath verdicts to the ledger
     needs: [prepare, ci-image, hotpath-judged]

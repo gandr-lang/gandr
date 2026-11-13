@@ -7,7 +7,7 @@
 # restore one build state at one commit pay a second container start and a
 # second restore for the same build, so they are steps of one job (#6704).
 #
-# Input: `.github/workflows/nightly.yml`'s `jobs`, anchors expanded, as JSON.
+# Input: `.github/workflows/nightly-sweeps.yml`'s `jobs`, anchors expanded, as JSON.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 
 def stateless: (.steps // []) | all(.name != "restore complete test state");

@@ -7,7 +7,7 @@
 # the hour's ceiling of each identity and API, and `site`, the rows. A row
 # names a site (`file`, `scope`), its `api` (`graphql` or `rest`), its
 # `identity` (`read` or `write` on a host, `actions` for a workflow's
-# token, `cycle` for the `gandr-lang` App, `landing` for landing.yml's
+# token, `cycle` for the `gandr-lang` App, `landing` for landing-queue.yml's
 # `LANDING_TOKEN`), the `calls` of that API the site holds, the `points`
 # one run spends, how they were `measured`, its `trigger`, and `hour`, the
 # runs in an hour on one host at eight seats.
@@ -42,7 +42,7 @@ include "class";
 def key: "\(.file) \(.scope) (\(.api))";
 
 # The kinds an identity covers: a workflow's token, the `gandr-lang` App and
-# landing.yml's `LANDING_TOKEN` each read and write.
+# landing-queue.yml's `LANDING_TOKEN` each read and write.
 def covers: if IN("actions", "cycle", "landing") then ["read", "write"] else [.] end;
 
 def plural($n): if $n == 1 then "" else "s" end;

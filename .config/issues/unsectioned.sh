@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every issue is a unit or is flagged (#3113), run by
-# `.github/workflows/issues.yml` on every opened, edited, labelled or
+# `.github/workflows/tracker-check-unit-form.yml` on every opened, edited, labelled or
 # unlabelled issue, or by hand:
 #
 #   unsectioned.sh <issue>

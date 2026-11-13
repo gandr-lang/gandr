@@ -1,5 +1,5 @@
 # The runner of the cycle's suite (#5526), read by `ci:cycle` before it
-# dispatches ci.yml on `integration`. The input holds the repository's
+# dispatches landing-checks.yml on `integration`. The input holds the repository's
 # self-hosted runners as the REST API lists them, or null when the cycle
 # cannot read them: the App's token holds no `Administration: read`, or
 # GitHub refuses the read. A runner that is online and carries the label
@@ -7,7 +7,7 @@
 # at a time. Any other input gives the hosted runner, so no suite waits for
 # a runner that is offline.
 #
-# The output is the value of ci.yml's input `runner`, `integration` or
+# The output is the value of landing-checks.yml's input `runner`, `integration` or
 # `hosted`, and one line. The line counts the runners and names none, since
 # a runner's name can name its host.
 [.runners // [] | .[] | select(.status == "online" and any(.labels[]; .name == "integration"))] as $online

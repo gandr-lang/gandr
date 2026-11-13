@@ -2,7 +2,7 @@
   {
     "name": "#6394: a runner context in a job environment is refused",
     "input": {
-      "workflow": ".github/workflows/riscv64.yml",
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
       "jobs": {
         "test": {
           "env": {
@@ -11,12 +11,12 @@
         }
       }
     },
-    "output": "[\"`.github/workflows/riscv64.yml` job `test` environment `CARGO_TARGET_DIR` names `runner.`, unavailable in job env\"]"
+    "output": "[\"`.github/workflows/nightly-riscv64-tests.yml` job `test` environment `CARGO_TARGET_DIR` names `runner.`, unavailable in job env\"]"
   },
   {
     "name": "a runner context in a step environment holds",
     "input": {
-      "workflow": ".github/workflows/riscv64.yml",
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
       "jobs": {
         "test": {
           "steps": [
@@ -34,7 +34,7 @@
   {
     "name": "#6888: a hashFiles walk of a build directory is refused",
     "input": {
-      "workflow": ".github/workflows/coverage.yml",
+      "workflow": ".github/workflows/report-coverage.yml",
       "jobs": {
         "coverage-part": {
           "steps": [
@@ -45,12 +45,12 @@
         }
       }
     },
-    "output": "[\"`.github/workflows/coverage.yml` job `coverage-part` walks a build directory with `hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)`. Test one file at the directory's root\"]"
+    "output": "[\"`.github/workflows/report-coverage.yml` job `coverage-part` walks a build directory with `hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)`. Test one file at the directory's root\"]"
   },
   {
     "name": "a hashFiles test of one file at a build directory's root holds",
     "input": {
-      "workflow": ".github/workflows/coverage.yml",
+      "workflow": ".github/workflows/report-coverage.yml",
       "jobs": {
         "coverage-part": {
           "steps": [
@@ -66,7 +66,7 @@
   {
     "name": "#6774: a job on an edit of a pull request whose condition reads no change is refused",
     "input": {
-      "workflow": ".github/workflows/pr-title.yml",
+      "workflow": ".github/workflows/landing-title-and-deletes.yml",
       "on": {
         "pull_request": {
           "types": ["opened", "edited", "reopened", "synchronize", "ready_for_review"]
@@ -82,12 +82,12 @@
         }
       }
     },
-    "output": "[\"`.github/workflows/pr-title.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
+    "output": "[\"`.github/workflows/landing-title-and-deletes.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
   },
   {
     "name": "#6774: a job on an edit of a pull request with no condition is refused",
     "input": {
-      "workflow": ".github/workflows/pr-title.yml",
+      "workflow": ".github/workflows/landing-title-and-deletes.yml",
       "on": {
         "pull_request": {
           "types": ["edited"]
@@ -97,12 +97,12 @@
         "title": {}
       }
     },
-    "output": "[\"`.github/workflows/pr-title.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
+    "output": "[\"`.github/workflows/landing-title-and-deletes.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
   },
   {
     "name": "#6774: a job on an edit of a pull request that reads the change of the title holds",
     "input": {
-      "workflow": ".github/workflows/pr-title.yml",
+      "workflow": ".github/workflows/landing-title-and-deletes.yml",
       "on": {
         "pull_request": {
           "types": ["opened", "edited"]
@@ -119,7 +119,7 @@
   {
     "name": "a job of a workflow that does not run on an edit of a pull request holds",
     "input": {
-      "workflow": ".github/workflows/issues.yml",
+      "workflow": ".github/workflows/tracker-check-unit-form.yml",
       "on": {
         "issues": {
           "types": ["opened", "edited"]
@@ -135,7 +135,7 @@
   {
     "name": "#7117: a job that runs a nextest archive with no fetch before it is refused",
     "input": {
-      "workflow": ".github/workflows/riscv64.yml",
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
       "jobs": {
         "test": {
           "steps": [
@@ -146,12 +146,12 @@
         }
       }
     },
-    "output": "[\"`.github/workflows/riscv64.yml` job `test` runs a nextest archive with no step before it that fetches the lockfile's sources, so a test that reads the dependency tree offline misses a new git source\"]"
+    "output": "[\"`.github/workflows/nightly-riscv64-tests.yml` job `test` runs a nextest archive with no step before it that fetches the lockfile's sources, so a test that reads the dependency tree offline misses a new git source\"]"
   },
   {
     "name": "#7117: a job that fetches the lockfile's sources before it runs a nextest archive holds",
     "input": {
-      "workflow": ".github/workflows/riscv64.yml",
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
       "jobs": {
         "test": {
           "steps": [

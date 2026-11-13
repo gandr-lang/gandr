@@ -21,9 +21,9 @@ use std::process::Command;
 /// The report over runs 3 and 2 with Clippy's budget `BUDGET`, standing
 /// `STANDING` and the table's summary `SUMMARY`.
 const REPORT: &str = "This report holds each CI lane's median job time against its budget in \
-                          `nightly.yml`.\n\nThe table holds each lane's median over the last 2 \
-                          merge-queue and pull-request runs of `ci.yml`. The cone a landing \
-                          touches gives each lane its class.\n\n\
+                          `nightly-sweeps.yml`.\n\nThe table holds each lane's median over the \
+                          last 2 merge-queue and pull-request runs of `landing-checks.yml`. The \
+                          cone a landing touches gives each lane its class.\n\n\
                           <details><summary>SUMMARY</summary>\n\n\
                           | lane | class | median | budget | jobs | standing |\n\
                           | --- | --- | ---: | ---: | ---: | --- |\n\
@@ -316,7 +316,7 @@ fn a_daily_lane_is_sampled_over_the_scheduled_runs()
     assert!(
         stdout.contains(
             "The table holds the daily lanes' medians over the last 2 scheduled runs of \
-             `ci.yml`.\n"
+             `landing-checks.yml`.\n"
         ),
         "{stdout}"
     );
@@ -360,7 +360,7 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // The nightly workflow's scheduled runs 6 and 5 hold a Clippy job of 600
+    // The nightly-sweeps workflow's scheduled runs 6 and 5 hold a Clippy job of 600
     // and 500 seconds; the landing runs hold one of 300 and 200. Each table
     // reads its own window, the nightly one after the daily one.
     assert!(
@@ -372,7 +372,7 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
     assert!(
         stdout.ends_with(
             "\nThe table reads runs 9, 8.\n\n</details>\n\nThe table holds the nightly lanes' \
-             medians over the last 2 scheduled runs of `nightly.yml`.\n\n<details><summary>1 \
+             medians over the last 2 scheduled runs of `nightly-sweeps.yml`.\n\n<details><summary>1 \
              lane — within: 0 over, 0 unmeasured</summary>\n\n| lane | class | median | budget | \
              jobs | standing |\n| --- | --- | ---: | ---: | ---: | --- |\n| check Clippy wall | \
              nightly | 8m 20s | 9m 10s | 2 | within |\n\nThe table reads runs 6, 5.\n\n</details>\n"
@@ -380,7 +380,7 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
         "{stdout}"
     );
     let log = log!(scratch);
-    assert!(log.contains("workflows/nightly.yml/runs"), "{log}");
+    assert!(log.contains("workflows/nightly-sweeps.yml/runs"), "{log}");
     assert!(log.contains("/runs/6/jobs"), "{log}");
     assert!(log.contains("/runs/5/jobs"), "{log}");
     assert!(!log.contains("/runs/4/jobs"), "{log}");
@@ -416,7 +416,7 @@ fn a_test_lane_is_sampled_over_the_integration_dispatches()
     // is information, so the report stays within and opens no issue.
     assert!(
         stdout.contains(
-            "\nThe table holds the test lanes' medians over the last 2 dispatches of `ci.yml` on \
+            "\nThe table holds the test lanes' medians over the last 2 dispatches of `landing-checks.yml` on \
              `integration`. A merge group on `landing` skips these lanes, so only the cycle \
              holds them.\n\n<details><summary>1 lane — within: 0 over, 0 \
              unmeasured</summary>\n\n| lane | class | median | budget | jobs | standing |\n| \
@@ -428,7 +428,7 @@ fn a_test_lane_is_sampled_over_the_integration_dispatches()
     );
     assert!(
         stdout.contains(
-            "\nThe table holds the same lanes' medians over the last 2 pushes of `ci.yml` to \
+            "\nThe table holds the same lanes' medians over the last 2 pushes of `landing-checks.yml` to \
              `main`. No gate waits on such a run, so the table is information and holds no \
              budget.\n\n<details><summary>1 lane — information, no budget</summary>\n\n| lane | \
              class | median | budget | jobs | standing |\n| --- | --- | ---: | ---: | ---: | --- \
@@ -547,7 +547,7 @@ fn a_summed_budget_tables_every_workflow()
             "--budget",
             "check Clippy wall=1000",
             "--summed",
-            "Nightly=500/600",
+            "nightly-sweeps=500/600",
             "--issue",
             "CI lane budgets",
         ],
@@ -568,22 +568,22 @@ fn a_summed_budget_tables_every_workflow()
     assert!(
         stdout.ends_with(
             "\nThe table holds each workflow's summed job time and wall time over its last 2 \
-             completed runs against the summed budgets in `nightly.yml`.\n\n\
+             completed runs against the summed budgets in `nightly-sweeps.yml`.\n\n\
              <details><summary>2 workflows — over: 1 over, 0 unmeasured</summary>\n\n\
              | workflow | runs | wall median | wall max | summed median | past budget | past \
              ceiling | standing |\n\
              | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n\
-             | CI | 2 | 13m 20s | 15m 0s | 3m 45s | — | — | unbudgeted |\n\
-             | Nightly | 2 | 10m 50s | 11m 40s | 9m 15s | 2 past 8m 20s | 1 past 10m 0s | \
+             | landing-checks | 2 | 13m 20s | 15m 0s | 3m 45s | — | — | unbudgeted |\n\
+             | nightly-sweeps | 2 | 10m 50s | 11m 40s | 9m 15s | 2 past 8m 20s | 1 past 10m 0s | \
              **over** |\n\
              \nThe table gives each run past its ceiling and the job that grew the most in \
              it.\n\n| workflow | run | summed | ceiling | job | time | median |\n\
              | --- | ---: | ---: | ---: | --- | ---: | ---: |\n\
-             | Nightly | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |\n\
+             | nightly-sweeps | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |\n\
              \nThe Actions cache holds 10.0 GiB in 144 caches, **over** its bound of 9.0 GiB: \
              GitHub evicts past 10 GiB (#6951).\n\n</details>\n\
-             \nThe newest run passed its ceiling: Nightly run 6: 11m 5s summed, past its 10m \
-             0s ceiling.\n\
+             \nThe newest run passed its ceiling: nightly-sweeps run 6: 11m 5s summed, past its \
+             10m 0s ceiling.\n\
              \nOpened https://example.invalid/issues/7.\n"
         ),
         "{stdout}"
@@ -592,7 +592,9 @@ fn a_summed_budget_tables_every_workflow()
     assert!(
         std::fs::read_to_string(scratch.join("body"))
             .unwrap()
-            .contains("| Nightly | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |"),
+            .contains(
+                "| nightly-sweeps | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |"
+            ),
         "the filed body holds the run past its ceiling"
     );
     let log = log!(scratch);

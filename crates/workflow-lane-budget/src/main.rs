@@ -6,14 +6,14 @@
 //! NAME=BUDGET/CEILING...] [--waiting CLASS...] [--runs N] [--issue TITLE]`
 //! samples the newest `N` merge-queue and pull-request runs through `gh` and
 //! classifies each by the cone its landing touched. With `--integration`, it
-//! samples the CI workflow's newest `N` dispatches on `integration` for the
-//! test lanes only they hold, and its newest `N` pushes to `main` for the same
-//! lanes as information; with `--daily`, its newest `N` scheduled runs; with
-//! `--nightly`, the nightly workflow's; with `--summed`, every active
-//! workflow's newest `N` completed runs, timed whole, and the cache's usage.
-//! With `--waiting`, it names each class of saved state the night waits for.
-//! It prints the Markdown report and with `--issue` opens, updates, reopens or
-//! closes the one issue of that title.
+//! samples the landing-checks workflow's newest `N` dispatches on `integration`
+//! for the test lanes only they hold, and its newest `N` pushes to `main` for
+//! the same lanes as information; with `--daily`, its newest `N` scheduled
+//! runs; with `--nightly`, the nightly-sweeps workflow's; with `--summed`,
+//! every active workflow's newest `N` completed runs, timed whole, and the
+//! cache's usage. With `--waiting`, it names each class of saved state the
+//! night waits for. It prints the Markdown report and with `--issue` opens,
+//! updates, reopens or closes the one issue of that title.
 //!
 //! # Exit codes
 //!
@@ -69,9 +69,9 @@ struct Cli
     /// is not cone-classified, so a deep budget is refused.
     #[arg(long = "daily")]
     daily: Vec<Unclassified>,
-    /// A lane of the nightly workflow and the whole seconds its median over
-    /// that workflow's scheduled runs may take, as `NAME=SECONDS`; such a lane
-    /// is not cone-classified, so a deep budget is refused.
+    /// A lane of the nightly-sweeps workflow and the whole seconds its median
+    /// over that workflow's scheduled runs may take, as `NAME=SECONDS`;
+    /// such a lane is not cone-classified, so a deep budget is refused.
     #[arg(long = "nightly")]
     nightly: Vec<Unclassified>,
     /// A workflow's budget for the lower median of its runs' summed job time

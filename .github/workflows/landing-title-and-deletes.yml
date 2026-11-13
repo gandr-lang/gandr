@@ -6,13 +6,13 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: PR title
+name: landing-title-and-deletes
 
 # Pull requests land as merge commits titled from the pull request, so the
-# title is the header that reaches main. ci.yml lints each authored commit and
+# title is the header that reaches main. landing-checks.yml lints each authored commit and
 # never a merge; this workflow lints the title with the same rules, on the
 # pull request and again in the merge queue. Its own workflow, because an
-# edited title must re-run the check alone: an `edited` run of ci.yml would
+# edited title must re-run the check alone: an `edited` run of landing-checks.yml would
 # repeat every lane or report them skipped, and a skipped check counts as
 # passed.
 #
@@ -47,7 +47,7 @@ jobs:
   # Definitions only: aliases run in each consuming job's context.
   template:
     if: false
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: &linux ubuntu-24.04-arm
     permissions: {}
     steps:

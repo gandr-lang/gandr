@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: triage
+name: tracker-check-labels
 
 # Every issue is filed with a `kind:` and an `area:` label (#2538,
 # `tracker.md` § tracker-issues). On every opened, labelled or unlabelled
@@ -29,7 +29,7 @@ concurrency:
 jobs:
   triage:
     name: flag an issue missing its kind or area
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     permissions:

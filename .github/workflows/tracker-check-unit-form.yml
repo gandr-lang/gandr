@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: issues
+name: tracker-check-unit-form
 
 # Every issue is a unit or is flagged (#3113, `tracker.md` § tracker-filing).
 # The unit form binds only the web, so on every opened, edited, labelled or
@@ -39,7 +39,7 @@ jobs:
       ${{ !contains(fromJSON('["labeled", "unlabeled"]'), github.event.action)
       || startsWith(github.event.label.name, 'kind:') || startsWith(github.event.label.name, 'area:')
       || contains(fromJSON('["shape:signed", "status:unsectioned", "collector"]'), github.event.label.name) }}
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     permissions:

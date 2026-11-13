@@ -15,7 +15,7 @@
 # made them.
 ARG UBUNTU_BASE=docker.io/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 FROM ${UBUNTU_BASE} AS tools
-# The pin's channel, passed by ci-image.yml and checked against the pin below.
+# The pin's channel, passed by build-ci-image.yml and checked against the pin below.
 ARG RUST_CHANNEL
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -38,7 +38,7 @@ ENV RUSTUP_HOME=/opt/ci/.rustup \
     RUSTUP_TOOLCHAIN=${RUST_CHANNEL} \
     PATH=/opt/ci/.local/bin:/opt/ci/.cargo/bin:$PATH
 
-# This must match ci.yml: workstation-only tools never enter CI installs.
+# This must match landing-checks.yml: workstation-only tools never enter CI installs.
 # mise's rust backend would install every component rust-toolchain.toml
 # lists, at build time and again on a job's first mise command, since it
 # counts the pin missing until all are present. With the version file off,
@@ -52,7 +52,7 @@ ENV MISE_DISABLE_TOOLS=cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk
 # mise may rewrite its lockfile while installing, so the build user owns pins.
 # The version-2 lockfile is two parts: mise.lock and the per-npm-tool sidecars
 # under .mise/locks, which the npm backend reads to install from lock.
-COPY --chown=1000:1000 rust-toolchain.toml mise.toml mise.lock .github/workflows/ci.yml .github/actions/install-tools/action.yml /opt/pins/
+COPY --chown=1000:1000 rust-toolchain.toml mise.toml mise.lock .github/workflows/landing-checks.yml .github/actions/install-tools/action.yml /opt/pins/
 COPY --chown=1000:1000 .mise/locks /opt/pins/.mise/locks
 COPY --chown=1000:1000 .config/mise/tasks/mise-tasks-fmt.toml .config/mise/tasks/mise-tasks-check.toml .config/mise/tasks/mise-tasks-mutants.toml /opt/pins/.config/mise/tasks/
 WORKDIR /opt/pins
@@ -73,8 +73,8 @@ RUN set -eux; \
 # builds it once instead of every mutants job.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false set -eux; \
     if [ -s /run/secrets/github_token ]; then GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; fi; \
-    expected="$(sed -n 's/^  MISE_DISABLE_TOOLS: "\(.*\)"$/\1/p' /opt/pins/ci.yml)"; \
-    [ "$MISE_DISABLE_TOOLS" = "$expected" ] || { echo "MISE_DISABLE_TOOLS drifts from ci.yml: image='$MISE_DISABLE_TOOLS' ci='$expected'" >&2; exit 1; }; \
+    expected="$(sed -n 's/^  MISE_DISABLE_TOOLS: "\(.*\)"$/\1/p' /opt/pins/landing-checks.yml)"; \
+    [ "$MISE_DISABLE_TOOLS" = "$expected" ] || { echo "MISE_DISABLE_TOOLS drifts from landing-checks.yml: image='$MISE_DISABLE_TOOLS' ci='$expected'" >&2; exit 1; }; \
     MISE_VERSION="$(grep -A2 'uses: jdx/mise-action' /opt/pins/action.yml | sed -n 's/^ *version: *//p' | head -n1 | tr -d '"')"; \
     [ -n "$MISE_VERSION" ]; \
     case "$(uname -m)" in \

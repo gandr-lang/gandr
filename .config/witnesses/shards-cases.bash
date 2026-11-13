@@ -4,13 +4,13 @@
 # `<package>::<path>` names a test of another package (#7039), and a shard
 # resolves its members' witnesses against its own listing. So the package
 # that a witness names stands in its owner's shard. The shards are the
-# matrix of `cargo-test-enforcing-shard` in `ci.yml`: each shard's
+# matrix of `cargo-test-enforcing-shard` in `landing-checks.yml`: each shard's
 # `packages`, and the shard of `excludes`, `rest`, that takes every other
 # package. On 962d3729c the split of #6885 left `gandr-surface-lowering-base`
 # in `rest`, while two witnesses of `gandr-surface-lowering` in `lowering`
 # named its tests, and the integration cycle failed.
 #
-# The cases read the tree's witnesses and its packages. The tree's `ci.yml`
+# The cases read the tree's witnesses and its packages. The tree's `landing-checks.yml`
 # gives no refusal. A copy whose `lowering` shard leaves the base crate out
 # gives the refusal that names it.
 set -euo pipefail
@@ -51,11 +51,11 @@ refusals() {
   ' "$scratch/packages" "$scratch/shards" "$scratch/witnesses" | sort -u
 }
 
-got=$(refusals .github/workflows/ci.yml)
-[[ -z $got ]] || fail "#7089: a shard of ci.yml leaves out a package whose tests its members' witnesses name: $got"
+got=$(refusals .github/workflows/landing-checks.yml)
+[[ -z $got ]] || fail "#7089: a shard of landing-checks.yml leaves out a package whose tests its members' witnesses name: $got"
 
-awk '{ sub(/ gandr-surface-lowering-base$/, ""); print }' .github/workflows/ci.yml > "$scratch/ci.yml"
-got=$(refusals "$scratch/ci.yml")
+awk '{ sub(/ gandr-surface-lowering-base$/, ""); print }' .github/workflows/landing-checks.yml > "$scratch/landing-checks.yml"
+got=$(refusals "$scratch/landing-checks.yml")
 [[ $got == *"gandr-surface-lowering in lowering names a test of gandr-surface-lowering-base in rest"* ]] \
   || fail "#7089: a lowering shard without gandr-surface-lowering-base gave no refusal: ${got:-none}"
 

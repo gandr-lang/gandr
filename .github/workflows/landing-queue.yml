@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: landing
+name: landing-queue
 
 # The server-side landing watcher (#2701). `pr:watch` queues a pull request
 # the moment its head is green and restacks a dequeued stack, but only while
@@ -42,7 +42,7 @@ name: landing
 # `actions/create-github-app-token`, queues an unlinked pull request.
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: [CI]
+    workflows: [landing-checks]
     types: [completed]
   pull_request:
     types: [dequeued, ready_for_review]
@@ -62,7 +62,7 @@ jobs:
   landing:
     name: land the green pull requests
     if: ${{ github.repository_owner == 'gandr-lang' }}
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     permissions:

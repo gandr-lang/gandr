@@ -9,8 +9,8 @@
 //!   exited unsuccessfully, or answered what its caller does not read.
 //!
 //! What each crate asks GitHub stays with that crate. The lane budget lists
-//! the CI workflow's runs through `gh api` and files one issue that it opens,
-//! reopens and closes; the test timings list merge-queue runs through
+//! the landing-checks workflow's runs through `gh api` and files one issue that
+//! it opens, reopens and closes; the test timings list merge-queue runs through
 //! `gh run list` and download their reports; the hotpath guard files one
 //! issue per function and edits its comments; the coverage guard edits one
 //! open issue. Those are four policies over one runner.

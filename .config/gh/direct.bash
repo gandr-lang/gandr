@@ -9,7 +9,9 @@
 # stall.bash, which source it. In a task file the source must stand in the
 # same task. The check reads each line of each task file under
 # `.config/mise/tasks/` at the head, changed or not, and the lines that the
-# change adds to each other script. The wrapper's own file is not direct.
+# change adds to each other script. The wrapper's own file is not direct. A
+# file that the change renames adds only the lines that its source at the base
+# lacks.
 set -euo pipefail
 base=${1:?usage: direct.bash <base> [head]}
 head=${2:-HEAD}
@@ -46,24 +48,49 @@ api_read() {
   return 0
 }
 
-# The path each file that the change renames had at the base: a move adds
-# no line that it keeps, so `added_lines` reads the file against that path.
-declare -A renamed=()
-while IFS=$'\t' read -r status old new; do
-  [[ $status == R* ]] && renamed[$new]=$old
-done < <(git diff --name-status -M "$base" "$head" -- .config .github)
-
+# Each line of `$1` at the head that the change adds, with its number. A
+# renamed file is read against `$2`, its path at the base, so a line that it
+# keeps reads as kept. A read that takes the place of a read of the same
+# command, in the same hunk, reads as kept too: the change edits its
+# arguments, as a rename of a workflow does, and adds no call.
 added_lines() {
-  git diff -U0 -M "$base" "$head" -- ${renamed[$1]:+"${renamed[$1]}"} "$1" | awk '
+  git diff -M -U0 "$base" "$head" -- ${2:+"$2"} "$1" | awk -v word="$word" '
+    function kind(text,    k) {
+      if (!match(text, word "[ \t]+[a-z][a-z-]*([ \t]+[A-Za-z][A-Za-z-]*)?")) return ""
+      k = substr(text, RSTART, RLENGTH)
+      gsub(/[ \t]+/, " ", k)
+      return k
+    }
+    function flush(    i, k) {
+      for (i = 1; i <= count; i++) {
+        k = kind(added[i])
+        if (k != "" && dropped[k] > 0) {
+          dropped[k]--
+          continue
+        }
+        printf "%d\t%s\n", at[i], added[i]
+      }
+      count = 0
+      split("", dropped)
+    }
     /^@@ / {
+      flush()
+      hunk = 1
       if (match($0, /\+([0-9]+)/)) start = substr($0, RSTART + 1, RLENGTH - 1) + 0
       next
     }
-    /^\+\+\+/ { next }
+    !hunk { next }
+    /^-/ {
+      k = kind(substr($0, 2))
+      if (k != "") dropped[k]++
+      next
+    }
     /^\+/ {
-      printf "%d\t%s\n", start, substr($0, 2)
+      added[++count] = substr($0, 2)
+      at[count] = start
       start++
     }
+    END { flush() }
   '
 }
 
@@ -108,9 +135,14 @@ while IFS= read -r file; do
   [[ -n $file ]] || continue
   judge "$file" 'a read of a task file' < <(unsourced_lines "$file")
 done < <(git ls-tree -r --name-only "$head" -- .config/mise/tasks | grep -E '\.toml$' || true)
-while IFS= read -r file; do
-  [[ -n $file ]] || continue
+while IFS=$'\t' read -r status from file; do
+  [[ -n $from ]] || continue
+  if [[ $status != R* ]]; then
+    file=$from
+    from=""
+  fi
+  [[ $file =~ \.(bash|sh|toml|ya?ml)$ ]] || continue
   [[ $file == */budget.bash || $file == */calls.toml || $file == .config/mise/tasks/*.toml ]] && continue
-  judge "$file" 'a read the change adds' lookup < <(added_lines "$file")
-done < <(git diff --name-only --diff-filter=ACMR "$base" "$head" -- .config .github | grep -E '\.(bash|sh|toml|ya?ml)$' || true)
+  judge "$file" 'a read the change adds' lookup < <(added_lines "$file" "$from")
+done < <(git diff -M --name-status --diff-filter=ACMR "$base" "$head" -- .config .github)
 exit "$failed"
