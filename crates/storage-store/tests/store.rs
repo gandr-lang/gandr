@@ -694,6 +694,58 @@ fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
     assert_eq!(back, value);
 }
 
+/// Sixteen threads that share one store and commit sixteen distinct values at
+/// once stage each object in a shard of their own and rename it into the
+/// plane. Every value derefs back from a store opened later, and each shard
+/// stands empty, with no temporary left (#7204).
+#[test]
+fn sixteen_writers_stage_in_their_shards_and_leave_each_empty_7204()
+{
+    let root = scratch(Path::new("sixteen-shards"));
+    let (store, _register) = Store::open(&root).expect("the store opens");
+    let values: Vec<Labels> = (40_u8 ..)
+        .take(WRITERS)
+        .map(|count| labels(Count(count)))
+        .collect();
+    let start = std::sync::Barrier::new(WRITERS);
+    let pointers: Vec<ContentPtr> = std::thread::scope(|scope| {
+        let writers: Vec<_> = values
+            .iter()
+            .map(|value| {
+                let start = &start;
+                let store = &store;
+                scope.spawn(move || {
+                    let _leader = start.wait();
+                    store.commit(value).expect("a writer commits its value")
+                })
+            })
+            .collect();
+        writers
+            .into_iter()
+            .map(|writer| writer.join().expect("a writer runs to its end"))
+            .collect()
+    });
+    let shards = files(&root.join("shards"));
+    assert!(
+        !shards.is_empty() && shards.len() <= WRITERS,
+        "the writers stage in one shard each at most: {shards:?}"
+    );
+    for shard in &shards {
+        assert_eq!(
+            files(shard),
+            Vec::<PathBuf>::new(),
+            "a shard holds no temporary after its writer returns"
+        );
+    }
+    let reopened = Store::open(&root).expect("the store opens again").0;
+    for (pointer, value) in pointers.iter().zip(&values) {
+        let back: Labels = reopened
+            .deref(*pointer)
+            .expect("each value derefs from the plane after reopening");
+        assert_eq!(&back, value, "each writer's value reads back whole");
+    }
+}
+
 /// How many leaves the tree of the same-store test spans at least: more than
 /// the first two tables of reads by name hold, 12 and 24 objects.
 const LEAVES: usize = 37_usize;
