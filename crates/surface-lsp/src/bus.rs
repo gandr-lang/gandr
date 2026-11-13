@@ -101,6 +101,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
 use std::thread;
 
+use gandr_surface_lsp_base::hub::lock;
 use gandr_surface_render_remote::AccountCard;
 use gandr_surface_render_remote::AccountKey;
 use gandr_surface_render_remote::Count;
@@ -117,7 +118,6 @@ use crate::activity::Cadence;
 use crate::activity::Pane;
 #[cfg(feature = "instrument")]
 use crate::activity::Tick;
-use crate::hub::lock;
 use crate::peer::Peer;
 use crate::protocol::DocumentUri;
 use crate::server::Settlement;

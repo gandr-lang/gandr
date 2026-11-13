@@ -98,6 +98,20 @@ use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lsp_base::proposal::Proposal;
+use gandr_surface_lsp_base::proposal::ProposalRefusal;
+use gandr_surface_lsp_base::proposal::actions;
+use gandr_surface_lsp_base::proposal::applied;
+use gandr_surface_lsp_base::proposal::ghosts;
+use gandr_surface_lsp_base::proposal::lenses;
+use gandr_surface_lsp_base::proposal::notes;
+use gandr_surface_lsp_base::proposal::settles;
+use gandr_surface_lsp_base::quiet::Holding;
+use gandr_surface_lsp_base::quiet::Met;
+use gandr_surface_lsp_base::quiet::QUIET;
+use gandr_surface_lsp_base::quiet::formless;
+use gandr_surface_lsp_base::quiet::publishable;
+use gandr_surface_lsp_base::session_trace::SessionTrace;
 use gandr_surface_lsp_base::tokens::ResultId;
 use gandr_surface_lsp_base::tokens::TokenStream;
 use gandr_surface_pretty::Form;
@@ -166,15 +180,7 @@ use crate::paste::copied;
 use crate::peer::Peer;
 use crate::position::Position;
 use crate::position::Range;
-use crate::proposal::Proposal;
-use crate::proposal::ProposalRefusal;
-use crate::proposal::actions;
-use crate::proposal::applied;
 use crate::proposal::check;
-use crate::proposal::ghosts;
-use crate::proposal::lenses;
-use crate::proposal::notes;
-use crate::proposal::settles;
 use crate::protocol::APPLY_FILL;
 use crate::protocol::Answer;
 use crate::protocol::AppliedEdit;
@@ -257,6 +263,7 @@ use crate::protocol::Sections;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::SemanticTokensDelta;
+use crate::protocol::Served;
 use crate::protocol::SetTraceParams;
 use crate::protocol::Settings;
 use crate::protocol::Severity;
@@ -287,12 +294,7 @@ use crate::protocol::WorkspaceFolder;
 use crate::protocol::WorkspaceSymbolParams;
 use crate::protocol::folder_roots;
 use crate::quiet::Deadlines;
-use crate::quiet::Holding;
-use crate::quiet::Met;
-use crate::quiet::QUIET;
-use crate::quiet::formless;
 use crate::quiet::paced;
-use crate::quiet::publishable;
 use crate::reading::Reading;
 use crate::recheck::DocumentSession;
 use crate::recheck::Finished;
@@ -352,7 +354,6 @@ use crate::run::taken;
 use crate::saved::Saved;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
-use crate::session_trace::SessionTrace;
 use crate::shadowed;
 use crate::signature::Opened;
 use crate::signature::Signatures;
@@ -1188,16 +1189,6 @@ impl Held
             None => Maybe::Absent(unheld::Absent::Forgotten),
         }
     }
-}
-
-/// How a session ended.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Served
-{
-    /// `exit` arrived after `shutdown`, or the stream closed after it.
-    Clean,
-    /// `exit` arrived, or the stream closed, before `shutdown`.
-    Abrupt,
 }
 
 /// What handling one message decided.
@@ -10418,6 +10409,9 @@ mod tests
     use gandr_surface_dispatcher::Threads;
     use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::named_path;
+    use gandr_surface_lsp_base::proposal::Proposal;
+    use gandr_surface_lsp_base::proposal::ProposalRefusal;
+    use gandr_surface_lsp_base::proposal::Settles;
     use serde_json::Value;
 
     use super::Admissions;
@@ -10437,9 +10431,6 @@ mod tests
     use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
-    use crate::proposal::Proposal;
-    use crate::proposal::ProposalRefusal;
-    use crate::proposal::Settles;
     use crate::protocol::ChoiceParams;
     use crate::protocol::ContentChange;
     use crate::protocol::DocumentUri;
@@ -19645,7 +19636,7 @@ mod tests
         let mut met = Vec::new();
         let mut nothing = std::io::BufReader::new(&[][..]);
         let _ended = crate::quiet::paced(&mut nothing, inbox, |seen, _deadlines| {
-            let closed = matches!(seen, crate::quiet::Met::Closed);
+            let closed = matches!(seen, gandr_surface_lsp_base::quiet::Met::Closed);
             met.push(format!("{seen:?}"));
             Ok(if closed {
                 core::ops::ControlFlow::Break(())

@@ -12,7 +12,7 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 
 ## Synopsis
 
-**What.** The protocol's messages as serde types, the base protocol's framing and the JSON-RPC envelope, and positions in UTF-16 code units. The semantic token stream and its legend, the forms an inline completion offers, and the markup that colours gandr text in a hover. The edits of a held text, a notebook's cells, the syntax tree view, a session handed across builds, and the process's one grammar. The document's outline, the hints and removals of unused names, the imports a missing name needs, and the hub's watch of the files on disk with the inbox it hands their changes to. `gandr-surface-lsp` names each module at its old path and re-exports each item that it exported before.
+**What.** The protocol's messages as serde types, the base protocol's framing and the JSON-RPC envelope, and positions in UTF-16 code units. The semantic token stream and its legend, the forms an inline completion offers, and the markup that colours gandr text in a hover. The edits of a held text, a notebook's cells, the syntax tree view, a session handed across builds, and the process's one grammar. The document's outline, the hints and removals of unused names, the imports a missing name needs, and the hub's watch of the files on disk with the inbox it hands their changes to. The form under the caret that the quiet publication holds, the checked fills a model proposed, the hub's socket and its relay, and the trace of a session with its replay. `gandr-surface-lsp` names each module at its old path and re-exports each item that it exported before.
 
 **Why.** A cold build of the driver compiles the server after the dispatcher and the session. A part of the server that reads neither compiles in a crate of its own, beside them, and leaves the build's longest chain. Each later split of the server adds its parts here or in a family crate over this one.
 
@@ -34,6 +34,10 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 - The hints of an unused binder and an unused import, and the removal of an unused import ([`unused`](src/unused.rs)).
 - The quick fix that imports a source for a name that names nothing ([`missing`](src/missing.rs)), over the names that sources elsewhere declare ([`elsewhere`](src/elsewhere.rs)).
 - `Inbox`, `Changes`, `Behind` and `Unread`: what a paced loop's reader and its watches hand it ([`inbox`](src/inbox.rs)); on Unix, the hub's watch of the files on disk ([`disk`](src/disk.rs)).
+- `QUIET`, `Holding`, `Met`, `caret_form` and `publishable`: the form under the caret, whose diagnostics the quiet publication holds ([`quiet`](src/quiet.rs)).
+- `Proposal`, `Settles` and `ProposalRefusal`: a checked fill that a model proposed, with its ghost text, its lens, its action and its note ([`proposal`](src/proposal.rs)).
+- `bind`, `relay`, `workspace_name`, `LINGER` and `Relayed`: the hub's socket, its name and the relay of a client's frames ([`hub`](src/hub.rs)).
+- `SessionTrace`, `TraceLine` and `Divergence`: the trace of a session, and where a replay parts from it ([`session_trace`](src/session_trace.rs)).
 
 ## Expected features
 
@@ -54,6 +58,10 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 | The outline | [`outline`](src/outline.rs) |
 | Unused names, missing imports | [`unused`](src/unused.rs), [`missing`](src/missing.rs), [`elsewhere`](src/elsewhere.rs) |
 | The watch of the files on disk | [`disk`](src/disk.rs), [`inbox`](src/inbox.rs) |
+| The quiet publication | [`quiet`](src/quiet.rs) |
+| The checked fills of a model | [`proposal`](src/proposal.rs) |
+| The hub's socket and relay | [`hub`](src/hub.rs) |
+| The trace of a session | [`session_trace`](src/session_trace.rs) |
 
 ## License
 

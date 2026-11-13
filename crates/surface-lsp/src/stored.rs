@@ -31,6 +31,7 @@ use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::StoreAccount;
 use gandr_surface_dispatcher::StoredKind;
 use gandr_surface_dispatcher::StoredRow;
+use gandr_surface_lsp_base::hub::lock;
 use gandr_surface_render_remote::Count;
 use gandr_surface_render_remote::OwedCell;
 use gandr_surface_render_remote::StoreCard;
@@ -40,8 +41,6 @@ use gandr_surface_render_remote::StoreResidence;
 use gandr_surface_render_remote::StoreRow;
 use gandr_surface_render_remote::UnitNumber;
 use quenchant_shape::shape::Maybe;
-
-use crate::hub::lock;
 
 /// The store under a hub's data directory, and its account as the hub read
 /// it last.
