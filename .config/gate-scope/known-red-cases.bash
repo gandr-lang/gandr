@@ -8,6 +8,7 @@
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 script=$here/known-red.bash
+source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 failed=0
@@ -16,18 +17,30 @@ fail() {
   failed=1
 }
 
+# The scratch commits carry the scratch identity and sign nothing, whatever
+# the host's configuration (#7159). A host that signs each commit through a
+# signer that needs a desktop agent fails each signed commit over a remote
+# shell. So the cases run under a global configuration that signs each commit
+# through a signer that always fails.
+printf '[commit]\n\tgpgsign = true\n[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tprogram = false\n' > "$scratch/gitconfig"
+export GIT_CONFIG_GLOBAL=$scratch/gitconfig
 repo=$scratch/repo
 git init -q -b main "$repo"
-git -C "$repo" -c user.name=case -c user.email=case@example.invalid commit -q --allow-empty -m red
+(cd "$repo" && identity)
+git -C "$repo" commit -q --allow-empty -m red
 red=$(git -C "$repo" rev-parse HEAD)
-git -C "$repo" -c user.name=case -c user.email=case@example.invalid commit -q --allow-empty -m base
+git -C "$repo" commit -q --allow-empty -m base
 git -C "$repo" update-ref refs/remotes/origin/landing HEAD
 git -C "$repo" switch -q -c lane
-git -C "$repo" -c user.name=case -c user.email=case@example.invalid commit -q --allow-empty -m change
+git -C "$repo" commit -q --allow-empty -m change
 git -C "$repo" switch -q --orphan apart
-git -C "$repo" -c user.name=case -c user.email=case@example.invalid commit -q --allow-empty -m apart
+git -C "$repo" commit -q --allow-empty -m apart
 apart=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" switch -q lane
+for commit in "$red" "$apart"; do
+  [[ $(git -C "$repo" cat-file commit "$commit") != *gpgsig* ]] \
+    || fail "#7159: a scratch commit signs nothing under a host that signs each commit"
+done
 
 # The body as `known-red.jq` writes it, with the head `$1` and the state `$2`.
 found() {
