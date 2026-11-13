@@ -12,16 +12,22 @@
 //! each key to the receivers of its target as its build ends, and brings mise
 //! to the pin on the builder and on each receiver.
 //!
+//! `host-tools check [--mise-version VERSION]` reads the tools of the
+//! checkout that this host lacks. It prints one line for each of them, and
+//! one line for the host's mise against the pin.
+//!
 //! # Exit codes
 //!
-//! - `0`: the key of each tool stands, and each push and update ended; also
-//!   `--help` and `--version`.
+//! - `0`: the key of each tool stands, and each push and update ended; for
+//!   `check`, the host lacks no tool; also `--help` and `--version`.
 //! - `2`: a tool's build, a push or an update failed, or the run was refused
-//!   before the first build; also a malformed invocation.
+//!   before the first build; for `check`, the host lacks a tool; also a
+//!   malformed invocation.
 
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use core::fmt::Write as _;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -32,7 +38,11 @@ use gandr_workflow_host_tools::Built;
 use gandr_workflow_host_tools::Host;
 use gandr_workflow_host_tools::HostToolsError;
 use gandr_workflow_host_tools::Input;
+use gandr_workflow_host_tools::Json;
+use gandr_workflow_host_tools::Listing;
 use gandr_workflow_host_tools::Lock;
+use gandr_workflow_host_tools::Machine;
+use gandr_workflow_host_tools::Platform;
 use gandr_workflow_host_tools::Processes;
 use gandr_workflow_host_tools::Pruned;
 use gandr_workflow_host_tools::Pushed;
@@ -40,10 +50,13 @@ use gandr_workflow_host_tools::Receiver;
 use gandr_workflow_host_tools::Target;
 use gandr_workflow_host_tools::Version;
 use gandr_workflow_host_tools::build;
+use gandr_workflow_host_tools::disabled;
+use gandr_workflow_host_tools::lacks;
 use gandr_workflow_host_tools::plan;
 use gandr_workflow_host_tools::prune;
 use gandr_workflow_host_tools::push;
 use gandr_workflow_host_tools::retire;
+use gandr_workflow_host_tools::settle;
 use gandr_workflow_host_tools::update;
 
 /// The exit code of a failed build, a refusal or a malformed invocation.
@@ -81,6 +94,14 @@ enum Command
         /// The inputs of the builds.
         #[command(flatten)]
         inputs: Inputs,
+    },
+    /// Reads the tools of the checkout that this host lacks, and the host's
+    /// mise against the pin.
+    Check
+    {
+        /// The pin of mise; the check prints no line for mise when absent.
+        #[arg(long)]
+        mise_version: Option<String>,
     },
 }
 
@@ -163,7 +184,8 @@ fn main() -> ExitCode
 }
 
 /// Runs the subcommand `cli` names: success when each tool's key stands and
-/// each push and update ended, the refusal's code otherwise.
+/// each push and update ended, or when the host lacks no tool; the refusal's
+/// code otherwise.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -175,18 +197,28 @@ fn main() -> ExitCode
 ///   refusal. After each key that stands, the key of each other version of its
 ///   tool goes, with a line `retired` for each. `push` does nothing when the
 ///   configuration names no receiver. Otherwise it brings the builder's mise to
-///   the pin, then builds the target of each receiver as `build` does. After
-///   each build that ends, it copies the key to each receiver of the target and
-///   prints `pushed` or `failed to push` for each copy that runs. Last, it
-///   brings to the pin each receiver that names no path of its mise, and prints
-///   `updated` or `failed to update`. At its end, each subcommand removes the
-///   scratch of the builds when no build holds it, and prints `pruned the
-///   scratch` when it removes it. The result is success when nothing failed,
-///   and the refusal's code otherwise.
+///   the pin, then builds the target of each receiver as `build` does. Before
+///   the first build of a target with tools, it turns automatic installs off on
+///   each receiver of the target, and prints `turned automatic installs off` or
+///   `failed to turn automatic installs off` when that runs. After each build
+///   that ends, it copies the key to each receiver of the target and prints
+///   `pushed` or `failed to push` for each copy that runs. Last, it brings to
+///   the pin each receiver that names no path of its mise, and prints `updated`
+///   or `failed to update`. At its end, `build` and `push` remove the scratch
+///   of the builds when no build holds it, and print `pruned the scratch` when
+///   they remove it. `check` prints `host-tools: <platform> <lack>` for each
+///   tool that the host lacks, in the listing's order, and writes the same
+///   lines without the prefix into
+///   `$XDG_STATE_HOME/gandr/host-tools-needs.txt`; with no lack, it removes
+///   that file. With a pin, it then prints the host's mise against the pin. The
+///   result is success when nothing failed and nothing lacks, and the refusal's
+///   code otherwise.
 /// - provides: the whole subcommand.
 /// - fails: [`HostToolsError::Io`] or [`HostToolsError::Toml`] when the table,
 ///   the lock or the configuration cannot be read; every refusal of [`plan()`];
-///   [`HostToolsError::Output`] when standard output cannot be written.
+///   [`HostToolsError::Command`] when mise cannot answer the check;
+///   [`HostToolsError::Listing`] when its answer is not the JSON the check
+///   reads; [`HostToolsError::Output`] when standard output cannot be written.
 /// - panics: none.
 /// - executable: none — the outcome is the keys on disk, the receivers'
 ///   directories and the bytes on standard output.
@@ -198,11 +230,14 @@ fn main() -> ExitCode
 /// - hypothesis: L3 — a key that stands is kept; a build that the host's
 ///   configuration refuses is named, and the run reports a failure; a push with
 ///   no receiver does nothing; a refused copy is named, and the run reports a
-///   failure.
+///   failure; a host that lacks a tool names it and records the need; a host
+///   that lacks nothing clears its needs.
 /// - witness: `tests::cli::a_key_that_stands_is_kept_and_exits_zero`
 /// - witness: `tests::cli::a_build_the_host_refuses_is_named_and_exits_two`
 /// - witness: `tests::cli::a_push_with_no_receiver_does_nothing`
 /// - witness: `tests::cli::a_refused_copy_is_named_and_exits_two`
+/// - witness: `tests::cli::a_host_that_lacks_a_tool_names_it_and_exits_two`
+/// - witness: `tests::cli::a_host_that_lacks_no_tool_exits_zero_and_clears_its_needs`
 fn run(cli: Cli) -> Result<ExitCode, HostToolsError>
 {
     let mut code = ExitCode::SUCCESS;
@@ -238,8 +273,116 @@ fn run(cli: Cli) -> Result<ExitCode, HostToolsError>
             }
             prune_scratch(&read, &mut code)?;
         },
+        Command::Check { mise_version } => check(
+            mise_version.as_deref().map(Version::from).as_ref(),
+            &mut code,
+        )?,
     }
     Ok(code)
+}
+
+/// A question that the check puts to mise.
+#[derive(Clone, Copy, Debug)]
+enum Query
+{
+    /// The tools of the checkout, `mise ls --current --json`.
+    Tools,
+    /// The tools that the host disables, `mise settings get disable_tools`.
+    Disabled,
+    /// The version of mise, `mise --version`.
+    Version,
+}
+
+/// Read the tools of the checkout in the working directory that this host
+/// lacks, and print one line for each, then the host's mise against `pin`.
+/// A lack sets `code` to the refusal's code.
+///
+/// # Specification
+/// trivial.
+fn check(
+    pin: Option<&Version>,
+    code: &mut ExitCode,
+) -> Result<(), HostToolsError>
+{
+    let platform = Platform::host();
+    let listing = Listing::read(&mise(Query::Tools)?)?;
+    let off = disabled(&mise(Query::Disabled)?)?;
+    let found = lacks(&listing, &off, Machine::host())?;
+    let mut needs = String::new();
+    for lack in &found {
+        say(format_args!("host-tools: {platform} {lack}"))?;
+        writeln!(needs, "{platform} {lack}").map_err(|error| HostToolsError::Output {
+            message: error.to_string(),
+        })?;
+    }
+    let needs_file = state_home().join("gandr").join("host-tools-needs.txt");
+    let io = |error: std::io::Error| HostToolsError::Io {
+        path: needs_file.clone(),
+        message: error.to_string(),
+    };
+    if found.is_empty() {
+        match std::fs::remove_file(&needs_file) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(io(error)),
+            Ok(()) | Err(_) => {},
+        }
+    }
+    else {
+        *code = ExitCode::from(REFUSED);
+        if let Some(parent) = needs_file.parent() {
+            std::fs::create_dir_all(parent).map_err(io)?;
+        }
+        std::fs::write(&needs_file, needs).map_err(io)?;
+    }
+    let Some(pin) = pin
+    else {
+        return Ok(());
+    };
+    let version = mise(Query::Version)?;
+    let text: &str = version.as_ref();
+    let running = text.split_whitespace().next().unwrap_or_default();
+    if *pin == *running {
+        say(format_args!("{platform} runs mise {running}, the pin"))
+    }
+    else {
+        say(format_args!(
+            "{platform} runs mise {running}, off the pin {pin}"
+        ))
+    }
+}
+
+/// Put `query` to mise in the working directory, and give its standard
+/// output.
+///
+/// # Specification
+/// trivial.
+fn mise(query: Query) -> Result<Json, HostToolsError>
+{
+    let args: &[&str] = match query {
+        Query::Tools => &["ls", "--current", "--json"],
+        Query::Disabled => &["settings", "get", "disable_tools"],
+        Query::Version => &["--version"],
+    };
+    let line = format!("mise {}", args.join(" "));
+    let output = std::process::Command::new("mise")
+        .args(args)
+        .output()
+        .map_err(|error| HostToolsError::Command {
+            key: "mise".to_owned(),
+            command: line.clone(),
+            message: error.to_string(),
+        })?;
+    if !output.status.success() {
+        return Err(HostToolsError::Command {
+            key: "mise".to_owned(),
+            command: line,
+            message: format!(
+                "exits with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        });
+    }
+    Ok(Json::from(String::from_utf8_lossy(&output.stdout).as_ref()))
 }
 
 impl Read
@@ -292,6 +435,25 @@ fn build_target(
 ) -> Result<(), HostToolsError>
 {
     let jobs = plan(&read.builds, &read.lock, &read.pin, target)?;
+    for &receiver in receivers.iter().filter(|_| !jobs.is_empty()) {
+        let mut processes = Processes {
+            log: read.logs.join(format!("{}.settings.log", receiver.host)),
+        };
+        match settle(receiver, &read.into, &mut processes) {
+            Ok(Pushed::Standing | Pushed::Skipped) => {},
+            Ok(Pushed::Pushed) => say(format_args!(
+                "turned automatic installs off on {}",
+                receiver.host
+            ))?,
+            Err(error) => {
+                *code = ExitCode::from(REFUSED);
+                say(format_args!(
+                    "failed to turn automatic installs off on {}: {error}",
+                    receiver.host
+                ))?;
+            },
+        }
+    }
     for job in &jobs {
         let started = std::time::Instant::now();
         let mut processes = Processes {
@@ -418,6 +580,20 @@ fn config_home() -> PathBuf
         .filter(|home| !home.is_empty())
         .map_or_else(
             || PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"),
+            PathBuf::from,
+        )
+}
+
+/// The user's state directory: `$XDG_STATE_HOME`, else `$HOME/.local/state`.
+///
+/// # Specification
+/// trivial.
+fn state_home() -> PathBuf
+{
+    std::env::var_os("XDG_STATE_HOME")
+        .filter(|home| !home.is_empty())
+        .map_or_else(
+            || PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"),
             PathBuf::from,
         )
 }

@@ -1756,7 +1756,8 @@ features = ["alloc", "derive"]
 # format, the diagnostics' JSON verbosity level, the render bus's line format
 # and the format its codec witnesses round-trip through, the syntax ledger's
 # machine form, nextest's machine-readable test list, Cargo's build messages,
-# `gh`'s issue listing, Codecov's answers and the prose check's parse.
+# `gh`'s issue listing, Codecov's answers, the prose check's parse and mise's
+# listing of a checkout's tools.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
@@ -1773,6 +1774,7 @@ features = ["alloc", "derive"]
 # - surface-tui
 # - workflow-build-state
 # - workflow-coverage-guard
+# - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-ledger-tasks

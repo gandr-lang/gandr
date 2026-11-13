@@ -64,6 +64,13 @@ pub enum HostToolsError
         /// The error the operating system gave.
         message: String,
     },
+    /// mise's listing of a checkout's tools is not the JSON that the check
+    /// reads.
+    Listing
+    {
+        /// The error of the reader.
+        message: String,
+    },
 }
 
 impl fmt::Display for HostToolsError
@@ -111,6 +118,12 @@ impl fmt::Display for HostToolsError
                 ref message,
             } => write!(f, "{key}: `{command}` {message}"),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Listing { ref message } => {
+                write!(
+                    f,
+                    "mise's listing of the tools is not the JSON it takes: {message}"
+                )
+            },
         }
     }
 }
@@ -172,6 +185,12 @@ mod tests
                     message: "closed".to_owned(),
                 },
                 "standard output: closed",
+            ),
+            (
+                HostToolsError::Listing {
+                    message: "expected a map".to_owned(),
+                },
+                "mise's listing of the tools is not the JSON it takes: expected a map",
             ),
         ];
         for (error, line) in cases {

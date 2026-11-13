@@ -1,11 +1,13 @@
-//! A key copied to each host that receives its target, and mise brought to
-//! the pin on each host.
+//! A key copied to each host that receives its target, automatic installs
+//! turned off there, and mise brought to the pin on each host.
 //!
 //! A key goes into the receiver's mise install directory as it is: the key
 //! holds the layout of a mise install. The key of mise goes to the path of
 //! the receiver's mise. A receiver with no such path, and the builder, take
-//! `mise self-update` to the pin. A marker under `<into>/.pushed/<host>/`
-//! records each push that ends, so a key goes to a host once.
+//! `mise self-update` to the pin. A receiver of keys turns mise's automatic
+//! installs off, so mise installs no binary of another machine there. A
+//! marker under `<into>/.pushed/<host>/` records each push that ends, so a key
+//! goes to a host once.
 
 use std::path::Path;
 
@@ -191,6 +193,64 @@ where
     Ok(Pushed::Pushed)
 }
 
+/// Turn mise's automatic installs off on `receiver`, unless a marker records
+/// it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `ssh <host> <mise> settings set auto_install false` ran, with the
+///   receiver's mise path or `mise`, and the marker
+///   `<into>/.pushed/<host>/auto_install.off` stands; the result is
+///   [`Pushed::Pushed`]. A marker that stands runs nothing and gives
+///   [`Pushed::Standing`]. A refusal leaves no marker.
+/// - provides: the one setting that keeps mise from installing a binary of
+///   another machine on a receiver.
+/// - fails: every refusal of `runner`; [`HostToolsError::Io`] when the marker
+///   cannot be written.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the setting runs over ssh with the receiver's mise, once.
+/// - witness: `push::tests::a_receiver_turns_automatic_installs_off_once`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. } | HostToolsError::Command { .. })))]
+#[inline]
+pub fn settle<R>(
+    receiver: &Receiver,
+    into: &Path,
+    runner: &mut R,
+) -> Result<Pushed, HostToolsError>
+where
+    R: Runner,
+{
+    let host: &Path = receiver.host.as_ref();
+    let marker = into.join(".pushed").join(host).join("auto_install.off");
+    if marker.is_file() {
+        return Ok(Pushed::Standing);
+    }
+    let mise = receiver
+        .mise
+        .as_ref()
+        .map_or_else(|| MISE.to_owned(), ToString::to_string);
+    runner.run(&ToolKey::from(MISE), &Run {
+        program: "ssh".to_owned(),
+        args: vec![
+            receiver.host.to_string(),
+            mise,
+            "settings".to_owned(),
+            "set".to_owned(),
+            "auto_install".to_owned(),
+            "false".to_owned(),
+        ],
+        env: Vec::new(),
+        cwd: None,
+    })?;
+    mark(&marker)?;
+    Ok(Pushed::Pushed)
+}
+
 /// Write the marker `marker`, with its directories.
 ///
 /// # Specification
@@ -215,6 +275,7 @@ mod tests
 
     use super::Pushed;
     use super::push;
+    use super::settle;
     use super::update;
     use crate::build::Runner;
     use crate::error::HostToolsError;
@@ -412,6 +473,30 @@ mod tests
             "mise self-update --yes --no-plugins 2026.11.4",
             "ssh rv mise self-update --yes --no-plugins 2026.11.4",
         ]);
+        std::fs::remove_dir_all(&into).unwrap();
+    }
+
+    #[test]
+    fn a_receiver_turns_automatic_installs_off_once()
+    {
+        let into = scratch();
+        let mut runner = Recording {
+            ran: Vec::new(),
+            fails: false,
+        };
+        let rv = receiver(Some(".cargo/bin/mise".into()));
+        assert_eq!(settle(&rv, &into, &mut runner), Ok(Pushed::Pushed));
+        assert_eq!(settle(&rv, &into, &mut runner), Ok(Pushed::Standing));
+        let other = Receiver {
+            host: "other".into(),
+            ..receiver(None)
+        };
+        assert_eq!(settle(&other, &into, &mut runner), Ok(Pushed::Pushed));
+        assert_eq!(runner.ran, [
+            "ssh rv .cargo/bin/mise settings set auto_install false",
+            "ssh other mise settings set auto_install false",
+        ]);
+        assert!(into.join(".pushed/rv/auto_install.off").is_file());
         std::fs::remove_dir_all(&into).unwrap();
     }
 }
