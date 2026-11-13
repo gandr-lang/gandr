@@ -1187,7 +1187,8 @@ jobs:
               gandr-core-checker gandr-core-incremental gandr-surface-lsp gandr-surface-lsp-base
           - shard: lowering
             packages: &lowering-shard >-
-              gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-pretty
+              gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-lowering-base
+              gandr-surface-pretty
           - shard: rest
             excludes:
               [*dispatcher-shard, *engine-shard, *faces-shard, *checker-shard, *lowering-shard]
