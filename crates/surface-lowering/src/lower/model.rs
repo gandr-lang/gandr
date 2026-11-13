@@ -108,7 +108,6 @@ use super::closed;
 use super::exhausted;
 use super::exits;
 use super::lowered;
-use super::native::NativeRef;
 use crate::by_form::FormStretch;
 use crate::error::AscriptionForm;
 use crate::error::FormFault;
@@ -4033,7 +4032,7 @@ impl<'source> Lowerer<'_, 'source>
                     return Err(Missing::Unlowered);
                 };
                 let frame = self.cx().reading(domain.node).frame();
-                indices.push(NativeRef::over(self.cx()).relocate_value_type(
+                indices.push(self.host_ref().relocate_value_type(
                     id,
                     frame,
                     Telescope::Signature,
@@ -4083,7 +4082,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(Missing::Unlowered);
             };
             let frame = self.cx().reading(entry).frame();
-            indices.push(NativeRef::over(self.cx()).relocate_value_type(
+            indices.push(self.host_ref().relocate_value_type(
                 id,
                 frame,
                 Telescope::Signature,

@@ -1536,6 +1536,35 @@ impl<'source> Lowerer<'_, 'source>
 /// family makes through its host, while the body stands in the lowering.
 impl<'source> Lowerer<'_, 'source>
 {
+    /// The native family's `answered_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn answered_type(
+        &self,
+        answer: native::Answer,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<CompTypeId, lowered::Absent>
+    {
+        NativeRef::over(&self.cx).answered_type(answer, sink)
+    }
+
+    /// The native family's `called_environment`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn called_environment(
+        &self,
+        declared: gandr_surface_lowering_base::lower::native::CalledAt,
+        written: NodeIndex,
+        sink: &Sink<'_>,
+    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>
+    {
+        NativeRef::over(&self.cx).called_environment(declared, written, sink)
+    }
+
     /// The native family's `called_result`.
     ///
     /// # Specification
@@ -1604,6 +1633,55 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         Native::new(self).looped_point(point)
+    }
+
+    /// The native family's `relocate`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn relocate(
+        &self,
+        arena: &mut CoreArena,
+        ty: CompTypeId,
+        from: Frame,
+        telescope: Telescope,
+        lift: Binders,
+        copies: Option<&mut Vec<gandr_core_term::Carried>>,
+    ) -> CompTypeId
+    {
+        NativeRef::over(&self.cx).relocate(arena, ty, from, telescope, lift, copies)
+    }
+
+    /// The native family's `relocate_value_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn relocate_value_type(
+        &self,
+        ty: ValueTypeId,
+        frame: Frame,
+        telescope: Telescope,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        NativeRef::over(&self.cx).relocate_value_type(ty, frame, telescope, sink, origin)
+    }
+
+    /// The native family's `words_point`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn words_point(
+        &self,
+        arena: &mut CoreArena,
+        words: &crate::module::WordsForm,
+    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>
+    {
+        NativeRef::over(&self.cx).words_point(arena, words)
     }
 
     /// The native family's `written_telescope`.
