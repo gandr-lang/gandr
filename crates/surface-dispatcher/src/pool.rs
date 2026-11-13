@@ -1082,12 +1082,15 @@ enum Taken
     Idle,
 }
 
-/// How many releases a chained schedule puts off for each release that it
-/// tries beside a running job. A schedule runs as a chain after a release
-/// holds while a job runs: the next release reads what that job commits, so
-/// the calling thread runs the job itself, and a hand-off would only cost a
-/// task's start. A try stages the item and gives the staging back when it
-/// holds, so a chain spends one try in 64 releases on finding parallel work.
+/// The most releases that a chained schedule puts off between two releases
+/// that it tries beside a running job. A schedule runs as a chain after a
+/// release holds while a job runs: the next release reads what that job
+/// commits, so the calling thread runs the job itself, and a hand-off would
+/// only cost a task's start. A try stages the item and gives the staging back
+/// when it holds. The first try comes at the next release, and each try that
+/// holds doubles the interval up to this bound (#7336). So a short module
+/// finds its parallel work at once, and a long chain spends one try in 64
+/// releases.
 const CHAIN_PROBE: usize = 64;
 
 /// One schedule's state that its tasks share.
@@ -1429,6 +1432,7 @@ where
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
     /// - witness: `pool::tests::a_chained_schedule_runs_its_jobs_on_the_calling_thread`
     /// - witness: `pool::tests::a_schedule_releases_at_most_a_window_ahead_of_its_commits_7299`
+    /// - witness: `pool::tests::a_short_chain_tries_a_release_beside_its_running_job_7336`
     fn drive<'scope, Item, Release, Commit>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
@@ -1447,14 +1451,15 @@ where
         let count = items.len();
         // The next item to release, the released jobs that are not committed,
         // the items committed, whether a release holds, whether the schedule
-        // runs as a chain, and the releases that the chain put off since its
-        // last try.
+        // runs as a chain, the releases that the chain put off since its last
+        // try, and the releases between two tries.
         let mut next = ItemIndex(0);
         let mut outstanding = 0_usize;
         let mut committed = 0_usize;
         let mut holding = false;
         let mut chained = false;
         let mut put_off = 0_usize;
+        let mut interval = 1_usize;
         // The window is the capacity of the lanes: a full lane and one more
         // job for each lane. A released job holds what its run reads until its
         // commit. That is its check's support, one stamp for each position of
@@ -1474,12 +1479,12 @@ where
             };
         while committed < count {
             while !holding && outstanding < window && waiting.free(next) == Released::Free {
-                // A chain releases beside a running job only once in
-                // `CHAIN_PROBE` releases: each other try stages the item and
-                // then gives the staging back.
+                // A chain releases beside a running job once in `interval`
+                // releases: each other try stages the item and then gives the
+                // staging back.
                 if chained && outstanding > 0 {
                     put_off = put_off.saturating_add(1);
-                    if put_off < CHAIN_PROBE {
+                    if put_off < interval {
                         break;
                     }
                     put_off = 0;
@@ -1505,6 +1510,14 @@ where
                         }
                     },
                     Releasing::Held(_) if outstanding > 0 => {
+                        // The first hold of a chain tries again at the next
+                        // release, and each later hold doubles the interval.
+                        interval = if chained {
+                            interval.saturating_mul(2).min(CHAIN_PROBE)
+                        }
+                        else {
+                            1
+                        };
                         chained = true;
                         holding = true;
                     },
@@ -2847,14 +2860,70 @@ mod tests
             elsewhere <= 1,
             "only the job before the first hold leaves the calling thread, not {elsewhere}"
         );
+        // The intervals double from one release to `CHAIN_PROBE`, so the
+        // tries that hold are the doublings and one in each `CHAIN_PROBE`
+        // releases after them.
+        let doublings = usize::try_from(CHAIN_PROBE.ilog2())
+            .unwrap()
+            .saturating_add(1);
         assert!(
             releases.get()
                 <= count
                     .saturating_add(1)
+                    .saturating_add(doublings)
                     .saturating_add(count.checked_div(CHAIN_PROBE).unwrap_or_default()),
-            "a chain tries one release beside a running job in {CHAIN_PROBE}, not {} releases for {count} items",
+            "a chain doubles its interval up to {CHAIN_PROBE}, not {} releases for {count} items",
             releases.get()
         );
+    }
+
+    /// A chain tries a release beside its running job at the next release
+    /// after its first hold. So a module shorter than `CHAIN_PROBE` finds the
+    /// jobs that can run at once (#7336).
+    #[test]
+    fn a_short_chain_tries_a_release_beside_its_running_job_7336()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let count = 27_usize;
+        // The second item reads what the first commits, and no other item
+        // reads another, as in a short module whose second declaration names
+        // its first.
+        let first = core::cell::Cell::new(false);
+        let pending = core::cell::Cell::new(0_usize);
+        let beside = core::cell::Cell::new(None);
+        let mut items = alloc::vec![usize::MAX; count];
+        pool.schedule(
+            &mut items,
+            &Dependences::default(),
+            |position, _item| {
+                let position = usize::from(position);
+                if position == 1 && !first.get() {
+                    return Releasing::<usize, usize>::Held(position);
+                }
+                if pending.get() > 0 && beside.get().is_none() {
+                    beside.set(Some(position));
+                }
+                pending.set(pending.get().saturating_add(1));
+                Releasing::Run(position)
+            },
+            |job| job,
+            |position, item, out| {
+                if usize::from(position) == 0 {
+                    first.set(true);
+                }
+                pending.set(pending.get().saturating_sub(1));
+                *item = out;
+            },
+        );
+        assert_eq!(
+            beside.get(),
+            Some(2),
+            "the item after the hold is tried beside the job of the held item"
+        );
+        let expected: Vec<usize> = (0 .. count).collect();
+        assert_eq!(items, expected, "each item commits its own job");
     }
 
     #[test]
