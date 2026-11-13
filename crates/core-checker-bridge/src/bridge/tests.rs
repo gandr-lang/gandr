@@ -9814,3 +9814,811 @@ fn an_undecided_pair_crosses_with_its_second_certificate_3557()
         "no reflexivity whose pair the tier met has the point `a`"
     );
 }
+
+/// The name of a declaration of a generated module that a readmission keeps
+/// from its record: stable across edits, so a declaration an edit leaves
+/// keeps its key.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Named(u32);
+
+/// The shape of one declaration of a generated module. A reference names a
+/// declaration by its name, as a canonical content names it by its item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Shape
+{
+    /// `def x : Type = Integer`.
+    Code,
+    /// `def x : Integer = k`.
+    Value(u8),
+    /// `def x : Type = c`: an alias of the code `c`.
+    Alias(Named),
+    /// `def x : El(c) = k`: its erasure unfolds the code `c`.
+    Element(Named, u8),
+    /// `def x : Integer = v`: a copy of the integer `v`.
+    Copy(Named),
+    /// `def x : Integer = sub k k`: a reader of the native `sub`, which a
+    /// readmission seeds below its first reader.
+    Native(u8),
+}
+
+/// One declaration of a generated module: its name and its shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Shaped
+{
+    /// The name, stable across edits.
+    name: Named,
+    /// The shape.
+    shape: Shape,
+}
+
+/// A drawn shape before its reference is chosen among the declarations
+/// before it.
+#[derive(Clone, Copy, Debug)]
+struct Drawn
+{
+    /// The shape's kind, one of six.
+    kind: u8,
+    /// Which declaration of the kind it reads a reference names.
+    choice: u16,
+    /// The literal a value or an element holds.
+    literal: u8,
+}
+
+/// One edit of a generated module, each place taken modulo its bound.
+#[derive(Clone, Copy, Debug)]
+enum ModuleEdit
+{
+    /// The declaration at a place takes a drawn shape: an edit of a literal
+    /// or of a reference.
+    Replaced(u16, Drawn),
+    /// A new definition at a place.
+    Inserted(u16, Drawn),
+    /// The declaration at a place is deleted.
+    Deleted(u16),
+    /// The declaration at one place moves to another.
+    Moved(u16, u16),
+    /// No declaration changes: a new space, which no content holds.
+    Unedited,
+}
+
+/// The drawn shapes.
+///
+/// # Specification
+/// trivial.
+fn drawn() -> impl proptest::strategy::Strategy<Value = Drawn>
+{
+    use proptest::strategy::Strategy as _;
+    (0_u8 .. 6, proptest::prelude::any::<u16>(), 0_u8 .. 3).prop_map(|(kind, choice, literal)| {
+        Drawn {
+            kind,
+            choice,
+            literal,
+        }
+    })
+}
+
+/// The edits of each class, the classes of #6621's probe.
+///
+/// # Specification
+/// trivial.
+fn module_edits() -> [proptest::strategy::BoxedStrategy<ModuleEdit>; 5]
+{
+    use proptest::prelude::any;
+    use proptest::strategy::Strategy as _;
+    [
+        (any::<u16>(), drawn())
+            .prop_map(|(at, drawn)| ModuleEdit::Replaced(at, drawn))
+            .boxed(),
+        (any::<u16>(), drawn())
+            .prop_map(|(at, drawn)| ModuleEdit::Inserted(at, drawn))
+            .boxed(),
+        any::<u16>().prop_map(ModuleEdit::Deleted).boxed(),
+        (any::<u16>(), any::<u16>())
+            .prop_map(|(from, to)| ModuleEdit::Moved(from, to))
+            .boxed(),
+        proptest::strategy::Just(ModuleEdit::Unedited).boxed(),
+    ]
+}
+
+/// The shape `drawn` gives a declaration after `earlier`: a reference names
+/// one of `earlier` of the kind it reads, and a shape with none to name
+/// reads no declaration.
+///
+/// # Specification
+/// trivial.
+fn shaped(
+    drawn: Drawn,
+    earlier: &[Shaped],
+) -> Shape
+{
+    let of = |code: bool| {
+        earlier
+            .iter()
+            .filter(|declaration| {
+                !matches!(declaration.shape, Shape::Native(_))
+                    && matches!(declaration.shape, Shape::Code | Shape::Alias(_)) == code
+            })
+            .map(|declaration| declaration.name)
+            .collect::<Vec<Named>>()
+    };
+    let pick = |names: Vec<Named>| {
+        usize::from(drawn.choice)
+            .checked_rem(names.len())
+            .and_then(|at| names.get(at))
+            .copied()
+    };
+    match drawn.kind {
+        0 => Shape::Code,
+        2 => pick(of(true)).map_or(Shape::Code, Shape::Alias),
+        3 => pick(of(true)).map_or(Shape::Value(drawn.literal), |code| {
+            Shape::Element(code, drawn.literal)
+        }),
+        4 => pick(of(false)).map_or(Shape::Value(drawn.literal), Shape::Copy),
+        5 => Shape::Native(drawn.literal),
+        _ => Shape::Value(drawn.literal),
+    }
+}
+
+/// The module `draws` give, each declaration named by its place.
+///
+/// # Specification
+/// trivial.
+fn generated(draws: &[Drawn]) -> Vec<Shaped>
+{
+    let mut module = Vec::with_capacity(draws.len());
+    for (place, &drawn) in draws.iter().enumerate() {
+        let shape = shaped(drawn, &module);
+        module.push(Shaped {
+            name: Named(u32::try_from(place).unwrap()),
+            shape,
+        });
+    }
+    module
+}
+
+/// `module` after `edit`, a new declaration named `fresh`.
+///
+/// # Specification
+/// trivial.
+fn edited(
+    module: &mut Vec<Shaped>,
+    edit: ModuleEdit,
+    fresh: Named,
+)
+{
+    let at = |raw: u16, bound: usize| usize::from(raw).checked_rem(bound).unwrap_or(0);
+    match edit {
+        ModuleEdit::Replaced(raw, drawn) if !module.is_empty() => {
+            let place = at(raw, module.len());
+            let shape = shaped(drawn, module.get(.. place).unwrap_or_default());
+            if let Some(declaration) = module.get_mut(place) {
+                declaration.shape = shape;
+            }
+        },
+        ModuleEdit::Inserted(raw, drawn) => {
+            let place = at(raw, module.len().saturating_add(1));
+            let shape = shaped(drawn, module.get(.. place).unwrap_or_default());
+            module.insert(place, Shaped { name: fresh, shape });
+        },
+        ModuleEdit::Deleted(raw) if !module.is_empty() => {
+            let _deleted = module.remove(at(raw, module.len()));
+        },
+        ModuleEdit::Moved(from, to) if !module.is_empty() => {
+            let moved = module.remove(at(from, module.len()));
+            module.insert(at(to, module.len().saturating_add(1)), moved);
+        },
+        ModuleEdit::Replaced(..)
+        | ModuleEdit::Deleted(_)
+        | ModuleEdit::Moved(..)
+        | ModuleEdit::Unedited => {},
+    }
+}
+
+/// `module` judged over a fresh arena, with the key of each declaration: its
+/// name and its shape, each reference by the name it names.
+///
+/// # Specification
+/// trivial.
+fn keyed_module(module: &[Shaped]) -> (CoreArena, ModuleReport, Vec<super::DeclarationKey>)
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let sub = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "sub")
+        .unwrap();
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let code = arena.value_quote(integer);
+    let literal = |arena: &mut CoreArena, value: u8| {
+        arena.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{value}")).unwrap(),
+            ),
+        ))
+    };
+    let mut declarations = Vec::with_capacity(module.len());
+    let mut keys = Vec::with_capacity(module.len());
+    for (place, entry) in module.iter().enumerate() {
+        let named = |name: Named| {
+            ConstantIndex::from(
+                module
+                    .get(.. place)
+                    .unwrap_or_default()
+                    .iter()
+                    .position(|earlier| earlier.name == name)
+                    .unwrap_or(place),
+            )
+        };
+        let (declared, defined, tag, read, value) = match entry.shape {
+            Shape::Code => (small, code, 0_u64, 0_u32, 0_u8),
+            Shape::Value(value) => (integer, literal(&mut arena, value), 1, 0, value),
+            Shape::Alias(read) => (small, arena.value_constant(named(read)), 2, read.0, 0),
+            Shape::Element(read, value) => {
+                let head = arena.value_constant(named(read));
+                let decoded = arena.value_type_element(head, Level::zero());
+                (decoded, literal(&mut arena, value), 3, read.0, value)
+            },
+            Shape::Copy(read) => (integer, arena.value_constant(named(read)), 4, read.0, 0),
+            Shape::Native(value) => {
+                let operand = literal(&mut arena, value);
+                let saturated =
+                    arena.computation_primitive(sub, Arguments::Binary([operand, operand]));
+                let returns = arena.comp_type_returner(integer);
+                (
+                    arena.value_type_thunk(returns),
+                    arena.value_thunk(saturated),
+                    5,
+                    0,
+                    value,
+                )
+            },
+        };
+        declarations.push(declaration(
+            At(place),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+        ));
+        keys.push(Maybe::Present(ContentDigest::new(
+            gandr_kernel_check_memo::DigestWord::from(u64::from(entry.name.0)),
+            gandr_kernel_check_memo::DigestWord::from(
+                (tag << 56_u32) | (u64::from(read) << 8_u32) | u64::from(value),
+            ),
+        )));
+    }
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &declarations)
+    };
+    (arena, report, keys)
+}
+
+/// The structured name of each declaration of `module`, by its position.
+///
+/// # Specification
+/// trivial.
+fn names_of(module: &[Shaped]) -> BTreeMap<ConstantIndex, StructuredName>
+{
+    module
+        .iter()
+        .enumerate()
+        .map(|(place, declaration)| {
+            (
+                ConstantIndex::from(place),
+                StructuredName::from(vec![
+                    NameSegment::from_text(alloc::format!("d{}", declaration.name.0)).unwrap(),
+                ]),
+            )
+        })
+        .collect()
+}
+
+/// One entry of a readmission as two readmissions of one module agree on
+/// it: its position, its origin, its outcome and the certificates it
+/// replayed.
+type Agreed = (
+    ConstantIndex,
+    OriginToken,
+    String,
+    Vec<(Unfolded, KernelVerdict)>,
+);
+
+/// The entries of `readmission` as two readmissions of one module agree on
+/// it: its position, its origin, the certificates it replayed and its
+/// outcome, an admitted one read up to the kernel position it took.
+///
+/// # Specification
+/// trivial.
+fn agreed(readmission: &Readmission) -> Vec<Agreed>
+{
+    readmission
+        .readmitted()
+        .iter()
+        .map(|entry| {
+            let outcome = match *entry.outcome() {
+                Outcome::Defined { .. } => String::from("defined"),
+                Outcome::Data { .. } => String::from("data"),
+                Outcome::Assumed { .. } => String::from("assumed"),
+                ref other @ (Outcome::Marked(_)
+                | Outcome::Suspended
+                | Outcome::Static
+                | Outcome::Refused(_)
+                | Outcome::Rejected(_)) => alloc::format!("{other:?}"),
+            };
+            (entry.constant(), entry.origin(), outcome, steps(entry))
+        })
+        .collect()
+}
+
+/// The record a readmission answered, borrowed.
+///
+/// # Specification
+/// trivial.
+fn held(record: &Maybe<super::Crossed, crossed::Absent>)
+-> Maybe<&super::Crossed, crossed::Absent>
+{
+    match *record {
+        Maybe::Present(ref record) => Maybe::Present(record),
+        Maybe::Absent(absent) => Maybe::Absent(absent),
+    }
+}
+
+/// Readmit the module `draws` give, then each module `edits` make of it in
+/// turn, keeping from the record of the readmission before: each answers as
+/// a whole readmission of its module answers, entry by entry and to the
+/// bytes of its export, and an unedited one keeps every declaration.
+///
+/// # Specification
+/// trivial.
+fn keeps_as_whole(
+    draws: &[Drawn],
+    edits: &[ModuleEdit],
+) -> Result<(), TestCaseError>
+{
+    let mut module = generated(draws);
+    let mut fresh = u32::try_from(module.len()).unwrap_or(u32::MAX);
+    let (mut arena, report, keys) = keyed_module(&module);
+    let (_, mut record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    for &edit in edits {
+        edited(&mut module, edit, Named(fresh));
+        fresh = fresh.saturating_add(1);
+        let (mut arena, report, keys) = keyed_module(&module);
+        let (kept, next) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(&record)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+        )
+        .whole();
+        let (mut whole_arena, whole_report, _) = keyed_module(&module);
+        let whole = readmit(&mut whole_arena, &whole_report);
+        prop_assert_eq!(
+            agreed(&kept),
+            agreed(&whole),
+            "each entry agrees after {:?}",
+            edit
+        );
+        prop_assert_eq!(
+            kept.export(names_of(&module)),
+            whole.export(names_of(&module)),
+            "the export is the whole one's after {:?}",
+            edit
+        );
+        if matches!(edit, ModuleEdit::Unedited) && matches!(record, Maybe::Present(_)) {
+            let unoffered = kept
+                .readmitted()
+                .iter()
+                .filter(|entry| {
+                    matches!(
+                        entry.outcome(),
+                        Outcome::Marked(_) | Outcome::Suspended | Outcome::Refused(_)
+                    )
+                })
+                .count();
+            prop_assert_eq!(
+                usize::from(kept.kept()).saturating_add(unoffered),
+                report.judged().len(),
+                "an unedited module offers the kernel nothing"
+            );
+        }
+        record = next;
+    }
+    Ok(())
+}
+
+/// #6846: for each class of edit of #6621's probe, a readmission that keeps
+/// the entries an edit leaves answers as a whole readmission of the edited
+/// module, entry by entry and to the bytes of its export. Each class runs 64
+/// generated modules, each edited by one edit of the class and then by up to
+/// two edits of any class, each kept from the record before it: 320 cases in
+/// all, drawn by a fixed seed.
+#[test]
+fn a_kept_readmission_answers_as_a_whole_one_6846()
+{
+    for (class, first) in module_edits().into_iter().enumerate() {
+        let mut runner = proptest::test_runner::TestRunner::new_with_rng(
+            ProptestConfig::with_cases(64),
+            proptest::test_runner::TestRng::deterministic_rng(
+                proptest::test_runner::RngAlgorithm::ChaCha,
+            ),
+        );
+        let any_edit = proptest::strategy::Union::new(module_edits());
+        let ran = runner.run(
+            &(
+                proptest::collection::vec(drawn(), 1 .. 10),
+                first,
+                proptest::collection::vec(any_edit, 0 .. 3),
+            ),
+            |(draws, first, rest)| {
+                let edits: Vec<ModuleEdit> = core::iter::once(first).chain(rest).collect();
+                keeps_as_whole(&draws, &edits)
+            },
+        );
+        assert!(ran.is_ok(), "class {class}: {ran:?}");
+    }
+}
+
+/// #6846: a readmission retires the reach of an edit and no suffix of the
+/// entries. The edit of `n2`'s literal leaves `n3`, after it, live at the
+/// kernel position it took, and the readmission offers the kernel `n2`
+/// alone.
+#[test]
+fn a_kept_readmission_retires_no_suffix_6846()
+{
+    let first = [
+        Shaped {
+            name: Named(0),
+            shape: Shape::Code,
+        },
+        Shaped {
+            name: Named(1),
+            shape: Shape::Value(0),
+        },
+        Shaped {
+            name: Named(2),
+            shape: Shape::Element(Named(0), 1),
+        },
+        Shaped {
+            name: Named(3),
+            shape: Shape::Copy(Named(1)),
+        },
+    ];
+    let (mut arena, report, keys) = keyed_module(&first);
+    let (whole, record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    let after = crossed_at(&whole, At(3));
+    let mut second = first;
+    second[2].shape = Shape::Element(Named(0), 2);
+    let (mut arena, report, keys) = keyed_module(&second);
+    let (kept, _) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, held(&record)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    assert_eq!(
+        usize::from(kept.kept()),
+        3,
+        "the readmission offers `n2` alone, the reach of the edit"
+    );
+    assert!(
+        kept.environment()
+            .entries()
+            .get(usize::from(after))
+            .is_some(),
+        "`n3`, after the edit and outside its reach, stays live where it was admitted"
+    );
+    assert_eq!(crossed_at(&kept, At(3)), after);
+}
+
+/// One declaration of a module whose declarations read the native `sub`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reader
+{
+    /// `def minus : Integer → Integer → Integer = sub`.
+    Minus,
+    /// `def zero : Integer = sub 0 0`.
+    Zero,
+    /// `def plain : Integer = 0`, which reads no native.
+    Plain,
+}
+
+/// The module of `readers`, judged, each keyed by its reader.
+///
+/// # Specification
+/// trivial.
+fn native_module(readers: &[Reader]) -> (CoreArena, ModuleReport, Vec<super::DeclarationKey>)
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let sub = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "sub")
+        .unwrap();
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let mut declarations = Vec::with_capacity(readers.len());
+    let mut keys = Vec::with_capacity(readers.len());
+    for (place, &reader) in readers.iter().enumerate() {
+        let (declared, defined, tag) = match reader {
+            Reader::Minus => {
+                let function = sub.thunk(&mut arena);
+                let declared = sub.declared_type(&mut arena);
+                (arena.value_type_thunk(declared), function, 0_u64)
+            },
+            Reader::Zero => {
+                let zero = arena.value_literal(integer_literal());
+                let saturated = arena.computation_primitive(sub, Arguments::Binary([zero, zero]));
+                let returns = arena.comp_type_returner(integer);
+                (
+                    arena.value_type_thunk(returns),
+                    arena.value_thunk(saturated),
+                    1,
+                )
+            },
+            Reader::Plain => (integer, arena.value_literal(integer_literal()), 2),
+        };
+        declarations.push(declaration(
+            At(place),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+        ));
+        keys.push(Maybe::Present(ContentDigest::new(
+            gandr_kernel_check_memo::DigestWord::from(tag),
+            gandr_kernel_check_memo::DigestWord::from(0_u64),
+        )));
+    }
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &declarations)
+    };
+    (arena, report, keys)
+}
+
+/// #6846: a seed stands just below its first reader. When the edit deletes
+/// that reader, the seed retires with each entry that reads it, and the
+/// next reader seeds it again just below itself; with no reader left, the
+/// seed retires and the export holds no `sub`. Each answers the bytes of a
+/// whole readmission.
+#[test]
+fn a_seed_whose_first_reader_leaves_retires_6846()
+{
+    for (before, after, kept) in [
+        (
+            &[Reader::Minus, Reader::Zero][..],
+            &[Reader::Zero][..],
+            0_usize,
+        ),
+        (&[Reader::Minus, Reader::Plain][..], &[Reader::Plain][..], 1),
+    ] {
+        let (mut arena, report, keys) = native_module(before);
+        let (first, record) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+        )
+        .whole();
+        let seeded = usize::from(crossed_at(&first, At(0)))
+            .checked_sub(1)
+            .expect("`sub` is seeded below `minus`");
+        let (mut arena, report, keys) = native_module(after);
+        let (readmitted, _) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(&record)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+        )
+        .whole();
+        let (mut whole_arena, whole_report, _) = native_module(after);
+        let whole = readmit(&mut whole_arena, &whole_report);
+        assert_eq!(usize::from(readmitted.kept()), kept, "{after:?}");
+        assert!(
+            readmitted.environment().entries().get(seeded).is_none(),
+            "the seed its first reader left retires: {after:?}"
+        );
+        assert_eq!(
+            readmitted.export(BTreeMap::new()),
+            whole.export(BTreeMap::new()),
+            "the export is the whole one's: {after:?}"
+        );
+        let natives = decode(readmitted.export(BTreeMap::new()).as_image())
+            .unwrap()
+            .declarations()
+            .iter()
+            .filter(|declaration| {
+                declaration
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .eq(["sub"])
+            })
+            .count();
+        assert_eq!(
+            natives,
+            usize::from(after.contains(&Reader::Zero)),
+            "`sub` is held only while a reader reads it: {after:?}"
+        );
+    }
+}
+
+/// #7196: a crossing that reads a kept seed first takes the seed below
+/// itself, where a fresh admission seeds it. `sub` is seeded below `minus`;
+/// the edit puts `zero`, which reads `sub` too, before `plain`. The
+/// readmission keeps `plain` and `minus`, moves `sub` below `zero` with no
+/// entry retired or seeded again, and answers the bytes of a whole one. The
+/// next edit deletes `zero`: the first reader of `sub` by rank is gone, so
+/// `sub` retires with `minus`, and `minus` seeds it again below itself.
+#[test]
+fn a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196()
+{
+    let (mut arena, report, keys) = native_module(&[Reader::Plain, Reader::Minus]);
+    let (_, mut record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    for (after, kept, entries) in [
+        (
+            &[Reader::Zero, Reader::Plain, Reader::Minus][..],
+            2_usize,
+            4_usize,
+        ),
+        (&[Reader::Plain, Reader::Minus][..], 1, 6),
+    ] {
+        let (mut arena, report, keys) = native_module(after);
+        let (readmitted, next) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(&record)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+        )
+        .whole();
+        let (mut whole_arena, whole_report, _) = native_module(after);
+        let whole = readmit(&mut whole_arena, &whole_report);
+        assert_eq!(usize::from(readmitted.kept()), kept, "{after:?}");
+        assert_eq!(
+            usize::from(readmitted.environment().entries().len()),
+            entries,
+            "the entries live and retired: {after:?}"
+        );
+        assert_eq!(
+            readmitted.export(BTreeMap::new()),
+            whole.export(BTreeMap::new()),
+            "the export is the whole one's: {after:?}"
+        );
+        record = next;
+    }
+}
+
+/// #6846: a keeping readmission retired part way leaves the record it
+/// started from whole: the record's environment keeps each live entry at its
+/// rank, and a readmission from it after answers as a whole one.
+#[test]
+fn a_retired_keeping_readmission_leaves_its_record_whole_6846()
+{
+    let first = [
+        Shaped {
+            name: Named(0),
+            shape: Shape::Value(0),
+        },
+        Shaped {
+            name: Named(1),
+            shape: Shape::Value(1),
+        },
+        Shaped {
+            name: Named(2),
+            shape: Shape::Copy(Named(1)),
+        },
+    ];
+    let (mut arena, report, keys) = keyed_module(&first);
+    let (_, record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    let Maybe::Present(ref recorded) = record
+    else {
+        panic!("every declaration is admitted, so the record holds them: {record:?}");
+    };
+    let ranked = |crossed: &super::Crossed| {
+        crossed
+            .environment
+            .in_rank_order()
+            .map(|position| {
+                (
+                    position,
+                    crossed
+                        .environment
+                        .entries()
+                        .get(usize::from(position))
+                        .map(gandr_kernel_core::AdmittedDeclaration::rank),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = ranked(recorded);
+    let mut second = first;
+    second[1].shape = Shape::Value(2);
+    let (mut arena, report, keys) = keyed_module(&second);
+    let retired = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, held(&record)),
+        &Recall::recheck(),
+        &RetireAt {
+            at: 2,
+            readings: core::cell::Cell::new(0),
+        },
+        &mut Untimed,
+    );
+    assert!(
+        matches!(
+            retired,
+            Polled::Retired((), Maybe::Absent(crossed::Absent::Kept))
+        ),
+        "retired part way, a keeping readmission records nothing"
+    );
+    assert_eq!(
+        ranked(recorded),
+        before,
+        "the record keeps each live entry at its rank"
+    );
+    let (kept, _) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, held(&record)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    let (mut whole_arena, whole_report, _) = keyed_module(&second);
+    let whole = readmit(&mut whole_arena, &whole_report);
+    assert_eq!(
+        kept.export(names_of(&second)),
+        whole.export(names_of(&second)),
+        "the readmission after it answers as a whole one"
+    );
+}

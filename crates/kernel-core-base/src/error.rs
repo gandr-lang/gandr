@@ -710,6 +710,13 @@ pub enum KeepRefusal
     /// it was admitted under: an input of the check changed, its precedence
     /// among them.
     KeyChanged,
+    /// A rank rewrite names a live entry twice, or leaves a live entry
+    /// unnamed: each live entry takes one rank and keeps it.
+    Ranks,
+    /// A move to the next rank finds no next rank set, an entry that ranks
+    /// below it, or an input of the entry's check at or past it: the entry
+    /// would read an input ranked at or above itself.
+    NextRank,
 }
 
 /// Every way the kernel refuses a declaration.

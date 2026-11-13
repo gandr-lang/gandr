@@ -2617,6 +2617,79 @@ impl Entries
         }
     }
 
+    /// Give each live entry that `ranks` names its rank there, in the entries
+    /// and in the tables kept beside them.
+    ///
+    /// # Specification
+    /// - requires: each position `ranks` names is live, and no two take one
+    ///   rank.
+    /// - ensures: each such entry holds its new rank; the presented types and
+    ///   the types of words over each sort hold it too, and the plain
+    ///   definitions of each content stand by rank ascending again; every other
+    ///   entry is as it was.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as `Environment::rerank`.
+    /// - witness: `gandr-kernel-core::environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    #[spec(requires: ranks.keys().all(|&position| self.live(position).is_some()),
+        ensures: ranks.iter().all(|(&position, &rank)| self.rank_of(position) == Some(rank)))]
+    #[inline]
+    pub fn rerank(
+        &mut self,
+        ranks: &BTreeMap<ConstantIndex, SourceRank>,
+    )
+    {
+        let log = self.log_mut();
+        for (&position, &rank) in ranks {
+            if let Some(entry) = log
+                .family
+                .get_mut(usize::from(position))
+                .and_then(Slot::admitted_mut)
+            {
+                entry.rank = rank;
+            }
+        }
+        log.presentations.rerank(ranks);
+        let EntryLog {
+            ref family,
+            ref mut definitions,
+            ..
+        } = *log;
+        for positions in definitions.values_mut() {
+            positions.sort_unstable_by_key(|&held| {
+                family
+                    .get(usize::from(held))
+                    .and_then(Slot::admitted)
+                    .map(|entry| entry.rank)
+            });
+        }
+    }
+
+    /// Name the entry at `position` `key_name`: the name a fresh admission at
+    /// its rank gives a plain definition, once a rank rewrite moves the twins
+    /// of its content.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn rename(
+        &mut self,
+        position: ConstantIndex,
+        key_name: ConstantName,
+    )
+    {
+        if let Some(entry) = self
+            .log_mut()
+            .family
+            .get_mut(usize::from(position))
+            .and_then(Slot::admitted_mut)
+        {
+            entry.key_name = key_name;
+        }
+    }
+
     /// Keep the first `length` entries, dropping later ones and their rows in
     /// the tables kept beside them.
     ///

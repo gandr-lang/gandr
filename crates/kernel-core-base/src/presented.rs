@@ -366,6 +366,38 @@ impl Presentations
         }
     }
 
+    /// These presentations with each row at the rank `ranks` gives its
+    /// position: the rows of the live entries after a readmission rewrites
+    /// their ranks. A row whose position `ranks` does not hold keeps its
+    /// rank.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn rerank(
+        &mut self,
+        ranks: &BTreeMap<ConstantIndex, SourceRank>,
+    )
+    {
+        let Some(shared) = self.table.as_mut()
+        else {
+            return;
+        };
+        let table = Arc::make_mut(shared);
+        for (position, presented) in &mut table.types {
+            if let Some(&rank) = ranks.get(position) {
+                presented.rank = rank;
+            }
+        }
+        for words in table.words.values_mut() {
+            for &mut (ref mut rank, position) in words.iter_mut() {
+                if let Some(&new) = ranks.get(&position) {
+                    *rank = new;
+                }
+            }
+            words.sort_unstable_by_key(|&(rank, _)| rank);
+        }
+    }
+
     /// The types of words whose cells loop in the sort at `sort`, by rank
     /// ascending.
     ///
