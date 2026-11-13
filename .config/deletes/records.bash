@@ -2,8 +2,8 @@
 # Writes the evidence records of each package to `<out>`, as the record run
 # of `check.bash` builds them at `<tree>` (#6823). Each package's records come
 # from a cache when its key and its inputs outside the key are the same as
-# when they were built. The rest build in one `cargo dylint` run, and that
-# run writes an entry for each package that it builds.
+# when they were built. Each other package builds in a `cargo dylint` run of
+# its own, and that run writes the entry of the package (#6861).
 #
 # One entry holds the record files of one package: each file whose name
 # starts with the package's directory, as `crates_<dir>_`. A run also writes
@@ -13,10 +13,12 @@
 # The key is the SHA-256 of a manifest. The manifest has one line for each
 # input that a record of the package reads:
 #   - the git tree of the directory of each workspace package that the
-#     package's units reach, in Cargo's unit graph of the run;
+#     package's units reach, in Cargo's unit graph of the package alone;
 #   - each unit that the package's units reach: its package, its target, its
-#     mode, its features, its platform and its profile. One run over several
-#     packages unifies their features, so the unit graph of the run decides;
+#     mode, its features, its platform and its profile. A run over several
+#     packages unifies their features, and the key of each package would then
+#     depend on the others. So each package has a unit graph and a run of its
+#     own, and its key is the same in each check that touches it;
 #   - the blobs of `Cargo.lock`, `Cargo.toml`, `.cargo/config.toml`,
 #     `rust-toolchain.toml`, `mise.toml` and `mise.lock`;
 #   - the policy configuration of the run with its records' directory taken
@@ -54,6 +56,8 @@
 # it to the key in one `rename` call. A reader sees a whole entry or none. A
 # second writer of a key removes its own directory. A temporary directory
 # older than one hour is a crash's leftover, and the next write removes it.
+# When the working state moves during a run, the run writes no entry, since
+# its records would then sit under the key of a different content.
 # The cache lives at `${XDG_CACHE_HOME:-$HOME/.cache}/gandr/deletes-records`,
 # or at `GANDR_DELETES_RECORDS`. A read touches its entry, and past 2 GiB the
 # entries with the oldest touch leave first.
@@ -373,47 +377,42 @@ records_main() {
   mkdir -p "$out" "$records_cache"
   records_open "$tree" "$target"
   trap 'rm -rf "$records_work"' EXIT
-  local names=() dirs=() pair i fixed closure key misses=() missed=() hits=0
+  local names=() dirs=() pair i fixed key root prefix files missed=() hits=0
   for pair in "$@"; do names+=("${pair%%=*}"); dirs+=("${pair#*=}"); done
   fixed=$(records_fixed)
-  records_units "${names[@]}" > "$records_work/units.json" 2> "$records_work/units.log" \
-    || { echo "check:deletes: no unit graph at $records_tree:" >&2; tail -n 20 "$records_work/units.log" >&2; return 2; }
   for i in "${!names[@]}"; do
-    closure=$(records_closure "$records_work/units.json" "${dirs[i]}")
-    records_manifest "$fixed" "$closure" > "$records_work/manifest-$i"
+    records_units "${names[i]}" > "$records_work/units-$i.json" 2> "$records_work/units.log" \
+      || { echo "check:deletes: no unit graph of ${names[i]} at $records_tree:" >&2; tail -n 20 "$records_work/units.log" >&2; return 2; }
+    records_closure "$records_work/units-$i.json" "${dirs[i]}" > "$records_work/closure-$i"
+    records_manifest "$fixed" "$(< "$records_work/closure-$i")" > "$records_work/manifest-$i"
     key=$(records_sha < "$records_work/manifest-$i")
-    if records_take "$key" "$out" "$records_work/manifest-$i"; then
-      hits=$((hits + 1))
-    else
-      misses+=("${names[i]}")
-      missed+=("$i")
-    fi
+    if records_take "$key" "$out" "$records_work/manifest-$i"; then hits=$((hits + 1)); else missed+=("$i"); fi
   done
-  if (( ${#misses[@]} )); then
-    local args=() name
-    for name in "${misses[@]}"; do args+=(-p "$name"); done
+  root=$records_root
+  for i in "${missed[@]}"; do
+    rm -rf "$records_work/records"
     mkdir -p "$records_work/records"
-    records_run cargo dylint --lib quenchant_dylints -- "${args[@]}" --all-targets --locked --quiet --message-format=json \
+    records_run cargo dylint --lib quenchant_dylints -- -p "${names[i]}" --all-targets --locked --quiet --message-format=json \
       > "$records_work/messages.json" 2> "$records_work/dylint.log" \
-      || { echo "check:deletes: the records of $records_tree do not build:" >&2; tail -n 20 "$records_work/dylint.log" >&2; return 2; }
-    records_units "${misses[@]}" > "$records_work/units-built.json" 2> "$records_work/units.log" \
-      || { echo "check:deletes: no unit graph at $records_tree:" >&2; tail -n 20 "$records_work/units.log" >&2; return 2; }
-    local prefix files
-    for i in "${missed[@]}"; do
-      closure=$(records_closure "$records_work/units-built.json" "${dirs[i]}")
-      records_manifest "$fixed" "$closure" > "$records_work/manifest-$i"
-      key=$(records_sha < "$records_work/manifest-$i")
-      records_extras "$records_work/messages.json" "$closure" > "$records_work/extras-$i"
-      prefix=$(tr '/' '_' <<< "${dirs[i]}")_
-      records_put "$key" "$records_work/records" "$prefix" "$records_work/manifest-$i" "$records_work/extras-$i"
-      shopt -s nullglob
-      files=("$records_work/records/$prefix"*)
-      shopt -u nullglob
-      if (( ${#files[@]} )); then records_clone "${files[@]}" "$out/"; fi
-    done
-    records_evict
-  fi
-  echo "records of $records_tree: $hits from the cache, ${#misses[@]} built"
+      || { echo "check:deletes: the records of ${names[i]} at $records_tree do not build:" >&2; tail -n 20 "$records_work/dylint.log" >&2; return 2; }
+    prefix=$(tr '/' '_' <<< "${dirs[i]}")_
+    shopt -s nullglob
+    files=("$records_work/records/$prefix"*)
+    shopt -u nullglob
+    if (( ${#files[@]} )); then records_clone "${files[@]}" "$out/"; fi
+    # An edit of the tree during the run gives records of one content under
+    # the key of another, so the run then writes no entry.
+    records_snapshot
+    if [[ $records_root != "$root" ]]; then
+      echo "check:deletes: $records_tree moved during the record run of ${names[i]}, so the cache keeps no entry of it" >&2
+      continue
+    fi
+    records_extras "$records_work/messages.json" "$(< "$records_work/closure-$i")" > "$records_work/extras-$i"
+    key=$(records_sha < "$records_work/manifest-$i")
+    records_put "$key" "$records_work/records" "$prefix" "$records_work/manifest-$i" "$records_work/extras-$i"
+  done
+  if (( ${#missed[@]} )); then records_evict; fi
+  echo "records of $records_tree: $hits from the cache, ${#missed[@]} built"
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then records_main "$@"; fi
