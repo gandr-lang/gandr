@@ -36,7 +36,7 @@ flowchart BT
   workflow
   kernel -->|3| theory
   core -->|12| theory
-  core -->|21| kernel
+  core -->|28| kernel
   storage -->|6| theory
   storage -->|1| kernel
   storage -->|1| core

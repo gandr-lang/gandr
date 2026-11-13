@@ -550,15 +550,14 @@
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is stated in the documentation of the module it governs.
 
-// Module documentation that predates the shape lint: 159 headings outside the
-// vocabulary, 87 decision records, 11 issue references and 48 budgets exceeded.
-// Each allow leaves with the rewrite that clears its count.
+// Module documentation that predates the shape lint: 13 headings outside the
+// vocabulary, 9 decision records and 9 budgets exceeded. Each allow leaves
+// with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     allow(
         module_doc_heading,
         doc_decision_record,
-        doc_issue_reference,
         module_doc_budget,
         reason = "module documentation that predates the shape lint"
     )
@@ -571,69 +570,55 @@ extern crate alloc;
 #[cfg(feature = "hotpath")]
 extern crate std;
 
-pub mod access;
-mod answer;
-pub mod bridge;
-mod canonical;
-mod capability;
-pub mod codata;
-mod code;
-pub mod comonoid;
-mod compose;
-mod context;
-mod conversion;
-mod coverage;
-mod declaration;
-mod discharge;
-mod divergence;
 pub mod elaborating;
-pub mod elaboration;
-pub mod eliminator;
-mod equiv;
-mod failure;
-pub mod fill;
-#[cfg(test)]
-mod fixture;
-mod flow;
-mod formation;
-mod former;
-mod forward;
-mod funext;
-mod handler;
-mod judgement;
-mod ledger;
-mod loops;
-mod module;
-mod nested;
-mod occurrence;
-mod product;
-pub mod program;
-mod quantified;
-mod record;
-mod recursion;
-mod refusal;
-mod regioned;
-mod relatedness;
-mod report;
-mod respect;
-mod retire;
-mod seal;
-pub mod session;
-mod solution;
-pub mod stage;
 pub mod staging;
-mod support;
-mod tactic;
+
+// The base's and the bridge's public modules, each at the path it had when
+// the three crates were one.
+pub use gandr_core_checker_base::access;
+// The base's other modules, which the re-exports below and the staged
+// programs and the session name.
+use gandr_core_checker_base::answer;
+use gandr_core_checker_base::capability;
+pub use gandr_core_checker_base::codata;
+use gandr_core_checker_base::code;
+pub use gandr_core_checker_base::comonoid;
+use gandr_core_checker_base::context;
+use gandr_core_checker_base::conversion;
+use gandr_core_checker_base::coverage;
+use gandr_core_checker_base::declaration;
+pub use gandr_core_checker_base::elaboration;
+pub use gandr_core_checker_base::eliminator;
+use gandr_core_checker_base::equiv;
+use gandr_core_checker_base::failure;
+pub use gandr_core_checker_base::fill;
+use gandr_core_checker_base::flow;
+use gandr_core_checker_base::formation;
+use gandr_core_checker_base::forward;
+use gandr_core_checker_base::funext;
+use gandr_core_checker_base::handler;
+use gandr_core_checker_base::judgement;
+use gandr_core_checker_base::ledger;
+use gandr_core_checker_base::module;
+use gandr_core_checker_base::nested;
+pub use gandr_core_checker_base::program;
+use gandr_core_checker_base::record;
+use gandr_core_checker_base::refusal;
+use gandr_core_checker_base::report;
+use gandr_core_checker_base::retire;
+use gandr_core_checker_base::seal;
+pub use gandr_core_checker_base::session;
+pub use gandr_core_checker_base::stage;
+use gandr_core_checker_base::support;
 #[cfg(feature = "instrument")]
-pub mod tally;
-pub mod template;
-pub mod tier;
+pub use gandr_core_checker_base::tally;
+pub use gandr_core_checker_base::tier;
 #[cfg(feature = "instrument")]
-pub mod trace;
-pub mod ua;
-mod univalence;
-mod view;
-pub mod worlds;
+pub use gandr_core_checker_base::trace;
+pub use gandr_core_checker_base::ua;
+pub use gandr_core_checker_base::worlds;
+pub use gandr_core_checker_bridge::bridge;
+pub use gandr_core_checker_bridge::template;
 
 pub use crate::answer::Checked;
 pub use crate::answer::Direction;

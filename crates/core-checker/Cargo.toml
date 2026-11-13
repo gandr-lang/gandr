@@ -3,7 +3,7 @@ name = "gandr-core-checker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The core checking judgement: four directed faces, the name-free declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary and the kernel bridge"
+description = "The core checking judgement: the base and the kernel bridge under one name, the staged programs and the elaboration session that fills a hole and resumes what waited"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -16,60 +16,40 @@ autotests = false
 name = "staging_templates"
 test = true
 
-# One integration target, each area file its own `cfg(test)` module, so a
-# witness path reads `tests::<area>::<name>`.
 [[test]]
 name = "tests"
 path = "tests/lib.rs"
 
-# The judgement is stated over the core language's own vocabulary and its
-# context, and reads the leaf vocabulary (admission positions, de Bruijn
-# indices, literals, base types, sorts) from the term crate that core-term
-# re-uses it from, and levels from the strata crate. A code constant unfolds,
-# and a static operator reduces, through the normaliser's conversion machine,
-# whose recorded trace is the certificate the kernel replays; a replayed
-# certificate is addressed by the check-memo seam's content digest. The kernel
-# bridge erases into the term crate's arena and admits through the kernel's
-# choke point, which re-derives every declaration the judgement accepts. The
-# certified strata's species and equivalences come from the site crate,
-# which `ua_n` reads its range and alphabet from; a context holds its
-# catalogues and strata, and a store the driver implements carries them on. An
-# endpoint's session type is related to another through the session crate's
-# one relation engine. A hole a call nominates for an omitted implicit is a
-# metavariable of the unifier's metacontext, solved by its solver. The pinned
-# anodized facade supplies the executable specifications; logic/BigInt stays
-# disabled in this no_std library. A staged program forks its independent
-# jobs through the fork crate's trait, on whatever pool the driver hands it.
-# The access rules add and compare uses in the ordered-algebras crate's usage
-# semiring. Nothing here names a surface crate: names, spans and syntax stay
-# above the core.
-# `hotpath` profiles checking, a model slot's resolution and readmission for
-# the benchmark report.
+# The top holds what reads both the base and the bridge: a staged program
+# reads the bridge's templates, and the elaboration session readmits what it
+# resumes. It re-exports both lower crates, so a consumer names one crate.
+# The normaliser, the term crates and the kernel give the vocabulary that a
+# session and a staged program read. A staged program forks its independent
+# jobs through the fork crate's trait. The pinned anodized facade supplies
+# the executable specifications. Nothing here names a surface crate: names,
+# spans and syntax stay above the core.
 [dependencies]
 anodized.workspace = true
+gandr-core-checker-base.workspace = true
+gandr-core-checker-bridge.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-nbe.workspace = true
-gandr-core-session.workspace = true
 gandr-core-term.workspace = true
-gandr-core-unify.workspace = true
-gandr-kernel-check-memo.workspace = true
-gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
-gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
-gandr-theory-deep-inference.workspace = true
-gandr-theory-ordered-algebras.workspace = true
-gandr-theory-sites.workspace = true
 hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
-serde.workspace = true
 
-# The univalence witnesses name the descriptions their statements relate.
+# The staging example measures its heap and its queues against the
+# alternatives it names. The integration target reads the base's fixtures,
+# the strata of a universe, and the property runner of the session's laws.
 [dev-dependencies]
 allocation-counter.workspace = true
 crossbeam-channel.workspace = true
 crossbeam-deque.workspace = true
-gandr-theory-levitation.workspace = true
+gandr-core-checker-base = { workspace = true, features = ["fixture"] }
+gandr-kernel-strata.workspace = true
+gandr-theory-deep-inference.workspace = true
 proptest.workspace = true
 rayon.workspace = true
 ringbuf.workspace = true
@@ -81,14 +61,16 @@ default = []
 # Per-declaration checking, the trial of each model slot's candidates, and
 # kernel readmission timed and their allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
-# The goal memo's tally in each checking context: a hit or a miss counted at
-# each consult, which the counts layer of the hub's instrument reads. The
-# buffer of steps a tracer lends the context, which the trace layer folds; its
-# records read the clock type of the fork crate's activity ring. Off, the
-# context holds no tally and no buffer, and a consult counts nothing.
-instrument = ["gandr-core-fork/instrument"]
-unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
+hotpath = [
+  "dep:hotpath",
+  "gandr-core-checker-base/hotpath",
+  "gandr-core-checker-bridge/hotpath",
+  "hotpath/hotpath",
+]
+# The tally and the trace buffer of each checking context (the base's
+# `instrument`), which the hub's instrument reads.
+instrument = ["gandr-core-checker-base/instrument"]
+unfolding-probe = ["gandr-core-checker-base/unfolding-probe"]
 
 [lints]
 workspace = true

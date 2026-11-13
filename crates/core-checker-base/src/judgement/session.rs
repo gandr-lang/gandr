@@ -1,0 +1,4501 @@
+//! The session rules on the judgement's machine: the fork that binds two
+//! endpoints, the actions that advance them, the offer whose arms agree on
+//! the linear zone, and the fence that keeps an endpoint out of every former
+//! that may run its use other than once. A forked task owes the held
+//! interfaces of the row around its fork, and the host answers each
+//! operation the task performs outside its own handlers. The decisions are
+//! stated in [`crate::session`].
+
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_nbe::CoreTerm;
+use gandr_core_nbe::FreeIndices;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::Binders;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::ContextError;
+use gandr_core_term::LinearUse;
+use gandr_core_term::LinearZone;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
+use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::ActionKind;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::session::SessionType;
+use gandr_core_term::session::Step as Move;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use quenchant_shape::shape::Maybe;
+
+use super::Frame;
+use super::Goal;
+use super::Machine;
+use super::Ordinal;
+use super::Produced;
+use super::Step;
+use crate::access::AccessDefect;
+use crate::answer::Direction;
+use crate::context::Atom;
+use crate::context::Recording;
+use crate::record::Typing;
+use crate::refusal::CheckRefusal;
+use crate::refusal::CoreNode;
+use crate::refusal::ExpectedShape;
+use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
+use crate::session::Capture;
+use crate::session::Endpoint;
+use crate::session::ForkSide;
+use crate::session::LinearityDefect;
+use crate::session::LiveEndpoint;
+use crate::session::ProtocolDefect;
+use crate::session::session_at;
+use crate::view::CompTypeView;
+use crate::view::ValueTypeView;
+use crate::view::comp_type_view;
+use crate::view::value_type_view;
+
+/// Who bound a linear slot: a fork's or a receive's endpoint, a received
+/// value, a hold's held value, an access's view, an entry's capability, an
+/// operation clause's continuation, or a linear function's parameter.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum Resident
+{
+    /// An endpoint a fork bound.
+    Endpoint(Endpoint),
+    /// A value the hold `at` holds.
+    Held
+    {
+        /// The hold.
+        at: ComputationId,
+    },
+    /// A value the receive `at` bound, opened spent: its reads copy.
+    Received
+    {
+        /// The receive.
+        at: ComputationId,
+    },
+    /// The buffer the receive `at` placed live, opened available: a send
+    /// returns it once, and the receive's end refuses it unreturned.
+    Buffer
+    {
+        /// The receive.
+        at: ComputationId,
+    },
+    /// The view the access `at` lends, of a value held at `grade`.
+    View
+    {
+        /// The access.
+        at: ComputationId,
+        /// The grade the lent value is held at.
+        grade: gandr_core_term::memory::HoldGrade,
+        /// The held slot's position above the run's base.
+        held: usize,
+    },
+    /// A capability the run's entry holds, to migrate once to `world`.
+    Capability
+    {
+        /// The world it migrates to.
+        world: gandr_core_term::world::World,
+    },
+    /// The continuation the operation clause `clause` receives, which holds an
+    /// obligation: a resumption or an abandonment spends it once.
+    Continuation
+    {
+        /// The clause's body.
+        clause: ComputationId,
+    },
+    /// The copy of the linear function `lambda`'s parameter: its body reads
+    /// the copy once, through the parameter's intuitionistic shadow.
+    Supply
+    {
+        /// The linear lambda.
+        lambda: ComputationId,
+    },
+}
+
+/// A linear slot the run bound: who bound it, and the intuitionistic depth
+/// its declared type was formed at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Opened
+{
+    /// Who bound it.
+    pub resident: Resident,
+    /// The intuitionistic depth at the binder.
+    pub depth: BinderDepth,
+}
+
+/// A held slot an access lends: where it stands and the mode it is lent in.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Lent
+{
+    /// The held slot's position above the run's base.
+    pub position: usize,
+    /// The mode the access lends it in.
+    pub mode: AccessMode<()>,
+}
+
+/// A held slot a region keeps a shared view of: frozen against an exclusive
+/// access until the region's scope ends.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Keep
+{
+    /// The held slot's position above the run's base.
+    pub position: usize,
+    /// The region the view is kept in.
+    pub region: RegionDepth,
+}
+
+/// An operation clause's continuation that holds an obligation: the level its
+/// stack is bound at, the linear slot its end spends and the clause.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Owed
+{
+    /// The intuitionistic level the stack is bound at.
+    pub stack: usize,
+    /// The linear slot's position above the run's base.
+    pub slot: usize,
+    /// The clause's body.
+    pub clause: ComputationId,
+}
+
+/// A linear function's parameter: the level its shadow is bound at, the
+/// linear slot that holds its copy and the lambda.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Supplied
+{
+    /// The intuitionistic level the shadow is bound at.
+    pub shadow: usize,
+    /// The linear slot's position above the run's base.
+    pub slot: usize,
+    /// The linear lambda.
+    pub lambda: ComputationId,
+}
+
+/// The linear state of one run: who bound each linear slot it opened, the
+/// held slots its accesses lend, the zones its offers restore and compare,
+/// and the free linear indices of the terms it read.
+#[derive(Debug)]
+pub(super) struct Sessions
+{
+    /// The linear depth the run began at; slots below it are not the run's.
+    pub base: BinderDepth,
+    /// One entry per linear slot above `base`, outermost first.
+    pub opened: Vec<Opened>,
+    /// Each held slot an access lends, with its mode, the innermost access
+    /// last.
+    pub lent: Vec<Lent>,
+    /// Each held slot a region keeps a shared view of, in the order kept.
+    pub kept: Vec<Keep>,
+    /// How many linear slots above `base` stood open as each region began —
+    /// a capability scope's subject, or a hold's scope past its held slot —
+    /// outermost first: a slot below a region's mark outlives the region.
+    pub regions: Vec<usize>,
+    /// How the run's own type reaches a region its definition abstracts, `A at
+    /// r` under `[r : Region]`: where it reaches one, a captor or a child may
+    /// name a value kept in a region while no region is open.
+    pub abstracted: crate::capability::Reach,
+    /// Each capability scope and operation whose clause receives a
+    /// continuation holding an obligation, in the order met.
+    pub owing: Vec<(ComputationId, gandr_core_term::effect::OperationName)>,
+    /// Each open clause's continuation that holds an obligation, innermost
+    /// last.
+    pub owed: Vec<Owed>,
+    /// Each open linear function's parameter, innermost last.
+    pub supplied: Vec<Supplied>,
+    /// The level of the owed stack the resumption or abandonment being
+    /// judged ends: its one mention that reads it.
+    pub ending: Option<usize>,
+    /// What each fork half being judged may do to the host so far, the
+    /// innermost half last.
+    pub footprints: Vec<crate::capability::Footprint>,
+    /// Each judged child's footprint while its parent is judged, the
+    /// innermost fork last.
+    separated: Vec<crate::capability::Footprint>,
+    /// Each open offer's zone as the offer found it, then as its first arm
+    /// left it, innermost offer last.
+    zones: Vec<LinearZone>,
+    /// The free linear indices of every term asked, each answered once.
+    free: FreeIndices,
+}
+
+impl Sessions
+{
+    /// The linear state of a run that begins with `base` linear slots open,
+    /// its own type reaching a region its definition abstracts as `abstracted`
+    /// says.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn new(
+        base: BinderDepth,
+        abstracted: crate::capability::Reach,
+    ) -> Self
+    {
+        Self {
+            base,
+            opened: Vec::new(),
+            lent: Vec::new(),
+            kept: Vec::new(),
+            regions: Vec::new(),
+            abstracted,
+            owing: Vec::new(),
+            owed: Vec::new(),
+            supplied: Vec::new(),
+            ending: None,
+            footprints: Vec::new(),
+            separated: Vec::new(),
+            zones: Vec::new(),
+            free: FreeIndices::default(),
+        }
+    }
+}
+
+/// How far a run's linear zone, its lendings, its keeps, its regions and its
+/// offers' zones stood: what a recovered or refused run falls back to.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Scope
+{
+    /// The linear depth.
+    linear: BinderDepth,
+    /// The lendings held.
+    lent: usize,
+    /// The keeps held.
+    kept: usize,
+    /// The regions open.
+    regions: usize,
+    /// The capture records held.
+    owing: usize,
+    /// The owed continuations held.
+    owed: usize,
+    /// The linear functions' parameters held.
+    supplied: usize,
+    /// The offers' zones held.
+    zones: usize,
+    /// The fork halves' footprints held.
+    footprints: usize,
+    /// The judged children's footprints held.
+    separated: usize,
+}
+
+/// Where one offer's or one case's zones stand on the run's zone stack: the
+/// zone as the former found it at the mark, the zone its arms left so far one
+/// above.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct ZoneMark(usize);
+
+/// How a case's arms leave the linear zone: one after another while the run
+/// holds no value and no endpoint, or each from the zone the case found and
+/// joined after the last while it holds one.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum Joining
+{
+    /// The run holds no value and no endpoint: each arm starts from the zone
+    /// the one before it left.
+    Threaded,
+    /// The run holds a value or an endpoint: each arm starts from the zone at
+    /// the mark, a held value one arm consumed counts as consumed after the
+    /// case, and every arm leaves each endpoint and each linear parameter's
+    /// copy as the first arm left it.
+    Joined(ZoneMark),
+}
+
+/// Which slots two arms' zones must agree on: every slot after an offer's
+/// arms, the endpoints and the linear parameters' copies alone after a
+/// case's, whose held values join.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Compared
+{
+    /// Every slot the run opened.
+    Every,
+    /// The endpoints and the linear parameters' copies the run opened.
+    Endpoints,
+}
+
+/// What a read of a linear function's shadow does where the run stands: a
+/// read inside a type the body forms is free, and every other read draws the
+/// parameter's copy.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ShadowRead
+{
+    /// A [`Frame::Forming`] waits above the body's frame: the read is free.
+    Free,
+    /// No formation waits above the body's frame: the read draws the copy.
+    Drawn,
+}
+
+/// One linear slot, read: who bound it, its declared type, its remaining
+/// use, the depth its type stands at and its position above the run's base.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Resided
+{
+    /// Who bound it.
+    pub resident: Resident,
+    /// Its declared type, at `depth`.
+    pub state: ValueTypeId,
+    /// Its remaining use.
+    pub use_state: LinearUse,
+    /// The intuitionistic depth `state` stands at.
+    pub depth: BinderDepth,
+    /// Its position above the run's base.
+    pub position: usize,
+}
+
+/// One endpoint's slot, read: its endpoint, session type, remaining use and
+/// the depth its type stands at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Slot
+{
+    /// The endpoint.
+    endpoint: Endpoint,
+    /// Its session type, at `depth`.
+    state: ValueTypeId,
+    /// Its remaining use.
+    use_state: LinearUse,
+    /// The intuitionistic depth `state` stands at.
+    depth: BinderDepth,
+}
+
+impl Machine<'_, '_>
+{
+    /// Where the linear zone, the lendings, the keeps, the regions and the
+    /// offers' zones stand.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn session_scope(&self) -> Scope
+    {
+        Scope {
+            linear: self.context.depth(Zone::Linear),
+            lent: self.sessions.lent.len(),
+            kept: self.sessions.kept.len(),
+            regions: self.sessions.regions.len(),
+            owing: self.sessions.owing.len(),
+            owed: self.sessions.owed.len(),
+            supplied: self.sessions.supplied.len(),
+            zones: self.sessions.zones.len(),
+            footprints: self.sessions.footprints.len(),
+            separated: self.sessions.separated.len(),
+        }
+    }
+
+    /// Drop every linear slot bound, every lending, keep, region, capture
+    /// record, owed continuation, linear parameter and footprint made and
+    /// every offer zone kept since `scope`, spent or not: the linear half of
+    /// unwinding a refused or recovered judgement.
+    ///
+    /// # Specification
+    /// - requires: the zones stand at or above `scope`.
+    /// - ensures: they stand at `scope`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal inside a fork leaves the context's linear
+    ///   zone as the run found it.
+    /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
+    #[spec(ensures: self.context.depth(Zone::Linear) <= scope.linear
+        && self.sessions.lent.len() <= scope.lent
+        && self.sessions.kept.len() <= scope.kept
+        && self.sessions.regions.len() <= scope.regions
+        && self.sessions.owing.len() <= scope.owing
+        && self.sessions.owed.len() <= scope.owed
+        && self.sessions.supplied.len() <= scope.supplied
+        && self.sessions.zones.len() <= scope.zones
+        && self.sessions.footprints.len() <= scope.footprints
+        && self.sessions.separated.len() <= scope.separated)]
+    pub(super) fn close_sessions(
+        &mut self,
+        scope: Scope,
+    )
+    {
+        self.context.binders().truncate(Zone::Linear, scope.linear);
+        let kept = usize::from(scope.linear).saturating_sub(usize::from(self.sessions.base));
+        self.sessions.opened.truncate(kept);
+        self.sessions.lent.truncate(scope.lent);
+        self.sessions.kept.truncate(scope.kept);
+        self.sessions.regions.truncate(scope.regions);
+        self.sessions.owing.truncate(scope.owing);
+        self.sessions.owed.truncate(scope.owed);
+        self.sessions.supplied.truncate(scope.supplied);
+        self.sessions.ending = None;
+        self.sessions.zones.truncate(scope.zones);
+        self.sessions.footprints.truncate(scope.footprints);
+        self.sessions.separated.truncate(scope.separated);
+    }
+
+    /// The endpoints the run bound and still holds, outermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per endpoint's slot above the run's base, with its
+    ///   endpoint, session type and remaining use; held values and views are
+    ///   left out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a leftover endpoint's failure lists the endpoint left
+    ///   and the one the child consumed.
+    /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
+    #[spec(ensures: |ret| ret.len() <= self.sessions.opened.len())]
+    pub(super) fn live_endpoints(&mut self) -> Vec<LiveEndpoint>
+    {
+        let base = usize::from(self.sessions.base);
+        let opened = &self.sessions.opened;
+        self.context
+            .binders()
+            .linear_slots()
+            .skip(base)
+            .zip(opened)
+            .filter_map(|((state, use_state), opened)| match opened.resident {
+                Resident::Endpoint(endpoint) => Some(LiveEndpoint {
+                    endpoint,
+                    state,
+                    use_state,
+                }),
+                Resident::Received { .. }
+                | Resident::Buffer { .. }
+                | Resident::Held { .. }
+                | Resident::View { .. }
+                | Resident::Capability { .. }
+                | Resident::Continuation { .. }
+                | Resident::Supply { .. } => None,
+            })
+            .collect()
+    }
+
+    /// The linear slot `index` names, read at `at`, whoever bound it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot's resident, declared type, use, depth and position.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`]
+    ///   at `at` for an index past the zone; [`CheckRefusal::MachineInvariant`]
+    ///   for a slot the run did not bind.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every action, access and eliminator reads its slot
+    ///   here, so the seat exchange, the counter and every refusal by resident
+    ///   observe it.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
+    #[spec(ensures: |ret| match ret {
+        | Ok(_) | Err(CheckRefusal::MachineInvariant) => true,
+        | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Unbound { index: unbound } }) => {
+            refused == at && unbound == index
+        },
+        | Err(CheckRefusal::Located { at: refused, defect: crate::worlds::LocatedDefect::Elsewhere { bound } }) => {
+            refused == at && bound != self.context.world()
+        },
+        | Err(_) => false,
+    })]
+    pub(super) fn resided(
+        &mut self,
+        at: CoreNode,
+        index: DeBruijnIndex,
+    ) -> Result<Resided, CheckRefusal>
+    {
+        let unbound = CheckRefusal::Linearity {
+            at,
+            defect: LinearityDefect::Unbound { index },
+        };
+        let binders = self.context.binders();
+        let depth = usize::from(binders.depth(Zone::Linear));
+        let state = binders
+            .declared(Zone::Linear, index)
+            .map_err(|_fault| unbound)?;
+        let use_state = binders.linear_use(index).map_err(|_fault| unbound)?;
+        let used = binders.world();
+        let bound = binders
+            .located(Zone::Linear, index)
+            .map_err(|_fault| unbound)?;
+        if bound != used {
+            return Err(CheckRefusal::Located {
+                at,
+                defect: crate::worlds::LocatedDefect::Elsewhere { bound },
+            });
+        }
+        let position = usize::try_from(u32::from(index))
+            .ok()
+            .and_then(|index| depth.checked_sub(index)?.checked_sub(1))
+            .and_then(|position| position.checked_sub(usize::from(self.sessions.base)))
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let opened = self
+            .sessions
+            .opened
+            .get(position)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        Ok(Resided {
+            resident: opened.resident,
+            state,
+            use_state,
+            depth: opened.depth,
+            position,
+        })
+    }
+
+    /// The endpoint's slot `index` names, read at `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot's endpoint, session type, use and depth.
+    /// - fails: as [`Self::resided`]; [`CheckRefusal::ShapeMismatch`] wanting
+    ///   [`ExpectedShape::Session`] at a term `at` whose slot holds a value or
+    ///   a view, and [`CheckRefusal::MachineInvariant`] at a type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every action reads its endpoint here, so the seat
+    ///   exchange and every refusal by endpoint observe it.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| match ret {
+        | Ok(_) | Err(CheckRefusal::MachineInvariant | CheckRefusal::ShapeMismatch { .. }) => true,
+        | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Unbound { index: unbound } }) => {
+            refused == at && unbound == index
+        },
+        | Err(CheckRefusal::Located { at: refused, .. }) => refused == at,
+        | Err(_) => false,
+    })]
+    fn slot(
+        &mut self,
+        at: CoreNode,
+        index: DeBruijnIndex,
+    ) -> Result<Slot, CheckRefusal>
+    {
+        let resided = self.resided(at, index)?;
+        match resided.resident {
+            Resident::Endpoint(endpoint) => Ok(Slot {
+                endpoint,
+                state: resided.state,
+                use_state: resided.use_state,
+                depth: resided.depth,
+            }),
+            Resident::Received { .. }
+            | Resident::Buffer { .. }
+            | Resident::Held { .. }
+            | Resident::View { .. }
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. }
+            | Resident::Supply { .. } => match at {
+                CoreNode::Term(term) => Err(CheckRefusal::ShapeMismatch {
+                    at: term,
+                    wanted: ExpectedShape::Session,
+                    found: TypeNode::Value(resided.state),
+                    unfolded: TypeNode::Value(resided.state),
+                }),
+                CoreNode::Type(_) => Err(CheckRefusal::MachineInvariant),
+            },
+        }
+    }
+
+    /// The available linear slot `index` names, read at the action `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::slot`], its use still available.
+    /// - fails: as [`Self::slot`]; [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::Closed`] for a consumed slot.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an action after `close` is refused by name.
+    /// - witness: `judgement::session::tests::an_endpoint_used_after_close_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|slot| slot.use_state == LinearUse::Available))]
+    fn live(
+        &mut self,
+        at: ComputationId,
+        index: DeBruijnIndex,
+    ) -> Result<Slot, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let slot = self.slot(node, index)?;
+        match slot.use_state {
+            LinearUse::Available => Ok(slot),
+            LinearUse::Moved | LinearUse::Consumed => Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Closed {
+                    endpoint: slot.endpoint,
+                },
+            }),
+        }
+    }
+
+    /// `ty`, which stands at the intuitionistic depth `depth`, read where the
+    /// judgement now stands.
+    ///
+    /// # Specification
+    /// - requires: the judgement stands at or under `depth`.
+    /// - ensures: `ty` itself at `depth`; otherwise `ty` shifted past the
+    ///   binders opened since.
+    /// - fails: [`CheckRefusal::MachineInvariant`] above `depth`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a receive under the bind of an earlier receive reads
+    ///   its payload at the bind's depth.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed`
+    #[spec(
+        captures: current = self.context.depth(Zone::Intuitionistic),
+        ensures: |ret| (current != depth || ret == Ok(ty))
+            && (current >= depth || ret == Err(CheckRefusal::MachineInvariant)),
+    )]
+    pub(super) fn here(
+        &mut self,
+        ty: ValueTypeId,
+        depth: BinderDepth,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        let opened = usize::from(self.context.depth(Zone::Intuitionistic))
+            .checked_sub(usize::from(depth))
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        if opened == 0 {
+            return Ok(ty);
+        }
+        let opened = u32::try_from(opened).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        Ok(self.context.shift_value_type(ty, Binders::from(opened)))
+    }
+
+    /// The pure returner of the unit, an action's type.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn unit_returner(&mut self) -> CompTypeId
+    {
+        let unit = self.context.atom(Atom::Unit).id();
+        self.context.arena_mut().comp_type_returner(unit)
+    }
+
+    /// The free linear indices of `term`, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the linear indices `term` reads without binding.
+    /// - fails: [`CheckRefusal::DanglingNode`] at `term` for a node the arena
+    ///   does not hold; [`CheckRefusal::MachineInvariant`] when the walk's
+    ///   order breaks.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk naming an endpoint and a fork naming one in
+    ///   both halves are refused through it.
+    /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref indices) => indices.is_sorted(),
+        | Err(ref refusal) => matches!(*refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
+    })]
+    pub(super) fn free_linear(
+        &mut self,
+        term: CoreTerm,
+    ) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
+    {
+        let node = match term {
+            CoreTerm::Value(id) => CoreNode::Term(TermNode::Value(id)),
+            CoreTerm::Computation(id) => CoreNode::Term(TermNode::Computation(id)),
+        };
+        self.sessions
+            .free
+            .linear(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })
+    }
+
+    /// The free linear indices `term` consumes, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the held slots a consume in `term` moves out of without
+    ///   binding them.
+    /// - fails: as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fold consuming an outer hold is refused through it,
+    ///   and a case whose arms consume it checks.
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref indices) => indices.is_sorted(),
+        | Err(ref refusal) => matches!(*refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
+    })]
+    fn free_consumed(
+        &mut self,
+        term: CoreTerm,
+    ) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
+    {
+        let node = match term {
+            CoreTerm::Value(id) => CoreNode::Term(TermNode::Value(id)),
+            CoreTerm::Computation(id) => CoreNode::Term(TermNode::Computation(id)),
+        };
+        self.sessions
+            .free
+            .consumed(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })
+    }
+
+    /// Refuse a linear resident named where its use may run other than once:
+    /// a thunk, a fixpoint, a branching former, a first-class stack, a
+    /// handler, a capability scope or a shift, while the run holds one. A
+    /// branch may read a held value: a read copies, and each branch lends it
+    /// at most for its own extent. A case's arms are separate paths, so an arm
+    /// may consume a held value or act on an endpoint: each arm starts from
+    /// the hold and the endpoint as the case found them, the case leaves the
+    /// hold consumed when any arm consumed it, and every arm leaves the
+    /// endpoint as the first did. A fold's step runs once per element and a
+    /// lazy product's components in any number, so neither consumes one. A
+    /// capability scope's clause receives the rest of its body as a
+    /// continuation it may resume twice or drop, so the body names only
+    /// residents that owe nothing: a held value,
+    /// whose slot stands outside the scope, a received value and a shared
+    /// view, each of which a read copies. A thunk or a stack checked at a type
+    /// kept in a region may name a shared view whose held slot outlives that
+    /// region: the slot is kept, frozen until the region's scope ends. Inside
+    /// a capability scope, a thunk or a stack names no variable kept in a
+    /// region deeper than the one its own type is kept in. Every former but a
+    /// branch names no continuation an operation clause owes, and every former
+    /// but a case names no linear parameter's shadow.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a goal of another former, or any goal while the run holds no
+    ///   linear slot, no scope is open and the checked type abstracts no
+    ///   region, passes without its free indices read; a kept thunk or stack
+    ///   keeps each shared view it names, and nothing else changes.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::Captured`] at the goal's term, with the first
+    ///   endpoint it names and what may run it, a case's arms excepted;
+    ///   [`LinearityDefect::ContinuationCaptured`] for an owed continuation it
+    ///   names, and [`LinearityDefect::ShadowCaptured`] for a linear
+    ///   parameter's shadow; [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::Escaped`] for a view no region keeps,
+    ///   [`AccessDefect::HeldCaptured`] for a held value and for one a fold or
+    ///   a lazy product consumes, and [`AccessDefect::KeptEscaped`] for a
+    ///   variable kept deeper than the goal; a shift names the innermost
+    ///   resident the run holds, which its captured continuation may resume
+    ///   twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk naming an endpoint is refused while the same
+    ///   action outside one checks; a thunk kept in a scope's region keeps a
+    ///   shared view and the same thunk kept in none is refused; a capability
+    ///   scope whose body closes an endpoint is refused while one whose body
+    ///   reads a held value checks.
+    /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    /// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
+    #[spec(
+        captures: [
+            holding = self.context.depth(Zone::Linear) > self.sessions.base,
+            scoped = !self.sessions.regions.is_empty(),
+            abstracted = self.sessions.abstracted != crate::capability::Reach::Clear,
+        ],
+        ensures: |ret| holding || scoped || abstracted || ret.is_ok(),
+    )]
+    pub(super) fn fence(
+        &mut self,
+        goal: Goal,
+    ) -> Result<(), CheckRefusal>
+    {
+        let holding = self.context.depth(Zone::Linear) > self.sessions.base;
+        let abstracted = self.sessions.abstracted != crate::capability::Reach::Clear;
+        if !holding && !abstracted && self.sessions.regions.is_empty() {
+            return Ok(());
+        }
+        let (term, node, by) = match goal {
+            Goal::Value { term, .. } => {
+                let by = match *self.value(term)? {
+                    Value::Thunk(_) => Capture::Thunk,
+                    Value::Reify(_) => Capture::Stack,
+                    Value::Primitive { .. }
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here(_)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Univalence(..)
+                    | Value::Ua { .. }
+                    | Value::Compose { .. }
+                    | Value::Fill { .. }
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::FlowProduct(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
+                    | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::RecordUpdate { .. }
+                    | Value::Variable { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Tuple(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Ascribe { .. }
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::Hole(_)
+                    | Value::Mark { .. }
+                    | Value::Row(_) => return Ok(()),
+                };
+                (
+                    CoreTerm::Value(term),
+                    CoreNode::Term(TermNode::Value(term)),
+                    by,
+                )
+            },
+            Goal::Computation { .. } if !holding => return Ok(()),
+            Goal::Computation { term, .. } => {
+                let by = match *self.computation(term)? {
+                    Computation::Fixpoint { .. } => Capture::Recursion,
+                    Computation::Case { .. }
+                    | Computation::DataCase { .. }
+                    | Computation::With(..)
+                    | Computation::ListFold { .. }
+                    | Computation::ListCase { .. } => Capture::Branch,
+                    Computation::Handle { .. } | Computation::Scope { .. } => Capture::Continuation,
+                    Computation::Shift(_) => {
+                        let node = CoreNode::Term(TermNode::Computation(term));
+                        let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
+                        return captured(node, innermost.resident, Capture::Continuation);
+                    },
+                    Computation::Primitive { .. }
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Lambda(_)
+                    | Computation::LinearLambda(_)
+                    | Computation::Application(..)
+                    | Computation::Return(_)
+                    | Computation::Bind(..)
+                    | Computation::ReturnAll(_)
+                    | Computation::BindAll { .. }
+                    | Computation::Ascribe { .. }
+                    | Computation::Force(_)
+                    | Computation::Decompose(_)
+                    | Computation::Split { .. }
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
+                    | Computation::Hole(_)
+                    | Computation::Mark { .. }
+                    | Computation::Perform { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Resume(..)
+                    | Computation::Abandon(_)
+                    | Computation::Reset(_)
+                    | Computation::Project(..)
+                    | Computation::Session(_)
+                    | Computation::Memory(_)
+                    | Computation::World(_) => return Ok(()),
+                };
+                (
+                    CoreTerm::Computation(term),
+                    CoreNode::Term(TermNode::Computation(term)),
+                    by,
+                )
+            },
+            Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
+        };
+        // A branch runs once, and the arms' agreement checks the
+        // continuation's slot; every other captor may run it twice or never.
+        if by != Capture::Branch {
+            self.owed_named(term, node, by)?;
+        }
+        // A case's arms are separate paths it joins; a fold's step runs once
+        // per element, and a lazy product's components may run in any number.
+        let joins = if let CoreTerm::Computation(id) = term {
+            matches!(
+                *self.computation(id)?,
+                Computation::Case { .. }
+                    | Computation::DataCase { .. }
+                    | Computation::ListCase { .. }
+            )
+        }
+        else {
+            false
+        };
+        // A case's arms each read a linear parameter's copy as the others do,
+        // which the join checks; every other captor may run a read of it
+        // twice or never.
+        if !joins {
+            self.supplied_named(term, node, by)?;
+        }
+        let scope = match goal {
+            Goal::Computation { term, .. } => {
+                matches!(*self.computation(term)?, Computation::Scope { .. })
+            },
+            Goal::Value { .. } | Goal::Form(_) | Goal::Stack { .. } => false,
+        };
+        let kept = match goal {
+            Goal::Value {
+                direction: Direction::Check(expected),
+                ..
+            } if matches!(by, Capture::Thunk | Capture::Stack) => self.kept_in(expected)?,
+            Goal::Value { .. } | Goal::Computation { .. } | Goal::Form(_) | Goal::Stack { .. } => {
+                Region::Held
+            },
+        };
+        if matches!(by, Capture::Thunk | Capture::Stack)
+            && (self.sessions.abstracted != crate::capability::Reach::Clear
+                || !self.sessions.regions.is_empty())
+        {
+            self.contained(term, node, kept)?;
+        }
+        if !holding {
+            return Ok(());
+        }
+        if by == Capture::Branch && !joins {
+            for index in self.free_consumed(term)? {
+                if let Resident::Held { .. } = self.resided(node, index)?.resident {
+                    return Err(CheckRefusal::Access {
+                        at: node,
+                        defect: AccessDefect::HeldCaptured { by },
+                    });
+                }
+            }
+        }
+        for index in self.free_linear(term)? {
+            let named = self.resided(node, index)?;
+            if let (Region::Scoped(region), Resident::View { at, held, .. }) =
+                (kept, named.resident)
+                && matches!(
+                    *self.computation(at)?,
+                    Computation::Memory(MemoryForm::Access {
+                        mode: AccessMode::Shared,
+                        ..
+                    })
+                )
+                && usize::try_from(u32::from(region))
+                    .ok()
+                    .and_then(|depth| depth.checked_sub(1))
+                    .and_then(|scope| self.sessions.regions.get(scope))
+                    .is_some_and(|&mark| held < mark)
+            {
+                self.sessions.kept.push(Keep {
+                    position: held,
+                    region,
+                });
+                continue;
+            }
+            if scope && self.owing(named.resident)? == Owing::Nothing {
+                continue;
+            }
+            // A case's arms each act on the endpoint from where the case
+            // found it, and the join requires them to leave it alike.
+            if joins && matches!(named.resident, Resident::Endpoint(_)) {
+                continue;
+            }
+            captured(node, named.resident, by)?;
+        }
+        Ok(())
+    }
+
+    /// What `resident` owes that a continuation run twice or never would
+    /// break: an endpoint's protocol, a buffer's return, an exclusive view's
+    /// resume or abort, a capability's one migration and a clause's
+    /// continuation's one end; a held value, a received value and a shared
+    /// view, which a read copies, owe nothing.
+    ///
+    /// # Specification
+    /// - requires: a view's access is in the arena.
+    /// - ensures: [`Owing::Something`] exactly for an endpoint, a buffer, a
+    ///   capability, a continuation, a linear parameter's copy and a view of an
+    ///   exclusive access.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a view whose access is not
+    ///   in the arena.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope naming an endpoint is refused and one reading
+    ///   a held value checks.
+    /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
+    #[spec(ensures: |ret| match resident {
+        | Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } | Resident::Continuation { .. } | Resident::Supply { .. } => matches!(ret, Ok(Owing::Something)),
+        | Resident::Held { .. } | Resident::Received { .. } => matches!(ret, Ok(Owing::Nothing)),
+        | Resident::View { .. } => true,
+    })]
+    fn owing(
+        &self,
+        resident: Resident,
+    ) -> Result<Owing, CheckRefusal>
+    {
+        Ok(match resident {
+            Resident::Endpoint(_)
+            | Resident::Buffer { .. }
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. }
+            | Resident::Supply { .. } => Owing::Something,
+            Resident::Held { .. } | Resident::Received { .. } => Owing::Nothing,
+            Resident::View { at, .. } => {
+                if matches!(
+                    *self.computation(at)?,
+                    Computation::Memory(MemoryForm::Access {
+                        mode: AccessMode::Shared,
+                        ..
+                    })
+                ) {
+                    Owing::Nothing
+                }
+                else {
+                    Owing::Something
+                }
+            },
+        })
+    }
+
+    /// The region a value checked at `expected` is kept in: the one
+    /// `expected` names at its weak head, or [`Region::Held`] for a type kept
+    /// in none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept_in(
+        &mut self,
+        expected: ValueTypeId,
+    ) -> Result<Region, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(expected)?;
+        if let ValueTypeView::Kept { region, .. } = value_type_view(self.context.arena(), head)? {
+            return Ok(region);
+        }
+        Ok(Region::Held)
+    }
+
+    /// Refuse the thunk or stack `term` at `node` naming a variable kept in a
+    /// region that ends while `kept`, the region its own type is kept in, is
+    /// still live: forced past that region's end, the variable would outlive
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::KeptEscaped`]
+    ///   at `node` for the first free intuitionistic variable whose type
+    ///   reaches a type kept in a region that ends while `kept` is still live,
+    ///   any region at all when `kept` is [`Region::Held`];
+    ///   [`CheckRefusal::DanglingNode`] and [`CheckRefusal::MachineInvariant`]
+    ///   as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk forcing a kept thunk is refused at a type
+    ///   kept in no region and checks at one kept in the same region; a thunk
+    ///   forcing a parameter kept at a region its definition abstracts is
+    ///   refused at a type kept in no region.
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    /// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::Access { at, defect }) => at == node && defect == AccessDefect::KeptEscaped,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn contained(
+        &mut self,
+        term: CoreTerm,
+        node: CoreNode,
+        kept: Region,
+    ) -> Result<(), CheckRefusal>
+    {
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            let declared = self
+                .context
+                .binders()
+                .declared(Zone::Intuitionistic, index)
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            let reach =
+                crate::capability::reaches(self.context.arena(), TypeNode::Value(declared), kept)?;
+            if matches!(reach, crate::capability::Reach::Keeps) {
+                return Err(CheckRefusal::Access {
+                    at: node,
+                    defect: AccessDefect::KeptEscaped,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse the child `term` of the fork `at` naming a variable that lives
+    /// in a region: the child runs as a peer no region bounds, so the region
+    /// could end while the child still holds the variable. A region the
+    /// definition abstracts is the caller's, and ends as soon.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::CapabilityEscaped`] at the fork for the first
+    ///   free intuitionistic variable whose type reaches a capability living in
+    ///   any region but the held one, and [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::KeptEscaped`] for one whose type reaches a value kept
+    ///   in one; [`CheckRefusal::DanglingNode`] and
+    ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child exercising its scope's capability is refused
+    ///   whether or not it still holds its end, and a child exercising a
+    ///   capability held for the run checks.
+    /// - witness: `judgement::session::tests::a_child_exercises_only_what_outlives_every_region_1334`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::CapabilityEscaped { at: refused, .. }) => refused == TermNode::Computation(at),
+        | Err(CheckRefusal::Access { at: refused, defect }) => refused == CoreNode::Term(TermNode::Computation(at)) && defect == AccessDefect::KeptEscaped,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn unbounded(
+        &mut self,
+        term: CoreTerm,
+        at: ComputationId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            let declared = self
+                .context
+                .binders()
+                .declared(Zone::Intuitionistic, index)
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            match crate::capability::reaches(
+                self.context.arena(),
+                TypeNode::Value(declared),
+                Region::Held,
+            )? {
+                crate::capability::Reach::Clear => {},
+                crate::capability::Reach::Mentions => {
+                    return Err(CheckRefusal::CapabilityEscaped {
+                        at: TermNode::Computation(at),
+                        found: TypeNode::Value(declared),
+                    });
+                },
+                crate::capability::Reach::Keeps => {
+                    return Err(CheckRefusal::Access {
+                        at: node,
+                        defect: AccessDefect::KeptEscaped,
+                    });
+                },
+            }
+        }
+        Ok(())
+    }
+
+    /// End the innermost region, a capability scope's or a hold's: its mark
+    /// dropped and every slot kept in it released to an exclusive access.
+    ///
+    /// # Specification
+    /// - requires: the region's body was judged under the innermost mark.
+    /// - ensures: one region fewer; every keep in the region that ended or a
+    ///   deeper one released.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when no region is open.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an exclusive access of a kept slot is refused inside
+    ///   the region and checks after its scope ends.
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    #[spec(
+        captures: open = self.sessions.regions.len(),
+        ensures: |ret| ret.is_err() || self.sessions.regions.len().checked_add(1) == Some(open),
+    )]
+    pub(super) fn close_region(&mut self) -> Result<(), CheckRefusal>
+    {
+        let ended = u32::try_from(self.sessions.regions.len())
+            .map(RegionDepth::from)
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        let _mark = self
+            .sessions
+            .regions
+            .pop()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.sessions.kept.retain(|keep| keep.region < ended);
+        Ok(())
+    }
+
+    /// The refusal of a linear variable read as a value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: always: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::AsValue`] with the endpoint the index names;
+    ///   [`CheckRefusal::UnboundIndex`] for an index past the zone.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an endpoint returned as a value is refused by name.
+    /// - witness: `judgement::session::tests::an_endpoint_read_as_a_value_is_refused`
+    #[spec(ensures: |ret| ret.is_err())]
+    pub(super) fn endpoint_as_value(
+        &mut self,
+        term: ValueId,
+        index: DeBruijnIndex,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(term));
+        let slot = self.slot(node, index).map_err(|refusal| {
+            if let CheckRefusal::Linearity {
+                defect: LinearityDefect::Unbound { .. },
+                ..
+            } = refusal
+            {
+                CheckRefusal::UnboundIndex {
+                    at: term,
+                    zone: Zone::Linear,
+                    index,
+                    depth: self.context.depth(Zone::Linear),
+                }
+            }
+            else {
+                refusal
+            }
+        })?;
+        Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::AsValue {
+                endpoint: slot.endpoint,
+            },
+        })
+    }
+
+    /// The rules of the session actions: a send checks its payload, a
+    /// receive, a selection and a close synthesise at once, an offer checks
+    /// its arms, and a fork forms its protocol.
+    ///
+    /// # Specification
+    /// - requires: `term` is a session action; an offer is judged in checking
+    ///   direction only.
+    /// - ensures: a send waits on its payload's check against the payload type
+    ///   its endpoint's state sends; a receive advances its endpoint and
+    ///   synthesises the returner of the payload, a selection advances it to
+    ///   the chosen branch and a close consumes it at `end`, both synthesising
+    ///   the returner of the unit; an offer checks its first arm with the
+    ///   endpoint at that arm's branch; a fork forms its protocol annotation.
+    /// - fails: [`CheckRefusal::SessionMismatch`] for an action the state does
+    ///   not admit, a label it does not offer, or arms that are not exactly its
+    ///   labels; [`CheckRefusal::Linearity`] for an action after close and a
+    ///   payload naming its own endpoint or another;
+    ///   [`CheckRefusal::NotSynthesisable`] for an offer in synthesis.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat exchange drives every action at both ends,
+    ///   and each refusal has its own pathological term.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::an_operator_holding_the_seat_view_is_refused`
+    /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::NotSynthesisable { form: crate::refusal::CheckingForm::Offer(offered) }) => {
+            offered == term && matches!(direction, Direction::Synthesise)
+        },
+        | _ => true,
+    })]
+    pub(super) fn session(
+        &mut self,
+        term: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Session(ref action) = *self.computation(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        match (action, direction) {
+            (&SessionAction::Send { endpoint, payload }, _) => self.send(term, endpoint, payload),
+            (&SessionAction::Receive { endpoint, body }, _) => {
+                self.receive(term, endpoint, body, direction)
+            },
+            (
+                &SessionAction::Select {
+                    endpoint,
+                    ref label,
+                },
+                _,
+            ) => {
+                let label = label.clone();
+                self.select(term, endpoint, &label)
+            },
+            (&SessionAction::Close { endpoint }, _) => self.close_endpoint(term, endpoint),
+            (&SessionAction::Offer { .. }, Direction::Check(expected)) => {
+                self.offer(term, expected)
+            },
+            (&SessionAction::Offer { .. }, Direction::Synthesise) => {
+                Err(CheckRefusal::NotSynthesisable {
+                    form: crate::refusal::CheckingForm::Offer(term),
+                })
+            },
+            (&SessionAction::Fork { protocol, .. }, _) => {
+                self.wait(Frame::ForkProtocol {
+                    at: term,
+                    direction,
+                });
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(protocol))))
+            },
+            (&SessionAction::Place { payload, body }, _) => {
+                self.place(term, payload, body, direction)
+            },
+        }
+    }
+
+    /// The session type `slot` stands at, when its next step is `observed`;
+    /// a typed run keeps that session type, read where the action `at`
+    /// stands, as the standing of its endpoint, admitted or not.
+    ///
+    /// # Specification
+    /// - requires: `slot` was read by [`Self::live`]; the action `at` is
+    ///   admitted once.
+    /// - ensures: the slot's session type, whose step is `observed`.
+    /// - fails: [`CheckRefusal::SessionMismatch`] naming the action the state
+    ///   admits; [`CheckRefusal::MachineInvariant`] for a slot holding no
+    ///   session type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator that holds the seat's end sends where the
+    ///   state receives; each action of the seat exchange keeps its endpoint's
+    ///   state.
+    /// - witness: `judgement::session::tests::an_operator_holding_the_seat_view_is_refused`
+    /// - witness: `tests::judgement::session::a_typed_run_keeps_each_endpoint_s_state`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|session| session.step().is_ok_and(|step| step.action() == observed)))]
+    fn admitted(
+        &mut self,
+        at: ComputationId,
+        slot: Slot,
+        observed: ActionKind,
+    ) -> Result<SessionType, CheckRefusal>
+    {
+        if self.context.recording() == Recording::On {
+            let state = self.here(slot.state, slot.depth)?;
+            self.context.keep_endpoint(Typing {
+                term: TermNode::Computation(at),
+                ty: TypeNode::Value(state),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        let session = session_at(self.context, slot.state)?;
+        let expected = session
+            .step()
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?
+            .action();
+        if expected != observed {
+            return Err(CheckRefusal::SessionMismatch {
+                at,
+                endpoint: slot.endpoint,
+                state: slot.state,
+                defect: ProtocolDefect::Action { expected, observed },
+            });
+        }
+        Ok(session)
+    }
+
+    /// Start a send: delegate an endpoint sent whole, or check the payload,
+    /// then advance the endpoint.
+    ///
+    /// # Specification
+    /// - requires: `at` is a send on `endpoint` of `payload`.
+    /// - ensures: a payload that is a linear variable naming another endpoint
+    ///   is delegated: its slot, read where the send stands, is converted to
+    ///   the payload type and consumed, and the endpoint advances; any other
+    ///   payload leaves one `SessionSend` frame waiting on its check against
+    ///   the payload type, read where the send stands, which is recorded for
+    ///   `at`.
+    /// - fails: as [`Self::live`] and [`Self::admitted`];
+    ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::UsedTwice`] when
+    ///   the payload names the endpoint, and [`LinearityDefect::Closed`] when
+    ///   it delegates an endpoint already consumed; the value bridge's refusal
+    ///   when the delegated endpoint's session type is not the payload type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a send over its own endpoint is refused, an endpoint
+    ///   sent whole leaves the sender and a later action on it is refused, and
+    ///   the seat exchange's sends check.
+    /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
+    /// - witness: `judgement::session::tests::a_delegated_endpoint_leaves_its_sender`
+    /// - witness: `judgement::session::tests::a_closed_endpoint_is_not_delegated`
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Value { .. }) | Step::Ascend(Produced::CompType(_)))))]
+    fn send(
+        &mut self,
+        at: ComputationId,
+        endpoint: DeBruijnIndex,
+        payload: ValueId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let slot = self.live(at, endpoint)?;
+        let session = self.admitted(at, slot, ActionKind::Send)?;
+        let Ok(Move::Send { payload: ty, next }) = session.step()
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let node = CoreNode::Term(TermNode::Value(payload));
+        if self
+            .free_linear(CoreTerm::Value(payload))?
+            .contains(&endpoint)
+        {
+            return Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::UsedTwice {
+                    endpoint: slot.endpoint,
+                },
+            });
+        }
+        let next = self.context.arena_mut().value_type_session(next);
+        let expected = self.here(ty, slot.depth)?;
+        if self.returned_buffer(at, payload, expected)? == HandedOn::Buffer
+            || self.handed_endpoint(payload, expected)? == HandedOn::Endpoint
+        {
+            return self.sent(endpoint, next);
+        }
+        self.context.record_payload(at, expected);
+        self.wait(Frame::SessionSend { at, endpoint, next });
+        Ok(Step::Descend(Goal::Value {
+            term: payload,
+            direction: Direction::Check(expected),
+        }))
+    }
+
+    /// Return the buffer `payload` names, where `action` — a send, a
+    /// resumption or an exercised operation — hands on a value of `expected`.
+    ///
+    /// # Specification
+    /// - requires: `expected` is read where `action` stands.
+    /// - ensures: [`HandedOn::Buffer`] when the payload is a linear variable
+    ///   holding a buffer, whose slot, converted to `expected`, is then
+    ///   consumed and its typing kept; [`HandedOn::Other`], the slot untouched,
+    ///   for any other payload where `expected` is not the buffer at its weak
+    ///   head.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::BufferReturnedTwice`] for a buffer already
+    ///   returned, and [`LinearityDefect::BufferRead`] at `action` for a buffer
+    ///   no slot holds handed where a buffer is expected, which would otherwise
+    ///   mint one; the value bridge's refusal when `expected` is not the
+    ///   buffer.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an allocated buffer freed once checks and freed twice
+    ///   is refused at the second free, and an allocation's reply no placement
+    ///   holds is refused where it is freed.
+    /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
+    /// - witness: `judgement::session::tests::a_buffer_no_slot_holds_is_never_returned`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    pub(super) fn returned_buffer(
+        &mut self,
+        action: ComputationId,
+        payload: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(payload));
+        if let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        {
+            let sent = self.resided(node, index)?;
+            if let Resident::Buffer { at: site } = sent.resident {
+                if sent.use_state == LinearUse::Consumed {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::BufferReturnedTwice { site },
+                    });
+                }
+                let found = self.here(sent.state, sent.depth)?;
+                crate::conversion::value_bridge(
+                    self.context,
+                    payload,
+                    found,
+                    expected,
+                    &mut self.conversions,
+                )?;
+                if self.context.recording() == Recording::On {
+                    self.context.keep_typing(Typing {
+                        term: TermNode::Value(payload),
+                        ty: TypeNode::Value(expected),
+                        depth: self.context.depth(Zone::Intuitionistic),
+                    });
+                }
+                let _returned = self
+                    .context
+                    .binders()
+                    .occurrence(Zone::Linear, index)
+                    .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+                return Ok(HandedOn::Buffer);
+            }
+        }
+        let head = self.context.whnf_value_type(expected)?;
+        if matches!(
+            value_type_view(self.context.arena(), head)?,
+            ValueTypeView::Buffer
+        ) {
+            return Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferRead { site: action },
+            });
+        }
+        Ok(HandedOn::Other)
+    }
+
+    /// Hand on the endpoint `payload` names whole, where a send delegates it
+    /// or a call moves it into a parameter of `expected`.
+    ///
+    /// # Specification
+    /// - requires: `expected` is read where the hand-on stands.
+    /// - ensures: [`HandedOn::Endpoint`] when the payload is a linear variable
+    ///   naming an endpoint, whose slot, converted to `expected`, is then
+    ///   consumed and its typing kept; [`HandedOn::Other`], the slot untouched,
+    ///   for any other payload.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Closed`]
+    ///   for an endpoint already consumed; the value bridge's refusal when the
+    ///   endpoint's session type is not `expected`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a delegated endpoint leaves its sender, and an
+    ///   endpoint moved into a call leaves its caller; an action after either
+    ///   is refused as after close.
+    /// - witness: `judgement::session::tests::a_delegated_endpoint_leaves_its_sender`
+    /// - witness: `judgement::session::tests::a_closed_endpoint_is_not_delegated`
+    /// - witness: `judgement::session::tests::an_endpoint_moved_into_a_call_leaves_its_caller_4501`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    fn handed_endpoint(
+        &mut self,
+        payload: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(payload));
+        let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let handed = self.resided(node, index)?;
+        let Resident::Endpoint(endpoint) = handed.resident
+        else {
+            return Ok(HandedOn::Other);
+        };
+        if handed.use_state == LinearUse::Consumed {
+            return Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Closed { endpoint },
+            });
+        }
+        let found = self.here(handed.state, handed.depth)?;
+        crate::conversion::value_bridge(
+            self.context,
+            payload,
+            found,
+            expected,
+            &mut self.conversions,
+        )?;
+        // The payload is judged here, not by a descent, so its typing is kept
+        // as a checked value's would be.
+        if self.context.recording() == Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(payload),
+                ty: TypeNode::Value(expected),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        let _handed = self
+            .context
+            .binders()
+            .occurrence(Zone::Linear, index)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        Ok(HandedOn::Endpoint)
+    }
+
+    /// The type a loop's first pass takes when the loop threads an endpoint:
+    /// the endpoint's state where the loop starts, the loop head's, alone or
+    /// beside the held slots in the tuple the loop threads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a linear variable naming a live endpoint, its state read
+    ///   where the argument stands, the endpoint spent; for a tuple of linear
+    ///   variables at least one of which names an endpoint, the product of each
+    ///   component's type, each endpoint spent at its state and each other
+    ///   component read as [`Self::linear_read`] reads it; none for any other
+    ///   argument, nothing changed.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Closed`]
+    ///   for an endpoint already consumed; as [`Self::linear_read`] for another
+    ///   component.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loop over an endpoint at a recursive protocol hands
+    ///   it to its first pass at that protocol and checks, alone and beside a
+    ///   held counter; a pass that runs again before it receives is refused
+    ///   against the head's state.
+    /// - witness: `judgement::session::tests::a_loop_takes_the_endpoint_it_is_applied_to_4502`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    pub(super) fn threaded_argument(
+        &mut self,
+        argument: ValueId,
+    ) -> Result<Option<ValueTypeId>, CheckRefusal>
+    {
+        let components = if let Value::Tuple(ref components) = *self.value(argument)? {
+            components.to_vec()
+        }
+        else {
+            alloc::vec::Vec::from([argument])
+        };
+        let mut endpoints = 0_usize;
+        for &component in &components {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Ok(None);
+            };
+            let node = CoreNode::Term(TermNode::Value(component));
+            if let Resident::Endpoint(_) = self.resided(node, index)?.resident {
+                endpoints = endpoints.saturating_add(1);
+            }
+        }
+        if endpoints == 0 {
+            return Ok(None);
+        }
+        let mut types = alloc::vec::Vec::with_capacity(components.len());
+        for &component in &components {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let node = CoreNode::Term(TermNode::Value(component));
+            let read = self.resided(node, index)?;
+            if let Resident::Endpoint(endpoint) = read.resident {
+                if read.use_state == LinearUse::Consumed {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::Closed { endpoint },
+                    });
+                }
+                let state = self.here(read.state, read.depth)?;
+                if self.handed_endpoint(component, state)? != HandedOn::Endpoint {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
+                types.push(state);
+                continue;
+            }
+            let Step::Ascend(Produced::ValueType(ty)) = self.linear_read(component, index)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            types.push(self.context.settle_value_type(ty));
+        }
+        if let &[one] = types.as_slice() {
+            return Ok(Some(one));
+        }
+        let product = self.context.arena_mut().value_type_product(&types);
+        if self.context.recording() == Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(argument),
+                ty: TypeNode::Value(product),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        Ok(Some(product))
+    }
+
+    /// Move the endpoint `argument` names into a call whose parameter stands
+    /// at `domain`, when `domain` is a session type at its weak head.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the call's domain, read where the call stands.
+    /// - ensures: [`HandedOn::Endpoint`] when `domain` is a session type at its
+    ///   weak head and the argument a linear variable naming an endpoint, which
+    ///   [`Self::handed_endpoint`] spends, or a product and the argument a
+    ///   tuple of slots [`Self::handed_slots`] hands on; [`HandedOn::Other`],
+    ///   nothing changed, otherwise, so the argument's check refuses an
+    ///   endpoint read as a value.
+    /// - fails: as [`Self::handed_endpoint`]; [`CheckRefusal::StageNotBelow`]
+    ///   at the argument, standing at no stage, when `domain` is a session type
+    ///   staged by a recursion and the argument names an endpoint, which never
+    ///   descends.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork's child that hands its end to a function at
+    ///   `end` checks, an action on the end after the call is refused as after
+    ///   close, and an end handed at `Integer` stays refused as read as a
+    ///   value; a recursive definition that hands its endpoint parameter to
+    ///   itself is refused at the self-call.
+    /// - witness: `judgement::session::tests::an_endpoint_moved_into_a_call_leaves_its_caller_4501`
+    /// - witness: `judgement::session::tests::a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    pub(super) fn moved_endpoint(
+        &mut self,
+        argument: ValueId,
+        domain: ValueTypeId,
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(domain)?;
+        let view = value_type_view(self.context.arena(), head)?;
+        if matches!(view, ValueTypeView::Session(_)) {
+            return self.handed_endpoint(argument, domain);
+        }
+        if let ValueTypeView::Product(parts) = view {
+            let parts = parts.to_vec();
+            return self.handed_slots(argument, domain, &parts);
+        }
+        let ValueTypeView::Staged { base, stage } = view
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let unstaged = self.context.whnf_value_type(base)?;
+        if !matches!(
+            value_type_view(self.context.arena(), unstaged)?,
+            ValueTypeView::Session(_)
+        ) {
+            return Ok(HandedOn::Other);
+        }
+        let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(argument)?
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let node = CoreNode::Term(TermNode::Value(argument));
+        if !matches!(self.resided(node, index)?.resident, Resident::Endpoint(_)) {
+            return Ok(HandedOn::Other);
+        }
+        // An endpoint never descends: it stands at no stage, so the self-call
+        // it is handed to is refused at it.
+        Err(CheckRefusal::StageNotBelow {
+            at: argument,
+            found: gandr_kernel_term::Standing::Top,
+            bound: stage,
+        })
+    }
+
+    /// Hand on the tuple of slots a loop's pass threads to its next pass,
+    /// when an endpoint stands among them: each endpoint moves whole into its
+    /// factor of the product `parts` spells, and each other slot is read and
+    /// converted to its factor.
+    ///
+    /// # Specification
+    /// - requires: `parts` are the factors of `domain`, read where the call
+    ///   stands.
+    /// - ensures: [`HandedOn::Endpoint`] when the argument is a tuple of linear
+    ///   variables, as many as `parts`, at least one naming an endpoint: each
+    ///   endpoint spent as [`Self::handed_endpoint`] spends it, each other
+    ///   component read as [`Self::linear_read`] reads it and converted to its
+    ///   factor, the tuple's typing kept; [`HandedOn::Other`], nothing changed,
+    ///   otherwise.
+    /// - fails: as [`Self::handed_endpoint`] and [`Self::linear_read`], and the
+    ///   value bridge's refusal for a component whose type is not its factor.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loop counting an endpoint's reports in a held slot
+    ///   hands both to its next pass and checks.
+    /// - witness: `judgement::session::tests::a_loop_takes_the_endpoint_it_is_applied_to_4502`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    fn handed_slots(
+        &mut self,
+        argument: ValueId,
+        domain: ValueTypeId,
+        parts: &[ValueTypeId],
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let Value::Tuple(ref components) = *self.value(argument)?
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let components = components.to_vec();
+        if components.len() != parts.len() {
+            return Ok(HandedOn::Other);
+        }
+        let mut endpoints = 0_usize;
+        for &component in &components {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Ok(HandedOn::Other);
+            };
+            let node = CoreNode::Term(TermNode::Value(component));
+            if let Resident::Endpoint(_) = self.resided(node, index)?.resident {
+                endpoints = endpoints.saturating_add(1);
+            }
+        }
+        if endpoints == 0 {
+            return Ok(HandedOn::Other);
+        }
+        for (&component, &part) in components.iter().zip(parts) {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            if self.handed_endpoint(component, part)? == HandedOn::Endpoint {
+                continue;
+            }
+            let Step::Ascend(Produced::ValueType(found)) = self.linear_read(component, index)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let found = self.context.settle_value_type(found);
+            crate::conversion::value_bridge(
+                self.context,
+                component,
+                found,
+                part,
+                &mut self.conversions,
+            )?;
+        }
+        if self.context.recording() == Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(argument),
+                ty: TypeNode::Value(domain),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        Ok(HandedOn::Endpoint)
+    }
+
+    /// Finish a send whose payload checked: advance the endpoint.
+    ///
+    /// # Specification
+    /// - requires: the payload checked.
+    /// - ensures: the endpoint stands at `next`; the send synthesises the
+    ///   returner of the unit.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when the endpoint is not
+    ///   available, which a payload naming no endpoint cannot cause.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat's send advances it to the offer that
+    ///   follows.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
+    pub(super) fn sent(
+        &mut self,
+        endpoint: DeBruijnIndex,
+        next: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let _previous = self
+            .context
+            .binders()
+            .advance(endpoint, next)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        Ok(Step::Ascend(Produced::CompType(self.unit_returner())))
+    }
+
+    /// Receive on `endpoint` into the receive's linear binder and judge its
+    /// body.
+    ///
+    /// # Specification
+    /// - requires: `at` is a receive on `endpoint` whose body is `body`.
+    /// - ensures: the endpoint stands at the continuation; one linear slot
+    ///   more, at the payload type read where the receive stands: an endpoint
+    ///   the receive binds, available, for a payload that is a session type at
+    ///   its weak head, and otherwise a received value opened spent, whose
+    ///   reads copy; the type the slot opened at recorded for `at`; one
+    ///   `ReceiveBody` frame waits on the body's judgement in the receive's
+    ///   direction.
+    /// - fails: as [`Self::live`] and [`Self::admitted`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat's first receive binds the dispatch, read by
+    ///   copy, and a received endpoint is acted on and closed in the body.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::a_received_endpoint_is_acted_on_and_must_be_closed`
+    #[spec(
+        captures: before = self.context.depth(Zone::Linear),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+            && self.context.depth(Zone::Linear) > before
+            && self.context.payloads().contains_key(&at)),
+    )]
+    fn receive(
+        &mut self,
+        at: ComputationId,
+        endpoint: DeBruijnIndex,
+        body: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let slot = self.live(at, endpoint)?;
+        let session = self.admitted(at, slot, ActionKind::Receive)?;
+        let Ok(Move::Receive { payload, next }) = session.step()
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let next = self.context.arena_mut().value_type_session(next);
+        let _previous = self
+            .context
+            .binders()
+            .advance(endpoint, next)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let payload = self.here(payload, slot.depth)?;
+        let head = self.context.whnf_value_type(payload)?;
+        let view = value_type_view(self.context.arena(), head)?;
+        let depth = self.context.depth(Zone::Intuitionistic);
+        let endpoint = matches!(view, ValueTypeView::Session(_));
+        let buffer = matches!(view, ValueTypeView::Buffer);
+        let opened = if endpoint || buffer { head } else { payload };
+        self.context.record_payload(at, opened);
+        if endpoint {
+            self.context.binders().open(Zone::Linear, head);
+            self.sessions.opened.push(Opened {
+                resident: Resident::Endpoint(Endpoint {
+                    fork: at,
+                    side: ForkSide::Received,
+                }),
+                depth,
+            });
+        }
+        else if buffer {
+            // A buffer is live: its slot opens available, and only the send
+            // that returns it spends it.
+            self.context.binders().open(Zone::Linear, head);
+            self.sessions.opened.push(Opened {
+                resident: Resident::Buffer { at },
+                depth,
+            });
+        }
+        else {
+            self.context.binders().open(Zone::Linear, payload);
+            self.sessions.opened.push(Opened {
+                resident: Resident::Received { at },
+                depth,
+            });
+            // A received value owes nothing: its slot opens spent, so a
+            // read copies and the body's end finds no residue.
+            let _received = self
+                .context
+                .binders()
+                .occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        }
+        self.wait(Frame::ReceiveBody { at, direction });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction,
+        }))
+    }
+
+    /// Place the buffer or the endpoint `payload` names live in the
+    /// placement's linear binder and judge its body.
+    ///
+    /// # Specification
+    /// - requires: `at` is a placement of `payload` over `body`, the payload an
+    ///   intuitionistic binder: the bind's a buffer's placement stands under,
+    ///   or a function's parameter at a session type.
+    /// - ensures: one linear slot more, opened available at the payload's weak
+    ///   head: a buffer, or an endpoint the placement binds at the session
+    ///   state the head names, its head recorded for `at`; a session type a
+    ///   recursion stages is placed at its base, since an endpoint never
+    ///   descends; one `ReceiveBody` frame waits on the body's judgement in the
+    ///   placement's direction, so the body's end refuses the buffer
+    ///   unreturned, or the endpoint unspent, as a receive's does.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a payload other than an
+    ///   intuitionistic variable whose type is the buffer or a session type,
+    ///   staged or not, at its weak head, which the lowering never builds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an allocated buffer freed checks, and one the body
+    ///   never returns is refused at the placement; a parameter's endpoint
+    ///   closed checks, and one the body leaves unspent is refused at the
+    ///   placement; a recursive definition's endpoint parameter is placed, so
+    ///   its self-call, not the placement, is refused.
+    /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
+    /// - witness: `tests::judgement::session::a_placed_endpoint_is_spent_by_its_body_1862`
+    /// - witness: `judgement::session::tests::a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704`
+    #[spec(
+        captures: before = self.context.depth(Zone::Linear),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+            && self.context.depth(Zone::Linear) > before),
+    )]
+    fn place(
+        &mut self,
+        at: ComputationId,
+        payload: ValueId,
+        body: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = *self.value(payload)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let declared = self
+            .context
+            .binders()
+            .occurrence(Zone::Intuitionistic, index)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let read = self
+            .context
+            .shift_value_type(declared, Binders::past(index));
+        let mut head = self.context.whnf_value_type(read)?;
+        // A fixpoint's descending parameter stands at a stage of its type; an
+        // endpoint never descends, so it is placed at the session it is.
+        if let ValueTypeView::Staged { base, .. } = value_type_view(self.context.arena(), head)? {
+            let unstaged = self.context.whnf_value_type(base)?;
+            if matches!(
+                value_type_view(self.context.arena(), unstaged)?,
+                ValueTypeView::Session(_)
+            ) {
+                head = unstaged;
+            }
+        }
+        let view = value_type_view(self.context.arena(), head)?;
+        let resident = if matches!(view, ValueTypeView::Session(_)) {
+            // The readmission erases a placed endpoint as it erases a
+            // received one, reading the opened head off the payloads.
+            self.context.record_payload(at, head);
+            Resident::Endpoint(Endpoint {
+                fork: at,
+                side: ForkSide::Placed,
+            })
+        }
+        else if matches!(view, ValueTypeView::Buffer) {
+            Resident::Buffer { at }
+        }
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, head);
+        self.sessions.opened.push(Opened { resident, depth });
+        self.wait(Frame::ReceiveBody { at, direction });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction,
+        }))
+    }
+
+    /// Finish a receive whose body was judged: require a received endpoint
+    /// spent, drop the payload's slot and hand the body's result on.
+    ///
+    /// # Specification
+    /// - requires: the body was judged in `direction`.
+    /// - ensures: the payload's slot is closed and its entry dropped; the
+    ///   receive checked, or synthesised the body's type.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Residue`]
+    ///   at the receive for a received endpoint left unconsumed;
+    ///   [`CheckRefusal::MachineInvariant`] when the innermost slot is not this
+    ///   receive's.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a received endpoint the body never closes is refused
+    ///   at the receive, and a closed one checks.
+    /// - witness: `judgement::session::tests::a_received_endpoint_is_acted_on_and_must_be_closed`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
+    pub(super) fn received(
+        &mut self,
+        at: ComputationId,
+        direction: Direction<CompTypeId>,
+        produced: Produced,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
+        match innermost.resident {
+            Resident::Endpoint(endpoint) if endpoint.fork == at => {
+                if innermost.use_state == LinearUse::Available {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::Residue {
+                            endpoint,
+                            state: innermost.state,
+                        },
+                    });
+                }
+            },
+            Resident::Received { at: receive } if receive == at => {},
+            Resident::Buffer { at: site } if site == at => {
+                if innermost.use_state == LinearUse::Available {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::BufferUnreturned { site },
+                    });
+                }
+            },
+            Resident::Endpoint(_)
+            | Resident::Received { .. }
+            | Resident::Buffer { .. }
+            | Resident::Held { .. }
+            | Resident::View { .. }
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. }
+            | Resident::Supply { .. } => return Err(CheckRefusal::MachineInvariant),
+        }
+        let _state = self
+            .context
+            .binders()
+            .close(Zone::Linear)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let _opened = self.sessions.opened.pop();
+        match (direction, produced) {
+            (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
+            (Direction::Synthesise, Produced::CompType(ty)) => {
+                Ok(Step::Ascend(Produced::CompType(ty)))
+            },
+            (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
+        }
+    }
+
+    /// Select `label` on `endpoint`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a selection of `label` on `endpoint`.
+    /// - ensures: the endpoint stands at the label's branch; the selection
+    ///   synthesises the returner of the unit.
+    /// - fails: as [`Self::live`] and [`Self::admitted`];
+    ///   [`CheckRefusal::SessionMismatch`] naming [`ProtocolDefect::Label`] for
+    ///   a label the state does not offer.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat selects each of its choices once across the
+    ///   exchange.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::a_selection_or_offer_off_the_protocol_s_labels_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
+    fn select(
+        &mut self,
+        at: ComputationId,
+        endpoint: DeBruijnIndex,
+        label: &FieldLabel,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let slot = self.live(at, endpoint)?;
+        let session = self.admitted(at, slot, ActionKind::Select)?;
+        let Ok(Move::Select(branches)) = session.step()
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let Maybe::Present(next) = branches
+            .get(label)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?
+        else {
+            return Err(CheckRefusal::SessionMismatch {
+                at,
+                endpoint: slot.endpoint,
+                state: slot.state,
+                defect: ProtocolDefect::Label,
+            });
+        };
+        let next = self.context.arena_mut().value_type_session(next);
+        let _previous = self
+            .context
+            .binders()
+            .advance(endpoint, next)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        Ok(Step::Ascend(Produced::CompType(self.unit_returner())))
+    }
+
+    /// Close `endpoint`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a close of `endpoint`.
+    /// - ensures: the endpoint is consumed; the close synthesises the returner
+    ///   of the unit.
+    /// - fails: as [`Self::live`] and [`Self::admitted`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a close before `end` is refused and a close at it
+    ///   consumes the endpoint, so a second close is refused as after close.
+    /// - witness: `judgement::session::tests::an_endpoint_used_after_close_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
+    fn close_endpoint(
+        &mut self,
+        at: ComputationId,
+        endpoint: DeBruijnIndex,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let slot = self.live(at, endpoint)?;
+        let _end = self.admitted(at, slot, ActionKind::Close)?;
+        let _state = self
+            .context
+            .binders()
+            .occurrence(Zone::Linear, endpoint)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        Ok(Step::Ascend(Produced::CompType(self.unit_returner())))
+    }
+
+    /// Start an offer checked against `expected`: its arms must be exactly
+    /// the labels its endpoint's state offers; the first arm is checked from
+    /// the zone as the offer found it.
+    ///
+    /// # Specification
+    /// - requires: `at` is an offer.
+    /// - ensures: the zone as found is kept; the first arm is checked as
+    ///   [`Self::arm`] checks it.
+    /// - fails: as [`Self::live`] and [`Self::admitted`];
+    ///   [`CheckRefusal::SessionMismatch`] naming [`ProtocolDefect::Arms`] for
+    ///   arms that are not the state's labels.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the operator's offers check both labels; arms leaving
+    ///   different endpoints are refused.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+    /// - witness: `judgement::session::tests::a_selection_or_offer_off_the_protocol_s_labels_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    fn offer(
+        &mut self,
+        at: ComputationId,
+        expected: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Session(SessionAction::Offer { endpoint, ref arms }) =
+            *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let labels: Vec<FieldLabel> = arms.keys().cloned().collect();
+        let slot = self.live(at, endpoint)?;
+        let session = self.admitted(at, slot, ActionKind::Offer)?;
+        let Ok(Move::Offer(branches)) = session.step()
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if !branches.labels().eq(labels.iter()) {
+            return Err(CheckRefusal::SessionMismatch {
+                at,
+                endpoint: slot.endpoint,
+                state: slot.state,
+                defect: ProtocolDefect::Arms,
+            });
+        }
+        let zones = ZoneMark(self.sessions.zones.len());
+        let found = self.context.binders().linear_zone();
+        self.sessions.zones.push(found);
+        self.arm(at, Ordinal::FIRST, expected, zones)
+    }
+
+    /// Check the offer `at`'s arm at `position` against `expected`, its
+    /// endpoint advanced to that arm's branch.
+    ///
+    /// # Specification
+    /// - requires: the zone stands as the offer found it.
+    /// - ensures: one `OfferArm` frame waits on the arm's check.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a position past the arms
+    ///   or an endpoint not at the offer.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both arms of each offer of the seat exchange are
+    ///   checked.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    fn arm(
+        &mut self,
+        at: ComputationId,
+        position: Ordinal,
+        expected: CompTypeId,
+        zones: ZoneMark,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Session(SessionAction::Offer { endpoint, ref arms }) =
+            *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let (label, body) = arms
+            .iter()
+            .nth(position.0)
+            .map(|(label, &body)| (label.clone(), body))
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let slot = self.live(at, endpoint)?;
+        let session = session_at(self.context, slot.state)?;
+        let Ok(Move::Offer(branches)) = session.step()
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let Ok(Maybe::Present(next)) = branches.get(&label)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let next = self.context.arena_mut().value_type_session(next);
+        let _previous = self
+            .context
+            .binders()
+            .advance(endpoint, next)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        self.wait(Frame::OfferArm {
+            at,
+            arm: position,
+            expected,
+            zones,
+        });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction: Direction::Check(expected),
+        }))
+    }
+
+    /// Finish the offer `at`'s arm at `position`: keep the zone the first arm
+    /// left, require every later arm to leave the same one, and check the
+    /// next arm from the zone as the offer found it.
+    ///
+    /// # Specification
+    /// - requires: the arm at `position` checked.
+    /// - ensures: the next arm's check is the next goal; after the last arm the
+    ///   zone stands as every arm left it and the offer checked.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ArmsDisagree`] at the arm whose zone differs from
+    ///   the first arm's: a slot consumed in one and not the other, or left at
+    ///   a session type the other's is not equivalent to.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm closing an endpoint the other leaves open is
+    ///   refused; the seat exchange's arms agree.
+    /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(_) | Step::Ascend(Produced::Checked))))]
+    pub(super) fn armed(
+        &mut self,
+        at: ComputationId,
+        position: Ordinal,
+        expected: CompTypeId,
+        zones: ZoneMark,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Session(SessionAction::Offer { ref arms, .. }) = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let count = arms.len();
+        let mut bodies = arms.values().copied();
+        let first = bodies.next().ok_or(CheckRefusal::MachineInvariant)?;
+        let this = arms
+            .values()
+            .nth(position.0)
+            .copied()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let left = self.context.binders().linear_zone();
+        if position == Ordinal::FIRST {
+            self.sessions.zones.push(left);
+        }
+        else {
+            self.agree(first, this, zones, &left, Compared::Every)?;
+        }
+        let next = position.next()?;
+        if next.0 < count {
+            let found = self
+                .sessions
+                .zones
+                .get(zones.0)
+                .cloned()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.context.binders().restore_linear(&found);
+            return self.arm(at, next, expected, zones);
+        }
+        self.sessions.zones.truncate(zones.0);
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Require the zone `left` the arm `other` left to agree with the one the
+    /// first arm `first` left, on the slots `compared` names.
+    ///
+    /// # Specification
+    /// - requires: the first arm's zone is kept above the offer's own.
+    /// - ensures: nothing changes when every slot `compared` names has the same
+    ///   use in both and every such available slot equivalent session types.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ArmsDisagree`] with the first slot that differs;
+    ///   [`LinearityDefect::LinearSlotUnconsumed`] at the arm that left a
+    ///   linear parameter's copy unread where the other read it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm consuming an outer endpoint the first arm left
+    ///   is refused, after an offer and after a case.
+    /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+    /// - witness: `judgement::session::tests::offer_arms_leaving_an_endpoint_open_agree_on_its_state`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::ArmsDisagree { first: kept, other: differing, .. } }) => {
+            refused == CoreNode::Term(TermNode::Computation(other)) && kept == first && differing == other
+        },
+        | _ => true,
+    })]
+    fn agree(
+        &mut self,
+        first: ComputationId,
+        other: ComputationId,
+        zones: ZoneMark,
+        left: &LinearZone,
+        compared: Compared,
+    ) -> Result<(), CheckRefusal>
+    {
+        let agreed = self
+            .sessions
+            .zones
+            .get(
+                zones
+                    .0
+                    .checked_add(1)
+                    .ok_or(CheckRefusal::MachineInvariant)?,
+            )
+            .cloned()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        if agreed.depth() != left.depth() {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let base = usize::from(self.sessions.base);
+        let slots: Vec<_> = agreed.slots().zip(left.slots()).collect();
+        for (position, ((agreed_type, agreed_use), (left_type, left_use))) in
+            slots.into_iter().enumerate()
+        {
+            let opened = position
+                .checked_sub(base)
+                .and_then(|position| self.sessions.opened.get(position))
+                .map(|opened| opened.resident);
+            if compared == Compared::Endpoints
+                && !matches!(
+                    opened,
+                    Some(Resident::Endpoint(_) | Resident::Supply { .. })
+                )
+            {
+                continue;
+            }
+            let same = agreed_use == left_use
+                && (agreed_use == LinearUse::Consumed
+                    || agreed_type == left_type
+                    || crate::conversion::equivalent(self.context, agreed_type, left_type)?
+                        == crate::conversion::Agreement::Convertible);
+            if same {
+                continue;
+            }
+            let resident = opened.ok_or(CheckRefusal::MachineInvariant)?;
+            let at = CoreNode::Term(TermNode::Computation(other));
+            return Err(match resident {
+                Resident::Endpoint(endpoint) => CheckRefusal::Linearity {
+                    at,
+                    defect: LinearityDefect::ArmsDisagree {
+                        endpoint,
+                        first,
+                        other,
+                    },
+                },
+                // A received value opens spent, so two arms never leave it
+                // otherwise.
+                Resident::Received { .. } => CheckRefusal::MachineInvariant,
+                // One arm returned the buffer and the other kept it.
+                Resident::Buffer { at: site } => CheckRefusal::Linearity {
+                    at,
+                    defect: LinearityDefect::BufferUnreturned { site },
+                },
+                // Within its hold a held slot's use changes by a consume
+                // alone, so one arm consumed it and the other did not.
+                Resident::Held { .. } => CheckRefusal::Access {
+                    at,
+                    defect: AccessDefect::Consumed,
+                },
+                Resident::View { .. } => CheckRefusal::Access {
+                    at,
+                    defect: AccessDefect::Unended,
+                },
+                Resident::Capability { world } => CheckRefusal::Located {
+                    at,
+                    defect: crate::worlds::LocatedDefect::CapabilityCaptured {
+                        world,
+                        by: Capture::Branch,
+                    },
+                },
+                // One arm ended the continuation and the other did not.
+                Resident::Continuation { clause } => CheckRefusal::Linearity {
+                    at,
+                    defect: LinearityDefect::ContinuationUnspent { clause },
+                },
+                // One arm read the copy and the other did not: the arm that
+                // left it unread is refused.
+                Resident::Supply { lambda } => CheckRefusal::Linearity {
+                    at: if left_use == LinearUse::Available {
+                        at
+                    }
+                    else {
+                        CoreNode::Term(TermNode::Computation(first))
+                    },
+                    defect: LinearityDefect::LinearSlotUnconsumed { lambda },
+                },
+            });
+        }
+        Ok(())
+    }
+
+    /// Open the arms of a case: while the run holds a value, has placed a
+    /// buffer live or holds an endpoint, keep the zone as the case found it,
+    /// for each arm to start from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Joining::Joined`] at the mark the found zone is kept at
+    ///   when a slot the run opened is held, a live buffer or an endpoint;
+    ///   [`Joining::Threaded`], nothing kept, otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case on a list or a sum whose arms consume a held
+    ///   value one each checks, and a read after it of a value the first arm or
+    ///   the second consumed is refused; a case whose arms each return a live
+    ///   buffer checks; a case whose arms each close an endpoint checks.
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
+    #[spec(
+        captures: kept = self.sessions.zones.len(),
+        ensures: |ret| match ret {
+            Joining::Joined(mark) => mark.0 == kept && kept.checked_add(1) == Some(self.sessions.zones.len()),
+            Joining::Threaded => self.sessions.zones.len() == kept,
+        },
+    )]
+    pub(super) fn arms_opened(&mut self) -> Joining
+    {
+        // A held value one arm may consume and another not, a live buffer
+        // every arm returns or none does, and an endpoint or a linear
+        // parameter's copy each arm spends as the others do: each arm starts
+        // from it as found.
+        if !self.sessions.opened.iter().any(|opened| {
+            matches!(
+                opened.resident,
+                Resident::Held { .. }
+                    | Resident::Buffer { .. }
+                    | Resident::Endpoint(_)
+                    | Resident::Supply { .. }
+            )
+        }) {
+            return Joining::Threaded;
+        }
+        let mark = ZoneMark(self.sessions.zones.len());
+        let found = self.context.binders().linear_zone();
+        self.sessions.zones.push(found);
+        Joining::Joined(mark)
+    }
+
+    /// End the arm `arm` of the case whose zones stand at `zones` with another
+    /// to come: fold the zone the arm left into the join, and give the next
+    /// arm each held slot, live buffer and endpoint as the case found it and
+    /// every other slot as this arm left it.
+    ///
+    /// # Specification
+    /// - requires: the arm `arm` of the case opened at `zones` checked, after
+    ///   the arm `first` when it is another.
+    /// - ensures: each held slot, live buffer and endpoint is at the use and
+    ///   the session type the case found it at; the join is kept above the
+    ///   found zone.
+    /// - fails: as [`Self::arm_folded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arms_opened`].
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
+    #[spec(ensures: |ret| ret.is_err() || zones.0.checked_add(2) == Some(self.sessions.zones.len()))]
+    pub(super) fn arm_ended(
+        &mut self,
+        zones: ZoneMark,
+        first: ComputationId,
+        arm: ComputationId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let joined = self.arm_folded(zones, first, arm)?;
+        let found = self
+            .sessions
+            .zones
+            .get(zones.0)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let base = usize::from(self.sessions.base);
+        let opened = &self.sessions.opened;
+        let resident = |position: BinderDepth| {
+            usize::from(position)
+                .checked_sub(base)
+                .and_then(|above| opened.get(above))
+                .map(|slot| slot.resident)
+        };
+        // A held slot and a live buffer change by their use alone; an
+        // endpoint's session type advances too, so the next arm takes its
+        // whole slot as found.
+        let next = joined
+            .taking(found, |position, _| {
+                matches!(
+                    resident(position),
+                    Some(Resident::Held { .. } | Resident::Buffer { .. })
+                )
+            })
+            .adopting(found, |position| {
+                matches!(
+                    resident(position),
+                    Some(Resident::Endpoint(_) | Resident::Supply { .. })
+                )
+            });
+        self.context.binders().restore_linear(&next);
+        Ok(())
+    }
+
+    /// Join the arms of the case whose zones stand at `zones` after its last
+    /// arm `arm`: the zone that arm left, each held slot consumed when any arm
+    /// consumed it.
+    ///
+    /// # Specification
+    /// - requires: the last arm `arm` of the case opened at `zones` checked,
+    ///   after the arm `first` when it is another.
+    /// - ensures: the zone is the join and the case's zones are dropped.
+    /// - fails: as [`Self::arm_folded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arms_opened`].
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
+    #[spec(ensures: |ret| ret.is_err() || self.sessions.zones.len() == zones.0)]
+    pub(super) fn arms_joined(
+        &mut self,
+        zones: ZoneMark,
+        first: ComputationId,
+        arm: ComputationId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let joined = self.arm_folded(zones, first, arm)?;
+        self.context.binders().restore_linear(&joined);
+        self.sessions.zones.truncate(zones.0);
+        Ok(())
+    }
+
+    /// The zone the arm `arm` just checked left, each held slot taken from the
+    /// join of the arms before it where one of them consumed it, kept as the
+    /// join above the zone the case found; each live buffer must be left as
+    /// the arms before it left it, returned by every arm or by none, and each
+    /// endpoint as the arm `first` left it.
+    ///
+    /// # Specification
+    /// - requires: the arm `arm` of the case opened at `zones` checked, after
+    ///   the arm `first` when it is another.
+    /// - ensures: the join is kept one above `zones` and returned.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ArmsDisagree`] at `arm` for the first endpoint
+    ///   `arm` leaves at another use or another session type than `first` left
+    ///   it; [`LinearityDefect::BufferUnreturned`] at `arm` for the outermost
+    ///   live buffer `arm` returned where the arms before it kept it, or kept
+    ///   where they returned it; [`CheckRefusal::MachineInvariant`] when no
+    ///   zone is kept at `zones` or the arm left another depth.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arms_opened`], and an arm keeping a buffer
+    ///   another returned is refused at that arm either way round, as is an arm
+    ///   leaving open an endpoint the first arm closed.
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
+    #[spec(ensures: |ret| match ret.as_ref() {
+        | Ok(joined) => zones.0.checked_add(1).and_then(|join| self.sessions.zones.get(join)) == Some(joined),
+        | Err(&CheckRefusal::Linearity {
+            at: refused,
+            defect: LinearityDefect::BufferUnreturned { .. } | LinearityDefect::ArmsDisagree { .. },
+        }) => refused == CoreNode::Term(TermNode::Computation(arm)),
+        | Err(_) => true,
+    })]
+    fn arm_folded(
+        &mut self,
+        zones: ZoneMark,
+        first: ComputationId,
+        arm: ComputationId,
+    ) -> Result<LinearZone, CheckRefusal>
+    {
+        let left = self.context.binders().linear_zone();
+        let join = zones
+            .0
+            .checked_add(1)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let found = self
+            .sessions
+            .zones
+            .get(zones.0)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        if found.depth() != left.depth() {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        // Every arm but the first leaves each endpoint as the first did, so
+        // the endpoint's state after the case is one whichever arm ran.
+        if self.sessions.zones.get(join).is_some() {
+            self.agree(first, arm, zones, &left, Compared::Endpoints)?;
+        }
+        let base = usize::from(self.sessions.base);
+        let opened = &self.sessions.opened;
+        let joined = match self.sessions.zones.get(join) {
+            Some(earlier) => {
+                for (position, ((_, theirs), (_, ours))) in
+                    earlier.slots().zip(left.slots()).enumerate()
+                {
+                    if theirs == ours {
+                        continue;
+                    }
+                    if let Some(Resident::Buffer { at: site }) = position
+                        .checked_sub(base)
+                        .and_then(|above| opened.get(above))
+                        .map(|slot| slot.resident)
+                    {
+                        return Err(CheckRefusal::Linearity {
+                            at: CoreNode::Term(TermNode::Computation(arm)),
+                            defect: LinearityDefect::BufferUnreturned { site },
+                        });
+                    }
+                }
+                left.taking(earlier, |position, theirs| {
+                    theirs != LinearUse::Available
+                        && usize::from(position)
+                            .checked_sub(base)
+                            .and_then(|above| opened.get(above))
+                            .is_some_and(|slot| matches!(slot.resident, Resident::Held { .. }))
+                })
+            },
+            None => left,
+        };
+        self.sessions.zones.truncate(join);
+        self.sessions.zones.push(joined.clone());
+        Ok(joined)
+    }
+
+    /// Judge, at the operation `at` handing on `payload` that `answerer`
+    /// answers, the live residents the operation's
+    /// continuation ends: the host answers once and captures nothing; a
+    /// scope's clause receives the rest of the scope's region as a
+    /// continuation, which holding an obligation the clause must end exactly
+    /// once, so the capture is recorded for the clause; and an operation
+    /// anyone may answer captures every slot the run opened, which is refused.
+    /// A received value, which a read copies, passes, and so does the buffer
+    /// `payload` names, which the operation hands back whole. An operation an
+    /// unwind performs passes: the unwind runs under the empty row, so no
+    /// clause answers it, and the row refuses it by name.
+    ///
+    /// # Specification
+    /// - requires: `payload` stands where `at` does.
+    /// - ensures: when a scope's clause answers and the continuation captures a
+    ///   live resident other than a received value or the buffer `payload` is,
+    ///   the scope and the operation are recorded in [`Sessions::owing`];
+    ///   nothing else changes.
+    /// - fails: as [`captured`] by [`Capture::Continuation`] at `at`, for the
+    ///   outermost slot an operation anyone may answer captures whose use is
+    ///   still available and whose resident is neither a received value nor the
+    ///   buffer `payload` is, and for one a scope captures whose region no
+    ///   waiting scope opened; [`CheckRefusal::MachineInvariant`] for a slot
+    ///   the binders do not hold; [`CheckRefusal::DanglingNode`] for a payload
+    ///   outside the arena.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parent exercising its scope's capability while it
+    ///   holds an endpoint opened in the scope has the scope's clause owe the
+    ///   continuation, the same exercise after the endpoint closed owes
+    ///   nothing, and one exercising a capability held for the run checks with
+    ///   the endpoint open.
+    /// - witness: `judgement::session::tests::an_operation_a_scope_answers_captures_what_the_scope_opened_1334`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant | CheckRefusal::DanglingNode { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. })))]
+    pub(super) fn region_captured(
+        &mut self,
+        at: ComputationId,
+        answerer: Answerer<'_>,
+        payload: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let mark = match answerer {
+            Answerer::Host => return Ok(()),
+            // A depth past the open regions reads as the outermost mark.
+            Answerer::Scope { depth, .. } => usize::try_from(u32::from(depth))
+                .ok()
+                .and_then(|depth| depth.checked_sub(1))
+                .and_then(|region| self.sessions.regions.get(region))
+                .copied()
+                .unwrap_or_default(),
+            Answerer::Anyone => 0,
+        };
+        if matches!(self.carrier(None), Some(Frame::AccessUnwind { .. })) {
+            return Ok(());
+        }
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let handed = if let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        {
+            Some(index)
+        }
+        else {
+            None
+        };
+        let opened = self.sessions.opened.len();
+        for position in mark .. opened {
+            let index = opened
+                .checked_sub(position)
+                .and_then(|above| above.checked_sub(1))
+                .and_then(|index| u32::try_from(index).ok())
+                .map(DeBruijnIndex::from)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let use_state = self
+                .context
+                .binders()
+                .linear_use(index)
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            if use_state != LinearUse::Available {
+                continue;
+            }
+            let resident = self
+                .sessions
+                .opened
+                .get(position)
+                .ok_or(CheckRefusal::MachineInvariant)?
+                .resident;
+            let returned = handed == Some(index) && matches!(resident, Resident::Buffer { .. });
+            if !returned && !matches!(resident, Resident::Received { .. }) {
+                if let Answerer::Scope { depth, operation } = answerer
+                    && let Some(scope) = self.scope_at(depth)
+                {
+                    if !self
+                        .sessions
+                        .owing
+                        .iter()
+                        .any(|&(owing, ref name)| owing == scope && name == operation)
+                    {
+                        self.sessions.owing.push((scope, operation.clone()));
+                    }
+                    return Ok(());
+                }
+                return captured(node, resident, Capture::Continuation);
+            }
+        }
+        Ok(())
+    }
+
+    /// The capability scope whose region stands at `depth`: the waiting scope
+    /// subject that region counts, outermost first, among the waiting scope
+    /// subjects and hold bodies.
+    ///
+    /// # Specification
+    /// - ensures: the scope when the region at `depth` is a scope's; `None` for
+    ///   a hold's region or a depth past the open ones.
+    /// - panics: none.
+    /// - executable: none — the frames are the machine's private stack, which
+    ///   only a judgement drives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation of an inner scope's capability records
+    ///   the inner scope, not the outer one.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    fn scope_at(
+        &self,
+        depth: RegionDepth,
+    ) -> Option<ComputationId>
+    {
+        let region = usize::try_from(u32::from(depth)).ok()?.checked_sub(1)?;
+        let waiting = self
+            .frames
+            .iter()
+            .filter(|waiting| {
+                matches!(
+                    waiting.frame,
+                    Frame::ScopeSubject { .. } | Frame::HoldBody { .. }
+                )
+            })
+            .nth(region)?;
+        if let Frame::ScopeSubject { at, .. } = waiting.frame {
+            Some(at)
+        }
+        else {
+            None
+        }
+    }
+
+    /// Open the linear slot the operation clause `clause` owes the
+    /// continuation it receives, which the next intuitionistic binder binds
+    /// at `stack`: the clause must resume it or abandon it exactly once.
+    ///
+    /// # Specification
+    /// - requires: the clause's payload is bound and its stack is not yet.
+    /// - ensures: one linear slot more, held by [`Resident::Continuation`], and
+    ///   one [`Owed`] entry at the next intuitionistic level.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the slots a run counts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause owing its continuation that resumes it once
+    ///   checks, and one that drops it is refused.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(
+        captures: [owed = self.sessions.owed.len(), before = self.context.depth(Zone::Linear)],
+        ensures: |ret| ret.is_err() || (self.sessions.owed.len() == owed.saturating_add(1) && self.context.depth(Zone::Linear) > before),
+    )]
+    pub(super) fn owe(
+        &mut self,
+        clause: ComputationId,
+        stack: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, stack);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Continuation { clause },
+            depth,
+        });
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(1)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.sessions.owed.push(Owed {
+            stack: usize::from(depth),
+            slot,
+            clause,
+        });
+        Ok(())
+    }
+
+    /// End the operation clause whose body was judged, its payload and stack
+    /// still bound: the continuation it owes, if any, must have been ended,
+    /// and its slot closes.
+    ///
+    /// # Specification
+    /// - requires: the clause's payload and stack are the innermost
+    ///   intuitionistic binders.
+    /// - ensures: the clause's [`Owed`] entry and its slot are gone; a clause
+    ///   that owes nothing changes nothing.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationUnspent`] at the clause's body for a
+    ///   continuation neither resumed nor abandoned;
+    ///   [`CheckRefusal::MachineInvariant`] when the slot is not the innermost.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause that drops a continuation holding an
+    ///   endpoint is refused, and one that abandons it checks.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(
+        captures: owed = self.sessions.owed.len(),
+        ensures: |ret| ret.is_err() || self.sessions.owed.len() <= owed,
+    )]
+    pub(super) fn owed_ended(&mut self) -> Result<(), CheckRefusal>
+    {
+        let depth = usize::from(self.context.depth(Zone::Intuitionistic));
+        let Some(&owed) = self.sessions.owed.last()
+        else {
+            return Ok(());
+        };
+        if owed.stack.checked_add(1) != Some(depth) {
+            return Ok(());
+        }
+        if owed.slot.checked_add(1) != Some(self.sessions.opened.len()) {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let use_state = self
+            .context
+            .binders()
+            .linear_use(DeBruijnIndex::from(0_u32))
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        if use_state == LinearUse::Available {
+            return Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(owed.clause)),
+                defect: LinearityDefect::ContinuationUnspent {
+                    clause: owed.clause,
+                },
+            });
+        }
+        let _declared = self
+            .context
+            .binders()
+            .close(Zone::Linear)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let _opened = self.sessions.opened.pop();
+        let _owed = self.sessions.owed.pop();
+        Ok(())
+    }
+
+    /// The owed continuation the intuitionistic `index` names, read here.
+    ///
+    /// # Specification
+    /// - ensures: the innermost [`Owed`] entry whose stack stands at the level
+    ///   `index` names; `None` for a variable no owed stack is.
+    /// - panics: none.
+    /// - executable: none — the level reads the context's depth, which only a
+    ///   judgement drives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the stack is found from inside a nested binder.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    fn owed_at(
+        &self,
+        index: DeBruijnIndex,
+    ) -> Option<Owed>
+    {
+        if self.sessions.owed.is_empty() {
+            return None;
+        }
+        let level = usize::from(self.context.depth(Zone::Intuitionistic))
+            .checked_sub(1)?
+            .checked_sub(usize::try_from(u32::from(index)).ok()?)?;
+        self.sessions
+            .owed
+            .iter()
+            .rev()
+            .find(|owed| owed.stack == level)
+            .copied()
+    }
+
+    /// Spend the owed continuation `stack` names, which the resumption or
+    /// abandonment `at` ends, and admit the one read of it that follows.
+    ///
+    /// # Specification
+    /// - ensures: for a stack that is an owed continuation's variable, its slot
+    ///   is spent and [`Sessions::ending`] names its level; nothing changes
+    ///   otherwise.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationUsedTwice`] at `at` for a continuation
+    ///   already ended; [`CheckRefusal::DanglingNode`] for a stack outside the
+    ///   arena; [`CheckRefusal::MachineInvariant`] for a slot the binders do
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a continuation resumed twice is refused at the second
+    ///   resumption.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_err() || self.sessions.ending.is_none() || !self.sessions.owed.is_empty())]
+    pub(super) fn ending(
+        &mut self,
+        at: ComputationId,
+        stack: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.sessions.owed.is_empty() {
+            return Ok(());
+        }
+        let Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = *self.value(stack)?
+        else {
+            return Ok(());
+        };
+        let Some(owed) = self.owed_at(index)
+        else {
+            return Ok(());
+        };
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(owed.slot)
+            .and_then(|above| above.checked_sub(1))
+            .and_then(|slot| u32::try_from(slot).ok())
+            .map(DeBruijnIndex::from)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        match self.context.binders().occurrence(Zone::Linear, slot) {
+            Ok(_) => {},
+            Err(ContextError::LinearSlotConsumed { .. }) => {
+                return Err(CheckRefusal::Linearity {
+                    at: CoreNode::Term(TermNode::Computation(at)),
+                    defect: LinearityDefect::ContinuationUsedTwice {
+                        clause: owed.clause,
+                    },
+                });
+            },
+            Err(
+                ContextError::UnboundIndex { .. }
+                | ContextError::LinearSlotUnconsumed { .. }
+                | ContextError::NoBinderToClose { .. },
+            ) => return Err(CheckRefusal::MachineInvariant),
+        }
+        self.sessions.ending = Some(owed.stack);
+        Ok(())
+    }
+
+    /// Admit the read `at` of the intuitionistic `index` only as what the
+    /// resumption or abandonment being judged ends, when it names an owed
+    /// continuation.
+    ///
+    /// # Specification
+    /// - ensures: [`Sessions::ending`] is cleared when the read is the one it
+    ///   admits; nothing changes otherwise.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationAsValue`] at `at` for any other read of
+    ///   an owed continuation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause returning its owed continuation as a value
+    ///   is refused.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::ContinuationAsValue { .. }, .. })))]
+    pub(super) fn mention(
+        &mut self,
+        at: ValueId,
+        index: DeBruijnIndex,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(owed) = self.owed_at(index)
+        else {
+            return Ok(());
+        };
+        if self.sessions.ending == Some(owed.stack) {
+            self.sessions.ending = None;
+            return Ok(());
+        }
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(at)),
+            defect: LinearityDefect::ContinuationAsValue {
+                clause: owed.clause,
+            },
+        })
+    }
+
+    /// Open the linear function `lambda`'s parameter at `domain`: its copy in
+    /// a linear slot, then its shadow as the next intuitionistic binder, which
+    /// every read of the parameter names.
+    ///
+    /// # Specification
+    /// - requires: `domain` is formed where the run stands.
+    /// - ensures: one linear slot more, available and held by
+    ///   [`Resident::Supply`]; one intuitionistic binder more at `domain`; one
+    ///   [`Supplied`] entry whose shadow is that binder's level.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the slots a run counts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear identity checks, and a body that never reads
+    ///   its parameter is refused.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(
+        captures: [
+            supplied = self.sessions.supplied.len(),
+            linear = self.context.depth(Zone::Linear),
+            intuitionistic = self.context.depth(Zone::Intuitionistic),
+        ],
+        ensures: |ret| ret.is_err()
+            || (self.sessions.supplied.len() == supplied.saturating_add(1)
+                && self.context.depth(Zone::Linear) > linear
+                && self.context.depth(Zone::Intuitionistic) > intuitionistic),
+    )]
+    pub(super) fn supply(
+        &mut self,
+        lambda: ComputationId,
+        domain: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, domain);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Supply { lambda },
+            depth,
+        });
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(1)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.context.binders().open(Zone::Intuitionistic, domain);
+        self.sessions.supplied.push(Supplied {
+            shadow: usize::from(depth),
+            slot,
+            lambda,
+        });
+        Ok(())
+    }
+
+    /// End the body of the linear function `lambda`: the body must have read
+    /// its parameter's copy, and the copy's slot and the shadow close.
+    ///
+    /// # Specification
+    /// - requires: the parameter's shadow is the innermost intuitionistic
+    ///   binder and its copy the innermost linear slot.
+    /// - ensures: the parameter's [`Supplied`] entry, its slot and its shadow
+    ///   are gone.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::LinearSlotUnconsumed`] at the lambda for a copy the
+    ///   body never read; [`CheckRefusal::MachineInvariant`] when the entry,
+    ///   the slot or the shadow is not the innermost.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body that never reads its parameter is refused at
+    ///   the lambda, and one that reads it once checks.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(
+        captures: supplied = self.sessions.supplied.len(),
+        ensures: |ret| ret.is_err() || self.sessions.supplied.len().checked_add(1) == Some(supplied),
+    )]
+    pub(super) fn supplied_ended(
+        &mut self,
+        lambda: ComputationId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let supplied = self
+            .sessions
+            .supplied
+            .last()
+            .copied()
+            .filter(|supplied| supplied.lambda == lambda)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let shadow = usize::from(self.context.depth(Zone::Intuitionistic));
+        if supplied.slot.checked_add(1) != Some(self.sessions.opened.len())
+            || supplied.shadow.checked_add(1) != Some(shadow)
+        {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        match self.context.binders().close(Zone::Linear) {
+            Ok(_) => {},
+            Err(ContextError::LinearSlotUnconsumed { .. }) => {
+                return Err(CheckRefusal::Linearity {
+                    at: CoreNode::Term(TermNode::Computation(lambda)),
+                    defect: LinearityDefect::LinearSlotUnconsumed { lambda },
+                });
+            },
+            Err(
+                ContextError::UnboundIndex { .. }
+                | ContextError::LinearSlotConsumed { .. }
+                | ContextError::NoBinderToClose { .. },
+            ) => return Err(CheckRefusal::MachineInvariant),
+        }
+        let _opened = self.sessions.opened.pop();
+        let _supplied = self.sessions.supplied.pop();
+        self.close()
+    }
+
+    /// The linear function's parameter whose shadow the intuitionistic
+    /// `index` names, read here.
+    ///
+    /// # Specification
+    /// - ensures: the innermost [`Supplied`] entry whose shadow stands at the
+    ///   level `index` names; `None` for a variable no shadow is.
+    /// - panics: none.
+    /// - executable: none — the level reads the context's depth, which only a
+    ///   judgement drives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the shadow is found from inside a nested binder.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    fn supplied_at(
+        &self,
+        index: DeBruijnIndex,
+    ) -> Option<Supplied>
+    {
+        if self.sessions.supplied.is_empty() {
+            return None;
+        }
+        let level = usize::from(self.context.depth(Zone::Intuitionistic))
+            .checked_sub(1)?
+            .checked_sub(usize::try_from(u32::from(index)).ok()?)?;
+        self.sessions
+            .supplied
+            .iter()
+            .rev()
+            .find(|supplied| supplied.shadow == level)
+            .copied()
+    }
+
+    /// What a read of the shadow of the linear function `lambda` does: it is
+    /// free where a [`Frame::Forming`] stands above the body's frame.
+    ///
+    /// # Specification
+    /// - ensures: [`ShadowRead::Free`] exactly when a [`Frame::Forming`] waits
+    ///   above the innermost [`Frame::LinearLambdaBody`] of `lambda`.
+    /// - panics: none.
+    /// - executable: none — the frames stand only as a judgement drives them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codomain that reads the shadow forms inside the
+    ///   body, and a term that reads the shadow draws its copy.
+    /// - witness: `judgement::session::tests::a_type_in_a_linear_body_reads_the_shadow_free_5853`
+    fn shadow_read(
+        &self,
+        lambda: ComputationId,
+    ) -> ShadowRead
+    {
+        let forming = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|waiting| {
+                !matches!(
+                    waiting.frame,
+                    Frame::LinearLambdaBody { lambda: body } if body == lambda
+                )
+            })
+            .any(|waiting| matches!(waiting.frame, Frame::Forming));
+        if forming {
+            ShadowRead::Free
+        }
+        else {
+            ShadowRead::Drawn
+        }
+    }
+
+    /// Mark the formation the run starts inside a linear lambda's body: a
+    /// [`Frame::Forming`] waits beneath it, unless one waits above the
+    /// innermost body's frame already.
+    ///
+    /// # Specification
+    /// - ensures: outside a linear lambda's body nothing changes; inside one, a
+    ///   read of the innermost linear lambda's shadow is [`ShadowRead::Free`].
+    /// - panics: none.
+    /// - executable: none — the clause reads every waiting frame, a walk no
+    ///   predicate makes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codomain that reads the shadow forms inside the
+    ///   body, and a term that reads the shadow draws its copy.
+    /// - witness: `judgement::session::tests::a_type_in_a_linear_body_reads_the_shadow_free_5853`
+    pub(super) fn forming_marked(&mut self)
+    {
+        let Some(&Supplied { lambda, .. }) = self.sessions.supplied.last()
+        else {
+            return;
+        };
+        if self.shadow_read(lambda) == ShadowRead::Drawn {
+            self.wait(Frame::Forming);
+        }
+    }
+
+    /// Read at `at` the linear function's parameter whose shadow the
+    /// intuitionistic `index` names: a read inside a type reads the shadow
+    /// free, and every other read draws the parameter's copy.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes for a variable no shadow is, or for a read
+    ///   inside a type the body forms; the copy's slot is spent otherwise.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::LinearSlotConsumed`] at `at` for a copy already
+    ///   read; [`CheckRefusal::MachineInvariant`] for a slot the binders do not
+    ///   hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body that reads its parameter twice is refused at
+    ///   the second read.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotConsumed { .. }, .. } | CheckRefusal::MachineInvariant)))]
+    pub(super) fn drawn(
+        &mut self,
+        at: ValueId,
+        index: DeBruijnIndex,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(supplied) = self.supplied_at(index)
+        else {
+            return Ok(());
+        };
+        if self.shadow_read(supplied.lambda) == ShadowRead::Free {
+            return Ok(());
+        }
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(supplied.slot)
+            .and_then(|above| above.checked_sub(1))
+            .and_then(|slot| u32::try_from(slot).ok())
+            .map(DeBruijnIndex::from)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        match self.context.binders().occurrence(Zone::Linear, slot) {
+            Ok(_) => Ok(()),
+            Err(ContextError::LinearSlotConsumed { .. }) => Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Value(at)),
+                defect: LinearityDefect::LinearSlotConsumed {
+                    lambda: supplied.lambda,
+                },
+            }),
+            Err(
+                ContextError::UnboundIndex { .. }
+                | ContextError::LinearSlotUnconsumed { .. }
+                | ContextError::NoBinderToClose { .. },
+            ) => Err(CheckRefusal::MachineInvariant),
+        }
+    }
+
+    /// Give back the copy of each linear function's parameter that `value`
+    /// read, where the body reads a copy of `value` in place of its name.
+    ///
+    /// A `let` of a returned value binds a name that stands for the value
+    /// ([`crate::solution::defined_body`]): the body reads a copy of the value
+    /// at each place the name stands, and each such read draws the copy. The
+    /// read at the `let` itself then draws nothing, so `let r = n; r` reads `n`
+    /// once and `let r = n; r + r` reads it twice.
+    ///
+    /// # Specification
+    /// - requires: `value` is read under the binders open now, and it was read
+    ///   once, drawing each copy its support names.
+    /// - ensures: each parameter's copy that the support of `value` names, and
+    ///   whose shadow a read draws here, is available again; every other slot
+    ///   is unchanged.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a value the arena does not
+    ///   hold; [`CheckRefusal::MachineInvariant`] for a copy that is not spent.
+    /// - panics: none.
+    /// - executable: none — the clause reads each parameter's slot, which the
+    ///   binders hold only as a judgement drives them.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `let` of a parameter read once in its body checks,
+    ///   and one read twice is refused at the second read.
+    /// - witness: `judgement::session::tests::a_let_of_a_linear_parameter_reads_it_where_its_name_stands_5942`
+    pub(super) fn refunded(
+        &mut self,
+        value: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(top) = usize::from(self.context.depth(Zone::Intuitionistic)).checked_sub(1)
+        else {
+            return Ok(());
+        };
+        for position in 0 .. self.sessions.supplied.len() {
+            let Some(&supplied) = self.sessions.supplied.get(position)
+            else {
+                continue;
+            };
+            if self.shadow_read(supplied.lambda) == ShadowRead::Free {
+                continue;
+            }
+            let Some(index) = top
+                .checked_sub(supplied.shadow)
+                .and_then(|index| u32::try_from(index).ok())
+                .map(DeBruijnIndex::from)
+            else {
+                continue;
+            };
+            let support =
+                self.context
+                    .arena()
+                    .value_support(value)
+                    .ok_or(CheckRefusal::DanglingNode {
+                        node: CoreNode::Term(TermNode::Value(value)),
+                    })?;
+            if matches!(support.rank(Zone::Intuitionistic, index), Maybe::Absent(_)) {
+                continue;
+            }
+            let slot = self
+                .sessions
+                .opened
+                .len()
+                .checked_sub(supplied.slot)
+                .and_then(|above| above.checked_sub(1))
+                .and_then(|slot| u32::try_from(slot).ok())
+                .map(DeBruijnIndex::from)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.context
+                .binders()
+                .refund(slot)
+                .map_err(|_unspent| CheckRefusal::MachineInvariant)?;
+        }
+        Ok(())
+    }
+
+    /// Refuse `term`, at `node`, naming a linear function's parameter where
+    /// `by` may run a read of it other than once.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ShadowCaptured`] with `by` for the first free
+    ///   variable of `term` that is a parameter's shadow, outside a type the
+    ///   body forms; [`CheckRefusal::DanglingNode`] and
+    ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk that reads a linear parameter is refused, and
+    ///   the same read outside the thunk checks.
+    /// - witness: `judgement::session::tests::a_thunk_reading_a_linear_parameter_is_refused_5853`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::ShadowCaptured { by: captor, .. }, .. }) if captor == by) || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    pub(super) fn supplied_named(
+        &mut self,
+        term: CoreTerm,
+        node: CoreNode,
+        by: Capture,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.sessions.supplied.is_empty() {
+            return Ok(());
+        }
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            if let Some(supplied) = self.supplied_at(index)
+                && self.shadow_read(supplied.lambda) == ShadowRead::Drawn
+            {
+                return Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::ShadowCaptured {
+                        lambda: supplied.lambda,
+                        by,
+                    },
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Add to the innermost fork half being judged what a name it mentions,
+    /// of type `declared`, lets it do to the host
+    /// ([`crate::capability::Footprint::reach`]); nothing outside a fork.
+    ///
+    /// # Specification
+    /// - ensures: the innermost footprint holds every operation it held.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does
+    ///   not resolve.
+    /// - panics: none.
+    /// - executable: none — as [`crate::capability::Footprint::reach`].
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child and a parent each naming a capability that
+    ///   writes are refused, and each naming one that only reads checks.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    pub(super) fn footprint_mentioned(
+        &mut self,
+        declared: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(footprint) = self.sessions.footprints.last_mut()
+        else {
+            return Ok(());
+        };
+        footprint.reach(self.context.arena(), TypeNode::Value(declared))
+    }
+
+    /// Add to the innermost fork half being judged the operation the request
+    /// `at` performs by name; nothing outside a fork or for another former.
+    ///
+    /// # Specification
+    /// - ensures: the innermost footprint holds every operation it held.
+    /// - panics: none.
+    /// - executable: none — as [`crate::capability::Footprint::reach`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two halves each writing a file by name are refused.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    pub(super) fn footprint_performed(
+        &mut self,
+        at: ComputationId,
+    )
+    {
+        let Some(footprint) = self.sessions.footprints.last_mut()
+        else {
+            return;
+        };
+        if let Some(&Computation::Perform {
+            ref signature,
+            ref operation,
+            ..
+        }) = self.context.arena().computation(at)
+        {
+            footprint.perform(signature, operation);
+        }
+    }
+
+    /// Refuse `term`, at `node`, naming an owed continuation where `by` may
+    /// run its end other than once.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationCaptured`] with `by` for the first free
+    ///   variable of `term` that is an owed continuation;
+    ///   [`CheckRefusal::DanglingNode`] and [`CheckRefusal::MachineInvariant`]
+    ///   as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause resuming its owed continuation inside a
+    ///   thunk is refused, and so is a child forked with it.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::ContinuationCaptured { by: captor, .. }, .. }) if captor == by) || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    pub(super) fn owed_named(
+        &mut self,
+        term: CoreTerm,
+        node: CoreNode,
+        by: Capture,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.sessions.owed.is_empty() {
+            return Ok(());
+        }
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            if let Some(owed) = self.owed_at(index) {
+                return Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::ContinuationCaptured {
+                        clause: owed.clause,
+                        by,
+                    },
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Continue a fork whose protocol annotation formed: split the zone, bind
+    /// the child's end at the annotation and check the child against the
+    /// returner of the unit at its task's row. That row is the host's part of
+    /// the row outside every handler and scope around the fork, empty when
+    /// the fork synthesises outside every one.
+    ///
+    /// # Specification
+    /// - requires: the annotation formed.
+    /// - ensures: one linear slot more, at the annotation's session type; the
+    ///   child's footprint opens empty; one `ForkChild` frame waits on the
+    ///   child's check.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] wanting
+    ///   [`ExpectedShape::Session`] for an annotation that is no session type
+    ///   at its weak head; [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::KeptEscaped`] for a protocol that carries a value kept
+    ///   in a region, and [`CheckRefusal::CapabilityEscaped`] for one that
+    ///   carries a capability living in one, and the same for a variable the
+    ///   child names: the child runs as a peer no region bounds, so a region
+    ///   could end while it holds the value; [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::UsedTwice`] for an enclosing endpoint both halves
+    ///   name, and [`LinearityDefect::ContinuationCaptured`] by
+    ///   [`Capture::Task`] for a continuation an operation clause owes that the
+    ///   child names.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat exchange forks at its protocol's alias, and
+    ///   an endpoint both halves of an inner fork name is refused; a protocol
+    ///   receiving a string checks and one receiving a string kept in a region
+    ///   is refused; a child reading through a capability its parent holds for
+    ///   the run checks, and one naming its scope's capability is refused.
+    /// - witness: `judgement::session::tests::a_child_exercises_only_what_outlives_every_region_1334`
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
+    /// - witness: `judgement::session::tests::an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it`
+    /// - witness: `tests::judgement::session::a_fork_carries_nothing_kept_in_a_region`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    pub(super) fn fork_formed(
+        &mut self,
+        at: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Session(SessionAction::Fork {
+            protocol,
+            child,
+            parent,
+        }) = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let head = self.context.whnf_value_type(protocol)?;
+        if !matches!(
+            value_type_view(self.context.arena(), head)?,
+            ValueTypeView::Session(_)
+        ) {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(at),
+                wanted: ExpectedShape::Session,
+                found: TypeNode::Value(protocol),
+                unfolded: TypeNode::Value(head),
+            });
+        }
+        let node = CoreNode::Term(TermNode::Computation(at));
+        // The child runs as a peer no region bounds: a value its protocol
+        // carries in a region, or a capability living in one, would outlive
+        // the region's end.
+        match crate::capability::reaches(self.context.arena(), TypeNode::Value(head), Region::Held)?
+        {
+            crate::capability::Reach::Clear => {},
+            crate::capability::Reach::Mentions => {
+                return Err(CheckRefusal::CapabilityEscaped {
+                    at: TermNode::Computation(at),
+                    found: TypeNode::Value(protocol),
+                });
+            },
+            crate::capability::Reach::Keeps => {
+                return Err(CheckRefusal::Access {
+                    at: node,
+                    defect: AccessDefect::KeptEscaped,
+                });
+            },
+        }
+        if self.sessions.abstracted != crate::capability::Reach::Clear
+            || !self.sessions.regions.is_empty()
+        {
+            self.unbounded(CoreTerm::Computation(child), at)?;
+        }
+        // A child could end the continuation after the clause returned.
+        self.owed_named(CoreTerm::Computation(child), node, Capture::Task)?;
+        let shared = self.free_linear(CoreTerm::Computation(parent))?;
+        let shared: BTreeSet<DeBruijnIndex> = shared.into_iter().collect();
+        for index in self.free_linear(CoreTerm::Computation(child))? {
+            if u32::from(index) == 0 {
+                continue;
+            }
+            let outer = DeBruijnIndex::from(u32::from(index).saturating_sub(1));
+            // A child runs as its own continuation: a held value or a view
+            // it names would be shared with the parent. A received value is
+            // read by copy and never written, so sharing it is sound.
+            let named = self.resided(node, outer)?;
+            let Resident::Endpoint(endpoint) = named.resident
+            else {
+                if !matches!(named.resident, Resident::Received { .. }) {
+                    captured(node, named.resident, Capture::Continuation)?;
+                }
+                continue;
+            };
+            if !shared.contains(&index) {
+                continue;
+            }
+            return Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::UsedTwice { endpoint },
+            });
+        }
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, head);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Endpoint(Endpoint {
+                fork: at,
+                side: ForkSide::Child,
+            }),
+            depth,
+        });
+        // The child runs as a task on the joined frame. No handler or scope
+        // around the fork stands on that stack, so the host answers each
+        // operation that no handler inside the child answers (#6058).
+        let around = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|waiting| delimiter(waiting.frame) != Delimiter::Apart)
+            .filter_map(|waiting| {
+                if let Frame::ScopeSubject { answer, .. } | Frame::HandlerSubject { answer, .. } =
+                    waiting.frame
+                {
+                    Some(answer)
+                }
+                else {
+                    None
+                }
+            })
+            .last()
+            .or(match direction {
+                Direction::Check(expected) => Some(expected),
+                Direction::Synthesise => None,
+            });
+        let row = match around {
+            Some(around) => hosted(&self.row_of(around)?)?,
+            None => EffectRow::EMPTY,
+        };
+        let unit = self.context.atom(Atom::Unit).id();
+        let returner = self
+            .context
+            .arena_mut()
+            .comp_type_returner_with_effects(unit, row);
+        self.sessions
+            .footprints
+            .push(crate::capability::Footprint::default());
+        self.wait(Frame::ForkChild {
+            at,
+            direction,
+            session: head,
+        });
+        Ok(Step::Descend(Goal::Computation {
+            term: child,
+            direction: Direction::Check(returner),
+        }))
+    }
+
+    /// The row `ty` carries: its returner's, or the empty row for any other
+    /// shape. The weak head's computation and its view can refuse.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As the weak head's computation and its view.
+    fn row_of(
+        &mut self,
+        ty: CompTypeId,
+    ) -> Result<EffectRow, CheckRefusal>
+    {
+        let head = self.context.whnf_comp_type(ty)?;
+        Ok(match comp_type_view(self.context.arena(), head)? {
+            CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. } => {
+                effects.clone()
+            },
+            CompTypeView::Unknown
+            | CompTypeView::With(..)
+            | CompTypeView::Arrow { .. }
+            | CompTypeView::Pi { .. }
+            | CompTypeView::LinearArrow { .. }
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => EffectRow::EMPTY,
+        })
+    }
+
+    /// Who answers an operation that the goal under way performs by name.
+    /// The host answers when the nearest delimiter around the goal is a
+    /// fork's child or a migration's body. A task's stack holds no frame of
+    /// its parent, and a body run at its world holds no frame of its caller.
+    /// Otherwise any handler that stands nearest at run time answers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Answerer::Host`] exactly when a `ForkChild` or a
+    ///   `MigrateBody` frame waits below the top with no handler, scope or
+    ///   suspension frame above it; [`Answerer::Anyone`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a seat that draws while it holds its end checks; the
+    ///   same draw in the parent, and one under a handler inside the seat, are
+    ///   each refused. A body that draws at its world before a later migration
+    ///   checks, its draw crossing the later migration's capability.
+    /// - witness: `judgement::session::tests::a_seat_draws_while_it_holds_its_end_6058`
+    /// - witness: `judgement::session::tests::a_draw_under_a_handler_inside_the_task_captures_its_end_6058`
+    /// - witness: `worlds::tests::a_body_s_draw_crosses_a_later_migration_s_capability_5712`
+    #[spec(ensures: |ret| matches!(ret, Answerer::Host | Answerer::Anyone))]
+    pub(super) fn task_answerer(&self) -> Answerer<'static>
+    {
+        let nearest = self
+            .frames
+            .iter()
+            .rev()
+            .find(|waiting| delimiter(waiting.frame) != Delimiter::Through);
+        match nearest.map(|waiting| waiting.frame) {
+            Some(Frame::ForkChild { .. } | Frame::MigrateBody { .. }) => Answerer::Host,
+            _ => Answerer::Anyone,
+        }
+    }
+
+    /// Close the innermost endpoint the run bound, refusing it unless spent,
+    /// together with the enclosing endpoints `share` names, one binder out.
+    ///
+    /// # Specification
+    /// - requires: the innermost linear slot is the run's.
+    /// - ensures: that slot is closed and its entry dropped.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Residue`]
+    ///   at the fork with the first endpoint left unconsumed, the innermost
+    ///   first.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child that never closes its end is refused, the
+    ///   endpoint and its state named.
+    /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
+    /// - witness: `judgement::session::tests::an_outer_endpoint_an_inner_child_leaves_open_is_its_residue`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Residue { .. } }) => {
+            refused == CoreNode::Term(TermNode::Computation(at))
+        },
+        | _ => true,
+    })]
+    fn spend(
+        &mut self,
+        at: ComputationId,
+        share: &[DeBruijnIndex],
+    ) -> Result<(), CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let named = share.iter().copied().filter(|&index| u32::from(index) != 0);
+        for index in core::iter::once(DeBruijnIndex::from(0_u32)).chain(named) {
+            let read = self.resided(node, index)?;
+            let Resident::Endpoint(endpoint) = read.resident
+            else {
+                continue;
+            };
+            if read.use_state == LinearUse::Available {
+                return Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::Residue {
+                        endpoint,
+                        state: read.state,
+                    },
+                });
+            }
+        }
+        let _state = self
+            .context
+            .binders()
+            .close(Zone::Linear)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let _opened = self.sessions.opened.pop();
+        Ok(())
+    }
+
+    /// Continue a fork whose child checked: require the child's end and its
+    /// share of the enclosing ones spent, set the child's footprint aside,
+    /// then bind the parent's end at the dual and judge the parent in the
+    /// fork's direction.
+    ///
+    /// # Specification
+    /// - requires: the child checked.
+    /// - ensures: the child's slot is closed and the parent's opened at the
+    ///   dual of `session`; the parent's footprint opens empty; one
+    ///   `ForkParent` frame waits on the parent.
+    /// - fails: as [`Self::spend`]; [`CheckRefusal::MachineInvariant`] when no
+    ///   child's footprint is open.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat exchange's operator runs at the dual of the
+    ///   seat's end.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    pub(super) fn forked(
+        &mut self,
+        at: ComputationId,
+        direction: Direction<CompTypeId>,
+        session: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Session(SessionAction::Fork { child, parent, .. }) =
+            *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let share = self.free_linear(CoreTerm::Computation(child))?;
+        self.spend(at, &share)?;
+        let child_footprint = self
+            .sessions
+            .footprints
+            .pop()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.sessions.separated.push(child_footprint);
+        self.sessions
+            .footprints
+            .push(crate::capability::Footprint::default());
+        let dual = session_at(self.context, session)?.dual();
+        let dual = self.context.arena_mut().value_type_session(dual);
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, dual);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Endpoint(Endpoint {
+                fork: at,
+                side: ForkSide::Parent,
+            }),
+            depth,
+        });
+        self.wait(Frame::ForkParent { at, direction });
+        Ok(Step::Descend(Goal::Computation {
+            term: parent,
+            direction,
+        }))
+    }
+
+    /// Finish a fork whose parent was judged: require the parent's end spent
+    /// and the two halves' footprints separate, add both to the half around
+    /// the fork, if any, and hand the parent's result on.
+    ///
+    /// # Specification
+    /// - requires: the parent was judged in `direction`.
+    /// - ensures: the parent's slot is closed; the fork checked, or synthesised
+    ///   the parent's type; the half around the fork, if any, holds every
+    ///   operation either half held.
+    /// - fails: as [`Self::spend`]; [`CheckRefusal::FootprintsOverlap`] at the
+    ///   fork when an interface is in both footprints and one of them holds an
+    ///   operation on it that does not only read the host;
+    ///   [`CheckRefusal::MachineInvariant`] when the halves' footprints are not
+    ///   open.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator that leaves its end open is refused at
+    ///   the fork; the seat exchange's operator closes it on every path; two
+    ///   halves writing through one capability are refused, and two reading
+    ///   through it check.
+    /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
+    pub(super) fn joined(
+        &mut self,
+        at: ComputationId,
+        direction: Direction<CompTypeId>,
+        produced: Produced,
+    ) -> Result<Step, CheckRefusal>
+    {
+        self.spend(at, &[])?;
+        let (Some(parent), Some(child)) = (
+            self.sessions.footprints.pop(),
+            self.sessions.separated.pop(),
+        )
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if let Some(shared) = child.overlap(&parent) {
+            let arena = self.context.arena_mut();
+            return Err(CheckRefusal::FootprintsOverlap {
+                at,
+                child: child.capability(arena)?,
+                parent: parent.capability(arena)?,
+                shared: shared.capability(arena)?,
+            });
+        }
+        if let Some(around) = self.sessions.footprints.last_mut() {
+            around.absorb(child);
+            around.absorb(parent);
+        }
+        match (direction, produced) {
+            (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
+            (Direction::Synthesise, Produced::CompType(ty)) => {
+                Ok(Step::Ascend(Produced::CompType(ty)))
+            },
+            (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
+        }
+    }
+}
+
+/// Refuse the resident `resident`, named at `node` by a former that may run
+/// its use other than once, as `by` says; a held or received value a branch
+/// reads passes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success for a held or received value named by a branch.
+/// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Captured`]
+///   for an endpoint, [`LinearityDefect::ContinuationCaptured`] for a clause's
+///   continuation and [`LinearityDefect::ShadowCaptured`] for a linear
+///   parameter's copy; [`CheckRefusal::Access`] naming
+///   [`AccessDefect::HeldCaptured`] for a held or received value and
+///   [`AccessDefect::Escaped`] for a view, each at `node` with `by`.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thunk naming an endpoint, a view and a held value is
+///   refused by each name, and a branch reading a held value checks.
+/// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
+/// - witness: `judgement::access::tests::a_view_escaping_its_access_is_refused`
+/// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
+/// - witness: `judgement::session::tests::a_buffer_capability_or_continuation_capture_is_refused_by_its_name`
+#[spec(ensures: |ret| match (resident, ret) {
+    | (Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }, Ok(())) => by == Capture::Branch,
+    | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } | Resident::Continuation { .. } | Resident::Supply { .. }, Ok(())) => false,
+    | (_, Err(_)) => true,
+})]
+fn captured(
+    node: CoreNode,
+    resident: Resident,
+    by: Capture,
+) -> Result<(), CheckRefusal>
+{
+    match resident {
+        Resident::Endpoint(endpoint) => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::Captured { endpoint, by },
+        }),
+        // A branch reads a held value by copy, and returns the buffer in each
+        // arm or in none, which the case's join checks.
+        Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }
+            if by == Capture::Branch =>
+        {
+            Ok(())
+        },
+        Resident::Buffer { at: site } => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::BufferRead { site },
+        }),
+        Resident::Held { .. } | Resident::Received { .. } => Err(CheckRefusal::Access {
+            at: node,
+            defect: AccessDefect::HeldCaptured { by },
+        }),
+        Resident::View { .. } => Err(CheckRefusal::Access {
+            at: node,
+            defect: AccessDefect::Escaped { by },
+        }),
+        Resident::Capability { world } => Err(CheckRefusal::Located {
+            at: node,
+            defect: crate::worlds::LocatedDefect::CapabilityCaptured { world, by },
+        }),
+        Resident::Continuation { clause } => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::ContinuationCaptured { clause, by },
+        }),
+        Resident::Supply { lambda } => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::ShadowCaptured { lambda, by },
+        }),
+    }
+}
+
+/// What a frame does to a walk for the handlers around a goal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Delimiter
+{
+    /// The frame waits on a body that runs apart from the frames below it: a
+    /// fork's child, a migration's body, a lambda's body or a thunk's body.
+    /// The walk stops at it.
+    Apart,
+    /// The frame is the subject of a scope or a handler, which answers
+    /// operations around the goal.
+    Answerer,
+    /// The frame neither stops the walk nor answers.
+    Through,
+}
+
+/// How `frame` delimits a walk for the handlers around a goal.
+///
+/// # Specification
+/// trivial.
+const fn delimiter(frame: Frame) -> Delimiter
+{
+    if matches!(
+        frame,
+        Frame::ForkChild { .. }
+            | Frame::MigrateBody { .. }
+            | Frame::LambdaBody
+            | Frame::LinearLambdaBody { .. }
+            | Frame::ThunkBody
+            | Frame::LetThunk { .. }
+    ) {
+        Delimiter::Apart
+    }
+    else if matches!(
+        frame,
+        Frame::ScopeSubject { .. } | Frame::HandlerSubject { .. }
+    ) {
+        Delimiter::Answerer
+    }
+    else {
+        Delimiter::Through
+    }
+}
+
+/// The part of `row` a host answers: each interface that `row` holds for the
+/// run, by name. Only a host interface or an `extern` block's interface is
+/// performed by name, and the host of the run answers each. A forked task
+/// performs only these, besides the operations a handler inside it answers.
+/// An instance at a region and an open tail stay out, because only a handler
+/// answers them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a closed row of the entries of `row` placed at [`Region::Held`].
+/// - fails: [`CheckRefusal::MachineInvariant`] when two kept interfaces share
+///   an operation, which no two interfaces of one row do.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a task's draw that its function owes checks under a scope
+///   of the parent that answers draws; without that row the draw is refused,
+///   since only the parent's scope would answer it.
+/// - witness: `judgement::session::tests::a_task_owes_its_draw_past_its_parent_s_handler_6058`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |kept| kept.tail().is_none() && kept.instances().len() <= row.instances().len()))]
+fn hosted(row: &EffectRow) -> Result<EffectRow, CheckRefusal>
+{
+    EffectRow::from_signatures(
+        row.instances()
+            .filter(|&(label, _)| label.region() == Region::Held)
+            .map(|(_, signature)| signature.clone()),
+    )
+    .map_err(|_conflict| CheckRefusal::MachineInvariant)
+}
+
+/// What a value handed on whole — by a send, an operation's payload or a
+/// resumption — was.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HandedOn
+{
+    /// A live buffer, whose slot the hand-off spent.
+    Buffer,
+    /// A live endpoint, whose slot the hand-off spent: delegated by a send or
+    /// moved into a call.
+    Endpoint,
+    /// Anything else, which the hand-off checks as a value.
+    Other,
+}
+
+/// Whether a resident owes something a continuation run twice or never would
+/// break.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Owing
+{
+    /// An obligation: a protocol to finish, a buffer to return, an exclusive
+    /// view to end, a capability to migrate once or a continuation to end
+    /// once.
+    Something,
+    /// Nothing a read does not copy.
+    Nothing,
+}
+
+/// Who answers an operation, and so how much of the run its continuation
+/// holds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Answerer<'operation>
+{
+    /// The host, through a capability it holds for the run or as the only
+    /// answerer of a forked task's operation: it answers once.
+    Host,
+    /// The clause of the capability scope whose region stands at `depth`,
+    /// answering `operation`.
+    Scope
+    {
+        /// The region's depth.
+        depth: RegionDepth,
+        /// The operation answered.
+        operation: &'operation gandr_core_term::effect::OperationName,
+    },
+    /// Whichever handler stands nearest when the operation runs.
+    Anyone,
+}
+
+#[cfg(test)]
+mod tests;

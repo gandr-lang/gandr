@@ -222,9 +222,9 @@ fn main() -> Result<(), Refusal>
         env::var_os("CARGO_MANIFEST_DIR").ok_or(Refusal::Environment("CARGO_MANIFEST_DIR"))?,
     );
     let out = PathBuf::from(env::var_os("OUT_DIR").ok_or(Refusal::Environment("OUT_DIR"))?);
-    let checker = manifest.join("../core-checker/src/refusal.rs");
-    let failure = manifest.join("../core-checker/src/failure.rs");
-    let root = manifest.join("../core-checker/src/lib.rs");
+    let checker = manifest.join("../core-checker-base/src/refusal.rs");
+    let failure = manifest.join("../core-checker-base/src/failure.rs");
+    let root = manifest.join("../core-checker-base/src/lib.rs");
     let table = manifest.join("refusals.toml");
     for path in [&checker, &failure, &root, &table] {
         println!("cargo::rerun-if-changed={}", path.display());

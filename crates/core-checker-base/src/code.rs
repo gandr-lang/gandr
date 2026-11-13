@@ -1,0 +1,2717 @@
+//! Code constants: the bodies a code may unfold to, and the certificate the
+//! normaliser's conversion gives each unfolding.
+//!
+//! # A code position is the one place a type reduces
+//!
+//! A type compares structurally, former by former, everywhere but at a decode
+//! `El c`: there the code `c` is a term, and a constant with a body — `def Num
+//! : Type = Integer` — stands for the type its body quotes. The judgement and
+//! the kernel bridge both unfold such a constant through
+//! [`CodeDefinitions::certify`], which asks `gandr-core-nbe`'s conversion
+//! machine whether the constant converts to its body, with a recording sink:
+//! the verdict and its trace travel together as a [`Certificate`], and the
+//! bridge has the kernel replay the trace before it offers a declaration that
+//! rests on the unfolding.
+//!
+//! # One unfolding per certificate
+//!
+//! A certificate names one δ-step, the constant against the body it was
+//! defined with, so the machine answers it by unfolding and the kernel's replay
+//! re-derives it by the same step. A body that is itself a constant is
+//! unfolded by a second certificate, and the types a quote carries are reached
+//! by the structural walk that called for the unfolding, so the static normal
+//! form is assembled from steps each of which replays. Comparing two quotes
+//! whole after unfolding inside them would ask the machine to decide codes it
+//! declines to look into.
+//!
+//! # Path endpoints compare structurally
+//!
+//! Types embed terms in decode codes and in native path endpoints. Path
+//! endpoints are closed first-order quoted codes, and their decoded types
+//! compare structurally; elsewhere the type walk compares shared trees with a
+//! worklist and accepts equal ids without revisiting them. Accepted code
+//! definitions therefore take part in type conversion without a second reducer
+//! in the checker.
+//!
+//! # Why one step per certificate
+//!
+//! The machine compares quotes whole and declines a pair of codes when anything
+//! inside them could still unfold, so a whole comparison of `⌜U El(Num)⌝`
+//! against `⌜U Integer⌝` would be refused where the stepwise one succeeds, and
+//! a certificate of one δ-step is exactly what the kernel's replay re-derives
+//! by its own unfolding rule. A static step is certified the same way — one
+//! saturated instance of a static definition against its δβ-reduct, one static
+//! lambda's redex against its β-reduct — and the walk compares the rest former
+//! by former, a rigid instance by its head and its arguments.
+//!
+//! The alternatives were keeping the comparison structural and refusing code
+//! constants with bodies, which leaves `def Num : Type = Integer` unusable in a
+//! type, and a reducer local to the checker beside the machine, a second
+//! conversion the kernel oracle exists to rule out. The choice reverses when
+//! the machine decides codes under quotes, at which point the walk hands the
+//! machine each code pair whole and a comparison carries one certificate.
+//!
+//! # A function to a universe is a function to a code
+//!
+//! `El` is unquote. A dynamic function whose arms return quotes — a `case`
+//! over a presentation's value returning `⌜Integer⌝` in one arm and `⌜Unit⌝`
+//! in another — is a first-order function to a code, and its call where a
+//! type is read is the decode of `returned(c)`, the code the call returns. A
+//! closed returned code steps to that code by running the call; the step is
+//! certified as an endpoint is related, its δ-steps held as recorded
+//! unfoldings, because the kernel replays it by reading the returned code as
+//! its computation and needs every unfolding named in the trace.
+//!
+//! A call on a binder runs as far as its scrutinee allows. Its run is read
+//! back under rigid binders, a definition's own recursion named as its source
+//! wrote it, so a decoder's arm `let x = el(a); let y = el(b); return (x =>
+//! y)` steps `el(Arrow(a, b))` to `⌜U(El(el(a)) → F El(el(b)))⌝`, whose
+//! decodes are the ones a signature writes. A call stuck on its binder,
+//! `el(c)`, reads back as a returned code and stays a decode over a neutral
+//! code: rigid, compared by its code, two nodes of one call the same syntax.
+//! A call of a binder itself, `tm(g)` with `tm` bound, is stuck before its
+//! first step, so its head is read and it is never run.
+//!
+//! This is the recorded design, a Tarski data universe: the codes are an
+//! ordinary datatype and `El` a decoder written over them, both bound at the
+//! value level, and a decode is a type over a code that is a term. The
+//! alternative was a large elimination, a `case` into `Type` with types for
+//! arms and `Element` erased, declined in #353: it would make the kernel's
+//! types compute by themselves, and the type language has no such former.
+//! Static operators were the other route, and they inspect no value: their
+//! arguments are codes. The choice reverses for a universe that stops being a
+//! data universe, one whose codes are not values a function can case on.
+//!
+//! An open step carries no dialogue: it is a [`Derivation::Reading`], and the
+//! kernel re-derives it by its own reading of the run. The quote such a run
+//! returns holds the calls its arms make on the binders, and the machine's
+//! code walk compares those returned endpoints by place, never by what they
+//! run to, so no dialogue of it relates the two sides. A closed run can
+//! return such a quote too, its call on a binder the quote itself opens: a
+//! decoder's arm `pi(a, b) => return (+U ((x : el[<](a)) -> -F
+//! el[<](b(x))))` steps `el(pi(nat, k))` to a quote holding `el(k(x))`, and
+//! the machine declines the pair for its undecided codes. That step is a
+//! reading as well; a closed step the machine decides keeps its dialogue. The
+//! alternative was a dialogue over that walk, which needs it to decide
+//! returned endpoints under quotes; the choice reverses with the reversal
+//! above, when the machine decides codes under quotes.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_nbe::BinderLevel;
+use gandr_core_nbe::DeclineReason;
+use gandr_core_nbe::Definitions;
+use gandr_core_nbe::DomainArena;
+use gandr_core_nbe::DomainCompId;
+use gandr_core_nbe::Endpoints;
+use gandr_core_nbe::Environment;
+use gandr_core_nbe::EvalFault;
+use gandr_core_nbe::Fuel;
+use gandr_core_nbe::LoweredChain;
+use gandr_core_nbe::MachineSettings;
+use gandr_core_nbe::MachineVerdict;
+use gandr_core_nbe::NeutralHead;
+use gandr_core_nbe::Problem;
+use gandr_core_nbe::ReadbackMode;
+use gandr_core_nbe::Recursion;
+use gandr_core_nbe::ResharingMemo;
+use gandr_core_nbe::StepBudget;
+use gandr_core_nbe::TermFace;
+use gandr_core_nbe::TraceNode;
+use gandr_core_nbe::Unfolding;
+#[cfg(feature = "unfolding-probe")]
+use gandr_core_nbe::UnfoldingProbe;
+use gandr_core_nbe::decide;
+use gandr_core_nbe::eval_value_within;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::DefinitionalEnvironment;
+use gandr_core_term::Transparency;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::Zone;
+use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::instantiate_value;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_conversion_trace::NullSink;
+use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GlobalIndex;
+use quenchant_shape::shape::Maybe;
+
+use crate::refusal::CheckRefusal;
+use crate::refusal::CoreNode;
+use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
+
+quenchant_shape::reason_enum! {
+    /// Why a constant has no body a code may unfold to.
+    pub mod unfolding {
+        /// The reason no body is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No accepted definition at that position supplied a body, and
+            /// nothing waits on it: an axiom, a refused declaration, a
+            /// position never admitted, or a hole as the definitions table
+            /// reads it.
+            Rigid,
+            /// The position is a hole the module owes: a judgement comparing
+            /// its decode with a constructor-headed type waits on it.
+            Owed,
+            /// The position is a declaration suspended on owed holes: a
+            /// judgement reading its type waits with it.
+            Waiting,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an evaluation claim returned no value.
+    pub mod evaluated {
+        /// The reason the claim's body reads back to no returner.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The body's normal form under its binders is not `return v`: it
+            /// is stuck on a variable, an opaque constant or an effect.
+            Stuck,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a traced conversion gave no trace.
+    pub mod converted {
+        /// The reason the two sides were not shown convertible.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The machine refuted the pair or declined it: the sides differ,
+            /// or a variable, an opaque constant or an effect stood where a
+            /// value was owed.
+            Apart,
+            /// Evaluating a side ran out of fuel, or the machine ran past its
+            /// budget, before the pair met or parted: unfolding may not end.
+            Undecided,
+        }
+    }
+}
+
+/// How many binders a claim stands under, each read as a rigid variable.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OpenBinders(pub u32);
+
+/// The evaluation budget each side of a certified unfolding runs under.
+const CODE_FUEL: u32 = 4_096_u32;
+
+/// How many rounds of evaluation and unfolding readback a claim may take
+/// before it is undecided: each round unfolds one layer of the definitions
+/// the previous round's normal form calls.
+const CLAIM_ROUNDS: u32 = 64_u32;
+
+/// The budget that one reading of a claim spends across all its rounds, 2^19
+/// steps. It is [`CLAIM_ROUNDS`] rounds of an evaluation and a readback at
+/// [`CODE_FUEL`] each, so a reading that does not end declines after the same
+/// work as when each round had its own budget. One round can spend all of it,
+/// so the width of a normal form is not bound by one round's budget.
+const READING_FUEL: u32 = 0x0008_0000_u32;
+
+/// The definitions a code may unfold, in admission order.
+#[derive(Clone, Debug, Default)]
+pub struct CodeDefinitions
+{
+    /// Each accepted definition's body, by admission position.
+    bodies: BTreeMap<ConstantIndex, ValueId>,
+    /// The same bodies as the normaliser's chain, lowered into the arena.
+    lowered: LoweredChain,
+    /// The definitional environment, which seals nothing.
+    environment: DefinitionalEnvironment,
+}
+
+/// A code checked at a universe above its own level: the readmission writes
+/// the kernel's explicit lift where it stands.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Lift
+{
+    /// The level of the universe the code synthesised.
+    natural: Level,
+    /// The level of the universe it was checked at, strictly above.
+    target: Level,
+}
+
+impl Lift
+{
+    /// The lift of a code of level `natural` to the universe at `target`.
+    ///
+    /// # Specification
+    /// - requires: `target` is strictly above `natural`.
+    /// - ensures: the natural and target levels are retained without changing
+    ///   their canonical expressions.
+    /// - panics: none.
+    /// - executable: none — `Level` exposes neither its representation nor a
+    ///   const-readable ordering or equality observer; this constructor must
+    ///   preserve its existing const interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal, smaller and larger value-code universes are
+    ///   distinguished by the bridge, and a genuine increase is independently
+    ///   checked after export. The witnesses observe the resulting coercion,
+    ///   not arbitrary direct construction outside the ordering premise.
+    /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        natural: Level,
+        target: Level,
+    ) -> Self
+    {
+        Self { natural, target }
+    }
+
+    /// The level of the universe the code synthesised.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn natural(&self) -> &Level
+    {
+        &self.natural
+    }
+
+    /// The level of the universe it was checked at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn target(&self) -> &Level
+    {
+        &self.target
+    }
+
+    /// Mint the lifted code `⌜Lift (El code) target⌝` in `arena`: the code a
+    /// lift stands for, in the vocabulary the kernel reads it in.
+    ///
+    /// # Specification
+    /// - requires: `code` is a value of `arena` whose type is the universe of
+    ///   the value sort at [`Self::natural`].
+    /// - ensures: a quote of the lift of the type `code` denotes; a quote
+    ///   decodes as it is minted, so a quoted `code` lifts its own type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quoted and named small codes are checked in a larger
+    ///   value universe, and kernel readmission observes the explicit lift;
+    ///   missing the quote, inner type or target changes that judgement.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_argument_unfolds_at_export`
+    #[spec(
+        requires: arena.value(code).is_some(),
+        ensures: |ret| matches!(arena.value(ret), Some(Value::Quote(quoted))
+            if matches!(arena.value_type(*quoted), Some(ValueType::Lift { inner, target })
+                if target == self.target() && match arena.value(code) {
+                    | Some(&Value::Quote(denoted)) => *inner == denoted,
+                    | Some(_) => matches!(arena.value_type(*inner), Some(ValueType::Element { code: held, target: natural })
+                        if *held == code && natural == self.natural()),
+                    | None => false,
+                })),
+    )]
+    #[inline]
+    pub fn mint(
+        &self,
+        arena: &mut CoreArena,
+        code: ValueId,
+    ) -> ValueId
+    {
+        let denoted = arena.value_type_element(code, self.natural.clone());
+        let lifted = arena.value_type_lift(denoted, self.target.clone());
+        arena.value_quote(lifted)
+    }
+}
+
+/// What one certified step unfolds: the name a certificate is filed under.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Unfolded
+{
+    /// The definition at this module position: a code constant's δ-step, or
+    /// a static definition's δβ-step at one saturated instance.
+    Definition(ConstantIndex),
+    /// The static lambda at this node, met at the head of a static
+    /// application: its β-step.
+    Abstraction(ValueId),
+    /// The returned code at this node, `returned(c)`: the call `c` run to the
+    /// quote it returns, the unquote of a function to a universe.
+    Returned(ValueId),
+}
+
+/// One step of reduction at a code's head: what it unfolds, the code it fires
+/// at and the reduct, minted.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Reduction
+{
+    /// What the step unfolds.
+    unfolded: Unfolded,
+    /// The code the step fires at.
+    redex: ValueId,
+    /// The reduct.
+    reduct: ValueId,
+}
+
+impl Reduction
+{
+    /// What the step unfolds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unfolded(&self) -> Unfolded
+    {
+        self.unfolded
+    }
+
+    /// The code the step fires at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn redex(&self) -> ValueId
+    {
+        self.redex
+    }
+
+    /// The reduct.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reduct(&self) -> ValueId
+    {
+        self.reduct
+    }
+}
+
+/// How the kernel re-derives a certified step.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Derivation
+{
+    /// By replaying the machine's dialogue, in order.
+    Dialogue,
+    /// By its own reading of the run, with no dialogue: the step of a returned
+    /// code over a binder, whose quote holds calls the machine's code walk
+    /// compares only by place.
+    Reading,
+}
+
+/// The normaliser's certificate that a code converts to the reduct of one
+/// step at its head.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Certificate
+{
+    /// What the step unfolds.
+    unfolded: Unfolded,
+    /// The code the step fires at.
+    redex: ValueId,
+    /// The reduct it fires to.
+    reduct: ValueId,
+    /// The verdict the step was certified at: the machine's for a dialogue,
+    /// the run's own for a reading.
+    verdict: MachineVerdict,
+    /// How the kernel re-derives the step.
+    derivation: Derivation,
+    /// The derivation the machine recorded, in order; empty for a reading.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl Certificate
+{
+    /// What the step unfolds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unfolded(&self) -> Unfolded
+    {
+        self.unfolded
+    }
+
+    /// The code the step fires at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn redex(&self) -> ValueId
+    {
+        self.redex
+    }
+
+    /// The reduct it fires to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reduct(&self) -> ValueId
+    {
+        self.reduct
+    }
+
+    /// The verdict the step was certified at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn verdict(&self) -> MachineVerdict
+    {
+        self.verdict
+    }
+
+    /// How the kernel re-derives the step.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn derivation(&self) -> Derivation
+    {
+        self.derivation
+    }
+
+    /// The derivation the machine recorded, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
+    }
+
+    /// The certificate with its derivation replaced: the seam a test corrupts
+    /// a trace through, to witness that the replay refuses it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(any(test, feature = "fixture"))]
+    #[inline]
+    #[must_use]
+    pub fn with_decisions(
+        self,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self { decisions, ..self }
+    }
+
+    /// The certificate with its reduct replaced: the seam a test forges a
+    /// step's result through, to witness that the replay refuses it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(any(test, feature = "fixture"))]
+    #[inline]
+    #[must_use]
+    pub fn with_reduct(
+        self,
+        reduct: ValueId,
+    ) -> Self
+    {
+        Self { reduct, ..self }
+    }
+}
+
+/// The normaliser's reading of one closed evaluation claim.
+///
+/// For the claim `thunk (λⁿ. M)`: the normal form it reads back to,
+/// `thunk (λⁿ. return v)`, the value `v` its body returns under its `n`
+/// binders, and the trace that the claim converts to that normal form.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Evaluation
+{
+    /// The claim's normal form.
+    normal: ValueId,
+    /// The value the body returns, under the claim's binders.
+    returned: ValueId,
+    /// The derivation the machine recorded that the claim converts to its
+    /// normal form, in order.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl Evaluation
+{
+    /// The claim's normal form, `thunk (λⁿ. return v)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn normal(&self) -> ValueId
+    {
+        self.normal
+    }
+
+    /// The value the body returns, under the claim's binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn returned(&self) -> ValueId
+    {
+        self.returned
+    }
+
+    /// The derivation that the claim converts to its normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
+    }
+}
+
+/// The normaliser's reading of one reflexivity: the derivation relating its
+/// point to each endpoint of the path type it was checked against.
+///
+/// Each dialogue is the machine's convertible trace from the point to that
+/// endpoint, recorded with returned endpoints held at the definitions they
+/// call ([`gandr_core_nbe::Endpoints::Hold`]), so every δ-step an endpoint
+/// needs, under a binder or not, is one of its decisions. An endpoint that is
+/// the point's own node or syntax relates by the empty dialogue. An endpoint
+/// the tier met carries the one decision `Evaluate` and the pair the machine
+/// reads if the kernel's own evaluation leaves that pair undecided.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Reflexivity
+{
+    /// The derivation from the point to the left endpoint, in order.
+    left: Vec<ConversionDecision<TraceNode>>,
+    /// The derivation from the point to the right endpoint, in order.
+    right: Vec<ConversionDecision<TraceNode>>,
+    /// The pair the tier met at each endpoint, left then right.
+    met: [Option<MetPair>; 2],
+}
+
+/// A reflexivity's pair that the tier met: the point, the endpoint and the
+/// binders whose calls return.
+///
+/// The checker records `Evaluate` for the pair and runs no machine. The
+/// readmission runs the machine on the pair only when the kernel's own
+/// evaluation leaves it undecided.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct MetPair
+{
+    /// The reflexivity's point.
+    point: ValueId,
+    /// The endpoint the tier met the point at.
+    endpoint: ValueId,
+    /// The intuitionistic binders whose calls return, by index, as the
+    /// endpoint conversion reads them ([`crate::divergence::returning`]); none
+    /// for a closed pair.
+    returning: Vec<DeBruijnIndex>,
+}
+
+impl MetPair
+{
+    /// The pair of `point` and `endpoint`, read under the binders `returning`
+    /// names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        point: ValueId,
+        endpoint: ValueId,
+        returning: Vec<DeBruijnIndex>,
+    ) -> Self
+    {
+        Self {
+            point,
+            endpoint,
+            returning,
+        }
+    }
+
+    /// The reflexivity's point.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn point(&self) -> ValueId
+    {
+        self.point
+    }
+
+    /// The machine's dialogue from the point to the endpoint under
+    /// `definitions`, the second certificate of the pair.
+    ///
+    /// # Specification
+    /// - requires: the point and the endpoint live in `core`.
+    /// - ensures: the decisions [`CodeDefinitions::relation`] records when it
+    ///   converts the pair under the binders the pair names; nothing when it
+    ///   refutes the pair, declines it or fails.
+    /// - provides: the dialogue the readmission sends for a pair the kernel
+    ///   reports undecided, as the checker sends it for a pair the tier does
+    ///   not meet.
+    /// - panics: none.
+    /// - executable: none — the dialogue is the machine's run on terms it
+    ///   evaluates; the witness observes it through the readmission.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CodeDefinitions::relation`].
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+    #[inline]
+    #[must_use]
+    pub fn certified(
+        &self,
+        definitions: &CodeDefinitions,
+        core: &CoreArena,
+    ) -> Option<Vec<ConversionDecision<TraceNode>>>
+    {
+        match definitions.relation(core, self.point, self.endpoint, &self.returning) {
+            Ok((MachineVerdict::Convertible, decisions)) => Some(decisions),
+            Ok((MachineVerdict::NotConvertible | MachineVerdict::Declined(_), _)) | Err(_) => None,
+        }
+    }
+}
+
+impl Reflexivity
+{
+    /// The reading relating the point to `left` and to `right` by these
+    /// derivations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        left: Vec<ConversionDecision<TraceNode>>,
+        right: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self {
+            left,
+            right,
+            met: [None, None],
+        }
+    }
+
+    /// The reading with the pair the tier met at each endpoint, left then
+    /// right.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn meeting(
+        self,
+        met: [Option<MetPair>; 2],
+    ) -> Self
+    {
+        Self { met, ..self }
+    }
+
+    /// The pair the tier met at the endpoint on `side`, if it met one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn met(
+        &self,
+        side: gandr_kernel_core::EndpointSide,
+    ) -> Option<&MetPair>
+    {
+        let [ref left, ref right] = self.met;
+        match side {
+            gandr_kernel_core::EndpointSide::Left => left.as_ref(),
+            gandr_kernel_core::EndpointSide::Right => right.as_ref(),
+        }
+    }
+
+    /// The reading with `decisions`, the second certificate, in place of the
+    /// derivation on `side`; the reading keeps no met pair on `side`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn answering(
+        &self,
+        side: gandr_kernel_core::EndpointSide,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        let mut answered = self.clone();
+        let Self {
+            ref mut left,
+            ref mut right,
+            ref mut met,
+        } = answered;
+        let [ref mut met_left, ref mut met_right] = *met;
+        match side {
+            gandr_kernel_core::EndpointSide::Left => {
+                *left = decisions;
+                *met_left = None;
+            },
+            gandr_kernel_core::EndpointSide::Right => {
+                *right = decisions;
+                *met_right = None;
+            },
+        }
+        answered
+    }
+
+    /// The derivation from the point to the left endpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn left(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.left
+    }
+
+    /// The derivation from the point to the right endpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexivity at a point that computes to its right
+    ///   endpoint records that derivation, and the bridge crosses it with the
+    ///   reflexivity.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_reflexivity_carries_its_right_endpoint_s_dialogue`
+    #[inline]
+    #[must_use]
+    pub fn right(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.right
+    }
+}
+
+/// The normaliser's reading of one pair of path endpoints a type conversion
+/// met: the derivation relating the left endpoint to the right.
+///
+/// The dialogue is the machine's convertible trace between the two, recorded
+/// as a reflexivity's is, with returned endpoints held at the definitions they
+/// call, so every δ-step the pair needs is one of its decisions. The kernel
+/// replays it where its own forced reading leaves the two types apart.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct EndpointRelation
+{
+    /// The endpoint the derivation starts from.
+    left: ValueId,
+    /// The endpoint the derivation ends at.
+    right: ValueId,
+    /// The derivation from `left` to `right`, in order.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl EndpointRelation
+{
+    /// The reading relating `left` to `right` by `decisions`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        left: ValueId,
+        right: ValueId,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self {
+            left,
+            right,
+            decisions,
+        }
+    }
+
+    /// The endpoint the derivation starts from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn left(&self) -> ValueId
+    {
+        self.left
+    }
+
+    /// The endpoint the derivation ends at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn right(&self) -> ValueId
+    {
+        self.right
+    }
+
+    /// The derivation from the left endpoint to the right.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
+    }
+}
+
+impl CodeDefinitions
+{
+    /// No definition: every constant is rigid.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// Record `body` as the definition at `constant`.
+    ///
+    /// # Specification
+    /// - requires: `body` is a closed value of the arena every later
+    ///   certificate is asked over.
+    /// - ensures: [`Self::body`] answers `body` for `constant` when `constant`
+    ///   follows every position recorded before it and the chain has entry
+    ///   space; otherwise the table is unchanged. An unrecorded position stays
+    ///   rigid, and a repeated position keeps its earlier body.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ascending definitions, a skipped lower position and a
+    ///   repeated position expose their reducts; these distinguish replacing an
+    ///   accepted body, admitting out of order and losing a new definition.
+    ///   Exhausting the thirty-two-bit entry space is not constructed.
+    /// - witness: `code::tests::definitions_reject_reordering_without_replacing_earlier_bodies`
+    /// - witness: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`
+    #[spec(
+        captures: [before = self.body(constant), count = self.bodies.len(), highest = self.bodies.last_key_value().map(|(&position, _)| position)],
+        ensures: if u32::try_from(count).is_ok() && highest.is_none_or(|previous| previous < constant) {
+            self.body(constant) == Maybe::Present(body) && self.bodies.len().checked_sub(count) == Some(1)
+        } else {
+            self.body(constant) == before && self.bodies.len() == count
+        },
+    )]
+    #[inline]
+    pub fn define(
+        &mut self,
+        constant: ConstantIndex,
+        body: ValueId,
+    )
+    {
+        let Ok(entry) = u32::try_from(self.bodies.len())
+        else {
+            return;
+        };
+        if self
+            .lowered
+            .define(
+                constant,
+                GlobalIndex::from(entry),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .is_ok()
+        {
+            self.bodies.insert(constant, body);
+        }
+    }
+
+    /// Record the data declaration at `constant` as presented by its
+    /// signature's rules, when it has any: every later conversion reads its
+    /// terms by their normal forms.
+    ///
+    /// # Specification
+    /// - requires: `signature` formed at `constant`, its rules validated.
+    /// - ensures: the lowered chain records the signature's constructor count
+    ///   at `constant`, and presents `constant` by the signature's rules over
+    ///   its constructor table's arities exactly when the signature has rules;
+    ///   a free signature leaves the presentations unchanged. A type of words
+    ///   carries the field type of its first letter, its own classifier
+    ///   `Data(w, [])`, which the evaluator checks before it mints an empty
+    ///   word there.
+    /// - provides: the one place a presented type reaches the checker's
+    ///   conversion.
+    /// - panics: none.
+    /// - executable: none — the lowered chain is read only through a
+    ///   conversion's definitions; the witness observes the rules there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle word checks at its reduced word's path type
+    ///   once the circle is presented, and is refused over a free circle.
+    /// - witness: `tests::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
+    #[inline]
+    pub fn present(
+        &mut self,
+        constant: ConstantIndex,
+        signature: &gandr_core_term::DataSignature,
+    )
+    {
+        self.lowered.admit_data(
+            constant,
+            gandr_kernel_term::ConstructorCount::from(signature.constructors().len()),
+        );
+        let presentation = signature.presentation();
+        if presentation.rules().is_empty() {
+            return;
+        }
+        let arities = signature
+            .constructors()
+            .iter()
+            .map(|fields| gandr_kernel_term::FieldCount::from(fields.len()))
+            .collect();
+        let presented = gandr_core_nbe::Presented::new(presentation.clone(), arities);
+        let own = presentation.cells().and_then(|_cells| {
+            signature
+                .constructors()
+                .iter()
+                .find_map(|fields| fields.first().copied())
+        });
+        self.lowered.present(constant, match own {
+            Some(own) => presented.classified(own),
+            None => presented,
+        });
+    }
+
+    /// Record that the lawful atom at `atom` reads its identity as
+    /// `relation`: a transport along its evidence reads the fibre the
+    /// relation returns.
+    ///
+    /// # Specification
+    /// - requires: `relation` is the relation of the atom's interface, whose
+    ///   interface states its law.
+    /// - ensures: the lowered chain records `relation` at `atom`.
+    /// - provides: the one place a lawful atom's relation reaches the checker's
+    ///   evaluation.
+    /// - panics: none.
+    /// - executable: none — the lowered chain is read only through an
+    ///   evaluation's definitions; the witness observes the transport there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport along a lawful atom's evidence into the
+    ///   fibre its relation reads as the unit type returns the unit, and the
+    ///   definition using it checks.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937`
+    #[inline]
+    pub fn identify(
+        &mut self,
+        atom: ConstantIndex,
+        relation: ValueId,
+    )
+    {
+        self.lowered.identify(atom, relation);
+    }
+
+    /// Record that the fill at `fill` stands for the induction `realised`:
+    /// evaluation reads the fill as the value the induction returns.
+    ///
+    /// # Specification
+    /// - requires: `realised` is the induction [`crate::fill::realise`] built
+    ///   for the fill at `fill`.
+    /// - ensures: the lowered chain records `realised` at `fill`.
+    /// - provides: the one place a realised fill reaches the checker's
+    ///   evaluation.
+    /// - panics: none.
+    /// - executable: none — the lowered chain is read only through an
+    ///   evaluation's definitions; the witness observes the fill there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill over a `here` cell in a type converts with
+    ///   `here` once realised, and the declaration holding it checks.
+    /// - witness: `fill::tests::a_realised_fill_converts_with_here_in_a_type`
+    #[inline]
+    pub fn realise(
+        &mut self,
+        fill: ValueId,
+        realised: gandr_core_term::ComputationId,
+    )
+    {
+        self.lowered.realise(fill, realised);
+    }
+
+    /// The body recorded at `constant`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn body(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<ValueId, unfolding::Absent>
+    {
+        match self.bodies.get(&constant) {
+            Some(&body) => Maybe::Present(body),
+            None => Maybe::Absent(unfolding::Absent::Rigid),
+        }
+    }
+
+    /// Every recorded definition, ascending by position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn definitions(&self) -> impl Iterator<Item = (ConstantIndex, ValueId)>
+    {
+        self.bodies
+            .iter()
+            .map(|(&constant, &body)| (constant, body))
+    }
+
+    /// Every recorded definition at `first` or after, ascending by position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn definitions_from(
+        &self,
+        first: ConstantIndex,
+    ) -> impl Iterator<Item = (ConstantIndex, ValueId)>
+    {
+        self.bodies
+            .range(first ..)
+            .map(|(&constant, &body)| (constant, body))
+    }
+
+    /// The definitions the normaliser unfolds: each body recorded, and each
+    /// data declaration presented, as every conversion this table answers
+    /// reads them.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant recorded with a body reads back through
+    ///   the normaliser as that body, and a constant with no body stays rigid.
+    /// - witness: `code::tests::the_normaliser_unfolds_each_recorded_definition`
+    #[inline]
+    #[must_use]
+    pub fn normaliser(&self) -> Definitions<'_>
+    {
+        self.nbe_definitions()
+    }
+
+    /// Record body reads in `probe`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn observe_unfoldings(
+        &mut self,
+        probe: UnfoldingProbe,
+    )
+    {
+        self.lowered.observe_unfoldings(probe);
+    }
+
+    /// Set the declaration that owns later body reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn unfolding_subject(
+        &self,
+        subject: ConstantIndex,
+    )
+    {
+        self.lowered.unfolding_subject(subject);
+    }
+
+    /// Build the evaluator definitions for this table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn nbe_definitions(&self) -> Definitions<'_>
+    {
+        Definitions::new(&self.lowered, &self.environment, self.environment.root())
+    }
+
+    /// One step of reduction at `code`'s head: a constant's δ-step, a static
+    /// definition's δβ-step at a saturated instance, a static lambda's
+    /// β-step at a saturated application, or a returned code's run to the
+    /// code it returns, its reduct minted into `core`.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds lives in `core`.
+    /// - ensures: for a constant with a body, that body, unfolding the
+    ///   definition. For a static application, read as its head under its
+    ///   arguments in order: at a head that opens `n` static lambdas — a static
+    ///   lambda chain, unfolding the abstraction at its outermost, or a
+    ///   constant whose body is one, unfolding the definition — and at least
+    ///   `n` arguments, the innermost body instantiated at the first `n`
+    ///   arguments outermost first, under the rest; with `n` zero, a constant's
+    ///   body itself under every argument. For a returned code standing alone,
+    ///   the step [`Self::run_returned`] gives. [`unfolding::Absent::Rigid`]
+    ///   for every other code, an operator short of its arguments and a run
+    ///   [`Self::run_returned`] holds rigid included. A step fires at `code`
+    ///   itself, and names a definition that has a body, a node that is a
+    ///   static lambda, or a node that is a returned code.
+    /// - provides: the one step every walk reduces a code by, whose reduct a
+    ///   certificate then relates to the code. The kernel's replay re-derives a
+    ///   δβ-step by the same saturated substitution, so a lambda chain is
+    ///   consumed whole or not at all, as an operator of as many parameters; it
+    ///   re-derives a run by reading the returned code as its computation.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a node `core` does not hold;
+    ///   [`CheckRefusal::Undecided`] at the code when its run faults or runs
+    ///   out of fuel.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
+    /// - [`CheckRefusal::Undecided`] — a returned code's run faulted.
+    ///
+    /// # Termination
+    /// - reason: `while let` loops descending a head path and a lambda chain,
+    ///   and `for` loops over finite argument slices, not recursion.
+    /// - measure: the focus's arena position while descending; then the
+    ///   arguments left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the arms, separated by a constant unfolding, a
+    ///   saturated and an unsaturated instance of a two-parameter operator, a
+    ///   saturated and an unsaturated static redex, an instance carrying a
+    ///   further argument, a rigid head, and a closed and an open returned
+    ///   code.
+    /// - witness: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`
+    /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(step)) => step.redex() == code && match step.unfolded() {
+            | Unfolded::Definition(constant) => matches!(self.body(constant), Maybe::Present(_)),
+            | Unfolded::Abstraction(head) => matches!(core.value(head), Some(Value::StaticLambda(_))),
+            | Unfolded::Returned(at) => at == code && matches!(core.value(at), Some(Value::Returned(_))),
+        },
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    pub fn reduce(
+        &self,
+        core: &mut CoreArena,
+        code: ValueId,
+    ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
+    {
+        let rigid = Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        let read = |core: &CoreArena, at: ValueId| {
+            core.value(at).cloned().ok_or(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Value(at)),
+            })
+        };
+        let mut arguments = Vec::new();
+        let mut head = code;
+        while let Value::StaticApplication(applied, argument) = read(core, head)? {
+            arguments.push(argument);
+            head = applied;
+        }
+        arguments.reverse();
+        let (unfolded, mut reduct) = match read(core, head)? {
+            Value::StaticLambda(_) => (Unfolded::Abstraction(head), head),
+            Value::Returned(_) if arguments.is_empty() => {
+                return self.run_returned(core, code);
+            },
+            Value::Constant(constant) => {
+                let Maybe::Present(body) = self.body(constant)
+                else {
+                    return rigid;
+                };
+                (Unfolded::Definition(constant), body)
+            },
+            Value::PathRefl(_)
+            | Value::Here(_)
+            | Value::Stay(_)
+            | Value::Then(..)
+            | Value::FlowProduct(..)
+            | Value::Forward(_)
+            | Value::FunctionFlow(..)
+            | Value::SessionRelated { .. }
+            | Value::Recorded(_)
+            | Value::Dialogue(_)
+            | Value::Web(_)
+            | Value::Funext(..)
+            | Value::Equiv(..)
+            | Value::Univalence(..)
+            | Value::Ua { .. }
+            | Value::Compose { .. }
+            | Value::Fill { .. }
+            | Value::Returned(_)
+            | Value::Nested(_)
+            | Value::Run(_)
+            | Value::RecordUpdate { .. }
+            | Value::Constructor { .. }
+            | Value::Record(_)
+            | Value::Reify(_)
+            | Value::Primitive { .. }
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
+            | Value::Variable { .. }
+            | Value::Tuple(_)
+            | Value::ListNil
+            | Value::ListCons(..)
+            | Value::Literal(_)
+            | Value::Injection(..)
+            | Value::Thunk(_)
+            | Value::Ascribe { .. }
+            | Value::Lift { .. }
+            | Value::Quote(_)
+            | Value::QuoteComputation(_)
+            | Value::StaticApplication(..)
+            | Value::Hole(_)
+            | Value::Mark { .. }
+            | Value::Row(_) => return rigid,
+        };
+        let mut consumed = 0_usize;
+        while let Value::StaticLambda(inner) = read(core, reduct)? {
+            let Some(&argument) = arguments.get(consumed)
+            else {
+                return rigid;
+            };
+            reduct = instantiate_value(core, inner, argument);
+            consumed = consumed
+                .checked_add(1)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+        }
+        for &argument in arguments.get(consumed ..).unwrap_or_default() {
+            reduct = core.value_static_application(reduct, argument);
+        }
+        Ok(Maybe::Present(Reduction {
+            unfolded,
+            redex: code,
+            reduct,
+        }))
+    }
+
+    /// The run of the returned code `code`, standing alone at a code position,
+    /// to the code its computation returns.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds lives in `core`.
+    /// - ensures: for a `returned(c)` whose computation reads back — every
+    ///   definition unfolded, a definition's own recursion named as the
+    ///   definition, the binders `c` reaches read as rigid variables — to
+    ///   `return v`, with `v` either no returned code or a returned call of a
+    ///   binder, one whose head, through applications, binds and ascriptions,
+    ///   forces a variable, the step unfolding the returned code at `code` to
+    ///   `v`. A run that reads back to any other returned code waits on a
+    ///   binder, and is what [`Self::arm_call`] makes of it: the step to the
+    ///   call of another definition its head definition's selected arm makes,
+    ///   or [`unfolding::Absent::Rigid`]. Rigid too for any other node and for
+    ///   a run that reads back stuck; a run that is itself a call of a binder
+    ///   is stuck before its first step and is rigid without being run.
+    /// - provides: the reduct of `El` as unquote: a function to a universe
+    ///   returns a quote, and the type at the code position is the quoted one,
+    ///   open or closed; a definition that unfolds to a call of a binder, or to
+    ///   another definition's stuck call, reduces to that call, which then
+    ///   converts with the call written out.
+    /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
+    ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
+    ///   for a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The head walk steps from a computation to the one it applies, binds
+    /// first or ascribes, a node minted before it, so the walk descends the
+    /// arena's finite positions.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed call of a function selecting a quote by
+    ///   `case` runs to that quote, and the same call on a variable is rigid; a
+    ///   decoder's arm on a binder steps to the quote over the decodes its
+    ///   source wrote, and an open decode forged to another quote is refused; a
+    ///   call of a binder, bare and bound first, is rigid with no node minted;
+    ///   a call of a definition that applies a binder steps to that
+    ///   application; a call whose arm reaches another definition's call stuck
+    ///   on a binder steps to it.
+    /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
+    /// - witness: `code::tests::a_call_of_a_binder_is_rigid_without_running_1369`
+    /// - witness: `code::tests::a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751`
+    /// - witness: `code::tests::a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
+            && step.redex() == code
+            && core.value(step.reduct()).is_some(),
+        | Ok(Maybe::Absent(_)) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: code }
+            || matches!(refusal, CheckRefusal::DanglingNode { .. }),
+    })]
+    fn run_returned(
+        &self,
+        core: &mut CoreArena,
+        code: ValueId,
+    ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
+    {
+        let calls_a_binder = |core: &CoreArena, run: ComputationId| {
+            let mut head = run;
+            while let Some(
+                &(Computation::Application(applied, _)
+                | Computation::Bind(applied, _)
+                | Computation::Ascribe { body: applied, .. }),
+            ) = core.computation(head)
+            {
+                head = applied;
+            }
+            matches!(core.computation(head), Some(&Computation::Force(forced))
+                if matches!(core.value(forced), Some(&Value::Variable { .. })))
+        };
+        let Some(&Value::Returned(run)) = core.value(code)
+        else {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        };
+        if calls_a_binder(core, run) {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        }
+        let reach = loose_reach(core, CoreNode::Term(TermNode::Value(code)))?;
+        let mut body = core.computation_return(code);
+        for _binder in 0 .. usize::from(reach) {
+            body = core.computation_lambda(body);
+        }
+        let claim = core.value_thunk(body);
+        let definitions = self.reading(Recursion::Refolded);
+        let readback = Self::read_back(core, claim, definitions)
+            .map_err(|_undecided| CheckRefusal::Undecided { at: code })?;
+        match readback {
+            Readback::Returned { returned, .. } => {
+                if let Some(&Value::Returned(stuck)) = core.value(returned)
+                    && !calls_a_binder(core, stuck)
+                {
+                    return self.arm_call(core, code, run, reach);
+                }
+                Ok(Maybe::Present(Reduction {
+                    unfolded: Unfolded::Returned(code),
+                    redex: code,
+                    reduct: returned,
+                }))
+            },
+            Readback::Stuck(_) | Readback::Unsuspended => {
+                Ok(Maybe::Absent(unfolding::Absent::Rigid))
+            },
+        }
+    }
+
+    /// The call of another definition the arm `code`'s head definition
+    /// selects makes, when the run `run` of `code` waits on a binder only
+    /// there: `viaZero(Zero, h)` selecting `emp(h)`, `emp` casing on `h`.
+    ///
+    /// # Specification
+    /// - requires: `code` is `returned(run)`, standing under `reach` binders,
+    ///   and its run reads back, every definition unfolded, to a returned code
+    ///   that is no call of a binder.
+    /// - ensures: for a `run` that applies a defined constant `f` to arguments,
+    ///   the run of `f`'s body at those arguments read back with every constant
+    ///   held rigid, the binders read as rigid variables: when that is `return
+    ///   v` with `v` a returned code other than `code` whose computation is a
+    ///   call of a constant, or binds over calls of constants that end in one —
+    ///   `emp(tailOf(h))`, its argument's call sequenced ahead of it — the step
+    ///   unfolding `code` to `v`. [`unfolding::Absent::Rigid`] otherwise: a run
+    ///   of any other head, a body that waits on a binder before it selects an
+    ///   arm, and an arm that makes no call or continues past a bind into
+    ///   anything but a call.
+    /// - provides: the step a call takes to the call its arm reached, which
+    ///   then converts with the call written out, or steps again.
+    /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
+    ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
+    ///   for a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: `while let` loops descending an application spine and a
+    ///   worklist over the binds the reached code holds, not recursion.
+    /// - measure: the focus's arena position while descending; then the
+    ///   computations left on the worklist, each a strict part of one before.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call whose arm reaches another definition's call
+    ///   stuck on a binder steps to it, and the call it reaches, casing at once
+    ///   on its binder, is rigid; one stuck on its own selecting argument is
+    ///   rigid; an arm whose call takes another call's result, bound ahead of
+    ///   it, steps to the two, and one that continues into a quote is rigid.
+    /// - witness: `code::tests::a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832`
+    /// - witness: `code::tests::a_definition_whose_arm_calls_over_a_stuck_call_steps_to_it_3042`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
+            && step.redex() == code
+            && core.value(step.reduct()).is_some(),
+        | Ok(Maybe::Absent(_)) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: code }
+            || matches!(refusal, CheckRefusal::DanglingNode { .. }),
+    })]
+    fn arm_call(
+        &self,
+        core: &mut CoreArena,
+        code: ValueId,
+        run: ComputationId,
+        reach: BinderDepth,
+    ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
+    {
+        let rigid = Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        let calls_a_constant = |core: &CoreArena, run: ComputationId| {
+            let mut head = run;
+            while let Some(&Computation::Application(applied, _)) = core.computation(head) {
+                head = applied;
+            }
+            match core.computation(head) {
+                Some(&Computation::Force(forced)) => match core.value(forced) {
+                    Some(&Value::Constant(constant)) => Some(constant),
+                    _ => None,
+                },
+                _ => None,
+            }
+        };
+        let Some(constant) = calls_a_constant(core, run)
+        else {
+            return rigid;
+        };
+        let Maybe::Present(body) = self.body(constant)
+        else {
+            return rigid;
+        };
+        let mut arguments = Vec::new();
+        let mut head = run;
+        while let Some(&Computation::Application(applied, argument)) = core.computation(head) {
+            arguments.push(argument);
+            head = applied;
+        }
+        let mut unfolded = core.computation_force(body);
+        for &argument in arguments.iter().rev() {
+            unfolded = core.computation_application(unfolded, argument);
+        }
+        let opened = core.value_returned(unfolded);
+        let mut claimed = core.computation_return(opened);
+        for _binder in 0 .. usize::from(reach) {
+            claimed = core.computation_lambda(claimed);
+        }
+        let claim = core.value_thunk(claimed);
+        let held = self.reading(Recursion::Refolded).rigid();
+        let Readback::Returned { returned, .. } = Self::read_back(core, claim, held)
+            .map_err(|_undecided| CheckRefusal::Undecided { at: code })?
+        else {
+            return rigid;
+        };
+        // An argument that is itself a call is sequenced ahead of the call it
+        // feeds, so the arm reads back as binds over calls ending in one.
+        let calls_through_binds = |core: &CoreArena, reached: ComputationId| {
+            let mut pending = Vec::from([reached]);
+            while let Some(at) = pending.pop() {
+                if let Some(&Computation::Bind(bound, continued)) = core.computation(at) {
+                    pending.extend([bound, continued]);
+                }
+                else if calls_a_constant(core, at).is_none() {
+                    return false;
+                }
+            }
+            true
+        };
+        match core.value(returned) {
+            Some(&Value::Returned(reached))
+                if calls_through_binds(core, reached)
+                    && equal_certificate_syntax(core, returned, code)
+                        != CertificateEquality::Equal =>
+            {
+                Ok(Maybe::Present(Reduction {
+                    unfolded: Unfolded::Returned(code),
+                    redex: code,
+                    reduct: returned,
+                }))
+            },
+            _ => rigid,
+        }
+    }
+
+    /// Certify that the step `step` took holds: its redex converts to its
+    /// reduct.
+    ///
+    /// # Specification
+    /// - requires: `step` is a reduction [`Self::reduce`] gave over `core`;
+    ///   every body this table holds lives in `core`.
+    /// - ensures: the certificate of the machine's verdict on the redex against
+    ///   the reduct, each evaluated with the free binders the redex reaches
+    ///   read as rigid variables — the reduct reaches no further — the
+    ///   derivation a recording sink kept. A closed returned code's run is
+    ///   related as an endpoint is, its δ-steps held as recorded unfoldings, so
+    ///   the kernel's replay of the code as its computation meets every
+    ///   unfolding it needs in the trace. An open returned code's run is
+    ///   certified as [`Derivation::Reading`], with no dialogue: its quote
+    ///   holds the calls its arms make on the binders, which the machine
+    ///   compares by place, and the kernel re-derives the step by its own
+    ///   reading. So is a closed run whose dialogue the machine declines for
+    ///   its undecided codes: its quote holds a call on a binder the quote
+    ///   itself opens, as `pi(a, b)` decodes to `(x : el(a)) -> -F el(b(x))`.
+    /// - provides: the one route by which a code position reduces, and the
+    ///   derivation the kernel re-derives.
+    /// - fails: [`CheckRefusal::Undecided`] at `redex` when either side does
+    ///   not evaluate, the machine faults, or its verdict is anything but
+    ///   convertible or, for a closed returned code, a decline for undecided
+    ///   codes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — the step was not certified.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop binds one rigid variable per binder the redex
+    ///   reaches, not recursion; the machine runs under its own fuel.
+    /// - measure: the binders left to bind.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the kernel's replay is the external oracle: every
+    ///   certificate a readmission records over generated code constants and
+    ///   generated static declarations replays to convertible; the L3 residue
+    ///   is a body chained through a second constant, an open instance, and a
+    ///   corrupted trace refused.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_declining_certificate_faults_the_declaration`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
+    /// - witness: `code::tests::a_step_under_binders_is_certified_with_the_binders_rigid`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref certificate) => {
+            certificate.unfolded() == step.unfolded()
+                && certificate.redex() == step.redex()
+                && certificate.reduct() == step.reduct()
+                && certificate.verdict() == MachineVerdict::Convertible
+                && (certificate.derivation() == Derivation::Dialogue || certificate.decisions().is_empty())
+        },
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: step.redex() }
+            || matches!(refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
+    })]
+    pub fn certify(
+        &self,
+        core: &CoreArena,
+        step: Reduction,
+    ) -> Result<Certificate, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: step.redex };
+        if let Unfolded::Returned(_) = step.unfolded {
+            let reading = Certificate {
+                unfolded: step.unfolded,
+                redex: step.redex,
+                reduct: step.reduct,
+                verdict: MachineVerdict::Convertible,
+                derivation: Derivation::Reading,
+                decisions: Vec::new(),
+            };
+            if usize::from(loose_reach(
+                core,
+                CoreNode::Term(TermNode::Value(step.redex)),
+            )?) != 0
+            {
+                return Ok(reading);
+            }
+            let (verdict, decisions) = self.relation(core, step.redex, step.reduct, &[])?;
+            return match verdict {
+                MachineVerdict::Convertible => Ok(Certificate {
+                    derivation: Derivation::Dialogue,
+                    decisions,
+                    ..reading
+                }),
+                MachineVerdict::Declined(DeclineReason::UndecidedCodes) => Ok(reading),
+                MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => Err(undecided),
+            };
+        }
+        let definitions = self.nbe_definitions();
+        let mut domain = DomainArena::new();
+        let mut environment = Environment::new();
+        let reach = loose_reach(core, CoreNode::Term(TermNode::Value(step.redex)))?;
+        let open = u32::try_from(usize::from(reach))
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        for level in 0 .. open {
+            let neutral = domain
+                .neutral_node(
+                    NeutralHead::Variable {
+                        zone: Zone::Intuitionistic,
+                        level: BinderLevel::from(level),
+                    },
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(|_fault| undecided)?;
+            let bound = domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .map_err(|_fault| undecided)?;
+            environment.extend(Zone::Intuitionistic, bound);
+        }
+        let fuel = Fuel::from(CODE_FUEL);
+        let evaluate = |domain: &mut DomainArena, term: ValueId| {
+            eval_value_within(core, domain, definitions, fuel, term, environment.clone())
+                .map(|(value, _remaining)| value)
+                .map_err(|_fault| undecided)
+        };
+        let left = evaluate(&mut domain, step.redex)?;
+        let right = evaluate(&mut domain, step.reduct)?;
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(left, right).under(BinderLevel::from(open)),
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+        match report.verdict() {
+            MachineVerdict::Convertible => Ok(Certificate {
+                unfolded: step.unfolded,
+                redex: step.redex,
+                reduct: step.reduct,
+                verdict: report.verdict(),
+                derivation: Derivation::Dialogue,
+                decisions: log.decisions().copied().collect(),
+            }),
+            MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => Err(undecided),
+        }
+    }
+
+    /// Decide whether two values standing under the same binders are the same
+    /// term: each evaluated with the free binders either reaches read as rigid
+    /// variables, every definition this table holds unfolding.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and both values, live in
+    ///   `core`; the two values stand under the same binders.
+    /// - ensures: the machine's verdict on the pair when it converts or refutes
+    ///   it, each side evaluated in one environment of rigid variables, one per
+    ///   binder the farther side reaches; never a decline.
+    /// - provides: the conversion two terms meet where no derivation is kept:
+    ///   function extensionality's pointwise results and a type comparison's
+    ///   term pairs. A caller reads a verdict other than convertible as a
+    ///   refutation, so a pair the machine declines is undecided here.
+    /// - fails: [`CheckRefusal::Undecided`] at `left` when a side does not
+    ///   evaluate, for its budget or for another fault, when the machine
+    ///   declines the pair, or when the machine faults;
+    ///   [`CheckRefusal::DanglingNode`] for a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
+    ///   above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function extensionality whose pointwise results
+    ///   differ is refused, and one whose results agree is decided. A pair the
+    ///   machine declines is undecided, never apart: returning the decline lets
+    ///   a type comparison report it as a mismatch.
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+    /// - witness: `code::tests::a_declined_pair_is_undecided_6544`
+    #[spec(ensures: |ret| (ret.is_ok() && !matches!(ret, Ok(MachineVerdict::Declined(_))))
+        || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
+        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    #[inline]
+    pub fn convert_terms(
+        &self,
+        core: &CoreArena,
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<MachineVerdict, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: left };
+        let definitions = self.nbe_definitions();
+        let mut domain = DomainArena::new();
+        let Maybe::Present((problem, _returning)) =
+            rigid_problem(core, &mut domain, definitions, left, right, &[])?
+        else {
+            return Err(undecided);
+        };
+        let verdict = decide::<NullSink, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut NullSink,
+        )
+        .map_err(|_fault| undecided)?
+        .verdict();
+        match verdict {
+            MachineVerdict::Convertible | MachineVerdict::NotConvertible => Ok(verdict),
+            MachineVerdict::Declined(_) => Err(undecided),
+        }
+    }
+
+    /// Relate a reflexivity's point to one endpoint standing under the same
+    /// binders, recording the derivation: each evaluated with the free
+    /// binders either reaches read as rigid variables, every definition this
+    /// table holds unfolding, a returned endpoint held at the definition it
+    /// calls, and an unread call of a variable among `returning` discarded.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and both values, live in
+    ///   `core`; the two values stand under the same binders.
+    /// - ensures: the machine's convertible trace from `point` to `endpoint`,
+    ///   each side evaluated in one environment of rigid variables, one per
+    ///   binder the farther side reaches, under
+    ///   [`gandr_core_nbe::Endpoints::Hold`] and with the variables at
+    ///   `returning`, by index, read as variables whose calls return;
+    ///   [`converted::Absent::Apart`] when the machine refutes or declines the
+    ///   pair, and when a side spends its budget before it evaluates.
+    /// - provides: the endpoint condition of reflexivity's rule and the
+    ///   dialogue the kernel replays for it. Holding returned endpoints puts
+    ///   every δ-step an endpoint needs in the trace as an `Unfold`, where
+    ///   evaluation would otherwise take it silently.
+    /// - fails: [`CheckRefusal::Undecided`] at `point` when either side does
+    ///   not evaluate for a fault other than its budget, or the machine faults;
+    ///   [`CheckRefusal::DanglingNode`] for a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
+    ///   above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition applied to a variable converts with the
+    ///   body it unfolds to, two distinct literals are apart, and an arithmetic
+    ///   redex over a variable is apart from the variable; skipping the
+    ///   unfolding or the rigid environment changes a verdict. The recorded
+    ///   dialogue replays in the kernel against the admitted definitions. An
+    ///   unread call converts with what follows it only when its variable is
+    ///   among `returning`.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    /// - witness: `divergence::tests::an_unread_call_converts_only_where_its_row_is_empty`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
+        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    #[inline]
+    pub fn relate_terms(
+        &self,
+        core: &CoreArena,
+        point: ValueId,
+        endpoint: ValueId,
+        returning: &[DeBruijnIndex],
+    ) -> Result<Maybe<Vec<ConversionDecision<TraceNode>>, converted::Absent>, CheckRefusal>
+    {
+        let (verdict, decisions) = self.relation(core, point, endpoint, returning)?;
+        Ok(match verdict {
+            MachineVerdict::Convertible => Maybe::Present(decisions),
+            MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
+                Maybe::Absent(converted::Absent::Apart)
+            },
+        })
+    }
+
+    /// The machine's verdict on `point` against `endpoint`, each evaluated as
+    /// [`Self::relate_terms`] evaluates them, and the dialogue it recorded.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::relate_terms`].
+    /// - ensures: the verdict the machine reached, with the decisions its
+    ///   recording sink kept; a decline keeps its reason. A side that spends
+    ///   its budget before it evaluates is a decline for the budget,
+    ///   [`DeclineReason::Budget`], with no decisions.
+    /// - provides: [`Self::relate_terms`]'s answer; the reason a returned
+    ///   step's dialogue was declined, which [`Self::certify`] reads; and the
+    ///   decline over a hole a reflexivity's endpoints and a type conversion's
+    ///   path endpoints wait on
+    ///   ([`crate::context::CheckingContext::awaits_fill`]).
+    /// - fails: as [`Self::relate_terms`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
+    ///   [`Self::relate_terms`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::relate_terms`], and a decode whose run
+    ///   returns a quote holding a call on the quote's own binder declined for
+    ///   its undecided codes; a side that runs past the budget is declined for
+    ///   the budget.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
+    /// - witness: `code::tests::a_side_past_the_budget_is_a_decline_for_the_budget_6478`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
+        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    pub(crate) fn relation(
+        &self,
+        core: &CoreArena,
+        point: ValueId,
+        endpoint: ValueId,
+        returning: &[DeBruijnIndex],
+    ) -> Result<(MachineVerdict, Vec<ConversionDecision<TraceNode>>), CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: point };
+        let definitions = self.nbe_definitions().reading_endpoints(Endpoints::Hold);
+        let mut domain = DomainArena::new();
+        let Maybe::Present((problem, levels)) =
+            rigid_problem(core, &mut domain, definitions, point, endpoint, returning)?
+        else {
+            return Ok((MachineVerdict::Declined(DeclineReason::Budget), Vec::new()));
+        };
+        let definitions = definitions.returning(&levels);
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+
+        Ok((report.verdict(), log.decisions().copied().collect()))
+    }
+
+    /// Decide that two computations standing under `open` binders convert,
+    /// each evaluated with those binders read as rigid variables and every
+    /// definition this table holds unfolding, and keep the machine's trace.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and both computations, live in
+    ///   `core`; neither reaches past `open` binders.
+    /// - ensures: the machine's convertible trace from `left` to `right`, its
+    ///   anchors forgotten as the wire forgets them;
+    ///   [`converted::Absent::Apart`] when the machine refutes or declines the
+    ///   pair.
+    /// - provides: the dialogue a universe equivalence's round trip carries,
+    ///   which the kernel replays against the claim it regenerates.
+    /// - fails: [`CheckRefusal::Undecided`] at `at` when either side does not
+    ///   evaluate or the machine faults.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — negation after negation returns its input at both
+    ///   injections and the trace replays in the kernel; the identity after
+    ///   negation is apart.
+    /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_equiv_crosses_as_a_universe_path`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at: found }) if found == at))]
+    #[inline]
+    pub fn trace_conversion(
+        &self,
+        core: &CoreArena,
+        at: ValueId,
+        (left, right): (ComputationId, ComputationId),
+        open: OpenBinders,
+    ) -> Result<Maybe<Vec<ConversionDecision<()>>, converted::Absent>, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at };
+        let definitions = self.nbe_definitions();
+        let mut domain = DomainArena::new();
+        let (one, other) = evaluated_pair(core, &mut domain, definitions, (left, right), open)
+            .map_err(|_fault| undecided)?;
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::computations(one, other).under(BinderLevel::from(open.0)),
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+        Ok(match report.verdict() {
+            MachineVerdict::Convertible => Maybe::Present(
+                log.decisions()
+                    .copied()
+                    .map(|decision| decision.map(|_anchor| ()))
+                    .collect(),
+            ),
+            MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
+                Maybe::Absent(converted::Absent::Apart)
+            },
+        })
+    }
+
+    /// Decide whether two computations standing under the same binders
+    /// convert with no definition unfolding: each evaluated with the binders
+    /// either reaches read as rigid variables and every constant compared by
+    /// name, a presented type's terms read by their normal forms.
+    ///
+    /// # Specification
+    /// - requires: both computations live in `core` and stand under the same
+    ///   binders.
+    /// - ensures: `Present` exactly when the machine finds the pair convertible
+    ///   under [`gandr_core_nbe::Constants::Rigid`];
+    ///   [`converted::Absent::Undecided`] when evaluating a side runs out of
+    ///   fuel or the machine declines for its budget;
+    ///   [`converted::Absent::Apart`] when it refutes or otherwise declines the
+    ///   pair, and when either side does not evaluate or the machine faults.
+    /// - provides: the δ-free conversion a case's respect for its type's rules
+    ///   is decided by, the one the kernel re-derives by its own forced rules,
+    ///   where no constant unfolds either. A pair it cannot decide is not shown
+    ///   convertible, which refuses rather than admits.
+    /// - fails: never — a fault is an apart answer, a spent budget an undecided
+    ///   one.
+    /// - panics: none.
+    /// - executable: none — the verdict is the machine's on terms it evaluates;
+    ///   the witnesses observe both answers through the case rule.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixpoint over the circle that recurses through both
+    ///   inverse letters meets itself at the cancelled word, and a case reading
+    ///   the letter as written does not.
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    #[inline]
+    pub fn convert_rigidly(
+        &self,
+        core: &CoreArena,
+        pair: (ComputationId, ComputationId),
+    ) -> Maybe<(), converted::Absent>
+    {
+        let definitions = self.nbe_definitions().rigid();
+        convert_computations(core, definitions, pair)
+    }
+
+    /// Decide whether two computations standing under the same binders
+    /// convert, every definition this table holds unfolding as the machine
+    /// needs it: each evaluated with the binders either reaches read as rigid
+    /// variables.
+    ///
+    /// # Specification
+    /// - requires: both computations live in `core` and stand under the same
+    ///   binders.
+    /// - ensures: `Present` exactly when the machine finds the pair convertible
+    ///   with this table's definitions unfolding;
+    ///   [`converted::Absent::Undecided`] when evaluating a side runs out of
+    ///   fuel or the machine declines for its budget;
+    ///   [`converted::Absent::Apart`] when it refutes or otherwise declines the
+    ///   pair, and when either side does not evaluate or the machine faults.
+    /// - provides: the conversion a case's loop obligation is decided by: an
+    ///   arm answering with a definition applied at the transported point is
+    ///   read by what that definition computes there.
+    /// - fails: never — a fault is an apart answer, a spent budget an undecided
+    ///   one.
+    /// - panics: none.
+    /// - executable: none — the verdict is the machine's on terms it evaluates;
+    ///   the witnesses observe both answers through the case rule.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case whose point branch runs a definition meets its
+    ///   obligation once the definition unfolds, at a family conjugation fixes,
+    ///   and is still refused at a fixed left endpoint.
+    /// - witness: `tests::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
+    #[inline]
+    pub fn convert_unfolding(
+        &self,
+        core: &CoreArena,
+        pair: (ComputationId, ComputationId),
+    ) -> Maybe<(), converted::Absent>
+    {
+        let definitions = self.nbe_definitions();
+        convert_computations(core, definitions, pair)
+    }
+
+    /// Evaluate the closed claim `claim`, `thunk (λⁿ. M)`, to the value its
+    /// body returns, every definition this table holds unfolding, and record
+    /// the trace that the claim converts to its normal form.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and `claim`, live in `core`;
+    ///   `claim` is closed.
+    /// - ensures: the claim's normal form, read back with every unfolding
+    ///   spent; when it is `thunk (λⁿ. return v)` for some `n`, the evaluation
+    ///   of `v` with the machine's convertible trace from the claim to that
+    ///   normal form, and [`evaluated::Absent::Stuck`] for any other normal
+    ///   form, with no trace recorded.
+    /// - provides: the computation a universe equivalence's translator decides,
+    ///   and the dialogue the kernel replays for it.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
+    ///   readback faults or runs out of fuel, or the machine does not convert
+    ///   the claim to its normal form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition applied to a constructor returns the
+    ///   branch it selects, an application stuck on a variable is stuck, and
+    ///   the trace replays in the kernel against the admitted definition.
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(ref evaluation)) => core.value(evaluation.returned()).is_some(),
+        | Ok(Maybe::Absent(_)) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    #[inline]
+    pub fn evaluate_claim(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<Maybe<Evaluation, evaluated::Absent>, CheckRefusal>
+    {
+        let Readback::Returned { normal, returned } =
+            Self::read_back(core, claim, self.reading(Recursion::Unrolled))?
+        else {
+            return Ok(Maybe::Absent(evaluated::Absent::Stuck));
+        };
+        let decisions = self.claim_trace(core, claim, normal)?;
+        Ok(Maybe::Present(Evaluation {
+            normal,
+            returned,
+            decisions,
+        }))
+    }
+
+    /// Read the closed claim `claim`, `thunk (λⁿ. M)`, to its normal form,
+    /// returning or stuck, every definition this table holds unfolding, and
+    /// record the trace that the claim converts to it.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluate_claim`].
+    /// - ensures: [`Reading::Returned`] with the evaluation
+    ///   [`Self::evaluate_claim`] gives when the normal form returns; otherwise
+    ///   [`Reading::Stuck`] with the normal form the rounds of evaluation and
+    ///   readback settle at and the machine's convertible trace from the claim
+    ///   to it.
+    /// - provides: each step a function extensionality decides under the
+    ///   quantifier: a stuck normal form is where the body applies its
+    ///   higher-order argument.
+    /// - fails: as [`Self::evaluate_claim`], and [`CheckRefusal::Undecided`] at
+    ///   `claim` when the claim reads back to no thunk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `λf. f(true)` at the generic higher-order pattern
+    ///   reads to its stuck application with a trace the kernel replays.
+    /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Reading::Returned(ref evaluation)) => core.value(evaluation.returned()).is_some(),
+        | Ok(Reading::Stuck(ref reduction)) => core.value(reduction.normal()).is_some(),
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    #[inline]
+    pub fn read_claim(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<Reading, CheckRefusal>
+    {
+        match Self::read_back(core, claim, self.reading(Recursion::Unrolled))? {
+            Readback::Returned { normal, returned } => {
+                let decisions = self.claim_trace(core, claim, normal)?;
+                Ok(Reading::Returned(Evaluation {
+                    normal,
+                    returned,
+                    decisions,
+                }))
+            },
+            Readback::Stuck(normal) => {
+                let decisions = self.claim_trace(core, claim, normal)?;
+                Ok(Reading::Stuck(Stalled { normal, decisions }))
+            },
+            Readback::Unsuspended => Err(CheckRefusal::Undecided { at: claim }),
+        }
+    }
+
+    /// Read the closed claim `claim`, `thunk (λⁿ. M)`, to its normal form,
+    /// every definition this table holds unfolding and each definition's own
+    /// recursion read back unrolled, as [`Self::read_claim`] reads it, with no
+    /// trace recorded.
+    ///
+    /// # Specification
+    /// - requires: `claim` is closed and lives in `core`, as every body this
+    ///   table holds does.
+    /// - ensures: the normal form the rounds of evaluation and readback settle
+    ///   at, returning or stuck. A stuck call of a recursive definition reads
+    ///   as its fixpoint applied, so two terms that unfold one definition to
+    ///   the same calls read to one normal form.
+    /// - provides: the normal forms [`crate::canonical::answers`] compares with
+    ///   no definition unfolding.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
+    ///   readback faults or runs out of fuel, the rounds run out, or the claim
+    ///   reads back to no thunk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `std.ir`'s `args` and `decodeArgs`, read at each
+    ///   code, meet their canonical answers, and an answer of another type at
+    ///   `ι` reads apart from the unit type.
+    /// - witness: `canonical::tests::a_holder_of_e_is_refused_at_its_first_departing_answer_5255`
+    #[spec(ensures: |ret| match ret {
+        | Ok(normal) => core.value(normal).is_some(),
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    #[inline]
+    pub fn read_normal(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<ValueId, CheckRefusal>
+    {
+        match Self::read_back(core, claim, self.reading(Recursion::Unrolled))? {
+            Readback::Returned { normal, .. } | Readback::Stuck(normal) => Ok(normal),
+            Readback::Unsuspended => Err(CheckRefusal::Undecided { at: claim }),
+        }
+    }
+
+    /// The definitions a claim is read back under: every one this table holds
+    /// unfolding, a definition's own recursion named as `recursion` says.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reading(
+        &self,
+        recursion: Recursion,
+    ) -> Definitions<'_>
+    {
+        self.nbe_definitions().reading_recursion(recursion)
+    }
+
+    /// Read the closed claim `claim` back under `definitions`, round by round,
+    /// until a round is final.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluate_claim`].
+    /// - ensures: at the first final round, [`Readback::Returned`] when its
+    ///   readback is `thunk (λⁿ. return v)` and [`Readback::Stuck`] otherwise;
+    ///   [`Readback::Unsuspended`] for a readback that is no thunk. A round is
+    ///   final when its readback ran every call it spent
+    ///   ([`gandr_core_nbe::SpentCalls::Ran`]) or reads back what it read. A
+    ///   round that held a spent call and still changed something is read
+    ///   again: an arm of a stuck case makes that call, and the next round runs
+    ///   it.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
+    ///   readback faults or runs out of fuel, or the rounds run out.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the outer `loop` runs at most [`CLAIM_ROUNDS`] rounds and the
+    ///   inner `while let` peels one lambda of the finite normal form per turn,
+    ///   not recursion; each round's evaluation and readback spend what the
+    ///   rounds before left of one [`READING_FUEL`].
+    /// - measure: the rounds left, then the lambdas left above the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+    /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_call_in_a_stuck_arm_of_a_returned_code_replays_2831`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Readback::Returned { normal, returned }) => core.value(normal).is_some() && core.value(returned).is_some(),
+        | Ok(Readback::Stuck(normal)) => core.value(normal).is_some(),
+        | Ok(Readback::Unsuspended) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    fn read_back(
+        core: &mut CoreArena,
+        claim: ValueId,
+        definitions: Definitions<'_>,
+    ) -> Result<Readback, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: claim };
+        let mut fuel = Fuel::from(READING_FUEL);
+        let mut current = claim;
+        let mut rounds = 0_u32;
+        loop {
+            let mut domain = DomainArena::new();
+            let (evaluated, left) =
+                gandr_core_nbe::eval_closed_value(core, &mut domain, definitions, fuel, current)
+                    .map_err(|_fault| undecided)?;
+            let (read, spent, left) = gandr_core_nbe::readback_value_spending(
+                core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                left,
+                evaluated,
+            )
+            .map_err(|_fault| undecided)?;
+            fuel = left;
+            let ran = spent == gandr_core_nbe::SpentCalls::Ran;
+            let Some(&Value::Thunk(mut body)) = core.value(read)
+            else {
+                return Ok(Readback::Unsuspended);
+            };
+            while let Some(&Computation::Lambda(inner)) = core.computation(body) {
+                body = inner;
+            }
+            // A round that returns may still hold a call it spent without
+            // running, a definition called in an arm of a case stuck on a
+            // binder: the next round runs it (#2831). A round that ran every
+            // call it spent is the normal form, and one that held a call is
+            // final only once it reads back what it read (#3337).
+            if ran || equal_certificate_syntax(core, read, current) == CertificateEquality::Equal {
+                if let Some(&Computation::Return(returned)) = core.computation(body) {
+                    return Ok(Readback::Returned {
+                        normal: read,
+                        returned,
+                    });
+                }
+                return Ok(Readback::Stuck(read));
+            }
+            rounds = rounds.checked_add(1).ok_or(undecided)?;
+            if rounds >= CLAIM_ROUNDS {
+                return Err(undecided);
+            }
+            current = read;
+        }
+    }
+
+    /// The machine's convertible trace from the closed claim `claim` to its
+    /// normal form `normal`, recorded with returned endpoints held at the
+    /// definitions they call ([`gandr_core_nbe::Endpoints::Hold`]).
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluate_claim`]; `normal` is the claim's
+    ///   readback.
+    /// - ensures: the decisions the machine recorded converting the two, in
+    ///   order; every δ-step the claim takes, a returned endpoint's among them,
+    ///   is one of those decisions.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when either side does
+    ///   not evaluate or the machine does not convert them.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`];
+    ///   a function carried along a named path, `⟨tr(x. x → x, p, f)⟩`, runs
+    ///   through `p`'s definition, and a run left to the evaluation records no
+    ///   step for it, so the kernel's replay, which unfolds `p` only on a
+    ///   recorded step, refuses what the checker accepted.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335`
+    #[spec(ensures: |ret| ret.is_ok() || ret == Err(CheckRefusal::Undecided { at: claim }))]
+    fn claim_trace(
+        &self,
+        core: &CoreArena,
+        claim: ValueId,
+        normal: ValueId,
+    ) -> Result<Vec<ConversionDecision<TraceNode>>, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: claim };
+        let definitions = self
+            .nbe_definitions()
+            .reading_endpoints(gandr_core_nbe::Endpoints::Hold);
+        let fuel = Fuel::from(CODE_FUEL);
+        let mut domain = DomainArena::new();
+        let left = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, claim)
+            .map_err(|_fault| undecided)?;
+        let right = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, normal)
+            .map_err(|_fault| undecided)?;
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(left, right),
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+        if report.verdict() != MachineVerdict::Convertible {
+            return Err(undecided);
+        }
+        Ok(log.decisions().copied().collect())
+    }
+}
+
+/// How a claim read back, round by round.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Readback
+{
+    /// The body returns: the normal form and the value it returns.
+    Returned
+    {
+        /// The normal form, `thunk (λⁿ. return v)`.
+        normal: ValueId,
+        /// The value returned, under the claim's binders.
+        returned: ValueId,
+    },
+    /// A round read back what it read: the normal form, which does not return.
+    Stuck(ValueId),
+    /// The readback is no thunk.
+    Unsuspended,
+}
+
+/// The normaliser's reading of one closed claim, returning or stuck.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Reading
+{
+    /// The body returns a value.
+    Returned(Evaluation),
+    /// The body's normal form does not return.
+    Stuck(Stalled),
+}
+
+/// The normaliser's reading of one closed claim whose normal form does not
+/// return: the normal form, `thunk (λⁿ. M)` with `M` stuck, and the trace that
+/// the claim converts to it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Stalled
+{
+    /// The claim's normal form.
+    normal: ValueId,
+    /// The derivation the machine recorded that the claim converts to its
+    /// normal form, in order.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl Stalled
+{
+    /// The claim's normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn normal(&self) -> ValueId
+    {
+        self.normal
+    }
+
+    /// The derivation that the claim converts to its normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
+    }
+}
+
+/// The machine problem relating two values standing under the same binders:
+/// each evaluated under `definitions` in one environment of rigid variables,
+/// one per binder the farther side reaches; and the levels of the variables
+/// among `returning`.
+///
+/// # Specification
+/// - requires: every body `definitions` holds, and both values, live in `core`;
+///   the two values stand under the same binders.
+/// - ensures: the problem between both evaluations, under as many binders as
+///   the environment binds, and, ascending, the level each index in `returning`
+///   the environment binds stands at; [`converted::Absent::Undecided`] when a
+///   side spends the machine's step budget, [`StepBudget::DEFAULT`], before it
+///   reaches its weak head.
+/// - provides: the shared preamble of [`CodeDefinitions::convert_terms`] and
+///   [`CodeDefinitions::relate_terms`], which differ only in the reading of a
+///   returned endpoint, in the variables known to return and in the sink. Each
+///   side evaluates under the budget the machine then decides the pair under,
+///   so the evaluation stops no earlier than the decision.
+/// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
+///   evaluate for a fault other than its budget; [`CheckRefusal::DanglingNode`]
+///   for a node `core` does not hold; [`CheckRefusal::MachineInvariant`] for a
+///   reach past the address space.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Termination
+/// - reason: the `for` loop binds one rigid variable per binder the sides
+///   reach, not recursion; evaluation runs under its own fuel.
+/// - measure: the binders left to bind.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition applied to a variable converts with the body
+///   it unfolds to, which needs the rigid environment; a side that runs past
+///   the budget is no fault.
+/// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+/// - witness: `code::tests::a_side_past_the_budget_is_a_decline_for_the_budget_6478`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
+    || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+fn rigid_problem(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    left: ValueId,
+    right: ValueId,
+    returning: &[DeBruijnIndex],
+) -> Result<Maybe<(Problem, Vec<BinderLevel>), converted::Absent>, CheckRefusal>
+{
+    let undecided = CheckRefusal::Undecided { at: left };
+    let mut environment = Environment::new();
+    let reach = |endpoint| loose_reach(core, CoreNode::Term(TermNode::Value(endpoint)));
+    let reach = usize::from(reach(left)?).max(usize::from(reach(right)?));
+    let open = u32::try_from(reach).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+    for level in 0 .. open {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .map_err(|_fault| undecided)?;
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .map_err(|_fault| undecided)?;
+        environment.extend(Zone::Intuitionistic, bound);
+    }
+    let fuel = u32::try_from(u64::from(StepBudget::DEFAULT))
+        .map_or_else(|_wide| Fuel::from(u32::MAX), Fuel::from);
+    let mut evaluate = |term: ValueId| match eval_value_within(
+        core,
+        domain,
+        definitions,
+        fuel,
+        term,
+        environment.clone(),
+    ) {
+        Ok((value, _remaining)) => Ok(Maybe::Present(value)),
+        Err(EvalFault::OutOfFuel) => Ok(Maybe::Absent(converted::Absent::Undecided)),
+        Err(_fault) => Err(undecided),
+    };
+    let one = match evaluate(left)? {
+        Maybe::Present(one) => one,
+        Maybe::Absent(spent) => return Ok(Maybe::Absent(spent)),
+    };
+    let other = match evaluate(right)? {
+        Maybe::Present(other) => other,
+        Maybe::Absent(spent) => return Ok(Maybe::Absent(spent)),
+    };
+    let mut levels: Vec<BinderLevel> = returning
+        .iter()
+        .filter_map(|&index| {
+            open.checked_sub(u32::from(index))
+                .and_then(|outside| outside.checked_sub(1))
+                .map(BinderLevel::from)
+        })
+        .collect();
+    levels.sort_unstable();
+    Ok(Maybe::Present((
+        Problem::values(one, other).under(BinderLevel::from(open)),
+        levels,
+    )))
+}
+
+/// Decide whether two computations standing under the same binders convert
+/// at the stance `definitions` holds: each evaluated with the binders either
+/// reaches read as rigid variables.
+///
+/// # Specification
+/// - requires: both computations live in `core` and stand under the same
+///   binders.
+/// - ensures: `Present` exactly when the machine finds the pair convertible
+///   with `definitions`; [`converted::Absent::Undecided`] when evaluating a
+///   side runs out of fuel or the machine declines for its budget;
+///   [`converted::Absent::Apart`] when it refutes or otherwise declines the
+///   pair, and when either side does not evaluate or the machine faults.
+/// - provides: the body of [`CodeDefinitions::convert_rigidly`] and
+///   [`CodeDefinitions::convert_unfolding`], which differ only in the stance.
+/// - fails: never — a fault is an apart answer, a spent budget an undecided
+///   one.
+/// - panics: none.
+/// - executable: none — the verdict is the machine's on terms it evaluates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the two callers.
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
+fn convert_computations(
+    core: &CoreArena,
+    definitions: Definitions<'_>,
+    (left, right): (ComputationId, ComputationId),
+) -> Maybe<(), converted::Absent>
+{
+    let apart = Maybe::Absent(converted::Absent::Apart);
+    let reach = |side| loose_reach(core, CoreNode::Term(TermNode::Computation(side)));
+    let (Ok(one), Ok(other)) = (reach(left), reach(right))
+    else {
+        return apart;
+    };
+    let Ok(open) = u32::try_from(usize::from(one).max(usize::from(other)))
+    else {
+        return apart;
+    };
+    let open = OpenBinders(open);
+    let mut domain = DomainArena::new();
+    let (one, other) = match evaluated_pair(core, &mut domain, definitions, (left, right), open) {
+        Ok(pair) => pair,
+        Err(EvalFault::OutOfFuel) => return Maybe::Absent(converted::Absent::Undecided),
+        Err(_) => return apart,
+    };
+    let decided = decide::<NullSink, ResharingMemo>(
+        core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        Problem::computations(one, other).under(BinderLevel::from(open.0)),
+        &mut NullSink,
+    );
+    match decided.map(|report| report.verdict()) {
+        Ok(MachineVerdict::Convertible) => Maybe::Present(()),
+        Ok(MachineVerdict::Declined(DeclineReason::Budget)) => {
+            Maybe::Absent(converted::Absent::Undecided)
+        },
+        Ok(MachineVerdict::NotConvertible | MachineVerdict::Declined(_)) | Err(_) => apart,
+    }
+}
+
+/// Evaluate two computations standing under `open` binders, each binder read
+/// as a rigid variable, in one environment.
+///
+/// # Specification
+/// - requires: both computations live in `core`; neither reaches past `open`
+///   binders.
+/// - ensures: both evaluations, in the order given, over one environment of
+///   `open` rigid intuitionistic variables, the innermost binder the newest.
+/// - provides: the shared preamble of [`CodeDefinitions::trace_conversion`] and
+///   [`convert_computations`], which differ in what unfolds and in the sink.
+/// - fails: the evaluator's fault, for a side that does not evaluate or a
+///   neutral the domain cannot mint.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `for` loop binds one rigid variable per open binder, not
+///   recursion; evaluation runs under its own fuel.
+/// - measure: the binders left to bind.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negation after negation returns its input under the
+///   pattern's binders and traces, which needs the rigid environment.
+/// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(one, other)| domain.computation(one).is_some() && domain.computation(other).is_some()))]
+fn evaluated_pair(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    (left, right): (ComputationId, ComputationId),
+    open: OpenBinders,
+) -> Result<(DomainCompId, DomainCompId), EvalFault>
+{
+    let mut environment = Environment::new();
+    for level in 0 .. open.0 {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .map_err(EvalFault::Domain)?;
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .map_err(EvalFault::Domain)?;
+        environment.extend(Zone::Intuitionistic, bound);
+    }
+    let fuel = Fuel::from(CODE_FUEL);
+    let mut evaluate = |term: ComputationId| {
+        gandr_core_nbe::eval_comp_within(core, domain, definitions, fuel, term, environment.clone())
+            .map(|(produced, _remaining)| produced)
+    };
+    let one = evaluate(left)?;
+    let other = evaluate(right)?;
+    Ok((one, other))
+}
+
+/// How many binders outside `root` its free intuitionistic variables reach:
+/// one past the largest index that counts out of every binder within `root`,
+/// which is a value, a computation or a type of either.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: zero for a closed node; otherwise the least `n` such that `root`
+///   read beneath `n` binders mentions no binder beyond them, read from the
+///   support the arena stored for `root` when it minted it. Linear variables
+///   count no binder and reach nothing.
+/// - provides: the environment a certificate evaluates an open code in, and the
+///   closedness an identity's carrier needs.
+/// - fails: [`CheckRefusal::DanglingNode`] for a root `core` does not hold;
+///   [`CheckRefusal::MachineInvariant`] for a reach past the address space.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separated by a closed code, a bare variable, a variable
+///   beneath a static lambda, a variable beneath a dependent arrow's binder
+///   inside a quote, and a type decoding a variable, each reach asserted.
+/// - witness: `code::tests::the_loose_reach_counts_only_binders_outside_the_root`
+/// - witness: `code::tests::the_loose_reach_descends_every_former_and_subtracts_only_its_binders`
+#[inline]
+#[spec(ensures: |ret| match (root, ret) {
+    | (CoreNode::Term(TermNode::Value(at)), Ok(reach)) => match core.value(at) {
+        | Some(&Value::Variable { zone: Zone::Intuitionistic, index }) => {
+            usize::try_from(u32::from(index)).ok().and_then(|counted| counted.checked_add(1))
+                == Some(usize::from(reach))
+        },
+        | Some(&(Value::Constant(_) | Value::Literal(_))) => reach == BinderDepth::default(),
+        | Some(&Value::Tuple(ref components)) if components.is_empty() => {
+            reach == BinderDepth::default()
+        },
+        | _ => true,
+    },
+    | _ => true,
+})]
+pub fn loose_reach(
+    core: &CoreArena,
+    root: CoreNode,
+) -> Result<BinderDepth, CheckRefusal>
+{
+    let support = match root {
+        CoreNode::Term(TermNode::Value(at)) => core.value_support(at),
+        CoreNode::Term(TermNode::Computation(at)) => core.computation_support(at),
+        CoreNode::Type(TypeNode::Value(at)) => core.value_type_support(at),
+        CoreNode::Type(TypeNode::Computation(at)) => core.comp_type_support(at),
+    }
+    .ok_or(CheckRefusal::DanglingNode { node: root })?;
+    let reach = match support.indices(Zone::Intuitionistic).next_back() {
+        None => 0_usize,
+        Some(index) => usize::try_from(u32::from(index))
+            .ok()
+            .and_then(|counted| counted.checked_add(1))
+            .ok_or(CheckRefusal::MachineInvariant)?,
+    };
+    Ok(BinderDepth::from(reach))
+}
+
+#[cfg(test)]
+mod tests;

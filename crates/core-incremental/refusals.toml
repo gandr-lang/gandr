@@ -1,6 +1,6 @@
 # The checker's refusals as the store keeps them.
 #
-# The build script reads `CheckRefusal` from `crates/core-checker/src/refusal.rs`
+# The build script reads `CheckRefusal` from `crates/core-checker-base/src/refusal.rs`
 # and writes the store's `Refusal`, its projection, its seat and its codec arms
 # from it and from this table. A refusal the checker adds needs one row here:
 # its wire tag. The script refuses a refusal without a row, a row without a
