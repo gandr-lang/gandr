@@ -83,7 +83,6 @@ use gandr_surface_dispatcher::Worlds;
 
 use super::Machine;
 use super::entry::EntryHost;
-use super::reals::Reals;
 
 /// Decide the migration `request` offers, as a host holding `worlds` and the
 /// world names `names` decides it, shipping it on `net` when its world is
@@ -305,12 +304,12 @@ impl Machine<'_, '_>
             World::Declared(constant) => self.rows.get(&constant),
             World::Host => None,
         };
-        let mut entry = EntryHost {
+        let mut entry = EntryHost::new(
             console,
-            net: Some(&mut *net),
-            reals: Reals::new(profile),
-            worlds: Some((worlds, self.names.as_slice())),
-        };
+            Some(&mut *net),
+            profile,
+            Some((worlds, self.names.as_slice())),
+        );
         let answer = match world::arrive(
             (self.arena, self.definitions),
             (at, world),

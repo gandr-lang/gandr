@@ -22,7 +22,7 @@
 # and `first` is null when the path prints nothing. `charged` is in bytes, or
 # null where the kernel keeps no peak of a scope. `allocation` is the size that
 # the failed allocation names, or null. `refusal` is the host's refusal, or
-# null. `owed` is the issue that owes the path's end, as `#3546`, or null.
+# null. `owed` is the issue that owes the path's end, as `#7308`, or null.
 # Output: one Markdown row.
 include "bound";
 

@@ -245,11 +245,12 @@ where
     }
 }
 
-/// A host attenuated to a world's row: an operation of an interface the row
-/// names goes to the host, and every other operation is declined, so the run
-/// is stuck at it. A host that runs a migration another host shipped answers
-/// the body through one, so the body reaches only the interfaces its world
-/// requires (#3546).
+/// A host attenuated to a world's row.
+///
+/// An operation of an interface the row names goes to the host, and every
+/// other operation is declined, so the run is stuck at it. A host that runs a
+/// migration another host shipped answers the body through one, so the body
+/// reaches only the interfaces its world requires (#3546).
 #[derive(Debug)]
 pub struct Attenuated<'host, Host>
 {
@@ -280,6 +281,7 @@ where
     ///   console, the host is never offered it and the migration answers
     ///   nothing.
     /// - witness: `tests::world::an_operation_outside_its_world_s_row_reaches_no_handler_3546`
+    #[inline]
     fn handle(
         &mut self,
         request: HostRequest<'_>,
@@ -297,6 +299,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn migrate(
         &mut self,
         request: MigrationRequest<'_>,
@@ -310,6 +313,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn spawning(&mut self) -> Spawning
     {
         self.host.spawning()
@@ -319,6 +323,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn task_order(&mut self) -> TaskOrder
     {
         self.host.task_order()

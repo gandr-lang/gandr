@@ -65,13 +65,37 @@ const EXIT: &str = "exit";
 pub(super) struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
-    pub(super) console: &'host mut dyn Console,
+    console: &'host mut dyn Console,
     /// The run's network, when it has one.
-    pub(super) net: Option<&'host mut Net>,
+    net: Option<&'host mut Net>,
     /// The plans and the machines of exact reals that the run holds.
-    pub(super) reals: Reals,
+    reals: Reals,
     /// The run's world bindings and the program's names, when it has them.
-    pub(super) worlds: Option<(Worlds<'host>, &'host [String])>,
+    worlds: Option<(Worlds<'host>, &'host [String])>,
+}
+
+impl<'host> EntryHost<'host>
+{
+    /// The host that prints on `console`, serves `Net` on `net`, holds its
+    /// reals under `profile`, and sends a migration where `worlds` binds its
+    /// world.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn new(
+        console: &'host mut dyn Console,
+        net: Option<&'host mut Net>,
+        profile: RealsProfile,
+        worlds: Option<(Worlds<'host>, &'host [String])>,
+    ) -> Self
+    {
+        Self {
+            console,
+            net,
+            reals: Reals::new(profile),
+            worlds,
+        }
+    }
 }
 
 impl HostHandler for EntryHost<'_>
@@ -221,12 +245,12 @@ impl<'source> Machine<'_, 'source>
             Err(evaluation) => return Entered::Ended(evaluation),
         };
         let mut store = Store::new();
-        let mut host = EntryHost {
+        let mut host = EntryHost::new(
             console,
             net,
-            reals: Reals::new(profile),
-            worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
-        };
+            profile,
+            worlds.map(|worlds| (worlds, self.names.as_slice())),
+        );
         match self.hosted(command, &mut store, &mut host) {
             Err(status) => Entered::Exited(status),
             Ok(Err(evaluation)) => Entered::Ended(evaluation),
