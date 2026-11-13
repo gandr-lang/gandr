@@ -45,9 +45,9 @@ gh() {
   done
   echo $(( ${#pairs[@]} / 2 )) >> "$work/aliases"
   [[ $fail == false ]] || return 1
-  jq -n --argjson merged "$merged" --args \
+  jq -n --slurpfile merged <(printf '%s\n' "$merged") --args \
     '$ARGS.positional as $p | [range(0; $p | length; 2) | [$p[.], $p[. + 1]] | {key: ("b" + (.[0] | ltrimstr("h"))), value: {nodes: (
-      if $merged[.[1]] then [{number: $merged[.[1]], commits: {nodes: [{commit: {messageHeadline: (.[1] + " own")}}]}}] else [] end)}}]
+      if $merged[0][.[1]] then [{number: $merged[0][.[1]], commits: {nodes: [{commit: {messageHeadline: (.[1] + " own")}}]}}] else [] end)}}]
       | from_entries | {data: {repository: .}}' "${pairs[@]}" \
     | jq -r "$filter"
 }

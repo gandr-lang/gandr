@@ -118,11 +118,12 @@ scaling_measure() {
 # The account's body for the row `$1` with the defect `$2` (or `null`), from
 # the account `$3` as `issue_found` gives it, and the closed defects `$4`.
 scaling_account() {
-  jq -n -c --argjson row "$1" --argjson defect "$2" --argjson found "$3" --argjson closed "$4" \
+  jq -n -c --slurpfile row <(printf '%s\n' "$1") --slurpfile defect <(printf '%s\n' "$2") \
+    --slurpfile found <(printf '%s\n' "$3") --slurpfile closed <(printf '%s\n' "$4") \
     --argjson config "$config" --argjson limit "$scaling_limit" \
     --argjson paths "$(printf '%s\n' "${scaling_paths[@]}" | jq -R . | jq -s -c .)" \
-    '{body: ($found.body // null), row: ($row + {defect: $defect}), widths: $config.widths,
-      placement: $config.placement, paths: $paths, share: $config.share, limit: $limit, closed: $closed}' \
+    '{body: ($found[0].body // null), row: ($row[0] + {defect: $defect[0]}), widths: $config.widths,
+      placement: $config.placement, paths: $paths, share: $config.share, limit: $limit, closed: $closed[0]}' \
     | jq -c -f "$scaling_dir/account.jq"
 }
 

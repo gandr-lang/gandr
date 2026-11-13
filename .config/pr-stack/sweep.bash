@@ -24,7 +24,7 @@ own_commits() {
     return 0
   fi
   git log --no-walk=unsorted --format=%s "${listed[@]}" \
-    | jq -R . | jq -sc --argjson trunk "$(fork_subjects "$1" "$2")" 'map({subject: ., on_trunk: ($trunk[.] // false)})'
+    | jq -R . | jq -sc --slurpfile trunk <(fork_subjects "$1" "$2") 'map({subject: ., on_trunk: ($trunk[0][.] // false)})'
 }
 
 # The merged pull requests of each branch that `wt:sweep` asks about (#5839),

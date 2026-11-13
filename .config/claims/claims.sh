@@ -72,10 +72,10 @@ declare -A aged=()
 if [[ $mode == sweep ]]; then
   while IFS= read -r number; do
     [[ -n $number ]] && aged[$number]=1
-  done < <(jq -r -L "$here" --argjson now "$(date +%s)" --argjson prs "$open_prs" 'include "targets";
+  done < <(jq -r -L "$here" --argjson now "$(date +%s)" --slurpfile prs <(printf '%s\n' "$open_prs") 'include "targets";
     .[] | . as $issue
     | select(.state == "open" and (.labels | index("kind:epic") | not)
-        and ([$prs[] | names($issue.number)] | any | not) and ($now - (.updated_at | fromdateiso8601)) < 14400)
+        and ([$prs[0][] | names($issue.number)] | any | not) and ($now - (.updated_at | fromdateiso8601)) < 14400)
     | .number' <<< "$listed")
 fi
 # A label no `labeled` event shows (a transferred issue) ages from the issue's
@@ -91,8 +91,9 @@ claimed=$(jq -c '.[]' <<< "$listed" | while IFS= read -r issue; do
   fi
 done | jq -s .)
 
-removals=$(jq -rn --argjson now "$(date +%s)" --argjson claimed "$claimed" --argjson open_prs "$open_prs" --argjson merged "$merged" \
-  '{now: $now, claimed: $claimed, open_prs: $open_prs, merged_body: $merged}' | jq -r -L "$here" -f "$here/decide.jq")
+removals=$(jq -rn --argjson now "$(date +%s)" --slurpfile claimed <(printf '%s\n' "$claimed") \
+  --slurpfile open_prs <(printf '%s\n' "$open_prs") --slurpfile merged <(printf '%s\n' "$merged") \
+  '{now: $now, claimed: $claimed[0], open_prs: $open_prs[0], merged_body: $merged[0]}' | jq -r -L "$here" -f "$here/decide.jq")
 
 # unmark <number>: takes the claim marker of the lane whose silent claim
 # lapsed off the body, after its label comes off (#5531). The lane is the one
@@ -157,9 +158,9 @@ lane=$(lanes_keys | jq -r --arg head "$head" '[.[] | select(. as $l | $head == $
 if [[ -n $lane ]]; then
   at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   # Each claimed issue the body advances, which keeps its claim (#6954).
-  for number in $(jq -r -L "$here" --argjson claimed "$claimed" 'include "targets";
+  for number in $(jq -r -L "$here" --slurpfile claimed <(printf '%s\n' "$claimed") 'include "targets";
     (env.CLAIMS_MERGED_BODY // "" | targets("advances")) as $advanced
-    | $claimed[] | select(.number as $n | $advanced | index($n)) | .number' -n); do
+    | $claimed[0][] | select(.number as $n | $advanced | index($n)) | .number' -n); do
     issue=$(gh api "repos/$repo/issues/$number" --jq '{state, body: (.body // "")}')
     [[ $(jq -r .state <<< "$issue") == open ]] || continue
     if [[ "$dry" == --dry-run ]]; then

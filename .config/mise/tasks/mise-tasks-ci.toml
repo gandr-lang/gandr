@@ -1041,8 +1041,9 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 gh issue list --repo "$repo" --state open --label kind:ci --search "\"$title\" in:title" --json number,title,body \
   | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/issue.json"
+: "${HOTPATH_UNSENT:?}"
 jq -n --slurpfile issue "$scratch/issue.json" --arg commit "${GITHUB_SHA:?}" \
-  --arg url "${GITHUB_SERVER_URL:?}/$repo/actions/runs/${GITHUB_RUN_ID:?}" --arg benchmarks "${HOTPATH_UNSENT:?}" \
+  --arg url "${GITHUB_SERVER_URL:?}/$repo/actions/runs/${GITHUB_RUN_ID:?}" --rawfile benchmarks <(printf '%s' "$HOTPATH_UNSENT") \
   '{issue: $issue[0], run: {commit: $commit, url: $url, benchmarks: ($benchmarks | split(" ") | map(select(length > 0)))}}' \
   | jq -c -f .config/hotpath/unsent.jq > "$scratch/filed.json"
 jq -r .body "$scratch/filed.json" > "$scratch/body.md"
@@ -1278,7 +1279,7 @@ while IFS= read -r line; do
   fi
   grep -F -e "$first" "$report" | grep -F -e "$how" | head -n 5 > "$scratch/findings" || true
   jq -n --arg name "$name" --arg kind "$kind" --argjson count "$count" --argjson family_count "$family_count" \
-    --arg families "$families" --rawfile findings "$scratch/findings" --arg run "${GITHUB_RUN_URL:-}" \
+    --rawfile families <(printf '%s' "$families") --rawfile findings "$scratch/findings" --arg run "${GITHUB_RUN_URL:-}" \
     '{$name, $kind, $count, $family_count, $families, $findings, run: (if $run == "" then null else $run end)}' \
     | jq -r -f .config/claims/recovery.jq > "$scratch/body.md"
   if [[ -n $repo ]]; then
@@ -1549,8 +1550,8 @@ if [[ -z $repair ]] && jq -e -L "$here" --arg tip "$integration" \
 fi
 [[ -n $stated ]] || stated=null
 decision=$(jq -n -c --arg landing "$landing" --arg integration "$integration" --arg compare "$compare" \
-  --arg repair "$repair" --argjson held "$held_repair" --argjson stated "$stated" --slurpfile runs "$scratch/runs.json" \
-  '{landing: $landing, integration: $integration, compare: $compare, repair: (if $repair == "" then $stated else {sha: $repair, held: $held} end), runs: $runs[0]}' \
+  --arg repair "$repair" --argjson held "$held_repair" --slurpfile stated <(printf '%s\n' "$stated") --slurpfile runs "$scratch/runs.json" \
+  '{landing: $landing, integration: $integration, compare: $compare, repair: (if $repair == "" then $stated[0] else {sha: $repair, held: $held} end), runs: $runs[0]}' \
   | jq -c -L "$here" -f "$here/cycle.jq")
 verdict=$(jq -c .verdict <<< "$decision")
 conclusion=$(jq -r '.conclusion // empty' <<< "$verdict")
@@ -1641,7 +1642,7 @@ fi
 # none (`false`): `close`, `reopen`, `file` or nothing (`list-state.jq`). It
 # reads `found`, the list's issue, from `keep_list`.
 list_act() {
-  jq -n -c --argjson row "$1" --argjson found "$found" '{row: $row, state: $found.state?}' \
+  jq -n -c --slurpfile row <(printf '%s\n' "$1") --slurpfile found <(printf '%s\n' "$found") '{row: $row[0], state: $found[0].state?}' \
     | jq -c -f "$here/list-state.jq" | jq -r '.act // empty'
 }
 
@@ -1702,9 +1703,10 @@ keep_list() {
       --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | .name' \
       | jq -R -s -c 'split("\n") | map(select(. != ""))')
   fi
-  known=$(jq -n -c --argjson verdict "$verdict" --argjson conflict "$conflict" --argjson jobs "$jobs" \
+  known=$(jq -n -c --slurpfile verdict <(printf '%s\n' "$verdict") --slurpfile conflict <(printf '%s\n' "$conflict") \
+    --slurpfile jobs <(printf '%s\n' "$jobs") \
     --argjson brake "$braking" --argjson aside "$aside" --slurpfile reports "$scratch/reports.json" --slurpfile soundness "$here/soundness.json" \
-    '{verdict: $verdict, conflict: $conflict, brake: $brake, aside: $aside, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
+    '{verdict: $verdict[0], conflict: $conflict[0], brake: $brake, aside: $aside, reports: $reports[0], jobs: $jobs[0], soundness: $soundness[0]}' \
     | jq -c -f "$here/known-red.jq")
   jq -r .body <<< "$known" > "$scratch/body.md"
   act=$(list_act "$(jq -c .page <<< "$known")")
@@ -2070,8 +2072,8 @@ tree() {
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    --argjson commits "$commits" --argjson ahead "$ahead" --argjson idle "$idle" --argjson stale "$stale" --argjson dirty "$dirty" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, ahead: $ahead, pulls: null, idle: $idle, stale: $stale, dirty: $dirty}')")
+    --slurpfile commits <(printf '%s\n' "$commits") --argjson ahead "$ahead" --argjson idle "$idle" --argjson stale "$stale" --argjson dirty "$dirty" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits[0], ahead: $ahead, pulls: null, idle: $idle, stale: $stale, dirty: $dirty}')")
 }
 # Delete an idle worktree's `incremental` caches, its `target/` measured
 # before and after. A clone shares its blocks with the primary worktree's
@@ -2228,9 +2230,9 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 gh pr list -R "$repo" --state open --limit 1000 --json headRefName --jq '[.[].headRefName]' > "$scratch/heads"
 gh issue list -R "$repo" --state open --limit 5000 --json title,body --jq '[.[] | "\(.title)\n\(.body)"]' > "$scratch/issues"
-reading=$(jq -n --argjson kept "$kept" --argjson remote "$remote" --argjson local "$local_branches" \
-  --slurpfile heads "$scratch/heads" --slurpfile issues "$scratch/issues" \
-  '{kept: $kept, remote: $remote, local: $local, heads: $heads[0], issues: $issues[0]}' \
+reading=$(jq -n --slurpfile kept <(printf '%s\n' "$kept") --slurpfile remote <(printf '%s\n' "$remote") \
+  --slurpfile local <(printf '%s\n' "$local_branches") --slurpfile heads "$scratch/heads" --slurpfile issues "$scratch/issues" \
+  '{kept: $kept[0], remote: $remote[0], local: $local[0], heads: $heads[0], issues: $issues[0]}' \
   | jq -c -f .config/pr-stack/branches.jq)
 list() {
   local title=$1 lines=$2
@@ -2391,8 +2393,8 @@ body=$(jq -r .body <<< "$issued")
 cutoff=$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")
 findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" --argjson number "$issue" -f "$claims/unit.jq" <<< "$body")
 if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
-  terms=$(jq -n --argjson issued "$issued" --argjson terms "$(yq -o json '.term' "$root/.config/references/terms.toml")" \
-    '{title: $issued.title, body: $issued.body, terms: $terms}' | jq -r -L "$claims" -f "$claims/terms.jq")
+  terms=$(jq -n --slurpfile issued <(printf '%s\n' "$issued") --slurpfile terms <(yq -o json '.term' "$root/.config/references/terms.toml") \
+    '{title: $issued[0].title, body: $issued[0].body, terms: $terms[0]}' | jq -r -L "$claims" -f "$claims/terms.jq")
   findings=$(printf '%s\n%s\n' "$findings" "$terms" | awk 'NF')
   claimed=$(claim_check "$body" null)
   if [[ -n $claimed ]] && jq -e '.labels | index("shape:signed")' <<< "$issued" > /dev/null; then
@@ -2436,8 +2438,8 @@ if (( ${#refs[@]} > 0 )); then fields=body; fi
 others='{}'
 if (( ${#wanted[@]} > 0 )); then others=$(deps_issues "$repo" "$fields" "${wanted[@]}"); fi
 if (( ${#refs[@]} > 0 )); then
-  motivating=$(jq -c --arg body "$body" --argjson refs "$(printf '%s\n' "${refs[@]}" | jq -s -c .)" \
-    '{body: $body, epics: [.[] | select((.number | IN($refs[])) and (.labels | index("kind:epic") != null)) | {number, body}]}' <<< "$others" \
+  motivating=$(jq -c --rawfile body <(printf '%s' "$body") --slurpfile refs <(printf '%s\n' "${refs[@]}" | jq -s -c .) \
+    '{body: $body, epics: [.[] | select((.number | IN($refs[0][])) and (.labels | index("kind:epic") != null)) | {number, body}]}' <<< "$others" \
     | jq -r -L "$claims" -f "$claims/motivating.jq")
   findings=$(printf '%s\n%s\n' "$findings" "$motivating" | awk 'NF')
 fi
@@ -2484,7 +2486,7 @@ if [[ $pages != null ]]; then
   trap 'rm -rf "$scratch"' EXIT
   git -C "$root" ls-files | awk -F/ '{ print $NF }' | sort -u > "$scratch/tree"
   printf '%s\n' "$pages" > "$scratch/pages.json"
-  vault=$(jq -n --arg body "$body" --slurpfile pages "$scratch/pages.json" --rawfile tree "$scratch/tree" '{body: $body, pages: $pages[0], tree: $tree}' \
+  vault=$(jq -n --rawfile body <(printf '%s' "$body") --slurpfile pages "$scratch/pages.json" --rawfile tree "$scratch/tree" '{body: $body, pages: $pages[0], tree: $tree}' \
     | jq -r -L "$claims" -f "$claims/shown.jq")
   refused=$(awk -F'\t' '$1 == "refuse" { print $2 }' <<< "$vault")
   shown=$(awk -F'\t' '$1 == "show" { print "  " $2 }' <<< "$vault")
@@ -3533,7 +3535,7 @@ for n in "${issues[@]}"; do
     if [[ ${usage_chain:-false} == true ]]; then
       deps_block "$repo" "$n" "$previous"
       body=$(gh api "repos/$repo/issues/$n" --jq '.body // ""')
-      edited=$(jq -n --arg body "$body" --argjson after "$previous" --argjson epic "$epic" \
+      edited=$(jq -n --rawfile body <(printf '%s' "$body") --argjson after "$previous" --argjson epic "$epic" \
         '{body: $body, after: $after, epic: $epic}' | jq -r -L "$claims" -f "$claims/chain.jq")
       if [[ $edited != "$body" ]]; then
         printf '%s\n' "$edited" | gh issue edit "$n" --body-file - > /dev/null
@@ -4124,8 +4126,8 @@ logs=()
 if [[ -n ${usage_logs:-} ]]; then logs=("$usage_logs"/chain-log-*/); fi
 if (( ${#logs[@]} == 0 )); then
   [[ -z ${usage_logs:-} ]] || echo "report:chain: $usage_logs holds no chain-log-<arch> directory; the last night's rows follow" >&2
-  jq -n -c --argjson share "$share" --slurpfile last "$scratch/last.json" --argjson edits "$(edits "$scratch/last.json")" \
-    '{share: $share, run: null, rows: $last[0], last: [], issues: [], edits: $edits}' \
+  jq -n -c --argjson share "$share" --slurpfile last "$scratch/last.json" --slurpfile edits <(edits "$scratch/last.json") \
+    '{share: $share, run: null, rows: $last[0], last: [], issues: [], edits: $edits[0]}' \
     | jq -r -f "$here/chain-night.jq" | jq -r .summary
   exit 0
 fi
@@ -4149,9 +4151,9 @@ if [[ -n ${REPORT_FILE:-} ]]; then
   found=$(issue_found "$title")
   run=$(jq -n -c --argjson id "${GITHUB_RUN_ID:?}" --arg url "${GITHUB_RUN_URL:?}" '{id: $id, url: $url}')
 fi
-jq -n -c --argjson share "$share" --argjson run "$run" --argjson found "$found" --arg title "$title" \
-  --slurpfile rows "$scratch/rows.json" --slurpfile last "$scratch/last.json" --argjson edits "$(edits "$scratch/rows.json")" \
-  '{share: $share, run: $run, rows: $rows[0], last: $last[0], issues: [$found | select(. != null) | . + {title: $title}], edits: $edits}' \
+jq -n -c --argjson share "$share" --slurpfile run <(printf '%s\n' "$run") --slurpfile found <(printf '%s\n' "$found") --arg title "$title" \
+  --slurpfile rows "$scratch/rows.json" --slurpfile last "$scratch/last.json" --slurpfile edits <(edits "$scratch/rows.json") \
+  '{share: $share, run: $run[0], rows: $rows[0], last: $last[0], issues: [$found[0] | select(. != null) | . + {title: $title}], edits: $edits[0]}' \
   | jq -c -f "$here/chain-night.jq" > "$scratch/night.json"
 jq -r .summary "$scratch/night.json"
 if [[ $(jq '.action != null' "$scratch/night.json") == true ]]; then
@@ -4644,13 +4646,13 @@ for reading in "${opening_readings[@]}"; do
 done
 findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$claims" -f "$claims/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
-signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
+signed=$(jq -n --slurpfile issues <(printf '%s\n' "$issues") '{issues: $issues[0]}' \
   | jq -r -L "$claims" --argjson concerns "$(jq -c .rows <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$claims/../references/window.toml")" -f "$claims/signed.jq")
 if [[ -n $signed ]]; then findings=${findings:+$findings$'\n'}$signed; fi
 # A design page an issue builds on is absorbed in the same pair, or the body
 # says why it stays design (#3161, `absorbing.jq`).
-absorbing=$(jq -n --rawfile body "$body" --argjson issues "$issues" --argjson absorption "$(vault_absorption)" \
-  '{body: $body, issues: $issues, absorption: $absorption}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
+absorbing=$(jq -n --rawfile body "$body" --slurpfile issues <(printf '%s\n' "$issues") --slurpfile absorption <(vault_absorption) \
+  '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
 if [[ -n $absorbing ]]; then findings=${findings:+$findings$'\n'}$absorbing; fi
 rm -rf "$vaultdir"
 # A `wait:` line names a future event, never a refusal (#4164): with nothing
@@ -5083,8 +5085,8 @@ claims=$(git rev-parse --show-toplevel)/.config/claims
 land_issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$ledger_body" \
   | while IFS= read -r issue; do gh api "repos/$repo/issues/$issue" --jq '{number, body: (.body // "")}'; done \
   | jq -s .)
-absorbing=$(jq -n --rawfile body "$ledger_body" --argjson issues "$land_issues" --argjson absorption "$(vault_absorption)" \
-  '{body: $body, issues: $issues, absorption: $absorption}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
+absorbing=$(jq -n --rawfile body "$ledger_body" --slurpfile issues <(printf '%s\n' "$land_issues") --slurpfile absorption <(vault_absorption) \
+  '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
 rm -f "$ledger_body"
 if (( status != 0 )); then
   printf 'PR #%s:\n%s\n' "$number" "${ledger:-ledger:patched failed to read the ledger}" | sed '2,$s/^/  /' >&2
@@ -5955,7 +5957,8 @@ reports() {
   while IFS=$'\t' read -r number comment; do
     echo "stall:watch: stall report #$number closed" >&2
     gh issue close "$number" -R "$repo" --comment "$comment" > /dev/null || :
-  done < <(jq -c --argjson reports "$open" --argjson states "$states" '{reports: $reports, states: $states, findings}' <<< "$reading" \
+  done < <(jq -c --slurpfile reports <(printf '%s\n' "$open") --slurpfile states <(printf '%s\n' "$states") \
+    '{reports: $reports[0], states: $states[0], findings}' <<< "$reading" \
     | jq -r -f "$stall_dir/reports.jq" | jq -r '.[] | "\(.number)\t\(.comment)"')
 }
 # Take pull request `$1`'s `<!-- stall -->` comments and its label off.

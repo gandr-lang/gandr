@@ -15,8 +15,8 @@
 
 claim_check() {
   local claims=${BASH_SOURCE[0]%/*}
-  jq -n --arg body "$1" --argjson absorption "$(vault_absorption)" --argjson before "$2" \
-    '{body: $body, absorption: $absorption, before: $before}' \
+  jq -n --rawfile body <(printf '%s' "$1") --slurpfile absorption <(vault_absorption) --slurpfile before <(printf '%s\n' "$2") \
+    '{body: $body, absorption: $absorption[0], before: $before[0]}' \
     | jq -r -L "$claims" -f "$claims/claim.jq"
 }
 

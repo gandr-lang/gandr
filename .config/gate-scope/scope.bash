@@ -58,18 +58,19 @@ packages=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path 
 change=$(mktemp)
 trap 'rm -f "$change" "$change.outside"' EXIT
 { git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } > "$change"
-set=$(jq -nR --argjson packages "$packages" --argjson touched "$touched" --argjson lints "$lints" '{changed: [inputs], packages: $packages, touched: $touched, lints: $lints}' < "$change" \
+set=$(jq -nR --slurpfile packages <(printf '%s\n' "$packages") --argjson touched "$touched" --argjson lints "$lints" \
+  '{changed: [inputs], packages: $packages[0], touched: $touched, lints: $lints}' < "$change" \
   | jq -c -L "$here" -f "$here/packages.jq")
 if [[ $readers == true ]]; then
   set=$(jq -c --slurpfile table "$here/table.json" 'if . == "workspace" then . else . + $table[0].readers | unique end' <<< "$set")
 fi
 # The paths in no package go to `jq` as a file, as the change does.
-jq -nR --argjson packages "$packages" '{changed: [inputs | select(length > 0)], packages: $packages}' < "$change" \
+jq -nR --slurpfile packages <(printf '%s\n' "$packages") '{changed: [inputs | select(length > 0)], packages: $packages[0]}' < "$change" \
   | jq -c -f "$here/outside.jq" > "$change.outside"
-jq -r --argjson packages "$packages" --slurpfile outside "$change.outside" --arg paths "$(wc -l < "$change" | tr -d ' ')" \
+jq -r --slurpfile packages <(printf '%s\n' "$packages") --slurpfile outside "$change.outside" --arg paths "$(wc -l < "$change" | tr -d ' ')" \
   'if . == "workspace" then "scope: the whole workspace; the change holds \($paths) paths, \($outside[0] | length) in no package: \($outside[0][:5] | join(" "))"
    elif length == 0 then "scope: no Rust path changes; a Rust check run by hand runs over the whole workspace"
-   else "scope: \(length) of \($packages | length) packages: \(join(" "))" end' <<< "$set" >&2
-jq -r --argjson packages "$packages" \
+   else "scope: \(length) of \($packages[0] | length) packages: \(join(" "))" end' <<< "$set" >&2
+jq -r --slurpfile packages <(printf '%s\n' "$packages") \
   'if . == "workspace" or length == 0 then "--workspace"
-   else . as $set | ["--workspace"] + [$packages[].name | select(IN($set[]) | not) | "--exclude " + .] | join(" ") end' <<< "$set"
+   else . as $set | ["--workspace"] + [$packages[0][].name | select(IN($set[]) | not) | "--exclude " + .] | join(" ") end' <<< "$set"

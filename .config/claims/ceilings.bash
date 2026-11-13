@@ -29,7 +29,7 @@ git diff -U0 --no-renames --no-color "$base" "$head" -- ':(glob)**/*.rs' \
       .hit // empty)] | group_by(.path) | map({path: .[0].path, lines: map(.line)}) | .[]' -c \
   | while IFS= read -r file; do
       path=$(jq -r .path <<< "$file")
-      git show "$head:$path" | jq -Rs --arg path "$path" --argjson lines "$(jq -c .lines <<< "$file")" '
+      git show "$head:$path" | jq -Rs --arg path "$path" --slurpfile lines <(jq -c .lines <<< "$file") '
         split("\n") as $text
         | def cites($from; $to): [$text[$from:$to + 1][] | scan("(?<![\\w/&])#([0-9]+)\\b") | .[0] | tonumber]
             | reduce .[] as $n ([]; if index([$n]) then . else . + [$n] end);
@@ -40,7 +40,7 @@ git diff -U0 --no-renames --no-color "$base" "$head" -- ':(glob)**/*.rs' \
             and ($next | sub("^\\s*//[/!]?\\s*"; "") | test("^(-\\s+)?`?[a-z][a-z-]*:\\s") | not);
           def comment_end($i): marker($i) as $m | def go($k): if continues($k + 1; $m) then go($k + 1) else $k end; go($i);
           def group_end($i): ([range($i; [$i + 12, ($text | length)] | min) | select($text[.] | test("\\)"))] | first) // $i;
-        [$lines[] | (. - 1) as $i
+        [$lines[0][] | (. - 1) as $i
           | $text[$i] as $open
           | if ($open | test("spec_clause_traversal"))
                and any(range([$i - 3, 0] | max; $i + 1); $text[.] | test("\\b(expect|allow)\\("))

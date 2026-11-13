@@ -100,11 +100,11 @@ service_unit() {
   mkdir -p "$(dirname "$file")"
   previous=$( [[ -f "$file" ]] && cat "$file" ) || previous=
   environment=$(for variable in "${service_carried[@]}"; do
-    [[ -z ${!variable:-} ]] || jq -n --arg key "$variable" --arg value "${!variable}" '{($key): $value}'
+    [[ -z ${!variable:-} ]] || jq -n --arg key "$variable" --rawfile value <(printf '%s' "${!variable}") '{($key): $value}'
   done | jq -s 'add // {}')
-  jq -rn --arg os "$os" --arg dir "$dir" --arg mise "$mise_bin" --arg path "$PATH" --argjson environment "$environment" \
-    --arg name "$name" --arg task "$task" --arg description "$description" --argjson background "$background" \
-    '{os: $os, dir: $dir, mise: $mise, path: $path, environment: $environment, name: $name, task: $task, description: $description, background: $background}' \
+  jq -rn --arg os "$os" --arg dir "$dir" --arg mise "$mise_bin" --arg path "$PATH" --slurpfile environment <(printf '%s\n' "$environment") \
+    --arg name "$name" --arg task "$task" --rawfile description <(printf '%s' "$description") --argjson background "$background" \
+    '{os: $os, dir: $dir, mise: $mise, path: $path, environment: $environment[0], name: $name, task: $task, description: $description, background: $background}' \
     | jq -r -f "$service_dir/service.jq" > "$file"
   if [[ "$os" == linux ]]; then
     systemctl --user daemon-reload

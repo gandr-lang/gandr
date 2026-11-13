@@ -29,11 +29,11 @@ branch_reading() {
       commits=$(own_commits "$trunk_ref" "$oid")
       ahead=$(git rev-list --count "$trunk_ref..$oid")
     fi
-    jq -nc --arg name "$name" --arg oid "$oid" --argjson commits "$commits" --argjson ahead "$ahead" \
-      '{name: $name, oid: $oid, commits: $commits, ahead: $ahead}'
+    jq -nc --arg name "$name" --arg oid "$oid" --slurpfile commits <(printf '%s\n' "$commits") --argjson ahead "$ahead" \
+      '{name: $name, oid: $oid, commits: $commits[0], ahead: $ahead}'
   done | jq -cs --argjson kept "$(printf '%s\n' "$@" | jq -R . | jq -cs 'map(select(. != ""))')" \
-    --argjson used "$(jq -R . < "$used" | jq -cs 'map(select(. != ""))')" \
-    '{kept: $kept, used: $used, heads: .}' | jq -L "$pr_stack_dir" -c -f "$pr_stack_dir/landed-heads.jq"
+    --slurpfile used <(jq -R . < "$used" | jq -cs 'map(select(. != ""))') \
+    '{kept: $kept, used: $used[0], heads: .}' | jq -L "$pr_stack_dir" -c -f "$pr_stack_dir/landed-heads.jq"
 }
 
 # Deletes from the remote `$1` each head that the decisions `$2` mark
