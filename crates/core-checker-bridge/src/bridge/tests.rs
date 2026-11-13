@@ -4947,7 +4947,7 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
     let rank = gandr_kernel_term::SourceRank::from;
     assert_eq!(
         kept.environment
-            .rerank(&[(n, rank(0_usize)), (m, rank(1_usize))]),
+            .rerank((rank(0_usize), &[(n, rank(0_usize)), (m, rank(1_usize))])),
         Ok(()),
         "`n` takes the rank 0 and `m` the rank 1"
     );
@@ -10389,7 +10389,9 @@ fn held(record: &Maybe<super::Crossed, crossed::Absent>)
 /// turn, keeping from the record of the readmission before under a fork that
 /// commits its checks in reverse: each answers as a whole serial readmission
 /// of its module answers, entry by entry and to the bytes of its export, and
-/// an unedited one keeps every declaration.
+/// an unedited one keeps every declaration. An unedited one that the kernel
+/// took whole resumes its whole record and answers no new record, so the
+/// record before it stands.
 ///
 /// # Specification
 /// trivial.
@@ -10440,23 +10442,38 @@ fn keeps_as_whole(
             edit
         );
         if matches!(edit, ModuleEdit::Unedited) && matches!(record, Maybe::Present(_)) {
-            let unoffered = kept
-                .readmitted()
-                .iter()
-                .filter(|entry| {
-                    matches!(
-                        entry.outcome(),
-                        Outcome::Marked(_) | Outcome::Suspended | Outcome::Refused(_)
-                    )
-                })
-                .count();
+            let unoffered = |entries: &[super::Readmitted]| {
+                entries
+                    .iter()
+                    .filter(|entry| {
+                        matches!(
+                            entry.outcome(),
+                            Outcome::Marked(_) | Outcome::Suspended | Outcome::Refused(_)
+                        )
+                    })
+                    .count()
+            };
+            let resumed = usize::from(kept.resumed());
             prop_assert_eq!(
-                usize::from(kept.kept()).saturating_add(unoffered),
+                resumed
+                    .saturating_add(usize::from(kept.kept()))
+                    .saturating_add(unoffered(
+                        kept.readmitted().get(resumed ..).unwrap_or_default()
+                    )),
                 report.judged().len(),
                 "an unedited module offers the kernel nothing"
             );
+            if unoffered(kept.readmitted()) == 0 {
+                prop_assert!(
+                    resumed == report.judged().len()
+                        && matches!(next, Maybe::Absent(crossed::Absent::Unchanged)),
+                    "an unedited module that the kernel took whole resumes its record"
+                );
+            }
         }
-        record = next;
+        if !matches!(next, Maybe::Absent(crossed::Absent::Unchanged)) {
+            record = next;
+        }
     }
     Ok(())
 }
@@ -10496,7 +10513,8 @@ fn a_kept_readmission_answers_as_a_whole_one_6846()
 /// #6846: a readmission retires the reach of an edit and no suffix of the
 /// entries. The edit of `n2`'s literal leaves `n3`, after it, live at the
 /// kernel position it took, and the readmission offers the kernel `n2`
-/// alone.
+/// alone. #7235: it resumes `n0` and `n1`, the leading run the edit leaves,
+/// and keeps `n3` in place.
 #[test]
 fn a_kept_readmission_retires_no_suffix_6846()
 {
@@ -10544,9 +10562,10 @@ fn a_kept_readmission_retires_no_suffix_6846()
     )
     .whole();
     assert_eq!(
-        usize::from(kept.kept()),
-        3,
-        "the readmission offers `n2` alone, the reach of the edit"
+        (usize::from(kept.resumed()), usize::from(kept.kept())),
+        (2, 1),
+        "the readmission resumes `n0` and `n1`, keeps `n3` and offers `n2` alone, the reach of \
+         the edit"
     );
     assert!(
         kept.environment()

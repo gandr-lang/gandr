@@ -2393,31 +2393,37 @@ impl Environment
         Ok(())
     }
 
-    /// Give each live entry the rank `ranks` names for it: the rank of its
-    /// place in the edited source, one word for each entry.
+    /// Give each live entry ranked at or above `floor` the rank `ranks` names
+    /// for it: the rank of its place in the edited source, one word for each
+    /// entry. Each entry ranked below `floor` keeps its rank.
     ///
-    /// A readmission rewrites the rank of every live entry before it checks
-    /// any, so each check reads the final environment below its rank. The
-    /// rewrite moves no position, checks nothing and mints nothing. A key
-    /// holds the order of the ranks it reads and no rank's value, so an entry
-    /// whose inputs keep their order keeps its key.
+    /// A readmission rewrites the rank of every live entry past the run it
+    /// shares with its record before it checks any, so each check reads the
+    /// final environment below its rank. The rewrite moves no position, checks
+    /// nothing and mints nothing, and it reads and writes nothing below
+    /// `floor`. A rewrite that changes no rank writes nothing. A key holds the
+    /// order of the ranks it reads and no rank's value, so an entry whose
+    /// inputs keep their order keeps its key.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success, each live entry holds the rank `ranks` names for
-    ///   it, and every reader of ranks reads it: the rank table, the presented
-    ///   types, the types of words over each sort and the order of the twins;
-    ///   the key chain ends, so each later admission is recalled by its entry
-    ///   key alone. On refusal, the environment is unchanged. Either way the
+    /// - ensures: on success, each live entry ranked at or above `floor` holds
+    ///   the rank `ranks` names for it, each other entry holds its rank, and
+    ///   every reader of ranks reads them: the rank table, the presented types,
+    ///   the types of words over each sort and the order of the twins. When a
+    ///   rank changes, the key chain ends, so each later admission is recalled
+    ///   by its entry key alone; when none changes, the environment is
+    ///   unchanged. On refusal, the environment is unchanged. Either way the
     ///   entries keep their number, and the arena mints nothing.
     /// - provides: the rank rewrite of a readmission that keeps each entry
     ///   outside the reach of an edit live.
     /// - fails: [`KernelError::UnboundConstant`] at a position that is not
     ///   live; [`KernelError::RankTaken`] when two positions take one rank;
     ///   [`KernelError::Unkept`] for [`crate::error::KeepRefusal::Ranks`] when
-    ///   a live entry is named twice or not at all; and
-    ///   [`KernelError::UnsettledReleases`] while a released check is not
-    ///   settled.
+    ///   a live entry ranked at or above `floor` is named twice or not at all,
+    ///   or when an entry ranked below `floor` is named or a rank below `floor`
+    ///   is given; and [`KernelError::UnsettledReleases`] while a released
+    ///   check is not settled.
     /// - panics: none.
     ///
     /// # Errors
@@ -2427,48 +2433,57 @@ impl Environment
     /// - hypothesis: L3 — an environment whose entries take new ranks in their
     ///   order, and whose entries are each kept in place, reads as a fresh
     ///   admission at those ranks, entry by entry, and exports its bytes; a
-    ///   rewrite that misses a live entry is refused and changes nothing.
+    ///   rewrite that misses a live entry is refused and changes nothing; a
+    ///   rewrite above a floor keeps each rank below it, and refuses a rank
+    ///   that crosses it.
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::a_rank_rewrite_that_misses_a_live_entry_is_refused_6846`
+    /// - witness: `environment::tests::a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
         ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
             && (ret.is_err() || ranks.iter().all(|&(position, rank)| self.entries.rank_of(position) == Some(rank))))]
     #[inline]
     pub fn rerank(
         &mut self,
-        ranks: &[(ConstantIndex, SourceRank)],
+        (floor, ranks): (SourceRank, &[(ConstantIndex, SourceRank)]),
     ) -> Result<(), KernelError>
     {
         self.settled()?;
+        let unkept = |position| KernelError::Unkept {
+            position,
+            refusal: crate::error::KeepRefusal::Ranks,
+        };
         let mut by_position: BTreeMap<ConstantIndex, SourceRank> = BTreeMap::new();
         let mut taken: BTreeMap<SourceRank, ConstantIndex> = BTreeMap::new();
+        let mut moved = false;
         for &(position, rank) in ranks {
-            if self.entries.live(position).is_none() {
+            let Some(held) = self.entries.rank_of(position)
+            else {
                 return Err(KernelError::UnboundConstant { index: position });
-            }
+            };
             if let Some(&by) = taken.get(&rank) {
                 return Err(KernelError::RankTaken { rank, by });
             }
-            if by_position.insert(position, rank).is_some() {
-                return Err(KernelError::Unkept {
-                    position,
-                    refusal: crate::error::KeepRefusal::Ranks,
-                });
+            // An entry below the floor keeps its rank, and no entry moves
+            // below the floor.
+            if held < floor || rank < floor || by_position.insert(position, rank).is_some() {
+                return Err(unkept(position));
             }
             let _fresh = taken.insert(rank, position);
+            moved |= held != rank;
         }
         if let Some(missing) = self
             .commits
-            .in_rank_order()
+            .ranked_from(floor)
             .find(|position| !by_position.contains_key(position))
         {
-            return Err(KernelError::Unkept {
-                position: missing,
-                refusal: crate::error::KeepRefusal::Ranks,
-            });
+            return Err(unkept(missing));
+        }
+        if !moved {
+            return Ok(());
         }
         let length = self.entries.len();
-        alloc::sync::Arc::make_mut(&mut self.commits).rerank(&by_position, length);
+        alloc::sync::Arc::make_mut(&mut self.commits).rerank((floor, &by_position), length);
         self.entries.rerank(&by_position);
         // The chain holds each admission at the rank it took, so a chain key
         // after the rewrite would name an environment of other ranks: the chain
@@ -3733,6 +3748,20 @@ impl CommitLog
         self.ranked.values().copied()
     }
 
+    /// The positions of the live entries ranked at or above `floor`, in rank
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn ranked_from(
+        &self,
+        floor: SourceRank,
+    ) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        self.ranked.range(floor ..).map(|(_, &position)| position)
+    }
+
     /// The rank past every rank a live entry holds.
     ///
     /// # Specification
@@ -4075,45 +4104,56 @@ impl CommitLog
     }
 
     /// Hold each rank of `ranks` at its position, in place of every rank held
-    /// before, among `length` slots: the rank table after a readmission
-    /// rewrites the rank of each live entry.
+    /// at or above `floor` before, among `length` slots: the rank table after
+    /// a readmission rewrites the rank of each live entry past the run it
+    /// shares. Each rank below `floor` stays.
     ///
     /// # Specification
-    /// - requires: `ranks` names each live entry once, and no two take one
-    ///   rank.
-    /// - ensures: the rank index holds exactly `ranks`; the order is positional
-    ///   exactly when the ranks ascend with the positions over every slot.
+    /// - requires: `ranks` names each live entry ranked at or above `floor`
+    ///   once, each at a rank at or above `floor`, and no two take one rank.
+    /// - ensures: the rank index holds each rank below `floor` as before and
+    ///   exactly `ranks` from `floor` on; the order is positional exactly when
+    ///   the ranks ascend with the positions over every slot.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Environment::rerank`].
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
-    #[spec(ensures: self.ranked.len() == ranks.len()
+    /// - witness: `environment::tests::a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235`
+    #[spec(ensures: self.ranked.len() >= ranks.len()
         && ranks.iter().all(|(&position, &rank)| self.ranked.get(&rank) == Some(&position)))]
     fn rerank(
         &mut self,
-        ranks: &BTreeMap<ConstantIndex, SourceRank>,
+        (floor, ranks): (SourceRank, &BTreeMap<ConstantIndex, SourceRank>),
         length: gandr_kernel_term::ArenaLength,
     )
     {
-        let ranked: BTreeMap<SourceRank, ConstantIndex> = ranks
-            .iter()
-            .map(|(&position, &rank)| (rank, position))
-            .collect();
+        let before = self.ranked.split_off(&floor);
+        for (&position, &rank) in ranks {
+            let _fresh = self.ranked.insert(rank, position);
+        }
         // The keys below the watermark hold through the longest run of
-        // entries that keeps its order, from the lowest rank on.
-        let mut keyed_through = None;
-        if let Some(held) = self.keyed_through {
-            for ((_, &before), (&rank, &after)) in self.ranked.range(..= held).zip(&ranked) {
-                if before != after {
+        // entries that keeps its order, from the lowest rank on. The entries
+        // below the floor keep theirs.
+        if let Some(held) = self.keyed_through
+            && held >= floor
+        {
+            let mut keyed_through = self
+                .ranked
+                .range(.. floor)
+                .next_back()
+                .map(|(&rank, _)| rank);
+            for ((_, &was), (&rank, &now)) in
+                before.range(..= held).zip(self.ranked.range(floor ..))
+            {
+                if was != now {
                     break;
                 }
                 keyed_through = Some(rank);
             }
+            self.keyed_through = keyed_through;
         }
-        self.ranked = ranked;
-        self.keyed_through = keyed_through;
         self.order = self.order_over(length);
     }
 
@@ -6661,7 +6701,10 @@ mod tests
             .expect("the old twin admits")
             .position();
         assert_eq!(
-            readmitted.rerank(&[(old, SourceRank::from(1_usize))]),
+            readmitted.rerank((SourceRank::from(0_usize), &[(
+                old,
+                SourceRank::from(1_usize)
+            )])),
             Ok(()),
             "the old twin takes the rank 1"
         );
@@ -6714,10 +6757,10 @@ mod tests
             }
         });
         assert_eq!(
-            environment.rerank(&[
+            environment.rerank((SourceRank::from(0_usize), &[
                 (a, SourceRank::from(2_usize)),
                 (b, SourceRank::from(4_usize))
-            ]),
+            ])),
             Ok(()),
             "`a` takes the rank 2 and `b` the rank 4"
         );
@@ -6771,10 +6814,10 @@ mod tests
         assert_eq!(kept.retire(&kept_x), Ok(()), "`x` retires");
         let (a, b) = (kept_a[0], kept_b[0]);
         assert_eq!(
-            kept.rerank(&[
+            kept.rerank((SourceRank::from(0_usize), &[
                 (a, SourceRank::from(0_usize)),
                 (b, SourceRank::from(1_usize))
-            ]),
+            ])),
             Ok(()),
             "`a` takes the rank 0 and `b` the rank 1"
         );
@@ -7802,7 +7845,7 @@ mod tests
                 }
             }
         }
-        proptest::prop_assert_eq!(kept.rerank(&ranks), Ok(()));
+        proptest::prop_assert_eq!(kept.rerank((SourceRank::from(0_usize), &ranks)), Ok(()));
         let mut data: Vec<ConstantIndex> = Vec::new();
         let mut offered = 0_usize;
         for (index, admission) in admissions.iter().enumerate() {
@@ -7942,7 +7985,7 @@ mod tests
         };
         let before = read_by_rank(&environment);
         assert_eq!(
-            environment.rerank(&[(b, SourceRank::from(9_usize))]),
+            environment.rerank((SourceRank::from(0_usize), &[(b, SourceRank::from(9_usize))])),
             Err(KernelError::Unkept {
                 position: a,
                 refusal: crate::error::KeepRefusal::Ranks,
@@ -7950,11 +7993,11 @@ mod tests
             "the rewrite leaves `a` out"
         );
         assert_eq!(
-            environment.rerank(&[
+            environment.rerank((SourceRank::from(0_usize), &[
                 (a, SourceRank::from(4_usize)),
                 (b, SourceRank::from(9_usize)),
                 (a, SourceRank::from(5_usize)),
-            ]),
+            ])),
             Err(KernelError::Unkept {
                 position: a,
                 refusal: crate::error::KeepRefusal::Ranks,
@@ -7962,10 +8005,10 @@ mod tests
             "the rewrite names `a` twice"
         );
         assert_eq!(
-            environment.rerank(&[
+            environment.rerank((SourceRank::from(0_usize), &[
                 (a, SourceRank::from(4_usize)),
                 (b, SourceRank::from(4_usize))
-            ]),
+            ])),
             Err(KernelError::RankTaken {
                 rank: SourceRank::from(4_usize),
                 by: a,
@@ -7978,10 +8021,10 @@ mod tests
             "a refused rewrite changes nothing"
         );
         assert_eq!(
-            environment.rerank(&[
+            environment.rerank((SourceRank::from(0_usize), &[
                 (a, SourceRank::from(4_usize)),
                 (b, SourceRank::from(9_usize))
-            ]),
+            ])),
             Ok(())
         );
         assert_eq!(
@@ -7993,6 +8036,77 @@ mod tests
             "each entry holds its new rank"
         );
         assert_eq!(environment.keep_in_place(b).map(CheckedId::position), Ok(b));
+    }
+
+    /// #7235: a rank rewrite above a floor keeps the rank of each entry below
+    /// it, as a readmission that shares its leading run keeps the run's ranks.
+    /// `a`, `b` and `c` take the ranks 0, 1 and 2, and `b` names `a`. A
+    /// rewrite that names an entry below the floor, or gives a rank below it,
+    /// is refused. So is one that leaves out an entry at or above the floor,
+    /// and a refused rewrite changes nothing.
+    #[test]
+    fn a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235()
+    {
+        let data = |level: u64| Generated::Lone(Member::Data(LevelConstant::from(level), vec![]));
+        let mut environment = keyed();
+        let a = admit_generated(&mut environment, &data(0), &[], None).expect("`a` admits");
+        let b = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Axiom(Field::Earlier(0))),
+            &a,
+            None,
+        )
+        .expect("`b` admits");
+        let c = admit_generated(&mut environment, &data(1), &[], None).expect("`c` admits");
+        let (Some(&b), Some(&c)) = (b.first(), c.first())
+        else {
+            panic!("each admission takes a position");
+        };
+        let rank = SourceRank::from;
+        let before = read_by_rank(&environment);
+        let unkept = |position| {
+            Err(KernelError::Unkept {
+                position,
+                refusal: crate::error::KeepRefusal::Ranks,
+            })
+        };
+        assert_eq!(
+            environment.rerank((rank(2_usize), &[(b, rank(5_usize)), (c, rank(9_usize))])),
+            unkept(b),
+            "`b` ranks below the floor"
+        );
+        assert_eq!(
+            environment.rerank((rank(2_usize), &[(c, rank(1_usize))])),
+            unkept(c),
+            "the rank 1 is below the floor"
+        );
+        assert_eq!(
+            environment.rerank((rank(1_usize), &[(c, rank(9_usize))])),
+            unkept(b),
+            "`b` ranks at the floor, and the rewrite leaves it out"
+        );
+        assert_eq!(
+            read_by_rank(&environment),
+            before,
+            "a refused rewrite changes nothing"
+        );
+        assert_eq!(
+            environment.rerank((rank(2_usize), &[(c, rank(9_usize))])),
+            Ok(())
+        );
+        assert_eq!(
+            read_by_rank(&environment)
+                .iter()
+                .map(|&(rank, ..)| rank)
+                .collect::<Vec<_>>(),
+            vec![rank(0_usize), rank(1_usize), rank(9_usize)],
+            "`a` and `b` keep their ranks below the floor, and `c` takes the rank 9"
+        );
+        assert_eq!(
+            environment.keep_in_place(b).map(CheckedId::position),
+            Ok(b),
+            "`b` reads `a` in the same order, so it keeps its key"
+        );
     }
 
     /// #6846: while a next rank is set, each admission staged with no rank

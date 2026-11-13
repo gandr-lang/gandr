@@ -2175,24 +2175,26 @@ impl Crossed
     }
 
     /// The environment, positions and entries a readmission of `report`
-    /// resumes from the record, when the record agrees with it.
+    /// resumes from the record over its first `run` declarations, when the
+    /// record agrees with them.
     ///
     /// # Specification
-    /// - requires: the record's declarations were judged as `report`'s leading
-    ///   ones were ([`readmit_resuming`]).
-    /// - ensures: `None` unless `report` has at least [`Crossed::boundary`]
-    ///   declarations, each at the position of the record's entry at its index
-    ///   under a verdict of the kind that entry's outcome crossed: a body for
-    ///   [`Outcome::Defined`], a body or a world for [`Outcome::Static`], a
-    ///   nominal declaration for [`Outcome::Data`], a signed one for
-    ///   [`Outcome::Assumed`]. Then the record's environment as
-    ///   [`Environment::handed_on`] copies it, with the outcomes its run kept,
-    ///   its positions with each core body defined and each data signature
-    ///   presented again from `report` in order, as crossing them did, and its
-    ///   entries with `report`'s origins. The native signatures and the free
-    ///   models the record holds are the ones its declarations read, each
-    ///   seeded at its first reader, so the native operations and the effects
-    ///   of the arena past them do not enter the agreement.
+    /// - requires: the record's first `run` declarations were judged as
+    ///   `report`'s leading ones were ([`readmit_resuming`]).
+    /// - ensures: `None` unless `report` and the record have at least `run`
+    ///   declarations each, each of `report`'s first `run` at the position of
+    ///   the record's entry at its index under a verdict of the kind that
+    ///   entry's outcome crossed: a body for [`Outcome::Defined`], a body or a
+    ///   world for [`Outcome::Static`], a nominal declaration for
+    ///   [`Outcome::Data`], a signed one for [`Outcome::Assumed`]. Then the
+    ///   record's environment as [`Environment::handed_on`] copies it, with the
+    ///   outcomes its run kept, its positions with each core body of the run
+    ///   defined and each data signature presented again from `report` in
+    ///   order, as crossing them did, and the run's entries with `report`'s
+    ///   origins. The native signatures and the free models the record holds
+    ///   are the ones its declarations read, each seeded at its first reader,
+    ///   so the native operations and the effects of the arena past them do not
+    ///   enter the agreement.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2203,42 +2205,29 @@ impl Crossed
     ///   is not resumed.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(self.boundary())
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(run)
         && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
             entry.constant == judged.constant() && entry.origin == judged.origin())))]
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn resume(
         &self,
         report: &ModuleReport,
+        run: LeadingCount,
     ) -> Option<(Environment, Positions, Vec<Readmitted>)>
     {
-        let leading = report.judged().get(.. self.boundary().0)?;
+        let leading = report.judged().get(.. run.0)?;
         let mut definitions = CodeDefinitions::new();
         let mut readmitted = Vec::with_capacity(report.judged().len());
-        for (entry, judged) in self.readmitted.iter().zip(leading) {
+        for (entry, judged) in self.readmitted.get(.. run.0)?.iter().zip(leading) {
             let constant = judged.constant();
-            if entry.constant != constant {
+            let crossed = (constant, &entry.outcome, judged.verdict());
+            if entry.constant != constant
+                || keep::agrees(report, crossed) != keep::Agreement::Agrees
+            {
                 return None;
             }
-            let defined =
-                |body: ValueId| report.definitions().get(&constant).copied().unwrap_or(body);
-            match (&entry.outcome, judged.verdict()) {
-                (
-                    &(Outcome::Defined { .. } | Outcome::Static),
-                    Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
-                ) => definitions.define(constant, defined(body)),
-                (&Outcome::Static, Verdict::Data) if report.worlds().contains(&constant) => {},
-                (&Outcome::Data { .. }, Verdict::Data) => {
-                    if let Some(signature) = report.data_signatures().get(&constant) {
-                        definitions.present(constant, signature);
-                    }
-                },
-                (
-                    &Outcome::Assumed { .. },
-                    Verdict::Owed(_) | Verdict::Checked { .. } | Verdict::Synthesised { .. },
-                ) => {},
-                _ => return None,
-            }
+            keep::define(&mut definitions, report, crossed);
             readmitted.push(Readmitted {
                 constant,
                 origin: judged.origin(),
@@ -2592,12 +2581,14 @@ where
 /// record that the edit leaves: `report`'s declarations carry the content
 /// keys `kept` gives, in order.
 ///
-/// The declarations are matched in order to the record's by their keys. The
-/// readmission retires the reach of each record declaration the match
-/// leaves, and of each seed whose first reader it leaves. Each other entry
-/// takes the rank of its place in the edited source and is kept in place at
-/// its own key; each other declaration crosses at the ranks of its place. So
-/// the kernel is offered the reach of the edit, and nothing else.
+/// The leading run that the edit leaves stands as the record holds it, as the
+/// run of a resumed readmission stands. Past the run, the declarations are
+/// matched in order to the record's by their keys. The readmission retires
+/// the reach of each record declaration the match leaves, and of each seed
+/// whose first reader it leaves. Each other entry takes the rank of its place
+/// in the edited source and is kept in place at its own key; each other
+/// declaration crosses at the ranks of its place. So the kernel is offered
+/// the reach of the edit, and nothing else.
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`]; each key is the [`DeclarationKey`] of
@@ -2606,16 +2597,19 @@ where
 /// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
 ///   with the readmission a whole readmission of `report` answers, entry by
 ///   entry and to the bytes of its export, and the record of every declaration
-///   with its key. Each admission is keyed, under a recall that rechecks too
-///   ([`Recall::keyed`]), since a kept entry stands by its key.
-///   [`Readmission::kept`] counts the declarations kept in place. With no
-///   record, a record without keys, a report that seals an abstract type, a
-///   record that holds a formation, or a crossing the kernel rejects, every
-///   declaration crosses, as a whole readmission crosses it, and the record
-///   carries the keys. Retired, [`Polled::Retired`] with the retirement and no
-///   record ([`crossed::Absent::Kept`]); the record given is unchanged either
-///   way. Each fork gives the same answer.
-/// - provides: an edit costs the kernel the reach of the edit.
+///   with its key; [`crossed::Absent::Unchanged`] when the run holds every
+///   declaration of `report`, as the record given answers for it. Each
+///   admission is keyed, under a recall that rechecks too ([`Recall::keyed`]),
+///   since a kept entry stands by its key. [`Readmission::resumed`] counts the
+///   declarations of the run, and [`Readmission::kept`] those kept in place
+///   past it. With no record, a record without keys, a report that seals an
+///   abstract type, a record that holds a formation, or a crossing the kernel
+///   rejects, every declaration crosses, as a whole readmission crosses it, and
+///   the record carries the keys. Retired, [`Polled::Retired`] with the
+///   retirement and no record ([`crossed::Absent::Kept`]); the record given is
+///   unchanged either way. Each fork gives the same answer.
+/// - provides: an edit costs the kernel the reach of the edit, and the
+///   readmission reads nothing of the run before the edit.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2938,7 +2932,7 @@ where
             keys,
             None,
             match crossed {
-                Maybe::Present(crossed) => crossed.resume(report),
+                Maybe::Present(crossed) => crossed.resume(report, crossed.boundary()),
                 Maybe::Absent(_) => None,
             }
             .map_or_else(
@@ -2956,6 +2950,7 @@ where
             Maybe::Present(keep::Kept {
                 environment,
                 positions,
+                leading,
                 held,
                 renames,
             }) => (
@@ -2966,7 +2961,7 @@ where
                     renames,
                     recall,
                 }),
-                (recalling(environment, recall), positions, fresh()),
+                (recalling(environment, recall), positions, leading),
             ),
             Maybe::Absent(_) => return Walked::Misplaced { recall, keys },
         },
