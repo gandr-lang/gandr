@@ -227,16 +227,17 @@ impl<'source> Lowerer<'_, 'source>
         },
         Ok(ResidentAtom::Wildcard | ResidentAtom::Compound) | Err(_) => true,
     })]
-    pub(super) fn resident_atom(
+    #[inline]
+    pub fn resident_atom(
         &self,
         resident: Placed,
     ) -> Result<ResidentAtom, LoweringRefusal<'source>>
     {
         let Some(Ok(Shape::Form { name, .. })) = self
-            .cx
+            .cx()
             .tree
             .node(resident.node)
-            .map(|node| shape_of(self.cx.pbg, node))
+            .map(|node| shape_of(self.cx().pbg, node))
         else {
             return Ok(ResidentAtom::Compound);
         };
@@ -254,7 +255,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         // A pattern spells an atom when its one piece is the atom's tile.
         let mut pieces = crate::form::Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, resident.node, &mut pieces)?;
+        read_pieces(self.cx().pbg, self.cx().tree, resident.node, &mut pieces)?;
         Ok(match *pieces.pieces.as_slice() {
             [Piece::Tile { label, at }] if label == TileName::NUMBER => ResidentAtom::Numeral(at),
             [Piece::Tile { label, at }] if label == TileName::CONSTRUCTOR => {
@@ -283,7 +284,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   lower as the same values supplied by name.
     /// - witness: `lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
     #[spec(ensures: |ret| ret.is_err() || match atom {
-        ResidentAtom::Numeral(at) | ResidentAtom::Constructor(at) => self.cx.classified_ahead.contains(&at.node),
+        ResidentAtom::Numeral(at) | ResidentAtom::Constructor(at) => self.cx().classified_ahead.contains(&at.node),
         ResidentAtom::Wildcard | ResidentAtom::Compound => true,
     })]
     fn positional_atom(
@@ -297,7 +298,7 @@ impl<'source> Lowerer<'_, 'source>
             ResidentAtom::Constructor(at) => (at, FormName::CONSTRUCTOR),
             ResidentAtom::Wildcard | ResidentAtom::Compound => return Ok(()),
         };
-        let _first = self.cx.classified_ahead.insert(at.node);
+        let _first = self.cx_mut().classified_ahead.insert(at.node);
         let site = Site {
             at,
             name,
@@ -330,13 +331,14 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
         Maybe::Absent(_) => true,
     })]
-    pub(super) fn merged_at(
+    #[inline]
+    pub fn merged_at(
         &self,
         node: NodeIndex,
     ) -> Maybe<&[TelescopeEntry<'source>], merged::Absent>
     {
-        let entries = match self.cx.collected.owner_of(node) {
-            Maybe::Present(slot) => self.cx.collected.plicities.get(&slot),
+        let entries = match self.cx().collected.owner_of(node) {
+            Maybe::Present(slot) => self.cx().collected.plicities.get(&slot),
             Maybe::Absent(_) => None,
         };
         if let Some(&Ok(ref entries)) = entries {
@@ -366,13 +368,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   the answers.
     /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
     #[spec(ensures: |ret| ret.is_ok() || matches!(self.merged_at(node), Maybe::Absent(_)))]
-    pub(super) fn merge_refusal(
+    #[inline]
+    pub fn merge_refusal(
         &self,
         node: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let merged = match self.cx.collected.owner_of(node) {
-            Maybe::Present(slot) => self.cx.collected.plicities.get(&slot),
+        let merged = match self.cx().collected.owner_of(node) {
+            Maybe::Present(slot) => self.cx().collected.plicities.get(&slot),
             Maybe::Absent(_) => None,
         };
         match merged {
@@ -419,10 +422,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
     #[spec(
-        captures: before = self.cx.parameters.mark(),
-        ensures: |ret| ret.is_err() || self.cx.parameters.mark() >= before,
+        captures: before = self.cx().parameters.mark(),
+        ensures: |ret| ret.is_err() || self.cx().parameters.mark() >= before,
     )]
-    pub(super) fn merged_parameters(
+    #[inline]
+    pub fn merged_parameters(
         &mut self,
         site: Site,
         function: Site,
@@ -431,24 +435,24 @@ impl<'source> Lowerer<'_, 'source>
         own: &mut super::OwnName,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        let Maybe::Present(entries) = self.merged_at(site.at.node)
+        let Maybe::Present(entries) = self.shared().merged_at(site.at.node)
         else {
             return Ok(frame);
         };
         let entries = entries.to_vec();
-        let owner = self.cx.collected.owner_of(site.at.node);
+        let owner = self.cx().collected.owner_of(site.at.node);
         let mut frame = frame;
         for (written, entry) in entries.into_iter().enumerate() {
             frame = self.bind_kept(site, own, frame);
             if entry.plicity == Plicity::Instance {
-                frame = Capability::new(self).instance_parameter(site, entry, frame)?;
+                frame = Capability::new(self.host()).instance_parameter(site, entry, frame)?;
                 continue;
             }
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
                 frame = self.flatten_implicit(entry, declared, &slot, frame)?;
                 if let Maybe::Present(owner) = owner {
                     let spelled = self.written_slot(entry, declared, &slot);
-                    let held = self.cx.written_slots.entry(owner).or_default();
+                    let held = self.cx_mut().written_slots.entry(owner).or_default();
                     if !held.iter().any(|&(at, _)| at == written) {
                         held.push((written, spelled));
                     }
@@ -466,10 +470,10 @@ impl<'source> Lowerer<'_, 'source>
             let written = Maybe::Present(entry.binder.span);
             let bound = match declared {
                 Maybe::Present(declared) => self
-                    .cx
+                    .cx_mut()
                     .scope
                     .extend_typed(frame, entry.name, declared, written),
-                Maybe::Absent(_) => self.cx.scope.extend(frame, entry.name, written),
+                Maybe::Absent(_) => self.cx_mut().scope.extend(frame, entry.name, written),
             };
             let parameter = if entry.plicity == Plicity::Explicit {
                 // An explicit entry is written in the tail's own list, which
@@ -479,7 +483,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 Parameter::elsewhere(entry.binder.node, bound, declared)
             };
-            self.cx.parameters.push(parameter);
+            self.cx_mut().parameters.push(parameter);
             frame = Frame::Inner(bound);
         }
         // A clause tail of no written list stands at its type's `:`.
@@ -519,7 +523,8 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn implicit_slot(
+    #[inline]
+    pub fn implicit_slot(
         &mut self,
         site: Site,
         entry: TelescopeEntry<'source>,
@@ -561,13 +566,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   parameter its match takes apart.
     /// - witness: `lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged))]
-    pub(super) fn merged_staging(
+    #[inline]
+    pub fn merged_staging(
         &mut self,
         site: Site,
         written: super::native::Staging,
     ) -> Result<super::native::Staging, LoweringRefusal<'source>>
     {
-        let Maybe::Present(entries) = self.merged_at(site.at.node)
+        let Maybe::Present(entries) = self.shared().merged_at(site.at.node)
         else {
             return Ok(written);
         };
@@ -620,18 +626,19 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn supplied_or_refused(
+    #[inline]
+    pub fn supplied_or_refused(
         &self,
         site: Site,
         constant: ConstantIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let slot = SlotIndex::from(usize::from(constant));
-        let Some(&Ok(ref entries)) = self.cx.collected.plicities.get(&slot)
+        let Some(&Ok(ref entries)) = self.cx().collected.plicities.get(&slot)
         else {
             return Ok(());
         };
-        if self.cx.supplied.contains(&site.at.node) {
+        if self.cx().supplied.contains(&site.at.node) {
             return Ok(());
         }
         let Some(first) = entries
@@ -641,7 +648,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         };
         let function = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(slot))
@@ -701,17 +708,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
     /// - witness: `lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
     #[spec(
-        captures: start = self.cx.operands.mark(),
+        captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
-                self.cx.plans.get(site.at.node),
-                Some(&Plan::Application(_, arguments)) if arguments == self.cx.operands.since(start)
+                self.cx().plans.get(site.at.node),
+                Some(&Plan::Application(_, arguments)) if arguments == self.cx().operands.since(start)
             ),
-            Ok(arity::Planned(false)) => self.cx.operands.mark() == start,
+            Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
             Err(_) => true,
         },
     )]
-    pub(super) fn supplied_call(
+    #[inline]
+    pub fn supplied_call(
         &mut self,
         site: Site,
         frame: Frame,
@@ -764,13 +772,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     /// - witness: `lower::implicit::tests::a_standing_stage_supply_stands_as_its_call_1498`
     #[spec(
-        captures: start = self.cx.operands.mark(),
+        captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
-                self.cx.plans.get(site.at.node),
-                Some(&Plan::Application(_, arguments)) if arguments == self.cx.operands.since(start)
+                self.cx().plans.get(site.at.node),
+                Some(&Plan::Application(_, arguments)) if arguments == self.cx().operands.since(start)
             ),
-            Ok(arity::Planned(false)) => self.cx.operands.mark() == start,
+            Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
             Err(_) => true,
         },
     )]
@@ -778,7 +786,8 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn supplied_value(
+    #[inline]
+    pub fn supplied_value(
         &mut self,
         site: Site,
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
@@ -812,9 +821,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_wildcard_skips_a_position_and_names_follow_positions_4945`
     /// - witness: `lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
     #[spec(
-        captures: start = self.cx.operands.mark(),
+        captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {
-            Ok(arity::Planned(false)) => self.cx.operands.mark() == start,
+            Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
             Ok(arity::Planned(true)) | Err(_) => true,
         },
     )]
@@ -826,8 +835,9 @@ impl<'source> Lowerer<'_, 'source>
         used: Use<'_>,
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
+        let (pbg, tree) = (self.cx().pbg, self.cx().tree);
         let former_of = |node: NodeIndex| {
-            let shape = shape_of(self.cx.pbg, self.cx.tree.node(node)?).ok()?;
+            let shape = shape_of(pbg, tree.node(node)?).ok()?;
             if let Shape::Form { former, .. } = shape {
                 Some(former)
             }
@@ -836,10 +846,10 @@ impl<'source> Lowerer<'_, 'source>
             }
         };
         let former = former_of(head.node);
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(pbg, tree, head.node, &mut scratch);
         let pieces = scratch.pieces.clone();
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
         let called = matches!(used, Use::Called(_));
         // A module path, `P.inv`, heads a call as a name does: the member's
@@ -867,7 +877,7 @@ impl<'source> Lowerer<'_, 'source>
         // the declaration's written block, and `_` supplies none: each waits
         // until the head resolves to a declaration that writes a block.
         let mut positional: Vec<(Placed, ResidentAtom)> = Vec::new();
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let mut outcome = Ok(arity::Planned(true));
         for piece in residents {
             let Piece::Operand(resident) = *piece
@@ -875,7 +885,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             if let Err(refusal) =
-                read_pieces(self.cx.pbg, self.cx.tree, resident.node, &mut scratch)
+                read_pieces(self.cx().pbg, self.cx().tree, resident.node, &mut scratch)
             {
                 outcome = Err(refusal);
                 break;
@@ -890,10 +900,10 @@ impl<'source> Lowerer<'_, 'source>
             // entry: a type or a value, `_` among them. The slot's forms are a
             // supply by name, a pun and a claim, `<`, `>`, `tail` or `.i <`.
             let form = match self
-                .cx
+                .cx()
                 .tree
                 .node(resident.node)
-                .map(|node| shape_of(self.cx.pbg, node))
+                .map(|node| shape_of(self.cx().pbg, node))
             {
                 Some(Ok(Shape::Form { name, .. })) => Some(name),
                 Some(Ok(Shape::Root | Shape::Layout | Shape::Repair(_)) | Err(_)) | None => None,
@@ -924,7 +934,7 @@ impl<'source> Lowerer<'_, 'source>
                         outcome = Err(site.fault(resident.span, FormFault::PositionalAfterNamed));
                         break;
                     }
-                    match self.resident_atom(resident) {
+                    match self.shared().resident_atom(resident) {
                         Ok(atom) => positional.push((resident, atom)),
                         Err(refusal) => {
                             outcome = Err(refusal);
@@ -943,13 +953,13 @@ impl<'source> Lowerer<'_, 'source>
                     break;
                 },
             };
-            let implicit = self.cx.name_at(written);
+            let implicit = self.cx().name_at(written);
             if supplied.insert(implicit, (written, value)).is_some() {
                 outcome = Err(site.fault(written.span, FormFault::SuppliedTwice));
                 break;
             }
         }
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         if outcome? == arity::Planned(false) {
             return Ok(arity::Planned(false));
         }
@@ -961,8 +971,9 @@ impl<'source> Lowerer<'_, 'source>
             member
         }
         else {
-            let name = self.cx.name_at(inner);
-            if let Maybe::Present(_) = self.cx.scope.resolve(frame, name, &mut self.cx.fuel)? {
+            let name = self.cx().name_at(inner);
+            let cx = self.cx_mut();
+            if let Maybe::Present(_) = cx.scope.resolve(frame, name, &mut cx.fuel)? {
                 return Ok(arity::Planned(false));
             }
             let named_site = Site { at: inner, ..site };
@@ -974,7 +985,7 @@ impl<'source> Lowerer<'_, 'source>
             (SlotIndex::from(usize::from(constant)), name)
         };
         if !positional.is_empty() {
-            let Some(block) = self.cx.collected.written_implicits.get(&slot)
+            let Some(block) = self.cx().collected.written_implicits.get(&slot)
             else {
                 return Ok(arity::Planned(false));
             };
@@ -1036,7 +1047,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_path_call_omits_its_member_s_implicits_5520`
     #[spec(
         ensures: |ret| match ret {
-            Ok(Maybe::Present((slot, _))) => self.cx.collected.slots.get(usize::from(slot)).is_some(),
+            Ok(Maybe::Present((slot, _))) => self.cx().collected.slots.get(usize::from(slot)).is_some(),
             Ok(Maybe::Absent(_)) | Err(_) => true,
         },
     )]
@@ -1052,14 +1063,14 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unresolved);
         };
-        let member = self.cx.name_at(selected);
+        let member = self.cx().name_at(selected);
         let mut links = Vec::from([(target, selected)]);
         let mut chain = Pieces::new();
         let root = loop {
-            self.cx.fuel.spend()?;
-            match self.cx.form_at(target)? {
+            self.cx_mut().fuel.spend()?;
+            match self.cx().form_at(target)? {
                 Some((_, Former::Projection)) => {
-                    read_pieces(self.cx.pbg, self.cx.tree, target.node, &mut chain)?;
+                    read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut chain)?;
                     if let Maybe::Present(_) = chain.repair {
                         return Ok(unresolved);
                     }
@@ -1074,8 +1085,9 @@ impl<'source> Lowerer<'_, 'source>
                 Some(_) | None => return Ok(unresolved),
             }
         };
-        let module = self.cx.name_at(root);
-        if let Maybe::Present(_) = self.cx.scope.resolve(frame, module, &mut self.cx.fuel)? {
+        let module = self.cx().name_at(root);
+        let cx = self.cx_mut();
+        if let Maybe::Present(_) = cx.scope.resolve(frame, module, &mut cx.fuel)? {
             return Ok(unresolved);
         }
         // A refusal here is the reading of the head too, which gives it.
@@ -1083,20 +1095,20 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Maybe::Present((slot, member)));
         }
         let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
-        segments.push(Segment::from(self.cx.text_at(root).as_ref()));
+        segments.push(Segment::from(self.cx().text_at(root).as_ref()));
         for &(_, selected) in links.iter().rev() {
-            segments.push(Segment::from(self.cx.text_at(selected).as_ref()));
+            segments.push(Segment::from(self.cx().text_at(selected).as_ref()));
         }
         let path = NamePath::from(segments);
         self.see_module(site, module);
         if !matches!(
-            self.cx.recognition.resolve_path(&path),
+            self.cx().recognition.resolve_path(&path),
             PathResolution::Complete(Recognized::ModuleComponent)
         ) {
             return Ok(unresolved);
         }
         Ok(self
-            .cx
+            .cx()
             .exported
             .get(&path)
             .map_or(unresolved, |&slot| Maybe::Present((slot, member))))
@@ -1132,17 +1144,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
     #[spec(
-        captures: start = self.cx.operands.mark(),
+        captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
-                self.cx.plans.get(site.at.node),
-                Some(&Plan::Application(head, arguments)) if head == tile.node && (arguments == FormStretch::default() || self.cx.operands.first(arguments) == Some(start))
+                self.cx().plans.get(site.at.node),
+                Some(&Plan::Application(head, arguments)) if head == tile.node && (arguments == FormStretch::default() || self.cx().operands.first(arguments) == Some(start))
             ),
-            Ok(arity::Planned(false)) => self.cx.operands.mark() == start,
+            Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
             Err(_) => true,
         },
     )]
-    pub(super) fn through_prelude(
+    #[inline]
+    pub fn through_prelude(
         &mut self,
         site: Site,
         frame: Frame,
@@ -1150,14 +1163,14 @@ impl<'source> Lowerer<'_, 'source>
         operands: [NodeIndex; 2],
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
-        let Some(prelude) = self.cx.collected.unit.prelude()
+        let Some(prelude) = self.cx().collected.unit.prelude()
         else {
             return Ok(arity::Planned(false));
         };
-        if self.cx.collected.unit.source_at(site.at.span.start()) == prelude {
+        if self.cx().collected.unit.source_at(site.at.span.start()) == prelude {
             return Ok(arity::Planned(false));
         }
-        let Some((slot, constant)) = self.cx.collected.prelude_declaration(name)
+        let Some((slot, constant)) = self.cx().collected.prelude_declaration(name)
         else {
             return Ok(arity::Planned(false));
         };
@@ -1207,9 +1220,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     #[spec(
-        captures: start = self.cx.operands.mark(),
+        captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {
-            Ok(arity::Planned(false)) => self.cx.operands.mark() == start,
+            Ok(arity::Planned(false)) => self.cx().operands.mark() == start,
             Ok(arity::Planned(true)) | Err(_) => true,
         },
     )]
@@ -1225,15 +1238,15 @@ impl<'source> Lowerer<'_, 'source>
     {
         let staged = self.stage_supplies(site, slot, &mut supplied)?;
         let stage_supplied = !staged.is_empty();
-        let entries = match self.cx.collected.plicities.get(&slot).cloned() {
+        let entries = match self.cx().collected.plicities.get(&slot).cloned() {
             Some(Ok(entries)) => entries,
             None if !staged.is_empty() => Vec::new(),
             Some(Err(_)) | None => return Ok(arity::Planned(false)),
         };
         if !staged.is_empty() {
-            let caller = match self.cx.collected.owner_of(site.at.node) {
+            let caller = match self.cx().collected.owner_of(site.at.node) {
                 Maybe::Present(owner) => self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(owner))
@@ -1245,7 +1258,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnownedSupply)));
             };
             let _first = self
-                .cx
+                .cx_mut()
                 .planned_supplies
                 .insert(inner.node, (caller, staged));
         }
@@ -1280,7 +1293,7 @@ impl<'source> Lowerer<'_, 'source>
             .filter(|entry| entry.plicity == Plicity::Explicit)
             .count();
         let function = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(slot))
@@ -1315,7 +1328,11 @@ impl<'source> Lowerer<'_, 'source>
         if standing {
             let _frame = self.require(site, Produced::Computation)?;
             opened = if stage_supplied {
-                self.cx.collected.parameters.get(&slot).map_or(0, Vec::len)
+                self.cx()
+                    .collected
+                    .parameters
+                    .get(&slot)
+                    .map_or(0, Vec::len)
             }
             else {
                 entries
@@ -1334,7 +1351,7 @@ impl<'source> Lowerer<'_, 'source>
         // explicit parameters are known here only by their count.
         let unlisted = if entries.is_empty() { opened } else { 0 };
         let mut bound = 0_usize;
-        let start = self.cx.operands.entries().len();
+        let start = self.cx().operands.entries().len();
         let mut positional = written.iter();
         for entry in entries
             .iter()
@@ -1359,7 +1376,8 @@ impl<'source> Lowerer<'_, 'source>
                             function,
                             implicit: entry.name,
                         })?;
-                        let _first = self.cx.nominated.insert(self.cx.operands.next_key(), hole);
+                        let cx = self.cx_mut();
+                        let _first = cx.nominated.insert(cx.operands.next_key(), hole);
                         Some(site.at.node)
                     }
                 },
@@ -1368,8 +1386,9 @@ impl<'source> Lowerer<'_, 'source>
                         Some(value)
                     }
                     else {
-                        let index = self.cx.resolved_instance(site, frame, function, *entry)?;
-                        let _first = self.cx.instanced.insert(self.cx.operands.next_key(), index);
+                        let index = self.cx().resolved_instance(site, frame, function, *entry)?;
+                        let cx = self.cx_mut();
+                        let _first = cx.instanced.insert(cx.operands.next_key(), index);
                         Some(site.at.node)
                     }
                 },
@@ -1378,8 +1397,9 @@ impl<'source> Lowerer<'_, 'source>
                     // variable is the furthest under the application.
                     let index = opened.saturating_sub(bound).saturating_sub(1);
                     bound = bound.saturating_add(1);
-                    let _first = self.cx.abstracted.insert(
-                        self.cx.operands.next_key(),
+                    let cx = self.cx_mut();
+                    let _first = cx.abstracted.insert(
+                        cx.operands.next_key(),
                         DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
                     );
                     Some(site.at.node)
@@ -1389,38 +1409,38 @@ impl<'source> Lowerer<'_, 'source>
                 },
             };
             if let Some(argument) = argument {
-                self.cx.operands.push(argument);
+                self.cx_mut().operands.push(argument);
             }
         }
-        self.cx.operands.extend(positional.copied());
+        self.cx_mut().operands.extend(positional.copied());
         let applied = Stretch {
             start,
-            end: self.cx.operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         };
-        let _fresh = self.cx.supplied.insert(inner.node);
+        let _fresh = self.cx_mut().supplied.insert(inner.node);
         if applied.start == applied.end {
-            let _first = self.cx.nullary.insert(inner.node, site.at.node);
+            let _first = self.cx_mut().nullary.insert(inner.node, site.at.node);
         }
         self.read(inner.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
             if self
-                .cx
+                .cx()
                 .operands
                 .locate(At::from(position))
                 .is_some_and(|key| {
-                    self.cx.nominated.contains_key(&key)
-                        || self.cx.abstracted.contains_key(&key)
-                        || self.cx.instanced.contains_key(&key)
-                        || self.cx.components.contains_key(&key)
+                    self.cx().nominated.contains_key(&key)
+                        || self.cx().abstracted.contains_key(&key)
+                        || self.cx().instanced.contains_key(&key)
+                        || self.cx().components.contains_key(&key)
                 })
             {
                 continue;
             }
-            if let Some(&argument) = self.cx.operands.entries().get(position) {
+            if let Some(&argument) = self.cx().operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
-        self.plan(site, Plan::Application(inner.node, self.cx.kept(applied)));
+        self.plan(site, Plan::Application(inner.node, self.cx().kept(applied)));
 
         Ok(arity::Planned(true))
     }
@@ -1455,14 +1475,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_nominates_a_hole_per_component_739`
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(
-        captures: before = self.cx.operands.entries().len(),
-        ensures: |ret| ret.is_err() || self.cx.operands.entries().len() == before.saturating_add(slot.components().len()),
+        captures: before = self.cx().operands.entries().len(),
+        ensures: |ret| ret.is_err() || self.cx().operands.entries().len() == before.saturating_add(slot.components().len()),
     )]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn pass_model(
+    #[inline]
+    pub fn pass_model(
         &mut self,
         site: Site,
         frame: Frame,
@@ -1483,17 +1504,19 @@ impl<'source> Lowerer<'_, 'source>
         let mut holes = Vec::new();
         for place in 0 .. slot.components().len() {
             if let Some(ref supplied) = supplied {
-                let _first = self.cx.components.insert(
-                    self.cx.operands.next_key(),
+                let cx = self.cx_mut();
+                let _first = cx.components.insert(
+                    cx.operands.next_key(),
                     (Arc::clone(supplied), model::ComponentPlace::from(place)),
                 );
             }
             else {
                 let hole = self.nominate(Nomination::Omitted { function, implicit })?;
-                let _first = self.cx.nominated.insert(self.cx.operands.next_key(), hole);
+                let cx = self.cx_mut();
+                let _first = cx.nominated.insert(cx.operands.next_key(), hole);
                 holes.push(hole);
             }
-            self.cx.operands.push(site.at.node);
+            self.cx_mut().operands.push(site.at.node);
         }
         if supplied.is_none() && !holes.is_empty() {
             self.plan_slot(site, slot, holes)?;
@@ -1528,16 +1551,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   theory.
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     /// - witness: `lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
-    pub(super) fn plan_slot(
+    #[inline]
+    pub fn plan_slot(
         &mut self,
         site: Site,
         slot: &model::ModelSlot,
         holes: Vec<gandr_core_term::hole::HoleId>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let caller = match self.cx.collected.owner_of(site.at.node) {
+        let caller = match self.cx().collected.owner_of(site.at.node) {
             Maybe::Present(owner) => self
-                .cx
+                .cx()
                 .collected
                 .slots
                 .get(usize::from(owner))
@@ -1554,9 +1578,9 @@ impl<'source> Lowerer<'_, 'source>
             .map(|&(name, _)| String::from(name.as_ref()))
             .collect();
         for &hole in &holes {
-            let _first = self.cx.model_candidates.insert(hole, names.clone());
+            let _first = self.cx_mut().model_candidates.insert(hole, names.clone());
         }
-        self.cx
+        self.cx_mut()
             .planned_models
             .entry(site.at.node)
             .or_default()
@@ -1606,31 +1630,34 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_form_s_holes_keep_their_names_when_another_form_writes_more_5598`
     /// - witness: `lower::implicit::tests::a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469`
     #[spec(
-        captures: before = self.cx.nominations.len(),
-        ensures: |ret| match ret {
-            Ok(hole) => matches!(
-                (hole.origin(), nomination),
-                (gandr_core_term::hole::HoleOrigin::Wildcard, Nomination::Wildcard)
-                    | (gandr_core_term::hole::HoleOrigin::Spliced, Nomination::Spliced(_))
-                    | (
-                        gandr_core_term::hole::HoleOrigin::Nominated,
-                        Nomination::Omitted { .. } | Nomination::Answering { .. }
-                    )
-            ) && self.cx.nominations.len() == before.saturating_add(1)
-                && self.cx.nominations.get(&hole) == Some(&nomination),
-            Err(_) => self.cx.nominations.len() == before,
-        },
+        captures: before = self.cx().nominations.len(),
+        ensures: |ret| ret.map_or_else(
+            |_| self.cx().nominations.len() == before,
+            |hole| {
+                matches!(
+                    (hole.origin(), nomination),
+                    (gandr_core_term::hole::HoleOrigin::Wildcard, Nomination::Wildcard)
+                        | (gandr_core_term::hole::HoleOrigin::Spliced, Nomination::Spliced(_))
+                        | (
+                            gandr_core_term::hole::HoleOrigin::Nominated,
+                            Nomination::Omitted { .. } | Nomination::Answering { .. }
+                        )
+                ) && self.cx().nominations.len() == before.saturating_add(1)
+                    && self.cx().nominations.get(&hole) == Some(&nomination)
+            },
+        ),
     )]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn nominate(
+    #[inline]
+    pub fn nominate(
         &mut self,
         nomination: Nomination<'source>,
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
-        let form = self.hole_group(self.cx.scope.form()).0;
+        let form = self.hole_group(self.cx().scope.form()).0;
         let origin = match nomination {
             Nomination::Wildcard => gandr_core_term::hole::HoleOrigin::Wildcard,
             Nomination::Spliced(_) => gandr_core_term::hole::HoleOrigin::Spliced,
@@ -1639,7 +1666,7 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let place = self
-            .cx
+            .cx()
             .nominated_places
             .get(&(form, origin))
             .copied()
@@ -1655,11 +1682,11 @@ impl<'source> Lowerer<'_, 'source>
             },
         }
         .ok_or_else(|| LoweringRefusal::BudgetExceeded {
-            budget: self.cx.fuel.budget(),
+            budget: self.cx().fuel.budget(),
         })?;
-        let _first = self.cx.nominations.insert(hole, nomination);
+        let _first = self.cx_mut().nominations.insert(hole, nomination);
         let _counted = self
-            .cx
+            .cx_mut()
             .nominated_places
             .insert((form, origin), place.saturating_add(1));
         Ok(hole)

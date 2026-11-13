@@ -114,22 +114,23 @@ impl<'source> Lowerer<'_, 'source>
     ///   completed declaration.
     /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     #[spec(
-        captures: before = self.cx.pathed.len(),
-        ensures: self.cx.pathed.len() >= before,
+        captures: before = self.cx().pathed.len(),
+        ensures: self.cx().pathed.len() >= before,
     )]
-    pub(super) fn mint_paths(
+    #[inline]
+    pub fn mint_paths(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        let source = self.cx.current.source;
+        let source = self.cx().current.source;
         let paths: Vec<PathDeclaration<'source>> = self
-            .cx
+            .cx()
             .collected
             .paths
             .iter()
             .filter(|path| {
-                self.cx
+                self.cx()
                     .collected
                     .unit
                     .source_at(path.declared_by.span.start())
@@ -140,12 +141,12 @@ impl<'source> Lowerer<'_, 'source>
         for path in &paths {
             for side in [Side::Into, Side::From] {
                 let (functor, slot) = path.body(side);
-                let outcome = self.path_function(path, functor, sink);
-                let _first = self.cx.pathed.insert(slot, outcome);
+                let outcome = self.shared().path_function(path, functor, sink);
+                let _first = self.cx_mut().pathed.insert(slot, outcome);
             }
             for trip in &path.trips {
-                let outcome = self.round_trip(path, trip, sink);
-                let _first = self.cx.pathed.insert(trip.slot, outcome);
+                let outcome = self.shared().round_trip(path, trip, sink);
+                let _first = self.cx_mut().pathed.insert(trip.slot, outcome);
             }
         }
     }
@@ -235,7 +236,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .filter_map(|component| {
                 let constant = self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(component.slot))?
@@ -294,7 +295,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> DeclarationOutcome<'source>
     {
-        let Some(template) = self.cx.collected.functors.get(usize::from(functor))
+        let Some(template) = self.cx().collected.functors.get(usize::from(functor))
         else {
             return DeclarationOutcome::Refused(LoweringRefusal::Unminted {
                 span: path.declared_by.span,
@@ -305,7 +306,7 @@ impl<'source> Lowerer<'_, 'source>
             span: template.named.span,
             name: template.name,
         });
-        let Maybe::Present(origin) = self.cx.origin_at(template.named.node)
+        let Maybe::Present(origin) = self.cx().origin_at(template.named.node)
         else {
             return unminted;
         };
@@ -443,7 +444,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let name: &str = name.as_ref();
         let stated = self
-            .cx
+            .cx()
             .collected
             .structures
             .get(usize::from(template.body))?
@@ -454,7 +455,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return None;
         };
-        let Maybe::Present(written) = self.cx.value_type_at(defined.node)
+        let Maybe::Present(written) = self.cx().value_type_at(defined.node)
         else {
             return None;
         };
@@ -504,7 +505,7 @@ impl<'source> Lowerer<'_, 'source>
             Side::From => (path.into, path.from),
             Side::Into => (path.from, path.into),
         };
-        let Some(witness) = self.cx.collected.slots.get(usize::from(trip.slot))
+        let Some(witness) = self.cx().collected.slots.get(usize::from(trip.slot))
         else {
             return DeclarationOutcome::Refused(LoweringRefusal::Unminted {
                 span: path.declared_by.span,
@@ -516,8 +517,8 @@ impl<'source> Lowerer<'_, 'source>
             name: trip.name,
         });
         let (Maybe::Present(origin), Some(template)) = (
-            self.cx.origin_at(witness.introduced_by.node),
-            self.cx.collected.functors.get(usize::from(first.0)),
+            self.cx().origin_at(witness.introduced_by.node),
+            self.cx().collected.functors.get(usize::from(first.0)),
         )
         else {
             return unminted;
@@ -560,7 +561,7 @@ impl<'source> Lowerer<'_, 'source>
             rename_type(sink, &sorts, stated, origin)
         };
         let constant = |slot: SlotIndex| {
-            self.cx
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(slot))
@@ -607,7 +608,7 @@ impl<'source> Lowerer<'_, 'source>
         let stated_at = match signature
             .components
             .get(usize::from(trip.component))
-            .map(|member| self.cx.origin_at(member.named.node))
+            .map(|member| self.cx().origin_at(member.named.node))
         {
             Some(Maybe::Present(at)) => at.inserted(Insertion::Relation),
             Some(Maybe::Absent(_)) | None => origin,
@@ -674,7 +675,7 @@ impl<'source> Lowerer<'_, 'source>
         let name: &str = name.as_ref();
         let body = Container::Module(template.body);
         (usize::from(template.body_first) .. usize::from(template.end)).find_map(|position| {
-            self.cx
+            self.cx()
                 .collected
                 .slots
                 .get(position)
@@ -704,7 +705,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .find_map(|parameter| match parameter.form {
                 ParameterForm::Derived(part) if part.component == component => {
-                    self.cx.modelled.get(&parameter.slot).copied()
+                    self.cx().modelled.get(&parameter.slot).copied()
                 },
                 ParameterForm::Derived(_)
                 | ParameterForm::Value(_)

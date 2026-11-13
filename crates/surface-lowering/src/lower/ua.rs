@@ -145,28 +145,29 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::ua::tests::a_later_member_named_ua_is_a_forward_reference`
     /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
     /// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx.tree.node(head.node).is_some())]
-    pub(super) fn stratum_head(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx().tree.node(head.node).is_some())]
+    #[inline]
+    pub fn stratum_head(
         &mut self,
         site: Site,
         head: Placed,
     ) -> Result<Maybe<(Stratified, Stratum), spelled::Absent>, LoweringRefusal<'source>>
     {
         let unspelled = Ok(Maybe::Absent(spelled::Absent::Unspelled));
-        let Some(node) = self.cx.tree.node(head.node)
+        let Some(node) = self.cx().tree.node(head.node)
         else {
             return unspelled;
         };
         let Shape::Form {
             former: Former::Instantiation,
             ..
-        } = shape_of(self.cx.pbg, node)?
+        } = shape_of(self.cx().pbg, node)?
         else {
             return unspelled;
         };
         let instantiated = Site { at: head, ..site };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut scratch);
         let mut cursor = Cursor::new(&scratch.pieces, head.span);
         let written = read.and_then(|()| {
             let named = instantiated.one(cursor.operands())?;
@@ -183,18 +184,18 @@ impl<'source> Lowerer<'_, 'source>
             exhausted(instantiated, &cursor)?;
             Ok((named, residents))
         });
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         let (named, residents) = written?;
-        let is_name = self.cx.tree.node(named.node).is_some_and(|node| {
+        let is_name = self.cx().tree.node(named.node).is_some_and(|node| {
             matches!(
-                shape_of(self.cx.pbg, node),
+                shape_of(self.cx().pbg, node),
                 Ok(Shape::Form {
                     former: Former::Name,
                     ..
                 })
             )
         });
-        let name = self.cx.name_at(named);
+        let name = self.cx().name_at(named);
         let former = match name.as_ref() {
             UA if is_name => Stratified::Ua,
             COMPOSE if is_name => Stratified::Compose,
@@ -228,8 +229,8 @@ impl<'source> Lowerer<'_, 'source>
             );
         };
         Ok(Maybe::Present((former, Stratum {
-            degree: self.resident(site, degree)?,
-            bound: self.resident(site, bound)?,
+            degree: self.shared().resident(site, degree)?,
+            bound: self.shared().resident(site, bound)?,
         })))
     }
 
@@ -255,12 +256,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   name in their place is refused.
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
     /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| self.cx.text_at(resident).as_ref().parse::<usize>().map(Count::from).as_ref() == Ok(value)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| self.cx().text_at(resident).as_ref().parse::<usize>().map(Count::from).as_ref() == Ok(value)))]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn resident<Count>(
+    #[inline]
+    pub fn resident<Count>(
         &self,
         site: Site,
         resident: Placed,
@@ -277,7 +279,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(refused);
         };
-        let text = self.cx.text_at(numeral);
+        let text = self.cx().text_at(numeral);
         let spelled: &str = text.as_ref();
         match spelled.parse::<usize>() {
             Ok(value) if spelled.bytes().all(|byte| byte.is_ascii_digit()) => {
@@ -308,8 +310,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   refused by its count.
     /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Ua { .. })))]
-    pub(super) fn ua_call(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Ua { .. })))]
+    #[inline]
+    pub fn ua_call(
         &mut self,
         site: Site,
         stratum: Stratum,
@@ -318,13 +321,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         let frame = self.require(site, Produced::Value)?;
         let [source, target, forward, backward] =
-            exactly(site, &mut cursor, &mut self.cx.operands)?;
+            exactly(site, &mut cursor, &mut self.cx_mut().operands)?;
         let sides = Sides {
             source: self.description(site, source)?,
             target: self.description(site, target)?,
         };
         let named = [source, target].map(|operand| {
-            self.cx.tree.node(operand).map_or_else(
+            self.cx().tree.node(operand).map_or_else(
                 || Origin::new(operand, site.at.span),
                 |node| Origin::new(operand, node.span()),
             )
@@ -377,7 +380,7 @@ impl<'source> Lowerer<'_, 'source>
         operand: NodeIndex,
     ) -> Result<Description, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(operand)
+        let Some(node) = self.cx().tree.node(operand)
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UaDescription)));
         };
@@ -386,27 +389,27 @@ impl<'source> Lowerer<'_, 'source>
         let Shape::Form {
             former: Former::Name | Former::Constructor,
             ..
-        } = shape_of(self.cx.pbg, node)?
+        } = shape_of(self.cx().pbg, node)?
         else {
             return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::UaDescription)));
         };
-        let name = self.cx.name_at(at);
+        let name = self.cx().name_at(at);
         let local = self
-            .cx
+            .cx()
             .collected
             .by_name
-            .get(&(self.cx.collected.top(at.span.start()), name))
+            .get(&(self.cx().collected.top(at.span.start()), name))
             .copied();
         let position = match local {
             Some(position) => Some(position),
             None => {
                 match self
-                    .cx
+                    .cx()
                     .collected
-                    .imported_slot(self.cx.collected.unit.source_at(at.span.start()), name)
+                    .imported_slot(self.cx().collected.unit.source_at(at.span.start()), name)
                 {
                     Ok(Maybe::Present((position, import))) => {
-                        self.cx.collected.reach(import);
+                        self.cx_mut().collected.reach(import);
                         Some(position)
                     },
                     Ok(Maybe::Absent(_)) => None,
@@ -422,8 +425,13 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let described = position
-            .and_then(|position| self.cx.collected.slots.get(usize::from(position)))
-            .map(|slot| self.cx.collected.descriptions.get(&slot.introduced_by.node));
+            .and_then(|position| self.cx().collected.slots.get(usize::from(position)))
+            .map(|slot| {
+                self.cx()
+                    .collected
+                    .descriptions
+                    .get(&slot.introduced_by.node)
+            });
         let Some(Maybe::Present(entry)) = described
             .filter(|entry| matches!(entry, Maybe::Present(held) if matches!(held.classifier, Maybe::Absent(_))))
         else {
@@ -437,13 +445,13 @@ impl<'source> Lowerer<'_, 'source>
             span.start() >= block.start() && span.end() <= block.end()
         };
         let refused = self
-            .cx
+            .cx()
             .collected
             .description_diagnostics
             .iter()
             .any(|diagnostic| inside(diagnostic.span))
             || self
-                .cx
+                .cx()
                 .collected
                 .cells
                 .diagnostics

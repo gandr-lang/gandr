@@ -140,8 +140,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   and a migration to a name nothing declares is refused at the name.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     /// - witness: `lower::world::tests::a_world_named_where_none_is_declared_is_unresolved`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::World(Worlded::Hold { .. } | Worlded::Migrate { .. }))))]
-    pub(super) fn world_form(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::World(Worlded::Hold { .. } | Worlded::Migrate { .. }))))]
+    #[inline]
+    pub fn world_form(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -168,7 +169,7 @@ impl<'source> Lowerer<'_, 'source>
             closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
             let world = self.world_named(site, frame, written)?;
             let body = self.block(site, &mut cursor, frame)?;
-            let _result = self.cx.results.insert(body.last);
+            let _result = self.cx_mut().results.insert(body.last);
             Worlded::Migrate { world, body }
         }
         else {
@@ -198,12 +199,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a handle at a declared world mints the handle type.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
-    #[spec(ensures: |ret| ret.is_ok() && matches!(self.cx.plans.get(site.at.node), Some(&Plan::World(Worlded::At { inner, world: World::Declared(declared) })) if inner == operand.node && declared == constant))]
+    #[spec(ensures: |ret| ret.is_ok() && matches!(self.cx().plans.get(site.at.node), Some(&Plan::World(Worlded::At { inner, world: World::Declared(declared) })) if inner == operand.node && declared == constant))]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn located_type(
+    #[inline]
+    pub fn located_type(
         &mut self,
         site: Site,
         operand: Placed,
@@ -253,7 +255,7 @@ impl<'source> Lowerer<'_, 'source>
         written: Placed,
     ) -> Result<World, LoweringRefusal<'source>>
     {
-        let name = self.cx.name_at(written);
+        let name = self.cx().name_at(written);
         match self.resolve_name(site, frame, name)? {
             Maybe::Present(Resolved::Declaration { constant, .. }) => Ok(World::Declared(constant)),
             Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_) => {
@@ -290,14 +292,15 @@ impl<'source> Lowerer<'_, 'source>
     ///   at the world written.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(
-        captures: before = self.cx.statements.mark(),
+        captures: before = self.cx().statements.mark(),
         ensures: |ret| match ret {
-            | Ok(Maybe::Present(_)) => self.cx.statements.mark() == before.next()
-                && self.cx.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Opened { .. })),
-            | Ok(Maybe::Absent(_)) | Err(_) => self.cx.statements.mark() == before,
+            | Ok(Maybe::Present(_)) => self.cx().statements.mark() == before.next()
+                && self.cx().statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Opened { .. })),
+            | Ok(Maybe::Absent(_)) | Err(_) => self.cx().statements.mark() == before,
         },
     )]
-    pub(super) fn opened(
+    #[inline]
+    pub fn opened(
         &mut self,
         statement: Site,
         pattern: Placed,
@@ -306,13 +309,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Frame, unopened::Absent>, LoweringRefusal<'source>>
     {
         let mut pieces = Pieces::new();
-        super::read_pieces(self.cx.pbg, self.cx.tree, pattern.node, &mut pieces)?;
+        super::read_pieces(self.cx().pbg, self.cx().tree, pattern.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(FormName::LET_STATEMENT));
         }
         let mut cursor = Cursor::new(&pieces.pieces, pattern.span);
         let binder = statement.one(cursor.operands())?;
-        if !matches!(self.cx.form_at(binder)?, Some((_, Former::Name))) {
+        if !matches!(self.cx().form_at(binder)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(unopened::Absent::OtherPattern));
         }
         closed(statement, &mut cursor, TileName::AT)?;
@@ -322,10 +325,10 @@ impl<'source> Lowerer<'_, 'source>
         };
         exhausted(statement, &cursor)?;
         let world = self.world_named(statement, frame, written)?;
-        let name = self.binder_name(statement, binder)?;
+        let name = self.shared().binder_name(statement, binder)?;
         self.note_binder(binder, frame, name)?;
         self.read(value.node, Reading::Value(frame));
-        self.cx.statements.push(Statement {
+        self.cx_mut().statements.push(Statement {
             origin: statement.at.node,
             bound: statement.at.node,
             binding: StatementBinding::Opened {
@@ -336,7 +339,7 @@ impl<'source> Lowerer<'_, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Maybe::Present(Frame::Inner(self.cx.scope.extend(
+        Ok(Maybe::Present(Frame::Inner(self.cx_mut().scope.extend(
             frame,
             name,
             Maybe::Present(binder.span),
@@ -363,7 +366,8 @@ impl<'source> Lowerer<'_, 'source>
         | (_, Maybe::Present(_)) => false,
         | (_, Maybe::Absent(_)) => true,
     })]
-    pub(super) fn mint_world(
+    #[inline]
+    pub fn mint_world(
         &self,
         worlded: Worlded,
         sink: &mut Sink<'_>,
@@ -372,13 +376,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         let form = match worlded {
             Worlded::At { inner, world } => {
-                return self.cx.value_type_at(inner).map(|inner| {
+                return self.cx().value_type_at(inner).map(|inner| {
                     let id = sink.arena.value_type_world(WorldType::At { inner, world });
                     sink.origins.record_value_type(id, origin);
                     Lowered::ValueType(id)
                 });
             },
-            Worlded::Hold { value } => match self.cx.value_at(value) {
+            Worlded::Hold { value } => match self.cx().value_at(value) {
                 Maybe::Present(value) => WorldForm::Hold { value },
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
@@ -416,16 +420,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   are each refused at the entry.
     /// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
     #[spec(
-        captures: before = self.cx.collected.slots.len(),
-        ensures: self.cx.collected.slots.len() == before,
+        captures: before = self.cx().collected.slots.len(),
+        ensures: self.cx().collected.slots.len() == before,
     )]
-    pub(super) fn check_requirements(&mut self)
+    #[inline]
+    pub fn check_requirements(&mut self)
     {
-        let source = self.cx.current.source;
+        let source = self.cx().current.source;
         let mut refusals = Vec::new();
         let mut hosts = Vec::new();
-        for (&slot, entries) in &self.cx.collected.requirements {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+        for (&slot, entries) in &self.cx().collected.requirements {
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -433,7 +438,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            if self.cx.collected.unit.source_at(entry.named.span.start()) != source
+            if self.cx().collected.unit.source_at(entry.named.span.start()) != source
                 || matches!(entry.refusal, Maybe::Present(_))
             {
                 continue;
@@ -443,11 +448,11 @@ impl<'source> Lowerer<'_, 'source>
                 name: FormName::WORLD_DECLARATION,
                 reading: Reading::Unread,
             };
-            match self.required(site, entries) {
+            match self.shared().required(site, entries) {
                 Ok(()) => hosts.extend(entries.iter().map(|required| {
                     (
                         required.interface.span().start(),
-                        EffectName::from(required.interface.name(self.cx.tree).as_ref()),
+                        EffectName::from(required.interface.name(self.cx().tree).as_ref()),
                     )
                 })),
                 Err(refusal) => refusals.push((slot, refusal)),
@@ -456,10 +461,10 @@ impl<'source> Lowerer<'_, 'source>
         // Each host interface a requirement names reaches the import of its
         // module (#4523).
         for (at, named) in hosts {
-            self.cx.collected.reach_host(at, &named);
+            self.cx_mut().collected.reach_host(at, &named);
         }
         for (slot, refusal) in refusals {
-            let _first = self.cx.faults.entry(slot).or_insert(refusal);
+            let _first = self.cx_mut().faults.entry(slot).or_insert(refusal);
         }
     }
 
@@ -486,19 +491,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   add none.
     /// - witness: `lower::world::tests::a_world_s_requirement_mints_its_row_3545`
     #[spec(
-        captures: before = self.cx.world_rows.len(),
-        ensures: self.cx.world_rows.len() >= before,
+        captures: before = self.cx().world_rows.len(),
+        ensures: self.cx().world_rows.len() >= before,
     )]
-    pub(super) fn mint_requirements(
+    #[inline]
+    pub fn mint_requirements(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        let source = self.cx.current.source;
+        let source = self.cx().current.source;
         let mut rows = Vec::new();
         let mut placed = Vec::new();
-        for (&slot, entries) in &self.cx.collected.requirements {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+        for (&slot, entries) in &self.cx().collected.requirements {
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -506,9 +512,9 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            if self.cx.collected.unit.source_at(entry.named.span.start()) != source
+            if self.cx().collected.unit.source_at(entry.named.span.start()) != source
                 || matches!(entry.refusal, Maybe::Present(_))
-                || self.cx.faults.contains_key(&slot)
+                || self.cx().faults.contains_key(&slot)
             {
                 continue;
             }
@@ -524,15 +530,15 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 }
                 let signature = match (
-                    CapabilityRef::new(self).handled(
+                    CapabilityRef::new(self.host_ref()).handled(
                         site,
                         &required.interface,
                         required.interface.last.node,
                         &required.manifest,
                     ),
-                    self.cx.origin_at(required.interface.last.node),
+                    self.cx().origin_at(required.interface.last.node),
                 ) {
-                    (Ok(interface), Maybe::Present(origin)) => CapabilityRef::new(self)
+                    (Ok(interface), Maybe::Present(origin)) => CapabilityRef::new(self.host_ref())
                         .interface_signature(&interface, Standing::Read, sink, origin),
                     (Err(_), _) | (_, Maybe::Absent(_)) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -550,7 +556,7 @@ impl<'source> Lowerer<'_, 'source>
                 rows.push((entry.constant, row));
             }
         }
-        self.cx.world_rows.extend(rows);
+        self.cx_mut().world_rows.extend(rows);
     }
 
     /// Read the entries of a requirement row written at `site` as a labelled
@@ -584,7 +590,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut labelled: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
         let mut whole: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
         for entry in entries {
-            let interface = CapabilityRef::new(self).handled(
+            let interface = CapabilityRef::new(self.host_ref()).handled(
                 site,
                 &entry.interface,
                 entry.interface.last.node,
@@ -592,11 +598,11 @@ impl<'source> Lowerer<'_, 'source>
             )?;
             let (span, name, seen) = match entry.label {
                 Maybe::Present(written) => {
-                    let named = CapabilityRef::new(self).label_of(site, written)?;
-                    (named.span, self.cx.name_at(named), &mut labelled)
+                    let named = CapabilityRef::new(self.host_ref()).label_of(site, written)?;
+                    (named.span, self.cx().name_at(named), &mut labelled)
                 },
                 Maybe::Absent(_) => {
-                    let name = entry.interface.name(self.cx.tree);
+                    let name = entry.interface.name(self.cx().tree);
                     if let Interface::Theory(_) = interface {
                         return Err(LoweringRefusal::UnlabelledRequirement {
                             span: entry.interface.span(),

@@ -69,10 +69,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::opening::tests::an_opened_module_answers_the_rest_of_its_block`
     /// - witness: `lower::opening::tests::an_unknown_module_is_refused_at_its_path`
     #[spec(
-        captures: before = self.cx.opened.len(),
-        ensures: |ret| ret.is_err() || self.cx.opened.len() <= before.saturating_add(1),
+        captures: before = self.cx().opened.len(),
+        ensures: |ret| ret.is_err() || self.cx().opened.len() <= before.saturating_add(1),
     )]
-    pub(super) fn open(
+    #[inline]
+    pub fn open(
         &mut self,
         site: Site,
         cursor: &mut Cursor<'_>,
@@ -99,7 +100,7 @@ impl<'source> Lowerer<'_, 'source>
         let scope = ByteSpan::new(semicolon.span.end(), site.at.span.end())
             .map_err(|_inverted| site.fault(semicolon.span, FormFault::MisplacedTile))?;
         let _first = self
-            .cx
+            .cx_mut()
             .opened
             .entry(keyword.span.join(semicolon.span))
             .or_insert(Opened { scope, module });
@@ -131,34 +132,35 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::open`].
     /// - witness: `lower::opening::tests::an_opened_module_answers_the_rest_of_its_block`
     /// - witness: `lower::opening::tests::an_unknown_module_is_refused_at_its_path`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| self.cx.collected.structures.get(usize::from(*module)).is_some()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| self.cx().collected.structures.get(usize::from(*module)).is_some()))]
     #[expect(
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn opened_module(
+    #[inline]
+    pub fn opened_module(
         &mut self,
         site: Site,
         head: Placed,
         links: &[Placed],
     ) -> Result<StructureIndex, LoweringRefusal<'source>>
     {
-        let name = self.cx.name_at(head);
+        let name = self.cx().name_at(head);
         let unresolved = LoweringRefusal::UnresolvedName {
             span: head.span,
             name,
         };
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Err(unresolved);
         };
-        let mut container = self.cx.collected.slots.get(usize::from(own)).map_or_else(
-            || self.cx.collected.top(site.at.span.start()),
+        let mut container = self.cx().collected.slots.get(usize::from(own)).map_or_else(
+            || self.cx().collected.top(site.at.span.start()),
             |slot| slot.container,
         );
         let mut module = loop {
-            self.cx.fuel.spend()?;
-            if let Some(&found) = self.cx.collected.modules.get(&(container, name)) {
+            self.cx_mut().fuel.spend()?;
+            if let Some(&found) = self.cx().collected.modules.get(&(container, name)) {
                 break found;
             }
             let Container::Module(enclosing) = container
@@ -166,28 +168,28 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(unresolved);
             };
             container = self
-                .cx
+                .cx()
                 .collected
                 .structures
                 .get(usize::from(enclosing))
                 .map_or_else(
-                    || self.cx.collected.top(site.at.span.start()),
+                    || self.cx().collected.top(site.at.span.start()),
                     |structure| structure.container,
                 );
         };
         let mut spelled = name;
         for &link in links {
-            self.cx.fuel.spend()?;
-            let member = self.cx.name_at(link);
+            self.cx_mut().fuel.spend()?;
+            let member = self.cx().name_at(link);
             let inner = self
-                .cx
+                .cx()
                 .collected
                 .structures
                 .get(usize::from(module))
                 .and_then(|structure| {
                     structure.exports.iter().find_map(|export| match *export {
                         Member::Module(inner) => self
-                            .cx
+                            .cx()
                             .collected
                             .structures
                             .get(usize::from(inner))
@@ -242,7 +244,8 @@ impl<'source> Lowerer<'_, 'source>
         | Err(LoweringRefusal::ImportShadows { span, name: refused, .. } | LoweringRefusal::ForwardMemberReference { span, name: refused, .. }) => span == site.at.span && refused == name,
         | Ok(Maybe::Absent(_)) | Err(_) => true,
     })]
-    pub(super) fn opened_name(
+    #[inline]
+    pub fn opened_name(
         &mut self,
         site: Site,
         own: SlotIndex,
@@ -251,22 +254,26 @@ impl<'source> Lowerer<'_, 'source>
     {
         let at = site.at.span.start();
         let mut found: Option<(SlotIndex, ByteSpan)> = None;
-        for (&statement, opened) in &self.cx.opened {
+        for (&statement, opened) in &self.cx().opened {
             if at < opened.scope.start() || at >= opened.scope.end() {
                 continue;
             }
-            let Some(structure) = self.cx.collected.structures.get(usize::from(opened.module))
+            let Some(structure) = self
+                .cx()
+                .collected
+                .structures
+                .get(usize::from(opened.module))
             else {
                 continue;
             };
             let exported = structure.exports.iter().find_map(|export| match *export {
                 Member::Slot(slot) => self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(slot))
                     .is_some_and(|held| held.name == name)
-                    .then(|| self.cx.collected.exported_read(opened.module, slot)),
+                    .then(|| self.cx().collected.exported_read(opened.module, slot)),
                 Member::Module(_) => None,
             });
             match (exported, found) {
@@ -286,7 +293,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
-        let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+        let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
@@ -300,7 +307,7 @@ impl<'source> Lowerer<'_, 'source>
                 constant: other, ..
             })) => {
                 let other = self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(other))

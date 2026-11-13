@@ -58,6 +58,7 @@ use gandr_theory_levitation::TheoryValue;
 use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
+use super::Context;
 use super::Lowerer;
 use super::Reading;
 use super::Sink;
@@ -107,16 +108,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     fn natively_read(
-        &self,
+        cx: &Context<'_, 'source>,
         entry: &DescribedDeclaration,
     ) -> Result<NativelyRead, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(entry.at.node)
+        let Some(node) = cx.tree.node(entry.at.node)
         else {
             return Ok(NativelyRead(false));
         };
         Ok(NativelyRead(matches!(
-            shape_of(self.cx.pbg, node)?,
+            shape_of(cx.pbg, node)?,
             Shape::Form {
                 former: Former::Data,
                 ..
@@ -153,33 +154,34 @@ impl<'source> Lowerer<'_, 'source>
         captures: before = seeds.len(),
         ensures: |ret| ret.is_err() || seeds.len() >= before,
     )]
-    pub(super) fn seed_descriptions(
+    #[inline]
+    pub fn seed_descriptions(
         &mut self,
         seeds: &mut Vec<(NodeIndex, Reading)>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let (source_of, current) = (&self.cx.source_of, self.cx.current.source);
-        for entry in self
-            .cx
+        let cx = self.cx_mut();
+        let (source_of, current) = (&cx.source_of, cx.current.source);
+        for entry in cx
             .collected
             .descriptions
             .values()
             .filter(|entry| source_of.get(entry.at.node) == Some(&current))
         {
-            if self.natively_read(entry)?.0 {
+            if Self::natively_read(cx, entry)?.0 {
                 continue;
             }
             let mut frame = Frame::Outermost;
             for parameter in &entry.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
-                let name = self.cx.name_at(parameter.named);
-                let extended = self.cx.scope.extend_typed(
+                let name = cx.name_at(parameter.named);
+                let extended = cx.scope.extend_typed(
                     frame,
                     name,
                     parameter.classifier.node,
                     Maybe::Present(parameter.named.span),
                 );
-                self.cx.scope.mention(extended);
+                cx.scope.mention(extended);
                 frame = Frame::Inner(extended);
             }
             for observation in &entry.written.observations {
@@ -228,24 +230,28 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     #[spec(
-        captures: [before = self.cx.data.len(), codata_before = self.cx.codata.len()],
-        ensures: |result| result.is_err() || (self.cx.data.len() == before && self.cx.codata.len() >= codata_before && self.cx.described.keys().chain(self.cx.codata_described.keys()).all(|position| self.cx.collected.slots.get(usize::from(*position)).is_some())),
+        captures: [before = self.cx().data.len(), codata_before = self.cx().codata.len()],
+        ensures: |result| result.is_err() || (self.cx().data.len() == before && self.cx().codata.len() >= codata_before && self.cx().described.keys().chain(self.cx().codata_described.keys()).all(|position| self.cx().collected.slots.get(usize::from(*position)).is_some())),
     )]
-    pub(super) fn mint_descriptions(
+    #[inline]
+    pub fn mint_descriptions(
         &mut self,
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let types = core::mem::take(&mut self.cx.described_types);
+        let types = core::mem::take(&mut self.cx_mut().described_types);
         let mut written = BTreeMap::new();
-        for position in self.cx.current.slots .. self.cx.collected.slots.len() {
-            self.cx.fuel.spend()?;
-            let Some(slot) = self.cx.collected.slots.get(position)
+        for position in self.cx().current.slots .. self.cx().collected.slots.len() {
+            self.cx_mut().fuel.spend()?;
+            let Some(slot) = self.cx().collected.slots.get(position)
             else {
                 break;
             };
-            let Maybe::Present(entry) =
-                self.cx.collected.descriptions.get(&slot.introduced_by.node)
+            let Maybe::Present(entry) = self
+                .cx()
+                .collected
+                .descriptions
+                .get(&slot.introduced_by.node)
             else {
                 continue;
             };
@@ -255,14 +261,16 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Absent(_) = entry.classifier {
                 continue;
             }
-            if self.natively_read(entry)?.0 {
+            if Self::natively_read(self.cx(), entry)?.0 {
                 continue;
             }
             let at = entry.at;
             let constant = slot.constant;
             let before = sink.arena.watermark();
-            let result = self.decode_family(sink.arena, entry, constant, &types);
-            if let Maybe::Present(origin) = self.cx.origin_at(at.node) {
+            let result = self
+                .shared()
+                .decode_family(sink.arena, entry, constant, &types);
+            if let Maybe::Present(origin) = self.cx().origin_at(at.node) {
                 for id in sink.arena.values_since(before) {
                     sink.origins.record_value(id, origin);
                 }
@@ -285,7 +293,7 @@ impl<'source> Lowerer<'_, 'source>
                     );
                 }
                 for id in sink.arena.comp_types_since(before) {
-                    let placed = match written.get(&id).map(|&node| self.cx.origin_at(node)) {
+                    let placed = match written.get(&id).map(|&node| self.cx().origin_at(node)) {
                         Some(Maybe::Present(placed)) => placed,
                         Some(Maybe::Absent(_)) | None => origin,
                     };
@@ -294,22 +302,22 @@ impl<'source> Lowerer<'_, 'source>
             }
             match result {
                 Ok(signature) => {
-                    let index = CodataIndex::from(self.cx.codata.len());
-                    self.cx.codata.push(Arc::new(signature));
+                    let index = CodataIndex::from(self.cx().codata.len());
+                    self.cx_mut().codata.push(Arc::new(signature));
                     let _first = self
-                        .cx
+                        .cx_mut()
                         .codata_described
                         .insert(SlotIndex::from(position), index);
                 },
                 Err(error) => {
-                    self.cx
+                    self.cx_mut()
                         .collected
                         .description_diagnostics
                         .push(DescriptionDiagnostic {
                             span: at.span,
                             fault: DescriptionFault::NativeDecode(error),
                         });
-                    if let Some(slot) = self.cx.collected.slots.get_mut(position) {
+                    if let Some(slot) = self.cx_mut().collected.slots.get_mut(position) {
                         slot.refuse(at.node, LoweringRefusal::UndescribedMember {
                             span: at.span,
                             fault: crate::description::MemberFault::NativeDecode,
@@ -318,7 +326,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             }
         }
-        self.cx.described_types = types;
+        self.cx_mut().described_types = types;
         Ok(())
     }
 
@@ -349,26 +357,27 @@ impl<'source> Lowerer<'_, 'source>
     ///   matching on it counts its operations.
     /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
     #[spec(
-        captures: before = (self.cx.data.len(), self.cx.presented.len()),
-        ensures: |result| result.is_err() || (self.cx.data.len() >= before.0 && self.cx.presented.len() >= before.1),
+        captures: before = (self.cx().data.len(), self.cx().presented.len()),
+        ensures: |result| result.is_err() || (self.cx().data.len() >= before.0 && self.cx().presented.len() >= before.1),
     )]
-    pub(super) fn mint_presentations(
+    #[inline]
+    pub fn mint_presentations(
         &mut self,
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Maybe::Present(ref theory) = self.cx.collected.theory
+        let Maybe::Present(ref theory) = self.cx().collected.theory
         else {
             return Ok(());
         };
         let code = theory.slot;
-        let Some(slot) = self.cx.collected.slots.get(usize::from(code))
+        let Some(slot) = self.cx().collected.slots.get(usize::from(code))
         else {
             return Ok(());
         };
         let constant = slot.constant;
         let at = slot.introduced_by;
-        if self.owns_slot(code).0 {
+        if self.shared().owns_slot(code).0 {
             let description = theory_desc(());
             let before = sink.arena.watermark();
             let kind = sink.arena.value_type_universe(
@@ -385,28 +394,28 @@ impl<'source> Lowerer<'_, 'source>
                 depth: ParameterDepth(0),
             };
             let decoded = decode_signature(sink.arena, &description, context, Vec::new(), kind);
-            self.record_since(sink, before, at.node);
+            self.shared().record_since(sink, before, at.node);
             let Ok(signature) = decoded
             else {
                 return Ok(());
             };
-            let index = DataIndex::from(self.cx.data.len());
-            self.cx.constructors.push(
+            let index = DataIndex::from(self.cx().data.len());
+            self.cx_mut().constructors.push(
                 description
                     .ctors
                     .iter()
                     .map(|constructor| String::from(constructor.name.as_ref()))
                     .collect(),
             );
-            self.cx.data.push(Arc::new(signature));
-            let _first = self.cx.described.insert(code, index);
+            self.cx_mut().data.push(Arc::new(signature));
+            let _first = self.cx_mut().described.insert(code, index);
         }
-        else if !self.cx.described.contains_key(&code) {
+        else if !self.cx().described.contains_key(&code) {
             // `Theory` did not decode in the source that declares it.
             return Ok(());
         }
         let cells_at: BTreeMap<NodeIndex, usize> = self
-            .cx
+            .cx()
             .collected
             .cells
             .declarations
@@ -414,9 +423,9 @@ impl<'source> Lowerer<'_, 'source>
             .enumerate()
             .map(|(index, cells)| (cells.at.node, index))
             .collect();
-        for position in self.cx.current.slots .. self.cx.collected.slots.len() {
-            self.cx.fuel.spend()?;
-            let Some(slot) = self.cx.collected.slots.get(position)
+        for position in self.cx().current.slots .. self.cx().collected.slots.len() {
+            self.cx_mut().fuel.spend()?;
+            let Some(slot) = self.cx().collected.slots.get(position)
             else {
                 break;
             };
@@ -431,7 +440,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             let block = slot.introduced_by;
-            let Maybe::Present(entry) = self.cx.collected.descriptions.get(&block.node)
+            let Maybe::Present(entry) = self.cx().collected.descriptions.get(&block.node)
             else {
                 continue;
             };
@@ -445,7 +454,7 @@ impl<'source> Lowerer<'_, 'source>
             // so its value is the presentation's own.
             let certified = cells_at
                 .get(&block.node)
-                .and_then(|&index| self.cx.collected.cells.declarations.get(index))
+                .and_then(|&index| self.cx().collected.cells.declarations.get(index))
                 .filter(|cells| !cells.oriented.is_empty())
                 .and_then(|cells| {
                     let parts = presentation.value.decode().ok()?;
@@ -458,18 +467,18 @@ impl<'source> Lowerer<'_, 'source>
             let declared = sink.arena.value_type_data(constant, Vec::new());
             let before = sink.arena.watermark();
             let body = presentation_term(sink.arena, value.as_value(), (constant, declared));
-            self.record_since(sink, before, block.node);
+            self.shared().record_since(sink, before, block.node);
             match body {
                 Ok(body) => {
                     let _first = self
-                        .cx
+                        .cx_mut()
                         .presented
                         .insert(SlotIndex::from(position), (declared, body));
                 },
                 Err(_fault) => {
-                    if let Some(node) = self.cx.tree.node(block.node)
-                        && let Shape::Form { name, .. } = shape_of(self.cx.pbg, node)?
-                        && let Some(slot) = self.cx.collected.slots.get_mut(position)
+                    if let Some(node) = self.cx().tree.node(block.node)
+                        && let Shape::Form { name, .. } = shape_of(self.cx().pbg, node)?
+                        && let Some(slot) = self.cx_mut().collected.slots.get_mut(position)
                     {
                         slot.refuse(block.node, LoweringRefusal::OutOfFragment {
                             span: block.span,
@@ -506,7 +515,7 @@ impl<'source> Lowerer<'_, 'source>
         node: NodeIndex,
     )
     {
-        let Maybe::Present(origin) = self.cx.origin_at(node)
+        let Maybe::Present(origin) = self.cx().origin_at(node)
         else {
             return;
         };
@@ -555,7 +564,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(DecodeError::MalformedCode);
         };
-        let Maybe::Present(kind) = self.cx.value_type_at(classifier.node)
+        let Maybe::Present(kind) = self.cx().value_type_at(classifier.node)
         else {
             return Err(DecodeError::MalformedCode);
         };
@@ -563,7 +572,7 @@ impl<'source> Lowerer<'_, 'source>
             .parameters
             .iter()
             .map(
-                |parameter| match self.cx.value_type_at(parameter.classifier.node) {
+                |parameter| match self.cx().value_type_at(parameter.classifier.node) {
                     Maybe::Present(classifier) => Ok(classifier),
                     Maybe::Absent(_) => Err(DecodeError::MalformedCode),
                 },
@@ -610,7 +619,7 @@ impl<'source> Lowerer<'_, 'source>
             .observations
             .iter()
             .filter(|written| matches!(written.itself, Maybe::Absent(_)))
-            .map(|written| match self.cx.value_type_at(written.at) {
+            .map(|written| match self.cx().value_type_at(written.at) {
                 Maybe::Present(field) => Ok(field),
                 Maybe::Absent(_) => Err(DecodeError::MalformedCode),
             })
@@ -676,7 +685,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut values: Vec<ValueId> = Vec::new();
         for &step in arguments {
             match step {
-                Applied::Argument(node) => match self.cx.value_at(node) {
+                Applied::Argument(node) => match self.cx().value_at(node) {
                     Maybe::Present(value) => values.push(value),
                     Maybe::Absent(_) => return Err(DecodeError::MalformedCode),
                 },
