@@ -182,6 +182,7 @@
         ".config/mise/disabled-tools.bash",
         ".config/mise/tasks/mise-tasks-ci.toml",
         ".config/triage/",
+        "crates/",
         "ledger/concerns.sql"
       ],
       "check:landing-queue": [

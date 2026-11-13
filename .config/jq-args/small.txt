@@ -139,6 +139,7 @@
 --argjson number
 --argjson oldest
 --argjson own
+--argjson parent
 --argjson pr
 --argjson ran
 --argjson red

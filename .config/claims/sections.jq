@@ -331,6 +331,27 @@ def epic_refs:
     | scan("(?<![\\w/])#([0-9]+)\\b") | .[0] | tonumber]
   | reduce .[] as $n ([]; if index([$n]) then . else . + [$n] end);
 
+# A unit's identifiers (#7019, `units.md` § units-sources): its number
+# `$number`; each number of its `from:` line and of its epic, by
+# `epic_refs` and by `$parent`, its parent on GitHub or null; each ledger
+# row of `$rows` that the body names in backquotes; and each crate
+# directory of `$crates` that the body names as `crates/<dir>` or in
+# backquotes, with `gandr-` before it or not.
+def unit_identifiers($number; $parent; $rows; $crates):
+  . as $body
+  | {numbers: ([$number] + ($body | epic_refs) + (if $parent == null then [] else [$parent] end) | unique),
+     rows: ([$body | scan("`([a-z0-9][a-z0-9-]*)`") | .[0] | select(IN($rows[]))] | unique),
+     crates: ([($body | scan("crates/([a-z0-9][a-z0-9-]*)") | .[0]), ($body | scan("`(?:gandr-)?([a-z0-9][a-z0-9-]*)`") | .[0])]
+       | map(select(IN($crates[]))) | unique)};
+
+# The marks by which a design page names one of a unit's identifiers (#7019):
+# a number with no digit after it, and a row in backquotes. `test` is the
+# expression that jq reads, and `grep` the one that `git grep -E` reads. A
+# crate has no mark: its own page stands for it.
+def identifier_marks:
+  [(.numbers[] | {label: "#\(.)", test: "#\(.)(?![0-9])", grep: "#\(.)([^0-9]|$)"}),
+   (.rows[] | {label: "`\(.)`", test: "`\(.)`", grep: "`\(.)`"})];
+
 # Whether a `Where` is spelled as an item path, `crate::path` or a crate
 # alone, as rustdoc names it.
 def item_path: test("^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$");

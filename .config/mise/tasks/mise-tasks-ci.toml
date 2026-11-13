@@ -2348,6 +2348,19 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 # no refusal, while its `## Sources` is as it was then. Without the vault's
 # statuses, as in CI, no row is read. An epic or a `collector` is not read.
 #
+# The identifiers (#7019): a unit is refused while its `## Sources` names
+# neither a design page that names one of its identifiers nor a design page
+# that such a page links (`.config/claims/identifiers.jq`, the reads
+# `.config/claims/identifiers.bash`). The identifiers are the unit's number,
+# each number of its `from:` line and of its epic, each ledger row that it
+# names in backquotes and each crate that it names. A page names a number or
+# a row in a level-two section, and the links of that section count; a crate
+# gives its own page alone. The design pages are the vault's pages under
+# `docs/programme/` and `plans/`. A `not read` row names a page too. A unit
+# in flight gets a note for each page, as for the claim of a design page. A
+# host with no vault, as in CI, prints a note and refuses nothing. An epic
+# or a `collector` is not read.
+#
 # The dependencies (#2902): an issue is GitHub-`blocked by` each issue its
 # `## After` lists, and an epic by each open sub-issue too; the plan is
 # `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
@@ -2377,6 +2390,7 @@ root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 source "$root/.config/references/vault.bash"
 source "$claims/claim.bash"
+source "$claims/identifiers.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
 source "$claims/deps.bash"
 # gh fills `{owner}` and `{repo}` from the checkout's remote, so the
@@ -2398,10 +2412,17 @@ if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > 
   findings=$(printf '%s\n%s\n' "$findings" "$terms" | awk 'NF')
   claimed=$(claim_check "$body" null)
   if [[ -n $claimed ]] && jq -e '.labels | index("shape:signed")' <<< "$issued" > /dev/null; then
-    claimed=$(claim_check "$body" "$(claim_before "$issue")")
+    claimed=$(claim_check "$body" "$(claim_before "$issue" claim.jq)")
   fi
-  noted=$(awk '/^note: /' <<< "$claimed")
-  findings=$(printf '%s\n%s\n' "$findings" "$(awk '!/^note: /' <<< "$claimed")" | awk 'NF')
+  # The design pages that the unit's identifiers name (#7019).
+  above=$(jq -c '.parent // null' <<< "$mine")
+  identified=$(identifiers_check "$body" "$issue" "$above" null)
+  if awk '!/^note: / && NF { found = 1 } END { exit !found }' <<< "$identified" \
+    && jq -e '.labels | index("shape:signed")' <<< "$issued" > /dev/null; then
+    identified=$(identifiers_check "$body" "$issue" "$above" "$(claim_before "$issue" identifiers.jq)")
+  fi
+  noted=$(printf '%s\n%s\n' "$claimed" "$identified" | awk '/^note: /')
+  findings=$(printf '%s\n%s\n%s\n' "$findings" "$(awk '!/^note: /' <<< "$claimed")" "$(awk '!/^note: /' <<< "$identified")" | awk 'NF')
 fi
 subs='[]'
 if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
