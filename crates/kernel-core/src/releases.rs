@@ -16,11 +16,20 @@
 //! ([`Hold`]). The environment hands its declaration back, and the caller
 //! settles each outstanding check before it releases the declaration again.
 //!
+//! With `speculation.rank` on ([`crate::speculation`]), a release with no
+//! rank goes ahead where the rank would hold. It takes the rank past each
+//! reservation, as if each outstanding release admits ([`Ranked::Predicted`]).
+//! The fold checks the rank at the cursor, and moves the entry to the rank of
+//! the serial run when an earlier release was refused. A check reads a rank
+//! only as an order among the live entries, and the move keeps that order,
+//! so no check runs again.
+//!
 //! # References
 //!
 //! - gandr #3476 — the parallel replay, § "Where the next landing starts": the
 //!   reserved slot and rank, the commit in dependence order, the cursor in
-//!   position order, and each read of order that holds a release.
+//!   position order, and each read of order that holds a release; and the plan
+//!   of the optimistic landing, whose first part predicts the rank.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
@@ -63,6 +72,21 @@ pub enum Sway
     Ordering,
     /// No later check reads it unless the check names it.
     Free,
+}
+
+/// How a release took its rank.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ranked
+{
+    /// The rank of the serial run: the rank staged, or the rank past every
+    /// live entry when no outstanding release reads into it.
+    Serial,
+    /// The rank past each outstanding reservation, as if each outstanding
+    /// release admits. The fold checks it at the cursor.
+    Predicted,
 }
 
 /// What a later release reads of an outstanding release before its commit.
@@ -176,6 +200,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No outstanding release reads into it.
             Unread,
+            /// It goes ahead on a prediction of what it reads, which the fold
+            /// checks.
+            Predicted,
         }
     }
 }
@@ -188,9 +215,10 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Debug, Default)]
 pub struct Releases
 {
-    /// The slot at each position from the cursor on, in position order. The
-    /// front is reserved whenever the queue holds a slot.
-    unfolded: VecDeque<Unfolded>,
+    /// The slot at each position from the cursor on, in position order, with
+    /// how its release took its rank. The front is reserved whenever the
+    /// queue holds a slot.
+    unfolded: VecDeque<(Ranked, Unfolded)>,
     /// How many outstanding releases there are.
     outstanding: usize,
     /// How many outstanding releases hold each release after them.
@@ -201,6 +229,8 @@ pub struct Releases
     generative: BTreeMap<VerdictKey, Vec<SourceRank>>,
     /// The ranks and names of the outstanding plain definitions, by digest.
     definitions: BTreeMap<ContentDigest, Vec<(SourceRank, ConstantName)>>,
+    /// How many slots from the cursor on hold a predicted rank.
+    predicting: usize,
 }
 
 impl Releases
@@ -225,7 +255,8 @@ impl Releases
         gandr_kernel_term::ArenaLength::from(self.unfolded.len())
     }
 
-    /// Reserve the slot past every slot for the release of a declaration.
+    /// Reserve the slot past every slot for the release of a declaration,
+    /// which took its rank as `ranked` states.
     ///
     /// # Specification
     /// - requires: `position` is the position past every slot of the entries.
@@ -244,6 +275,7 @@ impl Releases
         &mut self,
         position: ConstantIndex,
         reservation: Reservation,
+        ranked: Ranked,
     )
     {
         self.outstanding = self.outstanding.saturating_add(1);
@@ -263,7 +295,11 @@ impl Releases
                 .or_default()
                 .push((reservation.rank, reservation.name));
         }
-        self.unfolded.push_back(Unfolded::Reserved(reservation));
+        if ranked == Ranked::Predicted {
+            self.predicting = self.predicting.saturating_add(1);
+        }
+        self.unfolded
+            .push_back((ranked, Unfolded::Reserved(reservation)));
     }
 
     /// Note the refusal of a release at the position past every slot, made
@@ -275,7 +311,7 @@ impl Releases
     pub fn vacate(&mut self)
     {
         self.unfolded
-            .push_back(Unfolded::Vacated(Chained::Deferred));
+            .push_back((Ranked::Serial, Unfolded::Vacated(Chained::Deferred)));
     }
 
     /// Fill the reserved slot at `offset` from the cursor with its commit, and
@@ -304,7 +340,7 @@ impl Releases
         commit: Unfolded,
     ) -> Maybe<Reservation, reserved::Absent>
     {
-        let Some(slot) = self.unfolded.get_mut(usize::from(offset))
+        let Some(&mut (_, ref mut slot)) = self.unfolded.get_mut(usize::from(offset))
         else {
             return Maybe::Absent(reserved::Absent::Outside);
         };
@@ -340,7 +376,7 @@ impl Releases
     }
 
     /// Take the slot at the cursor once its commit came, so the cursor passes
-    /// it.
+    /// it, with how its release took its rank.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -359,15 +395,21 @@ impl Releases
         Maybe::Present(_) => self.unfolded.len().saturating_add(1) == queued,
         Maybe::Absent(_) => self.unfolded.len() == queued,
     })]
-    pub fn next(&mut self) -> Maybe<Unfolded, cursor::Absent>
+    pub fn next(&mut self) -> Maybe<(Ranked, Unfolded), cursor::Absent>
     {
         match self.unfolded.front() {
             None => Maybe::Absent(cursor::Absent::Folded),
-            Some(&Unfolded::Reserved(_)) => Maybe::Absent(cursor::Absent::Waiting),
-            Some(&(Unfolded::Admitted(..) | Unfolded::Vacated(_))) => self
-                .unfolded
-                .pop_front()
-                .map_or(Maybe::Absent(cursor::Absent::Folded), Maybe::Present),
+            Some(&(_, Unfolded::Reserved(_))) => Maybe::Absent(cursor::Absent::Waiting),
+            Some(&(_, Unfolded::Admitted(..) | Unfolded::Vacated(_))) => {
+                let Some(slot) = self.unfolded.pop_front()
+                else {
+                    return Maybe::Absent(cursor::Absent::Folded);
+                };
+                if slot.0 == Ranked::Predicted {
+                    self.predicting = self.predicting.saturating_sub(1);
+                }
+                Maybe::Present(slot)
+            },
         }
     }
 
@@ -391,7 +433,9 @@ impl Releases
     /// Why a release at `rank`, or at the rank past every rank when it
     /// carries none, holds: an outstanding release reserves its rank, or the
     /// rank past every rank reads one. `committed` is the rank past every
-    /// rank that a live entry holds.
+    /// rank that a live entry holds, and `speculating` is the setting of the
+    /// rank: on, a release with no rank goes ahead on its prediction where
+    /// it would hold.
     ///
     /// # Specification
     /// trivial.
@@ -400,17 +444,27 @@ impl Releases
         &self,
         rank: Maybe<SourceRank, crate::environment::unranked::Absent>,
         committed: SourceRank,
+        speculating: crate::speculation::Setting,
     ) -> Maybe<Hold, free::Absent>
     {
         let read = match rank {
-            Maybe::Present(rank) => self.ranks.contains_key(&rank),
+            // A staged rank reads a reservation of it. While a predicted rank
+            // is unfolded, the rank of a live entry may move at the fold, so
+            // a staged rank holds until no prediction is unfolded.
+            Maybe::Present(rank) => self.ranks.contains_key(&rank) || self.predicting != 0,
             // The rank past every rank reads an outstanding release when it
             // reserves a rank past the ones that live entries hold: the
-            // release's refusal moves the rank past every rank.
+            // release's refusal moves the rank past every rank. It reads an
+            // unfolded prediction too, which `committed` may hold.
             Maybe::Absent(crate::environment::unranked::Absent::Unranked) => {
-                self.ranks.last_key_value().is_some_and(|(&top, _)| {
-                    usize::from(top).saturating_add(1) >= usize::from(committed)
-                })
+                let read = self.predicting != 0
+                    || self.ranks.last_key_value().is_some_and(|(&top, _)| {
+                        usize::from(top).saturating_add(1) >= usize::from(committed)
+                    });
+                if read && speculating == crate::speculation::Setting::On {
+                    return Maybe::Absent(free::Absent::Predicted);
+                }
+                read
             },
         };
         if read {

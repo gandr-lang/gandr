@@ -508,6 +508,7 @@ pub use crate::verdicts::VerdictCache;
 pub use crate::verdicts::VerdictTally;
 pub use crate::verdicts::install_obligation_fork;
 pub use crate::verdicts::install_readmission_pool;
+pub use crate::verdicts::install_speculation;
 pub use crate::verdicts::install_verdict_cache;
 pub use crate::verdicts::tallied;
 pub use crate::verdicts::verdict_tally;
