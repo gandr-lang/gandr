@@ -43,6 +43,8 @@ mod live_match;
 #[cfg(test)]
 mod pattern_holes;
 #[cfg(test)]
+mod probe_7231;
+#[cfg(test)]
 mod session;
 #[cfg(test)]
 mod specification;
