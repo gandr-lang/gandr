@@ -259,7 +259,9 @@ pub enum Hold
     /// presented type or a role holder. Each check after it reads it.
     Ordering,
     /// An outstanding release reserves the declaration's rank, or the rank
-    /// past every rank that an unranked declaration takes.
+    /// past every rank that an unranked declaration takes; or a predicted
+    /// rank is not folded yet, and the declaration carries a rank, or
+    /// `speculation.rank` is off.
     Rank,
     /// An outstanding release ranked below carries the same generative
     /// content or the same plain definition, which the declaration's key or
@@ -413,6 +415,10 @@ pub struct Environment
     /// The releases whose commits the cursor has not folded, and what each
     /// outstanding release holds. Only the committer reads it.
     releases: crate::releases::Releases,
+    /// What a release behind the cursor predicts of the earlier commits.
+    speculation: crate::speculation::Speculation,
+    /// How many predictions the fold found wrong and set right.
+    rollbacks: crate::speculation::Rollbacks,
 }
 
 impl Environment
@@ -483,6 +489,48 @@ impl Environment
         }
     }
 
+    /// The same environment, each release behind the cursor predicting what
+    /// `speculation` states. A prediction changes no outcome, entry or
+    /// record: the fold checks each one, and sets a wrong one right.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn speculating(
+        self,
+        speculation: crate::speculation::Speculation,
+    ) -> Self
+    {
+        Self {
+            speculation,
+            ..self
+        }
+    }
+
+    /// What a release behind the cursor predicts of the earlier commits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn speculation(&self) -> crate::speculation::Speculation
+    {
+        self.speculation
+    }
+
+    /// How many predictions the fold found wrong and set right since the
+    /// environment began, or since [`Self::handed_on`] made it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rollbacks(&self) -> crate::speculation::Rollbacks
+    {
+        self.rollbacks
+    }
+
     /// This environment for a later run that resumes it: the same arena,
     /// declarations and key chain, and the names and kept outcomes of its
     /// session, without the verdicts this run checked or recalled, which its
@@ -530,6 +578,8 @@ impl Environment
             // which no settle of the copy fills, so the copy refuses what
             // reads the order of every commit.
             releases: self.releases.clone(),
+            speculation: crate::speculation::Speculation::OFF,
+            rollbacks: crate::speculation::Rollbacks::NONE,
         }
     }
 
@@ -1059,19 +1109,34 @@ impl Environment
         // outstanding. Then every read of order reads the serial state.
         let alone = usize::from(self.releases.outstanding()) == 0;
         // A declaration staged with no rank ranks past every live entry, so a
-        // vacancy before it moves its position and not its rank.
+        // vacancy before it moves its position and not its rank. Behind the
+        // cursor, with `speculation.rank` on, it takes the rank past each
+        // reservation, as if each outstanding release admits; the fold
+        // checks the rank at the cursor ([`Self::settle_rank`]).
         let committed = self.commits.past_ranks();
-        if !alone
-            && let Maybe::Present(hold) = self.releases.rank(
+        let ranked = if alone {
+            crate::releases::Ranked::Serial
+        }
+        else {
+            match self.releases.rank(
                 staged_rank.map_or(Maybe::Absent(unranked::Absent::Unranked), Maybe::Present),
                 committed,
-            )
-        {
-            return Ok(self.hand_back(
-                StagedDeclaration::new(content_start, staged_rank, declaration),
-                hold,
-            ));
-        }
+                self.speculation.rank,
+            ) {
+                Maybe::Present(hold) => {
+                    return Ok(self.hand_back(
+                        StagedDeclaration::new(content_start, staged_rank, declaration),
+                        hold,
+                    ));
+                },
+                Maybe::Absent(crate::releases::free::Absent::Unread) => {
+                    crate::releases::Ranked::Serial
+                },
+                Maybe::Absent(crate::releases::free::Absent::Predicted) => {
+                    crate::releases::Ranked::Predicted
+                },
+            }
+        };
         let rank = staged_rank.unwrap_or_else(|| self.releases.past(committed));
         let content_end = self.arena.watermark();
         // The rejection mark: this declaration's content-start, clamped into
@@ -1175,6 +1240,7 @@ impl Environment
         self.releases.reserve(
             position,
             crate::releases::Reservation::new(rank, sway, generative_content, key_name),
+            ranked,
         );
         let way = match recalled {
             Maybe::Present(accessibility) => Way::Recalled(accessibility),
@@ -1611,9 +1677,9 @@ impl Environment
     }
 
     /// Fold each slot at the cursor whose commit came, in position order: the
-    /// rows of the dependents, the order, the chain key and the record of the
-    /// verdict. A refused slot folds its vacancy, and its chain key steps
-    /// back when its release took one.
+    /// rank that a release predicted, the rows of the dependents, the order,
+    /// the chain key and the record of the verdict. A refused slot folds its
+    /// vacancy, and its chain key steps back when its release took one.
     ///
     /// # Specification
     /// - requires: each committed slot from the cursor on holds its commit.
@@ -1629,6 +1695,7 @@ impl Environment
     /// - hypothesis: L3 — a fold out of position order moves the order flag,
     ///   the reach or the chain key off the serial run's.
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    /// - witness: `environment::tests::a_refusal_before_a_predicted_rank_moves_it_at_the_fold_3476`
     fn fold(&mut self)
     {
         loop {
@@ -1636,12 +1703,15 @@ impl Environment
                 usize::from(self.entries.len())
                     .saturating_sub(usize::from(self.releases.unfolded())),
             );
-            let Maybe::Present(unfolded) = self.releases.next()
+            let Maybe::Present((ranked, unfolded)) = self.releases.next()
             else {
                 return;
             };
             match unfolded {
                 crate::releases::Unfolded::Admitted(chained, record) => {
+                    if ranked == crate::releases::Ranked::Predicted {
+                        self.settle_rank(position);
+                    }
                     let Self {
                         ref entries,
                         ref mut commits,
@@ -1675,6 +1745,55 @@ impl Environment
                 crate::releases::Unfolded::Reserved(_) => return,
             }
         }
+    }
+
+    /// Set the predicted rank of the entry at `position` right, at the
+    /// cursor. The serial run ranks a declaration staged with no rank past
+    /// every live entry below it. A refusal of an earlier release, which the
+    /// prediction took to admit, moves that rank down, and the entry takes
+    /// it.
+    ///
+    /// A check reads a rank only as an order among the live entries: the
+    /// horizon below it, the holder of a role, the types of words and the
+    /// twins of a definition below it, and the rank order of the operations
+    /// that it names. No live entry ranks between the two ranks, so the
+    /// check read what the serial check reads. Its key, its name and its
+    /// outcome stand, and no job runs again. The entry, its rows and the rank
+    /// index take the rank, and the order and the chain key fold after it.
+    ///
+    /// # Specification
+    /// - requires: each slot below `position` is folded, and the release of the
+    ///   entry at `position` predicted its rank.
+    /// - ensures: the entry at `position` holds the rank past every rank that a
+    ///   live entry below it holds, and the count of rollbacks is one more when
+    ///   the rank moved.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the serial rank reads the folded entries below
+    ///   `position`, which a predicate over one call would restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal settled after a later release that
+    ///   predicted its admission leaves the later entry one rank too high, and
+    ///   its rank, the order and the chain key differ from the serial run's.
+    /// - witness: `environment::tests::a_refusal_before_a_predicted_rank_moves_it_at_the_fold_3476`
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    fn settle_rank(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        let Some(predicted) = self.entries.rank_of(position)
+        else {
+            return;
+        };
+        let serial = self.commits.past_below(position);
+        if serial == predicted {
+            return;
+        }
+        alloc::sync::Arc::make_mut(&mut self.commits).reheld((position, predicted), serial);
+        self.entries.rerank(&BTreeMap::from([(position, serial)]));
+        self.rollbacks = self.rollbacks.and_one();
     }
 
     /// A receipt `signer` gives over the verdicts this environment checked
@@ -3775,6 +3894,31 @@ impl CommitLog
         )
     }
 
+    /// The rank past every rank that a live entry below `position` holds:
+    /// the rank that the serial run gives a declaration staged with no rank
+    /// at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn past_below(
+        &self,
+        position: ConstantIndex,
+    ) -> SourceRank
+    {
+        // economy: the walk from the top passes only the entries at or past
+        // `position`, which are the commits past the cursor, so it passes at
+        // most the releases in flight (gandr #3476).
+        self.ranked
+            .iter()
+            .rev()
+            .find(|&(_, &held)| held < position)
+            .map_or_else(
+                || SourceRank::from(0_usize),
+                |(&rank, _)| SourceRank::from(usize::from(rank).saturating_add(1)),
+            )
+    }
+
     /// The next rank, while a readmission sets one, for the admissions staged
     /// with no rank that take `positions`, each one rank past the one before:
     /// the next rank then moves past them all.
@@ -3920,6 +4064,24 @@ impl CommitLog
             self.stale_above(rank);
         }
         self.keyed(rank);
+    }
+
+    /// Hold `serial` at `position` in place of `predicted`, which the entry
+    /// committed there held: as [`Self::hold`] holds the rank of a commit, so
+    /// each live entry ranked above it may read it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reheld(
+        &mut self,
+        (position, predicted): (ConstantIndex, SourceRank),
+        serial: SourceRank,
+    )
+    {
+        if self.ranked.get(&predicted) == Some(&position) {
+            let _freed = self.ranked.remove(&predicted);
+        }
+        self.hold((position, serial));
     }
 
     /// Mark the key of each live entry ranked above `rank` as one that may
@@ -7589,12 +7751,14 @@ mod tests
 
         /// #3476: releases settled in each order that their dependences
         /// allow give the outcomes, the entries, the ranks, the keys, the
-        /// names, the order, the reach and the records of the serial run. The
-        /// driver releases in source order. It settles the releases in flight
-        /// that an offer reads before it stages the offer, every release when
-        /// a release holds, and one more whenever more than the width are in
-        /// flight. Atoms, presented and repeated declarations, refusals,
-        /// dips in rank and unranked offers each meet a read of order.
+        /// names, the order, the reach and the records of the serial run,
+        /// with the speculation group off and on. The driver releases in
+        /// source order. It settles the releases in flight that an offer
+        /// reads before it stages the offer, every release when a release
+        /// holds, and one more whenever more than the width are in flight.
+        /// Atoms, presented and repeated declarations, refusals, dips in rank
+        /// and unranked offers each meet a read of order, and a refusal
+        /// before an unranked offer meets a predicted rank.
         #[test]
         fn each_commit_order_of_a_released_source_folds_as_the_serial_run_3476(
             source in proptest::collection::vec(offer(), 1 .. 12),
@@ -7627,30 +7791,79 @@ mod tests
                     let expected = folded(&serial, &signer);
                     for settling in [Settling::Oldest, Settling::Newest, Settling::Drawn] {
                         for width in [1_usize, 2, 3, 8] {
-                            let (released, outcomes) =
-                                admit_released(fresh(), offered, (settling, InFlight(width), ranking));
-                            proptest::prop_assert_eq!(
-                                &outcomes,
-                                &reference,
-                                "each offer resolves as in the serial run: {:?} {:?} {:?} {}",
-                                verdicts, ranking, settling, width
-                            );
-                            proptest::prop_assert_eq!(
-                                &folded(&released, &signer),
-                                &expected,
-                                "the environment folds as the serial run's: {:?} {:?} {:?} {}",
-                                verdicts, ranking, settling, width
-                            );
-                            proptest::prop_assert_eq!(
-                                usize::from(released.releases.outstanding()),
-                                0_usize,
-                                "no release stays outstanding"
-                            );
+                            for speculation in [
+                                crate::speculation::Speculation::OFF,
+                                crate::speculation::Speculation::ON,
+                            ] {
+                                let (released, outcomes) = admit_released(
+                                    fresh().speculating(speculation),
+                                    offered,
+                                    (settling, InFlight(width), ranking),
+                                );
+                                proptest::prop_assert_eq!(
+                                    &outcomes,
+                                    &reference,
+                                    "each offer resolves as in the serial run: {:?} {:?} {:?} {} {}",
+                                    verdicts, ranking, settling, width, speculation
+                                );
+                                proptest::prop_assert_eq!(
+                                    &folded(&released, &signer),
+                                    &expected,
+                                    "the environment folds as the serial run's: {:?} {:?} {:?} {} {}",
+                                    verdicts, ranking, settling, width, speculation
+                                );
+                                proptest::prop_assert_eq!(
+                                    usize::from(released.releases.outstanding()),
+                                    0_usize,
+                                    "no release stays outstanding"
+                                );
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    /// #3476: a release behind a refused one takes the rank past the refused
+    /// release's reservation, as if that release admits. Settled first, it
+    /// commits at the predicted rank. The refusal folds, and the fold moves
+    /// the entry to the serial rank: one rollback, and the environment folds
+    /// as the serial run's.
+    #[test]
+    fn a_refusal_before_a_predicted_rank_moves_it_at_the_fold_3476()
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let source = [
+            Offer::Lone(Member::Refused, Dip::Ascending),
+            Offer::Unit(None, Dip::Ascending),
+        ];
+        let mut serial = Environment::new();
+        let reference = admit_serially(&mut serial, &source, Ranking::Unranked);
+        let (released, outcomes) = admit_released(
+            Environment::new().speculating(crate::speculation::Speculation::ON),
+            &source,
+            (Settling::Newest, InFlight(2), Ranking::Unranked),
+        );
+        assert_eq!(
+            outcomes, reference,
+            "each offer resolves as in the serial run"
+        );
+        assert_eq!(
+            usize::from(released.rollbacks()),
+            1_usize,
+            "the fold moves the predicted rank once"
+        );
+        assert_eq!(
+            released.entries().rank_of(ConstantIndex::from(1_usize)),
+            Some(SourceRank::from(0_usize)),
+            "the unit definition takes the serial rank"
+        );
+        assert_eq!(
+            folded(&released, &signer),
+            folded(&serial, &signer),
+            "the environment folds as the serial run's"
+        );
     }
 
     /// The ranks between the first members of two admissions: room for the

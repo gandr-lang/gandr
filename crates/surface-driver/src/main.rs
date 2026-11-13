@@ -3766,6 +3766,12 @@ fn render(
             if threads != Threads::ONE {
                 let _installed =
                     gandr_surface_dispatcher::install_readmission_pool(Arc::<Pool>::clone(&pool));
+                // A run with a pool spends its width on predictions: the
+                // speculation group on. A serial run predicts nothing, as the
+                // release in serial order (gandr #3476).
+                let _installed = gandr_surface_dispatcher::install_speculation(
+                    gandr_kernel_core::speculation::Speculation::ON,
+                );
                 if walk.sources_up_to(spare) < spare {
                     let _installed = gandr_surface_dispatcher::install_obligation_fork(
                         gandr_kernel_core::fork::SharedFork::through(Arc::<Pool>::clone(&pool)),
@@ -4383,9 +4389,12 @@ fn run(
 ///   critical path <n> ns, released <n> ns, chain of <n>: <names>`, where the
 ///   names are the structured names of the jobs of the critical path, in chain
 ///   order, each apart by `, `, and `@<position>` names a job by its kernel
-///   position when its declaration has no name. An artifact that does not
-///   decode is `gandr: <path>: <why>` on standard error. Any other step prints
-///   nothing.
+///   position when its declaration has no name. Then one line for the
+///   speculation group that the admission ran under: `speculation: <path>: rank
+///   <setting>, order.generative <setting>, order.twin <setting>,
+///   order.manifest <setting>; <n> rollbacks`, each setting `on` or `off`. An
+///   artifact that does not decode is `gandr: <path>: <why>` on standard error.
+///   Any other step prints nothing.
 /// - fails: the first write error, without writing anything after it.
 /// - panics: none.
 /// - executable: none — the lines are the streams'.
@@ -4401,6 +4410,7 @@ fn run(
 ///   recorded verdict that admitted it in place of counts its check never
 ///   charged.
 /// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
+/// - witness: `tests::cli::check_measures_the_speculation_each_width_runs_under_3476`
 fn measured(
     step: &Step<'_>,
     stdout: &mut dyn std::io::Write,
@@ -4473,7 +4483,14 @@ fn measured(
                         }
                         separator = ", ";
                     }
-                    writeln!(stdout)
+                    writeln!(stdout)?;
+                    writeln!(
+                        stdout,
+                        "speculation: {}: {}; {} rollbacks",
+                        path.display(),
+                        checks.speculation(),
+                        checks.rollbacks(),
+                    )
                 },
                 Ok(Maybe::Absent(_)) => Ok(()),
                 Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),

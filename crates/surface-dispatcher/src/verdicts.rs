@@ -46,6 +46,7 @@ use gandr_core_checker::Retirement;
 use gandr_core_checker::bridge;
 use gandr_core_term::CoreArena;
 use gandr_kernel_core::fork::SharedFork;
+use gandr_kernel_core::speculation::Speculation;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::StoredReceipt;
@@ -74,6 +75,11 @@ static INSTALLED: OnceLock<VerdictCache> = OnceLock::new();
 // the verdict cache is. #2802 threads the fork through the admission when
 // the frames of a check fork.
 static FORKING: OnceLock<SharedFork> = OnceLock::new();
+
+/// The speculation group this process installed for each readmission.
+// One group for each process: the driver sets it by the kind of run, and it
+// is read where every readmission funnels, as the fork is.
+static SPECULATION: OnceLock<Speculation> = OnceLock::new();
 
 /// The pool this process installed for the checks of each readmission.
 // One pool for each process: the checks of every readmission share the
@@ -285,7 +291,9 @@ impl VerdictCache
                 store: Arc::clone(store),
             }),
         };
-        bridge::Recall::trusting(self.policy.clone(), source).forking(forking())
+        bridge::Recall::trusting(self.policy.clone(), source)
+            .forking(forking())
+            .speculating(speculation())
     }
 
     /// Count what `readmission` recalled, and keep the receipt for what it
@@ -438,6 +446,34 @@ fn forking() -> SharedFork
     FORKING.get().cloned().unwrap_or_default()
 }
 
+/// Install `speculation` for each readmission this process makes: what a
+/// release behind the cursor predicts of the earlier commits.
+///
+/// A group installed already stays. A process that installs none predicts
+/// nothing, as the release in serial order.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`AlreadyInstalled`].
+#[inline]
+pub fn install_speculation(speculation: Speculation) -> Result<(), AlreadyInstalled>
+{
+    SPECULATION
+        .set(speculation)
+        .map_err(|_refused| AlreadyInstalled)
+}
+
+/// The speculation group this process installed, or the group off.
+///
+/// # Specification
+/// trivial.
+fn speculation() -> Speculation
+{
+    SPECULATION.get().copied().unwrap_or(Speculation::OFF)
+}
+
 /// Install `pool` for the checks of each readmission this process makes.
 ///
 /// A pool installed already stays. A process that installs none runs each
@@ -557,7 +593,10 @@ where
             arena,
             report,
             leading,
-            &RECHECK.clone().forking(forking()),
+            &RECHECK
+                .clone()
+                .forking(forking())
+                .speculating(speculation()),
             retirement,
             stopwatch,
             scheduling(),

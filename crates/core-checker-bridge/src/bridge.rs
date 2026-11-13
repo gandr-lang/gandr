@@ -582,6 +582,7 @@ use gandr_kernel_core::fork::SharedFork;
 use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
+use gandr_kernel_core::speculation::Speculation;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictSource;
@@ -2403,6 +2404,8 @@ pub struct Recall
     source: Arc<dyn VerdictSource>,
     /// The fork that each check's last drain runs its obligations through.
     fork: SharedFork,
+    /// What a release behind the cursor predicts of the earlier commits.
+    speculation: Speculation,
 }
 
 impl Recall
@@ -2419,6 +2422,7 @@ impl Recall
             policy: TrustPolicy::Recheck,
             source: Arc::new(NoVerdicts),
             fork: SharedFork::serial(),
+            speculation: Speculation::OFF,
         }
     }
 
@@ -2437,6 +2441,7 @@ impl Recall
             policy,
             source,
             fork: SharedFork::serial(),
+            speculation: Speculation::OFF,
         }
     }
 
@@ -2455,6 +2460,25 @@ impl Recall
         Self { fork, ..self }
     }
 
+    /// The same recall, each release behind the cursor predicting what
+    /// `speculation` states. A prediction changes no outcome: the kernel's
+    /// fold checks each one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn speculating(
+        self,
+        speculation: Speculation,
+    ) -> Self
+    {
+        Self {
+            speculation,
+            ..self
+        }
+    }
+
     /// An empty environment under this recall.
     ///
     /// # Specification
@@ -2463,6 +2487,7 @@ impl Recall
     {
         Environment::recalling(self.policy.clone(), Arc::clone(&self.source))
             .forking(self.fork.clone())
+            .speculating(self.speculation)
     }
 
     /// This recall, keying each admission: a policy that rechecks every
@@ -2488,6 +2513,7 @@ impl Recall
                 policy: TrustPolicy::Trusted(BTreeSet::new()),
                 source: Arc::clone(&self.source),
                 fork: self.fork.clone(),
+                speculation: self.speculation,
             },
             TrustPolicy::Trusted(_) => self.clone(),
         }
@@ -2910,7 +2936,9 @@ where
     // A resumed or a kept environment admits under the recall as a fresh one
     // does.
     let recalling = |environment: Environment, recall: &Recall| {
-        let mut environment = environment.forking(recall.fork.clone());
+        let mut environment = environment
+            .forking(recall.fork.clone())
+            .speculating(recall.speculation);
         environment.reading(Arc::clone(&recall.source));
         environment
     };

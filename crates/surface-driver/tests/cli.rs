@@ -876,6 +876,66 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
     assert_eq!(printed(&again), "", "the fixed source has no finding");
 }
 
+/// #3476: `gandr check --measure` prints the speculation group that each
+/// source's admission ran under, and the count of its rollbacks. A serial run
+/// predicts nothing, and a run of more than one job runs the group on. A
+/// source that refuses nothing rolls nothing back.
+#[test]
+fn check_measures_the_speculation_each_width_runs_under_3476()
+{
+    let scratch = Scratch::new(Path::new("speculation"));
+    let _source = scratch.file(
+        Path::new("one.gandr"),
+        Text::from(
+            "def one(n : Integer) -> -F Integer { n }\ndef two(n : Integer) -> -F Integer { one n }\n",
+        ),
+    );
+    let home = scratch.0.join("configuration");
+    for (jobs, group) in [
+        (
+            "1",
+            "rank off, order.generative off, order.twin off, order.manifest off",
+        ),
+        (
+            "2",
+            "rank on, order.generative on, order.twin on, order.manifest on",
+        ),
+    ] {
+        // A verdict cache of each run's own, so each run checks each
+        // declaration and recalls none.
+        let cache = scratch.0.join(format!("cache-{jobs}"));
+        let mut command = gandr(&[
+            Path::new("check"),
+            Path::new("--measure"),
+            Path::new("--jobs"),
+            Path::new(jobs),
+            &scratch.0,
+        ]);
+        let _configured = command
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache)
+            .env_remove("GANDR_JOBS");
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        let printed = stdout(&output);
+        let lines: Vec<&str> = printed
+            .lines()
+            .filter_map(|line| line.strip_prefix("speculation: "))
+            .map(|line| {
+                line.split_once(": ")
+                    .expect("a speculation line names its source")
+                    .1
+            })
+            .collect();
+        let expected = format!("{group}; 0 rollbacks");
+        assert_eq!(
+            lines,
+            [expected.as_str()],
+            "at --jobs {jobs}, the one source prints its group: {printed}"
+        );
+    }
+}
+
 /// `gandr check --measure` prints one line per declaration a source writes:
 /// its sizes, the goals the kernel's check of it charged and the time its
 /// admission took. Each source then prints the schedule that its component's

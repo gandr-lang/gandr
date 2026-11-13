@@ -65,6 +65,8 @@ use gandr_core_fork::Bound;
 use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
 use gandr_kernel_core::ExpansionCensus;
+use gandr_kernel_core::speculation::Rollbacks;
+use gandr_kernel_core::speculation::Speculation;
 use gandr_kernel_core::tallied;
 use gandr_kernel_term::ByteCount;
 use gandr_kernel_term::ConstantIndex;
@@ -212,7 +214,9 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: built by [`CheckSchedule::of`].
 /// - ensures: the jobs in kernel position order, their dependences by job, the
-///   count of jobs that carry no time and the bound of their schedule.
+///   count of jobs that carry no time, the bound of their schedule, the
+///   speculation group that the admission ran under and the count of its
+///   rollbacks.
 /// - panics: none.
 /// - executable: none — the fields are private and set only by
 ///   [`CheckSchedule::of`], whose specification states them.
@@ -233,6 +237,10 @@ pub struct CheckSchedule
     untimed: Vec<ConstantIndex>,
     /// What a schedule of the jobs can reach.
     bound: Bound,
+    /// The speculation group that the admission ran under.
+    speculation: Speculation,
+    /// How many predictions the kernel's fold found wrong and set right.
+    rollbacks: Rollbacks,
 }
 
 impl CheckSchedule
@@ -248,7 +256,8 @@ impl CheckSchedule
     ///   job at a position that the kernel's `Entries::waits_on` names for it.
     ///   Its cost is the time that its admission took, and nothing when no time
     ///   was read, which the untimed jobs name. The bound is
-    ///   [`Dependences::bound`] over those dependences and costs.
+    ///   [`Dependences::bound`] over those dependences and costs. The group and
+    ///   the rollbacks are the readmission's environment's.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -263,7 +272,8 @@ impl CheckSchedule
     #[must_use]
     pub(crate) fn of(readmission: &bridge::Readmission) -> Self
     {
-        let entries = readmission.environment().entries();
+        let environment = readmission.environment();
+        let entries = environment.entries();
         let mut timed: Vec<(ConstantIndex, AdmissionCost)> = readmission
             .readmitted()
             .iter()
@@ -311,6 +321,8 @@ impl CheckSchedule
             dependences,
             untimed,
             bound,
+            speculation: environment.speculation(),
+            rollbacks: environment.rollbacks(),
         }
     }
 
@@ -358,6 +370,28 @@ impl CheckSchedule
     pub const fn bound(&self) -> &Bound
     {
         &self.bound
+    }
+
+    /// The speculation group that the admission ran under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn speculation(&self) -> Speculation
+    {
+        self.speculation
+    }
+
+    /// How many predictions the kernel's fold found wrong and set right.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rollbacks(&self) -> Rollbacks
+    {
+        self.rollbacks
     }
 
     /// The kernel position of each job on the critical path, in order.

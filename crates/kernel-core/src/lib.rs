@@ -715,6 +715,7 @@ pub mod replay;
 pub use gandr_kernel_core_base::rewrite;
 mod ruled;
 pub use gandr_kernel_core_base::seal;
+pub mod speculation;
 pub mod stage;
 pub mod stage_order;
 pub use gandr_kernel_core_base::support;
