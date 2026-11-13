@@ -72,5 +72,27 @@
     "base": "    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel() {}\n",
     "head": "    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel() {}\npub fn g() {}\n",
     "output": []
+  },
+  {
+    "name": "#6890: a ceiling the change moves, at another indent, is not the change's ceiling",
+    "file": "crates/p/src/lib.rs",
+    "base": "/// economy: one minute.\npub const A: u8 = 1;\nfn f() {}\n",
+    "head": "fn f() {}\nmod m {\n    /// economy: one minute.\n    pub const A: u8 = 1;\n}\n",
+    "output": []
+  },
+  {
+    "name": "#6890: a new ceiling beside a moved one is the change's ceiling",
+    "file": "crates/p/src/lib.rs",
+    "base": "/// economy: one minute.\npub const A: u8 = 1;\nfn f() {}\n",
+    "head": "fn f() {}\n/// economy: one minute.\npub const A: u8 = 1;\n/// economy: one hour.\npub const B: u8 = 2;\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 4,
+        "kind": "economy",
+        "text": "/// economy: one hour.",
+        "cites": []
+      }
+    ]
   }
 ]

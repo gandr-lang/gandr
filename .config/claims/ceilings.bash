@@ -6,7 +6,8 @@
 #
 # Prints a JSON array of `{path, line, kind, text, cites}`, one per ceiling
 # that a Rust line the change from <base> to <head>, `HEAD` by default, adds
-# opens. A ceiling is a
+# opens. An added line that the change also removes, the same once trimmed,
+# moves a ceiling that stands already, so it opens none. A ceiling is a
 # `spec_clause_traversal` waiver, the lint's name inside an `expect(` or
 # `allow(` that opens on its line or on one of the three lines above it, or
 # an `economy:` comment. Its extent is read from the head's file, since its
@@ -19,12 +20,16 @@ set -euo pipefail
 base=${1:?usage: ceilings.bash <base> [head]}
 head=${2:-HEAD}
 git diff -U0 --no-renames --no-color "$base" "$head" -- ':(glob)**/*.rs' \
-  | jq -Rs '[foreach (split("\n")[]) as $line ({path: null, at: 0, hit: null};
+  | jq -Rs 'split("\n") as $diff
+    | def trimmed: .[1:] | sub("^\\s+"; "") | sub("\\s+$"; "");
+    [$diff[] | select(startswith("-") and (startswith("--- ") | not)) | trimmed] as $removed
+    | [foreach $diff[] as $line ({path: null, at: 0, hit: null};
       .hit = null
       | if ($line | startswith("+++ ")) then .path = ($line | sub("^\\+\\+\\+ (b/)?"; ""))
         elif ($line | startswith("@@ ")) then .at = ($line | capture("\\+(?<n>[0-9]+)").n | tonumber)
         elif ($line | startswith("+")) then
-          (if ($line | test("spec_clause_traversal|economy:")) then .hit = {path, line: .at} else . end) | .at += 1
+          (if ($line | test("spec_clause_traversal|economy:")) and (($line | trimmed) | IN($removed[]) | not)
+           then .hit = {path, line: .at} else . end) | .at += 1
         else . end;
       .hit // empty)] | group_by(.path) | map({path: .[0].path, lines: map(.line)}) | .[]' -c \
   | while IFS= read -r file; do
