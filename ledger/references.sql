@@ -457,7 +457,7 @@ INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kerne
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kernel-core','descent','exemplar','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','f69d6a7559364f8975c6703d516f594e90adc0e7');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','d03c14a645030fe23d85a00f3c3d8bd23303db6c','2026-11-13','2f1967ec8e99fa04e0328a6ae0b0d6b0c551a766');
-INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','d03c14a645030fe23d85a00f3c3d8bd23303db6c','2026-11-13','e81b3b86c27a5f161e35fe00a12734ed1bc6162d');
+INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','7a8a568bb73f8842c4f3b39c2060c496ec5a57ed','2026-11-13','95d7c9b98b10cddca559266fafd0634322829a93');
 INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-cell-complexes','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-cell-complexes-tools','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-coherent-resolutions','','anchor',NULL,NULL,NULL);

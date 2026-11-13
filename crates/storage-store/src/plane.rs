@@ -14,18 +14,23 @@
 //! [`Batch::publish`] writes each object that the batch took when the call
 //! ends: neither plane trait can name a file system's failure, and the facade
 //! can. A publication writes a temporary file in the shard of the calling
-//! thread, a directory of its own beside the planes, and renames it onto its
-//! name in the plane through `gandr_core_publish`. So a reader never meets
-//! half an object, and the plane's directory sees one rename for each object.
-//! The creation of each temporary touches only the thread's shard, so the
-//! producers of a pool contend on no directory for it. The union of the
-//! shards is set union by digest, and that one rename is all of it: an object
-//! is in the plane before the call that put it returns, so a read that the
-//! call orders after it finds the object in the plane. Two batches that take
-//! one object write the same bytes, so the rename publishes one object. Every
-//! load verifies what it read, so bytes changed on disk are refused by the
-//! plane's own fault. A listed object that a load refused stands refused, and
-//! the next batch that takes its name writes the object over the file.
+//! thread and renames it onto its name in the plane, so a reader never meets
+//! half an object. Two batches that take one object write the same bytes, so
+//! the rename publishes one object. Every load verifies what it read, so bytes
+//! changed on disk are refused by the plane's own fault. A listed object that
+//! a load refused stands refused, and the next batch that takes its name
+//! writes the object over the file.
+//!
+//! # Shards
+//!
+//! A shard is a directory of the calling thread's own beside the planes, and
+//! the publication goes through `gandr_core_publish` with its temporary there.
+//! So the plane's directory sees one rename for each object, and the creation
+//! of each temporary touches only the thread's shard. The producers of a pool
+//! contend on no directory to create a temporary. The union of the shards is
+//! set union by digest, and that one rename is all of it. An object is in the
+//! plane before the call that put it returns, so a read after that call finds
+//! the object in the plane.
 //!
 //! # Boundaries
 //!
