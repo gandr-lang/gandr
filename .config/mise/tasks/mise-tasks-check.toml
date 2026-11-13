@@ -2286,20 +2286,24 @@ run = [".config/replay/cases.bash", ".config/replay/replays.bash"]
 # the lane budget, and two jobs that restore one build state at one commit
 # (#6704). Each case in `.config/nightly/cases.json` gives its refusals; then
 # `.github/workflows/nightly.yml`'s own jobs, anchors expanded, give none.
+# The night's chain report (#6893): each case in `.config/nightly/chain.json`
+# gives the row that `chain.jq` reads from a build log, or the report and the
+# collector that `chain-night.jq` writes from the rows.
 ["check:nightly"]
-description = "The nightly's reporting work runs as one job, each step after a failure still running and the lane budget last"
+description = "The nightly's reporting work runs as one job, each step after a failure still running and the lane budget last, and the chain report reads each recorded log and night as recorded"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash nightly .config/nightly/cases.json --program .config/nightly/jobs.jq --mode c
+.config/cases/run.bash nightly .config/nightly/chain.json --programs .config/nightly --mode c
 refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/nightly.yml | jq -r -f .config/nightly/jobs.jq | jq -r '.[] | ".github/workflows/nightly.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
 fi
-echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as recorded; the nightly's reporting work is one job"
+echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as recorded; the nightly's reporting work is one job; $(jq length .config/nightly/chain.json) chain cases read as recorded"
 '''
 
 # The coverage measure in parts (#4020): `.config/coverage/jobs.jq` refuses a
