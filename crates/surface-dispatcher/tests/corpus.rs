@@ -3105,14 +3105,15 @@ mod sweeps
     /// #3381: `corpus/model/worlds/two-processes.gandr` persists its 53
     /// items. Its set is stored at the address of its program, and the model
     /// lowered again restores it. A resume from the restored set adopts each
-    /// item that no judgement elaborated. A change of the entry's capabilities
-    /// judges again `main` and the elaborated items, and no other item.
+    /// item, and an item that its judgement elaborated at the parts that its
+    /// checkpoint keeps (#6572). A change of the entry's capabilities judges
+    /// again `main`, and no other item.
     ///
     /// The model then resumes under two grants in turn: `near` with a
     /// capability for `far` twice, then thrice. Each resume judges again each
-    /// value declaration whose resolved entry moves, and each elaborated item.
-    /// It adopts each data, world, abstract and codata item. Each verdict is
-    /// the one a fresh pass under the grant gives.
+    /// value declaration whose resolved entry moves. It adopts each data,
+    /// world, abstract and codata item. Each verdict is the one a fresh pass
+    /// under the grant gives.
     #[test]
     fn two_processes_persists_and_a_grant_judges_again_what_it_moves_3381()
     {
@@ -3159,12 +3160,14 @@ mod sweeps
         let mut base = lowered(&source);
         assert_eq!(base.items().len(), 53, "the model's closure holds 53 items");
         let checked = check_program(&mut base, CheckBudget::DEFAULT).expect("the pass runs");
-        let elaborated: Vec<bool> = checked
-            .checkpoints()
-            .items()
-            .iter()
-            .map(|checkpoint| checkpoint.entered() == Entered::Elaborated)
-            .collect();
+        assert!(
+            checked
+                .checkpoints()
+                .items()
+                .iter()
+                .any(|checkpoint| checkpoint.entered() == Entered::Elaborated),
+            "the model holds an item that its judgement elaborated"
+        );
         let backend = BackendArtifact::from(b"core-checker".as_slice());
         let mut store = MemoryCheckpointStore::default();
         let address = persist(
@@ -3199,8 +3202,8 @@ mod sweeps
         );
         assert_eq!(
             judged(adopted.adoptions()),
-            elaborated,
-            "the resume adopts each item that no judgement elaborated"
+            vec![false; 53],
+            "the resume adopts each item, an elaborated one at the parts its checkpoint keeps"
         );
 
         let edited = source.replace(
@@ -3223,13 +3226,12 @@ mod sweeps
         let expected: Vec<bool> = capable
             .items()
             .iter()
-            .zip(&elaborated)
-            .map(|(item, &elaborated)| elaborated || <&[u8]>::from(item.key().name()) == b"main")
+            .map(|item| <&[u8]>::from(item.key().name()) == b"main")
             .collect();
         assert_eq!(
             judged(resumed.adoptions()),
             expected,
-            "the edit judges again `main` and the elaborated items, and no other item"
+            "the edit judges again `main`, and no other item"
         );
 
         let world = |name: &str| {
@@ -3264,13 +3266,12 @@ mod sweeps
             let expected: Vec<bool> = moved
                 .items()
                 .iter()
-                .zip(&elaborated)
-                .map(|(item, &elaborated)| {
+                .map(|item| {
                     let declaration = item.declaration();
                     match *declaration.content() {
                         // One that states no entry takes the grant's, which moves.
                         DeclarationContent::Value { .. } => {
-                            elaborated || matches!(declaration.entry(), Maybe::Absent(_))
+                            matches!(declaration.entry(), Maybe::Absent(_))
                         },
                         DeclarationContent::Data(_)
                         | DeclarationContent::Codata(_)
@@ -3282,8 +3283,8 @@ mod sweeps
             assert_eq!(
                 judged(resumed.adoptions()),
                 expected,
-                "{grant:?} judges again each value declaration whose entry it moves and each \
-                 elaborated item, and no other item"
+                "{grant:?} judges again each value declaration whose entry it moves, and no \
+                 other item"
             );
             previous = resumed;
         }

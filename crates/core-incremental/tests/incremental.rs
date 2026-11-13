@@ -1742,7 +1742,7 @@ fn corruption_selects_every_matching_name()
 /// # Adequacy
 /// - hypothesis: L3 — the path checks freshly and, judged again under a new
 ///   key, after the call resumes.
-/// - witness: `tests::incremental::a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549`
+/// - witness: `tests::incremental::a_filled_implicit_is_adopted_at_its_judged_body_so_its_reader_unfolds_it_6572`
 #[spec(ensures: |ret| ret.items().len() == 3)]
 fn filled(last: ItemKey) -> Program
 {
@@ -1807,12 +1807,13 @@ fn filled(last: ItemKey) -> Program
     Program::new(arena, items).expect("fixture positions ascend")
 }
 
-/// #6549: a call whose judgement filled its omitted implicit is judged again
-/// on a resume, so the path judged after it unfolds the filled body, as a
-/// fresh check does. An adopted call seats its written body, whose hole stays
-/// unsolved, and the path that compares it with `return Integer` then fails.
+/// #6549, #6572: a call whose judgement filled its omitted implicit is adopted
+/// on a resume at the judged body that its checkpoint keeps, so the path judged
+/// after it unfolds the filled body, as a fresh check does. A call seated at
+/// its written body keeps its hole unsolved, and the path that compares it
+/// with `return Integer` then fails.
 #[test]
-fn a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549()
+fn a_filled_implicit_is_adopted_at_its_judged_body_so_its_reader_unfolds_it_6572()
 {
     use gandr_core_checker::Entered;
 
@@ -1843,7 +1844,7 @@ fn a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549()
     );
     assert_eq!(
         renamed.adoptions(),
-        [Adopted, Judged, Judged],
-        "the picker is adopted, the filled call is judged again, and the renamed path has no checkpoint"
+        [Adopted, Adopted, Judged],
+        "the picker and the filled call are adopted, and the renamed path has no checkpoint"
     );
 }

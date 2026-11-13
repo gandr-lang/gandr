@@ -7,17 +7,18 @@
 //! judgement consulted — each signature answer it read, by reference — its
 //! typing, and whether the table held it as written. A later revision recalls
 //! a checkpoint by content, through the one check memo batch and incremental
-//! runs share, and adopts it only when four things hold: every recorded answer
+//! runs share, and adopts it only when three things hold: every recorded answer
 //! equals, pointwise and by content, the answer the edited program's table
 //! gives at that point of the pass; no reference in the item's type positions,
 //! nor in any recorded answer's type, names a definition whose value changed;
-//! the judgement entered the item as written; and the adopted type can be
-//! seated. Adoption seats the written signature and body, so an item its
-//! judgement elaborated — its holes filled, its nested runs bound — is judged
-//! again, and a reader unfolds what a fresh check's reader unfolds. Otherwise
-//! the item is judged again. Persisted checkpoints go through the same pass as
-//! in-memory records. Neither decoding nor this pass proves that recorded
-//! typing and support truthfully describe a prior judgement.
+//! and the adopted type can be seated. Adoption seats the table parts that the
+//! judgement left. These are the written signature and body, or, for an item
+//! its judgement elaborated, the parts that its checkpoint keeps: the judged
+//! body, the formed type, the stage signature and the following position. So a
+//! reader unfolds what a fresh check's reader unfolds. Otherwise the item is
+//! judged again. Persisted checkpoints go through the same pass as in-memory
+//! records. Neither decoding nor this pass proves that recorded typing and
+//! support truthfully describe a prior judgement.
 //!
 //! # The same pass, two memos
 //!
@@ -251,11 +252,9 @@ quenchant_shape::reason_enum! {
             /// reads every other declaration's role, which no support records,
             /// so the declaration is judged again.
             Marked,
-            /// The judgement entered the declaration elaborated: its holes
-            /// filled, its nested runs bound, its law discharged, its stages
-            /// at the plain type or its recursion's following position kept.
-            /// Adoption seats the written form, so the declaration is judged
-            /// again.
+            /// The judgement entered the declaration elaborated, and its
+            /// checkpoint keeps no table parts of it to seat, so the
+            /// declaration is judged again.
             Elaborated,
             /// The declaration is a member of a mutual block. It reads its
             /// siblings before they stand, so the pass decides it in its block
@@ -2949,6 +2948,7 @@ impl<'judged> Judgement<'judged>
             declaration,
             layout: taking.layout,
             minted,
+            entry: Maybe::Absent(elaborated::Absent::AsWritten),
         })
         else {
             return Maybe::Absent(taken::Absent::Unseated);
@@ -3514,13 +3514,15 @@ where
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
-                let (failure, entry, report) = match candidates.get(index) {
+                let (entered, failure, entry, report) = match candidates.get(index) {
                     Some(&Maybe::Present(ref candidate)) => (
+                        candidate.checkpoint.entered(),
                         candidate.checkpoint.parts.failure.clone(),
                         candidate.checkpoint.parts.entry.clone(),
                         candidate.checkpoint.parts.report.clone(),
                     ),
                     Some(&Maybe::Absent(_)) | None => (
+                        Entered::AsWritten,
                         Maybe::Absent(failed::Absent::Unkept),
                         Maybe::Absent(elaborated::Absent::AsWritten),
                         Maybe::Absent(reported::Absent::Unreported),
@@ -3537,7 +3539,7 @@ where
                         footprint,
                         support,
                         typing,
-                        entered: Entered::AsWritten,
+                        entered,
                         failure,
                         entry,
                         report,
@@ -3997,12 +3999,13 @@ enum Seat
 ///   `input.ordinal`.
 /// - ensures: when the item is transparent, the support holds pointwise, no
 ///   type position meets the value-changed set, the declaration takes no
-///   built-in role, its judgement entered it as written, the body is no
-///   accepted univalence statement, path product or equivalence and the type
-///   seats, the item is admitted with its seated type and the checkpoint's
-///   support, typing and answer are returned; otherwise the context is
-///   unchanged. A type the recalled verdict checked or synthesised under is
-///   seated as its judgement formed it; any other signature is formed again.
+///   built-in role, its judgement entered it as written or its checkpoint keeps
+///   the parts it entered at, the body is no accepted univalence statement,
+///   path product or equivalence and the type seats, the item is admitted with
+///   its seated type and the checkpoint's support, typing and answer are
+///   returned; otherwise the context is unchanged. A type the recalled verdict
+///   checked or synthesised under is seated as its judgement formed it; any
+///   other signature is formed again.
 /// - provides: the reason the checkpoint does not answer: `Opaque`, `Outdated`,
 ///   `ValueRead`, `Marked`, `Elaborated`, `Derived` or `Unseated`, checked in
 ///   that order.
@@ -4017,8 +4020,9 @@ enum Seat
 ///   statement, path product or equivalence is judged again, so a later
 ///   transport along it, a path identifying it or a product reading it unfolds
 ///   to the native path or decision the judgement records, as a fresh check's
-///   does. A declaration its judgement entered elaborated is judged again, so a
-///   reader unfolds the filled body, as a fresh check's reader does.
+///   does. A declaration its judgement entered elaborated is seated at the
+///   judged body that its checkpoint keeps, so a reader unfolds the filled
+///   body, as a fresh check's reader does.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::an_ascription_endpoint_is_a_read`
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
@@ -4026,7 +4030,7 @@ enum Seat
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 /// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
 /// - witness: `tests::native_formers::an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752`
-/// - witness: `tests::incremental::a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549`
+/// - witness: `tests::incremental::a_filled_implicit_is_adopted_at_its_judged_body_so_its_reader_unfolds_it_6572`
 #[spec(
     requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
@@ -4037,14 +4041,15 @@ enum Seat
         let supported = answers_hold(input.reader(), input.candidate.checkpoint.support(), Uncompared::Falls) == Standing::Stands;
         let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let marked = matches!(input.declaration.builtin(), Maybe::Present(_));
-        let elaborated = input.candidate.checkpoint.entered() == Entered::Elaborated;
+        let unkept = input.candidate.checkpoint.entered() == Entered::Elaborated
+            && matches!(input.candidate.checkpoint.entry(), Maybe::Absent(_));
         match ret {
             | Maybe::Present((ref support, ref typing, _)) => {
                 transparent
                     && supported
                     && untouched
                     && !marked
-                    && !elaborated
+                    && !unkept
                     && !derived
                     && support.as_slice() == input.candidate.checkpoint.support()
                     && typing == input.candidate.checkpoint.typing()
@@ -4056,7 +4061,7 @@ enum Seat
                 else if marked {
                     recall::Absent::Marked
                 }
-                else if elaborated {
+                else if unkept {
                     recall::Absent::Elaborated
                 }
                 else if derived {
@@ -4104,15 +4109,22 @@ fn adopt(
     if let Maybe::Present(_) = input.declaration.builtin() {
         return Maybe::Absent(recall::Absent::Marked);
     }
-    if checkpoint.entered() == Entered::Elaborated {
-        return Maybe::Absent(recall::Absent::Elaborated);
-    }
+    let entry = match (checkpoint.entered(), checkpoint.entry()) {
+        (Entered::AsWritten, Maybe::Present(_) | Maybe::Absent(_)) => {
+            Maybe::Absent(elaborated::Absent::AsWritten)
+        },
+        (Entered::Elaborated, Maybe::Present(entry)) => Maybe::Present(entry),
+        (Entered::Elaborated, Maybe::Absent(_)) => {
+            return Maybe::Absent(recall::Absent::Elaborated);
+        },
+    };
     let answer = seat(context, &Seating {
         typing: checkpoint.typing(),
         item: input.item,
         declaration: input.declaration,
         layout: input.layout,
         minted: input.candidate.seat,
+        entry,
     });
     if let Maybe::Present(_) = answer {
         settle_home(context, input, checkpoint.support());
@@ -4200,6 +4212,9 @@ struct Seating<'input>
     /// The seat of an unsigned item's synthesised type, minted in the edited
     /// arena, or why none is.
     minted: Maybe<ValueTypeId, seating::Absent>,
+    /// The table parts that the item's judgement elaborated and that its
+    /// checkpoint keeps, or why the table holds the written form.
+    entry: Maybe<&'input EntryContent, elaborated::Absent>,
 }
 
 /// Admit the item with the type its typing seats, as its judgement admitted
@@ -4213,7 +4228,9 @@ struct Seating<'input>
 ///   or equivalence and the type seats, the item is admitted with its seated
 ///   type and its answer is returned; otherwise the context is unchanged. A
 ///   type the verdict checked or synthesised under is seated as its judgement
-///   formed it; any other signature is formed again.
+///   formed it; any other signature is formed again. An item whose `entry` is
+///   present is admitted at the judged body and the formed type that it keeps,
+///   with its stage signature and its following position.
 /// - provides: the reason the typing does not seat: `Opaque`, `Derived` or
 ///   `Unseated`.
 /// - panics: none.
@@ -4342,12 +4359,43 @@ fn seat(
     if matches!(*seating.typing, Typing::Data) {
         return Maybe::Absent(recall::Absent::Unseated);
     }
+    // An item its judgement elaborated stands in the table at the judged body
+    // and the formed type that its checkpoint keeps, as a fresh judgement
+    // leaves it.
+    let (signature, body, filled) = match seating.entry {
+        Maybe::Present(entry) => {
+            let Maybe::Present((seated, _places)) = entry.seat(context.arena_mut(), seating.layout)
+            else {
+                return Maybe::Absent(recall::Absent::Unseated);
+            };
+            (
+                match seated.declared() {
+                    Maybe::Present(declared) => Maybe::Present(declared),
+                    Maybe::Absent(_) => signature,
+                },
+                match seated.body() {
+                    Maybe::Present(judged) => Maybe::Present(judged),
+                    Maybe::Absent(_) => body,
+                },
+                match entry.declared() {
+                    Maybe::Present(declared) => Some(declared),
+                    Maybe::Absent(_) => None,
+                },
+            )
+        },
+        Maybe::Absent(_) => (signature, body, None),
+    };
     let signed = || {
-        seating
-            .item
-            .content
-            .signature_type()
-            .map_or(Answer::Untyped, Answer::Typed)
+        filled.map_or_else(
+            || {
+                seating
+                    .item
+                    .content
+                    .signature_type()
+                    .map_or(Answer::Untyped, Answer::Typed)
+            },
+            |declared| Answer::Typed(declared.clone()),
+        )
     };
     let seat: Seat;
     let answer: Answer;
@@ -4405,6 +4453,21 @@ fn seat(
     };
     if seated.is_err() {
         return Maybe::Absent(recall::Absent::Unseated);
+    }
+    if let Maybe::Present(entry) = seating.entry {
+        context.adopt_stages(
+            constant,
+            (
+                match entry.stage() {
+                    Maybe::Present(stage) => Some(stage.clone()),
+                    Maybe::Absent(_) => None,
+                },
+                match entry.following() {
+                    Maybe::Present(position) => Some(position),
+                    Maybe::Absent(_) => None,
+                },
+            ),
+        );
     }
     Maybe::Present(answer)
 }
