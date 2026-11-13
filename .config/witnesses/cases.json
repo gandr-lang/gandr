@@ -248,6 +248,38 @@
     }
   },
   {
+    "name": "#7039: a witness spelled with a package resolves where the package depends on the owner, and is refused where it does not",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/core-checker-base/src/code.rs:675: unresolved-witness [gandr-core-checker-base] `gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`: no target of this crate runs the path; it is absent or renamed",
+        "/w/crates/core-checker-base/src/code.rs:676: unresolved-witness [gandr-core-checker-base] `gandr-surface-parser::tests::recovery::a_closer_is_kept`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [],
+      "here": { "target_os": ["linux"], "unix": true },
+      "hosts": { "x86_64-unknown-linux-gnu": { "target_os": ["linux"], "unix": true } },
+      "depends": {
+        "gandr-core-checker-base": ["gandr-core-checker-base", "gandr-core-checker-bridge"],
+        "gandr-core-checker-bridge": ["gandr-core-checker-base"],
+        "gandr-surface-parser": ["gandr-surface-syntax"]
+      },
+      "listed": {
+        "gandr-core-checker-bridge": {
+          "bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557": 1
+        },
+        "gandr-surface-parser": { "tests::recovery::a_closer_is_kept": 1 }
+      }
+    },
+    "output": {
+      "resolved": [
+        "/w/crates/core-checker-base/src/code.rs:675: the witness `gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557` runs in gandr-core-checker-bridge, which depends on gandr-core-checker-base"
+      ],
+      "refused": [
+        "/w/crates/core-checker-base/src/code.rs:676: unresolved-witness `gandr-surface-parser::tests::recovery::a_closer_is_kept`: gandr-surface-parser does not depend on gandr-core-checker-base, so no test of it witnesses an item of gandr-core-checker-base"
+      ]
+    }
+  },
+  {
     "name": "rustc's cfg text keeps the platform atoms alone",
     "program": "atoms.jq",
     "input": "debug_assertions\npanic=\"unwind\"\ntarget_arch=\"aarch64\"\ntarget_env=\"\"\ntarget_family=\"unix\"\ntarget_feature=\"neon\"\ntarget_has_atomic\ntarget_os=\"macos\"\ntarget_vendor=\"apple\"\nunix\n",
