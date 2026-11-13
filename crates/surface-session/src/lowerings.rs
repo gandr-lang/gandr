@@ -39,6 +39,7 @@ use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::JudgedClosure;
 use gandr_surface_dispatcher::Memo;
 use gandr_surface_dispatcher::item_program;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_syntax::GrammarFingerprint;
@@ -249,7 +250,11 @@ impl Closure
         self.rooted(root)
             .judged
             .get_or_init(|| {
-                JudgedClosure::new(Arc::clone(&self.lowering), &HostGrant::UNBOUNDED, root)
+                JudgedClosure::new::<Evaluator>(
+                    Arc::clone(&self.lowering),
+                    &HostGrant::UNBOUNDED,
+                    root,
+                )
             })
             .as_ref()
     }

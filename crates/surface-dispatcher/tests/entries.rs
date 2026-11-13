@@ -38,6 +38,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_dispatcher::lower_unit_source;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::MoldDef;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
@@ -1541,7 +1542,7 @@ mod sweeps
             return;
         }
         let walk = Walk::new(paths);
-        let ControlFlow::Continue(_report) = walk.visit(
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {

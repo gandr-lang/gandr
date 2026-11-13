@@ -29,7 +29,8 @@ gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
 # The suite renders diagnostics of real compositions: the dispatcher's walk
-# over the built-in grammar, with the lowering's refusals built directly; one
+# over the built-in grammar, with the run stage's engine, and the lowering's
+# refusals built directly; one
 # golden cuts a checker refusal's origin table down to its primary node, which
 # names the refusal's node through the checker's and the corpus's types; it
 # parses the JSON image back; and the corpus's refusing sources each pin their
@@ -39,6 +40,7 @@ expect-test.workspace = true
 gandr-core-checker.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 serde_json.workspace = true

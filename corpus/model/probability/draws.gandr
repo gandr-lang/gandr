@@ -14,7 +14,7 @@
 // states the weight of each sum: the count of pairs that give the sum, over
 // 16.
 //
-// - see: `crates/surface-dispatcher/src/evaluate/rand.rs` — the host that
+// - see: `crates/surface-evaluate/src/evaluate/rand.rs` — the host that
 //   serves the interface, and the exact model's answers
 // - see: `crates/surface-corpus/src/distribution.rs` — the runs summed into
 //   one distribution

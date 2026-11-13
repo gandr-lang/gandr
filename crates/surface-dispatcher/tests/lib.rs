@@ -12,17 +12,27 @@ mod census;
 #[cfg(test)]
 mod coincide;
 #[cfg(test)]
+mod compose;
+#[cfg(test)]
 mod corpus;
 #[cfg(test)]
 mod differential;
 #[cfg(test)]
 mod digest;
 #[cfg(test)]
+mod dispatch;
+#[cfg(test)]
 mod distances;
 #[cfg(test)]
 mod entries;
 #[cfg(test)]
+mod entry;
+#[cfg(test)]
+mod exercised;
+#[cfg(test)]
 mod locality;
+#[cfg(test)]
+mod manifold;
 #[cfg(test)]
 mod measure;
 #[cfg(test)]
@@ -30,6 +40,16 @@ mod package;
 #[cfg(test)]
 mod parity;
 #[cfg(test)]
+mod report;
+#[cfg(test)]
 mod run;
+#[cfg(test)]
+mod script;
+#[cfg(test)]
+mod typed;
+#[cfg(all(test, feature = "unfolding-probe"))]
+mod unfolding;
+#[cfg(test)]
+mod walk;
 #[cfg(test)]
 mod weights;

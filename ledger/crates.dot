@@ -79,6 +79,7 @@ digraph crates {
     "surface-diagnostics";
     "surface-dispatcher";
     "surface-driver";
+    "surface-evaluate";
     "surface-features";
     "surface-format";
     "surface-grammar";
@@ -277,6 +278,7 @@ digraph crates {
   "surface-driver" -> "surface-agentic";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";
+  "surface-driver" -> "surface-evaluate";
   "surface-driver" -> "surface-features";
   "surface-driver" -> "surface-format";
   "surface-driver" -> "surface-grammar";
@@ -284,6 +286,22 @@ digraph crates {
   "surface-driver" -> "surface-render-terminal";
   "surface-driver" -> "surface-repl";
   "surface-driver" -> "surface-tui";
+  "surface-evaluate" -> "core-checker";
+  "surface-evaluate" -> "core-incremental";
+  "surface-evaluate" -> "core-sequent";
+  "surface-evaluate" -> "core-term";
+  "surface-evaluate" -> "kernel-term";
+  "surface-evaluate" -> "runtime-emitter";
+  "surface-evaluate" -> "runtime-net";
+  "surface-evaluate" -> "storage-values";
+  "surface-evaluate" -> "surface-corpus";
+  "surface-evaluate" -> "surface-diagnostics";
+  "surface-evaluate" -> "surface-dispatcher";
+  "surface-evaluate" -> "surface-grammar";
+  "surface-evaluate" -> "surface-lowering";
+  "surface-evaluate" -> "surface-pretty";
+  "surface-evaluate" -> "surface-syntax";
+  "surface-evaluate" -> "theory-exact-reals";
   "surface-format" -> "core-term";
   "surface-format" -> "kernel-term";
   "surface-format" -> "surface-diagnostics";
@@ -331,6 +349,7 @@ digraph crates {
   "surface-lsp" -> "surface-corpus";
   "surface-lsp" -> "surface-diagnostics";
   "surface-lsp" -> "surface-dispatcher";
+  "surface-lsp" -> "surface-evaluate";
   "surface-lsp" -> "surface-format";
   "surface-lsp" -> "surface-grammar";
   "surface-lsp" -> "surface-lowering";
@@ -367,6 +386,7 @@ digraph crates {
   "surface-repl" -> "surface-corpus";
   "surface-repl" -> "surface-diagnostics";
   "surface-repl" -> "surface-dispatcher";
+  "surface-repl" -> "surface-evaluate";
   "surface-repl" -> "surface-grammar";
   "surface-repl" -> "surface-parser";
   "surface-repl" -> "surface-pretty";
@@ -385,6 +405,7 @@ digraph crates {
   "surface-session" -> "surface-corpus";
   "surface-session" -> "surface-diagnostics";
   "surface-session" -> "surface-dispatcher";
+  "surface-session" -> "surface-evaluate";
   "surface-session" -> "surface-grammar";
   "surface-session" -> "surface-lowering";
   "surface-session" -> "surface-parser";
@@ -444,6 +465,7 @@ digraph crates {
   "workflow-ledger-tasks" -> "surface-corpus";
   "workflow-ledger-tasks" -> "surface-diagnostics";
   "workflow-ledger-tasks" -> "surface-dispatcher";
+  "workflow-ledger-tasks" -> "surface-evaluate";
   "workflow-ledger-tasks" -> "surface-features";
   "workflow-ledger-tasks" -> "surface-grammar";
   "workflow-ledger-tasks" -> "surface-lowering";
@@ -501,7 +523,8 @@ digraph crates {
   "storage-chunker" -> "storage-records" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "storage-records" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "storage-values" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
-  "surface-dispatcher" -> "surface-lowering-base" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "surface-dispatcher" -> "surface-evaluate" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "surface-evaluate" -> "surface-lowering-base" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "surface-lowering-base" -> "surface-parser" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "surface-parser" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "surface-session" -> "theory-cell-complexes" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];

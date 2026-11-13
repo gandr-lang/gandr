@@ -9,7 +9,7 @@
 //! runs a machine on the open root of a plan, and `enclosed` asks for an
 //! enclosure of its real root.
 //!
-//! - see: `crates/surface-dispatcher/src/evaluate/reals.rs` — the host that
+//! - see: `crates/surface-evaluate/src/evaluate/reals.rs` — the host that
 //!   serves the interface
 //! - see: `crates/surface-dispatcher/tests/corpus.rs` — the rule of one name
 //!   for each subject

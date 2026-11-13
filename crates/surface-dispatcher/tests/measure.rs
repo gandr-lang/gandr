@@ -21,6 +21,7 @@ use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::measure;
 use gandr_surface_dispatcher::measured;
 use gandr_surface_dispatcher::schedule;
+use gandr_surface_evaluate::Evaluator;
 use quenchant_shape::shape::Maybe;
 
 /// The sizes of every declaration a component's artifact holds, by the last
@@ -67,77 +68,79 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
     let math = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/math");
     let mut written = BTreeMap::new();
     let mut kept = 0_u64;
-    let ControlFlow::Continue(_) = Walk::new(vec![math.clone()]).measuring().visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            let Step::Source {
-                path, ref composed, ..
-            } = step
-            else {
-                panic!("each std.math source is read: {step:?}");
-            };
-            let Composed::Settled {
-                kernel: Maybe::Present(ref kernel),
-                ..
-            } = *composed
-            else {
-                panic!("{} is judged and admitted", path.display());
-            };
-            let Ok(Maybe::Present(rows)) = measure(composed)
-            else {
-                panic!("{} is measured", path.display());
-            };
-            let sizes = sizes_by_name(kernel.as_image());
-            for row in &rows {
-                assert_eq!(
-                    sizes.get(row.name().as_ref()),
-                    Some(&(row.bytes(), row.shared(), row.unshared())),
-                    "{}'s row for {} reads that declaration's segment",
-                    path.display(),
-                    row.name()
-                );
-                assert!(
-                    u64::try_from(usize::from(row.shared()))
-                        .is_ok_and(|shared| shared <= u64::from(row.unshared())),
-                    "a segment adds no more entries than its roots' trees hold"
-                );
-                let Maybe::Present(census) = row.census()
+    let ControlFlow::Continue(_) = Walk::new(vec![math.clone()])
+        .measuring()
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path, ref composed, ..
+                } = step
                 else {
-                    panic!(
-                        "{}'s {} is checked, no cache recalling it: {:?}",
+                    panic!("each std.math source is read: {step:?}");
+                };
+                let Composed::Settled {
+                    kernel: Maybe::Present(ref kernel),
+                    ..
+                } = *composed
+                else {
+                    panic!("{} is judged and admitted", path.display());
+                };
+                let Ok(Maybe::Present(rows)) = measure(composed)
+                else {
+                    panic!("{} is measured", path.display());
+                };
+                let sizes = sizes_by_name(kernel.as_image());
+                for row in &rows {
+                    assert_eq!(
+                        sizes.get(row.name().as_ref()),
+                        Some(&(row.bytes(), row.shared(), row.unshared())),
+                        "{}'s row for {} reads that declaration's segment",
+                        path.display(),
+                        row.name()
+                    );
+                    assert!(
+                        u64::try_from(usize::from(row.shared()))
+                            .is_ok_and(|shared| shared <= u64::from(row.unshared())),
+                        "a segment adds no more entries than its roots' trees hold"
+                    );
+                    let Maybe::Present(census) = row.census()
+                    else {
+                        panic!(
+                            "{}'s {} is checked, no cache recalling it: {:?}",
+                            path.display(),
+                            row.name(),
+                            row.census()
+                        );
+                    };
+                    assert!(
+                        u64::from(census.expansions())
+                            .saturating_add(u64::from(census.recalls()))
+                            .saturating_add(u64::from(census.kept()))
+                            > 0,
+                        "{}'s check of {} charges at least its declared type's formation",
+                        path.display(),
+                        row.name()
+                    );
+                    kept = kept.saturating_add(u64::from(census.kept()));
+                    assert!(
+                        matches!(row.took(), Maybe::Present(_)),
+                        "{}'s admission of {} is timed: {:?}",
                         path.display(),
                         row.name(),
-                        row.census()
+                        row.took()
                     );
-                };
-                assert!(
-                    u64::from(census.expansions())
-                        .saturating_add(u64::from(census.recalls()))
-                        .saturating_add(u64::from(census.kept()))
-                        > 0,
-                    "{}'s check of {} charges at least its declared type's formation",
-                    path.display(),
-                    row.name()
+                }
+                let names: Vec<String> = rows.iter().map(|row| row.name().to_string()).collect();
+                let _replaced = written.insert(
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    names,
                 );
-                kept = kept.saturating_add(u64::from(census.kept()));
-                assert!(
-                    matches!(row.took(), Maybe::Present(_)),
-                    "{}'s admission of {} is timed: {:?}",
-                    path.display(),
-                    row.name(),
-                    row.took()
-                );
-            }
-            let names: Vec<String> = rows.iter().map(|row| row.name().to_string()).collect();
-            let _replaced = written.insert(
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                names,
-            );
-            ControlFlow::Continue(())
-        },
-    );
+                ControlFlow::Continue(())
+            },
+        );
     assert_eq!(
         written.get("cylinder.gandr").map(Vec::as_slice),
         Some(
@@ -169,7 +172,7 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
         "a declaration of std.math stands on the outcomes an earlier admission kept"
     );
     let mut unasked = 0_usize;
-    let ControlFlow::Continue(_) = Walk::new(vec![math]).visit(
+    let ControlFlow::Continue(_) = Walk::new(vec![math]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -209,130 +212,127 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
         "tests/measure/fixtures/a-component-s-schedule-waits-on-the-references-of-each-job.gandr",
     );
     let mut scheduled = 0_usize;
-    let ControlFlow::Continue(_) = Walk::new(vec![source]).measuring().visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            let Step::Source { ref composed, .. } = step
-            else {
-                panic!("the source is read: {step:?}");
-            };
-            let Composed::Settled {
-                ref report,
-                positions: Maybe::Present(ref positions),
-                ..
-            } = *composed
-            else {
-                panic!("the source is judged, admitted and positioned");
-            };
-            let Ok(Maybe::Present(row)) = schedule(composed)
-            else {
-                panic!("a measured admission reads its schedule");
-            };
-            let checks = row.schedule();
-            let Ok(Maybe::Present(rows)) = measure(composed)
-            else {
-                panic!("the source is measured");
-            };
-            // Each written definition's job, and the time its admission took.
-            let job = |name: &str| -> (usize, Duration) {
-                let declaration = report
-                    .declarations()
-                    .iter()
-                    .find(|declaration| declaration.name().as_ref() == name)
-                    .unwrap_or_else(|| panic!("the source writes {name}"));
-                let Maybe::Present(placed) = positions.placed(declaration.constant())
-                else {
-                    panic!("{name} crosses into the kernel");
-                };
-                let at = checks
-                    .jobs()
-                    .binary_search(&placed.position())
-                    .unwrap_or_else(|_| panic!("{name} is a job"));
-                let Some(Maybe::Present(took)) = rows
-                    .iter()
-                    .find(|row| row.name().as_ref() == name)
-                    .map(gandr_surface_dispatcher::Measure::took)
-                else {
-                    panic!("{name}'s admission is timed");
-                };
-                (at, took.wall())
-            };
-            let [first, second, third, beside] = ["first", "second", "third", "beside"].map(job);
-            let written = [first.0, second.0, third.0, beside.0];
-            let among: Vec<(usize, usize)> = checks
-                .dependences()
-                .edges()
+    let ControlFlow::Continue(_) = Walk::new(vec![source]).measuring().visit::<Evaluator, _, _>(&Pool::new(Width::SERIAL), |step| -> ControlFlow<Infallible> {
+        let Step::Source { ref composed, .. } = step
+        else {
+            panic!("the source is read: {step:?}");
+        };
+        let Composed::Settled {
+            ref report,
+            positions: Maybe::Present(ref positions),
+            ..
+        } = *composed
+        else {
+            panic!("the source is judged, admitted and positioned");
+        };
+        let Ok(Maybe::Present(row)) = schedule(composed)
+        else {
+            panic!("a measured admission reads its schedule");
+        };
+        let checks = row.schedule();
+        let Ok(Maybe::Present(rows)) = measure(composed)
+        else {
+            panic!("the source is measured");
+        };
+        // Each written definition's job, and the time its admission took.
+        let job = |name: &str| -> (usize, Duration) {
+            let declaration = report
+                .declarations()
                 .iter()
-                .map(|edge| (edge.before, edge.after))
-                .filter(|&(before, after)| written.contains(&before) && written.contains(&after))
-                .collect();
-            assert_eq!(
-                among,
-                [(first.0, second.0), (second.0, third.0)],
-                "second waits on first and third on second; beside waits on none of them"
-            );
-            let bound = checks.bound();
-            let chain = bound.chain();
-            for (&before, &after) in chain.iter().zip(chain.iter().skip(1)) {
-                // `Dependences` keeps its edges sorted, so one search finds each.
-                assert!(
-                    checks
-                        .dependences()
-                        .edges()
-                        .binary_search(&Dependence {
-                            before: usize::from(before),
-                            after: usize::from(after)
-                        })
-                        .is_ok(),
-                    "the chain of the critical path follows the dependences: {before:?} to {after:?}"
-                );
-            }
+                .find(|declaration| declaration.name().as_ref() == name)
+                .unwrap_or_else(|| panic!("the source writes {name}"));
+            let Maybe::Present(placed) = positions.placed(declaration.constant())
+            else {
+                panic!("{name} crosses into the kernel");
+            };
+            let at = checks
+                .jobs()
+                .binary_search(&placed.position())
+                .unwrap_or_else(|_| panic!("{name} is a job"));
+            let Some(Maybe::Present(took)) = rows
+                .iter()
+                .find(|row| row.name().as_ref() == name)
+                .map(gandr_surface_dispatcher::Measure::took)
+            else {
+                panic!("{name}'s admission is timed");
+            };
+            (at, took.wall())
+        };
+        let [first, second, third, beside] = ["first", "second", "third", "beside"].map(job);
+        let written = [first.0, second.0, third.0, beside.0];
+        let among: Vec<(usize, usize)> = checks
+            .dependences()
+            .edges()
+            .iter()
+            .map(|edge| (edge.before, edge.after))
+            .filter(|&(before, after)| written.contains(&before) && written.contains(&after))
+            .collect();
+        assert_eq!(
+            among,
+            [(first.0, second.0), (second.0, third.0)],
+            "second waits on first and third on second; beside waits on none of them"
+        );
+        let bound = checks.bound();
+        let chain = bound.chain();
+        for (&before, &after) in chain.iter().zip(chain.iter().skip(1)) {
+            // `Dependences` keeps its edges sorted, so one search finds each.
             assert!(
-                bound.critical() >= first.1.saturating_add(second.1).saturating_add(third.1),
-                "the critical path covers the written chain"
+                checks
+                    .dependences()
+                    .edges()
+                    .binary_search(&Dependence {
+                        before: usize::from(before),
+                        after: usize::from(after)
+                    })
+                    .is_ok(),
+                "the chain of the critical path follows the dependences: {before:?} to {after:?}"
             );
-            assert!(
-                bound.critical() <= bound.folded() && bound.folded() <= bound.serial(),
-                "no schedule passes the serial cost, and the fold waits at least for the chain"
-            );
-            assert!(
-                checks.untimed().is_empty(),
-                "a source with no mutual block times each job: {:?}",
-                checks.untimed()
-            );
-            let on_chain: Vec<_> = bound
+        }
+        assert!(
+            bound.critical() >= first.1.saturating_add(second.1).saturating_add(third.1),
+            "the critical path covers the written chain"
+        );
+        assert!(
+            bound.critical() <= bound.folded() && bound.folded() <= bound.serial(),
+            "no schedule passes the serial cost, and the fold waits at least for the chain"
+        );
+        assert!(
+            checks.untimed().is_empty(),
+            "a source with no mutual block times each job: {:?}",
+            checks.untimed()
+        );
+        let on_chain: Vec<_> = bound
+            .chain()
+            .iter()
+            .filter_map(|&item| checks.jobs().get(usize::from(item)).copied())
+            .collect();
+        assert_eq!(
+            row.chain()
+                .iter()
+                .map(|&(position, _)| position)
+                .collect::<Vec<_>>(),
+            on_chain,
+            "the schedule names each job of its chain, in order"
+        );
+        for (written, at) in [
+            ("first", first.0),
+            ("second", second.0),
+            ("third", third.0),
+            ("beside", beside.0),
+        ] {
+            if let Some(&(_, ref name)) = row
                 .chain()
                 .iter()
-                .filter_map(|&item| checks.jobs().get(usize::from(item)).copied())
-                .collect();
-            assert_eq!(
-                row.chain()
-                    .iter()
-                    .map(|&(position, _)| position)
-                    .collect::<Vec<_>>(),
-                on_chain,
-                "the schedule names each job of its chain, in order"
-            );
-            for (written, at) in [
-                ("first", first.0),
-                ("second", second.0),
-                ("third", third.0),
-                ("beside", beside.0),
-            ] {
-                if let Some(&(_, ref name)) = row
-                    .chain()
-                    .iter()
-                    .find(|&&(position, _)| checks.jobs().get(at) == Some(&position))
-                {
-                    assert!(
-                        name.rsplit('.').next() == Some(written),
-                        "the chain names {written} by the artifact's name: {name}"
-                    );
-                }
+                .find(|&&(position, _)| checks.jobs().get(at) == Some(&position))
+            {
+                assert!(
+                    name.rsplit('.').next() == Some(written),
+                    "the chain names {written} by the artifact's name: {name}"
+                );
             }
-            scheduled = scheduled.saturating_add(1);
-            ControlFlow::Continue(())
-        },
-    );
+        }
+        scheduled = scheduled.saturating_add(1);
+        ControlFlow::Continue(())
+    });
     assert_eq!(scheduled, 1, "the walk reads the one source");
 }

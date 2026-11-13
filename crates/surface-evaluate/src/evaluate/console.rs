@@ -3,8 +3,8 @@
 //! `Stdin.read_line` reads from it.
 //!
 //! The host at a program's entry hands each line to the console. The console
-//! and its models live in [`crate::entry::console`], below the run stage. A
-//! program runs unchanged under each model.
+//! and its models live in [`gandr_surface_dispatcher::Console`], below the run
+//! stage. A program runs unchanged under each model.
 
 use alloc::boxed::Box;
 use core::convert::Infallible;
@@ -23,13 +23,13 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::TaskOrder;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Input;
+use gandr_surface_dispatcher::Line;
+use gandr_surface_dispatcher::Printed;
 
 use super::rand::Draws;
 use super::rand::answered;
-use crate::entry::console::Console;
-use crate::entry::console::Input;
-use crate::entry::console::Line;
-use crate::entry::console::Printed;
 
 /// The operation of [`CONSOLE`] that writes a line.
 const PRINT: &str = "print";

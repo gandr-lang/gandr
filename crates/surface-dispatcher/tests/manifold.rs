@@ -1,3 +1,7 @@
+//! A site and a manifold read from their files, and each world's row judged
+//! against the site's offer: each judgement composes a source with the run
+//! stage's engine, so these tests stand in the `tests` target (#7048).
+
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -5,19 +9,19 @@ use gandr_runtime_net::Lookup;
 use gandr_runtime_net::NodeId;
 use gandr_runtime_net::Secret;
 use gandr_runtime_net::WorldName;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Manifold;
+use gandr_surface_dispatcher::Secreted;
+use gandr_surface_dispatcher::Secrets;
+use gandr_surface_dispatcher::Site;
+use gandr_surface_dispatcher::Stated;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Undeployed;
+use gandr_surface_dispatcher::fixture::Translation;
+use gandr_surface_dispatcher::stepped_alone;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
-
-use super::Manifold;
-use super::Secreted;
-use super::Secrets;
-use super::Site;
-use super::Stated;
-use super::Translation;
-use super::Undeployed;
-use crate::compose::Composed;
-use crate::walk::Step;
-use crate::workspace::stepped_alone;
 
 /// The corpus directory holding the migration model, its site and its
 /// manifold.
@@ -39,7 +43,8 @@ const OTHER_KEY: &str = "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5
 fn a_site_and_a_manifold_read_from_their_files_3374()
 {
     let worlds = worlds();
-    let site = Site::read(&worlds.join("two-processes.site.gandr")).expect("the site reads");
+    let site =
+        Site::read::<Evaluator>(&worlds.join("two-processes.site.gandr")).expect("the site reads");
     let key: NodeId = SITE_KEY.parse().expect("the key is hex");
     assert_eq!(
         (site.key(), site.sockets().to_vec(), site.lookup()),
@@ -50,8 +55,8 @@ fn a_site_and_a_manifold_read_from_their_files_3374()
         ),
         "the site reads its key and its one socket"
     );
-    let manifold =
-        Manifold::read(&worlds.join("two-processes.manifold.gandr")).expect("the manifold reads");
+    let manifold = Manifold::read::<Evaluator>(&worlds.join("two-processes.manifold.gandr"))
+        .expect("the manifold reads");
     assert_eq!(
         manifold.deploying(&worlds.join("two-processes.gandr")),
         Ok(()),
@@ -183,14 +188,14 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         "twice.gandr",
         &format!(
             include_str!(
-                "tests/unformatted/a-field-that-does-not-read-is-refused-by-name-3374-twice.gandr"
+                "manifold/unformatted/a-field-that-does-not-read-is-refused-by-name-3374-twice.gandr"
             ),
             SITE_KEY = SITE_KEY
         ),
     );
     assert!(
         matches!(
-            Manifold::read(&twice),
+            Manifold::read::<Evaluator>(&twice),
             Err(Undeployed::Replicated { ref world, ref count, .. }) if world == "far" && count == "2"
         ),
         "a world run as two processes is refused, naming it and its count"
@@ -198,7 +203,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     let unplaced = manifold("unplaced.gandr", "");
     assert!(
         matches!(
-            Manifold::read(&unplaced),
+            Manifold::read::<Evaluator>(&unplaced),
             Err(Undeployed::Undeclared {
                 field: Stated::Placements,
                 ..
@@ -212,7 +217,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     );
     assert!(
         matches!(
-            Manifold::read(&listed),
+            Manifold::read::<Evaluator>(&listed),
             Err(Undeployed::Unplaced { ref came, .. }) if came == "cons \"far\" nil"
         ),
         "placements that are no placements are refused with what they ran to"
@@ -228,20 +233,20 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     };
     assert!(
         matches!(
-            Site::read(&site("unkeyed.gandr", "abc", "")),
+            Site::read::<Evaluator>(&site("unkeyed.gandr", "abc", "")),
             Err(Undeployed::Unkeyed { .. })
         ),
         "a key that is no key is refused"
     );
     assert!(
         matches!(
-            Site::read(&site("unsocketed.gandr", SITE_KEY, "127.0.0.1:7433, nowhere")),
+            Site::read::<Evaluator>(&site("unsocketed.gandr", SITE_KEY, "127.0.0.1:7433, nowhere")),
             Err(Undeployed::Unsocketed { ref entry, .. }) if entry == "nowhere"
         ),
         "a socket that is no `ip:port` is refused, naming the entry"
     );
     assert_eq!(
-        Site::read(&site("found.gandr", SITE_KEY, "")).map(|site| site.lookup()),
+        Site::read::<Evaluator>(&site("found.gandr", SITE_KEY, "")).map(|site| site.lookup()),
         Ok(Lookup::Mdns),
         "a site naming no socket is found by its key alone"
     );
@@ -261,7 +266,11 @@ const KEPT: &str = "pub theory Kept where {\n  sort V : Type+;\n  sort C : Type;
 #[test]
 fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
 {
-    let judged = |path: &Path| Manifold::read(path).expect("the manifold reads").judged();
+    let judged = |path: &Path| {
+        Manifold::read::<Evaluator>(path)
+            .expect("the manifold reads")
+            .judged::<Evaluator>()
+    };
     let worlds = worlds();
     let deployments = worlds.join("../deployments");
     assert_eq!(
@@ -276,7 +285,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     );
     let states = |path: &Path| {
         let text = std::fs::read_to_string(path).expect("the source reads");
-        stepped_alone(path, SourceText::from(text.as_str()), |step| {
+        stepped_alone::<Evaluator, _, _>(path, SourceText::from(text.as_str()), |step| {
             let Step::Source {
                 composed:
                     Composed::Settled {
@@ -359,7 +368,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     let manifold = scratch.file(
         Path::new("m.gandr"),
         Text(&format!(
-            include_str!("tests/unformatted/a-world-s-row-is-judged-against-its-site-s-offer-3523-manifold.gandr"), local = local
+            include_str!("manifold/unformatted/a-world-s-row-is-judged-against-its-site-s-offer-3523-manifold.gandr"), local = local
         )),
     );
     let refused = judged(&manifold);
@@ -401,7 +410,11 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
 #[test]
 fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
 {
-    let judged = |path: &Path| Manifold::read(path).expect("the manifold reads").judged();
+    let judged = |path: &Path| {
+        Manifold::read::<Evaluator>(path)
+            .expect("the manifold reads")
+            .judged::<Evaluator>()
+    };
     let translations = worlds().join("../translations");
     let pathological = worlds().join("../../pathological/worlds");
     assert_eq!(
@@ -433,7 +446,7 @@ fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
     let _versions = scratch.file(
         Path::new("v.gandr"),
         Text(include_str!(
-            "tests/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-versions.gandr"
+            "manifold/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-versions.gandr"
         )),
     );
     let _program = scratch.file(
@@ -448,7 +461,7 @@ fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
             Path::new(name),
             Text(&format!(
                 include_str!(
-                    "tests/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-site.gandr"
+                    "manifold/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-site.gandr"
                 ),
                 sort = sort,
                 offers = offers,
@@ -461,7 +474,7 @@ fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
             Path::new(name),
             Text(&format!(
                 include_str!(
-                    "tests/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-manifold.gandr"
+                    "manifold/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-manifold.gandr"
                 ),
                 site = site,
                 translation = translation,
@@ -506,7 +519,7 @@ fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
         "pub def translation = 3;",
     );
     assert_eq!(
-        Manifold::read(&unspelled).map(|read| read.judged()),
+        Manifold::read::<Evaluator>(&unspelled).map(|read| read.judged::<Evaluator>()),
         Err(Undeployed::Untranslatable {
             file: unspelled.clone(),
             came: String::from("3"),
@@ -519,7 +532,8 @@ fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
 fn a_site_reads_its_secret_from_the_model_given_3375()
 {
     let worlds = worlds();
-    let site = Site::read(&worlds.join("two-processes.site.gandr")).expect("the site reads");
+    let site =
+        Site::read::<Evaluator>(&worlds.join("two-processes.site.gandr")).expect("the site reads");
     let key: NodeId = SITE_KEY.parse().expect("the key is hex");
     assert_eq!(
         site.variable(),
@@ -527,7 +541,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
         "the site's secret `far` is read from its upper-cased variable"
     );
     assert_eq!(
-        site.secret(Secrets::Model(&worlds.join("two-processes.secrets.gandr")))
+        site.secret::<Evaluator>(Secrets::Model(&worlds.join("two-processes.secrets.gandr")))
             .map(|secret| secret.node_id()),
         Ok(key),
         "the corpus model answers the secret proving the site's key, sealed as it is"
@@ -537,13 +551,13 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
         Path::new("named.gandr"),
         Text(&format!(
             include_str!(
-                "tests/unformatted/a-site-reads-its-secret-from-the-model-given-3375-named.gandr"
+                "manifold/unformatted/a-site-reads-its-secret-from-the-model-given-3375-named.gandr"
             ),
             SITE_KEY = SITE_KEY
         )),
     );
     assert_eq!(
-        Site::read(&named).map(|site| site.variable()),
+        Site::read::<Evaluator>(&named).map(|site| site.variable()),
         Ok(String::from("GANDR_SECRET_FAR_SITE__")),
         "a hyphen, a dot and a letter outside ASCII are each spelled `_`"
     );
@@ -558,7 +572,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
     };
     let other = model("other.gandr", &"02".repeat(32));
     assert_eq!(
-        site.secret(Secrets::Model(&other))
+        site.secret::<Evaluator>(Secrets::Model(&other))
             .map(|secret| secret.node_id()),
         Err(Undeployed::Unproven {
             site: key,
@@ -572,7 +586,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
     );
     let unkeyable = model("unkeyable.gandr", "hunter2");
     let refused = site
-        .secret(Secrets::Model(&unkeyable))
+        .secret::<Evaluator>(Secrets::Model(&unkeyable))
         .map(|secret| secret.node_id());
     assert_eq!(
         refused,
@@ -590,7 +604,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
     );
     let modelless = scratch.file(Path::new("modelless.gandr"), Text("pub def other = 1;\n"));
     assert_eq!(
-        site.secret(Secrets::Model(&modelless))
+        site.secret::<Evaluator>(Secrets::Model(&modelless))
             .map(|secret| secret.node_id()),
         Err(Undeployed::Undeclared {
             file: modelless,

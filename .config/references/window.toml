@@ -215,12 +215,12 @@ work = "doi:10.17487/rfc8089"
 exemplar = "RFC 8089 is the standard of the file URI scheme, and no newer work states the scheme or the percent-decoding of its path"
 
 [[site]]
-site = "surface-dispatcher::evaluate::reals"
+site = "surface-evaluate::evaluate::reals"
 work = "Escardó-2004-synthetic_topology_data_types_classical_spaces"
 exemplar = "no newer work states a strict comparison of two reals as an open that a run semidecides, with no stop read as false"
 
 [[site]]
-site = "surface-dispatcher::evaluate::reals"
+site = "surface-evaluate::evaluate::reals"
 work = "Taylor-2010-lambda_calculus_real_analysis"
 exemplar = "no newer work states the laws that a Dedekind cut owes, and the modality of the domain that a quantifier ranges over"
 

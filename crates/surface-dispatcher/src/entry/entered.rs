@@ -70,7 +70,7 @@ impl From<&IntegerLiteral> for ExitStatus
     /// # Adequacy
     /// - hypothesis: L3 — zero, a small code, 255, 256, a long magnitude and a
     ///   negative integer.
-    /// - witness: `evaluate::entry::tests::an_exit_status_keeps_the_low_byte_1881`
+    /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_exit_status_keeps_the_low_byte_1881`
     #[spec(
         captures: [odd = literal.magnitude().as_ref().bytes().last().is_some_and(|digit| digit % 2 == 1)],
         ensures: |ret| (ret.0 % 2 == 1) == odd,

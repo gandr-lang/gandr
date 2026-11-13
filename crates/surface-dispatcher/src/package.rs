@@ -122,9 +122,10 @@ use crate::compose::LoweringCount;
 use crate::compose::item_program;
 use crate::compose::lower_prelude;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::evaluation::Evaluation;
 use crate::entry::evaluation::declaration_name;
-use crate::evaluate::Program;
+use crate::program::Program;
 use crate::root::classify;
 use crate::workspace::Gathered;
 use crate::workspace::Unmembered;
@@ -524,10 +525,12 @@ fn inside(
     },
 )]
 #[inline]
-pub fn packaged(
+pub fn packaged<E>(
     paths: Vec<PathBuf>,
     working: &Path,
 ) -> Result<Walked, Unpathed>
+where
+    E: Engine,
 {
     let base = working
         .canonicalize()
@@ -541,10 +544,12 @@ pub fn packaged(
     };
     let mut gathered: Vec<Gathered> = Vec::new();
     let mut members = |workspace: &Workspace| {
-        let (members, read) = workspace.members().map_err(|why| Unpathed::Unmembered {
-            workspace: workspace.source(),
-            why,
-        })?;
+        let (members, read) = workspace
+            .members::<E>()
+            .map_err(|why| Unpathed::Unmembered {
+                workspace: workspace.source(),
+                why,
+            })?;
         if gathered
             .iter()
             .all(|standing| standing.workspace != *workspace)
@@ -730,28 +735,30 @@ impl Manifest
     /// - witness: `tests::package::a_manifest_renders_the_toolchain_its_model_asks_for_3135`
     /// - witness: `tests::package::a_manifest_renders_the_presentation_its_model_names_3135`
     #[inline]
-    pub fn of(
+    pub fn of<E>(
         program: &mut Program<'_>,
         own: &SettleReport<'_>,
         package: &Package,
     ) -> Result<Self, Unmanifested>
+    where
+        E: Engine,
     {
-        let name = strung(program, own, Field::Name)?;
-        let version = strung(program, own, Field::Version)?;
-        let authors = strung(program, own, Field::Authors)?;
-        let licence = strung(program, own, Field::Licence)?;
-        let documentation = strung(program, own, Field::Documentation)?;
-        let endpoint = strung(program, own, Field::Endpoint)?;
-        let gandr = strung(program, own, Field::Gandr)?;
-        let features = strung(program, own, Field::Features)?;
-        let systems = strung(program, own, Field::Systems)?;
+        let name = strung::<E>(program, own, Field::Name)?;
+        let version = strung::<E>(program, own, Field::Version)?;
+        let authors = strung::<E>(program, own, Field::Authors)?;
+        let licence = strung::<E>(program, own, Field::Licence)?;
+        let documentation = strung::<E>(program, own, Field::Documentation)?;
+        let endpoint = strung::<E>(program, own, Field::Endpoint)?;
+        let gandr = strung::<E>(program, own, Field::Gandr)?;
+        let features = strung::<E>(program, own, Field::Features)?;
+        let systems = strung::<E>(program, own, Field::Systems)?;
         let toolchain = Toolchain::read(gandr.clone(), Separated(&features), Separated(&systems))
             .map_err(|_unconstrained| Unmanifested::Unconstrained { came: gandr })?;
-        let spelling = strung(program, own, Field::Spelling)?;
+        let spelling = strung::<E>(program, own, Field::Spelling)?;
         if !spelling.is_empty() && spelling.parse::<gandr_surface_grammar::Spelling>().is_err() {
             return Err(Unmanifested::Unspelled { came: spelling });
         }
-        let sources = strung(program, own, Field::Sources)?;
+        let sources = strung::<E>(program, own, Field::Sources)?;
         if package.stated().map(Path::as_os_str) != Some(std::ffi::OsStr::new(&sources)) {
             return Err(Unmanifested::Unstated { came: sources });
         }
@@ -929,11 +936,13 @@ impl WorkspaceManifest
 /// # Adequacy
 /// - hypothesis: L3 — as [`Manifest::of`].
 /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
-fn strung(
+fn strung<E>(
     program: &mut Program<'_>,
     own: &SettleReport<'_>,
     field: Field,
 ) -> Result<String, Unmanifested>
+where
+    E: Engine,
 {
     let constant = match program.named_among(
         field.path(),
@@ -944,7 +953,7 @@ fn strung(
             return Err(Unmanifested::Undeclared(field));
         },
     };
-    let came = match program.evaluate(constant) {
+    let came = match E::evaluate(program, constant) {
         Evaluation::Value(value) => value.to_string(),
         ref other @ (Evaluation::Sealed(_)
         | Evaluation::Blamed(_)

@@ -34,6 +34,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::compose;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_render_terminal::RenderStyle;
@@ -189,7 +190,7 @@ fn unsettled<'step>(
         root,
         text,
         base: gandr_surface_syntax::ByteOffset::from(0_usize),
-        composed: compose(
+        composed: compose::<Evaluator>(
             &grammar,
             root.corpus_root(),
             text,
@@ -223,7 +224,7 @@ fn only(
 ) -> Diagnostic
 {
     let step = unsettled(path, root, text);
-    let mut printed: Vec<Diagnostic> = entries(&step, verb).collect();
+    let mut printed: Vec<Diagnostic> = entries::<Evaluator>(&step, verb).collect();
     assert_eq!(printed.len(), 1_usize, "one diagnostic: {printed:?}");
     printed.remove(0)
 }
@@ -441,7 +442,7 @@ fn an_unended_form_renders_what_is_missing_where()
             SourceRoot::Strict,
             SourceText::from(source),
         );
-        let rendered: String = entries(&step, check)
+        let rendered: String = entries::<Evaluator>(&step, check)
             .map(|diagnostic| plain(&diagnostic, Verbosity::User))
             .collect();
         golden.assert_eq(&rendered);
@@ -570,7 +571,7 @@ fn an_unlocated_diagnostic_names_its_path_and_quotes_no_line()
         root: SourceRoot::Strict,
         text: SourceText::from("def"),
         base: gandr_surface_syntax::ByteOffset::from(0_usize),
-        composed: compose(
+        composed: compose::<Evaluator>(
             &grammar,
             SourceRoot::Strict.corpus_root(),
             composed_text,
@@ -579,7 +580,7 @@ fn an_unlocated_diagnostic_names_its_path_and_quotes_no_line()
         .expect("the source composes"),
         standing: Standing::Unsettled,
     };
-    let printed: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated)).collect();
+    let printed: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated)).collect();
     assert_eq!(printed.len(), 1_usize, "one refusal, one diagnostic");
     let rendered = plain(&printed[0], Verbosity::User);
     assert!(
@@ -647,15 +648,17 @@ fn a_walk_renders_each_refused_declaration_at_its_line()
         Verb::Test,
     ] {
         let mut rendered = Vec::new();
-        let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                rendered.extend(
-                    entries(&step, verb).map(|diagnostic| plain(&diagnostic, Verbosity::User)),
-                );
-                ControlFlow::Continue(())
-            },
-        );
+        let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()])
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    rendered.extend(
+                        entries::<Evaluator>(&step, verb)
+                            .map(|diagnostic| plain(&diagnostic, Verbosity::User)),
+                    );
+                    ControlFlow::Continue(())
+                },
+            );
         assert_eq!(rendered.len(), 3_usize, "three refusals: {rendered:?}");
         for ((line, column), rendered) in [(2_usize, 14_usize), (4, 13), (5, 3)]
             .into_iter()
@@ -678,13 +681,14 @@ fn a_ledger_line_prints_as_itself()
         SourceText::from("@[ owes(1) ] def later : Integer ;\n"),
     );
     let mut lines = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            lines.extend(entries(&step, Verb::Test));
-            ControlFlow::Continue(())
-        },
-    );
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                lines.extend(entries::<Evaluator>(&step, Verb::Test));
+                ControlFlow::Continue(())
+            },
+        );
     let [ref line] = *lines.as_slice()
     else {
         panic!("one settled fixture, one line: {lines:?}");
@@ -723,7 +727,7 @@ fn scratch_scope_removal_is_visible_to_a_new_walk()
     let text = SourceText::from("def answer = 17 ;\n");
     let path = scratch.file(Path::new("strict/nested/source.gandr"), text);
     let mut observed = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit(
+    let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             if let Step::Source { text, base, .. } = step {
@@ -745,9 +749,10 @@ fn scratch_scope_removal_is_visible_to_a_new_walk()
     let root = scratch.0.clone();
     drop(scratch);
     assert!(matches!(root.try_exists(), Ok(false)));
-    let missing = Walk::new(vec![path]).visit(&Pool::new(Width::SERIAL), |step| {
-        ControlFlow::Break(matches!(step, Step::Fault { .. }))
-    });
+    let missing = Walk::new(vec![path])
+        .visit::<Evaluator, _, _>(&Pool::new(Width::SERIAL), |step| {
+            ControlFlow::Break(matches!(step, Step::Fault { .. }))
+        });
     assert_eq!(
         missing,
         ControlFlow::Break(true),

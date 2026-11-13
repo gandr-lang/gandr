@@ -15,8 +15,6 @@
 use alloc::string::String;
 
 use anodized::spec;
-use gandr_core_checker::ModuleReport;
-use gandr_core_checker::Verdict;
 use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::ProducerArity;
@@ -25,7 +23,6 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::host::PROC;
-use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::StringLiteral;
 use gandr_runtime_emitter::HostHandler;
@@ -35,17 +32,17 @@ use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_net::Net;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Entered;
+use gandr_surface_dispatcher::Entry;
+use gandr_surface_dispatcher::ExitStatus;
+use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Worlds;
 use gandr_surface_lowering::Arguments;
-use gandr_surface_lowering::Container;
-use gandr_surface_lowering::ENTRY;
-use gandr_surface_lowering::LoweredDeclaration;
-use gandr_surface_lowering::LoweredModule;
-use gandr_surface_lowering::Role;
-use gandr_surface_lowering::entry_shape;
 use quenchant_shape::shape::Maybe;
 
 use super::Evaluation;
-use super::Program;
+use super::Machine;
 use super::Start;
 use super::Unrunnable;
 use super::console;
@@ -54,13 +51,6 @@ use super::rand;
 use super::reals;
 use super::reals::Reals;
 use super::worlds;
-use crate::entry::console::Console;
-use crate::entry::entered::Entered;
-use crate::entry::entered::Entry;
-use crate::entry::entered::ExitStatus;
-use crate::entry::entered::RealsProfile;
-use crate::entry::entered::program_entry;
-use crate::entry::worlds::Worlds;
 
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
@@ -144,19 +134,8 @@ impl HostHandler for EntryHost<'_>
     }
 }
 
-impl<'source> Program<'source>
+impl<'source> Machine<'_, 'source>
 {
-    /// The declaration this program starts at: the `main` its source declares
-    /// at the top level, at an entry's type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub const fn entry(&self) -> Maybe<Entry, program_entry::Absent>
-    {
-        self.entry
-    }
-
     /// Run `entry` with `arguments`, under a host that serves `Proc.exit`,
     /// writes each `Console.print` line to `console`, serves each `Net`
     /// operation on `net` when it is given, serves each `Reals` operation on
@@ -202,10 +181,10 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
     /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
     /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_authority_2970`
-    /// - witness: `tests::run::a_script_pings_over_its_network_3186`
-    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
-    /// - witness: `tests::run::a_world_bound_to_this_host_runs_here`
-    /// - witness: `tests::run::a_world_no_binding_names_is_refused_before_the_run`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_pings_over_its_network_3186`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_world_bound_to_this_host_runs_here`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_world_no_binding_names_is_refused_before_the_run`
     #[inline]
     pub fn enter(
         &mut self,
@@ -287,114 +266,6 @@ fn argument_list(
         let text = core.value_literal(Literal::Text(StringLiteral::new(argument.clone())));
         core.value_list_cons(text, rest)
     })
-}
-
-/// The entry of the program over `module`: the `main` declared at the top
-/// level of its last source, the one run, when the checker took it at an
-/// entry's type.
-///
-/// # Specification
-/// - requires: `verdicts` judged `module` over `core`.
-/// - ensures: the admission position of the declaration named [`ENTRY`] at the
-///   top level of the last source any top-level declaration of `module` stands
-///   in — a stray, named by the token it opens with, is none — with the
-///   arguments its declared type reads, when its verdict states a type
-///   [`entry_shape()`] answers; the undeclared absence otherwise.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the clause reads the module's sources and the verdicts
-///   as the body does; the witness observes the entries.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a source declaring `main` of each entry type beside
-///   another name, one declaring none, one whose module's member is the only
-///   `main`, and one running `main()` after declaring it.
-/// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
-pub(super) fn entry_of(
-    core: &CoreArena,
-    module: &LoweredModule<'_>,
-    verdicts: &ModuleReport,
-) -> Maybe<Entry, program_entry::Absent>
-{
-    let undeclared = Maybe::Absent(program_entry::Absent::Undeclared);
-    let top = |container: Container| match container {
-        Container::TopLevel(source) => Some(source),
-        Container::Module(_) => None,
-    };
-    let Some(run) = module
-        .declarations()
-        .iter()
-        .filter_map(|lowered| top(lowered.container()))
-        .max()
-    else {
-        return undeclared;
-    };
-    let Some(constant) = module
-        .declarations()
-        .iter()
-        .filter(|lowered| {
-            lowered.name().as_ref() == ENTRY
-                && lowered.role() != Role::Held
-                && top(lowered.container()) == Some(run)
-        })
-        .map(LoweredDeclaration::constant)
-        .next_back()
-    else {
-        return undeclared;
-    };
-    let declared = verdicts
-        .judged()
-        .iter()
-        .find(|judged| judged.constant() == constant)
-        .and_then(|judged| match judged.verdict() {
-            Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => Some(declared.id()),
-            Verdict::Synthesised { .. }
-            | Verdict::Data
-            | Verdict::Owed(_)
-            | Verdict::Refused(_) => None,
-        });
-    match declared.map(|declared| entry_shape(core, declared)) {
-        Some(Maybe::Present(arguments)) => Maybe::Present(Entry {
-            constant,
-            arguments,
-        }),
-        Some(Maybe::Absent(_)) | None => undeclared,
-    }
-}
-
-/// The worlds `entry`'s declaration holds a capability for, in its `entry`
-/// attribute's order: none for a module with no entry, or an entry no such
-/// attribute decorates.
-///
-/// # Specification
-/// - requires: `entry` is the entry of `module`.
-/// - ensures: the worlds after the first — the home — that the entry's
-///   attribute names, as [`LoweredModule::worlds`] answers them.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the answer is the module's attribute table read at the
-///   entry's keys.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an entry holding a capability for a world no binding
-///   names is refused before it runs, and one whose bindings bind it runs.
-/// - witness: `tests::run::a_world_no_binding_names_is_refused_before_the_run`
-pub(super) fn reaches(
-    module: &LoweredModule<'_>,
-    entry: Maybe<Entry, program_entry::Absent>,
-) -> Vec<ConstantIndex>
-{
-    let Maybe::Present(Entry { constant, .. }) = entry
-    else {
-        return Vec::new();
-    };
-    module
-        .declarations()
-        .iter()
-        .rfind(|lowered| lowered.constant() == constant)
-        .and_then(|lowered| module.worlds(lowered).get(1 ..))
-        .map(<[ConstantIndex]>::to_vec)
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

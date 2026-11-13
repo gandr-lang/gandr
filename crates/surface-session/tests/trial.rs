@@ -17,6 +17,7 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::render;
 use gandr_surface_session::Session;
@@ -75,7 +76,7 @@ fn shown(submission: &Submission<'_>) -> Shown
         submission.obligations()
     );
     let step = submission.clone().into_step(Path::new("candidate.gandr"));
-    for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+    for diagnostic in entries::<Evaluator>(&step, Verb::Check(Goals::Reported)) {
         text.push_str(render(&diagnostic, RenderStyle::Plain, Verbosity::User).as_ref());
         text.push('\n');
     }

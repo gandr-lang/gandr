@@ -80,8 +80,8 @@ pub trait Console
     /// - hypothesis: L3 — a program printing two lines leaves both in
     ///   [`Captured`], in order, and a console failing a line stops the run
     ///   there.
-    /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
-    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_entry_prints_through_its_console_2279`
+    /// - witness: `gandr-surface-evaluate::evaluate::tests::a_printed_line_reaches_the_console_2279`
     fn print(
         &mut self,
         line: Line<'_>,
@@ -100,7 +100,7 @@ pub trait Console
     /// # Adequacy
     /// - hypothesis: L3 — an entry writing to both streams leaves each line in
     ///   its own stream of [`Captured`], in order.
-    /// - witness: `evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
+    /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
     fn eprint(
         &mut self,
         line: Line<'_>,
@@ -119,7 +119,7 @@ pub trait Console
     /// # Adequacy
     /// - hypothesis: L3 — an entry reading two lines from [`Captured`] fed one
     ///   reads it and then the empty string.
-    /// - witness: `evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
+    /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
     fn read_line(&mut self) -> Input;
 }
 
@@ -180,7 +180,8 @@ impl Captured
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn clear(&mut self)
+    #[inline]
+    pub fn clear(&mut self)
     {
         self.lines.clear();
         self.errors.clear();

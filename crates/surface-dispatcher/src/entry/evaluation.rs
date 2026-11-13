@@ -13,6 +13,7 @@ use anodized::spec;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::ReadbackRefusal;
 use gandr_core_sequent::Stuck;
+use gandr_core_term::ComputationId;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Declined;
@@ -47,6 +48,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a program has no declaration of its own source's.
+    pub mod last_declared {
+        /// The source declares nothing.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source declares no name.
+            NoDeclaration,
+        }
+    }
+}
+
 /// A value, spelled: the text `gandr run` prints for a run that returned one,
 /// laid out by the printer every face shares.
 #[repr(transparent)]
@@ -61,7 +74,7 @@ impl ValueSpelling
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(presentation: Presentation) -> Self
+    pub const fn new(presentation: Presentation) -> Self
     {
         Self(presentation)
     }
@@ -127,7 +140,7 @@ impl SealedRun
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         module: String,
         declared: String,
     ) -> Self
@@ -141,7 +154,7 @@ impl SealedRun
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn module(&self) -> &String
+    pub const fn module(&self) -> &String
     {
         &self.module
     }
@@ -152,7 +165,7 @@ impl SealedRun
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn declared(&self) -> &String
+    pub const fn declared(&self) -> &String
     {
         &self.declared
     }
@@ -172,6 +185,19 @@ impl fmt::Display for SealedRun
     {
         write!(f, "⟨opaque at {}⟩ : {}", self.module, self.declared)
     }
+}
+
+/// Where a run of a declaration ended: its terminal value read back, or the
+/// evaluation that ended it before there was one to read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Terminal<'source>
+{
+    /// The terminal value, read back as the computation returning it into
+    /// the arena the run was given.
+    Read(ComputationId),
+    /// The evaluation the run ended with first: unrunnable, stuck, blamed, or
+    /// a terminal whose read-back refused.
+    Ended(Evaluation<'source>),
 }
 
 /// What running one declaration came to.
@@ -272,7 +298,7 @@ impl Evaluation<'_>
     /// # Adequacy
     /// - hypothesis: L3 — one run of each class the fragment can write, each
     ///   asserted at its exact status.
-    /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
+    /// - witness: `gandr-surface-evaluate::evaluate::tests::each_outcome_class_has_its_status`
     #[spec(ensures: |ret| match *self {
         Self::Value(_) | Self::Sealed(_) => matches!(ret, RunStatus::Value),
         Self::Blamed(_) | Self::Holed { .. } | Self::Stuck(_) | Self::Unfinished(_) => matches!(ret, RunStatus::Failed),
@@ -311,9 +337,9 @@ impl fmt::Display for Evaluation<'_>
     /// - hypothesis: L3 — value spellings, goal names and distinct numeric
     ///   admission positions retain their roles; a sink failure is not
     ///   injected.
-    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
-    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
-    /// - witness: `evaluate::tests::terminal_classification_preserves_declaration_identity`
+    /// - witness: `gandr-surface-evaluate::evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `gandr-surface-evaluate::evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `gandr-surface-evaluate::evaluate::tests::terminal_classification_preserves_declaration_identity`
     #[inline]
     fn fmt(
         &self,

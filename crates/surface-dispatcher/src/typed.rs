@@ -186,6 +186,7 @@ use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweredStructure;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
@@ -248,8 +249,8 @@ use crate::compose::judge_lowering;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::evaluation::Evaluation;
-use crate::evaluate::hidden_members;
 use crate::typed::referent::Referents;
 
 mod referent;
@@ -1219,6 +1220,90 @@ fn own(
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
 }
 
+/// Each member a module matched against a signature keeps out of its
+/// interface, with that module's path.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: every declaration whose container is a module that matching
+///   coerced, and whose admission position none of that module's exported value
+///   components resolves to, keyed by that position and holding the module's
+///   path joined by `.`; a member hidden by two modules keeps the first.
+/// - fails: never.
+/// - panics: none.
+/// - intension: a module with no coerced structure is skipped without a walk;
+///   otherwise each declaration's container path is read once, in place, and
+///   compared with each coerced module's path, allocating nothing per
+///   declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model whose helpers stand outside its signature, and
+///   sealed modules whose runs name only their exports.
+/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `gandr-surface-evaluate::evaluate::tests::a_run_naming_a_declaration_outside_every_sealed_module_is_spelled`
+#[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
+#[inline]
+#[must_use]
+pub fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
+{
+    let mut hidden = BTreeMap::new();
+    if !module
+        .structures()
+        .iter()
+        .any(|structure| structure.coerced().0)
+    {
+        return hidden;
+    }
+    // Each declaration's container path, as `LoweredModule::path_of` spells
+    // it before the declaration's own name: a derived rule's theory, else the
+    // path of the module it is declared in.
+    let containers: Vec<(ConstantIndex, Option<SurfaceName<'_>>, &[SurfaceName<'_>])> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            let path = match declaration.container() {
+                Container::TopLevel(_) => &[][..],
+                Container::Module(index) => module
+                    .structures()
+                    .get(usize::from(index))
+                    .map_or(&[][..], LoweredStructure::path),
+            };
+            (declaration.constant(), module.theory_of(declaration), path)
+        })
+        .collect();
+    let mut exported: BTreeSet<ConstantIndex> = BTreeSet::new();
+    let mut at = String::new();
+    for structure in module.structures() {
+        if !structure.coerced().0 {
+            continue;
+        }
+        exported.clear();
+        exported.extend(
+            structure
+                .values()
+                .iter()
+                .map(|component| component.constant),
+        );
+        at.clear();
+        for (index, segment) in structure.path().iter().enumerate() {
+            if index > 0 {
+                at.push('.');
+            }
+            at.push_str(AsRef::<str>::as_ref(segment));
+        }
+        for &(constant, theory, path) in &containers {
+            let within = theory.map_or_else(
+                || path == structure.path(),
+                |theory| structure.path() == [theory],
+            );
+            if within && !exported.contains(&constant) {
+                let _first = hidden.entry(constant).or_insert_with(|| at.clone());
+            }
+        }
+    }
+    hidden
+}
+
 /// The modules of the source starting at `base` in the unit's text `text`
 /// that hold a member, in pre-order, each with the members a seal hides that
 /// its body writes by their own names, and where a probe is written into it;
@@ -1793,7 +1878,7 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — a document typed after its judged closure answers
     ///   every position as one typed whole does.
-    /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
+    /// - witness: `tests::typed::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
     #[inline]
     pub fn of_parsed_after<'held>(
         judged: &'held JudgedClosure,
@@ -1837,10 +1922,10 @@ impl TypeTable
     ///   answers; a match left to a pattern hole is refused as its judgement
     ///   refuses it.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
-    /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
+    /// - witness: `tests::typed::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
     /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
     /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
-    /// - witness: `typed::tests::a_pattern_hole_refuses_its_match_in_both_tables_3617`
+    /// - witness: `tests::typed::a_pattern_hole_refuses_its_match_in_both_tables_3617`
     fn typed(
         source: SourceText<'_>,
         lowering: Lowering<'_>,
@@ -4152,6 +4237,18 @@ impl TypeTable
         self.referents.offered()
     }
 
+    /// The key of each declaration form the table holds a type or a refusal
+    /// for, ascending: what a test of a refusal finds a declaration by.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(any(test, feature = "fixture"))]
+    #[inline]
+    pub fn declared_keys(&self) -> impl Iterator<Item = NodeKey> + '_
+    {
+        self.declared.keys().copied()
+    }
+
     /// The declarations of the table's own source a run can start at, each
     /// by where its name is written and the constant it admits, ascending:
     /// those that run as they stand, applied to nothing.
@@ -5300,7 +5397,7 @@ impl TypeTable
     ///   of every source, failing on a class the findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
     /// - witness: `typed::tests::a_record_parameter_reprints_with_its_labels_1655`
-    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
+    /// - witness: `tests::typed::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
     /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
     /// - witness: `typed::tests::a_list_type_reads_back_through_its_home_4835`
@@ -5993,16 +6090,18 @@ impl TypeTable
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
-    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
-    /// - witness: `typed::tests::a_member_s_value_reprints_under_its_own_declaration_610`
+    /// - witness: `tests::typed::an_importer_s_value_reads_back_beside_its_sibling_552`
+    /// - witness: `tests::typed::a_member_s_value_reprints_under_its_own_declaration_610`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
-    pub fn reprint_value(
+    pub fn reprint_value<E>(
         &self,
         grammar: &Pbg,
         signed: Maybe<Name<'_>, signed::Absent>,
         written: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
+    where
+        E: Engine,
     {
         const NAME: &str = REPRINTED;
         let declared = match signed {
@@ -6055,7 +6154,7 @@ impl TypeTable
                 let mut signed = String::from(<&str>::from(self.naming.text()));
                 signed.push_str(&signature);
                 signed.push_str(&body);
-                self.run_reprinted(grammar, SourceText::from(signed.as_str()))
+                self.run_reprinted::<E>(grammar, SourceText::from(signed.as_str()))
             },
             again @ (Maybe::Present(_) | Maybe::Absent(_)) => again,
         }
@@ -6090,19 +6189,21 @@ impl TypeTable
     /// - hypothesis: L3 — a theory's normal form reads back as written, a call
     ///   reads to its normal form, and a name that is no block reads nothing;
     ///   the census reads the corpus's family rows as values.
-    /// - witness: `typed::tests::a_theory_s_normal_form_reads_back_under_its_rules_669`
+    /// - witness: `tests::typed::a_theory_s_normal_form_reads_back_under_its_rules_669`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
-    pub fn reprint_normal_form(
+    pub fn reprint_normal_form<E>(
         &self,
         grammar: &Pbg,
         block: Name<'_>,
         written: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
+    where
+        E: Engine,
     {
         let Ok(Lowered::Module { module, .. }) = lower_unit_source(
             grammar,
@@ -6124,7 +6225,11 @@ impl TypeTable
         if matches!(declaration.outcome(), DeclarationOutcome::Data(_))
             || declaration.role() == Role::Operation
         {
-            return self.reprint_value(grammar, Maybe::Absent(signed::Absent::Unsigned), written);
+            return self.reprint_value::<E>(
+                grammar,
+                Maybe::Absent(signed::Absent::Unsigned),
+                written,
+            );
         }
         module
             .normal_form(declaration, CallText::from(<&str>::from(written)))
@@ -6156,7 +6261,7 @@ impl TypeTable
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
-    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
+    /// - witness: `tests::typed::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     fn lowered_reprint(
         &self,
@@ -6229,18 +6334,20 @@ impl TypeTable
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
-    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
+    /// - witness: `tests::typed::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
-    fn run_reprinted(
+    fn run_reprinted<E>(
         &self,
         grammar: &Pbg,
         source: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
+    where
+        E: Engine,
     {
         let Ok(Composed::Settled { mut program, .. }) =
             lower_unit_source(grammar, source, &self.unit, &mut LoweringCount::default()).and_then(
                 |lowering| {
-                    judge_lowering(
+                    judge_lowering::<E>(
                         CorpusRoot::Fixture,
                         (lowering, source),
                         &HostGrant::UNBOUNDED,
@@ -6260,7 +6367,7 @@ impl TypeTable
             .find(|&constant| {
                 matches!(program.name(constant), Maybe::Present(held) if held.as_ref() == REPRINTED)
             });
-        match constant.map(|constant| program.evaluate(constant)) {
+        match constant.map(|constant| E::evaluate(&mut program, constant)) {
             Some(Evaluation::Value(value)) => Maybe::Present(value.presentation().to_string()),
             Some(
                 Evaluation::Sealed(_)
@@ -7075,14 +7182,14 @@ mod tests
     }
 
     /// The table [`TypeTable::of_unit`] builds for `source` laid importing
-    /// every host interface's module ([`crate::tests::Listed::hosted`]), its
+    /// every host interface's module ([`crate::fixture::Listed::hosted`]), its
     /// offsets the source's own; panics when the grammar or the parse fails.
     ///
     /// # Specification
     /// trivial.
     fn hosted_table(source: SourceText<'_>) -> TypeTable
     {
-        let listed = crate::tests::Listed::hosted(<&str>::from(source));
+        let listed = crate::fixture::Listed::hosted(<&str>::from(source));
         let grammar = built_in().expect("the built-in grammar builds");
         TypeTable::of_unit(
             &grammar,
@@ -8367,82 +8474,6 @@ mod tests
         );
     }
 
-    /// #552: a table built over an importer's unit reads its printed values
-    /// and types back in that unit. Read alone, the importer's import
-    /// resolves to nothing and every declaration of it — the appended probe
-    /// among them — is refused with the import.
-    #[test]
-    fn an_importer_s_value_reads_back_beside_its_sibling_552()
-    {
-        use gandr_surface_lowering::ImportTarget;
-        use gandr_surface_lowering::SourceIndex;
-        use gandr_surface_lowering::Unit;
-        use gandr_surface_lowering::UnitSource;
-        use gandr_surface_pretty::Name;
-
-        use super::reprinted;
-        use super::signed;
-
-        let sibling = include_str!(
-            "typed/unformatted/an-importer-s-value-reads-back-beside-its-sibling-552-sibling.gandr"
-        );
-        let importer = include_str!(
-            "typed/unformatted/an-importer-s-value-reads-back-beside-its-sibling-552-importer.gandr"
-        );
-        let laid = format!(
-            include_str!(
-                "typed/unformatted/a-name-nothing-declares-is-kept-beside-a-form-refused-as-shadowing-laid.gandr"
-            ),
-            importer = importer,
-            sibling = sibling
-        );
-        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
-        let unit = Unit::new(vec![
-            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
-            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
-        ])
-        .expect("the unit's sources start in order");
-        let grammar = built_in().expect("the built-in grammar builds");
-        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
-            .expect("the unit parses");
-        assert_eq!(
-            table.reprint_value(
-                &grammar,
-                Maybe::Absent(signed::Absent::Unsigned),
-                SourceText::from("Here")
-            ),
-            Maybe::Present(String::from("Here")),
-            "the sibling's constructor reads back as written"
-        );
-        assert_eq!(
-            table.reprint_value(
-                &grammar,
-                Maybe::Absent(signed::Absent::Unsigned),
-                SourceText::from("nope")
-            ),
-            Maybe::Absent(reprinted::Absent::Unlowered),
-            "an unsigned value the lowering refuses has no signature to run under"
-        );
-        assert_eq!(
-            table.reprint_value(
-                &grammar,
-                Maybe::Present(Name::from("there")),
-                SourceText::from("+{.1 = Here}")
-            ),
-            Maybe::Present(String::from("+{.1 = Here}")),
-            "an injection, which needs its type, reads back run under the declaration's"
-        );
-        let trips: Vec<(String, RoundTrip)> = table
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
-            .into_iter()
-            .map(|back| (back.spelled, back.trip))
-            .collect();
-        assert!(
-            !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
-            "every printed type of the importer reads back beside its sibling: {trips:?}"
-        );
-    }
-
     /// #5213: a type that calls a module's function prints as that call, a
     /// call of no arguments with its empty list, and reads back to its
     /// certificate. A call's result applied once more prints and reads back
@@ -8626,152 +8657,6 @@ mod tests
                 "every printed type reads back: {trips:?}"
             );
         }
-    }
-
-    /// #669: a `theory`'s stated normal form is a term of the block, which a
-    /// top-level thunk cannot name. Read back under the block's rules it is
-    /// itself, and a call reads to the normal form the engine spells.
-    #[test]
-    fn a_theory_s_normal_form_reads_back_under_its_rules_669()
-    {
-        use gandr_surface_pretty::Name;
-
-        use super::reprinted;
-
-        let source = SourceText::from(include_str!(
-            "typed/fixtures/a-theory-s-normal-form-reads-back-under-its-rules-669.gandr"
-        ));
-        let grammar = built_in().expect("the built-in grammar builds");
-        let table = table(source);
-        let block = Name::from("Pointed");
-        let read = |written: &'static str| {
-            table.reprint_normal_form(&grammar, block, SourceText::from(written))
-        };
-        assert_eq!(read("pt"), Maybe::Present(String::from("pt")), "as written");
-        assert_eq!(
-            read("flip(flip(pt))"),
-            Maybe::Present(String::from("pt")),
-            "a call to its normal form"
-        );
-        assert_eq!(
-            table.reprint_normal_form(&grammar, Name::from("Absent"), SourceText::from("pt")),
-            Maybe::Absent(reprinted::Absent::Unlowered),
-            "no block of that name"
-        );
-    }
-
-    /// #610: a run value of one member of a component reprints under its own
-    /// declaration's signature. The walk numbers the constants of the whole
-    /// component — here the base, a sibling that also imports it, then the
-    /// member — while the member's table numbers only its import closure, so
-    /// the walk's number of `joined` names another declaration of the table,
-    /// or none, and the `Cons` that needs its type refused to read back.
-    #[test]
-    fn a_member_s_value_reprints_under_its_own_declaration_610()
-    {
-        use core::convert::Infallible;
-        use core::ops::ControlFlow;
-        use std::path::Path;
-
-        use gandr_kernel_term::ConstantIndex;
-        use gandr_surface_pretty::Name;
-
-        use crate::component::lay_out;
-        use crate::compose::Composed;
-        use crate::entry::evaluation::Evaluation;
-        use crate::pool::Pool;
-        use crate::walk::Step;
-        use crate::walk::Walk;
-        use crate::walk::tests::Scratch;
-        use crate::width::Width;
-
-        let scratch = Scratch::new(Path::new("member-reprint"));
-        scratch.file(
-            Path::new("fixture/base.gandr"),
-            SourceText::from(include_str!(
-                "typed/fixtures/a-member-s-value-reprints-under-its-own-declaration-610-1.gandr"
-            )),
-        );
-        scratch.file(
-            Path::new("fixture/a-sibling.gandr"),
-            SourceText::from(include_str!(
-                "typed/fixtures/a-member-s-value-reprints-under-its-own-declaration-610-2.gandr"
-            )),
-        );
-        scratch.file(
-            Path::new("fixture/b-member.gandr"),
-            SourceText::from(include_str!("typed/fixtures/member-list.gandr")),
-        );
-        let grammar = built_in().expect("the built-in grammar builds");
-        let mut reprinted = Vec::new();
-        let ControlFlow::Continue(_) = Walk::new(vec![scratch.root().join("fixture")]).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                let Step::Source {
-                    path,
-                    root,
-                    text,
-                    base,
-                    composed: Composed::Settled { mut program, .. },
-                    ..
-                } = step
-                else {
-                    return ControlFlow::Continue(());
-                };
-                if !path.ends_with("b-member.gandr") {
-                    return ControlFlow::Continue(());
-                }
-                let own =
-                    SourceText::from(text.as_ref().get(usize::from(base) ..).unwrap_or_default());
-                let laid = lay_out(&grammar, path, root, own);
-                let table = TypeTable::of_unit(
-                    &grammar,
-                    SourceText::from(laid.text.as_str()),
-                    &laid.unit,
-                    laid.base,
-                )
-                .expect("the member's unit parses");
-                let Maybe::Present(last) = program.last_declared()
-                else {
-                    panic!("the component declares");
-                };
-                let mut named = String::new();
-                for position in 0_usize ..= usize::from(last) {
-                    let constant = ConstantIndex::from(position);
-                    let Maybe::Present(name) = program.name(constant)
-                    else {
-                        continue;
-                    };
-                    named.clear();
-                    core::fmt::Write::write_fmt(&mut named, format_args!("{name}"))
-                        .expect("a name writes");
-                    if named != "joined" {
-                        continue;
-                    }
-                    let Evaluation::Value(value) = program.evaluate(constant)
-                    else {
-                        panic!("`joined` runs to a value");
-                    };
-                    let presentation = value.presentation();
-                    let spelled: &str = presentation.as_ref();
-                    let reprint = table.reprint_value(
-                        &grammar,
-                        Maybe::Present(Name::from("joined")),
-                        SourceText::from(spelled),
-                    );
-                    reprinted.push((String::from(spelled), reprint));
-                }
-                ControlFlow::Continue(())
-            },
-        );
-        assert_eq!(
-            reprinted,
-            [(
-                String::from("Cons Zero Nil"),
-                Maybe::Present(String::from("Cons Zero Nil"))
-            )],
-            "the member's value reprints under its own declaration's type"
-        );
     }
 
     #[test]
@@ -9774,7 +9659,7 @@ mod tests
         let source = SourceText::from(include_str!(
             "typed/unformatted/an-unread-binder-of-a-list-a-model-or-a-bind-answers-2181.gandr"
         ));
-        let listed = crate::tests::Listed::new(source);
+        let listed = crate::fixture::Listed::new(source);
         let grammar = built_in().expect("the built-in grammar builds");
         let table = TypeTable::of_unit(
             &grammar,
@@ -11248,104 +11133,6 @@ mod tests
         );
     }
 
-    /// #776: a document typed after its judged closure — lowered after the
-    /// closure's arena, its own declarations typed on the checker's state
-    /// after the closure's — answers at every byte, for every declaration,
-    /// every declared name and every printed type read back, as the document
-    /// typed whole over its unit does. The rose trees import two siblings and
-    /// write families, recursion through an imported `map`, cases and a mutual
-    /// block.
-    #[test]
-    fn a_document_typed_after_its_closure_types_as_one_typed_whole_776()
-    {
-        use alloc::sync::Arc;
-
-        use gandr_surface_corpus::CorpusRoot;
-        use gandr_surface_parser::parse;
-
-        use crate::HostGrant;
-        use crate::JudgedClosure;
-        use crate::LoweringCount;
-        use crate::SourceRoot;
-        use crate::lay_out;
-        use crate::lower_closure;
-
-        let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
-        let path = std::fs::canonicalize(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../corpus/model/data/rose.gandr"),
-        )
-        .expect("the rose trees are in the corpus");
-        let own = std::fs::read_to_string(&path).expect("the rose trees read");
-        let laid = lay_out(
-            &grammar,
-            &path,
-            SourceRoot::Fixture,
-            SourceText::from(own.as_str()),
-        );
-        let closure = Arc::new(
-            lower_closure(
-                Arc::clone(&grammar),
-                String::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
-                laid.unit
-                    .before_last()
-                    .expect("the prelude and the siblings make a unit"),
-                &mut LoweringCount::default(),
-            )
-            .expect("the siblings are held"),
-        );
-        let judged = JudgedClosure::new(
-            Arc::clone(&closure),
-            &HostGrant::UNBOUNDED,
-            CorpusRoot::Fixture,
-        )
-        .expect("the siblings lower to their end");
-        let text = SourceText::from(laid.text.as_str());
-        let parsed = parse(&grammar, SourceText::from(own.as_str()))
-            .expect("the rose trees parse")
-            .after(closure.tree(), text)
-            .expect("the rose trees lay after their siblings");
-        let after = TypeTable::of_parsed_after(&judged, parsed, &laid.unit, laid.base)
-            .expect("the rose trees type after their siblings");
-        let whole = TypeTable::of_unit(&grammar, text, &laid.unit, laid.base)
-            .expect("the rose trees type whole");
-        let page = PageWidth::from(80_u32);
-        let differing: Vec<usize> = (0 .. own.len())
-            .filter(|&offset| {
-                let at = ByteOffset::from(offset);
-                after.at(at, page, Form::Explicit.into())
-                    != whole.at(at, page, Form::Explicit.into())
-            })
-            .collect();
-        assert!(
-            after.spans().nth(100).is_some() && differing.is_empty(),
-            "every byte answers alike, over more than a hundred entries: differing at {differing:?}"
-        );
-        assert!(
-            after
-                .declarations(page, Form::Explicit.into())
-                .eq(whole.declarations(page, Form::Explicit.into())),
-            "every declaration answers alike"
-        );
-        assert_eq!(
-            after.declared_names(),
-            whole.declared_names(),
-            "every declared name is offered alike"
-        );
-        let read = |table: &TypeTable| -> Vec<(String, RoundTrip)> {
-            table
-                .read_back(&grammar, page, Form::Sugared.into())
-                .into_iter()
-                .map(|back| (back.spelled, back.trip))
-                .collect()
-        };
-        assert_eq!(
-            read(&after),
-            read(&whole),
-            "every printed type reads back alike"
-        );
-    }
-
     /// A term checked against a type spelled otherwise than its own reads
     /// back at both: its own, and the one it was checked against.
     #[test]
@@ -11705,69 +11492,6 @@ mod tests
                 ("_) => Z\n", String::from("N")),
             ],
             "each name at the index its constructor states, each field at its declared type"
-        );
-    }
-
-    /// #3617: a match that leaves an arm to a pattern hole is refused in the
-    /// table typed alone as in the table its judgement keeps, and a match
-    /// with every arm written is refused in neither.
-    #[test]
-    fn a_pattern_hole_refuses_its_match_in_both_tables_3617()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let refusals = |arms: &str| {
-            let own = alloc::format!(
-                include_str!(
-                    "typed/unformatted/a-pattern-hole-refuses-its-match-in-both-tables-3617-own.gandr"
-                ),
-                arms = arms
-            );
-            let text = SourceText::from(own.as_str());
-            let alone = table(text);
-            let Ok(crate::Lowered::Module { module, arena }) =
-                crate::lower_source(&grammar, text, &mut crate::LoweringCount::default())
-                    .map(crate::Lowering::into_lowered)
-            else {
-                panic!("the source lowers to a module");
-            };
-            let (_judged, judged) = crate::judge_member_tabled(
-                gandr_surface_corpus::CorpusRoot::Fixture,
-                (module, text),
-                arena,
-                (&crate::HostGrant::UNBOUNDED, crate::Checking::Whole),
-                (
-                    &gandr_surface_lowering::Unit::single(),
-                    ByteOffset::from(0_usize),
-                ),
-            );
-            let Maybe::Present(judged) = judged
-            else {
-                panic!("the judgement keeps its table");
-            };
-            let read = |typed: &TypeTable| -> Vec<Option<String>> {
-                typed
-                    .declared
-                    .keys()
-                    .map(|&key| match typed.refusal(key) {
-                        Maybe::Present(refusal) => Some(String::from(<&str>::from(refusal))),
-                        Maybe::Absent(_) => None,
-                    })
-                    .collect()
-            };
-            (read(&alone), read(&judged))
-        };
-        let undecided = Some(String::from(
-            "a pattern hole leaves the match's arm undecided",
-        ));
-        let (alone, judged) = refusals("| Red => return 0 | ? => return 1");
-        assert!(
-            alone.contains(&undecided) && alone == judged,
-            "the match left to a pattern hole is refused alike in both tables: {alone:?} and {judged:?}"
-        );
-        let (alone, judged) = refusals("| Red => return 0 | Green => return 1 | Blue => return 2");
-        assert!(
-            alone.iter().all(Option::is_none) && alone == judged,
-            "the match with every arm written is refused in neither table: {alone:?} and {judged:?}"
         );
     }
 

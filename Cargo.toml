@@ -32,6 +32,7 @@ members = [
   "crates/surface-diagnostics",
   "crates/surface-dispatcher",
   "crates/surface-driver",
+  "crates/surface-evaluate",
   "crates/surface-features",
   "crates/surface-format",
   "crates/surface-grammar",
@@ -736,6 +737,21 @@ path = "crates/surface-diagnostics"
 # - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
+
+# The run stage: each run of a checked module's program, native or on the
+# executor, and the engine the composition and the walk take.
+# consumers:
+# - runtime-stencils (dev)
+# - surface-diagnostics (dev)
+# - surface-dispatcher (dev)
+# - surface-driver
+# - surface-lsp
+# - surface-render-terminal (dev)
+# - surface-repl
+# - surface-session
+# - workflow-ledger-tasks
+[workspace.dependencies.gandr-surface-evaluate]
+path = "crates/surface-evaluate"
 
 # The features ledger as data: the record `gandr check` reads at the toolchain
 # step, and the rows the tools list and show.

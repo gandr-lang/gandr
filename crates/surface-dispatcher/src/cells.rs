@@ -472,7 +472,7 @@ mod tests
     use super::CensusFault;
     use super::CensusStep;
     use super::Fusions;
-    use crate::walk::tests::Scratch;
+    use crate::fixture::Scratch;
 
     #[test]
     fn a_census_reads_each_hole_s_count_in_the_source_s_own_declarations()

@@ -22,6 +22,7 @@ use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::compose;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_parser::FormSplit;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::label;
@@ -87,7 +88,7 @@ fn agree(
 ) -> FormCensus
 {
     let source = SourceText::from(text.0);
-    let walked = compose(
+    let walked = compose::<Evaluator>(
         &GRAMMAR,
         root.corpus_root(),
         source,
@@ -513,7 +514,7 @@ mod sweeps
         let drawn = visited.len();
         let mut scripted = 0_usize;
         let mut over = 0_usize;
-        let ControlFlow::Continue(_report) = Walk::new(visited).visit(
+        let ControlFlow::Continue(_report) = Walk::new(visited).visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {

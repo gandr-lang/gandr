@@ -51,13 +51,15 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Composed;
-use gandr_surface_dispatcher::Engine;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Terminal;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_evaluate::Engine;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Runs as _;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
@@ -673,7 +675,7 @@ fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
     );
     let mut counted: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut differing = String::new();
-    let ControlFlow::Continue(_report) = walk.visit_admitting(
+    let ControlFlow::Continue(_report) = walk.visit_admitting::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step, admission| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -788,41 +790,42 @@ fn a_transport_along_an_inline_equivalence_normalises_1677()
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/model/identity/transport-list.gandr");
     let mut answers: BTreeMap<String, Compared> = BTreeMap::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![source]).visit_admitting(
-        &Pool::new(Width::SERIAL),
-        |step, admission| -> ControlFlow<Infallible> {
-            let (
-                Step::Source {
-                    composed:
-                        Composed::Settled {
-                            report,
-                            mut program,
-                            ..
-                        },
-                    ..
-                },
-                Maybe::Present(admission),
-            ) = (step, admission)
-            else {
-                return ControlFlow::Continue(());
-            };
-            let definitions = definitions_of(admission.verdicts());
-            let mut core = admission.arena().clone();
-            for declaration in report.declarations() {
-                let name = declaration.name().to_string();
-                if name == "flipped_inline" || name == "flipped_list" {
-                    let answer = compared(
-                        &mut program,
-                        &mut core,
-                        definitions.normaliser(),
-                        declaration.constant(),
-                    );
-                    answers.insert(name, answer);
+    let ControlFlow::Continue(_report) = Walk::new(vec![source])
+        .visit_admitting::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step, admission| -> ControlFlow<Infallible> {
+                let (
+                    Step::Source {
+                        composed:
+                            Composed::Settled {
+                                report,
+                                mut program,
+                                ..
+                            },
+                        ..
+                    },
+                    Maybe::Present(admission),
+                ) = (step, admission)
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let definitions = definitions_of(admission.verdicts());
+                let mut core = admission.arena().clone();
+                for declaration in report.declarations() {
+                    let name = declaration.name().to_string();
+                    if name == "flipped_inline" || name == "flipped_list" {
+                        let answer = compared(
+                            &mut program,
+                            &mut core,
+                            definitions.normaliser(),
+                            declaration.constant(),
+                        );
+                        answers.insert(name, answer);
+                    }
                 }
-            }
-            ControlFlow::Continue(())
-        },
-    );
+                ControlFlow::Continue(())
+            },
+        );
     for name in ["flipped_list", "flipped_inline"] {
         assert_eq!(
             answers.get(name),

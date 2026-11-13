@@ -28,6 +28,8 @@ use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_dispatcher::reprinted;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Runs as _;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_pretty::Form;
@@ -523,7 +525,7 @@ fn spell(shard: Shard)
     let mut values = 0_usize;
     let mut walked = 0_usize;
     let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-    let ControlFlow::Continue(_report) = walk.visit(
+    let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -583,7 +585,7 @@ fn spell(shard: Shard)
                             )
                             .expect("a name writes");
                             let normal = SourceText::from(normal.trim());
-                            let again = table.reprint_normal_form(
+                            let again = table.reprint_normal_form::<Evaluator>(
                                 &grammar,
                                 Name::from(named.as_str()),
                                 normal,
@@ -614,7 +616,7 @@ fn spell(shard: Shard)
                             // over: the walk numbers the whole component's
                             // constants, the table its source's unit (#610).
                             let spelled = SourceText::from(value.presentation().as_ref());
-                            let again = table.reprint_value(
+                            let again = table.reprint_value::<Evaluator>(
                                 &grammar,
                                 Maybe::Present(Name::from(named.as_str())),
                                 spelled,
@@ -789,7 +791,7 @@ mod sweeps
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
         let mut over = 0_usize;
-        let ControlFlow::Continue(_report) = walk.visit(
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {

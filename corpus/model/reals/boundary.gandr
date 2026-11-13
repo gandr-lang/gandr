@@ -14,7 +14,7 @@
 // quanta, one comparison a line.
 //
 // - see: `corpus/model/reals/comparison.gandr` — a comparison that holds
-// - see: `crates/surface-dispatcher/src/evaluate/reals/machine.rs` — the
+// - see: `crates/surface-evaluate/src/evaluate/reals/machine.rs` — the
 //   verdicts of a machine
 
 // The console's host interface.

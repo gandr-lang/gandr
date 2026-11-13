@@ -2491,6 +2491,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::lower_source','functio
 INSERT INTO purpose VALUES('surface-dispatcher','compose::lower_unit_source','function','Parse and lower the sources `unit` lays end to end in `source`: lower_source over a unit of several sources.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::tabled::Absent','enum','Why a judgement holds no type table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','dispatch','function','Route one invocation to its outcome.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','engine::Engine','trait','The run stage as the composition, the walk, the type table and the run verb call it: each run of a program.',NULL,'collides','sound','The name also names the run stage''s choice of code for a run, `gandr_surface_evaluate::Engine`.');
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Entries','struct','The diagnostics of one step, in the order its verb prints them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Refusals','enum','Which of a step''s refusals its declarations print.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Repairs','enum','Whether the repair a refusal names is checked before the refusal proposes it as its fix, so `check` proposes only a fix that settles its declaration.',NULL,'fits','sound',NULL);
@@ -2508,6 +2509,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','entry::entries','function','Wha
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::Evaluation','enum','What running one declaration came to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::RunStatus','enum','How a run went, as `gandr run`''s exit reports it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::SealedRun','struct','A run whose value names a member its module''s signature hides: the module it is opaque at and the declared type of the declaration run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::Terminal','enum','Where a run of a declaration ended: its terminal value read back, or the evaluation that ended it before there was one to read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::Unfinished','enum','Why a run could not be finished.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::Unrunnable','enum','Why a declaration never reached the machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::ValueSpelling','struct','A value, spelled: the text `gandr run` prints for a run that returned one, laid out by the printer every face shares.',NULL,'fits','sound',NULL);
@@ -2530,11 +2532,6 @@ INSERT INTO purpose VALUES('surface-dispatcher','entry::worlds::WorldBinding','s
 INSERT INTO purpose VALUES('surface-dispatcher','entry::worlds::WorldBindingError','enum','Why a world''s binding did not read: no `=`, no name before it, or a peer after it that does not parse.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::worlds::WorldBindings','struct','A host''s world bindings: each declared world, by name, bound to the host it runs at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::worlds::Worlds','struct','What a host with world bindings decides a migration by: the bindings and the key of the program it runs.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Engine','enum','The engine a run takes.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Program','struct','A checked module, focused and ready to run.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Terminal','enum','Where a run of a declaration ended: its terminal value read back, or the evaluation that ended it before there was one to read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::channel::Absent','enum','Why a play is reported by no channel name: no source wrote its fork.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::reals::RealsAdapter','struct','The host of `std.reals.Eff` with one plan admitted, which a measurement of the adapter calls: `admit`, `enclose` and `decide` with each reply spelled.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','format::FormatFault','enum','Why a path could not be laid out.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','format::FormatStep','enum','One step of a formatting.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','format::Formatting','struct','The format verb over the paths it was given, laying out its sources in order.',NULL,'fits','sound',NULL);
@@ -2613,6 +2610,13 @@ INSERT INTO purpose VALUES('surface-dispatcher','presentation::Presentation','st
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::PresentationFault','enum','Why a `[presentation]` table could not be read: the file unread, not TOML, or naming a spelling there is none of.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::presented','function','Read the `[presentation]` table of a document another reader has already parsed, so one parse of a file serves each of its tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::read_presentation','function','Read the `[presentation]` table of the file at a path, an absent file naming nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','program::DeclaredRun','struct','One declaration of a program: its name and how it stands for a run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','program::Focused','struct','The part of a program that the leading declarations of a module make, which a program over a module they lead continues.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','program::Opacity','enum','Why the machine carries a declaration as itself.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','program::Parts','struct','The parts of a program that a run reads, borrowed from it: the arena it mints its commands into, and the rest as the program holds it.',NULL,'vague','sound','The name is a bare word, and it does not say that a run borrows these parts.');
+INSERT INTO purpose VALUES('surface-dispatcher','program::Program','struct','A checked module, focused and ready to run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','program::Slot','enum','How one declaration stands for a run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','program::references','function','The constants a body refers to, outside its types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','receipts::DamagedCount','struct','Counts the receipts a verdict store passed over because they did not read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','receipts::StoredVerdicts','struct','Holds the kernel''s receipts as values in the storage tier''s store, each named by a root, indexed by every key they hold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','receipts::VerdictStoreError','enum','Why a verdict store could not open its store or keep a receipt.',NULL,'fits','sound',NULL);
@@ -2663,6 +2667,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','typed::Shift','enum','A shift o
 INSERT INTO purpose VALUES('surface-dispatcher','typed::Subject','enum','What an entry of the table stands for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::TypeTable','struct','The type of every node of one source a face can point at, and of every declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::TypedSpan','struct','One node the source wrote, with the type a face shows for it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','typed::hidden_members','function','Each member that a module matched against a signature keeps out of its interface, with the path of that module.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::DeclaredHalf','enum','Which half of a declared name a request asks for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::NameKind','enum','What a declared name names, which decides where it may be written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::Referent','struct','Where the unit writes what a use refers to: the source holding it, the name, and the whole binder or declaration form, each span in that source''s own text.',NULL,'fits','sound',NULL);
@@ -2688,6 +2693,12 @@ INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE','constant
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE_MANIFEST','constant','The file name of the manifest the checker writes beside a workspace''s source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::Workspace','struct','A workspace: the directory holding `workspace.gandr`, whose `members` names its packages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::stepped_alone','function','What a reader makes of the step a source''s text takes through the pipeline, laid out at its path and judged as `gandr check` judges a source alone.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Engine','enum','The engine a run takes.',NULL,'collides','sound','The name also names the crossing of the dispatcher, `gandr_surface_dispatcher::Engine`, which `Evaluator` implements.');
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Evaluator','struct','The run stage, as the composition, the walk, the type table and the run verb of the dispatcher take it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Machine','struct','A run of a program: the parts of it that a run reads, borrowed from it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Runs','trait','The runs of a program, as a caller above the dispatcher calls them, each the run of a machine over the program.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::ScheduledRuns','struct','A program whose runs take the concurrent schedule on a pool: what settles a composition scheduled concurrently.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::reals::RealsAdapter','struct','The host of `std.reals.Eff` with one plan admitted, which a measurement of the adapter calls: `admit`, `enclose` and `decide` with each reply spelled.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-features','Area','struct','An area of the ledger, a row''s `area`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-features','Feature','struct','One row of the ledger.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-features','FeatureId','struct','A feature''s identifier, its row''s `id`.',NULL,'fits','sound',NULL);

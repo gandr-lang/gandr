@@ -33,6 +33,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Body;
@@ -1069,9 +1070,11 @@ fn a_refusal_is_published_where_the_model_locates_it()
     let text = include_str!("session/fixtures/a-session-round-trips-over-in-memory-streams.gandr");
     std::fs::write(&path, text).expect("the source is written");
 
-    let ControlFlow::Break(found) = Walk::new(vec![path.clone()])
-        .visit(&Pool::new(Width::SERIAL), |step| {
-            ControlFlow::Break(entries(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>())
+    let ControlFlow::Break(found) =
+        Walk::new(vec![path.clone()]).visit::<Evaluator, _, _>(&Pool::new(Width::SERIAL), |step| {
+            ControlFlow::Break(
+                entries::<Evaluator>(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>(),
+            )
         })
     else {
         panic!("the walk reaches the source");
@@ -1812,7 +1815,7 @@ mod sweeps
         let walk = Walk::new(paths);
         let mut expected = BTreeMap::new();
         let mut sources = Vec::new();
-        let ControlFlow::Continue(_report) = walk.visit(
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {
@@ -1847,7 +1850,7 @@ mod sweeps
                     },
                     other @ (Step::Source { .. } | Step::Fault { .. }) => other,
                 };
-                let reports = entries(&step, Verb::Check(Goals::Reported))
+                let reports = entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
                     .map(|diagnostic| rendered(&diagnostic, &index))
                     .collect::<Vec<_>>();
                 let source = Source {
@@ -1969,7 +1972,7 @@ mod sweeps
                     .expect("the family resolves"),
             ]);
             let mut expected_uris = alloc::collections::BTreeSet::new();
-            let ControlFlow::Continue(_report) = walk.visit(
+            let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
                 &Pool::new(Width::SERIAL),
                 |step| -> ControlFlow<Infallible> {
                     let Step::Source { path, .. } = step

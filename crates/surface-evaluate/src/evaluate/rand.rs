@@ -46,10 +46,9 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::Bits;
-
-use crate::entry::console::Console;
-use crate::entry::console::Line;
-use crate::entry::console::Printed;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Line;
+use gandr_surface_dispatcher::Printed;
 
 #[cfg(test)]
 mod tests;
@@ -145,7 +144,7 @@ impl fmt::Display for Declined
 /// - hypothesis: L3 — the exemplar sums two draws of two bits and exits with a
 ///   sum from 0 to 6; the widths 0, 65 and -1 are each declined with their
 ///   cause on standard error, and the run is stuck at the draw.
-/// - witness: `tests::run::a_script_draws_fair_bits_5707`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_draws_fair_bits_5707`
 #[spec(
     captures: [random = request.signature.name().as_ref() == RAND],
     ensures: |ret| ret.is_none() != random,
@@ -187,7 +186,7 @@ pub(super) fn served<Abort>(
 /// - hypothesis: L3 — the widths 0, 65 and -1 are each refused, and 1 and 64
 ///   are each taken.
 /// - witness: `evaluate::rand::tests::a_draw_lies_below_two_to_its_width_at_each_width`
-/// - witness: `tests::run::a_script_draws_fair_bits_5707`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_draws_fair_bits_5707`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |width| (1 ..= WIDEST).contains(&width.0)))]
 fn width(
     operation: &OperationName,
@@ -435,7 +434,7 @@ impl Draws
 /// # Adequacy
 /// - hypothesis: L3 — the exemplar's two draws of two bits settle their stated
 ///   distribution, and a draw of 17 bits is refused past the quota.
-/// - witness: `tests::corpus::a_distribution_settles_over_every_answer_of_its_draws_5710`
+/// - witness: `gandr-surface-dispatcher::tests::corpus::a_distribution_settles_over_every_answer_of_its_draws_5710`
 #[spec(
     captures: [random = request.signature.name().as_ref() == RAND],
     ensures: |ret| ret.is_none() != random,

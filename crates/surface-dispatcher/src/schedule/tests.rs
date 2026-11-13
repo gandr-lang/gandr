@@ -73,7 +73,7 @@ fn callee(
 ///
 /// # Specification
 /// trivial.
-fn typed(listed: &crate::tests::Listed) -> (LoweredModule<'_>, CoreArena, TypedModule)
+fn typed(listed: &crate::fixture::Listed) -> (LoweredModule<'_>, CoreArena, TypedModule)
 {
     let grammar = built_in().expect("the built-in grammar");
     let lowering = crate::lower_unit_source(
@@ -104,7 +104,7 @@ fn named_calls<Source>(source: Source) -> Vec<(String, Independence)>
 where
     Source: core::fmt::Display,
 {
-    let listed = crate::tests::Listed::hosted(source);
+    let listed = crate::fixture::Listed::hosted(source);
     let (module, core, typed) = typed(&listed);
     let core = &core;
     let writers = independent(core, &typed);
@@ -177,7 +177,7 @@ fn a_writer_over_a_capability_stays_fused()
 #[test]
 fn a_writer_answering_a_kept_value_stays_fused_2954()
 {
-    let listed = crate::tests::Listed::hosted(include_str!(
+    let listed = crate::fixture::Listed::hosted(include_str!(
         "tests/fixtures/a-writer-answering-a-kept-value-stays-fused-2954-listed.gandr"
     ));
     let (_module, core, typed) = typed(&listed);

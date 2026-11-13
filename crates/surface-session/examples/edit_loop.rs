@@ -66,6 +66,7 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::compose;
 use gandr_surface_dispatcher::lower_source;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
@@ -433,7 +434,7 @@ fn rows(
             &mut (),
             |&mut ()| Ok(()),
             |&mut ()| {
-                compose(
+                compose::<Evaluator>(
                     grammar,
                     root.corpus_root(),
                     SourceText::from(edited.as_str()),

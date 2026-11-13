@@ -20,6 +20,7 @@ use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
@@ -267,7 +268,7 @@ fn step<'text>(
 fn located(source: Text<'_>) -> Vec<(RefusalSpelling, Maybe<ByteSpan, report_span::Absent>)>
 {
     let step = step(Path::new("located.gandr"), source);
-    entries(&step, Verb::Check(Goals::Reported))
+    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
         .filter_map(|diagnostic| {
             assert_ne!(
                 diagnostic.severity,

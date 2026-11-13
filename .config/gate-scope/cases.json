@@ -784,7 +784,7 @@
     "output": ["gandr-core-term"]
   },
   {
-    "name": "#6725: #6709's corpus source alone touches the dispatcher, whose tests read the corpus",
+    "name": "#6725: #6709's corpus source alone touches the readers, whose tests read the corpus",
     "program": "packages.jq",
     "input": {
       "changed": ["corpus/model/identity/hopf.gandr"],
@@ -799,10 +799,15 @@
           "name": "gandr-surface-dispatcher",
           "dir": "crates/surface-dispatcher",
           "deps": ["gandr-core-checker"]
+        },
+        {
+          "name": "gandr-surface-evaluate",
+          "dir": "crates/surface-evaluate",
+          "deps": ["gandr-surface-dispatcher"]
         }
       ]
     },
-    "output": ["gandr-surface-dispatcher"]
+    "output": ["gandr-surface-dispatcher", "gandr-surface-evaluate"]
   },
   {
     "name": "#5014: a workflow-only change scopes no package",

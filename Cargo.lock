@@ -1410,6 +1410,7 @@ dependencies = [
  "gandr-surface-agentic",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-features",
  "gandr-surface-format",
  "gandr-surface-grammar",
@@ -1481,6 +1482,7 @@ dependencies = [
  "gandr-runtime-emitter",
  "gandr-surface-corpus",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-theory-cell-complexes",
  "quenchant-shape",
 ]
@@ -1612,6 +1614,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-surface-corpus",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",
@@ -1631,7 +1634,6 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
- "allocation-counter",
  "blake3",
  "crossbeam-queue",
  "gandr-core-checker",
@@ -1653,6 +1655,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-features",
  "gandr-surface-format",
  "gandr-surface-grammar",
@@ -1670,7 +1673,6 @@ dependencies = [
  "gandr-theory-probability",
  "gandr-theory-sites",
  "gandr-workflow-sweep",
- "getrandom 0.4.3",
  "hotpath",
  "memmap2",
  "quenchant-anodized",
@@ -1682,6 +1684,36 @@ dependencies = [
  "sysctl",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "gandr-surface-evaluate"
+version = "0.0.0"
+dependencies = [
+ "allocation-counter",
+ "gandr-core-checker",
+ "gandr-core-incremental",
+ "gandr-core-sequent",
+ "gandr-core-term",
+ "gandr-kernel-check-memo",
+ "gandr-kernel-term",
+ "gandr-runtime-emitter",
+ "gandr-runtime-net",
+ "gandr-storage-values",
+ "gandr-surface-corpus",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-pretty",
+ "gandr-surface-syntax",
+ "gandr-theory-exact-reals",
+ "getrandom 0.4.3",
+ "hotpath",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1806,6 +1838,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-format",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
@@ -1907,6 +1940,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-syntax",
@@ -1928,6 +1962,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-pretty",
@@ -1960,6 +1995,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",
@@ -2345,6 +2381,7 @@ dependencies = [
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-features",
  "gandr-surface-grammar",
  "gandr-surface-lowering",

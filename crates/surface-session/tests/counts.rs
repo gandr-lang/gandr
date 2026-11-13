@@ -21,6 +21,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_dispatcher::measure;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::Counts;
 use gandr_surface_session::DeclarationCounts;
@@ -120,7 +121,7 @@ struct Work
 fn measured(path: PathBuf) -> Vec<(String, Goals)>
 {
     let mut goals = Vec::new();
-    let ControlFlow::Continue(_) = Walk::new(vec![path]).measuring().visit(
+    let ControlFlow::Continue(_) = Walk::new(vec![path]).measuring().visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source { ref composed, .. } = step

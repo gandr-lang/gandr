@@ -15,7 +15,7 @@
 //
 // - see: `model/probability/draws.gandr` — the exact model at the root
 // - see: `model/probability/leader.gandr` — the exact model across worlds
-// - see: `crates/surface-dispatcher/src/evaluate.rs` — a test runs
+// - see: `crates/surface-evaluate/src/evaluate.rs` — a test runs
 //   `exchanged` under two orders of the ready queue
 
 // The host interface of randomness.
