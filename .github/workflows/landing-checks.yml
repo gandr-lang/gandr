@@ -1989,13 +1989,16 @@ jobs:
   # over its runs and the push before's kept ones, never rerun here (`mise
   # run ci:hotpath-judge`). A push whose push before kept no runs, the first
   # after the move among them, is judged on nothing and says so once.
-  # `hotpath-judged` posts the checks on the pushed commit.
+  # `hotpath-judged` posts the checks on the pushed commit. One set of runs
+  # fails no row (#7319): a row past its margin is a suspect, its check
+  # neutral, and `hotpath-confirm` runs its series again.
   hotpath:
     name: report the hotpath benchmarks (linux)
     needs: *rust-needs
     if: ${{ !cancelled() && (needs.prepare.outputs.landed == 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     outputs:
       judged: ${{ steps.judge.outputs.checks }}
+      suspects: ${{ steps.judge.outputs.suspects }}
       unsent: ${{ steps.unsent.outputs.benchmarks }}
     runs-on: *linux
     permissions:
@@ -2026,11 +2029,19 @@ jobs:
       - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
-      - name: run the gandr series
+      # Each series step runs in `hotpath` and, for a suspect series alone,
+      # in `hotpath-confirm`: `needs.hotpath` is empty in `hotpath` itself.
+      - &hotpath-gandr
+        name: run the gandr series
+        if: ${{ github.job == 'hotpath' || contains(needs.hotpath.outputs.suspects, ' gandr ') }}
         run: mise run ci:hotpath gandr gandr-lang hotpath
-      - name: run the store series
+      - &hotpath-store
+        name: run the store series
+        if: ${{ github.job == 'hotpath' || contains(needs.hotpath.outputs.suspects, ' store ') }}
         run: mise run ci:hotpath store gandr-storage-schema store
-      - name: run the conversion series
+      - &hotpath-conversion
+        name: run the conversion series
+        if: ${{ github.job == 'hotpath' || contains(needs.hotpath.outputs.suspects, ' conversion ') }}
         run: mise run ci:hotpath conversion gandr-lang conversion
       # Each report `ci:hotpath` could not upload is named under
       # target/hotpath/unsent/; `hotpath-unsent` files them.
@@ -2039,6 +2050,8 @@ jobs:
         run: printf 'benchmarks=%s\n' "$(ls target/hotpath/unsent | paste -sd' ')" >> "$GITHUB_OUTPUT"
       # `compgen` is a builtin of bash alone. The image's default shell is
       # `sh`, where the test fails and no check reaches the poster (#7277).
+      # `suspects` names each series with a neutral check, a space either
+      # side of each name, for the series steps' `contains`.
       - name: judge the runs against the base's
         id: judge
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
@@ -2049,6 +2062,9 @@ jobs:
           mise run ci:hotpath-judge gandr store conversion
           if compgen -G 'target/hotpath/judged/checks/*.json' > /dev/null; then
             echo checks=true >> "$GITHUB_OUTPUT"
+          fi
+          if [[ -s target/hotpath/judged/suspects ]]; then
+            echo "suspects= $(< target/hotpath/judged/suspects) " >> "$GITHUB_OUTPUT"
           fi
       # A lost artifact loses its measurements, never this run's result.
       - name: keep the reports
@@ -2076,6 +2092,66 @@ jobs:
           retention-days: 14
       - *lane-state
 
+  # The second set of runs (#7319): a row fails only when two sets on two
+  # jobs pass its policy's margin. The job starts only when the first set
+  # finds a suspect, so the common push costs nothing more. It runs each
+  # suspect series again with no upload, and judges the new runs against
+  # the same base runs with the first set's checks (`mise run
+  # ci:hotpath-judge --confirm`). A row that only one set finds stays a
+  # neutral note and files nothing.
+  hotpath-confirm:
+    name: run the suspect hotpath series again (linux)
+    needs: [prepare, ci-image, hotpath]
+    if: ${{ !cancelled() && needs.hotpath.outputs.suspects != '' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      HOTPATH_UPLOAD: "0"
+      HOTPATH_ALLOC_METRIC: count
+      CI_HEAD_SHA: ${{ github.sha }}
+      HOTPATH_RUNS: "5"
+      HOTPATH_FUNCTIONS_LIMIT: "0"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      - name: download the first set's checks
+        uses: *download-artifact
+        with:
+          name: hotpath-judged
+          path: target/hotpath/first
+      - *hotpath-gandr
+      - *hotpath-store
+      - *hotpath-conversion
+      - name: judge the second set against the base's
+        shell: bash
+        env:
+          CI_BASE_SHA: ${{ github.event.before }}
+          SUSPECTS: ${{ needs.hotpath.outputs.suspects }}
+        run: |
+          read -ra series <<< "$SUSPECTS"
+          mise run ci:hotpath-judge --confirm target/hotpath/first "${series[@]}"
+      - name: keep the confirmed checks
+        uses: *upload-artifact
+        with:
+          name: hotpath-confirmed
+          path: target/hotpath/judged/checks/*.json
+          retention-days: 14
+      - *lane-state
+
   # Every lane's step times, from one read of the run's jobs (#5078): each
   # lane once read the jobs for itself, nine reads a run. A page of 100
   # holds every job of a run. The jobs API at times lists a job without its
@@ -2093,6 +2169,7 @@ jobs:
         mutants,
         mutants-nightly,
         hotpath,
+        hotpath-confirm,
       ]
     if: ${{ !cancelled() && github.event.merge_group.base_ref != 'refs/heads/landing' }}
     runs-on: *linux
@@ -2118,10 +2195,12 @@ jobs:
   # workflow, so this job dispatches the hotpath guard for the commit (on the
   # default branch's copy of it), which files a failed one as it files
   # hotpath Cloud's and marks a passed one's rows fixed. A push names no
-  # pull request: the guard looks up the one that carries the commit.
+  # pull request: the guard looks up the one that carries the commit. When
+  # `hotpath-confirm` ran, its checks are the ones posted; when it failed,
+  # the first set's neutral checks are, and they file nothing (#7319).
   hotpath-judged:
     name: post the judged hotpath checks
-    needs: hotpath
+    needs: [hotpath, hotpath-confirm]
     if: ${{ !cancelled() && needs.hotpath.outputs.judged == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
@@ -2137,7 +2216,7 @@ jobs:
       - name: download the judged checks
         uses: *download-artifact
         with:
-          name: hotpath-judged
+          name: ${{ needs.hotpath-confirm.result == 'success' && 'hotpath-confirmed' || 'hotpath-judged' }}
       # Every judged check in one GraphQL request, one `createCheckRun` for
       # each under its own alias (#5078): a REST post a check spent about
       # four requests a judgement. A check keeps its name, conclusion and

@@ -2,11 +2,17 @@
 //! base's, written as a `hotpath / <benchmark>` check.
 //!
 //! `hotpath-judge --repository OWNER/NAME --head SHA --base SHA --benchmark
-//! NAME --policy FILE --base-run FILE… --head-run FILE… --output
-//! FILE` reads each run's JSON report and the policy, judges the rows
-//! ([`gandr_workflow_hotpath_guard::judge`]), prints the summary, and writes
-//! the check run's body, its name, conclusion, title and summary, as JSON
-//! to the output file. The judge reads every row.
+//! NAME --policy FILE --base-run FILE… --head-run FILE… --output FILE
+//! [--confirm FILE]` reads each run's JSON report and the policy, judges the
+//! rows ([`gandr_workflow_hotpath_guard::judge`]), prints the summary, and
+//! writes the check run's body, its name, conclusion, title, summary and
+//! suspects, as JSON to the output file. The judge reads every row.
+//!
+//! One set of runs fails no row: on a shared runner one set passes a margin by
+//! noise. A first set that finds rows writes a
+//! neutral check that names each row as a suspect, and a second job runs the
+//! series again. With `--confirm`, the first set's check, the second set
+//! fails only the rows that both sets find.
 //!
 //! # Exit codes
 //!
@@ -15,6 +21,9 @@
 //! - `2`: a refusal — an unreadable or malformed report or policy, an
 //!   unwritable output, a malformed argument; also a malformed invocation.
 
+extern crate alloc;
+
+use alloc::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
@@ -58,6 +67,9 @@ struct Cli
     /// Where the check run's body is written.
     #[arg(long)]
     output: PathBuf,
+    /// The first set's check, when this set is the second.
+    #[arg(long)]
+    confirm: Option<PathBuf>,
 }
 
 /// Parses the invocation, judges and chooses the exit code.
@@ -73,7 +85,7 @@ struct Cli
 /// # Adequacy
 /// - hypothesis: L3. A regressed push, a clear one and a missing report. A
 ///   swapped stream, conclusion or exit code changes the observed result.
-/// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
+/// - witness: `tests::judge::a_regressed_push_writes_a_neutral_check`
 /// - witness: `tests::judge::a_missing_report_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
@@ -143,13 +155,53 @@ impl File
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`main`].
-    /// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
+    /// - witness: `tests::judge::a_regressed_push_writes_a_neutral_check`
     fn input(&self) -> judge::Input<'_>
     {
         judge::Input {
             path: &self.path,
             text: &self.text,
         }
+    }
+
+    /// The suspects a first set's check names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each string of the check's `suspects` array.
+    /// - provides: the rows a second set can confirm.
+    /// - fails: [`GuardError::Input`] naming the path when the text is not JSON
+    ///   or holds no `suspects` array of strings.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file's text.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a confirmed push and one that the second set clears.
+    ///   A lost suspect clears the confirmed push.
+    /// - witness: `tests::judge::a_second_set_fails_only_a_row_both_sets_find`
+    fn suspects(&self) -> Result<BTreeSet<judge::Suspect>, GuardError>
+    {
+        let refused = |message: &str| GuardError::Input {
+            path: self.path.clone(),
+            message: message.to_owned(),
+        };
+        let check: serde_json::Value =
+            serde_json::from_str(&self.text).map_err(|error| refused(&error.to_string()))?;
+        check
+            .get("suspects")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| refused("the check names no `suspects` array"))?
+            .iter()
+            .map(|suspect| {
+                suspect
+                    .as_str()
+                    .map(|key| judge::Suspect::from(key.to_owned()))
+                    .ok_or_else(|| refused("a suspect is not a string"))
+            })
+            .collect()
     }
 }
 
@@ -158,12 +210,16 @@ impl File
 /// # Specification
 /// - requires: nothing.
 /// - ensures: standard output receives the summary; the output file holds
-///   `{"name": "hotpath / <benchmark>", "conclusion": "failure" | "success",
-///   "output": {"title", "summary"}}`, a failure exactly when a row regressed.
+///   `{"name": "hotpath / <benchmark>", "conclusion", "output": {"title",
+///   "summary"}, "suspects"}`. Without `--confirm` the conclusion is `neutral`
+///   exactly when a row regressed, and `success` otherwise. With it, the
+///   conclusion is `failure` exactly when a row regressed that the first check
+///   names, and `success` otherwise.
 /// - provides: the whole command.
-/// - fails: every refusal of [`File::read`], [`judge::Run::read`] and
-///   [`judge::Policy::read`]; [`GuardError::Input`] when the output cannot be
-///   written; [`GuardError::Output`] when standard output cannot be.
+/// - fails: every refusal of [`File::read`], [`File::suspects`],
+///   [`judge::Run::read`] and [`judge::Policy::read`]; [`GuardError::Input`]
+///   when the output cannot be written; [`GuardError::Output`] when standard
+///   output cannot be.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes written.
 ///
@@ -171,9 +227,11 @@ impl File
 /// As `fails` lists.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`main`].
-/// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
+/// - hypothesis: L3 — as [`main`], with a second set that confirms a row and
+///   one that clears it.
+/// - witness: `tests::judge::a_regressed_push_writes_a_neutral_check`
 /// - witness: `tests::judge::a_clear_push_writes_a_passed_check`
+/// - witness: `tests::judge::a_second_set_fails_only_a_row_both_sets_find`
 fn run(cli: &Cli) -> Result<(), GuardError>
 {
     let policy = judge::Policy::read(File::read(&cli.policy)?.input())?;
@@ -183,12 +241,17 @@ fn run(cli: &Cli) -> Result<(), GuardError>
             .map(|path| judge::Run::read(File::read(path)?.input()))
             .collect::<Result<Vec<_>, _>>()
     };
-    let verdict = judge::judge(
+    let judged = judge::judge(
         &policy,
         judge::Scope::All,
         &runs(&cli.base_runs)?,
         &runs(&cli.head_runs)?,
     );
+    let first = cli.confirm.as_deref().map(File::read).transpose()?;
+    let verdict = match first {
+        Some(ref check) => judged.confirmed(&check.suspects()?),
+        None => judged,
+    };
     let summary = judge::Summary {
         subject: judge::Subject {
             repository: &cli.repository,
@@ -202,15 +265,27 @@ fn run(cli: &Cli) -> Result<(), GuardError>
     write!(std::io::stdout(), "{summary}").map_err(|error| GuardError::Output {
         message: error.to_string(),
     })?;
-    let conclusion = verdict.conclusion();
-    let title = match conclusion {
-        judge::Conclusion::Failure => "a row regressed past its policy",
-        judge::Conclusion::Success => "no row regressed past its policy",
+    let (conclusion, title) = match (verdict.conclusion(), first.is_some()) {
+        (judge::Conclusion::Failure, true) => (
+            "failure",
+            "a row regressed past its policy on two sets of runs",
+        ),
+        (judge::Conclusion::Failure, false) => (
+            "neutral",
+            "a row passes its policy on one set of runs; a second set decides",
+        ),
+        (judge::Conclusion::Success, true) => (
+            "success",
+            "the second set of runs clears each row the first set found",
+        ),
+        (judge::Conclusion::Success, false) => ("success", "no row regressed past its policy"),
     };
+    let suspects = verdict.suspects();
     let body = serde_json::json!({
         "name": format!("hotpath / {}", cli.benchmark),
-        "conclusion": conclusion.to_string(),
+        "conclusion": conclusion,
         "output": {"title": title, "summary": summary},
+        "suspects": suspects.iter().map(judge::Suspect::to_string).collect::<Vec<_>>(),
     });
     std::fs::write(&cli.output, body.to_string()).map_err(|error| GuardError::Input {
         path: cli.output.display().to_string(),

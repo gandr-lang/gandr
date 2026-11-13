@@ -5958,6 +5958,7 @@ INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Share','struct','Nam
 INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Spread','struct','Holds the least, the median and the greatest of one reading over a side''s runs, so the spread''s values are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Subject','struct','Holds what a check''s summary names, so the subject''s repository, commits and benchmark are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Summary','struct','Holds a verdict written as a check''s summary, so the summary''s subject and verdict are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Suspect','struct','Names a row that a first set of runs finds past its margin, so a second set''s judgement keeps only that row.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Verdict','struct','Holds a judgement, so the judgement''s findings and wall time are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::Written','struct','Names a number as a report or a policy writes it, so the number''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','judge::judge','function','Judges a commit''s runs of one benchmark against its base''s, so the judgement''s verdict is read.',NULL,'fits','sound',NULL);

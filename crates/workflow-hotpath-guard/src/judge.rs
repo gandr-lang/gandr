@@ -22,6 +22,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::fmt;
 
 use serde::Deserialize;
@@ -864,6 +865,66 @@ pub struct Finding
     moves: Vec<Move>,
 }
 
+/// A row that one set of runs finds past its margin, as a second set's
+/// judgement names it: the family and the profiled name, one space between.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Suspect(String);
+
+impl fmt::Display for Suspect
+{
+    /// Writes the suspect as the first judgement's check writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the key goes out in the first check and comes back in
+    ///   the second; a changed key confirms no row.
+    /// - witness: `judge::tests::a_second_set_confirms_only_the_rows_the_first_set_flagged_7319`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for Suspect
+{
+    /// The suspect a first judgement's check wrote.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Suspect`]'s `Display`.
+    /// - witness: `judge::tests::a_second_set_confirms_only_the_rows_the_first_set_flagged_7319`
+    #[inline]
+    fn from(key: String) -> Self
+    {
+        Self(key)
+    }
+}
+
+impl Finding
+{
+    /// The finding's suspect: its family and its profiled name.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Suspect`]'s `Display`.
+    /// - witness: `judge::tests::a_second_set_confirms_only_the_rows_the_first_set_flagged_7319`
+    fn suspect(&self) -> Suspect
+    {
+        Suspect(format!("{:?} {}", self.family, self.name))
+    }
+}
+
 /// A check run's conclusion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Conclusion
@@ -884,7 +945,7 @@ impl fmt::Display for Conclusion
     /// # Adequacy
     /// - hypothesis: L3. A regressed push and a clear one. A swapped word posts
     ///   the other check.
-    /// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
+    /// - witness: `tests::judge::a_second_set_fails_only_a_row_both_sets_find`
     /// - witness: `tests::judge::a_clear_push_writes_a_passed_check`
     #[inline]
     fn fmt(
@@ -932,6 +993,53 @@ impl Verdict
         else {
             Conclusion::Failure
         }
+    }
+
+    /// The suspect of each finding.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first set's findings go to the second job; a lost
+    ///   finding is never confirmed.
+    /// - witness: `judge::tests::a_second_set_confirms_only_the_rows_the_first_set_flagged_7319`
+    #[must_use]
+    #[inline]
+    pub fn suspects(&self) -> BTreeSet<Suspect>
+    {
+        self.findings.iter().map(Finding::suspect).collect()
+    }
+
+    /// The judgement of a second set of runs, with only the findings that the
+    /// first set also found. One set of runs on a shared runner passes a margin
+    /// by noise, so a row fails only when two sets find it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the findings are this verdict's findings whose suspect is in
+    ///   `suspects`, in the same order; the wall time and the runs are this
+    ///   verdict's.
+    /// - provides: the confirmed judgement of a benchmark.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the filter is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row that only one set finds, a row that both sets
+    ///   find, and no suspects. A filter that keeps all or drops all fails one
+    ///   case.
+    /// - witness: `judge::tests::a_second_set_confirms_only_the_rows_the_first_set_flagged_7319`
+    #[must_use]
+    #[inline]
+    pub fn confirmed(
+        mut self,
+        suspects: &BTreeSet<Suspect>,
+    ) -> Self
+    {
+        self.findings
+            .retain(|finding| suspects.contains(&finding.suspect()));
+        self
     }
 }
 
@@ -1347,6 +1455,7 @@ impl fmt::Display for Summary<'_>
 mod tests
 {
     use super::Amount;
+    use super::BTreeSet;
     use super::Conclusion;
     use super::Family;
     use super::Input;
@@ -1356,6 +1465,7 @@ mod tests
     use super::Share;
     use super::Subject;
     use super::Summary;
+    use super::Suspect;
     use super::Verdict;
     use super::Written;
     use super::judge;
@@ -1586,6 +1696,43 @@ mod tests
             names(&judge(&policy!(TIMING), Scope::All, &base, &slower)),
             ["gandr_storage_schema::store::edit::Store::add_part"],
             "on a push the judge decides it on its median alone, the ranges overlapping"
+        );
+    }
+
+    #[test]
+    fn a_second_set_confirms_only_the_rows_the_first_set_flagged_7319()
+    {
+        let (base, head) = measured();
+        let first = judge(&policy!(TIMING), Scope::All, &base, &head).suspects();
+        assert_eq!(first.iter().map(Suspect::to_string).collect::<Vec<_>>(), [
+            "Timing gandr_storage_schema::store::edit::Store::delete_part"
+        ]);
+        let slower = side(&[
+            at!("81", "25", "205"),
+            at!("80", "25", "207"),
+            at!("82", "25", "186"),
+        ]);
+        let other = judge(&policy!(TIMING), Scope::All, &base, &slower).confirmed(&first);
+        assert_eq!(
+            (names(&other), other.conclusion()),
+            (Vec::<String>::new(), Conclusion::Success),
+            "the second set finds add_part, which the first set did not: nothing is confirmed"
+        );
+        let again = judge(&policy!(TIMING), Scope::All, &base, &head).confirmed(&first);
+        assert_eq!(
+            (names(&again), again.conclusion()),
+            (
+                vec!["gandr_storage_schema::store::edit::Store::delete_part".to_owned()],
+                Conclusion::Failure
+            ),
+            "both sets find delete_part"
+        );
+        let unflagged =
+            judge(&policy!(TIMING), Scope::All, &base, &head).confirmed(&BTreeSet::new());
+        assert_eq!(
+            unflagged.conclusion(),
+            Conclusion::Success,
+            "no suspect, no failure"
         );
     }
 
