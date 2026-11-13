@@ -84,7 +84,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_kernel_check_memo::CheckMemo as _;
+use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
@@ -333,7 +333,7 @@ pub enum Meeting
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct DrainLedger
 {
     /// How many obligations the drain took from its worklist.
@@ -345,6 +345,23 @@ pub struct DrainLedger
     /// The names of the keys the drain met. A key it met already is not
     /// checked again.
     seen: BTreeSet<(RecordName, RecordName)>,
+}
+
+impl Clone for DrainLedger
+{
+    /// A copy of the count, the keys checked and the keys met.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            drained: self.drained,
+            passed: self.passed.clone(),
+            seen: self.seen.clone(),
+        }
+    }
 }
 
 impl DrainLedger
@@ -434,12 +451,26 @@ impl DrainLedger
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn fold(
+    pub fn absorb(
         &mut self,
         part: Self,
     )
     {
         self.drained = self.drained.saturating_add(part.drained);
+        self.fold(part);
+    }
+
+    /// Add each key that `part` checked and this ledger did not meet, in the
+    /// order the part checked them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fold(
+        &mut self,
+        part: Self,
+    )
+    {
         for (key, named) in part.passed {
             if self.seen.insert(key.names()) {
                 self.passed.push((key, named));
@@ -447,16 +478,25 @@ impl DrainLedger
         }
     }
 
-    /// The keys the drain checked, each with the parameters its verdict is
-    /// kept under, in the order the drain met them.
+    /// Record the verdict of each key the drain checked in `memo`, and keep it
+    /// in `session` under its parameters.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub fn into_passed(self) -> Vec<(NodeSupport, Option<RecordName>)>
+    pub fn record<M>(
+        self,
+        memo: &mut M,
+        session: &mut SupportContext,
+    ) where
+        M: CheckMemo<NodeSupport, NodeOutcome>,
     {
-        self.passed
+        for (key, named) in self.passed {
+            if let Some(named) = named {
+                session.keep(&key, named, &NodeOutcome::Checked);
+            }
+            let _recorded = memo.remember(key, NodeOutcome::Checked);
+        }
     }
 }
 
@@ -715,7 +755,7 @@ impl SupportContext
             owe_into(&mut self.open, &owed);
         }
         self.owing.extend(owing);
-        self.drained.fold(drained);
+        self.drained.absorb(drained);
         Ok(())
     }
 
@@ -730,7 +770,7 @@ impl SupportContext
         ledger: DrainLedger,
     )
     {
-        self.drained.fold(ledger);
+        self.drained.absorb(ledger);
     }
 
     /// Take what this check's forked children drained, for the check's own

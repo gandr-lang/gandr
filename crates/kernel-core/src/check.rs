@@ -8427,13 +8427,13 @@ where
         && let Some(parts) = drain_forked(arena, judgement, fork, memo, session, census, &owed)?
     {
         let mut ledger = session.take_drained();
-        ledger.fold(parts);
-        record_drained(ledger, memo, session);
+        ledger.absorb(parts);
+        ledger.record(memo, session);
         return Ok(());
     }
     let mut ledger = session.take_drained();
     drain_into(arena, judgement, memo, session, census, owed, &mut ledger)?;
-    record_drained(ledger, memo, session);
+    ledger.record(memo, session);
     Ok(())
 }
 
@@ -8444,27 +8444,6 @@ const FORKED_DRAIN: usize = 64;
 
 /// The fewest obligations one part of a forked drain checks.
 const FORKED_PART: usize = 16;
-
-/// Record the verdict of each key `ledger` checked in `memo`, and keep it in
-/// `session` under its parameters.
-///
-/// # Specification
-/// trivial.
-#[inline]
-fn record_drained<M>(
-    ledger: DrainLedger,
-    memo: &mut M,
-    session: &mut SupportContext,
-) where
-    M: CheckMemo<NodeSupport, NodeOutcome>,
-{
-    for (key, named) in ledger.into_passed() {
-        if let Some(named) = named {
-            session.keep(&key, named, &NodeOutcome::Checked);
-        }
-        let _recorded = memo.remember(key, NodeOutcome::Checked);
-    }
-}
 
 /// Check each obligation of `owed`, and each obligation those checks owe in
 /// turn, last owed first, into `ledger`.
@@ -8873,7 +8852,7 @@ where
         if passed {
             session.join(arena, part_session)?;
             census.absorb(&part_census);
-            ledger.fold(part_ledger);
+            ledger.absorb(part_ledger);
         }
     }
     Ok(passed.then_some(ledger))
