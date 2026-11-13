@@ -73,7 +73,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::splice::tests::a_splice_is_a_hole_carrying_its_tactic_2762`
     /// - witness: `lower::splice::tests::an_operand_writing_no_tactic_is_refused_2762`
     #[spec(ensures: |ret| ret.is_err() || matches!(
-        self.plans.get(site.at.node),
+        self.cx.plans.get(site.at.node),
         Some(&Plan::ValueHole(hole)) if hole.tactic().is_some()
     ))]
     pub(super) fn splice(
@@ -125,9 +125,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         let unknown = LoweringRefusal::UnknownTactic { span: operand.span };
         let named = |at: Placed, word: &str| {
-            self.tree.node(at.node).is_some_and(|node| {
+            self.cx.tree.node(at.node).is_some_and(|node| {
                 matches!(
-                    shape_of(self.pbg, node),
+                    shape_of(self.cx.pbg, node),
                     Ok(Shape::Form {
                         former: Former::Name,
                         ..
@@ -140,18 +140,18 @@ impl<'source> Lowerer<'_, 'source>
         let mut tactic = Tactic::ASSUMPTION;
         let mut at = operand;
         while !named(at, ASSUMPTION) {
-            let Some(node) = self.tree.node(at.node)
+            let Some(node) = self.cx.tree.node(at.node)
             else {
                 return Err(unknown);
             };
             let Shape::Form {
                 former: Former::Call,
                 ..
-            } = shape_of(self.pbg, node)?
+            } = shape_of(self.cx.pbg, node)?
             else {
                 return Err(unknown);
             };
-            read_pieces(self.pbg, self.tree, at.node, &mut called)?;
+            read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut called)?;
             let mut cursor = Cursor::new(&called.pieces, at.span);
             let head = site.one(cursor.operands())?;
             written.clear();
@@ -160,7 +160,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(unknown);
             };
-            let Some(inner) = self.tree.node(argument)
+            let Some(inner) = self.cx.tree.node(argument)
             else {
                 return Err(unknown);
             };

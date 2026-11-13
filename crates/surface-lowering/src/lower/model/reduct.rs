@@ -287,13 +287,14 @@ impl<'source> Lowerer<'_, 'source>
     )
     {
         let slots: Vec<SlotIndex> = self
+            .cx
             .collected
             .reducts
-            .range(SlotIndex::from(self.current.slots) ..)
+            .range(SlotIndex::from(self.cx.current.slots) ..)
             .map(|(&slot, _)| slot)
             .collect();
         for slot in slots {
-            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -304,13 +305,14 @@ impl<'source> Lowerer<'_, 'source>
             let origin = Origin::new(entry.named.node, entry.named.span);
             match self.reduct(slot, sink, origin) {
                 Ok(minted) => {
-                    let _first = self.derivations.insert(slot, minted);
+                    let _first = self.cx.derivations.insert(slot, minted);
                 },
                 Err(Missing::Refused(refusal)) => {
-                    let _first = self.faults.insert(slot, refusal);
+                    let _first = self.cx.faults.insert(slot, refusal);
                 },
                 Err(Missing::Unlowered) => {
                     let _first = self
+                        .cx
                         .faults
                         .insert(slot, LoweringRefusal::Unminted { span, name });
                 },
@@ -349,6 +351,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(ValueTypeId, ValueId), Missing<'source>>
     {
         let reduct = self
+            .cx
             .collected
             .reducts
             .get(&slot)
@@ -474,6 +477,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Bundle, Missing<'source>>
     {
         let held = self
+            .cx
             .collected
             .slots
             .get(usize::from(theory))
@@ -481,7 +485,7 @@ impl<'source> Lowerer<'_, 'source>
         let Maybe::Present(&crate::description::DescribedDeclaration {
             presentation: Maybe::Present(ref presentation),
             ..
-        }) = self.collected.descriptions.get(&held.introduced_by.node)
+        }) = self.cx.collected.descriptions.get(&held.introduced_by.node)
         else {
             return Err(Missing::Unlowered);
         };

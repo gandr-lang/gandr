@@ -101,7 +101,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   is no binding, and a map onto a type that is no theory's models.
     /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
     /// - witness: `tests::modules::models::a_written_forgetting_map_names_only_its_theory_s_sorts_2130`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Called(Code::Constant(_), _))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Called(Code::Constant(_), _))))]
     pub(in crate::lower) fn forget_model(
         &mut self,
         site: Site,
@@ -112,7 +112,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::FORGET)?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
         let mut written: Vec<(Placed, Placed)> = Vec::new();
-        let mut scratch = core::mem::take(&mut self.scratch);
+        let mut scratch = core::mem::take(&mut self.cx.scratch);
         let read = loop {
             let entry = match site.one(cursor.operands()) {
                 Ok(entry) => entry,
@@ -132,7 +132,7 @@ impl<'source> Lowerer<'_, 'source>
                 break Ok(());
             }
         };
-        self.scratch = scratch;
+        self.cx.scratch = scratch;
         read?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let model = site.one(cursor.operands())?;
@@ -147,14 +147,14 @@ impl<'source> Lowerer<'_, 'source>
             Site { at: stated, ..site },
             site.fault(at.span, FormFault::MisplacedTile),
         )?;
-        let named = theory.name(self.tree);
+        let named = theory.name(self.cx.tree);
         let read = Site {
             at: theory.last,
             ..site
         };
         let theories = self.bundled(read, (site.at.span.start(), &theory))?;
         let prefix = self.theory_prefix(&theory);
-        let (slot, _) = self.collected.presented_theory_in(
+        let (slot, _) = self.cx.collected.presented_theory_in(
             site.at.span.start(),
             &prefix,
             theory.last.span,
@@ -164,7 +164,7 @@ impl<'source> Lowerer<'_, 'source>
         // signature states the sorts.
         let mut by_sort: BTreeMap<&str, (Placed, Placed)> = BTreeMap::new();
         for &(sort, carrier) in &written {
-            let name = self.tree.fragment(sort.node).map_or("", <&str>::from);
+            let name = self.cx.tree.fragment(sort.node).map_or("", <&str>::from);
             if by_sort.insert(name, (sort, carrier)).is_some() {
                 return Err(site.fault(sort.span, FormFault::MisplacedTile));
             }
@@ -189,28 +189,29 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
         let map = self
+            .cx
             .collected
             .forgets
             .iter()
             .find(|&(_, forgetting)| {
                 forgetting.theory == slot && forgetting.onto == slot && forgetting.fixed == fixed
             })
-            .and_then(|(&map, _)| self.collected.slots.get(usize::from(map)))
+            .and_then(|(&map, _)| self.cx.collected.slots.get(usize::from(map)))
             .map(|entry| entry.constant)
             .ok_or_else(|| {
                 site.out(crate::error::FragmentBoundary::Unadmitted(
                     Unbuilt::ForgetModel,
                 ))
             })?;
-        let start = self.operands.entries().len();
-        self.operands.extend(ordered);
-        self.operands.push(model.node);
+        let start = self.cx.operands.entries().len();
+        self.cx.operands.extend(ordered);
+        self.cx.operands.push(model.node);
         let arguments = Stretch {
             start,
-            end: self.operands.entries().len(),
+            end: self.cx.operands.entries().len(),
         };
         for position in arguments.start .. arguments.end {
-            if let Some(&argument) = self.operands.entries().get(position) {
+            if let Some(&argument) = self.cx.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
@@ -243,13 +244,14 @@ impl<'source> Lowerer<'_, 'source>
     )
     {
         let slots: Vec<SlotIndex> = self
+            .cx
             .collected
             .forgets
-            .range(SlotIndex::from(self.current.slots) ..)
+            .range(SlotIndex::from(self.cx.current.slots) ..)
             .map(|(&slot, _)| slot)
             .collect();
         for slot in slots {
-            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -260,14 +262,15 @@ impl<'source> Lowerer<'_, 'source>
             let origin = Origin::new(entry.named.node, entry.named.span);
             match self.forget(slot, sink, origin) {
                 Ok((ty, body, sorts)) => {
-                    let _first = self.derivations.insert(slot, (ty, body));
-                    let _sorts = self.forgotten.insert(slot, sorts);
+                    let _first = self.cx.derivations.insert(slot, (ty, body));
+                    let _sorts = self.cx.forgotten.insert(slot, sorts);
                 },
                 Err(Missing::Refused(refusal)) => {
-                    let _first = self.faults.insert(slot, refusal);
+                    let _first = self.cx.faults.insert(slot, refusal);
                 },
                 Err(Missing::Unlowered) => {
                     let _first = self
+                        .cx
                         .faults
                         .insert(slot, LoweringRefusal::Unminted { span, name });
                 },
@@ -311,6 +314,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(ValueTypeId, ValueId, Vec<Name>), Missing<'source>>
     {
         let plan = self
+            .cx
             .collected
             .forgets
             .get(&slot)

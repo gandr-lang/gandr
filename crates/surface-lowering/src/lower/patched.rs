@@ -304,7 +304,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   each patched at two of three fields, and a field the base lacks.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
     pub(super) fn patched_fields(
         &mut self,
         site: Site,
@@ -371,7 +371,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
     /// - witness: `lower::patched::tests::a_system_of_faces_keeps_each_later_face_s_value_on_its_meet`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
     pub(super) fn patched_faces(
         &mut self,
         site: Site,
@@ -385,7 +385,7 @@ impl<'source> Lowerer<'_, 'source>
             span: face.span,
             name: self.name_at(face),
         };
-        let Some(record) = held.and_then(|held| self.collected.record_faces.get(&held))
+        let Some(record) = held.and_then(|held| self.cx.collected.record_faces.get(&held))
         else {
             return Err(faces.first().map_or_else(
                 || site.fault(site.at.span, FormFault::MisplacedTile),
@@ -770,7 +770,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(declined());
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, value.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, value.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(name));
         }
@@ -802,7 +802,7 @@ impl<'source> Lowerer<'_, 'source>
         declared: NodeIndex,
     ) -> Result<Maybe<(), ()>, LoweringRefusal<'source>>
     {
-        let Some(tree) = self.tree.node(declared)
+        let Some(tree) = self.cx.tree.node(declared)
         else {
             return Ok(Maybe::Absent(()));
         };
@@ -811,7 +811,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Maybe::Absent(()));
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, declared, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, declared, &mut pieces)?;
         Ok(if bracket_of(&pieces.pieces) == Written::Stage {
             Maybe::Absent(())
         }

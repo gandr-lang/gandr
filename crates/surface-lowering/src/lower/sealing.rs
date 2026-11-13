@@ -64,30 +64,32 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     #[spec(
-        captures: before = self.collected.abstracts.keys().filter(|&&slot| matches!(self.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))).count(),
+        captures: before = self.cx.collected.abstracts.keys().filter(|&&slot| matches!(self.cx.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))).count(),
         ensures: |ret| {
-            self.collected.abstracts.iter().all(|(&slot, recorded)| match recorded.representation {
+            self.cx.collected.abstracts.iter().all(|(&slot, recorded)| match recorded.representation {
                 | Maybe::Present(represented) => {
-                    !matches!(self.collected.slots.get(usize::from(represented.held)).map(|held| held.refusal), Some(Maybe::Present(_)))
-                        || matches!(self.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))
+                    !matches!(self.cx.collected.slots.get(usize::from(represented.held)).map(|held| held.refusal), Some(Maybe::Present(_)))
+                        || matches!(self.cx.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))
                 },
                 | Maybe::Absent(_) => true,
-            }) && ret.0 == (self.collected.abstracts.keys().filter(|&&slot| matches!(self.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))).count() > before)
+            }) && ret.0 == (self.cx.collected.abstracts.keys().filter(|&&slot| matches!(self.cx.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))).count() > before)
         },
     )]
     pub(super) fn refuse_unrepresented(&mut self) -> Refused
     {
         let mut refused = false;
         for (&slot, recorded) in self
+            .cx
             .collected
             .abstracts
-            .range(SlotIndex::from(self.current.slots) ..)
+            .range(SlotIndex::from(self.cx.current.slots) ..)
         {
             let Maybe::Present(represented) = recorded.representation
             else {
                 continue;
             };
             let inherited = match self
+                .cx
                 .collected
                 .slots
                 .get(usize::from(represented.held))
@@ -102,7 +104,7 @@ impl<'source> Lowerer<'_, 'source>
                     (represented.defined.node, refusal)
                 },
             };
-            if let Some(own) = self.collected.slots.get_mut(usize::from(slot))
+            if let Some(own) = self.cx.collected.slots.get_mut(usize::from(slot))
                 && let Maybe::Absent(_) = own.refusal
             {
                 own.refuse(inherited.0, inherited.1);
@@ -130,16 +132,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a seal and a functor's abstract parameter over a
     ///   computation member are each refused at its definition.
     /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
-    #[spec(ensures: |ret| ret.is_none() || self.computation_members.contains(&defined.node))]
+    #[spec(ensures: |ret| ret.is_none() || self.cx.computation_members.contains(&defined.node))]
     pub(super) fn computation_refusal(
         &self,
         defined: Placed,
     ) -> Option<LoweringRefusal<'source>>
     {
-        if !self.computation_members.contains(&defined.node) {
+        if !self.cx.computation_members.contains(&defined.node) {
             return None;
         }
-        match shape_of(self.pbg, self.tree.node(defined.node)?) {
+        match shape_of(self.cx.pbg, self.cx.tree.node(defined.node)?) {
             Ok(Shape::Form { name, .. }) => Some(LoweringRefusal::OutOfFragment {
                 span: defined.span,
                 form: name,
@@ -180,9 +182,9 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     #[spec(
-        ensures: self.sealings.keys().chain(self.kind_checks.keys()).all(|slot| {
-            self.collected.abstracts.contains_key(slot)
-                && self.collected.slots.get(usize::from(*slot)).is_some_and(|own| matches!(own.refusal, Maybe::Absent(_)))
+        ensures: self.cx.sealings.keys().chain(self.cx.kind_checks.keys()).all(|slot| {
+            self.cx.collected.abstracts.contains_key(slot)
+                && self.cx.collected.slots.get(usize::from(*slot)).is_some_and(|own| matches!(own.refusal, Maybe::Absent(_)))
         }),
     )]
     pub(super) fn mint_abstracts(
@@ -191,11 +193,12 @@ impl<'source> Lowerer<'_, 'source>
     )
     {
         for (&slot, recorded) in self
+            .cx
             .collected
             .abstracts
-            .range(SlotIndex::from(self.current.slots) ..)
+            .range(SlotIndex::from(self.cx.current.slots) ..)
         {
-            let Some(own) = self.collected.slots.get(usize::from(slot))
+            let Some(own) = self.cx.collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -231,7 +234,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             match own.role {
                 Role::Abstract => {
-                    let _replaced = self.sealings.insert(slot, Sealing {
+                    let _replaced = self.cx.sealings.insert(slot, Sealing {
                         kind,
                         representation,
                         extent: SealExtent::from(recorded.extent),
@@ -243,7 +246,7 @@ impl<'source> Lowerer<'_, 'source>
                 Role::Witness => {
                     let code = sink.arena.value_quote(representation);
                     let _minted = sink.value(code, written);
-                    let _replaced = self.kind_checks.insert(slot, (kind, code));
+                    let _replaced = self.cx.kind_checks.insert(slot, (kind, code));
                 },
                 Role::Declared
                 | Role::Held

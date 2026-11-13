@@ -156,9 +156,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::a_hold_lowers_at_its_grade`
     /// - witness: `lower::access::tests::a_stated_var_ascribes_its_value_or_holds_a_handle`
     #[spec(
-        captures: before = self.statements.mark(),
-        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
-            && self.statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
+        captures: before = self.cx.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx.statements.mark() == before.next()
+            && self.cx.statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
     )]
     pub(super) fn hold(
         &mut self,
@@ -198,7 +198,7 @@ impl<'source> Lowerer<'_, 'source>
                 if grade != HoldGrade::Many {
                     return Err(statement.fault(stated.span, FormFault::MisplacedTile));
                 }
-                self.statements.push(Statement {
+                self.cx.statements.push(Statement {
                     origin: hold.node,
                     bound: value.node,
                     binding: StatementBinding::Located {
@@ -207,14 +207,14 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     rest: exits::Rest::Bound,
                 });
-                return Ok(Frame::Inner(self.scope.extend(
+                return Ok(Frame::Inner(self.cx.scope.extend(
                     frame,
                     name,
                     Maybe::Present(binder.span),
                 )));
             }
         }
-        self.statements.push(Statement {
+        self.cx.statements.push(Statement {
             origin: hold.node,
             bound: hold.node,
             binding: StatementBinding::Held {
@@ -230,9 +230,10 @@ impl<'source> Lowerer<'_, 'source>
         });
 
         let slot = self
+            .cx
             .scope
             .extend_linear(frame, name, Maybe::Present(binder.span));
-        let _held = self.held.insert(slot);
+        let _held = self.cx.held.insert(slot);
 
         Ok(Frame::Inner(slot))
     }
@@ -346,7 +347,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
     /// - witness: `lower::method::tests::an_index_reads_its_held_element`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |held| match *held {
-        | Maybe::Present(bound) => self.held.contains(&bound.binder),
+        | Maybe::Present(bound) => self.cx.held.contains(&bound.binder),
         | Maybe::Absent(_) => true,
     }))]
     pub(super) fn held_slot(
@@ -355,7 +356,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
     {
         Ok(match self.linear_binder(subject)? {
-            Maybe::Present(bound) if !self.held.contains(&bound.binder) => {
+            Maybe::Present(bound) if !self.cx.held.contains(&bound.binder) => {
                 Maybe::Absent(slot::Absent::Unheld)
             },
             found @ (Maybe::Present(_) | Maybe::Absent(_)) => found,
@@ -484,7 +485,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
     /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
     /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Access(_) | Plan::Method(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Access(_) | Plan::Method(_)))))]
     pub(super) fn access_form(
         &mut self,
         site: Site,
@@ -512,7 +513,7 @@ impl<'source> Lowerer<'_, 'source>
             if keyword == TileName::RESUME {
                 let (written, value) = self.keyword_two(site, operand)?;
                 let (view, ended) = self.ended_view(frame, written)?;
-                let _first = self.ended_views.insert(ended);
+                let _first = self.cx.ended_views.insert(ended);
                 self.read(value.node, Reading::Value(frame));
                 Accessed::Resume {
                     view,
@@ -522,7 +523,7 @@ impl<'source> Lowerer<'_, 'source>
             else if keyword == TileName::ABORT {
                 let written = self.keyword_one(site, operand)?;
                 let (view, ended) = self.ended_view(frame, written)?;
-                let _first = self.ended_views.insert(ended);
+                let _first = self.cx.ended_views.insert(ended);
                 Accessed::Abort { view }
             }
             else {
@@ -595,7 +596,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::a_shared_access_lowers_without_an_unwind`
     /// - witness: `lower::access::tests::an_access_of_a_place_lowers_with_its_index`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.results.contains(&body.last))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.cx.results.contains(&body.last))))]
     fn access(
         &mut self,
         site: Site,
@@ -645,10 +646,11 @@ impl<'source> Lowerer<'_, 'source>
         let name = self.name_at(viewer);
         self.note_binder(viewer, frame, name)?;
         let viewed = self
+            .cx
             .scope
             .extend_linear(frame, name, Maybe::Present(viewer.span));
         let body = self.block(site, &mut cursor, Frame::Inner(viewed))?;
-        let _result = self.results.insert(body.last);
+        let _result = self.cx.results.insert(body.last);
         let mut cursor = Cursor::new(tail, site.at.span);
         let mode = match (mode, tail.is_empty()) {
             (AccessMode::Shared, true) => AccessMode::Shared,
@@ -663,7 +665,7 @@ impl<'source> Lowerer<'_, 'source>
             (AccessMode::Exclusive { .. }, false) => {
                 closed(site, &mut cursor, TileName::UNWIND)?;
                 let unwind = self.block(site, &mut cursor, frame)?;
-                let _result = self.results.insert(unwind.last);
+                let _result = self.cx.results.insert(unwind.last);
                 AccessMode::Exclusive {
                     unwind: Maybe::Present(unwind),
                 }
@@ -698,7 +700,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a plain and a compound assignment each lower to the
     ///   access they write.
     /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| self.assignments.contains_key(&place.node)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| self.cx.assignments.contains_key(&place.node)))]
     pub(super) fn assignment(
         &mut self,
         site: Site,
@@ -716,7 +718,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let value = site.one(cursor.operands())?;
         self.read(value.node, Reading::Value(frame));
-        let _first = self.assignments.insert(place.node, Assignment {
+        let _first = self.cx.assignments.insert(place.node, Assignment {
             operator,
             value: value.node,
         });
@@ -751,7 +753,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   name.
     /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
     /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(Accessed::Assign { .. }))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Access(Accessed::Assign { .. }))))]
     pub(super) fn assign(
         &mut self,
         site: Site,

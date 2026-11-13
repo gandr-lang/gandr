@@ -111,12 +111,12 @@ impl<'source> Lowerer<'_, 'source>
         entry: &DescribedDeclaration,
     ) -> Result<NativelyRead, LoweringRefusal<'source>>
     {
-        let Some(node) = self.tree.node(entry.at.node)
+        let Some(node) = self.cx.tree.node(entry.at.node)
         else {
             return Ok(NativelyRead(false));
         };
         Ok(NativelyRead(matches!(
-            shape_of(self.pbg, node)?,
+            shape_of(self.cx.pbg, node)?,
             Shape::Form {
                 former: Former::Data,
                 ..
@@ -158,8 +158,9 @@ impl<'source> Lowerer<'_, 'source>
         seeds: &mut Vec<(NodeIndex, Reading)>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let (source_of, current) = (&self.source_of, self.current.source);
+        let (source_of, current) = (&self.cx.source_of, self.cx.current.source);
         for entry in self
+            .cx
             .collected
             .descriptions
             .values()
@@ -172,13 +173,13 @@ impl<'source> Lowerer<'_, 'source>
             for parameter in &entry.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
                 let name = self.name_at(parameter.named);
-                let extended = self.scope.extend_typed(
+                let extended = self.cx.scope.extend_typed(
                     frame,
                     name,
                     parameter.classifier.node,
                     Maybe::Present(parameter.named.span),
                 );
-                self.scope.mention(extended);
+                self.cx.scope.mention(extended);
                 frame = Frame::Inner(extended);
             }
             for observation in &entry.written.observations {
@@ -227,23 +228,24 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     #[spec(
-        captures: [before = self.data.len(), codata_before = self.codata.len()],
-        ensures: |result| result.is_err() || (self.data.len() == before && self.codata.len() >= codata_before && self.described.keys().chain(self.codata_described.keys()).all(|position| self.collected.slots.get(usize::from(*position)).is_some())),
+        captures: [before = self.cx.data.len(), codata_before = self.cx.codata.len()],
+        ensures: |result| result.is_err() || (self.cx.data.len() == before && self.cx.codata.len() >= codata_before && self.cx.described.keys().chain(self.cx.codata_described.keys()).all(|position| self.cx.collected.slots.get(usize::from(*position)).is_some())),
     )]
     pub(super) fn mint_descriptions(
         &mut self,
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let types = core::mem::take(&mut self.described_types);
+        let types = core::mem::take(&mut self.cx.described_types);
         let mut written = BTreeMap::new();
-        for position in self.current.slots .. self.collected.slots.len() {
-            self.fuel.spend()?;
-            let Some(slot) = self.collected.slots.get(position)
+        for position in self.cx.current.slots .. self.cx.collected.slots.len() {
+            self.cx.fuel.spend()?;
+            let Some(slot) = self.cx.collected.slots.get(position)
             else {
                 break;
             };
-            let Maybe::Present(entry) = self.collected.descriptions.get(&slot.introduced_by.node)
+            let Maybe::Present(entry) =
+                self.cx.collected.descriptions.get(&slot.introduced_by.node)
             else {
                 continue;
             };
@@ -292,20 +294,22 @@ impl<'source> Lowerer<'_, 'source>
             }
             match result {
                 Ok(signature) => {
-                    let index = CodataIndex::from(self.codata.len());
-                    self.codata.push(Arc::new(signature));
+                    let index = CodataIndex::from(self.cx.codata.len());
+                    self.cx.codata.push(Arc::new(signature));
                     let _first = self
+                        .cx
                         .codata_described
                         .insert(SlotIndex::from(position), index);
                 },
                 Err(error) => {
-                    self.collected
+                    self.cx
+                        .collected
                         .description_diagnostics
                         .push(DescriptionDiagnostic {
                             span: at.span,
                             fault: DescriptionFault::NativeDecode(error),
                         });
-                    if let Some(slot) = self.collected.slots.get_mut(position) {
+                    if let Some(slot) = self.cx.collected.slots.get_mut(position) {
                         slot.refuse(at.node, LoweringRefusal::UndescribedMember {
                             span: at.span,
                             fault: crate::description::MemberFault::NativeDecode,
@@ -314,7 +318,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             }
         }
-        self.described_types = types;
+        self.cx.described_types = types;
         Ok(())
     }
 
@@ -345,20 +349,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   matching on it counts its operations.
     /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
     #[spec(
-        captures: before = (self.data.len(), self.presented.len()),
-        ensures: |result| result.is_err() || (self.data.len() >= before.0 && self.presented.len() >= before.1),
+        captures: before = (self.cx.data.len(), self.cx.presented.len()),
+        ensures: |result| result.is_err() || (self.cx.data.len() >= before.0 && self.cx.presented.len() >= before.1),
     )]
     pub(super) fn mint_presentations(
         &mut self,
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Maybe::Present(ref theory) = self.collected.theory
+        let Maybe::Present(ref theory) = self.cx.collected.theory
         else {
             return Ok(());
         };
         let code = theory.slot;
-        let Some(slot) = self.collected.slots.get(usize::from(code))
+        let Some(slot) = self.cx.collected.slots.get(usize::from(code))
         else {
             return Ok(());
         };
@@ -386,22 +390,23 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Ok(());
             };
-            let index = DataIndex::from(self.data.len());
-            self.constructors.push(
+            let index = DataIndex::from(self.cx.data.len());
+            self.cx.constructors.push(
                 description
                     .ctors
                     .iter()
                     .map(|constructor| String::from(constructor.name.as_ref()))
                     .collect(),
             );
-            self.data.push(Arc::new(signature));
-            let _first = self.described.insert(code, index);
+            self.cx.data.push(Arc::new(signature));
+            let _first = self.cx.described.insert(code, index);
         }
-        else if !self.described.contains_key(&code) {
+        else if !self.cx.described.contains_key(&code) {
             // `Theory` did not decode in the source that declares it.
             return Ok(());
         }
         let cells_at: BTreeMap<NodeIndex, usize> = self
+            .cx
             .collected
             .cells
             .declarations
@@ -409,9 +414,9 @@ impl<'source> Lowerer<'_, 'source>
             .enumerate()
             .map(|(index, cells)| (cells.at.node, index))
             .collect();
-        for position in self.current.slots .. self.collected.slots.len() {
-            self.fuel.spend()?;
-            let Some(slot) = self.collected.slots.get(position)
+        for position in self.cx.current.slots .. self.cx.collected.slots.len() {
+            self.cx.fuel.spend()?;
+            let Some(slot) = self.cx.collected.slots.get(position)
             else {
                 break;
             };
@@ -426,7 +431,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             let block = slot.introduced_by;
-            let Maybe::Present(entry) = self.collected.descriptions.get(&block.node)
+            let Maybe::Present(entry) = self.cx.collected.descriptions.get(&block.node)
             else {
                 continue;
             };
@@ -440,7 +445,7 @@ impl<'source> Lowerer<'_, 'source>
             // so its value is the presentation's own.
             let certified = cells_at
                 .get(&block.node)
-                .and_then(|&index| self.collected.cells.declarations.get(index))
+                .and_then(|&index| self.cx.collected.cells.declarations.get(index))
                 .filter(|cells| !cells.oriented.is_empty())
                 .and_then(|cells| {
                     let parts = presentation.value.decode().ok()?;
@@ -457,13 +462,14 @@ impl<'source> Lowerer<'_, 'source>
             match body {
                 Ok(body) => {
                     let _first = self
+                        .cx
                         .presented
                         .insert(SlotIndex::from(position), (declared, body));
                 },
                 Err(_fault) => {
-                    if let Some(node) = self.tree.node(block.node)
-                        && let Shape::Form { name, .. } = shape_of(self.pbg, node)?
-                        && let Some(slot) = self.collected.slots.get_mut(position)
+                    if let Some(node) = self.cx.tree.node(block.node)
+                        && let Shape::Form { name, .. } = shape_of(self.cx.pbg, node)?
+                        && let Some(slot) = self.cx.collected.slots.get_mut(position)
                     {
                         slot.refuse(block.node, LoweringRefusal::OutOfFragment {
                             span: block.span,

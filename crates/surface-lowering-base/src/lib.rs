@@ -41,7 +41,7 @@
 //! | [`operation`] | an operation's rules planned as a routing tree and minted as one function |
 //! | [`doc`] | documentation comments and their links |
 //! | [`layout`] | a bracket that the layout of a block misplaces, read where it was written |
-//! | [`lower`] | the records of the lowering: the exits, the runs and the literals the module pass reads, the types of the fields of the lowering's context, the refusal of a `cells` node and a theory read as a capability's interface |
+//! | [`lower`] | the records of the lowering: the exits, the runs and the literals the module pass reads, the lowering's context and the types of its fields, the refusal of a `cells` node and a theory read as a capability's interface |
 //!
 //! `gandr-surface-lowering` names each module at its old path, and re-exports
 //! the modules its consumers read. Each module states its decisions. A witness

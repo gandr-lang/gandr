@@ -71,9 +71,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::model::opening::tests::a_model_opens_as_a_bind_over_the_rest_of_its_block_4788`
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
     #[spec(
-        captures: before = self.statements.mark(),
-        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
-            && self.statements.last().is_some_and(|last| last.origin == lead.node && matches!(last.binding, StatementBinding::Opening { .. }))),
+        captures: before = self.cx.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx.statements.mark() == before.next()
+            && self.cx.statements.last().is_some_and(|last| last.origin == lead.node && matches!(last.binding, StatementBinding::Opening { .. }))),
     )]
     pub(in crate::lower) fn module_statement(
         &mut self,
@@ -95,12 +95,12 @@ impl<'source> Lowerer<'_, 'source>
         let opened = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         let stated = self.opened_declared(opened, frame)?;
-        let _first = self.opened_models.insert(opened.node, stated);
+        let _first = self.cx.opened_models.insert(opened.node, stated);
         let name = self.name_at(binder);
         self.note_binder(binder, frame, name)?;
-        let _result = self.results.insert(opened.node);
+        let _result = self.cx.results.insert(opened.node);
         self.read(opened.node, Reading::Computation(frame));
-        self.statements.push(Statement {
+        self.cx.statements.push(Statement {
             origin: lead.node,
             bound: opened.node,
             binding: StatementBinding::Opening {
@@ -111,7 +111,7 @@ impl<'source> Lowerer<'_, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend_typed(
+        Ok(Frame::Inner(self.cx.scope.extend_typed(
             frame,
             name,
             stated,
@@ -172,19 +172,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::module_statement`].
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
-    #[spec(ensures: |ret| ret.is_ok() || self.opened_models.contains_key(&site.at.node))]
+    #[spec(ensures: |ret| ret.is_ok() || self.cx.opened_models.contains_key(&site.at.node))]
     pub(in crate::lower) fn opened_model(
         &self,
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Some(&stated) = self.opened_models.get(&site.at.node)
+        let Some(&stated) = self.cx.opened_models.get(&site.at.node)
         else {
             return Ok(());
         };
         let mut at = stated;
         loop {
-            match self.plans.get(at) {
+            match self.cx.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::Bundle(_)) => return Ok(()),
                 _ => {
