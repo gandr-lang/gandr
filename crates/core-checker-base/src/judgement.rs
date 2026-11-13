@@ -651,7 +651,7 @@ pub fn synthesise_value(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
 )]
-pub fn synthesise_value_with_failure(
+pub(crate) fn synthesise_value_with_failure(
     context: &mut CheckingContext<'_>,
     value: ValueId,
 ) -> Result<Synthesised<FormedValueType>, Failure>
@@ -737,7 +737,7 @@ pub fn check_value(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
 )]
-pub fn check_value_with_failure(
+pub(crate) fn check_value_with_failure(
     context: &mut CheckingContext<'_>,
     value: ValueId,
     expected: FormedValueType,
@@ -962,7 +962,7 @@ pub fn form(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: context.depth(Zone::Intuitionistic) == depth,
 )]
-pub fn form_with_failure(
+pub(crate) fn form_with_failure(
     context: &mut CheckingContext<'_>,
     node: TypeNode,
 ) -> Result<(), Failure>

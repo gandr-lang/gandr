@@ -410,7 +410,7 @@ pub enum Reach
     | Err(CheckRefusal::ShapeMismatch { at: named, wanted, .. }) => named == TermNode::Value(capability) && wanted == ExpectedShape::Capability,
     | Ok(()) | Err(_) => true,
 })]
-pub fn authorise(
+pub(crate) fn authorise(
     arena: &CoreArena,
     at: ComputationId,
     capability: ValueId,
@@ -557,7 +557,7 @@ pub fn abstracts(
 /// # Specification
 /// trivial.
 #[inline]
-pub fn binder_precedence(
+pub(crate) fn binder_precedence(
     arena: &CoreArena,
     root: TypeNode,
 ) -> BinderPrecedence

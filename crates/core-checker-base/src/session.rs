@@ -91,7 +91,7 @@
 //! statement relates it ([`crate::flow`]). A send crosses as its payload
 //! returned, a select and a close as the unit, a fork as its child and then
 //! its parent. A receive, an offer and a linear variable are still refused as
-//! [`crate::bridge::Refusal::Session`], and a declaration holding one stays
+//! the bridge's `Refusal::Session`, and a declaration holding one stays
 //! on the checker's side, accepted and not re-derived.
 //!
 //! # References
@@ -387,7 +387,7 @@ quenchant_shape::reason_enum! {
 ///   this, so the seat exchange observes it at each action.
 /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
 #[spec(ensures: |ret| ret.is_err() || matches!(value_type_view(context.arena(), ty), Ok(ValueTypeView::Session(_))))]
-pub fn session_at(
+pub(crate) fn session_at(
     context: &CheckingContext<'_>,
     ty: ValueTypeId,
 ) -> Result<SessionType, CheckRefusal>

@@ -29,7 +29,9 @@ One row per directory: the directory and what it is.
 ```text
 # Rows sort lexicographically by directory; the dependency order is § Layering.
 crates/
-├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary, residual readmission and guarded staging families
+├── core-checker/                  the checking judgement under one name
+├── core-checker-base/             the faces, module run and refusals
+├── core-checker-bridge/           kernel readmission, staging families
 ├── core-fork/                     the fork a consumer hands its independent jobs to, and its serial reference
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging

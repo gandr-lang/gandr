@@ -408,7 +408,7 @@ pub fn universe(arena: &mut CoreArena) -> ValueTypeId
     | Ok(Maybe::Present(ref session)) => session.state() == session.protocol().root(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-pub fn session_code(
+pub(crate) fn session_code(
     context: &mut CheckingContext<'_>,
     code: ValueId,
 ) -> Result<Maybe<SessionType, session_code::Absent>, CheckRefusal>
@@ -957,7 +957,7 @@ fn payload_certificate(
     | Err(CheckRefusal::SessionNotSubtype { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
-pub fn record_simulation(
+pub(crate) fn record_simulation(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     carrier: ValueTypeId,
@@ -1720,7 +1720,7 @@ pub fn admit(
     | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn run_premises(
+pub(crate) fn run_premises(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     expected: ValueTypeId,
@@ -1843,7 +1843,7 @@ pub fn run_premises(
     ) => site == at,
     | Ok(_) | Err(_) => true,
 })]
-pub fn dialogue_premises(
+pub(crate) fn dialogue_premises(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     expected: ValueTypeId,
@@ -2124,7 +2124,7 @@ impl Log
 ///   each endpoint of a dialogue checks its own payloads at its protocol.
 /// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 /// - witness: `tests::flow::a_dialogue_checks_by_its_web_and_refuses_by_move`
-pub fn payload_premises<'moves, Moves>(
+pub(crate) fn payload_premises<'moves, Moves>(
     session: SessionType,
     moves: Moves,
 ) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
@@ -2160,7 +2160,7 @@ where
 ///
 /// # Specification
 /// trivial.
-pub fn skeleton_move(movement: &RecordedMove) -> Move
+pub(crate) fn skeleton_move(movement: &RecordedMove) -> Move
 {
     let payload = Payload {
         identity: gandr_core_session::ValueTypeId([0_u8; 32]),
@@ -2225,7 +2225,7 @@ fn replay_refusal(
 /// - hypothesis: L3 — a paused run, a truncated one, one moving the wrong way
 ///   and one moving past its close name distinct faults.
 /// - witness: `flow::tests::each_refusal_is_named`
-pub fn replay_fault(error: &ReplayError) -> Option<RunFault>
+pub(crate) fn replay_fault(error: &ReplayError) -> Option<RunFault>
 {
     match *error {
         ReplayError::Refused {

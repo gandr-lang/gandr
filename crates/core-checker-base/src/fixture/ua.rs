@@ -194,3 +194,25 @@ impl StratumStore for Answering
         let _before = count.fetch_add(1, Ordering::Relaxed);
     }
 }
+
+/// The table of `translator` at `corolla`, from the elements `from` into the
+/// elements `to`, as the univalence derivation reads it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As the derivation's reading: the refusal where the translator's run sticks
+/// or leaves the code.
+pub fn tabulated(
+    context: &mut crate::context::CheckingContext<'_>,
+    corolla: ShapeIndex,
+    translator: gandr_core_term::ValueId,
+    elements: (
+        &[gandr_theory_sites::Element],
+        &[gandr_theory_sites::Element],
+    ),
+) -> Result<gandr_theory_sites::Table, crate::ua::UaRefusal>
+{
+    crate::ua::tabulated(context, corolla, translator, elements)
+}

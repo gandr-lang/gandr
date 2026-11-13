@@ -487,7 +487,7 @@ pub enum Agreement
             true
         },
 )]
-pub fn value_bridge<Synthesised>(
+pub(crate) fn value_bridge<Synthesised>(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     synthesised: Synthesised,
@@ -980,7 +980,7 @@ fn literal_reader(
     captures: [before = context.deferrals().collecting, counted = tally.0],
     ensures: context.deferrals().collecting == before && tally.0 == counted.saturating_add(1),
 )]
-pub fn decimal_bridge(
+pub(crate) fn decimal_bridge(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     expected: ValueTypeId,
@@ -1521,7 +1521,7 @@ fn carriers(
             | _ => true,
         },
 )]
-pub fn comp_bridge(
+pub(crate) fn comp_bridge(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
     synthesised: CompTypeId,
@@ -1593,7 +1593,7 @@ pub fn comp_bridge(
             | _ => true,
         },
 )]
-pub fn decode_bridge(
+pub(crate) fn decode_bridge(
     context: &mut CheckingContext<'_>,
     code: ValueId,
     synthesised: ValueTypeId,
@@ -1727,7 +1727,7 @@ pub fn equivalent(
 ///   admits; one annotated at a call that returns another index is refused.
 /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
 #[spec(ensures: |ret| left != right || ret.is_err() || ret == Ok(Agreement::Convertible))]
-pub fn indices_agree(
+pub(crate) fn indices_agree(
     context: &mut CheckingContext<'_>,
     left: ValueId,
     right: ValueId,
@@ -1769,7 +1769,7 @@ pub fn indices_agree(
 ///   another literal is refused by the field.
 /// - witness: `tests::native_formers::a_literal_s_fixed_field_converts_with_the_fixed_value_5612`
 #[spec(ensures: |ret| field != fixed || ret.is_err() || ret == Ok(Agreement::Convertible))]
-pub fn fixed_field_agrees(
+pub(crate) fn fixed_field_agrees(
     context: &mut CheckingContext<'_>,
     field: ValueId,
     fixed: ValueId,

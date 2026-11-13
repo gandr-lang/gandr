@@ -18,10 +18,10 @@ use gandr_core_checker_base::fixture::flow::retiring;
 use gandr_core_checker_base::fixture::flow::ridden;
 use gandr_core_checker_base::fixture::flow::run;
 use gandr_core_checker_base::fixture::flow::seat;
+use gandr_core_checker_base::fixture::flow::session_code;
 use gandr_core_checker_base::fixture::flow::statement;
 use gandr_core_checker_base::fixture::flow::texted;
 use gandr_core_checker_base::fixture::flow::verdict;
-use gandr_core_checker_base::flow::session_code;
 use gandr_core_checker_base::flow::universe;
 use gandr_core_checker_base::refusal::CheckRefusal;
 use gandr_core_checker_base::refusal::RunFault;
@@ -688,7 +688,9 @@ fn a_session_is_a_code_only_at_its_root()
     ));
     assert_eq!(
         session_code(&mut context, later),
-        Ok(Maybe::Absent(session_code::Absent::Elsewhere))
+        Ok(Maybe::Absent(
+            gandr_core_checker_base::flow::session_code::Absent::Elsewhere
+        ))
     );
 }
 

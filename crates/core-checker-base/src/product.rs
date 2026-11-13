@@ -329,7 +329,7 @@ pub fn classifier(
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
-pub fn flow_component(
+pub(crate) fn flow_component(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     classifier: ValueTypeId,
@@ -414,7 +414,7 @@ pub fn flow_component(
 /// - hypothesis: L3 — a product of `stay` and a forward flow synthesises the
 ///   flow between its pairs, and checks at the declared telescope.
 /// - witness: `tests::product::a_flow_product_synthesises_the_flow_between_its_pairs`
-pub fn flow_classifier(
+pub(crate) fn flow_classifier(
     arena: &mut CoreArena,
     (first_source, first_target): (ValueTypeId, ValueTypeId),
     (second_source, second_target): (ValueTypeId, ValueTypeId),

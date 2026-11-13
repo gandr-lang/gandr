@@ -9746,8 +9746,10 @@ fn an_undecided_pair_crosses_with_its_second_certificate_3557()
     };
     let reflexivities = BTreeMap::from([(
         at,
-        crate::code::Reflexivity::new(evaluate(), evaluate())
-            .meeting([None, Some(crate::code::MetPair::new(b, d, Vec::new()))]),
+        gandr_core_checker_base::fixture::met_reflexivity(evaluate(), evaluate(), [
+            None,
+            Some((b, d)),
+        ]),
     )]);
     let lifts = BTreeMap::new();
     let definitions = BTreeMap::new();

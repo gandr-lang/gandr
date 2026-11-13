@@ -575,7 +575,7 @@ enum Taken
     | Maybe::Present(ref refined) => refined.term != arm && matches!(context.arena().computation(refined.term), Some(&Computation::Lambda(_))),
     | Maybe::Absent(_) => true,
 }))]
-pub fn refined_arm(
+pub(crate) fn refined_arm(
     context: &mut CheckingContext<'_>,
     arm: ComputationId,
     expected: CompTypeId,
@@ -772,7 +772,7 @@ struct Arm
     | Maybe::Present(ref refined) => refined.term != case,
     | Maybe::Absent(_) => true,
 }))]
-pub fn refined_case(
+pub(crate) fn refined_case(
     context: &mut CheckingContext<'_>,
     case: ComputationId,
     direction: Direction<CompTypeId>,
@@ -1213,7 +1213,7 @@ fn scrutinised_place(
 /// - witness: `tests::native_formers::a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036`
 /// - witness: `tests::native_formers::a_case_on_an_outer_binder_reads_its_goal_at_each_form_in_both_checkers_6110`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&goal| goal == shifted || context.arena().comp_type(goal).is_some()))]
-pub fn sum_arm_goal(
+pub(crate) fn sum_arm_goal(
     context: &mut CheckingContext<'_>,
     scrutinee: ValueId,
     summand: gandr_core_term::Summand,
@@ -1256,7 +1256,7 @@ pub fn sum_arm_goal(
 ///   its body at the unit, and one whose goal does not checks it as written.
 /// - witness: `tests::native_formers::a_case_on_an_outer_binder_reads_its_goal_at_each_form_in_both_checkers_6110`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&goal| goal == expected || context.arena().comp_type(goal).is_some()))]
-pub fn unit_split_goal(
+pub(crate) fn unit_split_goal(
     context: &mut CheckingContext<'_>,
     scrutinee: ValueId,
     expected: CompTypeId,
@@ -1311,7 +1311,7 @@ pub fn unit_split_goal(
     | Maybe::Present(ref refined) => refined.minted.is_empty() && refined.generalising.is_empty(),
     | Maybe::Absent(_) => true,
 }))]
-pub fn defined_body(
+pub(crate) fn defined_body(
     context: &mut CheckingContext<'_>,
     (bound, body): (ComputationId, ComputationId),
     migrating: Migrating,

@@ -520,7 +520,7 @@ pub fn tabulate(
     | Err(UaRefusal::Code { corolla: found, .. }) => found == corolla,
     | Err(UaRefusal::Species(_)) => false,
 })]
-pub fn tabulated(
+pub(crate) fn tabulated(
     context: &mut CheckingContext<'_>,
     corolla: ShapeIndex,
     translator: ValueId,

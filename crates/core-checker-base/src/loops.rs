@@ -865,7 +865,7 @@ pub fn wrapped(
 ///   with `Base`, in both checkers.
 /// - witness: `tests::native_formers::a_path_whose_endpoints_compute_the_point_is_its_words_485`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |point| point.is_none_or(|point| matches!(context.arena().value(point), Some(Value::Constructor { .. })))))]
-pub fn point_of(
+pub(crate) fn point_of(
     context: &mut CheckingContext<'_>,
     carrier: ValueTypeId,
     words: ConstantIndex,

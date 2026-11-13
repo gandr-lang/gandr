@@ -366,3 +366,18 @@ pub fn verdict(
 {
     report.judged().get(position).map(Judged::verdict)
 }
+
+/// The session that `code` denotes at its root, as the flow reads it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As the flow's reading: the refusal that the code's normal form meets.
+pub fn session_code(
+    context: &mut CheckingContext<'_>,
+    code: ValueId,
+) -> Result<Maybe<SessionType, crate::flow::session_code::Absent>, crate::CheckRefusal>
+{
+    crate::flow::session_code(context, code)
+}

@@ -834,7 +834,7 @@ pub enum Identified
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Plain,
     Err(_) => true,
 })]
-pub fn constructor_owes(
+pub(crate) fn constructor_owes(
     context: &mut CheckingContext<'_>,
     expected: ValueTypeId,
 ) -> Result<Maybe<Owed, Unstaged>, CheckRefusal>

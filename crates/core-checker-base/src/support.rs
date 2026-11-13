@@ -574,7 +574,7 @@ impl Supported
 }
 
 /// Whether the context logs the answers it hands out.
-pub enum SupportLog
+pub(crate) enum SupportLog
 {
     /// No supported judgement runs; nothing is logged.
     Off,

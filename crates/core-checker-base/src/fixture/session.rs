@@ -467,3 +467,18 @@ pub fn delegator(
     );
     (fork(arena, ended, inner_child, inner_parent), reused)
 }
+
+/// The session type at `ty`, as the session judgement reads it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As the judgement's reading: the refusal when `ty` is no session type.
+pub fn session_at(
+    context: &CheckingContext<'_>,
+    ty: ValueTypeId,
+) -> Result<SessionType, CheckRefusal>
+{
+    crate::session::session_at(context, ty)
+}

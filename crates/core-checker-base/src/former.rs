@@ -170,7 +170,7 @@ use crate::refusal::CoreNode;
 /// - hypothesis: L3 — both universe sorts and a non-universe separate the rule.
 /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|level| matches!(context.arena().value_type(kind), Some(ValueType::Universe { sort: Sort::Ground(GroundSort::Value), level: held }) if held == level)) == ret.is_ok())]
-pub fn kind_level(
+pub(crate) fn kind_level(
     context: &CheckingContext<'_>,
     kind: ValueTypeId,
 ) -> Result<Level, CheckRefusal>
@@ -231,7 +231,7 @@ pub fn kind_level(
     && (matches!(context.data_in_scope(position), Maybe::Absent(_))
         || context.data_signatures().contains_key(&position)
         || context.block_of(position) != crate::occurrence::Block::lone(position)))]
-pub fn form_signature(
+pub(crate) fn form_signature(
     context: &mut CheckingContext<'_>,
     position: ConstantIndex,
     signature: &Arc<DataSignature>,
@@ -263,7 +263,7 @@ pub fn form_signature(
 ///   the projected refusal is [`form_signature`]'s.
 /// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
-pub fn form_signature_with_failure(
+pub(crate) fn form_signature_with_failure(
     context: &mut CheckingContext<'_>,
     position: ConstantIndex,
     signature: &Arc<DataSignature>,
@@ -633,7 +633,7 @@ fn node(
     ensures: |ret| context.seal_table().sites().len() == minted
         && (ret.is_err() || matches!(context.seal_table().lookup(declared.site()), Maybe::Absent(_))),
 )]
-pub fn form_abstract(
+pub(crate) fn form_abstract(
     context: &mut CheckingContext<'_>,
     declared: AbstractType,
 ) -> Result<Level, CheckRefusal>
@@ -690,7 +690,7 @@ pub fn form_abstract(
 /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
 #[spec(ensures: |ret| matches!(declared.interface(), Maybe::Present(_)) || ret.is_ok())]
-pub fn form_interface(
+pub(crate) fn form_interface(
     context: &mut CheckingContext<'_>,
     declared: AbstractType,
     level: &Level,
@@ -975,7 +975,7 @@ pub fn field_type(
 /// - witness: `former::tests::a_dependent_field_checks_at_the_value_of_the_field_it_names`
 /// - witness: `former::tests::a_field_that_reads_a_lambda_field_reads_its_thunk_5374`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
-pub fn field_at(
+pub(crate) fn field_at(
     context: &mut CheckingContext<'_>,
     (datatype, constructor): (ValueTypeId, ValueId),
     field: ValueTypeId,
@@ -1052,7 +1052,7 @@ quenchant_shape::reason_enum! {
 ///   code before it is dependent.
 /// - witness: `former::tests::a_later_field_reads_its_parameters_past_the_earlier_fields`
 #[spec(ensures: |ret| usize::from(position) != 0 || matches!(ret, Ok(Maybe::Present(_)) | Err(_)))]
-pub fn field_outside(
+pub(crate) fn field_outside(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
     field: ValueTypeId,
@@ -1209,7 +1209,7 @@ pub fn stated_at(
 ///   index read, separates a read field from its tail, which no type reads.
 /// - witness: `tests::native_formers::a_constructor_field_written_as_a_call_meets_its_annotation_3625`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.windows(2).all(|pair| matches!(pair, [before, after] if usize::from(*before) < usize::from(*after)))))]
-pub fn type_read_fields(
+pub(crate) fn type_read_fields(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
     tag: ConstructorTag,

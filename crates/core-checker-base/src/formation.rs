@@ -264,7 +264,7 @@ pub fn form_value_type(
         && ret.as_ref().is_ok_and(|formed| formed.id() == value_type) == ret.is_ok(),
 )]
 #[inline]
-pub fn form_value_type_with_failure(
+pub(crate) fn form_value_type_with_failure(
     context: &mut CheckingContext<'_>,
     value_type: ValueTypeId,
 ) -> Result<FormedValueType, Failure>

@@ -322,7 +322,7 @@ struct Sealed
 /// back into itself.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Foresight(usize);
+pub(crate) struct Foresight(usize);
 
 /// The core context wrapped with the signature table, the admission position,
 /// the atoms, the code definitions, the sealed abstract types, the lifts and

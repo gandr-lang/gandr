@@ -746,7 +746,7 @@ fn a_corolla_automorphism_acts_on_a_certificate_by_conjugation()
     let tables = {
         let mut context = prepared(&mut arena, &prelude);
         [crossed, recrossed].map(|translator| {
-            gandr_core_checker_base::ua::tabulated(
+            gandr_core_checker_base::fixture::ua::tabulated(
                 &mut context,
                 binary,
                 translator,

@@ -631,7 +631,7 @@ impl MetPair
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         point: ValueId,
         endpoint: ValueId,
         returning: Vec<DeBruijnIndex>,
@@ -695,7 +695,7 @@ impl Reflexivity
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         left: Vec<ConversionDecision<TraceNode>>,
         right: Vec<ConversionDecision<TraceNode>>,
     ) -> Self
@@ -714,7 +714,7 @@ impl Reflexivity
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn meeting(
+    pub(crate) fn meeting(
         self,
         met: [Option<MetPair>; 2],
     ) -> Self

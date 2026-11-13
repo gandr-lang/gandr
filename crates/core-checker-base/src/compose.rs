@@ -378,7 +378,7 @@ fn level_four_object(tree: Tree) -> Result<WreathShape<WreathShape<WreathShape<S
 /// # Specification
 /// trivial.
 #[must_use]
-pub fn chain_budget() -> ShapeBudget
+pub(crate) fn chain_budget() -> ShapeBudget
 {
     ShapeBudget::from(9_usize)
 }

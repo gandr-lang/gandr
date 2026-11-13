@@ -1622,5 +1622,24 @@ pub fn formed(id: gandr_core_term::ValueTypeId) -> crate::formation::FormedValue
     crate::formation::FormedValueType::derived(id)
 }
 
+/// The reflexivity whose point relates to its left endpoint by `left` and to
+/// its right endpoint by `right`, with the pair `(point, endpoint)` the tier
+/// met at each side, closed: a test hands the readmission a reading that no
+/// judgement made.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn met_reflexivity(
+    left: Vec<gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>>,
+    right: Vec<gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>>,
+    met: [Option<(ValueId, ValueId)>; 2],
+) -> crate::code::Reflexivity
+{
+    crate::code::Reflexivity::new(left, right).meeting(met.map(|pair| {
+        pair.map(|(point, endpoint)| crate::code::MetPair::new(point, endpoint, Vec::new()))
+    }))
+}
+
 #[cfg(test)]
 mod tests;
