@@ -1219,14 +1219,16 @@ exit "$status"
 # `check:corpus-goldens` and `check:clippy-plain-only` wait behind them. A
 # caller's own `CARGO_TARGET_DIR` stands: `check:doc-features` sets one for its
 # scratch crates.
+#
+# Over the whole workspace, each pass keeps Cargo's messages in the build
+# directory, and `ci:prune-docs` reads them as the units that the passes
+# build (`.config/doc/check.bash`).
 ["check:doc"]
 description = "Private-item rustdoc with every rustdoc lint denied, with the default features and with every feature on"
 env.RUSTDOCFLAGS = "-D warnings"
 env.CARGO_TARGET_DIR = "{{ env.CARGO_TARGET_DIR | default(value=config_root ~ '/target/gate-doc') }}"
-run = [
-  ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --locked --no-deps --document-private-items",
-  ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --all-features --locked --no-deps --document-private-items",
-]
+tools.jq = "1.8.1"
+run = ".config/doc/check.bash"
 
 # `check:doc` refuses a link that resolves under one set of features alone
 # (#6508): `.config/doc/features-cases.bash` documents a scratch crate through

@@ -561,17 +561,18 @@ run = [
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-tests.jsonl target/debug/units-corpus.jsonl target/debug/units-comments.jsonl target/debug/units-tool.jsonl",
 ]
 
-# The documentation lane's builds, with the arguments `check:doc` gives
-# them: the private-item rustdoc with the default features and with every
-# feature on, and the pruning binary itself, all in `check:doc`'s own build
-# directory, `target/gate-doc`.
+# The documentation lane's builds: the two passes of `check:doc`, whose
+# messages it keeps over the whole workspace (`.config/doc/check.bash`), and
+# the pruning binary itself, all in `check:doc`'s own build directory,
+# `target/gate-doc`. Two passes of its own would document 50 crates again at
+# each change of the set of features, about 11 min of each cycle (#7185). A
+# list that is absent, as after a scoped run, stops the prune, and the job
+# hands on the whole directory.
 ["ci:prune-docs"]
 description = "Prune the documentation state to the units this run's builds used"
-env.RUSTDOCFLAGS = "-D warnings"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/gate-doc"
 run = [
-  ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items --message-format json > target/gate-doc/units-doc-default.jsonl",
-  ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/gate-doc/units-doc.jsonl",
+  "test -s target/gate-doc/units-doc-default.jsonl && test -s target/gate-doc/units-doc.jsonl || { echo 'ci:prune-docs: check:doc kept no list of its units over the whole workspace' >&2; exit 1; }",
   ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/gate-doc/units-tool.jsonl",
   "target/gate-doc/debug/build-state prune --profile-dir target/gate-doc/debug target/gate-doc/units-doc-default.jsonl target/gate-doc/units-doc.jsonl target/gate-doc/units-tool.jsonl",
 ]
