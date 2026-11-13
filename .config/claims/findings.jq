@@ -56,7 +56,11 @@
 #   refused, by the part it lacks. An issue the coordinator signed is not
 #   judged, so no unit signed before the rule becomes unclaimable;
 # - `## The shape` and `## Try first`, when the body says it is new
-#   territory.
+#   territory;
+# - `## Observed at`, on an issue labelled `view` (#6873): the table
+#   `| Surface | How to reach it | Test |`, the editor extension first, each
+#   row naming a shipped surface of `surfaces.json` (`views.jq`). An issue
+#   the coordinator signed is not judged, as for `## Surface`.
 #
 # A `## Sources` row citing a paper dated before the citation window's cutoff
 # (`.config/references/window.toml`, #4708) names the newer work that
@@ -75,6 +79,7 @@
 # sections through the issues workflow.
 
 include "sections";
+include "views";
 
 def need($name):
   (section($name) // null) as $lines
@@ -240,5 +245,6 @@ def findings($labels; $number):
       | "the line `\(.)` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"),
     (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end),
     surface($labels),
+    observed_findings($labels),
     engineering_findings($labels),
     window($labels);

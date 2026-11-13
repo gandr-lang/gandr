@@ -32,6 +32,9 @@
 #             #5061): [{file, scope, api}]
 #   comments  the comment lines the change removes (`comments.bash`, #6004),
 #             one row per source: [{path, removed, dropped}]
+#   views     what the change builds that a consumer sees and where the body
+#             says the consumer sees it (`views.bash`, #6873):
+#             {built: [name], tests: [{surface, test, found}]}
 #
 # A merge reads the claims of what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -434,6 +437,25 @@ def keywords:
   .body | strays[]
   | "the body's line `\(.line)` carries `\(.keyword)`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again";
 
+# The refusals of a change that builds a view or closes a `view` unit
+# (#6873). A change that adds a request or a card type builds a view, so the
+# issue it closes carries `view`. A body that closes a `view` issue holds a
+# row of `## Observed at` whose test stands at HEAD under the paths of its
+# shipped surface (`views.bash`). A body that only advances the issue passes.
+def viewed:
+  (.body | targets(closing)) as $closed
+  | (.views // {built: [], tests: []}) as $views
+  | [(.issues // [])[] | select(.number as $n | $closed | index($n))] as $closing
+  | [$closing[] | select((.labels // []) | index("view"))] as $viewing
+  | (if ($views.built | length) > 0 and ($closing | length) > 0 and ($viewing | length) == 0 then
+       "the change adds \($views.built | join(", ")), a view, and closes \($closing | map("#\(.number)") | join(", ")), which carries no `view`: label the issue `view` and write its `## Observed at`, or write \($closing | map("`Advances #\(.number)`") | join(" and ")) while the view stands on its server side alone, then run `pr:open` again"
+     else empty end),
+    ($viewing[]
+      | .number as $n
+      | select(any($views.tests[]; .found) | not)
+      | ($views.tests | map("`\(.surface)` `\(.test)`") | join(", ")) as $read
+      | "the body closes #\($n), a `view` unit, and no row of its `## Observed at` names a shipped surface whose test stands at the head\(if $read == "" then "" else " (none found: \($read))" end): write `| Surface | How to reach it | Test |` with a test under the surface's paths in `.config/claims/surfaces.json`, or write `Advances #\($n)` while the view stands on its server side alone, then run `pr:open` again");
+
 # The refusals of `## Refactoring` (#2884): the section present, its first
 # line one verdict, `yes`, `maybe` or `no`, and a `yes` or `maybe` answered
 # by a table, `| Kind | Where | Observation |`, each row a kind of
@@ -591,4 +613,4 @@ def speedups:
   | select($lacks | length > 0)
   | "the body's line `\(gsub("^\\s+|\\s+$"; ""))` claims a speedup without \($lacks | join(" and ")): name both on the claim's line (#3479, the algorithm-first ruling of #320), then run `pr:open` again";
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings, api_budget, facts_kept, speedups
+claim, sources, citations, readings, concerns, defects, surface, keywords, viewed, refactorings, collectors, engineering_answers, ceilings, api_budget, facts_kept, speedups

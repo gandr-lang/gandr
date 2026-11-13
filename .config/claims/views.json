@@ -1,0 +1,77 @@
+[
+  {
+    "name": "#6873: a dispatch arm for a request that the base does not serve builds a view",
+    "files": [
+      {
+        "path": "crates/surface-lsp/src/server.rs",
+        "base": "match (phase, method) {\n    (Phase::Running, \"gandr/stack\") => stack(),\n}\n",
+        "head": "match (phase, method) {\n    (Phase::Running, \"gandr/stack\") => stack(),\n    (Phase::Running, \"gandr/goals\") => goals(),\n}\n"
+      }
+    ],
+    "body": "Advances #6873\n",
+    "output": { "built": ["request `gandr/goals`"], "tests": [] }
+  },
+  {
+    "name": "#6873: a test that asks a request the base serves builds no view",
+    "files": [
+      {
+        "path": "crates/surface-lsp/src/server.rs",
+        "base": "match (phase, method) {\n    (Phase::Running, \"gandr/stack\") => stack(),\n}\n",
+        "head": "match (phase, method) {\n    (Phase::Running, \"gandr/stack\") => stack(),\n}\nfn asks() { ask(&mut server, \"gandr/stack\", (0, 0)); }\n"
+      }
+    ],
+    "body": "Advances #6873\n",
+    "output": { "built": [], "tests": [] }
+  },
+  {
+    "name": "#6873: a card type that HEAD adds builds a view, and a struct of another name does not",
+    "files": [
+      {
+        "path": "crates/surface-render-remote/src/goals.rs",
+        "base": null,
+        "head": "pub struct GoalsCard {\n    pub goals: Vec<Goal>,\n}\npub struct Layout;\n"
+      }
+    ],
+    "body": "Advances #6873\n",
+    "output": { "built": ["card `GoalsCard`"], "tests": [] }
+  },
+  {
+    "name": "#6873: a row's test is found under its own surface's paths alone, as a `test(…)` call or as a Rust `fn`",
+    "files": [
+      {
+        "path": "contrib/gandr-vscode/src/stack.test.ts",
+        "base": null,
+        "head": "test(\"the stack view lists each spine\", async () => {});\nfunction a_card_draws_its_title() {}\n"
+      },
+      {
+        "path": "crates/surface-tui/src/stack.rs",
+        "base": null,
+        "head": "#[test]\nfn a_stack_card_lists_its_spines() {}\n"
+      }
+    ],
+    "body": "Closes #6873\n\n## Observed at\n\n| Surface | How to reach it | Test |\n| --- | --- | --- |\n| editor extension | the command `gandr: show the stack` | `the stack view lists each spine` |\n| gandr tui | `gandr tui`, then `s` | `stack::tests::a_stack_card_lists_its_spines` |\n| gandr view | `gandr view <file>` | `a_card_draws_its_title` |\n| Tern | the stack pane | `the stack view lists each spine` |\n",
+    "output": {
+      "built": [],
+      "tests": [
+        { "surface": "editor extension", "test": "the stack view lists each spine", "found": true },
+        {
+          "surface": "gandr tui",
+          "test": "stack::tests::a_stack_card_lists_its_spines",
+          "found": true
+        },
+        { "surface": "gandr view", "test": "a_card_draws_its_title", "found": false }
+      ]
+    }
+  },
+  {
+    "name": "#6873: an editor row set aside and a test still `owed` are no test found",
+    "files": [
+      { "path": "crates/surface-tui/src/lib.rs", "base": null, "head": "fn owed_elsewhere() {}\n" }
+    ],
+    "body": "Closes #6873\n\n## Observed at\n\n| Surface | How to reach it | Test |\n| --- | --- | --- |\n| editor extension | n/a — the view has no form in the editor | n/a |\n| gandr view | `gandr view <file>` | owed |\n",
+    "output": {
+      "built": [],
+      "tests": [{ "surface": "gandr view", "test": "owed", "found": false }]
+    }
+  }
+]
