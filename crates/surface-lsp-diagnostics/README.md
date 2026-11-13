@@ -7,6 +7,7 @@ The diagnostics of gandr's language server: the recheck of a document, the kerne
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -40,6 +41,11 @@ The diagnostics of gandr's language server: the recheck of a document, the kerne
 | Quick fixes | [`fix`](src/fix.rs) |
 | A model's proposals | [`proposal`](src/proposal.rs) |
 | Saves | [`saved`](src/saved.rs) |
+
+## References
+
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
 
 ## License
 

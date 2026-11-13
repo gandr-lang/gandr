@@ -8,7 +8,6 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -88,15 +87,6 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | The families that the server's handlers call, which their READMEs tabulate | [`gandr-surface-lsp-core`](../surface-lsp-core/README.md), [`gandr-surface-lsp-navigation`](../surface-lsp-navigation/README.md), [`gandr-surface-lsp-diagnostics`](../surface-lsp-diagnostics/README.md) |
 | The parts that read neither the dispatcher nor the session, which the base's README tabulates | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: an item slot offers `flow`.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `flow` supplies an import's translation.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming in a `flow` body is free.
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
-- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — anchor: a shadow is a diagnostic, off by default.
 
 ## License
 

@@ -1,12 +1,13 @@
 # gandr-surface-lsp-navigation
 
-The navigation of gandr's language server: references, highlights, rename, the call hierarchy, inlay hints, copied sources, shadowing and the documentation site. Each family reads the hover's table of a judged copy, which `gandr-surface-lsp-core` holds. This crate compiles beside `gandr-surface-lsp-diagnostics`, and `gandr-surface-lsp` compiles over both.
+The navigation of gandr's language server: references, highlights, rename, the call hierarchy, inlay hints, copied sources, shadowed binders and the documentation site. Each family reads the hover's table of a judged copy, which `gandr-surface-lsp-core` holds. This crate compiles beside `gandr-surface-lsp-diagnostics`, and `gandr-surface-lsp` compiles over both.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -43,6 +44,10 @@ The navigation of gandr's language server: references, highlights, rename, the c
 | Paste with imports | [`paste`](src/paste.rs) |
 | Shadowing binders | [`shadowed`](src/shadowed.rs) |
 | The documentation | [`doc`](src/doc.rs), [`site`](src/site.rs) |
+
+## References
+
+- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — anchor: a shadow is a diagnostic, off by default.
 
 ## License
 

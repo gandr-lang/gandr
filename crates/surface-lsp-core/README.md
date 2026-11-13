@@ -7,6 +7,7 @@ The core of the families of gandr's language server: the reading of a held text 
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -54,6 +55,13 @@ The core of the families of gandr's language server: the reading of a held text 
 | The store and the build | [`stored`](src/stored.rs), [`build`](src/build.rs) |
 | The render bus's report | [`view`](src/view.rs) |
 | The hub's fold of the activity ring | [`activity`](src/activity.rs) |
+
+## References
+
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: an item slot offers `flow`.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `flow` supplies an import's translation.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming in a `flow` body is free.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the activity fold, the derivation pane and the store pane.
 
 ## License
 
