@@ -61,13 +61,14 @@ suggestion = "Move mechanism, decisions and specification detail into the crate'
 includes = ["contrib/*/README.md", "crates/*/README.md", "library/*/README.md"]
 max_size = "12KB"
 
-# The crate map grows with the workspace: one member row for each crate, in
-# the file of its category (#7215). A byte bound on it moves with each
-# split, and a trimmed row loses what the map is for. So this rule outranks
-# `doc_sprawl` and the default, and it sets no size: `check:crate-map` holds
-# the rows, a row for each crate and no other.
-[rules.crate_map]
+# The crates listing carries one row per member, so it grows with the
+# workspace rather than with any one crate's prose. An agent reads the map
+# whole (the owner, 2026-11-13; #7275), so the budget rises with the
+# workspace and leaves room for the stage's splits.
+[rules.readme_crates]
 enabled = true
 priority = 200
-description = "The crate map: its index and the member rows of each category"
-includes = ["crates/README.md", "crates/README/*.md"]
+description = "Crates listing over its budget"
+suggestion = "An agent reads this map whole: no seat trims a member row, and the budget rises with the workspace"
+includes = ["crates/README.md"]
+max_size = "32KB"
