@@ -1287,10 +1287,11 @@ fn admitted_after<'text>(
     }
 }
 
-/// #776: a document laid out after its import closure offers the kernel its
-/// own declarations alone once the closure was admitted, exporting and
-/// committing what a whole admission of the revision exports and commits, and
-/// offers the whole closure again once a source of it changed.
+/// #776, #6847: a document laid out after its import closure offers the kernel
+/// the reach of an edit to its own text once the closure was admitted,
+/// exporting and committing what a whole admission of the revision exports and
+/// commits. Once a source of the closure changed, it offers the reach of that
+/// change: the changed declaration and each declaration that reads it.
 #[test]
 fn an_edit_to_its_own_text_readmits_the_document_alone_776()
 {
@@ -1332,10 +1333,10 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     assert_eq!(
         admitted_after(&mut session, &document, &second),
         Counted {
-            offered: 2,
+            offered: 1,
             judged: *PRELUDE + 4
         },
-        "an edit to the document's own text offers its own declarations alone"
+        "an edit to the document's own text offers the declaration it adds alone"
     );
     std::fs::write(
         &sibling,
@@ -1346,28 +1347,27 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     assert_eq!(
         admitted_after(&mut session, &document, &second),
         Counted {
-            offered: *PRELUDE + 4,
+            offered: 4,
             judged: *PRELUDE + 4
         },
-        "a changed sibling offers the whole closure again"
+        "a changed sibling offers its changed declaration and each one that reads it"
     );
     assert_eq!(
         admitted_after(&mut session, &document, first),
         Counted {
-            offered: 1,
+            offered: 0,
             judged: *PRELUDE + 3
         },
-        "and the changed closure is resumed thereafter"
+        "and the removal of a declaration that nothing reads offers none"
     );
     let _removed = std::fs::remove_dir_all(&directory);
 }
 
-/// #2102: an admission resumes the declarations its revision leads with
-/// unchanged since the admission before it. A comment after the last
-/// declaration offers the kernel the document's declarations once, then none;
-/// an edit to the last declaration offers the document's, then that one alone;
-/// and an edit to a declaration whose value a later one reads offers both
-/// again, the later one refused — each exporting and committing what a whole
+/// #2102, #6847: an admission keeps the declarations that an edit leaves. A
+/// comment after the last declaration offers the kernel none; an edit to the
+/// last declaration offers that declaration alone; and an edit to a
+/// declaration whose value a later one reads offers both, the later one
+/// refused, and nothing else — each exporting and committing what a whole
 /// admission of the same text does.
 #[test]
 fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
@@ -1402,8 +1402,8 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
         ),
         (
             revision("two", "three", "// noted\n"),
-            3_usize,
-            "a comment offers the document's declarations once",
+            0_usize,
+            "a comment offers none",
         ),
         (
             revision("two", "three", "// noted again\n"),
@@ -1412,18 +1412,18 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
         ),
         (
             revision("two", "two", "// noted again\n"),
-            3_usize,
-            "an edit to the last declaration offers the document's declarations",
+            1_usize,
+            "an edit to the last declaration offers it alone",
         ),
         (
             revision("two", "one", "// noted again\n"),
             1_usize,
-            "and another to it offers it alone",
+            "and another to it offers it alone again",
         ),
         (
             revision("2", "one", "// noted again\n"),
-            3_usize,
-            "an edit to a declaration whose value a later one reads offers both again",
+            2_usize,
+            "an edit to a declaration whose value a later one reads offers both alone",
         ),
     ] {
         assert_eq!(
@@ -1462,16 +1462,18 @@ impl gandr_core_checker::Retirement for After
     }
 }
 
-/// #1547: an admission retired part way leaves the record of the declarations
-/// it crossed, inside the import closure or past it, and the next admission of
-/// the same revision offers the kernel only those after it, exporting what a
-/// whole admission exports.
+/// #1547, #6847: an admission retired part way leaves the record of the
+/// declarations it crossed, and the next admission of the same revision offers
+/// the kernel only those after it. An admission retired while it keeps leaves
+/// the session's record whole, and the next one offers the reach of the edit.
+/// Each exports what a whole admission exports.
 #[test]
 fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
 {
     use gandr_core_checker::HostGrant;
     use gandr_core_checker::Polled;
     use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::Laid;
     use gandr_surface_dispatcher::Lowered;
     use gandr_surface_dispatcher::LoweringCount;
     use gandr_surface_dispatcher::judge_member;
@@ -1496,18 +1498,28 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     std::fs::write(&document, "").expect("the document is written");
     let grammar = &*crate::common::GRAMMAR;
     let mut session = session(SourceRoot::Strict);
-    let own = include_str!(
+    let laid_out = |own: &str| lay_out(grammar, &document, SourceRoot::Strict, own.into());
+    let own = laid_out(include_str!(
         "session/fixtures/a-retired-admission-leaves-what-it-crossed-to-the-next-1547-own.gandr"
-    );
-    let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
-    let text = SourceText::from(laid.text.as_str());
+    ));
+    let edited = laid_out(include_str!(
+        "session/fixtures/a-retired-admission-leaves-what-it-crossed-to-the-next-1547-edited.gandr"
+    ));
+    // The admission that the judgement of `laid` leaves.
     let judge = |session: &mut gandr_surface_session::Session<
         gandr_core_incremental::MemoryCheckpointStore,
         gandr_storage_records::InMemoryBlockStore,
-    >| {
+    >,
+                 laid: &Laid| {
         let slot = gandr_surface_session::ClosureSlot::new();
         let _judged = session
-            .judge_unit_reading(text, &laid.unit, laid.base, &slot, |_| ())
+            .judge_unit_reading(
+                SourceText::from(laid.text.as_str()),
+                &laid.unit,
+                laid.base,
+                &slot,
+                |_| (),
+            )
             .expect("the revision is judged");
         let Maybe::Present(detached) = session.admission()
         else {
@@ -1517,8 +1529,8 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     };
     // Each retirement, then the whole admission after it: what it counted and
     // the artifact it exported.
-    let mut retire_then_admit = |wanted: usize| {
-        let retired = judge(&mut session).run(
+    let mut retire_then_admit = |laid: &Laid, wanted: usize| {
+        let retired = judge(&mut session, laid).run(
             &After(core::cell::Cell::new(wanted)),
             &mut gandr_surface_session::Silent,
         );
@@ -1526,7 +1538,7 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
             matches!(retired, Polled::Retired((), ())),
             "the admission is retired after {wanted} crossings"
         );
-        let ran = judge(&mut session)
+        let ran = judge(&mut session, laid)
             .run(
                 &gandr_core_checker::Unretired,
                 &mut gandr_surface_session::Silent,
@@ -1542,38 +1554,48 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
             admitted,
         )
     };
-    let (crossed, judged, inside) = retire_then_admit(1_usize);
+    // The artifact that a whole admission of `laid` exports.
+    let whole = |laid: &Laid| {
+        let text = SourceText::from(laid.text.as_str());
+        let Lowered::Module { module, arena } =
+            lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
+                .expect("the revision lowers")
+                .into_lowered()
+        else {
+            panic!("the revision is not refused whole");
+        };
+        judge_member::<Evaluator>(
+            CorpusRoot::Strict,
+            (module, text),
+            arena,
+            &HostGrant::UNBOUNDED,
+            laid.base,
+        )
+        .into_parts()
+        .1
+        .admit()
+        .expect("the kernel re-derives the revision")
+    };
+    let (crossed, judged, inside) = retire_then_admit(&own, 1_usize);
     assert_eq!(
         (crossed, judged),
         (*PRELUDE + 3, *PRELUDE + 4),
         "retired inside the closure, the next admission crosses the rest"
     );
-    let Lowered::Module { module, arena } =
-        lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
-            .expect("the revision lowers")
-            .into_lowered()
-    else {
-        panic!("the revision is not refused whole");
-    };
-    let whole = judge_member::<Evaluator>(
-        CorpusRoot::Strict,
-        (module, text),
-        arena,
-        &HostGrant::UNBOUNDED,
-        laid.base,
-    )
-    .into_parts()
-    .1
-    .admit()
-    .expect("the kernel re-derives the revision");
-    assert!(*inside.kernel() == whole, "and exports the whole artifact");
-    let (crossed, judged, past) = retire_then_admit(1_usize);
+    assert!(
+        *inside.kernel() == whole(&own),
+        "and exports the whole artifact"
+    );
+    let (crossed, judged, kept) = retire_then_admit(&edited, 0_usize);
     assert_eq!(
         (crossed, judged),
         (1_usize, *PRELUDE + 4),
-        "retired past the closure, the next admission crosses the last declaration alone"
+        "retired while it keeps, the next admission offers the edited declaration alone"
     );
-    assert!(*past.kernel() == whole, "and exports the whole artifact");
+    assert!(
+        *kept.kernel() == whole(&edited),
+        "and exports the whole artifact"
+    );
     let _removed = std::fs::remove_dir_all(&directory);
 }
 

@@ -11175,8 +11175,8 @@ fn a_kept_readmission_answers_as_a_whole_one_6846()
 /// #6846: a readmission retires the reach of an edit and no suffix of the
 /// entries. The edit of `n2`'s literal leaves `n3`, after it, live at the
 /// kernel position it took, and the readmission offers the kernel `n2`
-/// alone. #7235: it resumes `n0` and `n1`, the leading run the edit leaves,
-/// and keeps `n3` in place.
+/// alone ([`Readmission::offered`]). #7235: it resumes `n0` and `n1`, the
+/// leading run the edit leaves, and keeps `n3` in place.
 #[test]
 fn a_kept_readmission_retires_no_suffix_6846()
 {
@@ -11228,6 +11228,13 @@ fn a_kept_readmission_retires_no_suffix_6846()
         (2, 1),
         "the readmission resumes `n0` and `n1`, keeps `n3` and offers `n2` alone, the reach of \
          the edit"
+    );
+    assert_eq!(
+        kept.offered()
+            .map(super::Readmitted::constant)
+            .collect::<Vec<_>>(),
+        vec![ConstantIndex::from(2_usize)],
+        "the readmission offers the kernel `n2` alone, and not the kept `n3`"
     );
     assert!(
         kept.environment()

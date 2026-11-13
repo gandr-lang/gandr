@@ -32,6 +32,7 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::KernelTier;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Reuse;
 use gandr_surface_dispatcher::Unruled;
 use gandr_surface_dispatcher::adapt;
 use gandr_surface_dispatcher::admitted;
@@ -1244,8 +1245,10 @@ fn a_retired_admission_resumes_from_its_record_1547()
         .1
     };
     let Polled::Retired((), Maybe::Present(record)) = admission().admit_retiring(
-        bridge::LeadingCount::from(3_usize),
-        Maybe::Absent(bridge::crossed::Absent::Unasked),
+        Reuse::Leading(
+            bridge::LeadingCount::from(3_usize),
+            Maybe::Absent(bridge::crossed::Absent::Unasked),
+        ),
         &After(core::cell::Cell::new(2_usize)),
     )
     else {
@@ -1259,8 +1262,7 @@ fn a_retired_admission_resumes_from_its_record_1547()
     let whole = admission().admit();
     let resumed = admission()
         .admit_retiring(
-            bridge::LeadingCount::from(3_usize),
-            Maybe::Present(&record),
+            Reuse::Leading(bridge::LeadingCount::from(3_usize), Maybe::Present(&record)),
             &Unretired,
         )
         .whole();
@@ -1303,8 +1305,10 @@ fn an_admission_keeps_each_declaration_s_kernel_tier_2517()
         .into_parts()
         .1
         .admit_retiring(
-            bridge::LeadingCount::NONE,
-            Maybe::Absent(bridge::crossed::Absent::Unasked),
+            Reuse::Leading(
+                bridge::LeadingCount::NONE,
+                Maybe::Absent(bridge::crossed::Absent::Unasked),
+            ),
             &Unretired,
         )
         .whole()

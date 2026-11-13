@@ -55,6 +55,7 @@ use gandr_kernel_core::verdict::VerdictKey;
 use gandr_kernel_core::verdict::VerdictSource;
 use quenchant_shape::shape::Maybe;
 
+use crate::compose::Reuse;
 use crate::held::Held;
 use crate::held::HeldVerdicts;
 use crate::pool::Pool;
@@ -338,14 +339,15 @@ impl VerdictCache
         }
     }
 
-    /// [`bridge::readmit_retiring`] under this cache's recall, timing each
-    /// admission by `stopwatch`, settling a whole readmission into the cache.
+    /// The readmission that `reuse` asks for under this cache's recall,
+    /// timing each admission by `stopwatch`, settling a whole readmission into
+    /// the cache.
     ///
     /// # Specification
-    /// - ensures: the readmission [`bridge::readmit_retiring`] gives under the
-    ///   cache's policy over its source as it stands now; a whole one adds what
-    ///   it recalled to the tally, and the cache keeps the receipt its kernel
-    ///   signs for what it checked.
+    /// - ensures: the readmission [`readmit_as`] gives under the cache's policy
+    ///   over its source as it stands now; a whole one adds what it recalled to
+    ///   the tally, and the cache keeps the receipt its kernel signs for what
+    ///   it checked.
     /// - panics: none.
     /// - executable: none — the store and the counts are shared state.
     ///
@@ -357,25 +359,14 @@ impl VerdictCache
         &self,
         arena: &mut CoreArena,
         report: &gandr_core_checker::ModuleReport,
-        leading: (
-            bridge::LeadingCount,
-            Maybe<&bridge::Crossed, bridge::crossed::Absent>,
-        ),
-        (retirement, stopwatch): (&Poll, &mut Watch),
+        reuse: Reuse<'_>,
+        timing: (&Poll, &mut Watch),
     ) -> bridge::Readmitting<Poll::Retired>
     where
         Poll: Retirement,
         Watch: bridge::Stopwatch,
     {
-        let polled = bridge::readmit_retiring(
-            arena,
-            report,
-            leading,
-            &self.recall(),
-            retirement,
-            stopwatch,
-            scheduling(),
-        );
+        let polled = readmit_as(arena, report, reuse, &self.recall(), timing);
         if let Polled::Whole((ref readmission, _)) = polled {
             self.settle(readmission);
         }
@@ -500,6 +491,45 @@ fn scheduling() -> &'static Pool
     SCHEDULING.get().map_or(&SERIAL, |pool| pool)
 }
 
+/// [`bridge::readmit_retiring`] for [`Reuse::Leading`], or
+/// [`bridge::readmit_keeping`] for [`Reuse::Keeping`], under `recall`, on
+/// the installed readmission pool.
+///
+/// # Specification
+/// trivial.
+fn readmit_as<Poll, Watch>(
+    arena: &mut CoreArena,
+    report: &gandr_core_checker::ModuleReport,
+    reuse: Reuse<'_>,
+    recall: &bridge::Recall,
+    (retirement, stopwatch): (&Poll, &mut Watch),
+) -> bridge::Readmitting<Poll::Retired>
+where
+    Poll: Retirement,
+    Watch: bridge::Stopwatch,
+{
+    match reuse {
+        Reuse::Leading(boundary, crossed) => bridge::readmit_retiring(
+            arena,
+            report,
+            (boundary, crossed),
+            recall,
+            retirement,
+            stopwatch,
+            scheduling(),
+        ),
+        Reuse::Keeping(keys, record) => bridge::readmit_keeping(
+            arena,
+            report,
+            (keys, record),
+            recall,
+            retirement,
+            stopwatch,
+            scheduling(),
+        ),
+    }
+}
+
 quenchant_shape::reason_enum! {
     /// Why a process has no verdict tally.
     pub mod tallied {
@@ -566,40 +596,36 @@ pub fn verdict_tally() -> Maybe<VerdictTally, tallied::Absent>
         })
 }
 
-/// [`bridge::readmit_retiring`] under the installed cache's recall, settling
-/// a whole readmission into the cache; under [`bridge::Recall::recheck`] when
-/// none is installed. The checks run on the installed readmission pool, and
-/// `stopwatch` times each one. A whole readmission adds the admitted results
-/// its kernel took to the process's tally.
+/// The readmission that `reuse` asks for ([`readmit_as`]) under the
+/// installed cache's recall, settling a whole readmission into the cache;
+/// under [`bridge::Recall::recheck`] when none is installed. The checks run on
+/// the installed readmission pool, and `stopwatch` times each one. A whole
+/// readmission adds the admitted results its kernel took to the process's
+/// tally.
 ///
 /// # Specification
 /// trivial.
 pub fn readmit<Poll, Watch>(
     arena: &mut CoreArena,
     report: &gandr_core_checker::ModuleReport,
-    leading: (
-        bridge::LeadingCount,
-        Maybe<&bridge::Crossed, bridge::crossed::Absent>,
-    ),
-    (retirement, stopwatch): (&Poll, &mut Watch),
+    reuse: Reuse<'_>,
+    timing: (&Poll, &mut Watch),
 ) -> bridge::Readmitting<Poll::Retired>
 where
     Poll: Retirement,
     Watch: bridge::Stopwatch,
 {
     let polled = match INSTALLED.get() {
-        Some(cache) => cache.readmit(arena, report, leading, (retirement, stopwatch)),
-        None => bridge::readmit_retiring(
+        Some(cache) => cache.readmit(arena, report, reuse, timing),
+        None => readmit_as(
             arena,
             report,
-            leading,
+            reuse,
             &RECHECK
                 .clone()
                 .forking(forking())
                 .speculating(speculation()),
-            retirement,
-            stopwatch,
-            scheduling(),
+            timing,
         ),
     };
     if let Polled::Whole((ref readmission, _)) = polled {
@@ -688,7 +714,7 @@ mod tests
             .readmit(
                 &mut arena,
                 &report,
-                (
+                crate::compose::Reuse::Leading(
                     bridge::LeadingCount::NONE,
                     Maybe::Absent(bridge::crossed::Absent::Unasked),
                 ),

@@ -246,19 +246,20 @@ pub struct CheckSchedule
 
 impl CheckSchedule
 {
-    /// The schedule of the declarations that `readmission` admitted, each
-    /// after the ones that it resumed.
+    /// The schedule of the declarations that `readmission` offered to the
+    /// kernel ([`bridge::Readmission::offered`]).
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one job for each readmitted declaration after the resumed
-    ///   ones whose outcome is a definition, an axiom or a nominal declaration,
-    ///   at its kernel position, in position order. A job waits on each other
-    ///   job at a position that the kernel's `Entries::waits_on` names for it.
-    ///   Its cost is the time that its admission took, and nothing when no time
-    ///   was read, which the untimed jobs name. The bound is
-    ///   [`Dependences::bound`] over those dependences and costs. The group and
-    ///   the rollbacks are the readmission's environment's.
+    /// - ensures: one job for each offered declaration whose outcome is a
+    ///   definition, an axiom or a nominal declaration, at its kernel position,
+    ///   in position order. A resumed or a kept declaration is no job. A job
+    ///   waits on each other job at a position that the kernel's
+    ///   `Entries::waits_on` names for it. Its cost is the time that its
+    ///   admission took, and nothing when no time was read, which the untimed
+    ///   jobs name. The bound is [`Dependences::bound`] over those dependences
+    ///   and costs. The group and the rollbacks are the readmission's
+    ///   environment's.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -276,9 +277,7 @@ impl CheckSchedule
         let environment = readmission.environment();
         let entries = environment.entries();
         let mut timed: Vec<(ConstantIndex, AdmissionCost)> = readmission
-            .readmitted()
-            .iter()
-            .skip(usize::from(readmission.resumed()))
+            .offered()
             .filter_map(|entry| match *entry.outcome() {
                 bridge::Outcome::Data { admitted, .. }
                 | bridge::Outcome::Defined { admitted, .. }

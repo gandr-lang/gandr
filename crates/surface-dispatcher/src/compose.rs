@@ -898,23 +898,29 @@ impl Admission
         crossed: Maybe<&bridge::Crossed, bridge::crossed::Absent>,
     ) -> Resumption
     {
-        self.admit_retiring(boundary, crossed, &Unretired).whole()
+        self.admit_retiring(Reuse::Leading(boundary, crossed), &Unretired)
+            .whole()
     }
 
-    /// [`admit_resuming`](Self::admit_resuming), polling `retirement` before
+    /// The readmission that `reuse` asks for, polling `retirement` before
     /// each declaration the readmission crosses: retired, it stops there and
     /// answers the record of the declarations it crossed before.
     ///
     /// # Specification
-    /// - requires: as [`admit_resuming`](Self::admit_resuming).
+    /// - requires: a [`Reuse::Leading`] record as
+    ///   [`admit_resuming`](Self::admit_resuming) requires; the keys of a
+    ///   [`Reuse::Keeping`] are those of the verdicts' declarations, as
+    ///   [`bridge::readmit_keeping`] requires.
     /// - ensures: while every poll answers wanted, [`Polled::Whole`] with
-    ///   [`admit_resuming`](Self::admit_resuming)'s answer; retired before a
-    ///   declaration, [`Polled::Retired`] with the retirement and the record
-    ///   [`bridge::readmit_retiring`] made of the declarations before it, and
-    ///   no artifact.
+    ///   [`admit_resuming`](Self::admit_resuming)'s answer for a leading run,
+    ///   and for a keeping one the answer of [`bridge::readmit_keeping`] with
+    ///   its record of every declaration; retired before a declaration,
+    ///   [`Polled::Retired`] with the retirement and the record that
+    ///   [`bridge::readmit_retiring`] made of the declarations before it, or
+    ///   none for a keeping one, and no artifact.
     /// - provides: an editor's admission that a newer revision overtakes stops
     ///   at its next declaration, and the next admission resumes what it
-    ///   crossed.
+    ///   crossed or keeps what the edit leaves.
     /// - fails: as [`admit_resuming`](Self::admit_resuming), in the artifact.
     /// - panics: none.
     ///
@@ -942,15 +948,13 @@ impl Admission
     )]
     pub fn admit_retiring<Poll>(
         mut self,
-        boundary: bridge::LeadingCount,
-        crossed: Maybe<&bridge::Crossed, bridge::crossed::Absent>,
+        reuse: Reuse<'_>,
         retirement: &Poll,
     ) -> Polled<Resumption, Poll::Retired, Maybe<bridge::Crossed, bridge::crossed::Absent>>
     where
         Poll: Retirement,
     {
         let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
-        let leading = (boundary, crossed);
         // A measured admission times the kernel's admission of each
         // declaration, and a metered one counts its allocations too; any other
         // reads no clock.
@@ -958,14 +962,14 @@ impl Admission
             Positioning::Positioned => readmitted(
                 &mut self.arena,
                 &self.verdicts,
-                leading,
+                reuse,
                 (retirement, &mut bridge::Timed::by(Monotonic::started())),
             ),
             #[cfg(feature = "instrument")]
             Positioning::Metered => readmitted(
                 &mut self.arena,
                 &self.verdicts,
-                leading,
+                reuse,
                 (
                     retirement,
                     &mut bridge::Metered::by(Monotonic::started(), crate::meter::Allocations),
@@ -974,7 +978,7 @@ impl Admission
             Positioning::Tallied | Positioning::Unpositioned => readmitted(
                 &mut self.arena,
                 &self.verdicts,
-                leading,
+                reuse,
                 (retirement, &mut bridge::Untimed),
             ),
         };
@@ -986,6 +990,7 @@ impl Admission
         Polled::Whole(match readmission {
             Ok(readmission) => Resumption {
                 resumed: readmission.resumed(),
+                kept: readmission.kept(),
                 judged,
                 positions: match positioning {
                     Positioning::Positioned | Positioning::Tallied => {
@@ -999,7 +1004,11 @@ impl Admission
                 },
                 declined: declined(&readmission),
                 tiers: tiers(&readmission),
-                artifact: Ok(readmission.export_resuming(self.names, crossed, &mut recorded)),
+                artifact: Ok(readmission.export_resuming(
+                    self.names,
+                    reuse.record(),
+                    &mut recorded,
+                )),
                 crossed: recorded,
             },
             Err(fault) => Resumption {
@@ -1008,6 +1017,7 @@ impl Admission
                 declined: Vec::new(),
                 tiers: Vec::new(),
                 resumed: bridge::LeadingCount::NONE,
+                kept: bridge::KeptCount::default(),
                 judged,
                 crossed: recorded,
             },
@@ -1062,6 +1072,9 @@ pub struct Resumption
     /// How many leading declarations the readmission resumed rather than
     /// crossed again.
     pub resumed: bridge::LeadingCount,
+    /// How many declarations past the resumed run the readmission kept in
+    /// place from its record, each without an offer to the kernel.
+    pub kept: bridge::KeptCount,
     /// How many declarations the checker judged.
     pub judged: bridge::LeadingCount,
     /// The record of the first declarations, for a later admission to resume.
@@ -1465,21 +1478,21 @@ quenchant_shape::reason_enum! {
 
 impl ArtifactPositions
 {
-    /// The position `readmission` gave each declaration the kernel admitted,
-    /// beside the census its environment entry keeps and the time its entry
-    /// carries, and the schedule of its checks when `positioning` read a
+    /// The position `readmission` gave each declaration it offered to the
+    /// kernel, beside the census its environment entry keeps and the time its
+    /// entry carries, and the schedule of its checks when `positioning` read a
     /// clock for the measure.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per readmitted declaration after the ones the
-    ///   readmission resumed whose outcome is a definition, an axiom or a
-    ///   nominal declaration, at the position its receipt names, with what the
-    ///   environment's entry there answers of its census and the readmitted
-    ///   time. A resumed declaration did not cross, so it has no entry. Under
-    ///   [`Positioning::Positioned`] the schedule is [`CheckSchedule::of`] the
-    ///   readmission, and under any other positioning it is absent as
-    ///   [`scheduled::Absent::Untimed`].
+    /// - ensures: one entry per declaration that the readmission offered
+    ///   ([`bridge::Readmission::offered`]) whose outcome is a definition, an
+    ///   axiom or a nominal declaration, at the position its receipt names,
+    ///   with what the environment's entry there answers of its census and the
+    ///   readmitted time. A resumed or a kept declaration did not cross, so it
+    ///   has no entry. Under [`Positioning::Positioned`] the schedule is
+    ///   [`CheckSchedule::of`] the readmission, and under any other positioning
+    ///   it is absent as [`scheduled::Absent::Untimed`].
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1496,9 +1509,7 @@ impl ArtifactPositions
         let entries = readmission.environment().entries();
         Self {
             placed: readmission
-                .readmitted()
-                .iter()
-                .skip(usize::from(readmission.resumed()))
+                .offered()
                 .filter_map(|entry| match *entry.outcome() {
                     bridge::Outcome::Data { admitted, .. }
                     | bridge::Outcome::Defined { admitted, .. }
@@ -5462,24 +5473,65 @@ type Readmitting<Retired> = Polled<
     Maybe<bridge::Crossed, bridge::crossed::Absent>,
 >;
 
+/// What a readmission resumes or keeps from, and what it records for a later
+/// one.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub enum Reuse<'record>
+{
+    /// Resume the leading run that the record holds, when one is given, and
+    /// record the leading declarations that the count counts
+    /// ([`bridge::readmit_retiring`]).
+    Leading(
+        bridge::LeadingCount,
+        Maybe<&'record bridge::Crossed, bridge::crossed::Absent>,
+    ),
+    /// Keep each entry of the record that the edit leaves, and record every
+    /// declaration with the key at its index in the slice
+    /// ([`bridge::readmit_keeping`]).
+    Keeping(
+        &'record [bridge::DeclarationKey],
+        Maybe<&'record bridge::Crossed, bridge::crossed::Absent>,
+    ),
+}
+
+impl<'record> Reuse<'record>
+{
+    /// The record that the readmission resumes or keeps from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn record(self) -> Maybe<&'record bridge::Crossed, bridge::crossed::Absent>
+    {
+        match self {
+            Self::Leading(_, record) | Self::Keeping(_, record) => record,
+        }
+    }
+}
+
 /// Readmit each declaration of `verdicts` that the checker accepted.
 ///
 /// Have the kernel re-derive every declaration in `verdicts` the checker
 /// accepted, or admit it on a verdict the installed cache recalls, resuming
-/// the first of them from `leading`'s record and recording its boundary's, as
-/// [`bridge::readmit_retiring`] does under `timing`'s retirement and stopwatch
-/// and the recall [`crate::verdicts::readmit`] chooses.
+/// or keeping from `reuse`'s record and recording what it asks, as
+/// [`bridge::readmit_retiring`] or [`bridge::readmit_keeping`] does under
+/// `timing`'s retirement and stopwatch and the recall
+/// [`crate::verdicts::readmit`] chooses.
 ///
 /// # Specification
-/// - requires: `verdicts` was judged over `arena`; `leading`'s record, when
-///   present, as [`bridge::readmit_resuming`] requires.
-/// - ensures: retired before a declaration, [`bridge::readmit_retiring`]'s
-///   retirement and record. Otherwise, beside [`bridge::readmit_resuming`]'s
-///   record of `leading`'s boundary, succeeds with the readmission when every
-///   accepted declaration crossed as a definition or an axiom, or stays on the
-///   checker's side as a static definition or as an effectful one the bridge
-///   refuses by its effectful former; a refused declaration crosses as its
-///   mark, a suspended one crosses as nothing until a fill resumes it, a
+/// - requires: `verdicts` was judged over `arena`; `reuse`'s record, when
+///   present, as [`bridge::readmit_resuming`] or [`bridge::readmit_keeping`]
+///   requires.
+/// - ensures: retired before a declaration, the retirement and the record of
+///   [`bridge::readmit_retiring`] or [`bridge::readmit_keeping`]. Otherwise,
+///   beside the record that `reuse` asks for, succeeds with the readmission
+///   when every accepted declaration crossed as a definition or an axiom, or
+///   stays on the checker's side as a static definition or as an effectful one
+///   the bridge refuses by its effectful former; a refused declaration crosses
+///   as its mark, a suspended one crosses as nothing until a fill resumes it, a
 ///   declaration withheld because it names a refused one carries that one's
 ///   reason, a declaration holding a term hole or the unknown type stays behind
 ///   as the user absence it is, and a declaration holding a session stays
@@ -5531,17 +5583,14 @@ type Readmitting<Retired> = Polled<
 pub fn readmitted<Poll, Watch>(
     arena: &mut CoreArena,
     verdicts: &ModuleReport,
-    leading: (
-        bridge::LeadingCount,
-        Maybe<&bridge::Crossed, bridge::crossed::Absent>,
-    ),
+    reuse: Reuse<'_>,
     timing: (&Poll, &mut Watch),
 ) -> Readmitting<Poll::Retired>
 where
     Poll: Retirement,
     Watch: bridge::Stopwatch,
 {
-    let (readmission, recorded) = match crate::verdicts::readmit(arena, verdicts, leading, timing) {
+    let (readmission, recorded) = match crate::verdicts::readmit(arena, verdicts, reuse, timing) {
         Polled::Whole(whole) => whole,
         Polled::Retired(retired, held) => return Polled::Retired(retired, held),
     };
