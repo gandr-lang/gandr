@@ -29,8 +29,8 @@ struct Ran
     root: PathBuf,
 }
 
-/// Writes the case's reports and policy, then runs the judge over them with
-/// `--band`, the check body written to `check.json`.
+/// Writes the case's reports and policy, then runs the judge over them.
+/// The check body is written to `check.json`.
 ///
 /// # Specification
 /// trivial.
@@ -55,8 +55,7 @@ fn judge(case: &Case) -> Ran
         "--base",
         "8d13f30c8",
         "--benchmark",
-        "store-timing-band",
-        "--band",
+        "store-timing-push",
     ]);
     command.arg("--policy").arg(root.join("policy.toml"));
     command.arg("--output").arg(root.join("check.json"));
@@ -92,7 +91,7 @@ fn check(ran: &Ran) -> serde_json::Value
 }
 
 #[test]
-fn a_regressed_band_writes_a_failed_check()
+fn a_regressed_push_writes_a_failed_check()
 {
     let ran = judge(&Case {
         name: "regressed",
@@ -101,7 +100,7 @@ fn a_regressed_band_writes_a_failed_check()
     });
     assert!(ran.output.status.success(), "{:?}", ran.output);
     let body = check(&ran);
-    assert_eq!(body["name"], "hotpath / store-timing-band");
+    assert_eq!(body["name"], "hotpath / store-timing-push");
     assert_eq!(body["conclusion"], "failure", "{body}");
     let summary = body["output"]["summary"].as_str().unwrap();
     assert!(
@@ -116,7 +115,7 @@ fn a_regressed_band_writes_a_failed_check()
 }
 
 #[test]
-fn a_clear_band_writes_a_passed_check()
+fn a_clear_push_writes_a_passed_check()
 {
     let ran = judge(&Case {
         name: "clear",

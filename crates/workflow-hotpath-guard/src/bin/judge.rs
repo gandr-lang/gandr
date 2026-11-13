@@ -2,12 +2,11 @@
 //! base's, written as a `hotpath / <benchmark>` check.
 //!
 //! `hotpath-judge --repository OWNER/NAME --head SHA --base SHA --benchmark
-//! NAME --policy FILE --base-run FILE… --head-run FILE… [--band] --output
+//! NAME --policy FILE --base-run FILE… --head-run FILE… --output
 //! FILE` reads each run's JSON report and the policy, judges the rows
 //! ([`gandr_workflow_hotpath_guard::judge`]), prints the summary, and writes
-//! the check run's body — its name, conclusion, title and summary — as JSON
-//! to the output file. `--band` judges only the rows under the policy's
-//! share floor: hotpath Cloud judges the rest of a pull request.
+//! the check run's body, its name, conclusion, title and summary, as JSON
+//! to the output file. The judge reads every row.
 //!
 //! # Exit codes
 //!
@@ -56,9 +55,6 @@ struct Cli
     /// A report of the commit's runs; one per run.
     #[arg(long = "head-run", required = true)]
     head_runs: Vec<PathBuf>,
-    /// Judge only the rows under the policy's share floor.
-    #[arg(long)]
-    band: bool,
     /// Where the check run's body is written.
     #[arg(long)]
     output: PathBuf,
@@ -75,9 +71,9 @@ struct Cli
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a regressed band, a clear one and a missing report; a
+/// - hypothesis: L3. A regressed push, a clear one and a missing report. A
 ///   swapped stream, conclusion or exit code changes the observed result.
-/// - witness: `tests::judge::a_regressed_band_writes_a_failed_check`
+/// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
 /// - witness: `tests::judge::a_missing_report_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
@@ -147,7 +143,7 @@ impl File
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`main`].
-    /// - witness: `tests::judge::a_regressed_band_writes_a_failed_check`
+    /// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
     fn input(&self) -> judge::Input<'_>
     {
         judge::Input {
@@ -176,8 +172,8 @@ impl File
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`main`].
-/// - witness: `tests::judge::a_regressed_band_writes_a_failed_check`
-/// - witness: `tests::judge::a_clear_band_writes_a_passed_check`
+/// - witness: `tests::judge::a_regressed_push_writes_a_failed_check`
+/// - witness: `tests::judge::a_clear_push_writes_a_passed_check`
 fn run(cli: &Cli) -> Result<(), GuardError>
 {
     let policy = judge::Policy::read(File::read(&cli.policy)?.input())?;
@@ -187,15 +183,9 @@ fn run(cli: &Cli) -> Result<(), GuardError>
             .map(|path| judge::Run::read(File::read(path)?.input()))
             .collect::<Result<Vec<_>, _>>()
     };
-    let scope = if cli.band {
-        judge::Scope::Band
-    }
-    else {
-        judge::Scope::All
-    };
     let verdict = judge::judge(
         &policy,
-        scope,
+        judge::Scope::All,
         &runs(&cli.base_runs)?,
         &runs(&cli.head_runs)?,
     );
