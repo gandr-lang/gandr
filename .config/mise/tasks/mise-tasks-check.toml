@@ -2951,6 +2951,9 @@ done < <(jq -c '.[]' .config/claims/board.json)
 # `input-cases.bash` builds the input `claim:next` gives `next.jq` (#5292):
 # each reading, longer than one argument can be, reaches jq whole.
 .config/claims/input-cases.bash || exit 1
+# `frame-cases.bash` signs a unit over a stub `gh` (#7018): the comment
+# holds the marker of the frame now and names its signer (#7129).
+.config/claims/frame-cases.bash || exit 1
 # `comments-cases.bash` reads the comment lines a change drops (#6004): a
 # deleted file's lines read under its own path, and a line that moves is kept
 # (#7084).
