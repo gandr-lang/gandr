@@ -88,7 +88,7 @@ impl Stored
     ///   values hears the card of both after the greeting, with each owed
     ///   cell's unit.
     /// - witness: `hub::tests::an_attached_view_hears_the_store_6296`
-    pub(crate) fn card(
+    pub fn card(
         &self,
         paths: &[PathBuf],
     ) -> StoreCard

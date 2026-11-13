@@ -1,0 +1,41 @@
+[package]
+name = "gandr-surface-lsp-navigation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The navigation of gandr's language server: references, highlights, rename, the call hierarchy, inlay hints, copied sources, shadowing and the documentation site"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "lsp"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The navigation reads what the core reads of a held text, through the core:
+# the hover's table of a judged copy, its definitions and its reading. It
+# reads the dispatcher's uses and the lowering's sources. The documentation
+# site renders its prose through pulldown-cmark, and a page's index reads the
+# record store of a session.
+[dependencies]
+anodized.workspace = true
+gandr-core-incremental.workspace = true
+gandr-storage-records.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-lsp-base.workspace = true
+gandr-surface-lsp-core.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-session.workspace = true
+gandr-surface-syntax.workspace = true
+pulldown-cmark.workspace = true
+quenchant-shape.workspace = true
+serde_json.workspace = true
+
+# The tests find a line of a source through the core's line finder.
+[dev-dependencies]
+gandr-surface-lsp-core = { workspace = true, features = ["fixture"] }
+
+[lints]
+workspace = true

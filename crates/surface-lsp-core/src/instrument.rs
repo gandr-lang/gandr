@@ -83,23 +83,9 @@ pub enum Layer
     Activity(Arc<Activity>),
     /// The counts layer: each job runs at a fresh [`Counts`], so each recheck
     /// counts into its own column.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
-        )
-    )]
     Counts,
     /// The timings layer: each job runs at a fresh [`Timings`], so each
     /// recheck samples into its own column.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
-        )
-    )]
     Timings,
     /// The trace layer: each job runs at a fresh [`Trace`], so each recheck
     /// folds the steps of each item it judges into the item's tree.
@@ -132,39 +118,18 @@ impl Subscription
 
     /// The subscription of a client that subscribed to the counts layer.
     #[cfg(feature = "instrument")]
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
-        )
-    )]
     pub const COUNTS: Self = Self {
         layer: Layer::Counts,
     };
 
     /// The subscription of a client that subscribed to the timings layer.
     #[cfg(feature = "instrument")]
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
-        )
-    )]
     pub const TIMINGS: Self = Self {
         layer: Layer::Timings,
     };
 
     /// The subscription of a client that subscribed to the trace layer.
     #[cfg(feature = "instrument")]
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
-        )
-    )]
     pub const TRACE: Self = Self {
         layer: Layer::Trace,
     };
@@ -176,7 +141,7 @@ impl Subscription
     /// trivial.
     #[cfg(feature = "instrument")]
     #[must_use]
-    pub(crate) const fn recording(rings: Arc<Activity>) -> Self
+    pub const fn recording(rings: Arc<Activity>) -> Self
     {
         Self {
             layer: Layer::Activity(rings),
@@ -191,7 +156,7 @@ impl Subscription
     /// trivial.
     #[cfg(feature = "instrument")]
     #[must_use]
-    pub(crate) fn traced(rings: Option<Arc<Activity>>) -> Self
+    pub fn traced(rings: Option<Arc<Activity>>) -> Self
     {
         Self {
             layer: rings.map_or(Layer::Trace, Layer::TracedActivity),

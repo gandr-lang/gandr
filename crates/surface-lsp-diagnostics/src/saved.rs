@@ -136,7 +136,7 @@ impl Saved
         (&ret, crate::build::running()),
         (&Maybe::Present(_), Maybe::Present(_)) | (&Maybe::Absent(_), Maybe::Absent(_))
     ))]
-    pub(crate) fn restorer(&self) -> Maybe<Box<dyn Restorer>, unidentified::Absent>
+    pub fn restorer(&self) -> Maybe<Box<dyn Restorer>, unidentified::Absent>
     {
         crate::build::running().map(|build| -> Box<dyn Restorer> {
             Box::new(RestoreFrom::new(
@@ -166,7 +166,7 @@ impl Saved
     /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
     /// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
     #[spec(ensures: |ret| !matches!(ret, Err(Unsaved::Unidentified(_))) || matches!(crate::build::running(), Maybe::Absent(_)))]
-    pub(crate) fn keep(
+    pub fn keep(
         &self,
         session: &DocumentSession,
     ) -> Result<(), Unsaved>

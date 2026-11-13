@@ -387,62 +387,60 @@ use gandr_surface_lsp_base::inline;
 use gandr_surface_lsp_base::markup;
 use gandr_surface_lsp_base::missing;
 use gandr_surface_lsp_base::notebook;
-use gandr_surface_lsp_base::outline;
 use gandr_surface_lsp_base::peer;
 use gandr_surface_lsp_base::position;
 use gandr_surface_lsp_base::protocol;
 use gandr_surface_lsp_base::rpc;
 use gandr_surface_lsp_base::syntax;
 use gandr_surface_lsp_base::toolkit;
-use gandr_surface_lsp_base::tracking;
 use gandr_surface_lsp_base::transport;
 use gandr_surface_lsp_base::unused;
-
 #[cfg(feature = "instrument")]
-mod activity;
+use gandr_surface_lsp_core::activity;
 #[cfg(test)]
-mod anchor;
-mod build;
+use gandr_surface_lsp_core::anchor;
+use gandr_surface_lsp_core::build;
+use gandr_surface_lsp_core::complete;
+#[cfg(feature = "instrument")]
+use gandr_surface_lsp_core::derivation;
+use gandr_surface_lsp_core::files;
+use gandr_surface_lsp_core::format;
+use gandr_surface_lsp_core::goto;
+use gandr_surface_lsp_core::hover;
+use gandr_surface_lsp_core::instrument;
+use gandr_surface_lsp_core::reading;
+use gandr_surface_lsp_core::relocate;
+use gandr_surface_lsp_core::search;
+use gandr_surface_lsp_core::signature;
+#[cfg(unix)]
+use gandr_surface_lsp_core::stored;
+use gandr_surface_lsp_core::sweep;
+use gandr_surface_lsp_core::tokens;
+use gandr_surface_lsp_core::view;
+use gandr_surface_lsp_diagnostics::fix;
+use gandr_surface_lsp_diagnostics::proposal;
+use gandr_surface_lsp_diagnostics::recheck;
+use gandr_surface_lsp_diagnostics::saved;
+use gandr_surface_lsp_diagnostics::tier;
+use gandr_surface_lsp_navigation::calls;
+use gandr_surface_lsp_navigation::doc;
+use gandr_surface_lsp_navigation::inlay;
+use gandr_surface_lsp_navigation::paste;
+use gandr_surface_lsp_navigation::rename;
+use gandr_surface_lsp_navigation::shadowed;
+use gandr_surface_lsp_navigation::site;
+use gandr_surface_lsp_navigation::uses;
+
 #[cfg(unix)]
 mod bus;
-mod calls;
 #[cfg(feature = "client")]
 pub mod client;
-mod complete;
-#[cfg(feature = "instrument")]
-mod derivation;
-mod doc;
-mod files;
-mod fix;
-mod format;
-mod goto;
-mod hover;
 #[cfg(unix)]
 mod hub;
-mod inlay;
-mod instrument;
-mod paste;
-mod proposal;
 mod quiet;
-mod reading;
-mod recheck;
-mod relocate;
-mod rename;
 mod run;
-mod saved;
-mod search;
 mod server;
 mod session_trace;
-mod shadowed;
-mod signature;
-mod site;
-#[cfg(unix)]
-mod stored;
-mod sweep;
-mod tier;
-mod tokens;
-mod uses;
-mod view;
 
 pub use gandr_surface_dispatcher::Pool;
 pub use gandr_surface_dispatcher::Width;

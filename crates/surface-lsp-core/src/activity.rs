@@ -208,7 +208,7 @@ impl Activities
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(crate) fn of(pool: Arc<Pool>) -> Self
+    pub fn of(pool: Arc<Pool>) -> Self
     {
         Self(Arc::new(Shared {
             watched: Watched::default(),
