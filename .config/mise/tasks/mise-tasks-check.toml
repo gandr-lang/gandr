@@ -665,13 +665,19 @@ run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo nextes
 # `mise run check` sets `GATE_WITNESS_SCOPE` to the packages its change
 # touches (#6433). The gate then lists those packages as a shard does, with
 # the same features as the integration cycle, and resolves their witnesses.
+# With neither, the task lists the shard's members, or the workspace, first,
+# so the gate and `resolve.jq` read one listing.
 # A listing holds the tests this host builds, so a witness whose test's own
 # `#[cfg(…)]` builds it on another host is absent from it (#4441). Each
 # `unresolved-witness` line is read against that `cfg` (`.config/witnesses/
 # resolve.jq`): a test a gate host in `.config/witnesses/hosts.json` builds
 # is left to that host to run, and one no gate host builds is refused.
+# A witness spelled `<package>::<path>` names a test of another package
+# (#7039). It resolves when that package depends on the owner, by a normal,
+# a dev or a build dependency, and one target of it in the listings runs the
+# path. So a shard lists each package whose tests its members' witnesses name.
 ["check:witnesses"]
-description = "Resolve adequacy witnesses in the consumer test inventory, a witness this host builds no test for left to the gate host whose cfg builds it"
+description = "Resolve adequacy witnesses in the consumer test inventory, a witness this host builds no test for left to the gate host whose cfg builds it, and a witness spelled with a package that depends on the owner read in that package"
 depends = ["workflow:install"]
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
@@ -681,21 +687,25 @@ run = '''
 set -euo pipefail
 summary=$(mktemp)
 listed=$(mktemp)
-trap 'rm -f "$summary" "$listed"' EXIT
+depends=$(mktemp)
+aliases=$(mktemp)
+trap 'rm -f "$summary" "$listed" "$depends" "$aliases"' EXIT
 listings=()
+files=()
 shard=${CI_SHARD_ARGS:-}
 if [[ -n ${CI_WITNESS_LISTINGS:-} ]]; then
   for listing in "$CI_WITNESS_LISTINGS"/*.json; do
-    [[ -e $listing ]] && listings+=(--inventory "$listing")
+    [[ -e $listing ]] && listings+=(--inventory "$listing") && files+=("$listing")
   done
   if [[ -z ${listings[*]:-} ]]; then
     echo "check:witnesses: no listing under $CI_WITNESS_LISTINGS" >&2
     exit 1
   fi
-elif [[ -n ${GATE_WITNESS_SCOPE:-} ]]; then
-  shard=$GATE_WITNESS_SCOPE
-  CI_SHARD_ARGS=$shard CI_WITNESS_LISTING=$listed mise run ci:witness-listing
+else
+  [[ -z ${GATE_WITNESS_SCOPE:-} ]] || shard=$GATE_WITNESS_SCOPE
+  CI_SHARD_ARGS=${shard:---workspace} CI_WITNESS_LISTING=$listed mise run ci:witness-listing
   listings+=(--inventory "$listed")
+  files+=("$listed")
 fi
 scope=()
 for argument in $shard; do
@@ -709,10 +719,20 @@ if (( status != 1 )); then
   cat "$summary" >&2
   exit "$status"
 fi
+# Each workspace package's workspace dependencies, and each listed package's
+# aliases with the count of its targets that list each. An alias is spelled as
+# `quenchant-gates` spells it: an integration test's carries its target's name.
+# Both pass through files: a listing of the workspace exceeds an argument.
+cargo metadata --locked --no-deps --format-version 1 \
+  | jq -c '[.packages[] | {key: .name, value: ([.dependencies[] | select(.path != null) | .name] | unique)}] | from_entries' > "$depends"
+jq -c -s 'reduce (.[] | ."rust-suites"[]) as $suite ({};
+    ($suite."binary-name" // $suite."package-name") as $target
+    | reduce ($suite.testcases // {} | keys[]) as $name (.;
+        .[$suite."package-name"][if $suite.kind == "test" then "\($target)::\($name)" else $name end] += 1))' "${files[@]}" > "$aliases"
 read=$(jq -n --arg report "$report" --argjson tests "$("$witnesses/tests.bash")" \
   --argjson here "$(rustc --print cfg | jq -R -s . | jq -c -L "$witnesses" -f "$witnesses/atoms.jq")" \
-  --slurpfile hosts "$witnesses/hosts.json" \
-  '{lines: ($report | split("\n")), tests: $tests, here: $here, hosts: $hosts[0]}' \
+  --slurpfile hosts "$witnesses/hosts.json" --slurpfile depends "$depends" --slurpfile listed "$aliases" \
+  '{lines: ($report | split("\n")), tests: $tests, here: $here, hosts: $hosts[0], depends: $depends[0], listed: $listed[0]}' \
   | jq -c -L "$witnesses" -f "$witnesses/resolve.jq")
 jq -r '.resolved[]' <<< "$read"
 if [[ $(jq '.refused | length' <<< "$read") != 0 ]]; then
@@ -720,15 +740,16 @@ if [[ $(jq '.refused | length' <<< "$read") != 0 ]]; then
   cat "$summary" >&2
   exit 1
 fi
-echo "adequacy witness resolution (G0): every witness resolves here or is left to the gate host whose cfg builds it"
+echo "adequacy witness resolution (G0): every witness resolves here, in a package that depends on its owner, or is left to the gate host whose cfg builds it"
 '''
 
-# The witness resolution's cases (#4441): each case in
-# `.config/witnesses/cases.json` holds a report, the gated tests and the host
-# atoms `resolve.jq` reads, and the lines it must leave to a gate host or
-# refuse; one holds `rustc --print cfg`'s text and the atoms `atoms.jq` keeps.
+# The witness resolution's cases (#4441, #7039): each case in
+# `.config/witnesses/cases.json` holds a report, the gated tests, the host
+# atoms, the dependencies and the listed aliases `resolve.jq` reads, and the
+# lines it must resolve or refuse; one holds `rustc --print cfg`'s text and
+# the atoms `atoms.jq` keeps.
 ["check:witness-cases"]
-description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, as recorded"
+description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, and a witness spelled with a package resolves only where that package depends on the owner, as recorded"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
