@@ -241,6 +241,12 @@
         "crates/",
         "ledger/"
       ],
+      "check:recovery-rise": [
+        ".config/recovery/",
+        "corpus/",
+        "crates/surface-corpus/strict/",
+        "crates/surface-parser/tests/"
+      ],
       "check:references": [
         ".config/claims/",
         ".config/references/",
