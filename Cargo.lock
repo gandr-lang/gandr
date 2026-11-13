@@ -1253,6 +1253,7 @@ dependencies = [
 name = "gandr-core-nbe"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-nbe-base",
  "gandr-core-session",
  "gandr-core-term",
  "gandr-kernel-check-memo",
@@ -1260,10 +1261,21 @@ dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
- "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "tracing",
+]
+
+[[package]]
+name = "gandr-core-nbe-base"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-kernel-core",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-theory-spec-combinators",
+ "quenchant-anodized",
 ]
 
 [[package]]

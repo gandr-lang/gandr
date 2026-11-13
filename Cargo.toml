@@ -7,6 +7,7 @@ members = [
   "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
+  "crates/core-nbe-base",
   "crates/core-publish",
   "crates/core-sequent",
   "crates/core-session",
@@ -443,6 +444,14 @@ path = "crates/core-incremental"
 # - surface-session
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
+
+# The base of the glued value domain: the per-run arena, closures, values and
+# neutrals, free indices, content guards, element identity, the stage terms,
+# and the sharing overlay with its erasure and its measure.
+# consumers:
+# - core-nbe
+[workspace.dependencies.gandr-core-nbe-base]
+path = "crates/core-nbe-base"
 
 # The one writer that publishes a file whole: a private temporary created
 # exclusively, then renamed onto its name.

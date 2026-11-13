@@ -369,30 +369,29 @@ extern crate alloc;
 #[cfg(feature = "unfolding-probe")]
 extern crate std;
 
-mod arena;
-mod closure;
+use gandr_core_nbe_base::arena;
+use gandr_core_nbe_base::closure;
 mod code;
 mod conv;
 mod derivation;
-mod domain;
+use gandr_core_nbe_base::domain;
 mod duplicate;
 mod eval;
-mod free;
+use gandr_core_nbe_base::free;
 mod fusion;
-mod guard;
+use gandr_core_nbe_base::guard;
 pub mod identity;
 mod live;
 mod machine;
-mod measure;
-mod overlay;
+use gandr_core_nbe_base::measure;
+use gandr_core_nbe_base::overlay;
 mod overlay_eval;
 mod policy;
 mod presented;
 mod readback;
 mod resharing;
 mod rules;
-mod spec;
-pub mod stage;
+pub use gandr_core_nbe_base::stage;
 mod traced;
 
 pub use crate::arena::CompClosureId;

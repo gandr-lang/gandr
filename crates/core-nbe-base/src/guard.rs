@@ -198,7 +198,7 @@ pub enum GuardAnswer
 /// The node kind a word folds first, so two kinds over equal content hash
 /// apart.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum GuardTag
+pub(crate) enum GuardTag
 {
     /// A literal value.
     Literal,

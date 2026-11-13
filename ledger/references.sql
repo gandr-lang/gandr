@@ -335,7 +335,7 @@ INSERT INTO reference VALUES('doi:10.1145/351240.351262','core-sequent','','back
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-computads','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/3547641','core-nbe','stage','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1145/3547641','core-nbe-base','stage','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3547641','kernel-core','stage','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3586048','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3586048','core-checker-base','coverage','background',NULL,NULL,NULL);
@@ -639,8 +639,8 @@ INSERT INTO reference VALUES('vault:01a17f47-4717-7b62-93c4-f9d2f8369221','surfa
 INSERT INTO reference VALUES('vault:01a1813c-69c4-7402-97c9-fd16b5893f9f','core-sequent','store','exemplar','147a8d90f69d3fde2aae520e8c2048e101737ff1','2026-10-29','b8ab7377776615735038ee8a68cfbba2fa0526ae');
 INSERT INTO reference VALUES('vault:01a1813c-69c4-7402-97c9-fd16b5893f9f','runtime-emitter','run','exemplar','147a8d90f69d3fde2aae520e8c2048e101737ff1','2026-10-29','435bb1bdb63e5c693f48e4c34d2ea6bc18afcda8');
 INSERT INTO reference VALUES('vault:01a1813c-69c4-7402-97c9-fd16b5893f9f','runtime-stencils','transitions','exemplar','147a8d90f69d3fde2aae520e8c2048e101737ff1','2026-10-29','5798eb33d59350803c0f1f778926862d42f9727f');
-INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-nbe','closure','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','8a4aef58d20e532ef6cf0061b142b25438ea96f3');
 INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-nbe','readback','exemplar','3ac0ff70e3c295db32ad698004431dd31f0601c6','2026-10-29','157acf4928483206c8d9f819971ec7e8284c5154');
+INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-nbe-base','closure','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','8a4aef58d20e532ef6cf0061b142b25438ea96f3');
 INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','kernel-core','replay::environment','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','09b037f2241cfe424dc51ce6595f10e36ed945af');
 INSERT INTO reference VALUES('vault:01a183de-4e71-7f03-aa71-7821123f3c40','core-sequent','closure','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6','core-checker-base','canonical','anchor',NULL,NULL,NULL);
