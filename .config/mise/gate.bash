@@ -41,6 +41,13 @@
 # niceness 19, so the gate takes only CPU that no other process asks for, and
 # no lane's gate waits for its slot. A gate that asks for the background at
 # another niceness takes a slot, as any gate does.
+#
+# Each run of `check` and `gate:all` leaves one row (#7021): one JSON line in
+# `gates.jsonl` under `gandr/` in the host's state directory, which no tree
+# holds. The row keeps the gate's times, its head, its tree, its lane, its
+# slot, its waits, its result, the gates beside it and the host. One trap,
+# `gate_exit`, writes the row and then releases the locks, whatever ends the
+# gate. `report:gates` reads the rows of the host and prints the medians.
 
 source "${BASH_SOURCE[0]%/*}/host-lock.bash"
 source "${BASH_SOURCE[0]%/*}/../claims/lanes.bash"
@@ -52,6 +59,8 @@ source "${BASH_SOURCE[0]%/*}/../claims/lanes.bash"
 # 4, 6 or 8 slots: the time of a gate is its work (#6963).
 gate_cores=$(getconf _NPROCESSORS_ONLN)
 gate_slots=${GANDR_GATE_SLOTS:-$(( gate_cores / 8 > 1 ? gate_cores / 8 : 1 ))}
+# The rows of the gates on this host (#7021).
+gate_rows=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/gates.jsonl
 
 # The lane of the worktree the gate runs in: the longest lane of the lane
 # table that the worktree's name equals or starts with before a `-`, else the
@@ -129,27 +138,134 @@ hold_gate_slot() {
     unset GANDR_GATE_BACKGROUND
     gate_slot=background
     export GANDR_GATE_SLOT=$gate_slot
-    # The traps release descriptor 9 too; it holds no lock here.
+    # The trap releases descriptor 9 too; it holds no lock here.
     exec 9> /dev/null
-    trap 'host_unlock 9; host_unlock 8' EXIT
-    return
+  else
+    unset GANDR_GATE_BACKGROUND
+    gate_clock
+    start=$gate_clock
+    host_lock ${wait[@]+"${wait[@]}"} gate "$gate_slots" "$@" "(lane $gate_lane)"
+    gate_clock
+    gate_seconds "$start" "$gate_clock"
+    gate_wait_slot=$gate_seconds
+    gate_slot=$host_slot
+    export GANDR_GATE_SLOT=$gate_slot
   fi
-  unset GANDR_GATE_BACKGROUND
+  gate_locked=1
   gate_clock
-  start=$gate_clock
-  host_lock ${wait[@]+"${wait[@]}"} gate "$gate_slots" "$@" "(lane $gate_lane)"
-  gate_clock
-  gate_seconds "$start" "$gate_clock"
-  gate_wait_slot=$gate_seconds
-  gate_slot=$host_slot
-  export GANDR_GATE_SLOT=$gate_slot
-  trap 'host_unlock 9; host_unlock 8' EXIT
+  gate_held=$gate_clock
+  gate_beside
+  trap gate_exit EXIT
 }
 
 # The gate's waits as its record keeps them: `{"lane": <s>, "slot": <s>}`. A
 # gate that took no lock waited for none, so both read 0.
 gate_wait() {
   printf '{"lane": %d, "slot": %d}\n' "${gate_wait_lane:-0}" "${gate_wait_slot:-0}"
+}
+
+# Opens the row of the gate `$1`, `check` or `gate:all` (#7021): reads its
+# start and the gates beside it, and sets the trap that ends it, `gate_exit`.
+# A heavy check run alone opens no row, since it is no gate. The task sets
+# `gate_tree` to the tree of the work once it reads it.
+gate_open() {
+  gate_name=$1
+  gate_clock
+  gate_start=$gate_clock
+  gate_beside
+  trap gate_exit EXIT
+}
+
+# Raises `gate_beside_most` to the count of the other gates on the host now:
+# the lane locks whose recorded holder is alive and is not this shell. Each
+# gate holds its lane's lock for its whole run, a background gate too, and so
+# does a heavy check run alone. A lane's lock that its holder released keeps
+# the record of a holder that has exited. The read forks no process.
+gate_beside() {
+  local dir file record pid count=0
+  dir=$(host_lock_dir)
+  for file in "${dir%/}"/gandr/gate-lane-*.1.lock; do
+    [[ -f $file ]] || continue
+    IFS= read -r record < "$file" || [[ -n $record ]] || continue
+    [[ $record =~ \(pid\ ([0-9]+), ]] || continue
+    pid=${BASH_REMATCH[1]}
+    if [[ $pid != "$$" ]] && kill -0 "$pid" 2> /dev/null; then count=$(( count + 1 )); fi
+  done
+  if (( count > ${gate_beside_most:-0} )); then gate_beside_most=$count; fi
+}
+
+# Sets the variable `$1` to a JSON string of `$2`, or to `null` when `$2` is
+# empty or holds a character outside `[A-Za-z0-9._:/-]`, which no field of a
+# row needs. So the row needs no escape, and the shell writes it with no
+# `jq` and no subshell.
+gate_json_text() {
+  if [[ -n $2 && $2 =~ ^[A-Za-z0-9._:/-]+$ ]]; then printf -v "$1" '"%s"' "$2"; else printf -v "$1" 'null'; fi
+}
+
+# Appends the row of the gate that ends with status `$1` to `gate_rows`
+# (#7021). A status of 0 from a gate that did not reach its end, which sets
+# `gate_ran`, is a signal: bash runs the `EXIT` trap of a `SIGTERM`, a
+# `SIGINT` or a `SIGHUP` with the status of the last command. So the row
+# reads `stopped`, as it does for a status above 128, and its status is
+# null. The host's class is the `class` of `host.json` under
+# `$XDG_CONFIG_HOME/gandr`, `{"class": "<name>"}`, and its architecture is
+# bash's `HOSTTYPE`. The shell builds the row, and `git rev-parse` is its one
+# process; a gate of light checks also reads its lane, which no lock read.
+# The row is one `printf` of less than 4,096 bytes to a file opened for
+# append, so the rows of two gates never mix. A failed write prints one line
+# and fails no gate.
+gate_row() {
+  local status=$1 result config text= class= head lane millis row
+  local name_json head_json tree_json lane_json slot_json arch_json class_json
+  if [[ $status == 0 && -z ${gate_ran:-} ]] || (( status > 128 )); then
+    result=stopped
+    status=null
+  elif [[ $status == 0 ]]; then
+    result=passed
+  else
+    result=failed
+  fi
+  config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/host.json
+  if [[ -f $config ]]; then
+    IFS= read -r -d '' text < "$config" || :
+    if [[ $text =~ \"class\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then class=${BASH_REMATCH[1]}; fi
+  fi
+  head=$(git rev-parse --verify --quiet HEAD 2> /dev/null) || head=
+  lane=${gate_lane:-}
+  if [[ -z $lane ]]; then lane=$(gate_lane); fi
+  gate_json_text name_json "$gate_name"
+  gate_json_text head_json "$head"
+  gate_json_text tree_json "${gate_tree:-}"
+  gate_json_text lane_json "$lane"
+  if [[ ${gate_slot:-} =~ ^[0-9]+$ ]]; then slot_json=$gate_slot; else gate_json_text slot_json "${gate_slot:-}"; fi
+  gate_json_text arch_json "${HOSTTYPE:-}"
+  gate_json_text class_json "$class"
+  gate_clock
+  millis=$(( (gate_clock - gate_start) / 1000 ))
+  printf -v row '{"gate":%s,"start":%d,"held":%s,"end":%d,"seconds":%d.%03d,"head":%s,"tree":%s,"lane":%s,"slot":%s,"wait":{"lane":%d,"slot":%d},"status":%s,"result":"%s","beside":%d,"host":{"arch":%s,"cores":%d,"class":%s}}' \
+    "$name_json" "$gate_start" "${gate_held:-null}" "$gate_clock" $(( millis / 1000 )) $(( millis % 1000 )) \
+    "$head_json" "$tree_json" "$lane_json" "$slot_json" "${gate_wait_lane:-0}" "${gate_wait_slot:-0}" \
+    "$status" "$result" "${gate_beside_most:-0}" "$arch_json" "$gate_cores" "$class_json"
+  if ! { { [[ -d ${gate_rows%/*} ]] || mkdir -p "${gate_rows%/*}"; } && printf '%s\n' "$row" >> "$gate_rows"; } 2> /dev/null; then
+    echo "$gate_name: the row of the gate is not written to $gate_rows" >&2
+  fi
+}
+
+# The one trap that ends a gate (#7021): the row of an open gate, read before
+# the release so that its count of the gates beside still holds, then the
+# release of the lane's lock and the slot, and of the jobserver's FIFO. Each
+# step guards its own failure, so the trap keeps the status of the gate.
+gate_exit() {
+  local status=$?
+  if [[ -n ${gate_name:-} ]]; then
+    gate_beside
+    gate_row "$status"
+  fi
+  if [[ -n ${gate_locked:-} ]]; then
+    host_unlock 9 || :
+    host_unlock 8 || :
+  fi
+  if [[ -n ${gate_jobs_fifo:-} ]]; then rm -f "$gate_jobs_fifo" || :; fi
 }
 
 # A gate's share of the host: the host's cores divided by the slots, at least
@@ -182,7 +298,7 @@ gate_bound() {
   exec {gate_jobs_fd}<>"$gate_jobs_fifo"
   printf '%*s' "$share" '' >&"$gate_jobs_fd"
   export MAKEFLAGS="-j$share --jobserver-auth=fifo:$gate_jobs_fifo"
-  trap 'host_unlock 9; host_unlock 8; rm -f "$gate_jobs_fifo"' EXIT
+  trap gate_exit EXIT
 }
 
 # The lower of a value already set, when it is a positive count, and a share.

@@ -58,6 +58,8 @@
 # once the gate holds its slot, and the record keeps the gate's wait for its
 # lane's lock and for its slot beside it (#6699). The gate never blocks on its
 # time.
+# Each run, passed or not, also leaves one row in the host's state, which
+# `report:gates` reads (`.config/mise/gate.bash`, #7021).
 #
 # It first reads the claim of the unit its branch works
 # (`.config/claims/taken.bash`, #5146): a branch `<lane>-<n>-…` whose issue #n
@@ -75,9 +77,11 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 source .config/mise/gate.bash
+gate_open check
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 tree=$(.config/gate-scope/passed.bash tree)
+gate_tree=$tree
 selected=$(.config/gate-scope/select.bash --landing)
 heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
 if (( heavy > 0 )); then
@@ -115,6 +119,7 @@ mkdir -p target/gate
 SECONDS=0
 { MISE_TASK_TIMINGS=1 mise run --output prefix "${tasks[@]:0:${#tasks[@]}-1}" 2>&1 1>&3 3>&- | tee target/gate/check.log >&2; } 3>&1
 .config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "$(gate_wait)" "${checks[@]}"
+gate_ran=1
 {% endraw %}'''
 
 # The cases runner rejects a malformed file before it runs a program (#5646).
@@ -165,6 +170,7 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 source .config/mise/gate.bash
+gate_open gate:all
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 hold_gate_slot "mise run gate:all"
@@ -172,6 +178,7 @@ gate_bound
 echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
 unset GATE_SCOPE GATE_BASE
 tree=$(.config/gate-scope/passed.bash tree)
+gate_tree=$tree
 mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
 mkdir -p target/gate
 SECONDS=0
@@ -182,6 +189,7 @@ if [[ ${usage_keep_going:-false} == true ]]; then keep=(--continue-on-error); fi
 if [[ $tree == "$(git rev-parse 'origin/main^{tree}' 2> /dev/null)" ]]; then
   REPORT_FILE=1 mise run report:gate-time || echo "gate:all: the report of main's gate time failed; the pass stays recorded" >&2
 fi
+gate_ran=1
 {% endraw %}'''
 
 # The landing's gate on another host of ours (#6996,
@@ -204,6 +212,24 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 exec .config/gate-scope/remote.bash ${usage_host:+"$usage_host"}
+{% endraw %}'''
+
+# The medians of the gates on this host (#7021): each run of `check` and
+# `gate:all` leaves one row in the host's state (`.config/mise/gate.bash`),
+# and `.config/gate-rows/report.bash` reads the rows of a window. It prints
+# the runs, the median and the 90th percentile of the seconds for each gate,
+# class, architecture and result, and it writes nothing. A host names its
+# class in `host.json` under `$XDG_CONFIG_HOME/gandr` as `{"class": "<name>"}`.
+["report:gates"]
+description = "The medians of the gates on this host, from the row that each run of a gate leaves"
+tools.jq = "1.8.1"
+usage = '''
+arg "[since]" help="the first day of the window, YYYY-MM-DD in UTC; by default the last 7 days"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+exec .config/gate-rows/report.bash ${usage_since:+"$usage_since"}
 {% endraw %}'''
 
 # The local gate's time against its budget (#5215). The gate on main runs
@@ -2246,6 +2272,16 @@ echo "gh-budget check OK: $(jq length <<< "$sites") calls in $(jq '[.[] | [.file
 ["check:host-lock"]
 description = "A host lock's slots refuse or wait while held, free when their holder and its children are gone, a gate's slot frees when the gate exits, and a lane holds one slot"
 run = ".config/mise/host-lock-cases.bash"
+
+# The rows of the gates (#7021): `.config/gate-rows/cases.bash` runs the trap
+# of a gate in scratch directories. It reads the row of a pass, a failure, a
+# stop and a `SIGTERM`, of a host with a class and one with none, and of a
+# gate beside another lane's gate. A heavy check run alone leaves no row, and
+# the report reads the medians of a fixed set of rows.
+["check:gate-rows"]
+description = "Each run of a gate leaves one row of its times, head, result, gates beside it and host, whatever ends it, and the report reads their medians"
+tools.jq = "1.8.1"
+run = ".config/gate-rows/cases.bash"
 
 # The checks a change selects (#4911): `.config/gate-scope/cases.json` holds
 # `select.jq` over the table, a workflow-only change selecting no Rust check, a
