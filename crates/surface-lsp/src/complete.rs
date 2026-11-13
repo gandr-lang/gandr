@@ -68,6 +68,7 @@ use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lsp_base::signature::Calling;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::LineIndex;
@@ -95,7 +96,6 @@ use crate::protocol::LabelsDetailed;
 use crate::protocol::MarkupContent;
 use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
-use crate::signature::Calling;
 
 /// One item of a completion before it is numbered: its label, its kind, its
 /// detail, the snippet it inserts in place of its label, and the import edit
@@ -373,7 +373,7 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///
 /// [`Signatures`]: crate::signature::Signatures
 /// [`KeywordForm::snippet`]: crate::inline::KeywordForm::snippet
-/// [`Signature::called`]: crate::signature::Signature::called
+/// [`Signature::called`]: gandr_surface_lsp_base::signature::Signature::called
 #[spec(ensures: |ret| !ret.is_incomplete && ret.items.iter().all(|item| item.text_edit.range.end == position
     && item.label_details.is_some() == (labels.0 && item.detail.is_some())
     && item.insert_text_format.is_some() == item.filter_text.is_some()

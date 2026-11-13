@@ -38,6 +38,7 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 - `Proposal`, `Settles` and `ProposalRefusal`: a checked fill that a model proposed, with its ghost text, its lens, its action and its note ([`proposal`](src/proposal.rs)).
 - `bind`, `relay`, `workspace_name`, `LINGER` and `Relayed`: the hub's socket, its name and the relay of a client's frames ([`hub`](src/hub.rs)).
 - `SessionTrace`, `TraceLine` and `Divergence`: the trace of a session, and where a replay parts from it ([`session_trace`](src/session_trace.rs)).
+- `Signature`, `Calling`, `heads_among` and `parameters_documented`: the head of each declaration and constructor of a text, read off its declaring form, and the signature a client is answered with ([`signature`](src/signature.rs)).
 
 ## Expected features
 
@@ -62,6 +63,7 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 | The checked fills of a model | [`proposal`](src/proposal.rs) |
 | The hub's socket and relay | [`hub`](src/hub.rs) |
 | The trace of a session | [`session_trace`](src/session_trace.rs) |
+| The heads of a text | [`signature`](src/signature.rs) |
 
 ## License
 
