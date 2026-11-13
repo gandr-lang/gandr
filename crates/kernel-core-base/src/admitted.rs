@@ -96,6 +96,7 @@ impl Tally
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn new() -> Self
     {
         Self(AtomicU32::new(0))
@@ -192,6 +193,7 @@ impl<'check> Taking<'check>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn taken(self) -> AdmittedCount
     {
         match self {
@@ -239,6 +241,8 @@ impl<'check> Taking<'check>
                 && self.taken() == if ret == Took::Taken { before.and(AdmittedCount(1)) } else { before }
         },
     )]
+    #[inline]
+    #[must_use]
     pub fn take(
         self,
         arena: &TermArena,

@@ -243,6 +243,7 @@ fn representation(
 /// - witness: `gandr-kernel-core::environment::seal_tests::only_a_manifest_atom_unfolds`
 /// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`
 #[spec(ensures: |ret| !manifest.is_empty() || ret.as_ref().ok() == Some(&root))]
+#[inline]
 pub fn unseal(
     arena: &mut TermArena,
     entries: &Entries,

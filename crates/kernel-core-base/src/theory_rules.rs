@@ -55,6 +55,7 @@ use crate::error::KernelError;
 ///   value names.
 /// - witness: `gandr-kernel-core::environment::theory_rules_tests::a_presentation_is_admitted_only_when_its_rules_converge`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::PresentationRulesRefused(_))))]
+#[inline]
 pub fn admit(
     arena: &TermArena,
     entries: &Entries,

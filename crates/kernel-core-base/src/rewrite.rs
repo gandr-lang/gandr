@@ -185,6 +185,7 @@ impl BinderDepth
     /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
     #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     #[inline]
+    #[must_use]
     pub fn deeper(self) -> Self
     {
         // reason: binder depth uses u32::MAX as its conservative ceiling.
@@ -211,6 +212,7 @@ impl BinderDepth
     /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
     #[spec(ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(u64::try_from(usize::from(binders)).unwrap_or(u64::MAX)).min(u64::from(u32::MAX)))]
     #[inline]
+    #[must_use]
     pub fn deeper_by(
         self,
         binders: gandr_kernel_term::ResultCount,
@@ -781,6 +783,7 @@ where
         ret == subject
     })]
 #[must_use]
+#[inline]
 pub fn shift_value<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1085,6 +1088,7 @@ where
     arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
+#[inline]
 pub fn abstract_constant_value_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1132,6 +1136,7 @@ where
     arena.computation(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
+#[inline]
 pub fn share_endpoint<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1173,6 +1178,7 @@ where
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
+#[inline]
 pub fn substitute_value_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1217,6 +1223,7 @@ where
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
+#[inline]
 pub fn substitute_value_type_at<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1259,6 +1266,7 @@ where
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
+#[inline]
 pub fn substitute_value<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1302,6 +1310,7 @@ where
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
+#[inline]
 pub fn substitute_value_at<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1388,6 +1397,7 @@ where
 /// - witness: `gandr-kernel-core::tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
 pub fn substitute_computation_at<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1410,8 +1420,10 @@ where
 }
 
 /// The computation `subject` with the `width` binders outside its `depth`
-/// innermost ones replaced by `environment`'s components, the binder `k`
-/// places out by component `k`, and every index past them lowered by `width`.
+/// innermost ones replaced by `environment`'s components.
+///
+/// The binder `k` places out takes component `k`, and every index past them
+/// is lowered by `width`.
 ///
 /// One walk substitutes the whole environment: the unload an
 /// environment-carrying reduction runs at the weak head it stops at.
@@ -1436,6 +1448,7 @@ where
 /// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
 pub fn unload_computation<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1474,6 +1487,7 @@ where
 #[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
 pub fn unload_value<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -1516,6 +1530,7 @@ where
 #[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
 pub fn substitute_outer_value_type<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,

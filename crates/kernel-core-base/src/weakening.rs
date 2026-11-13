@@ -112,6 +112,7 @@ impl Support
     /// - hypothesis: L3 — as [`Support`].
     /// - witness: `gandr-kernel-core::environment::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
     #[spec(ensures: self.stamps.len() >= usize::from(length) && self.joined != 0 && self.joined & 1 == 0)]
+    #[inline]
     pub fn open(
         &mut self,
         length: ArenaLength,
@@ -141,6 +142,7 @@ impl Support
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn close(&mut self) -> Option<ConstantIndex>
     {
         self.joined = 0;
@@ -153,6 +155,7 @@ impl Support
     /// # Specification
     /// trivial.
     #[cfg(any(test, feature = "fixture"))]
+    #[inline]
     pub fn reads(&self) -> ArenaLength
     {
         ArenaLength::from(self.reads.load(Ordering::Relaxed))
@@ -162,6 +165,7 @@ impl Support
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn join(
         &self,
         position: ConstantIndex,
@@ -194,6 +198,7 @@ impl Support
     /// # Adequacy
     /// - hypothesis: L3 — as [`Support`].
     /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    #[inline]
     pub fn read(
         &self,
         position: ConstantIndex,
@@ -250,6 +255,7 @@ impl Support
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn peek(
         &self,
         position: ConstantIndex,

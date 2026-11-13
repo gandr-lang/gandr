@@ -407,6 +407,7 @@ impl SupportContext
     /// - hypothesis: L3 — as [`Self::join`].
     /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
     #[must_use]
+    #[inline]
     pub fn fork(
         &mut self,
         arena: &TermArena,
@@ -450,6 +451,7 @@ impl SupportContext
     ///   recalls each outcome under the name a serial session gives it.
     /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
     /// - witness: `support::tests::two_jobs_that_keep_two_outcomes_under_one_key_do_not_glue`
+    #[inline]
     pub fn join(
         &mut self,
         arena: &TermArena,
@@ -505,6 +507,7 @@ impl SupportContext
     ///   session.
     /// - witness: `gandr-kernel-core::environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
     /// - witness: `gandr-kernel-core::environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    #[inline]
     pub fn recall_kept(
         &mut self,
         arena: &TermArena,
@@ -592,6 +595,7 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::recall_kept`].
     /// - witness: `gandr-kernel-core::environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    #[inline]
     pub fn keep(
         &mut self,
         support: &NodeSupport,
@@ -954,6 +958,7 @@ impl SupportContext
     Maybe::Absent(read_indices::Absent::Widest) => false,
 })]
 #[inline]
+#[must_use]
 pub fn innermost(reads: &Reads) -> BinderUse
 {
     let Maybe::Present(mut indices) = reads.indices()

@@ -150,6 +150,7 @@ impl<'session> Forking<'session>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn new(fork: Option<&'session dyn ObligationFork>) -> Self
     {
         Self(fork)
@@ -160,6 +161,7 @@ impl<'session> Forking<'session>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn fork(self) -> Option<&'session dyn ObligationFork>
     {
         self.0
@@ -222,6 +224,7 @@ impl SharedFork
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn forking(&self) -> Option<&dyn ObligationFork>
     {
         self.0

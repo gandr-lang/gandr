@@ -54,6 +54,7 @@ impl CheckedId
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn new(position: ConstantIndex) -> Self
     {
         Self(position)
@@ -740,6 +741,7 @@ impl StagedMarks
         )
     )]
     #[spec(ensures: |ret| usize::from(ret) == self.marks.iter().filter(|&&held| held.clamped_into(ArenaWatermark::default(), mark) != held).count())]
+    #[must_use]
     pub fn above(
         &self,
         mark: ArenaWatermark,
@@ -803,6 +805,7 @@ impl Drop for StagingClaim<'_>
         ensures: self.outstanding.marks.len() == entry_len.saturating_sub(1_usize)
             && self.outstanding.marks.last().copied() == prefix_last
     )]
+    #[inline]
     fn drop(&mut self)
     {
         let _released = self.outstanding.marks.pop();
@@ -1410,6 +1413,7 @@ impl Unit
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn lone(position: ConstantIndex) -> Self
     {
         Self {
@@ -1424,6 +1428,7 @@ impl Unit
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn holds(
         self,
         position: ConstantIndex,
@@ -1481,6 +1486,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn content(&self) -> &DeclarationContent
     {
         self.declaration.content()
@@ -1503,6 +1509,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn block(&self) -> crate::occurrence::Block
     {
         self.block
@@ -1513,6 +1520,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn accessibility(&self) -> &crate::occurrence::Accessibility
     {
         &self.accessibility
@@ -1523,6 +1531,7 @@ impl AdmittedDeclaration
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn key_name(&self) -> ConstantName
     {
         self.key_name
@@ -1830,6 +1839,7 @@ impl Slot
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn admitted(&self) -> Option<&AdmittedDeclaration>
     {
         match *self {
@@ -1922,6 +1932,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn family(&self) -> &Family<Slot>
     {
         self.log.as_deref().map_or(&NO_FAMILY, |log| &log.family)
@@ -2124,6 +2135,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn presentations(&self) -> &crate::presented::Presentations
     {
         self.horizon.as_ref().map_or_else(
@@ -2142,6 +2154,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn horizon(&self) -> SourceRank
     {
         self.horizon
@@ -2179,6 +2192,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn live(
         &self,
         position: ConstantIndex,
@@ -2251,6 +2265,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn ruled(
         &self,
         root: ComputationId,
@@ -2267,6 +2282,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn holder(
         &self,
         role: gandr_kernel_term::Builtin,
@@ -2281,6 +2297,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn holder_below(
         &self,
         role: gandr_kernel_term::Builtin,
@@ -2393,6 +2410,7 @@ impl Entries
     /// - hypothesis: L3 — as [`Self::get`].
     /// - witness: `gandr-kernel-core::tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
     #[spec(captures: entry_len = self.len(), ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1))]
+    #[inline]
     pub fn push(
         &mut self,
         arena: &TermArena,
@@ -2411,6 +2429,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
+    #[inline]
     pub fn reserve(&mut self)
     {
         let log = self.log_mut();
@@ -2432,8 +2451,9 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — a commit in another order than the positions fills
     ///   each slot as the serial run admits it.
-    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && usize::from(self.admitted()) == usize::from(admitted).saturating_add(1))]
+    #[inline]
     pub fn fill(
         &mut self,
         arena: &TermArena,
@@ -2463,6 +2483,7 @@ impl Entries
     /// - hypothesis: L3 — as `Environment::add_decl`.
     /// - witness: `gandr-kernel-core::environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
+    #[inline]
     pub fn vacate(&mut self)
     {
         let log = self.log_mut();
@@ -2476,6 +2497,7 @@ impl Entries
     /// # Specification
     /// trivial.
     #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && self.admitted() == admitted)]
+    #[inline]
     pub fn vacate_at(
         &mut self,
         position: ConstantIndex,
@@ -2508,6 +2530,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::retire`.
     /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    #[inline]
     pub fn retire(
         &mut self,
         position: ConstantIndex,
@@ -2547,6 +2570,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::keep`.
     /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    #[inline]
     pub fn reinstate(
         &mut self,
         arena: &TermArena,
@@ -2608,6 +2632,7 @@ impl Entries
     ///   the entries it found.
     /// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(captures: entry_len = self.len(), ensures: self.len() == length.min(entry_len))]
+    #[inline]
     pub fn truncate(
         &mut self,
         length: gandr_kernel_term::ArenaLength,
@@ -2695,11 +2720,13 @@ impl Entries
     /// - hypothesis: L3 — as [`Self::get`].
     /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     /// - witness: `gandr-kernel-core::environment::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
-    pub fn open(
+    #[inline]
+    pub fn open<Roots>(
         &mut self,
-        roots: impl IntoIterator<Item = ConstantIndex>,
+        roots: Roots,
         (rank, end): (SourceRank, gandr_kernel_term::ArenaLength),
-    )
+    ) where
+        Roots: IntoIterator<Item = ConstantIndex>,
     {
         self.horizon = Some(Horizon {
             rank,
@@ -2733,6 +2760,7 @@ impl Entries
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn close(&mut self) -> Option<ConstantIndex>
     {
         self.horizon = None;
@@ -2933,6 +2961,8 @@ pub enum CodeEdges
         _ => true,
     },
 })]
+#[inline]
+#[must_use]
 pub fn collect_reachable(
     arena: &TermArena,
     root: AnyNode,
@@ -2975,6 +3005,8 @@ pub fn collect_reachable(
 ///   and one that reads past it is refused.
 /// - witness: `gandr-kernel-core::environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
+#[inline]
+#[must_use]
 pub fn references(
     arena: &TermArena,
     declaration: &Declaration,
@@ -3594,6 +3626,7 @@ impl ConstantSearch
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn new(sought: ConstantIndex) -> Self
     {
         Self {
@@ -3622,6 +3655,7 @@ impl ConstantSearch
     ///   `Named`.
     /// - witness: `env::tests::a_search_stops_at_its_constant_across_roots`
     #[spec(ensures: |ret| (ret == Mention::Named) == collect_reachable(arena, root, CodeEdges::Follow).contains(&self.sought))]
+    #[inline]
     pub fn names(
         &mut self,
         arena: &TermArena,
@@ -3679,6 +3713,7 @@ impl ConstantSearch
     _ => true,
 })]
 #[inline]
+#[must_use]
 pub fn projected_atoms(
     arena: &TermArena,
     root: ValueTypeId,

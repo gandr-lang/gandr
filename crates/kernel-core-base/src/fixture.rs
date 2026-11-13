@@ -13,6 +13,7 @@ use crate::support::SupportContext;
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn constant_name(
     session: &SupportContext,
     index: gandr_kernel_term::ConstantIndex,
@@ -26,6 +27,7 @@ pub fn constant_name(
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn reads(entries: &Entries) -> gandr_kernel_term::ArenaLength
 {
     entries.reads()
@@ -69,6 +71,8 @@ pub mod presented
         ///
         /// # Specification
         /// trivial.
+        #[inline]
+        #[must_use]
         pub fn tag(self) -> ConstructorTag
         {
             ConstructorTag::from(match self {
@@ -83,6 +87,8 @@ pub mod presented
         ///
         /// # Specification
         /// trivial.
+        #[inline]
+        #[must_use]
         pub fn node(self) -> RuleNode
         {
             RuleNode::Constructor(self.tag())
@@ -93,6 +99,8 @@ pub mod presented
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn x() -> RuleNode
     {
         RuleNode::Variable(RuleVariable::from(0_u32))
@@ -102,6 +110,8 @@ pub mod presented
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn circle() -> Presentation
     {
         let (looped, unlooped) = (Letter::Loop.node(), Letter::Unloop.node());
@@ -115,6 +125,7 @@ pub mod presented
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn word(
         arena: &mut TermArena,
         letters: &[Letter],
@@ -142,6 +153,8 @@ pub mod presented
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn base() -> alloc::boxed::Box<[RuleNode]>
     {
         [Letter::Base.node()].into()

@@ -65,9 +65,11 @@ use crate::occurrence::Stratification;
 use crate::occurrence::Variance;
 
 /// The kernel's build identity: one digest of every file of every kernel
-/// crate and of the workspace lock. The judgement's build script writes it,
-/// and the judgement passes it to each derivation of a key, so a key binds the
-/// files of the record and of the judgement both.
+/// crate and of the workspace lock.
+///
+/// The judgement's build script writes it, and the judgement passes it to
+/// each derivation of a key, so a key binds the files of the record and of
+/// the judgement both.
 ///
 /// # Specification
 /// trivial.
@@ -298,6 +300,7 @@ impl EntryKeyer
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn tagged(
         build: BuildIdentity,
         tag: EntryTag,
@@ -1364,6 +1367,7 @@ impl Default for Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn default() -> Self
     {
         Self::rechecking(Arc::new(NoVerdicts))
@@ -1391,6 +1395,7 @@ impl Verdicts
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn keying(&self) -> Keying
     {
         match self.chain {
@@ -1411,7 +1416,6 @@ impl Verdicts
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub const fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
     {
         match self.chain {
@@ -1444,6 +1448,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn under(
         policy: TrustPolicy,
         source: Arc<dyn VerdictSource>,
@@ -1470,6 +1475,8 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn handed_on(&self) -> Self
     {
         Self {
@@ -1490,6 +1497,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn key(
         &mut self,
         arena: &TermArena,
@@ -1527,6 +1535,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn end(&mut self)
     {
         if let Maybe::Present(_) = self.chain {
@@ -1541,6 +1550,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn refused(&mut self)
     {
         if let Maybe::Present(ref mut chain) = self.chain {
@@ -1554,6 +1564,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn reading(
         &mut self,
         source: Arc<dyn VerdictSource>,
@@ -1567,6 +1578,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn recall(
         &mut self,
         key: VerdictKey,
@@ -1618,6 +1630,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn checked(
         &mut self,
         entry: Maybe<VerdictKey, keyed::Absent>,
@@ -1645,6 +1658,7 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn receipt(
         &self,
         signer: &KernelSigner,
@@ -1668,6 +1682,8 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn recalls(&self) -> RecallCount
     {
         RecallCount(self.recalls)
@@ -1677,6 +1693,8 @@ impl Verdicts
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn recorded(&self) -> RecordCount
     {
         RecordCount(self.recorded)

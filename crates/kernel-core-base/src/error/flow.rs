@@ -186,6 +186,8 @@ impl Variance
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn reverse(self) -> Self
     {
         match self {

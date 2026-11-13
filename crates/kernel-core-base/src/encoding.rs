@@ -2520,6 +2520,7 @@ impl ContentTable
     /// - witness: `gandr-kernel-core::environment::encoding_tests::an_axiom_reference_keeps_its_position`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len() == named_before.max(usize::from(entries.len())))]
+    #[inline]
     pub fn name_constants(
         &mut self,
         entries: &crate::env::Entries,
@@ -2548,6 +2549,7 @@ impl ContentTable
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len()
             == named_before.max(usize::from(entries.len()).min(usize::from(end))))]
+    #[inline]
     pub fn name_constants_before(
         &mut self,
         entries: &crate::env::Entries,
@@ -2580,10 +2582,11 @@ impl ContentTable
     /// # Adequacy
     /// - hypothesis: L3 — a definition committed after a later release named
     ///   its position reads by its content to the checks after it.
-    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len() == named_before
             && (usize::from(index) >= named_before || self.constants.get(usize::from(index)) == Some(&name)))]
+    #[inline]
     pub fn rename_constant(
         &mut self,
         index: ConstantIndex,
@@ -3057,6 +3060,7 @@ impl ContentTable
     ///   dropped component merges two that differ.
     /// - witness: `encoding::tests::parameters_name_their_block_by_content`
     #[spec(ensures: |ret| ret.0 < self.records)]
+    #[inline]
     pub fn parameters(
         &mut self,
         arena: &TermArena,
@@ -4256,6 +4260,7 @@ impl ContentTable
     #[must_use]
     #[spec(ensures: |ret| ret.records == self.records && self.base == self.records
         && ret.base == self.base)]
+    #[inline]
     pub fn fork(
         &mut self,
         arena: &TermArena,
@@ -4324,6 +4329,7 @@ impl ContentTable
     ///   overlap, and are folded in either order. Each node's record carries
     ///   the name a serial table gives it.
     /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    #[inline]
     pub fn join(
         &mut self,
         arena: &TermArena,
@@ -4444,6 +4450,7 @@ impl ContentTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::join`].
     /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    #[inline]
     pub fn settle(&mut self)
     {
         while let Some(view) = self.placed.layers.pop() {
@@ -6171,9 +6178,10 @@ pub fn content_digest(
 }
 
 /// The name of a plain definition of `declared` and `body` about to be
-/// admitted at `position` after `entries`, at the rank `below`: its two roots,
-/// the digest of their names, and its order among the definitions ranked below
-/// it and named by the same two.
+/// admitted at `position` after `entries`, at the rank `below`.
+///
+/// The name holds its two roots, the digest of their names, and its order
+/// among the definitions ranked below it and named by the same two.
 ///
 /// `table` is the session's table, which names each record from its members'
 /// names. The fold that minted the roots named them there, so the naming
@@ -6214,6 +6222,7 @@ pub fn content_digest(
 #[must_use]
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
     if kept_declared == declared && kept_body == body))]
+#[inline]
 pub fn name_definition(
     table: &mut ContentTable,
     arena: &TermArena,
@@ -6292,13 +6301,16 @@ pub enum Likeness
 /// # Adequacy
 /// - hypothesis: L3 — twins released together hold the later one, and its name
 ///   counts the earlier one as the serial run's does.
-/// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
-pub fn likeness(
+/// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+#[inline]
+pub fn likeness<Others>(
     table: &mut ContentTable,
     arena: &TermArena,
     name: ConstantName,
-    others: impl IntoIterator<Item = ConstantName>,
+    others: Others,
 ) -> Likeness
+where
+    Others: IntoIterator<Item = ConstantName>,
 {
     let ConstantName::Definition {
         declared,
@@ -6408,6 +6420,7 @@ pub mod fixture
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn place(
         table: &mut ContentTable,
         arena: &TermArena,
@@ -6422,6 +6435,7 @@ pub mod fixture
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn stream(table: &ContentTable) -> &ContentEncoding
     {
         table.stream()

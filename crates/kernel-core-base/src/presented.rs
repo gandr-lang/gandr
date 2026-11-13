@@ -137,6 +137,7 @@ impl PresentedType
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn cells(&self) -> Option<&FreeCells>
     {
         self.presentation.cells()
@@ -262,6 +263,7 @@ impl Presentations
     /// # Adequacy
     /// - hypothesis: L3 — as [`normal_form`].
     /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+    #[inline]
     pub fn admit(
         &mut self,
         (position, rank): (ConstantIndex, SourceRank),
@@ -303,6 +305,7 @@ impl Presentations
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn forget_from(
         &mut self,
         first: ConstantIndex,
@@ -331,6 +334,7 @@ impl Presentations
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn retire(
         &mut self,
         position: ConstantIndex,
@@ -403,6 +407,7 @@ impl Presentations
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn presented(
         &self,
         constant: ConstantIndex,
@@ -441,6 +446,7 @@ impl Presentations
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn sort_arities(
         &self,
         words: ConstantIndex,
@@ -477,6 +483,7 @@ impl Presentations
     /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
     #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some())))]
     #[must_use]
+    #[inline]
     pub fn words(
         &self,
         arena: &TermArena,
@@ -511,6 +518,7 @@ impl Presentations
     /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
     #[spec(ensures: |ret| ret == ty || matches!(arena.value_type(ret), Some(ValueType::Data { arguments, .. }) if arguments.is_empty()))]
     #[must_use]
+    #[inline]
     pub fn identified(
         &self,
         arena: &mut TermArena,
@@ -576,6 +584,7 @@ impl Presentations
     /// - witness: `gandr-kernel-core::replay::tests::a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741`
     #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some_and(|cells| cells.reflexivities() >= wraps))))]
     #[must_use]
+    #[inline]
     pub fn emptied(
         &self,
         arena: &TermArena,
@@ -764,6 +773,8 @@ fn spelled_along(
 /// - hypothesis: L3 — as [`Presentations::words`].
 /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| !matches!(arena.value(ret.0), Some(&Value::Here { .. })))]
+#[inline]
+#[must_use]
 pub fn unwrapped(
     arena: &TermArena,
     value: ValueId,
@@ -880,6 +891,7 @@ fn spells(
 /// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
 /// - witness: `gandr-kernel-core::environment::presented_tests::words_admit_only_as_their_cells_mint_them`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_) | KernelError::WordsRefused(_))))]
+#[inline]
 pub fn admit(
     arena: &TermArena,
     entries: &Entries,
@@ -1009,6 +1021,8 @@ fn words(
 /// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
 /// - witness: `presented::tests::a_pair_over_a_parameter_reads_its_second_field_as_dependent`
 #[spec(ensures: |ret| ret.len() == constructors.len())]
+#[inline]
+#[must_use]
 pub fn slot_table(
     arena: &TermArena,
     position: ConstantIndex,
@@ -1083,6 +1097,7 @@ enum Origin
 /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
 #[spec(captures: before = u64::from(*fuel), ensures: |ret| u64::from(*fuel) <= before
     && ret.is_ok_and(|normal| normal == value || arena.value(normal).is_some()) || ret == Err(Exhausted))]
+#[inline]
 pub fn normal_form(
     arena: &mut TermArena,
     presentations: &Presentations,
@@ -1195,6 +1210,7 @@ pub fn normal_form(
 ///   distinct constructors are apart.
 /// - witness: `gandr-kernel-core::environment::presented_tests::endpoints_are_apart_by_their_normal_forms`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotADataType { .. })))]
+#[inline]
 pub fn apart(
     arena: &TermArena,
     entries: &Entries,
