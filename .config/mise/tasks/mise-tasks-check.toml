@@ -100,6 +100,14 @@ if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:
   GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
   GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash)
   export GATE_WITNESS_SCOPE GATE_TEST_SCOPE
+  # A test that the known-red list names below the branch's base is the
+  # fixer's, and it holds no lane's gate (#7061). The head watcher reads
+  # every test, so the cycle's reading stays whole.
+  if [[ -z ${GATE_TEST_EVERY_RED:-} ]]; then
+    read -ra test_scope <<< "$GATE_TEST_SCOPE"
+    GATE_TEST_KNOWN_RED=$(.config/gate-scope/known-red.bash "${test_scope[@]}")
+    if [[ -n $GATE_TEST_KNOWN_RED ]]; then export GATE_TEST_KNOWN_RED; else unset GATE_TEST_KNOWN_RED; fi
+  fi
 fi
 tasks=()
 for check in "${checks[@]}"; do tasks+=("$check" :::); done
@@ -671,12 +679,13 @@ run = ".config/mise/enforcing .config/mise/scope cargo nextest run {{ env.CI_SHA
 # the touched packages and the dispatcher, or to the whole workspace in the
 # head watcher (`.config/gate-scope/test-scope.bash`, #6812), as it sets
 # `GATE_WITNESS_SCOPE` to the touched packages. Without either, the suite runs
-# over `GATE_SCOPE`, or the whole workspace.
+# over `GATE_SCOPE`, or the whole workspace. `GATE_TEST_KNOWN_RED` leaves out
+# each test that the known-red list names below the branch's base (#7061).
 ["check:tests-enforcing"]
 description = "Unit and integration tests over every target, specifications enforced"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% elif env.GATE_TEST_SCOPE is defined %}{{ env.GATE_TEST_SCOPE }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% elif env.GATE_TEST_SCOPE is defined %}{{ env.GATE_TEST_SCOPE }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %}{% if env.GATE_TEST_KNOWN_RED is defined %} -E '{{ env.GATE_TEST_KNOWN_RED }}'{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory. With `CI_WITNESS_LISTINGS` naming a directory
@@ -2252,6 +2261,10 @@ run = ".config/mise/host-lock-cases.bash"
 # (#6996) through a stand-in `ssh` and `mise`: a far pass comes here with its
 # host after the push, a far red records nothing, work beyond HEAD is refused
 # and the probe counts the free slots.
+# `.config/gate-scope/known-red-cases.bash` reads a recorded known-red list
+# in a scratch repository (#7061): a list below the branch's base leaves each
+# listed test of the suite's scope out of a scratch crate's red suite, and
+# another head, a closed list and a failed read leave every test in.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group or the `landing`
 # list naming no check, fails it. So does a check that builds `GATE_SCOPE`
@@ -2272,6 +2285,7 @@ set -euo pipefail
 .config/gate-scope/tests-cases.bash
 .config/gate-scope/comments-cases.bash
 .config/gate-scope/remote-cases.bash
+.config/gate-scope/known-red-cases.bash
 tasks=$(mise tasks ls --json)
 mapfile -t scoped < <(jq -r '.reads.checks // {} | keys[]' .config/gate-scope/table.json)
 findings=$(
