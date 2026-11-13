@@ -305,9 +305,9 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (self.exitable.contains(&site.at.node)
-                    && matches!(self.plans.get(site.at.node), Some(&Plan::Loop(body))
-                        if self.looping.contains(&body.last)))
+                || (self.cx.exitable.contains(&site.at.node)
+                    && matches!(self.cx.plans.get(site.at.node), Some(&Plan::Loop(body))
+                        if self.cx.looping.contains(&body.last)))
         },
     )]
     pub(super) fn looped(
@@ -317,11 +317,11 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        if !self.exitable.contains(&site.at.node) {
+        if !self.cx.exitable.contains(&site.at.node) {
             return Err(site.out(FragmentBoundary::NotInTail));
         }
         let _keyword = cursor.tile(TileName::LOOP);
-        let own = self.scope.extend(
+        let own = self.cx.scope.extend(
             frame,
             iteration(),
             Maybe::Absent(binder_site::Absent::Unwritten),
@@ -360,10 +360,10 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (self.exitable.contains(&site.at.node)
-                    && matches!(self.plans.get(site.at.node), Some(&Plan::While(condition, body))
-                        if self.looping.contains(&body.last)
-                            && self.tested.contains(&condition)
+                || (self.cx.exitable.contains(&site.at.node)
+                    && matches!(self.cx.plans.get(site.at.node), Some(&Plan::While(condition, body))
+                        if self.cx.looping.contains(&body.last)
+                            && self.cx.tested.contains(&condition)
                             && matches!(self.reading(condition), Reading::Computation(Frame::Inner(_)))))
         },
     )]
@@ -374,22 +374,22 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        if !self.exitable.contains(&site.at.node) {
+        if !self.cx.exitable.contains(&site.at.node) {
             return Err(site.out(FragmentBoundary::NotInTail));
         }
         let _keyword = cursor.tile(TileName::WHILE);
         let condition = site.one(cursor.operands())?;
-        let own = self.scope.extend(
+        let own = self.cx.scope.extend(
             frame,
             iteration(),
             Maybe::Absent(binder_site::Absent::Unwritten),
         );
         let (passes, carries) = self.passes(site, own);
-        let _tested = self.tested.insert(condition.node);
+        let _tested = self.cx.tested.insert(condition.node);
         self.read(condition.node, Reading::Computation(passes));
         let mut held = passes;
         for _binder in 0_u8 .. 2_u8 {
-            held = Frame::Inner(self.scope.extend(
+            held = Frame::Inner(self.cx.scope.extend(
                 held,
                 SurfaceName::from(""),
                 Maybe::Absent(binder_site::Absent::Unwritten),
@@ -434,7 +434,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
     /// - witness: `lower::loops::tests::a_loop_threads_the_endpoint_it_names_4502`
     #[spec(ensures: |ret| match ret {
-        | Ok(rest) => rest == after || self.threading.contains_key(&written),
+        | Ok(rest) => rest == after || self.cx.threading.contains_key(&written),
         | Err(LoweringRefusal::BudgetExceeded { .. }) => true,
         | Err(_) => false,
     })]
@@ -445,13 +445,13 @@ impl<'source> Lowerer<'_, 'source>
         (frame, after): (Frame, Frame),
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        let Some(from) = self.tree.node(written).map(|node| node.span().start())
+        let Some(from) = self.cx.tree.node(written).map(|node| node.span().start())
         else {
             return Ok(after);
         };
-        let looping = self.tree.node(written).is_some_and(|node| {
+        let looping = self.cx.tree.node(written).is_some_and(|node| {
             matches!(
-                shape_of(self.pbg, node),
+                shape_of(self.cx.pbg, node),
                 Ok(Shape::Form {
                     former: Former::Loop | Former::While,
                     ..
@@ -459,9 +459,9 @@ impl<'source> Lowerer<'_, 'source>
             )
         });
         if !looping
-            || self.joined.contains(&site.at.node)
-            || !self.scope.chain(frame).any(|binder| {
-                self.held.contains(&binder) || self.scope.zone(binder) == Zone::Linear
+            || self.cx.joined.contains(&site.at.node)
+            || !self.cx.scope.chain(frame).any(|binder| {
+                self.cx.held.contains(&binder) || self.cx.scope.zone(binder) == Zone::Linear
             })
         {
             return Ok(after);
@@ -472,25 +472,25 @@ impl<'source> Lowerer<'_, 'source>
             BTreeMap::new();
         let mut pending = Vec::from([site.at.node]);
         while let Some(position) = pending.pop() {
-            let Some(node) = self.tree.node(position)
+            let Some(node) = self.cx.tree.node(position)
             else {
                 continue;
             };
             if node.span().end() <= from {
                 continue;
             }
-            pending.extend(self.tree.children(position));
+            pending.extend(self.cx.tree.children(position));
             if node.span().start() < from
-                || tile_label(self.pbg, node) != Maybe::Present(TileName::IDENTIFIER)
+                || tile_label(self.cx.pbg, node) != Maybe::Present(TileName::IDENTIFIER)
             {
                 continue;
             }
             let name = self.name_at(Placed::of(position, node));
-            if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)?
+            if let Maybe::Present(bound) = self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?
                 && bound.zone == Zone::Linear
-                && !self.capabilities.contains(&bound.binder)
+                && !self.cx.capabilities.contains(&bound.binder)
             {
-                let carry = if self.held.contains(&bound.binder) {
+                let carry = if self.cx.held.contains(&bound.binder) {
                     Carry::Held
                 }
                 else {
@@ -504,15 +504,17 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut rest = after;
         for &(name, carry) in slots.values() {
-            let again =
-                self.scope
-                    .extend_linear(rest, name, Maybe::Absent(binder_site::Absent::Unwritten));
+            let again = self.cx.scope.extend_linear(
+                rest,
+                name,
+                Maybe::Absent(binder_site::Absent::Unwritten),
+            );
             if carry == Carry::Held {
-                let _held = self.held.insert(again);
+                let _held = self.cx.held.insert(again);
             }
             rest = Frame::Inner(again);
         }
-        let _first = self.threading.insert(
+        let _first = self.cx.threading.insert(
             written,
             slots
                 .into_iter()
@@ -540,40 +542,44 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::threads`].
     /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
-    #[spec(ensures: |ret| ret.1.is_empty() != self.reheld.contains_key(&own))]
+    #[spec(ensures: |ret| ret.1.is_empty() != self.cx.reheld.contains_key(&own))]
     fn passes(
         &mut self,
         site: Site,
         own: ScopeId,
     ) -> (Frame, Vec<(DeBruijnIndex, Carry)>)
     {
-        let Some(slots) = self.threading.remove(&site.at.node)
+        let Some(slots) = self.cx.threading.remove(&site.at.node)
         else {
             return (Frame::Inner(own), Vec::new());
         };
         let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
-        let mut pass = Frame::Inner(self.scope.extend(
+        let mut pass = Frame::Inner(self.cx.scope.extend(
             Frame::Inner(own),
             SurfaceName::from(""),
             unwritten(),
         ));
         if slots.len() > 1 {
             for _component in &slots {
-                pass = Frame::Inner(self.scope.extend(pass, SurfaceName::from(""), unwritten()));
+                pass = Frame::Inner(
+                    self.cx
+                        .scope
+                        .extend(pass, SurfaceName::from(""), unwritten()),
+                );
             }
         }
         let mut reheld = Vec::with_capacity(slots.len());
         let mut carries = Vec::with_capacity(slots.len());
         for (index, name, carry) in slots {
-            let again = self.scope.extend_linear(pass, name, unwritten());
+            let again = self.cx.scope.extend_linear(pass, name, unwritten());
             if carry == Carry::Held {
-                let _held = self.held.insert(again);
+                let _held = self.cx.held.insert(again);
             }
             reheld.push(again);
             carries.push((index, carry));
             pass = Frame::Inner(again);
         }
-        let _first = self.reheld.insert(own, reheld);
+        let _first = self.cx.reheld.insert(own, reheld);
 
         (pass, carries)
     }
@@ -592,7 +598,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
     #[spec(
         captures: empty = carries.is_empty(),
-        ensures: empty || self.carries.contains_key(&body.last),
+        ensures: empty || self.cx.carries.contains_key(&body.last),
     )]
     fn carry(
         &mut self,
@@ -601,7 +607,7 @@ impl<'source> Lowerer<'_, 'source>
     )
     {
         if !carries.is_empty() {
-            let _first = self.carries.insert(body.last, carries);
+            let _first = self.cx.carries.insert(body.last, carries);
         }
     }
 
@@ -630,9 +636,9 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (self.exitable.contains(&site.at.node)
-                    && matches!(self.plans.get(site.at.node), Some(&Plan::For(list, body))
-                        if self.looping.contains(&body.last)
+                || (self.cx.exitable.contains(&site.at.node)
+                    && matches!(self.cx.plans.get(site.at.node), Some(&Plan::For(list, body))
+                        if self.cx.looping.contains(&body.last)
                             && matches!(self.reading(list), Reading::Value(_))))
         },
     )]
@@ -643,7 +649,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        if !self.exitable.contains(&site.at.node) {
+        if !self.cx.exitable.contains(&site.at.node) {
             return Err(site.out(FragmentBoundary::NotInTail));
         }
         let _keyword = cursor.tile(TileName::FOR);
@@ -655,12 +661,16 @@ impl<'source> Lowerer<'_, 'source>
         let list = site.one(cursor.operands())?;
         self.read(list.node, Reading::Value(frame));
         let unwritten = Maybe::Absent(binder_site::Absent::Unwritten);
-        let own = Frame::Inner(self.scope.extend(frame, iteration(), unwritten));
-        let listed = Frame::Inner(self.scope.extend(own, SurfaceName::from(""), unwritten));
+        let own = Frame::Inner(self.cx.scope.extend(frame, iteration(), unwritten));
+        let listed = Frame::Inner(self.cx.scope.extend(own, SurfaceName::from(""), unwritten));
         let name = self.name_at(binder);
         self.note_binder(binder, listed, name)?;
-        let element = Frame::Inner(self.scope.extend(listed, name, Maybe::Present(binder.span)));
-        let held = Frame::Inner(self.scope.extend(element, remaining(), unwritten));
+        let element = Frame::Inner(
+            self.cx
+                .scope
+                .extend(listed, name, Maybe::Present(binder.span)),
+        );
+        let held = Frame::Inner(self.cx.scope.extend(element, remaining(), unwritten));
         let body = self.block(site, &mut cursor, held)?;
         self.iterate(site, body)?;
         self.plan(site, Plan::For(list.node, body));
@@ -691,11 +701,11 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (self.iterated.contains(&body.last)
-                    && self.looping.contains(&body.last)
-                    && self.exitable.contains(&body.last)
-                    && self.framed.contains(&body.last) == self.framed.contains(&site.at.node)
-                    && !self.looped_past.contains(&body.last))
+                || (self.cx.iterated.contains(&body.last)
+                    && self.cx.looping.contains(&body.last)
+                    && self.cx.exitable.contains(&body.last)
+                    && self.cx.framed.contains(&body.last) == self.cx.framed.contains(&site.at.node)
+                    && !self.cx.looped_past.contains(&body.last))
         },
     )]
     fn iterate(
@@ -704,17 +714,17 @@ impl<'source> Lowerer<'_, 'source>
         body: Block,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _end = self.iterated.insert(body.last);
-        let _iteration = self.looping.insert(body.last);
-        if self.framed.contains(&site.at.node) {
-            let _framed = self.framed.insert(body.last);
+        let _end = self.cx.iterated.insert(body.last);
+        let _iteration = self.cx.looping.insert(body.last);
+        if self.cx.framed.contains(&site.at.node) {
+            let _framed = self.cx.framed.insert(body.last);
         }
-        if let Some(&owner) = self.bodies.get(&site.at.node) {
-            let _owner = self.bodies.insert(body.last, owner);
+        if let Some(&owner) = self.cx.bodies.get(&site.at.node) {
+            let _owner = self.cx.bodies.insert(body.last, owner);
         }
-        let answer = match self.answers.get(&site.at.node) {
+        let answer = match self.cx.answers.get(&site.at.node) {
             Some(&answer) => {
-                let _passed = self.answers.insert(body.last, answer);
+                let _passed = self.cx.answers.insert(body.last, answer);
                 Maybe::Present(answer)
             },
             None => Maybe::Absent(answered::Absent::Unstated),
@@ -749,9 +759,9 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (self.looping.contains(&site.at.node)
-                    && self.breaking.contains(&site.at.node)
-                    && matches!(self.plans.get(site.at.node), Some(&(Plan::Break | Plan::Return(_)))))
+                || (self.cx.looping.contains(&site.at.node)
+                    && self.cx.breaking.contains(&site.at.node)
+                    && matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Break | Plan::Return(_)))))
         },
     )]
     pub(super) fn broken(
@@ -773,7 +783,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(_) => Plan::Break,
         };
         exhausted(site, &cursor)?;
-        let _first = self.breaking.insert(site.at.node);
+        let _first = self.cx.breaking.insert(site.at.node);
         self.plan(site, plan);
 
         Ok(())
@@ -803,9 +813,9 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (self.looping.contains(&site.at.node)
-                    && self.leaving.contains(&site.at.node)
-                    && matches!(self.plans.get(site.at.node), Some(&Plan::Reenter(_))))
+                || (self.cx.looping.contains(&site.at.node)
+                    && self.cx.leaving.contains(&site.at.node)
+                    && matches!(self.cx.plans.get(site.at.node), Some(&Plan::Reenter(_))))
         },
     )]
     pub(super) fn continued(
@@ -819,7 +829,7 @@ impl<'source> Lowerer<'_, 'source>
         let _keyword = cursor.tile(TileName::CONTINUE);
         exhausted(site, &cursor)?;
         let reentry = self.reentry(frame, site)?;
-        let _exit = self.leaving.insert(site.at.node);
+        let _exit = self.cx.leaving.insert(site.at.node);
         self.plan(site, Plan::Reenter(reentry));
 
         Ok(())
@@ -857,22 +867,29 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<Reentry, LoweringRefusal<'source>>
     {
-        let Maybe::Present(own) = self.scope.resolve(frame, iteration(), &mut self.fuel)?
+        let Maybe::Present(own) = self
+            .cx
+            .scope
+            .resolve(frame, iteration(), &mut self.cx.fuel)?
         else {
             return Err(LoweringRefusal::OutsideLoop {
                 span: site.at.span,
                 exit: LoopExit::Continue,
             });
         };
-        let tail = match self.scope.index_of(frame, remaining(), &mut self.fuel)? {
+        let tail = match self
+            .cx
+            .scope
+            .index_of(frame, remaining(), &mut self.cx.fuel)?
+        {
             Maybe::Present(tail) if u32::from(tail) < u32::from(own.index) => Maybe::Present(tail),
             Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(passed::Absent::Unlisted),
         };
-        let carried = self.reheld.get(&own.binder).map_or(
+        let carried = self.cx.reheld.get(&own.binder).map_or(
             Maybe::Absent(carried::Absent::Unthreaded),
             |held| match held
                 .last()
-                .map(|&innermost| self.scope.linear_index(frame, innermost))
+                .map(|&innermost| self.cx.scope.linear_index(frame, innermost))
             {
                 Some(Maybe::Present(innermost)) => Maybe::Present(Carried {
                     innermost,
@@ -913,16 +930,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
     #[spec(
         ensures: |ret| match ret {
-            | Ok(()) => self.exitable.contains(&site.at.node) && self.looping.contains(&site.at.node),
+            | Ok(()) => self.cx.exitable.contains(&site.at.node) && self.cx.looping.contains(&site.at.node),
             | Err(LoweringRefusal::OutsideLoop { span, exit: refused }) => {
-                span == site.at.span && refused == exit && !self.looping.contains(&site.at.node)
-                    && !self.looped_past.contains(&site.at.node)
+                span == site.at.span && refused == exit && !self.cx.looping.contains(&site.at.node)
+                    && !self.cx.looped_past.contains(&site.at.node)
             },
             | Err(LoweringRefusal::AcrossHandler { span, .. }) => {
-                span == site.at.span && !self.looping.contains(&site.at.node)
-                    && self.looped_past.contains(&site.at.node)
+                span == site.at.span && !self.cx.looping.contains(&site.at.node)
+                    && self.cx.looped_past.contains(&site.at.node)
             },
-            | Err(_) => !self.exitable.contains(&site.at.node),
+            | Err(_) => !self.cx.exitable.contains(&site.at.node),
         },
     )]
     fn on_loop_path(
@@ -931,11 +948,11 @@ impl<'source> Lowerer<'_, 'source>
         exit: LoopExit,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if !self.exitable.contains(&site.at.node) {
+        if !self.cx.exitable.contains(&site.at.node) {
             return Err(site.out(FragmentBoundary::NotInTail));
         }
-        if !self.looping.contains(&site.at.node) {
-            if self.looped_past.contains(&site.at.node) {
+        if !self.cx.looping.contains(&site.at.node) {
+            if self.cx.looped_past.contains(&site.at.node) {
                 return Err(LoweringRefusal::AcrossHandler {
                     span: site.at.span,
                     exit: match exit {
@@ -981,9 +998,9 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (!self.iterated.contains(&site.at.node)
+                || (!self.cx.iterated.contains(&site.at.node)
                     && (self.leaves_at(site.at.node) == Leaves::Always)
-                        != self.reentered.contains_key(&site.at.node))
+                        != self.cx.reentered.contains_key(&site.at.node))
         },
     )]
     pub(super) fn reenter(
@@ -991,13 +1008,13 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _ended = self.iterated.remove(&site.at.node);
+        let _ended = self.cx.iterated.remove(&site.at.node);
         let leaves = self.leaves_at(site.at.node);
         if leaves == Leaves::Always {
             return Ok(());
         }
         let reentry = self.reentry(site.reading.frame(), site)?;
-        let budget = self.fuel.budget();
+        let budget = self.cx.fuel.budget();
         let past = |index: DeBruijnIndex| {
             u32::from(index)
                 .checked_add(1_u32)
@@ -1012,12 +1029,12 @@ impl<'source> Lowerer<'_, 'source>
             },
             carried: reentry.carried,
         };
-        let _first = self.reentered.insert(site.at.node, under);
+        let _first = self.cx.reentered.insert(site.at.node, under);
         if leaves == Leaves::Never {
-            let _discarded = self.answers.remove(&site.at.node);
+            let _discarded = self.cx.answers.remove(&site.at.node);
         }
         else {
-            let _joined = self.joined.insert(site.at.node);
+            let _joined = self.cx.joined.insert(site.at.node);
         }
 
         Ok(())
@@ -1212,7 +1229,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> ComputationId
     {
-        let Some(carries) = self.carries.get(&body.last)
+        let Some(carries) = self.cx.carries.get(&body.last)
         else {
             let id = sink
                 .arena

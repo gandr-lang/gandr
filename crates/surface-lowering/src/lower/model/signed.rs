@@ -152,18 +152,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     #[spec(
-        captures: before = self.collected.slots.len(),
-        ensures: self.collected.slots.len() == before,
+        captures: before = self.cx.collected.slots.len(),
+        ensures: self.cx.collected.slots.len() == before,
     )]
     pub(in crate::lower) fn match_signatures(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        let source = self.current.source;
+        let source = self.cx.current.source;
         let mut refusals = Vec::new();
         let mut untranslated = Vec::new();
-        for import in self.collected.imports.declarations() {
+        for import in self.cx.collected.imports.declarations() {
             let (
                 &Maybe::Present(ref signature),
                 ImportResolution::Path(ImportTarget::Source(target)),
@@ -207,11 +207,11 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
         }
-        self.untranslated.extend(untranslated);
+        self.cx.untranslated.extend(untranslated);
         for verdict in refusals {
-            for (index, slot) in self.collected.slots.iter().enumerate() {
-                if self.collected.unit.source_at(slot.named.span.start()) != source
-                    || self.collected.stratum_of(slot.container) != Stratum::Module
+            for (index, slot) in self.cx.collected.slots.iter().enumerate() {
+                if self.cx.collected.unit.source_at(slot.named.span.start()) != source
+                    || self.cx.collected.stratum_of(slot.container) != Stratum::Module
                     || matches!(slot.refusal, Maybe::Present(_))
                 {
                     continue;
@@ -226,7 +226,11 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     Unmatched::Unnamed(refusal) => refusal,
                 };
-                let _first = self.faults.entry(SlotIndex::from(index)).or_insert(refusal);
+                let _first = self
+                    .cx
+                    .faults
+                    .entry(SlotIndex::from(index))
+                    .or_insert(refusal);
             }
         }
     }
@@ -269,7 +273,7 @@ impl<'source> Lowerer<'_, 'source>
                     ref codomain,
                 },
             ..
-        }) = self.collected.functors.get(usize::from(flow))
+        }) = self.cx.collected.functors.get(usize::from(flow))
         else {
             return Maybe::Absent(matched::Absent::Untranslated);
         };
@@ -330,11 +334,12 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(matched::Absent::Held);
         }
         let published: Vec<(SurfaceName<'source>, SlotIndex)> = self
+            .cx
             .collected
             .by_name
             .range((Container::TopLevel(target), SurfaceName::from("")) ..)
             .take_while(|&(&(container, _), _)| container == Container::TopLevel(target))
-            .filter(|&(_, &slot)| self.collected.slot_visibility(slot) == Visibility::Public)
+            .filter(|&(_, &slot)| self.cx.collected.slot_visibility(slot) == Visibility::Public)
             .map(|(&(_, name), &slot)| (name, slot))
             .collect();
         let members: Vec<SurfaceName<'source>> = published.iter().map(|&(name, _)| name).collect();
@@ -355,7 +360,7 @@ impl<'source> Lowerer<'_, 'source>
                 let first = published
                     .iter()
                     .find(|&&(name, _)| name == named)
-                    .and_then(|&(_, slot)| self.collected.slots.get(usize::from(slot)))
+                    .and_then(|&(_, slot)| self.cx.collected.slots.get(usize::from(slot)))
                     .map_or(given.span, |entry| entry.named.span);
                 Unmatched::Unnamed(LoweringRefusal::DuplicateDefinition {
                     span: given.span,
@@ -408,14 +413,15 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Unmatched<'source>, matched::Absent>
     {
         let name = self.name_at(named);
-        let presentation =
-            match self
-                .collected
-                .presented_theory_in(named.span.start(), prefix, named.span, name)
-            {
-                Ok((_, presentation)) => presentation,
-                Err(refusal) => return Maybe::Present(Unmatched::Unnamed(refusal)),
-            };
+        let presentation = match self.cx.collected.presented_theory_in(
+            named.span.start(),
+            prefix,
+            named.span,
+            name,
+        ) {
+            Ok((_, presentation)) => presentation,
+            Err(refusal) => return Maybe::Present(Unmatched::Unnamed(refusal)),
+        };
         let Ok(derived) = derive(presentation)
         else {
             return Maybe::Present(Unmatched::Member(name, MatchFault::Unstated));
@@ -432,11 +438,14 @@ impl<'source> Lowerer<'_, 'source>
             let member = self.name_at(component.named);
             let fault = |fault| Maybe::Present(Unmatched::Member(member, fault));
             let Some(position) = self
+                .cx
                 .collected
                 .by_name
                 .get(&(Container::TopLevel(target), *renaming.read(&member)))
                 .copied()
-                .filter(|&position| self.collected.slot_visibility(position) == Visibility::Public)
+                .filter(|&position| {
+                    self.cx.collected.slot_visibility(position) == Visibility::Public
+                })
             else {
                 return fault(MatchFault::Missing);
             };
@@ -490,10 +499,12 @@ impl<'source> Lowerer<'_, 'source>
     {
         let derived = |prefix: &[(ByteSpan, SurfaceName<'source>)], named: Placed| {
             let name = self.name_at(named);
-            match self
-                .collected
-                .presented_theory_in(named.span.start(), prefix, named.span, name)
-            {
+            match self.cx.collected.presented_theory_in(
+                named.span.start(),
+                prefix,
+                named.span,
+                name,
+            ) {
                 Ok((_, presentation)) => derive(presentation)
                     .map_err(|_underived| Unmatched::Member(name, MatchFault::Unstated)),
                 Err(refusal) => Err(Unmatched::Unnamed(refusal)),
@@ -562,13 +573,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::match_signatures`].
     /// - witness: `tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || usize::from(position) < self.collected.slots.len())]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || usize::from(position) < self.cx.collected.slots.len())]
     fn written_type(
         &self,
         position: SlotIndex,
     ) -> Maybe<ValueTypeId, unwritten::Absent>
     {
-        let Some(slot) = self.collected.slots.get(usize::from(position))
+        let Some(slot) = self.cx.collected.slots.get(usize::from(position))
         else {
             return Maybe::Absent(unwritten::Absent::Unwritten);
         };

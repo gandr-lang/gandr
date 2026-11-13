@@ -683,10 +683,10 @@ impl ClosureLowering
         let (first, prior) = match *prefix {
             Prefix::Suspended { ref state, .. } => (
                 NominalSerial::from(
-                    u64::try_from(state.lowerer.collected.descriptions.count().0)
+                    u64::try_from(state.lowerer.cx.collected.descriptions.count().0)
                         .unwrap_or(u64::MAX),
                 ),
-                Some(&state.lowerer.collected.descriptions),
+                Some(&state.lowerer.cx.collected.descriptions),
             ),
             // A refused closure answers its refusal below, however the
             // document's descriptions are numbered and whatever it includes.

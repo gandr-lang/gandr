@@ -200,14 +200,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReceiverMode`].
     /// - witness: `lower::method::tests::a_receiver_is_a_typed_first_self`
-    #[spec(ensures: |ret| ret.is_none() || matches!(self.collected.owner_of(site.at.node), Maybe::Present(_)))]
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.cx.collected.owner_of(site.at.node), Maybe::Present(_)))]
     pub(super) fn receiver_mode(
         &self,
         site: Site,
     ) -> Option<ReceiverMode>
     {
-        match self.collected.owner_of(site.at.node) {
-            Maybe::Present(slot) => self.collected.receivers.get(&slot).copied(),
+        match self.cx.collected.owner_of(site.at.node) {
+            Maybe::Present(slot) => self.cx.collected.receivers.get(&slot).copied(),
             Maybe::Absent(_) => None,
         }
     }
@@ -319,7 +319,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, declared.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, declared.node, &mut pieces)?;
 
         Ok(match *pieces.pieces.as_slice() {
             [
@@ -395,7 +395,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a written-through method's body reads `self` as its
     ///   held slot.
     /// - witness: `lower::method::tests::a_written_through_body_returns_its_receiver`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(held, _)| matches!(held, Frame::Inner(slot) if self.held.contains(&slot))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(held, _)| matches!(held, Frame::Inner(slot) if self.cx.held.contains(&slot))))]
     pub(super) fn hold_receiver(
         &mut self,
         function: Site,
@@ -404,8 +404,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(Frame, HeldReceiver), LoweringRefusal<'source>>
     {
         let name = SurfaceName::from("self");
-        let found = self.scope.resolve(frame, name, &mut self.fuel)?;
-        let parameters = self.parameters.read(parameters);
+        let found = self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?;
+        let parameters = self.cx.parameters.read(parameters);
         let place = match found {
             Maybe::Present(bound) => parameters
                 .iter()
@@ -418,11 +418,11 @@ impl<'source> Lowerer<'_, 'source>
             return Err(function.out(FragmentBoundary::Held));
         };
         let site = match parameters.get(position) {
-            Some(parameter) => self.scope.site(parameter.frame),
+            Some(parameter) => self.cx.scope.site(parameter.frame),
             None => Maybe::Absent(binder_site::Absent::Unwritten),
         };
-        let slot = self.scope.extend_linear(frame, name, site);
-        let _held = self.held.insert(slot);
+        let slot = self.cx.scope.extend_linear(frame, name, site);
+        let _held = self.cx.held.insert(slot);
 
         Ok((Frame::Inner(slot), HeldReceiver { position, index }))
     }
@@ -442,7 +442,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::method_at`].
     /// - witness: `lower::method::tests::each_mode_lowers_to_its_access`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Method(_))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Method(_))))]
     pub(super) fn method(
         &mut self,
         site: Site,
@@ -476,7 +476,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   and after one of a method that reads its receiver.
     /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     /// - witness: `lower::method::tests::a_view_block_after_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Method(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Method(_))))]
     pub(super) fn view_call(
         &mut self,
         site: Site,
@@ -495,7 +495,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(refused);
         };
         let mut called = Pieces::new();
-        read_pieces(self.pbg, self.tree, call.node, &mut called)?;
+        read_pieces(self.cx.pbg, self.cx.tree, call.node, &mut called)?;
         let head = Cursor::new(&called.pieces, call.span);
         match self.method_at(site, &head, Some((call.node, &mut cursor)))? {
             Planned(true) => Ok(()),
@@ -543,7 +543,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `lower::method::tests::a_receiver_is_a_typed_first_self`
     /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Method(_))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Method(_))))]
     fn method_at(
         &mut self,
         site: Site,
@@ -561,7 +561,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, head.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut pieces)?;
         let &[
             Piece::Operand(target),
             Piece::Tile {
@@ -581,7 +581,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         };
         let method = self.name_at(selected);
-        let Container::TopLevel(here) = self.collected.top(selected.span.start())
+        let Container::TopLevel(here) = self.cx.collected.top(selected.span.start())
         else {
             return Ok(Planned(false));
         };
@@ -609,12 +609,12 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(resolved) => resolved,
             Maybe::Absent(_) => return Ok(Planned(false)),
         };
-        let Some(entry) = self.collected.slots.get(usize::from(slot))
+        let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::MethodCall)));
         };
         let (constant, declared) = (entry.constant, entry.named.span);
-        if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        if let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
             && slot >= own
         {
             return Err(LoweringRefusal::ForwardMemberReference {
@@ -631,7 +631,7 @@ impl<'source> Lowerer<'_, 'source>
             declared: Maybe::Absent(crate::resolve::binder_type::Absent::Untyped),
         });
         let held = match resolved {
-            Resolved::Binder(bound) if self.held.contains(&bound.binder) => Some(bound.index),
+            Resolved::Binder(bound) if self.cx.held.contains(&bound.binder) => Some(bound.index),
             Resolved::Binder(_) | Resolved::Declaration { .. } => None,
         };
         let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
@@ -643,21 +643,27 @@ impl<'source> Lowerer<'_, 'source>
         let (receiving, inner) = match (mode, held) {
             (ReceiverMode::Shared, Some(held)) => (
                 Receiving::Read { held },
-                Frame::Inner(
-                    self.scope
-                        .extend_linear(frame, SurfaceName::from(""), unwritten()),
-                ),
+                Frame::Inner(self.cx.scope.extend_linear(
+                    frame,
+                    SurfaceName::from(""),
+                    unwritten(),
+                )),
             ),
             (ReceiverMode::Exclusive, Some(held)) => (
                 Receiving::Written { held },
-                Frame::Inner(
-                    self.scope
-                        .extend_linear(frame, SurfaceName::from(""), unwritten()),
-                ),
+                Frame::Inner(self.cx.scope.extend_linear(
+                    frame,
+                    SurfaceName::from(""),
+                    unwritten(),
+                )),
             ),
             (ReceiverMode::Consumed, Some(held)) => (
                 Receiving::Taken { held },
-                Frame::Inner(self.scope.extend(frame, SurfaceName::from(""), unwritten())),
+                Frame::Inner(
+                    self.cx
+                        .scope
+                        .extend(frame, SurfaceName::from(""), unwritten()),
+                ),
             ),
             (ReceiverMode::Deduced, Some(held)) => {
                 let view = match view {
@@ -669,21 +675,24 @@ impl<'source> Lowerer<'_, 'source>
                         };
                         let name = self.name_at(viewer);
                         self.note_binder(viewer, frame, name)?;
-                        let index = self.scope.extend(frame, SurfaceName::from(""), unwritten());
-                        let binder = self.scope.extend_linear(
+                        let index = self
+                            .cx
+                            .scope
+                            .extend(frame, SurfaceName::from(""), unwritten());
+                        let binder = self.cx.scope.extend_linear(
                             Frame::Inner(index),
                             name,
                             Maybe::Present(viewer.span),
                         );
                         let body = self.block(site, block, Frame::Inner(binder))?;
-                        let _result = self.results.insert(body.last);
+                        let _result = self.cx.results.insert(body.last);
                         Maybe::Present(ViewBlock { binder, body, call })
                     },
                     None => Maybe::Absent(unviewed::Absent::Read),
                 };
                 (
                     Receiving::Viewed { held, view },
-                    Frame::Inner(self.scope.extend_linear(
+                    Frame::Inner(self.cx.scope.extend_linear(
                         frame,
                         SurfaceName::from(""),
                         unwritten(),
@@ -698,14 +707,14 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(receiver.out(FragmentBoundary::Held));
             },
         };
-        let start = self.operands.entries().len();
-        arguments(site, &mut ahead, &mut self.operands)?;
+        let start = self.cx.operands.entries().len();
+        arguments(site, &mut ahead, &mut self.cx.operands)?;
         let written = Stretch {
             start,
-            end: self.operands.entries().len(),
+            end: self.cx.operands.entries().len(),
         };
         for position in written.start .. written.end {
-            if let Some(&argument) = self.operands.entries().get(position) {
+            if let Some(&argument) = self.cx.operands.entries().get(position) {
                 self.read(argument, Reading::Value(inner));
             }
         }
@@ -750,8 +759,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<SurfaceName<'source>, LoweringRefusal<'source>>
     {
         let name = self.name_at(written);
-        let bound = match self.collected.owner_of(site.at.node) {
+        let bound = match self.cx.collected.owner_of(site.at.node) {
             Maybe::Present(slot) => self
+                .cx
                 .mode_binders
                 .get(&slot)
                 .is_some_and(|modes| modes.contains(&name)),
@@ -792,7 +802,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   result of another shape.
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || !self.view_types.is_empty())]
+    #[spec(ensures: |ret| ret.is_err() || !self.cx.view_types.is_empty())]
     pub(super) fn view_result(
         &mut self,
         result: Placed,
@@ -805,7 +815,7 @@ impl<'source> Lowerer<'_, 'source>
         let view = match self.form_at(result)? {
             Some((_, Former::StagedType)) => result,
             Some((_, Former::ReturnerType)) => {
-                read_pieces(self.pbg, self.tree, result.node, &mut pieces)?;
+                read_pieces(self.cx.pbg, self.cx.tree, result.node, &mut pieces)?;
                 let &[Piece::Tile { .. }, Piece::Operand(view)] = pieces.pieces.as_slice()
                 else {
                     return Err(refused);
@@ -818,7 +828,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             Some(_) | None => return Err(refused),
         };
-        read_pieces(self.pbg, self.tree, view.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, view.node, &mut pieces)?;
         let &[
             Piece::Operand(head),
             Piece::Tile {
@@ -854,7 +864,7 @@ impl<'source> Lowerer<'_, 'source>
         if self.name_at(written) != mode {
             return Err(LoweringRefusal::ViewNotPlace { span: written.span });
         }
-        let _fresh = self.view_types.insert(view.node);
+        let _fresh = self.cx.view_types.insert(view.node);
         self.read(element.node, Reading::ValueType(frame));
 
         Ok(element.node)
@@ -883,15 +893,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
     /// - witness: `lower::method::tests::an_index_reads_its_held_element`
     /// - witness: `lower::method::tests::an_index_of_an_unheld_list_holds_it_for_the_read_2670`
-    #[spec(ensures: |ret| ret.is_err() || self.view_places.contains_key(&site.at.node)
-        || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. } | super::access::Accessed::Unheld { .. }))))]
+    #[spec(ensures: |ret| ret.is_err() || self.cx.view_places.contains_key(&site.at.node)
+        || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. } | super::access::Accessed::Unheld { .. }))))]
     pub(super) fn index_form(
         &mut self,
         site: Site,
         cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if let Some(&place) = self.view_places.get(&site.at.node) {
+        if let Some(&place) = self.cx.view_places.get(&site.at.node) {
             return self.view_place(site, cursor, place);
         }
         match self.lent_head(site)? {
@@ -921,7 +931,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   parameter's name no slot holds.
     /// - witness: `lower::method::tests::an_index_reads_its_held_element`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |lent| match *lent {
-        | Maybe::Present(bound) => self.held.contains(&bound.binder),
+        | Maybe::Present(bound) => self.cx.held.contains(&bound.binder),
         | Maybe::Absent(_) => true,
     }))]
     pub(super) fn lent_head(
@@ -929,13 +939,13 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<Maybe<Bound, unlent::Absent>, LoweringRefusal<'source>>
     {
-        let mut scratch = core::mem::take(&mut self.scratch);
-        let read = read_pieces(self.pbg, self.tree, site.at.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let read = read_pieces(self.cx.pbg, self.cx.tree, site.at.node, &mut scratch);
         let head = match *scratch.pieces.as_slice() {
             [Piece::Operand(head), ..] => Maybe::Present(head),
             _ => Maybe::Absent(unlent::Absent::Unnamed),
         };
-        self.scratch = scratch;
+        self.cx.scratch = scratch;
         read?;
         let Maybe::Present(head) = head
         else {
@@ -991,8 +1001,8 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<Maybe<ByteSpan, unindexing::Absent>, LoweringRefusal<'source>>
     {
-        let mut scratch = core::mem::take(&mut self.scratch);
-        let read = read_pieces(self.pbg, self.tree, site.at.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let read = read_pieces(self.cx.pbg, self.cx.tree, site.at.node, &mut scratch);
         let parts = match *scratch.pieces.as_slice() {
             [
                 Piece::Operand(head),
@@ -1005,7 +1015,7 @@ impl<'source> Lowerer<'_, 'source>
             ] => Maybe::Present((head, bracket, resident)),
             _ => Maybe::Absent(unindexing::Absent::Unnamed),
         };
-        self.scratch = scratch;
+        self.cx.scratch = scratch;
         read?;
         let Maybe::Present((head, bracket, resident)) = parts
         else {
@@ -1015,7 +1025,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Maybe::Absent(unindexing::Absent::Unnamed));
         }
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, resident.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, resident.node, &mut pieces)?;
         if let [Piece::Tile { label, .. }] = *pieces.pieces.as_slice()
             && (label == TileName::LESS_THAN || label == TileName::GREATER_THAN)
         {
@@ -1023,10 +1033,11 @@ impl<'source> Lowerer<'_, 'source>
         }
         let name = self.name_at(head);
         match self
+            .cx
             .scope
-            .resolve(site.reading.frame(), name, &mut self.fuel)?
+            .resolve(site.reading.frame(), name, &mut self.cx.fuel)?
         {
-            Maybe::Present(bound) if !self.recursions.contains_key(&bound.binder) => {
+            Maybe::Present(bound) if !self.cx.recursions.contains_key(&bound.binder) => {
                 Ok(Maybe::Present(bracket.span))
             },
             Maybe::Present(_) | Maybe::Absent(_) => Ok(Maybe::Absent(unindexing::Absent::Static)),
@@ -1056,7 +1067,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a held list read at a name and at a number, each
     ///   asserted as the access it mints.
     /// - witness: `lower::method::tests::an_index_reads_its_held_element`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. }))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. }))))]
     pub(super) fn element(
         &mut self,
         site: Site,
@@ -1105,7 +1116,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a parameter's list read at a name, asserted as the
     ///   hold and the access it mints.
     /// - witness: `lower::method::tests::an_index_of_an_unheld_list_holds_it_for_the_read_2670`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Unheld { .. }))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Unheld { .. }))))]
     pub(super) fn unheld_element(
         &mut self,
         site: Site,
@@ -1156,7 +1167,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
     /// - witness: `lower::method::tests::a_bare_index_is_refused_naming_the_selector_4944`
-    #[spec(ensures: |ret| ret.is_err() || self.view_places.get(&block.last) == Some(&ViewPlace { element }))]
+    #[spec(ensures: |ret| ret.is_err() || self.cx.view_places.get(&block.last) == Some(&ViewPlace { element }))]
     pub(super) fn view_body(
         &mut self,
         function: Site,
@@ -1164,7 +1175,7 @@ impl<'source> Lowerer<'_, 'source>
         element: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Some(node) = self.tree.node(block.last)
+        let Some(node) = self.cx.tree.node(block.last)
         else {
             return Err(LoweringRefusal::ViewNotPlace {
                 span: function.at.span,
@@ -1174,7 +1185,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut pieces = Pieces::new();
         let shaped = match self.form_at(last)? {
             Some((_, Former::Instantiation)) => {
-                read_pieces(self.pbg, self.tree, last.node, &mut pieces)?;
+                read_pieces(self.cx.pbg, self.cx.tree, last.node, &mut pieces)?;
                 if let [
                     Piece::Operand(head),
                     Piece::Tile {
@@ -1194,15 +1205,18 @@ impl<'source> Lowerer<'_, 'source>
                 false
             },
             Some((_, Former::Access)) => {
-                read_pieces(self.pbg, self.tree, last.node, &mut pieces)?;
+                read_pieces(self.cx.pbg, self.cx.tree, last.node, &mut pieces)?;
                 indexed(&pieces).is_some()
             },
             _ => false,
         };
-        if !self.statements.read(block.statements).is_empty() || !shaped {
+        if !self.cx.statements.read(block.statements).is_empty() || !shaped {
             return Err(LoweringRefusal::ViewNotPlace { span: last.span });
         }
-        let _first = self.view_places.insert(block.last, ViewPlace { element });
+        let _first = self
+            .cx
+            .view_places
+            .insert(block.last, ViewPlace { element });
 
         Ok(())
     }
@@ -1232,7 +1246,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   place of another name.
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Place { .. }))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Place { .. }))))]
     pub(super) fn view_place(
         &mut self,
         site: Site,
@@ -1309,7 +1323,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `tests::namespace::a_method_of_a_source_not_imported_is_out_of_scope`
     /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(slot, mode, _)| self.collected.receivers.get(&slot) == Some(&mode))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(slot, mode, _)| self.cx.collected.receivers.get(&slot) == Some(&mode))))]
     fn methods_named(
         &mut self,
         method: SurfaceName<'source>,
@@ -1325,13 +1339,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mut found = Vec::new();
         let receivers: Vec<(SlotIndex, ReceiverMode)> = self
+            .cx
             .collected
             .receivers
             .iter()
             .map(|(&slot, &mode)| (slot, mode))
             .collect();
         for (slot, mode) in receivers {
-            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -1346,8 +1361,8 @@ impl<'source> Lowerer<'_, 'source>
             let mut declared_in = None;
             let mut at = Some(module);
             while let Some(structure) = at {
-                self.fuel.spend()?;
-                let Some(held) = self.collected.structures.get(usize::from(structure))
+                self.cx.fuel.spend()?;
+                let Some(held) = self.cx.collected.structures.get(usize::from(structure))
                 else {
                     break;
                 };
@@ -1363,15 +1378,15 @@ impl<'source> Lowerer<'_, 'source>
             segments.reverse();
             segments.push(Segment::from(method.as_ref()));
             let path = NamePath::from(segments);
-            if declared_in.is_some_and(|source| seen(&self.collected, source, slot))
-                && self.recognition.resolve_path(&path)
+            if declared_in.is_some_and(|source| seen(&self.cx.collected, source, slot))
+                && self.cx.recognition.resolve_path(&path)
                     == PathResolution::Complete(Recognized::ModuleComponent)
-                && self.exported.get(&path) == Some(&slot)
-                && let Some(named) = self.collected.structures.get(usize::from(module))
+                && self.cx.exported.get(&path) == Some(&slot)
+                && let Some(named) = self.cx.collected.structures.get(usize::from(module))
             {
                 found.push((slot, mode, named.name));
                 if let Some(source) = declared_in {
-                    self.collected.reach_source(here, source);
+                    self.cx.collected.reach_source(here, source);
                 }
             }
         }
@@ -1408,7 +1423,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = self.operands.read(called.arguments);
+        let written = self.cx.operands.read(called.arguments);
         let mut passed = Vec::with_capacity(written.len());
         for &argument in written {
             match self.value_at(argument) {
@@ -1534,7 +1549,7 @@ impl<'source> Lowerer<'_, 'source>
                             Maybe::Present(body) => body,
                             Maybe::Absent(reason) => return Maybe::Absent(reason),
                         };
-                        let mode = if self.ended_views.contains(&block.binder) {
+                        let mode = if self.cx.ended_views.contains(&block.binder) {
                             let unit = sink.arena.value_unit();
                             sink.origins.record_value(unit, inner);
                             let unwind = sink.arena.computation_return(unit);
@@ -1672,7 +1687,7 @@ impl<'source> Lowerer<'_, 'source>
             .get(receiver.position ..)
             .unwrap_or_default()
             .iter()
-            .filter(|parameter| bool::from(self.scope.mentioned(parameter.frame)))
+            .filter(|parameter| bool::from(self.cx.scope.mentioned(parameter.frame)))
             .count();
         let past = Binders::from(u32::try_from(past).unwrap_or(u32::MAX));
         let carried = shift_value_type(sink.arena, held, past).settle(sink.arena);

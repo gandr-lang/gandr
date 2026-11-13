@@ -89,7 +89,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
     /// - witness: `lower::conditional::tests::an_else_if_tests_its_own_condition_in_the_false_branch`
     #[spec(
-        ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::If(_))),
+        ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::If(_))),
     )]
     pub(super) fn conditional(
         &mut self,
@@ -100,12 +100,12 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::Computation)?;
         let (condition, then, inner, answer) = self.branch(site, &mut cursor, frame)?;
         let otherwise = if let Maybe::Present(_) = cursor.tile(TileName::IF) {
-            let start = self.else_ifs.mark();
+            let start = self.cx.else_ifs.mark();
             let (condition, then, mut below, answer) = self.branch(site, &mut cursor, inner)?;
             let mut last_answer = answer;
             while let Maybe::Present(_) = cursor.tile(TileName::IF) {
                 let (condition, then, next, answer) = self.branch(site, &mut cursor, below)?;
-                self.else_ifs.push((condition, then, answer));
+                self.cx.else_ifs.push((condition, then, answer));
                 below = next;
                 last_answer = answer;
             }
@@ -114,7 +114,7 @@ impl<'source> Lowerer<'_, 'source>
             Otherwise::If {
                 condition,
                 then,
-                rest: self.else_ifs.since(start),
+                rest: self.cx.else_ifs.since(start),
                 otherwise,
                 answer,
             }
@@ -159,7 +159,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::conditional`].
     /// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(condition, ..)| self.tested.contains(&condition)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(condition, ..)| self.cx.tested.contains(&condition)))]
     fn branch(
         &mut self,
         site: Site,
@@ -173,11 +173,11 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(_) => Maybe::Present(site.one(cursor.operands())?),
             Maybe::Absent(_) => Maybe::Absent(answered::Absent::Unstated),
         };
-        let _tested = self.tested.insert(condition.node);
+        let _tested = self.cx.tested.insert(condition.node);
         self.read(condition.node, Reading::Computation(frame));
         let mut inner = frame;
         for _binder in 0_u8 .. 2_u8 {
-            inner = Frame::Inner(self.scope.extend(
+            inner = Frame::Inner(self.cx.scope.extend(
                 inner,
                 SurfaceName::from(""),
                 Maybe::Absent(binder_site::Absent::Unwritten),
@@ -237,7 +237,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a conditional ending a function whose branches both
     ///   return checks, as one whose branches end in values does.
     /// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
-    #[spec(ensures: |ret| ret.is_err() || !self.exitable.contains(&site.at.node) || self.exitable.contains(&block.last))]
+    #[spec(ensures: |ret| ret.is_err() || !self.cx.exitable.contains(&site.at.node) || self.cx.exitable.contains(&block.last))]
     fn ends(
         &mut self,
         site: Site,
@@ -248,16 +248,17 @@ impl<'source> Lowerer<'_, 'source>
         let answer = match answer {
             Maybe::Present(written) => Maybe::Present(written),
             Maybe::Absent(reason) => self
+                .cx
                 .answers
                 .get(&site.at.node)
                 .copied()
                 .map_or(Maybe::Absent(reason), Maybe::Present),
         };
         if let Maybe::Present(stated) = answer {
-            let _first = self.answers.insert(block.last, stated);
+            let _first = self.cx.answers.insert(block.last, stated);
         }
         self.pass_paths(site.at.node, block.last);
-        if self.exitable.contains(&site.at.node) {
+        if self.cx.exitable.contains(&site.at.node) {
             self.paths_through(site, block, answer)?;
         }
         Ok(())
@@ -305,7 +306,7 @@ impl<'source> Lowerer<'_, 'source>
                 answer,
             } => {
                 let mut otherwise = self.mint_block(otherwise, sink);
-                for &(condition, then, answer) in self.else_ifs.read(rest).iter().rev() {
+                for &(condition, then, answer) in self.cx.else_ifs.read(rest).iter().rev() {
                     otherwise = match (self.mint_block(then, sink), otherwise) {
                         (Maybe::Present(then), Maybe::Present(otherwise)) => {
                             self.tested((condition, answer), [then, otherwise], sink, origin)

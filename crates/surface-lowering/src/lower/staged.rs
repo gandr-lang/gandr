@@ -180,7 +180,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::staged::tests::a_bound_or_stage_naming_no_binder_is_refused_by_name`
     /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
     /// - witness: `lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
-    #[spec(captures: before = self.stage_bounds.len(), ensures: |ret| ret.is_err() || self.stage_bounds.len() >= before)]
+    #[spec(captures: before = self.cx.stage_bounds.len(), ensures: |ret| ret.is_err() || self.cx.stage_bounds.len() >= before)]
     pub(super) fn stage_telescope(
         &mut self,
         site: Site,
@@ -264,12 +264,12 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             }
         }
-        if let Maybe::Present(slot) = self.collected.owner_of(site.at.node) {
+        if let Maybe::Present(slot) = self.cx.collected.owner_of(site.at.node) {
             if !regions.is_empty() {
-                let _first = self.region_binders.insert(slot, regions);
+                let _first = self.cx.region_binders.insert(slot, regions);
             }
             if !modes.is_empty() {
-                let _first = self.mode_binders.insert(slot, modes);
+                let _first = self.cx.mode_binders.insert(slot, modes);
             }
         }
         if bounds.is_empty() {
@@ -285,12 +285,12 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         pending.reverse();
-        let mut scratch = core::mem::take(&mut self.scratch);
+        let mut scratch = core::mem::take(&mut self.cx.scratch);
         let marked = self.mark_stages(&names, pending, &mut scratch);
-        self.scratch = scratch;
+        self.cx.scratch = scratch;
         marked?;
         let key = self.key_at(site.at.node);
-        let _first = self.stage_bounds.insert(key, bounds);
+        let _first = self.cx.stage_bounds.insert(key, bounds);
 
         Ok(())
     }
@@ -310,18 +310,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a parameter's kept type and a body's value name the
     ///   binder of their definition's telescope.
     /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
-    #[spec(ensures: |ret| ret.is_none() || matches!(self.collected.owner_of(at), Maybe::Present(_)))]
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.cx.collected.owner_of(at), Maybe::Present(_)))]
     pub(super) fn region_binder(
         &self,
         at: NodeIndex,
         name: SurfaceName<'source>,
     ) -> Option<RegionBinder>
     {
-        let Maybe::Present(slot) = self.collected.owner_of(at)
+        let Maybe::Present(slot) = self.cx.collected.owner_of(at)
         else {
             return None;
         };
-        self.region_binders.get(&slot)?.get(&name).copied()
+        self.cx.region_binders.get(&slot)?.get(&name).copied()
     }
 
     /// The stages a call at `site` supplies the stage binders of the function
@@ -349,7 +349,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   binder files the stage at the callee's binder; a supply naming no
     ///   binder of the caller is refused at the name.
     /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |staged| staged.len() <= self.collected.stage_binders.get(&callee).map_or(0, Vec::len)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |staged| staged.len() <= self.cx.collected.stage_binders.get(&callee).map_or(0, Vec::len)))]
     pub(super) fn stage_supplies(
         &mut self,
         site: Site,
@@ -366,6 +366,7 @@ impl<'source> Lowerer<'_, 'source>
                 .collect()
         };
         let Some(callee) = self
+            .cx
             .collected
             .stage_binders
             .get(&callee)
@@ -373,8 +374,9 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(staged);
         };
-        let caller = match self.collected.owner_of(site.at.node) {
+        let caller = match self.cx.collected.owner_of(site.at.node) {
             Maybe::Present(owner) => self
+                .cx
                 .collected
                 .stage_binders
                 .get(&owner)
@@ -382,14 +384,14 @@ impl<'source> Lowerer<'_, 'source>
                 .unwrap_or_default(),
             Maybe::Absent(_) => BTreeMap::new(),
         };
-        let mut scratch = core::mem::take(&mut self.scratch);
+        let mut scratch = core::mem::take(&mut self.cx.scratch);
         let mut outcome = Ok(());
         for (name, &(written, value)) in supplied.iter() {
             let Some(&binder) = callee.get(name)
             else {
                 continue;
             };
-            if let Err(refusal) = read_pieces(self.pbg, self.tree, value, &mut scratch) {
+            if let Err(refusal) = read_pieces(self.cx.pbg, self.cx.tree, value, &mut scratch) {
                 outcome = Err(refusal);
                 break;
             }
@@ -416,7 +418,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             }
         }
-        self.scratch = scratch;
+        self.cx.scratch = scratch;
         outcome?;
         supplied.retain(|name, _| !callee.contains_key(name));
 
@@ -451,7 +453,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   carrier is refused where it is written.
     /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     /// - witness: `lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
-    #[spec(captures: before = self.stage_marks.len(), ensures: |ret| ret.is_err() || self.stage_marks.len() >= before)]
+    #[spec(captures: before = self.cx.stage_marks.len(), ensures: |ret| ret.is_err() || self.cx.stage_marks.len() >= before)]
     fn mark_stages(
         &mut self,
         names: &BTreeMap<SurfaceName<'source>, StageBinder>,
@@ -460,13 +462,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         while let Some((at, placement)) = pending.pop() {
-            let Some(node) = self.tree.node(at)
+            let Some(node) = self.cx.tree.node(at)
             else {
                 continue;
             };
             let placed = Placed::of(at, node);
             let formed = self.form_at(placed)?;
-            read_pieces(self.pbg, self.tree, at, scratch)?;
+            read_pieces(self.cx.pbg, self.cx.tree, at, scratch)?;
             if let Some((form, Former::StagedType)) = formed
                 && patched::bracket_of(&scratch.pieces) == patched::Written::Stage
             {
@@ -504,7 +506,7 @@ impl<'source> Lowerer<'_, 'source>
                     else {
                         Stage::At(anchor)
                     };
-                    let _first = self.stage_marks.insert(at, stage);
+                    let _first = self.cx.stage_marks.insert(at, stage);
                 }
             }
             let below = match formed {
@@ -556,7 +558,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer)))))]
     pub(super) fn staged_type(
         &mut self,
         site: Site,
@@ -578,14 +580,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
         if let Maybe::Present(_) = cursor.at(TileName::PAREN_OPEN) {
-            if !self.view_types.contains(&site.at.node) {
+            if !self.cx.view_types.contains(&site.at.node) {
                 return Err(LoweringRefusal::ViewNotPlace { span: site.at.span });
             }
             self.plan(site, Plan::Atom(TypeAtom::Integer));
             return Ok(());
         }
         exhausted(site, &cursor)?;
-        let Some(&stage) = self.stage_marks.get(&site.at.node)
+        let Some(&stage) = self.cx.stage_marks.get(&site.at.node)
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StagedType)));
         };

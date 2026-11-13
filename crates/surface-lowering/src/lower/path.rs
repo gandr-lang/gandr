@@ -114,31 +114,38 @@ impl<'source> Lowerer<'_, 'source>
     ///   completed declaration.
     /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     #[spec(
-        captures: before = self.pathed.len(),
-        ensures: self.pathed.len() >= before,
+        captures: before = self.cx.pathed.len(),
+        ensures: self.cx.pathed.len() >= before,
     )]
     pub(super) fn mint_paths(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        let source = self.current.source;
+        let source = self.cx.current.source;
         let paths: Vec<PathDeclaration<'source>> = self
+            .cx
             .collected
             .paths
             .iter()
-            .filter(|path| self.collected.unit.source_at(path.declared_by.span.start()) == source)
+            .filter(|path| {
+                self.cx
+                    .collected
+                    .unit
+                    .source_at(path.declared_by.span.start())
+                    == source
+            })
             .cloned()
             .collect();
         for path in &paths {
             for side in [Side::Into, Side::From] {
                 let (functor, slot) = path.body(side);
                 let outcome = self.path_function(path, functor, sink);
-                let _first = self.pathed.insert(slot, outcome);
+                let _first = self.cx.pathed.insert(slot, outcome);
             }
             for trip in &path.trips {
                 let outcome = self.round_trip(path, trip, sink);
-                let _first = self.pathed.insert(trip.slot, outcome);
+                let _first = self.cx.pathed.insert(trip.slot, outcome);
             }
         }
     }
@@ -228,6 +235,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .filter_map(|component| {
                 let constant = self
+                    .cx
                     .collected
                     .slots
                     .get(usize::from(component.slot))?
@@ -286,7 +294,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> DeclarationOutcome<'source>
     {
-        let Some(template) = self.collected.functors.get(usize::from(functor))
+        let Some(template) = self.cx.collected.functors.get(usize::from(functor))
         else {
             return DeclarationOutcome::Refused(LoweringRefusal::Unminted {
                 span: path.declared_by.span,
@@ -435,6 +443,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let name: &str = name.as_ref();
         let stated = self
+            .cx
             .collected
             .structures
             .get(usize::from(template.body))?
@@ -495,7 +504,7 @@ impl<'source> Lowerer<'_, 'source>
             Side::From => (path.into, path.from),
             Side::Into => (path.from, path.into),
         };
-        let Some(witness) = self.collected.slots.get(usize::from(trip.slot))
+        let Some(witness) = self.cx.collected.slots.get(usize::from(trip.slot))
         else {
             return DeclarationOutcome::Refused(LoweringRefusal::Unminted {
                 span: path.declared_by.span,
@@ -508,7 +517,7 @@ impl<'source> Lowerer<'_, 'source>
         });
         let (Maybe::Present(origin), Some(template)) = (
             self.origin_at(witness.introduced_by.node),
-            self.collected.functors.get(usize::from(first.0)),
+            self.cx.collected.functors.get(usize::from(first.0)),
         )
         else {
             return unminted;
@@ -551,7 +560,8 @@ impl<'source> Lowerer<'_, 'source>
             rename_type(sink, &sorts, stated, origin)
         };
         let constant = |slot: SlotIndex| {
-            self.collected
+            self.cx
+                .collected
                 .slots
                 .get(usize::from(slot))
                 .map(|entry| entry.constant)
@@ -664,7 +674,8 @@ impl<'source> Lowerer<'_, 'source>
         let name: &str = name.as_ref();
         let body = Container::Module(template.body);
         (usize::from(template.body_first) .. usize::from(template.end)).find_map(|position| {
-            self.collected
+            self.cx
+                .collected
                 .slots
                 .get(position)
                 .filter(|slot| {
@@ -693,7 +704,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .find_map(|parameter| match parameter.form {
                 ParameterForm::Derived(part) if part.component == component => {
-                    self.modelled.get(&parameter.slot).copied()
+                    self.cx.modelled.get(&parameter.slot).copied()
                 },
                 ParameterForm::Derived(_)
                 | ParameterForm::Value(_)

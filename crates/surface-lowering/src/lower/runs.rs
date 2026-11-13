@@ -147,8 +147,10 @@ impl Lowerer<'_, '_>
             .iter()
             .filter(|&&(_, origin)| origin.provenance() == Provenance::Inserted(Insertion::Nested))
             .map(|&(_, origin)| {
-                let asked = match self.collected.owner_of(origin.node()) {
-                    Maybe::Present(slot) => self.asked_runs.get(&slot).copied().unwrap_or_default(),
+                let asked = match self.cx.collected.owner_of(origin.node()) {
+                    Maybe::Present(slot) => {
+                        self.cx.asked_runs.get(&slot).copied().unwrap_or_default()
+                    },
                     Maybe::Absent(_) => AskedRuns::Unasked,
                 };
                 let spelling = if matches!(self.reading(origin.node()), super::Reading::Head(_)) {
@@ -157,7 +159,7 @@ impl Lowerer<'_, '_>
                 else {
                     RunSpelling::Bare
                 };
-                let operand = operand_of(self.pbg, self.tree.node(origin.node()));
+                let operand = operand_of(self.cx.pbg, self.cx.tree.node(origin.node()));
                 (origin.node(), NestedSite {
                     asked,
                     spelling,
@@ -187,9 +189,9 @@ impl Lowerer<'_, '_>
     ///   the effectful ones by itself keeps every run.
     /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
     #[spec(
-        captures: before = self.asked_runs.len(),
-        ensures: self.asked_runs.len() >= before
-            && (entry.name() == RegisteredAttribute::EXPLICIT_RUNS || self.asked_runs.len() == before),
+        captures: before = self.cx.asked_runs.len(),
+        ensures: self.cx.asked_runs.len() >= before
+            && (entry.name() == RegisteredAttribute::EXPLICIT_RUNS || self.cx.asked_runs.len() == before),
     )]
     pub(super) fn ask_runs<Slots>(
         &mut self,
@@ -206,7 +208,7 @@ impl Lowerer<'_, '_>
             Maybe::Present(_) => AskedRuns::Effectful,
         };
         for slot in slots {
-            let held = self.asked_runs.entry(slot).or_default();
+            let held = self.cx.asked_runs.entry(slot).or_default();
             *held = (*held).max(asked);
         }
     }
@@ -234,7 +236,7 @@ impl Lowerer<'_, '_>
     /// - hypothesis: L3 — as [`LinearRun`].
     /// - witness: `lower::runs::tests::a_run_read_once_first_is_linear`
     /// - witness: `lower::runs::tests::a_run_in_a_match_branch_is_linear_1935`
-    #[spec(ensures: |ret| ret.len() <= self.statements.entries().len() && ret.is_sorted())]
+    #[spec(ensures: |ret| ret.len() <= self.cx.statements.entries().len() && ret.is_sorted())]
     pub(super) fn linear_runs(
         &self,
         arena: &CoreArena,
@@ -264,8 +266,8 @@ impl Lowerer<'_, '_>
         // Each statement's binds, beside the statement and the call it runs
         // when the statement could be written away, as far as it alone says.
         let mut statements: BTreeMap<ComputationId, (usize, Option<ByteSpan>)> = BTreeMap::new();
-        let mut listed: Vec<bool> = Vec::with_capacity(self.statements.entries().len());
-        for (index, statement) in self.statements.entries().iter().enumerate() {
+        let mut listed: Vec<bool> = Vec::with_capacity(self.cx.statements.entries().len());
+        for (index, statement) in self.cx.statements.entries().iter().enumerate() {
             let call = self.linear_call(statement);
             listed.push(call.is_some());
             for bind in minted(statement.origin) {
@@ -318,6 +320,7 @@ impl Lowerer<'_, '_>
         };
         loop {
             let dropped: Vec<usize> = self
+                .cx
                 .statements
                 .entries()
                 .iter()
@@ -338,6 +341,7 @@ impl Lowerer<'_, '_>
             }
         }
         let mut found: Vec<LinearRun> = self
+            .cx
             .statements
             .entries()
             .iter()
@@ -367,9 +371,9 @@ impl Lowerer<'_, '_>
         {
             return None;
         }
-        let bound = self.tree.node(statement.bound)?;
+        let bound = self.cx.tree.node(statement.bound)?;
         if !matches!(
-            shape_of(self.pbg, bound),
+            shape_of(self.cx.pbg, bound),
             Ok(Shape::Form {
                 former: Former::Call,
                 ..
@@ -377,8 +381,8 @@ impl Lowerer<'_, '_>
         ) {
             return None;
         }
-        let asked = match self.collected.owner_of(statement.origin) {
-            Maybe::Present(slot) => self.asked_runs.get(&slot).copied().unwrap_or_default(),
+        let asked = match self.cx.collected.owner_of(statement.origin) {
+            Maybe::Present(slot) => self.cx.asked_runs.get(&slot).copied().unwrap_or_default(),
             Maybe::Absent(_) => AskedRuns::Unasked,
         };
         (asked == AskedRuns::Unasked).then(|| bound.span())

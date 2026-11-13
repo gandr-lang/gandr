@@ -80,13 +80,14 @@ impl Lowerer<'_, '_>
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() != pair.get(1)))]
     pub(super) fn literal_readers(&self) -> Vec<LiteralReader>
     {
-        let Some(prelude) = self.collected.unit.prelude()
+        let Some(prelude) = self.cx.collected.unit.prelude()
         else {
             return Vec::new();
         };
         let mut readers = Vec::new();
         for (theory, member, reads) in READING {
             let Some(&theory) = self
+                .cx
                 .collected
                 .by_name
                 .get(&(Container::TopLevel(prelude), SurfaceName::from(theory)))
@@ -94,13 +95,14 @@ impl Lowerer<'_, '_>
                 continue;
             };
             let mut answering = BTreeSet::from([theory]);
-            for (&including, reached) in &self.collected.included {
+            for (&including, reached) in &self.cx.collected.included {
                 if reached.iter().any(|&(included, _)| included == theory) {
                     let _fresh = answering.insert(including);
                 }
             }
             readers.extend(
-                self.collected
+                self.cx
+                    .collected
                     .structures
                     .iter()
                     .enumerate()
@@ -109,6 +111,7 @@ impl Lowerer<'_, '_>
                             && matches!(structure.stratum, Stratum::Module)
                             && match structure.model {
                                 Maybe::Present(model) => self
+                                    .cx
                                     .collected
                                     .model_theories
                                     .get(&model)
@@ -118,10 +121,11 @@ impl Lowerer<'_, '_>
                     })
                     .filter_map(|(at, _)| {
                         let module = Container::Module(StructureIndex::from(at));
-                        self.collected
+                        self.cx
+                            .collected
                             .by_name
                             .get(&(module, SurfaceName::from(member)))
-                            .and_then(|&slot| self.collected.slots.get(usize::from(slot)))
+                            .and_then(|&slot| self.cx.collected.slots.get(usize::from(slot)))
                             .filter(|declared| matches!(declared.refusal, Maybe::Absent(_)))
                             .map(|declared| LiteralReader {
                                 by: declared.constant,

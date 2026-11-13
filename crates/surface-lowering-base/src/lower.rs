@@ -72,6 +72,7 @@ pub mod arity;
 pub mod capability;
 pub mod cells;
 pub mod conditional;
+pub mod context;
 pub mod exits;
 pub mod generic;
 pub mod identity;
@@ -86,6 +87,7 @@ pub mod runs;
 pub mod session;
 pub mod world;
 
+pub use context::Context;
 pub use exits::ElidableExit;
 pub use exits::Exit;
 pub use exits::Explicitness;

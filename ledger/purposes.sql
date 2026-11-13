@@ -3123,6 +3123,10 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::r
 INSERT INTO purpose VALUES('surface-lowering-base','lower::cells::refuse_cells','function','Refuses a `cells` node until the pasting reading lands, so the node''s one diagnostic names the reading''s tracking issue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::conditional::Conditional','struct','Holds a conditional as the minting reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::conditional::Otherwise','enum','Names what a conditional runs when its condition does not hold.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::context::Context','struct','Holds the lowering''s working state, so each family of the lowering reads and writes one state.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::context::extend_sources','function','Extends the sources of a tree''s first blocks to the blocks after them, so a document resumed after its closure reads its own nodes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::context::own_positions','function','Gives the positions of one source in ascending order, so a pass over a source walks its own nodes alone.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::context::sources_of','function','Gives each node the source its top-level form starts in, so a pass reads a source''s own nodes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::ElidableExit','struct','Holds an elidable exit, so the exit''s elision is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::Exit','enum','Names an exit, so the exit''s polarity is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::Explicitness','enum','Names an exit''s explicitness, so the exit''s explicitness is read.',NULL,'fits','sound',NULL);

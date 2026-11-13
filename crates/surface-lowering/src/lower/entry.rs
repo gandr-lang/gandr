@@ -150,13 +150,14 @@ impl Lowerer<'_, '_>
         sink: &Sink<'_>,
     )
     {
-        let top = Container::TopLevel(self.current.source);
+        let top = Container::TopLevel(self.cx.current.source);
         let misshapen: Vec<(SlotIndex, ByteSpan)> = self
+            .cx
             .collected
             .slots
             .iter()
             .enumerate()
-            .skip(self.current.slots)
+            .skip(self.cx.current.slots)
             .filter(|&(_, slot)| {
                 slot.role == Role::Declared && slot.container == top && slot.name.as_ref() == ENTRY
             })
@@ -183,6 +184,7 @@ impl Lowerer<'_, '_>
             .collect();
         for (position, span) in misshapen {
             let _first = self
+                .cx
                 .faults
                 .insert(position, LoweringRefusal::EntryType { span });
         }

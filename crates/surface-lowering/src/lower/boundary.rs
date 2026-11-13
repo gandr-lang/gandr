@@ -133,13 +133,14 @@ impl<'source> Lowerer<'_, 'source>
     )
     {
         let checks: Vec<(SlotIndex, BoundarySlot)> = self
+            .cx
             .collected
             .boundaries
-            .range(SlotIndex::from(self.current.slots) ..)
+            .range(SlotIndex::from(self.cx.current.slots) ..)
             .map(|(&slot, check)| (slot, check.clone()))
             .collect();
         for (slot, check) in checks {
-            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -154,11 +155,11 @@ impl<'source> Lowerer<'_, 'source>
                 Origin::new(entry.named.node, entry.named.span).inserted(Insertion::Derived);
             match self.boundary_check(&check, rows, sink, origin) {
                 Ok(Maybe::Present(minted)) => {
-                    let _first = self.derivations.insert(slot, minted);
+                    let _first = self.cx.derivations.insert(slot, minted);
                 },
                 Ok(Maybe::Absent(_)) => {},
                 Err(refusal) => {
-                    let _first = self.faults.insert(slot, refusal);
+                    let _first = self.cx.faults.insert(slot, refusal);
                 },
             }
         }
@@ -336,28 +337,29 @@ impl<'source> Lowerer<'_, 'source>
     {
         let admit = SurfaceName::from(ADMIT_BLOCK);
         let declares = |source: SourceIndex| {
-            self.collected
+            self.cx
+                .collected
                 .by_name
                 .contains_key(&(Container::TopLevel(source), admit))
         };
-        let own = self.collected.unit.source_at(site.at.span.start());
+        let own = self.cx.collected.unit.source_at(site.at.span.start());
         if declares(own) {
             return Home::Own;
         }
-        let reached = |source: SourceIndex| {
-            self.collected
-                .imports
-                .of(source)
-                .filter_map(|import| match import.resolution() {
-                    ImportResolution::Path(ImportTarget::Source(target)) => {
-                        Some((target, import.span()))
-                    },
-                    ImportResolution::Path(
-                        ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
-                    )
-                    | ImportResolution::Foreign => None,
+        let reached =
+            |source: SourceIndex| {
+                self.cx.collected.imports.of(source).filter_map(|import| {
+                    match import.resolution() {
+                        ImportResolution::Path(ImportTarget::Source(target)) => {
+                            Some((target, import.span()))
+                        },
+                        ImportResolution::Path(
+                            ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
+                        )
+                        | ImportResolution::Foreign => None,
+                    }
                 })
-        };
+            };
         let mut seen = BTreeSet::from([own]);
         let mut pending: VecDeque<(SourceIndex, ByteSpan)> = reached(own).collect();
         while let Some((source, import)) = pending.pop_front() {
@@ -412,17 +414,19 @@ impl<'source> Lowerer<'_, 'source>
             };
         };
         let slot = match self
+            .cx
             .collected
             .by_name
             .get(&(Container::TopLevel(source), name))
         {
             Some(&slot) => slot,
-            None => match self.collected.imported_slot(source, name) {
+            None => match self.cx.collected.imported_slot(source, name) {
                 Ok(Maybe::Present((slot, _))) => slot,
                 Ok(Maybe::Absent(_)) | Err(_) => return Err(unresolved),
             },
         };
         let Some(constant) = self
+            .cx
             .collected
             .slots
             .get(usize::from(slot))
@@ -430,7 +434,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unresolved);
         };
-        self.collected.reach(import);
+        self.cx.collected.reach(import);
         Ok(constant)
     }
 
@@ -480,9 +484,9 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(_) => return Err(unresolved),
             },
             Home::Reached { source, import } => {
-                let bare = match self.collected.bare_constructor(source, name, |_| true) {
+                let bare = match self.cx.collected.bare_constructor(source, name, |_| true) {
                     Some(bare) => bare,
-                    None => match self.collected.imported_constructor(source, name) {
+                    None => match self.cx.collected.imported_constructor(source, name) {
                         Ok(Maybe::Present((bare, _))) => bare,
                         Ok(Maybe::Absent(_)) => return Err(unresolved),
                         Err(ambiguity) => {
@@ -511,11 +515,12 @@ impl<'source> Lowerer<'_, 'source>
                         ));
                     },
                 };
-                self.collected.reach(import);
+                self.cx.collected.reach(import);
                 found
             },
         };
         let Some(family) = self
+            .cx
             .collected
             .slots
             .get(usize::from(found.family))

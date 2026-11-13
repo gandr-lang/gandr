@@ -356,7 +356,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   as a continuation, each asserted as the exact protocol or refusal.
     /// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
     /// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Session(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Session(..))))]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -375,13 +375,13 @@ impl<'source> Lowerer<'_, 'source>
             written: Vec::new(),
             sites: Vec::new(),
             work: Vec::new(),
-            base: self.operands.entries().len(),
+            base: self.cx.operands.entries().len(),
         };
         let root = draft.queue(site.at);
         let mut binders: Vec<SurfaceName<'source>> = Vec::new();
         let mut pieces = Pieces::new();
         while let Some(step) = draft.work.pop() {
-            self.fuel.spend()?;
+            self.cx.fuel.spend()?;
             let (at, state) = match step {
                 Walk::Leave => {
                     let _left = binders.pop();
@@ -501,7 +501,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SessionType
                 | Former::LabelledSumType
                 | Former::LazyRecordType => {
-                    read_pieces(self.pbg, self.tree, at.node, &mut pieces)?;
+                    read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut pieces)?;
                     if let Maybe::Present(repaired) = pieces.repair {
                         return Err(repaired.refusal(name));
                     }
@@ -668,8 +668,8 @@ impl<'source> Lowerer<'_, 'source>
             };
             draft.fill(state, node);
         }
-        let payloads = self.operands.since(At::from(draft.base));
-        let count = PayloadCount::from(self.operands.read(payloads).len());
+        let payloads = self.cx.operands.since(At::from(draft.base));
+        let count = PayloadCount::from(self.cx.operands.read(payloads).len());
         let Draft {
             syntax,
             written,
@@ -722,9 +722,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the seat's protocol reads every one of the four.
     /// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
     #[spec(
-        captures: before = (draft.syntax.len(), self.operands.entries().len()),
+        captures: before = (draft.syntax.len(), self.cx.operands.entries().len()),
         ensures: |ret| ret.as_ref().map_or(true, |node| match *node {
-            | ProtocolSyntax::Send { payload, next } | ProtocolSyntax::Receive { payload, next } => self.operands.entries().len() == before.1.saturating_add(1) && usize::from(payload) == before.1.saturating_sub(draft.base) && usize::from(next) == before.0,
+            | ProtocolSyntax::Send { payload, next } | ProtocolSyntax::Receive { payload, next } => self.cx.operands.entries().len() == before.1.saturating_add(1) && usize::from(payload) == before.1.saturating_sub(draft.base) && usize::from(next) == before.0,
             | ProtocolSyntax::Mu(body) => usize::from(body) == before.0,
             | ProtocolSyntax::End => draft.syntax.len() == before.0,
             | ProtocolSyntax::Select(_) | ProtocolSyntax::Offer(_) | ProtocolSyntax::Recur(_) => false,
@@ -785,8 +785,9 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(here.out(FragmentBoundary::WrongSort));
         };
-        let payload = PayloadSlot::from(self.operands.entries().len().saturating_sub(draft.base));
-        self.operands.push(carried.node);
+        let payload =
+            PayloadSlot::from(self.cx.operands.entries().len().saturating_sub(draft.base));
+        self.cx.operands.push(carried.node);
         self.read(carried.node, Reading::ValueType(frame));
         let next = draft.queue(continued);
 
@@ -917,9 +918,10 @@ impl<'source> Lowerer<'_, 'source>
         let found = self.linear_binder(subject)?;
         if found == Maybe::Absent(slot::Absent::Unlinear)
             && let Maybe::Present(bound) =
-                self.scope
-                    .resolve(frame, self.name_at(operand), &mut self.fuel)?
-            && let Some(&(_, value)) = self.ran.get(&bound.binder)
+                self.cx
+                    .scope
+                    .resolve(frame, self.name_at(operand), &mut self.cx.fuel)?
+            && let Some(&(_, value)) = self.cx.ran.get(&bound.binder)
         {
             let lost = Site {
                 at: value,
@@ -974,12 +976,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Stands, LoweringRefusal<'source>>
     {
         let mut at = declared.node;
-        for _name in 0 ..= self.collected.slots.len() {
+        for _name in 0 ..= self.cx.collected.slots.len() {
             let Maybe::Present(unwrapped) = self.unwrapped(at)?
             else {
                 return Ok(Stands::Other);
             };
-            let Some(tree) = self.tree.node(unwrapped.node)
+            let Some(tree) = self.cx.tree.node(unwrapped.node)
             else {
                 return Ok(Stands::Other);
             };
@@ -1076,7 +1078,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
     {
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, site.at.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, site.at.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(site.name));
         }
@@ -1085,12 +1087,13 @@ impl<'source> Lowerer<'_, 'source>
         Self::linked(&mut links, target, nested, member);
         let head = self.path_head(site, target, &mut links)?;
         let path = self.path_named(head, &links);
-        self.collected.reach_declaring(
-            self.collected.unit.source_at(site.at.span.start()),
+        self.cx.collected.reach_declaring(
+            self.cx.collected.unit.source_at(site.at.span.start()),
             self.name_at(head),
         );
-        if self.recognition.resolve_path(&path) == PathResolution::Complete(Recognized::ModuleType)
-            && let Some(stated) = self.exported_types.get(&path)
+        if self.cx.recognition.resolve_path(&path)
+            == PathResolution::Complete(Recognized::ModuleType)
+            && let Some(stated) = self.cx.exported_types.get(&path)
         {
             return Ok(written(stated.meaning));
         }
@@ -1116,8 +1119,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   placed linear binder, and a parameter at `Integer` stays unplaced.
     /// - witness: `lower::session::tests::a_parameter_at_a_session_type_is_placed_1862`
     #[spec(
-        captures: before = self.endpoints.mark(),
-        ensures: |ret| ret.1 == self.endpoints.since(before) && self.endpoints.read(ret.1).len() <= endpoints.len(),
+        captures: before = self.cx.endpoints.mark(),
+        ensures: |ret| ret.1 == self.cx.endpoints.since(before) && self.cx.endpoints.read(ret.1).len() <= endpoints.len(),
     )]
     pub(super) fn place_endpoints(
         &mut self,
@@ -1125,7 +1128,7 @@ impl<'source> Lowerer<'_, 'source>
         endpoints: &[Parameter],
     ) -> (Frame, FormStretch)
     {
-        let start = self.endpoints.mark();
+        let start = self.cx.endpoints.mark();
         let mut placed = frame;
         for &Parameter {
             binder,
@@ -1134,21 +1137,22 @@ impl<'source> Lowerer<'_, 'source>
         } in endpoints
         {
             let Some((name, found)) = self
+                .cx
                 .scope
                 .bindings(frame)
                 .find(|&(_, found)| found.binder == bound)
             else {
                 continue;
             };
-            let site = self.scope.site(bound);
-            placed = Frame::Inner(self.scope.extend_linear(placed, name, site));
-            self.endpoints.push(PlacedEndpoint {
+            let site = self.cx.scope.site(bound);
+            placed = Frame::Inner(self.cx.scope.extend_linear(placed, name, site));
+            self.cx.endpoints.push(PlacedEndpoint {
                 binder,
                 index: found.index,
             });
         }
 
-        (placed, self.endpoints.since(start))
+        (placed, self.cx.endpoints.since(start))
     }
 
     /// Wrap `body`, minted under the linear binders `endpoints` placed, in
@@ -1178,7 +1182,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        for endpoint in self.endpoints.read(endpoints).iter().rev() {
+        for endpoint in self.cx.endpoints.read(endpoints).iter().rev() {
             let Maybe::Present(origin) = self.origin_at(endpoint.binder)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
@@ -1231,7 +1235,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::a_drop_is_the_end_action_1054`
     /// - witness: `lower::session::tests::a_receive_or_a_fork_no_let_binds_is_refused`
     /// - witness: `lower::session::tests::sharing_is_reserved_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Action(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Action(..))))]
     pub(super) fn session_action(
         &mut self,
         site: Site,
@@ -1365,8 +1369,8 @@ impl<'source> Lowerer<'_, 'source>
         if members != one {
             return Err(site.out(FragmentBoundary::Arity(members)));
         }
-        let applied = match self.tree.node(at.node) {
-            Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
+        let applied = match self.cx.tree.node(at.node) {
+            Some(node) => matches!(shape_of(self.cx.pbg, node)?, Shape::Form {
                 former: Former::Call,
                 ..
             }),
@@ -1376,15 +1380,15 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Arity(one)));
         }
         self.inherit_owner(at.node);
-        let mut pieces = core::mem::take(&mut self.scratch);
-        let read = read_pieces(self.pbg, self.tree, at.node, &mut pieces);
+        let mut pieces = core::mem::take(&mut self.cx.scratch);
+        let read = read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut pieces);
         let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
             Piece::Operand(operand) => Some(operand),
             Piece::Tile { .. } => None,
         });
         let written = (operands.next(), operands.next());
         let rest = operands.count();
-        self.scratch = pieces;
+        self.cx.scratch = pieces;
         read?;
         match written {
             (Some(head), Some(argument)) if rest == 0_usize => Ok((head, argument)),
@@ -1426,13 +1430,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(Placed, OperandCount), LoweringRefusal<'source>>
     {
         let mut at = operand;
-        let mut pieces = core::mem::take(&mut self.scratch);
+        let mut pieces = core::mem::take(&mut self.cx.scratch);
         let found = loop {
-            let Some(node) = self.tree.node(at.node)
+            let Some(node) = self.cx.tree.node(at.node)
             else {
                 break Ok(1_usize);
             };
-            match shape_of(self.pbg, node) {
+            match shape_of(self.cx.pbg, node) {
                 Ok(Shape::Form {
                     former: Former::Parenthesized,
                     ..
@@ -1442,7 +1446,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Err(refusal) => break Err(refusal),
             }
-            if let Err(refusal) = read_pieces(self.pbg, self.tree, at.node, &mut pieces) {
+            if let Err(refusal) = read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut pieces) {
                 break Err(refusal);
             }
             let commas = pieces
@@ -1462,7 +1466,7 @@ impl<'source> Lowerer<'_, 'source>
                 _ => break Ok(commas.saturating_add(1_usize)),
             }
         };
-        self.scratch = pieces;
+        self.cx.scratch = pieces;
         found.map(|members| (at, OperandCount::from(members)))
     }
 
@@ -1539,8 +1543,8 @@ impl<'source> Lowerer<'_, 'source>
             labels.push((pattern.span, armed.clone()));
             let _armed = arms.insert(armed, body.node);
             self.read(body.node, Reading::Computation(frame));
-            if let Some(&answer) = self.answers.get(&site.at.node) {
-                let _passed = self.answers.insert(body.node, answer);
+            if let Some(&answer) = self.cx.answers.get(&site.at.node) {
+                let _passed = self.cx.answers.insert(body.node, answer);
             }
             self.pass_paths(site.at.node, body.node);
         }
@@ -1570,9 +1574,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   of its block, and the operator's receives under offer arms.
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     #[spec(
-        captures: before = self.statements.mark(),
-        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
-            && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Received { .. }))),
+        captures: before = self.cx.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx.statements.mark() == before.next()
+            && self.cx.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Received { .. }))),
     )]
     pub(super) fn receive(
         &mut self,
@@ -1588,7 +1592,7 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Computation(frame),
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, bound.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, bound.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(FormName::RECV_EXPRESSION));
         }
@@ -1599,7 +1603,7 @@ impl<'source> Lowerer<'_, 'source>
         let subject = self.keyword_one(site, operand)?;
         let endpoint = self.endpoint(frame, subject)?;
         self.note_binder(binder, frame, name)?;
-        self.statements.push(Statement {
+        self.cx.statements.push(Statement {
             origin: statement.at.node,
             bound: bound.node,
             binding: StatementBinding::Received {
@@ -1610,7 +1614,7 @@ impl<'source> Lowerer<'_, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend_linear(
+        Ok(Frame::Inner(self.cx.scope.extend_linear(
             frame,
             name,
             Maybe::Present(binder.span),
@@ -1642,9 +1646,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::sharing_is_reserved_by_name`
     #[spec(
-        captures: before = self.statements.mark(),
-        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
-            && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Forked { .. }))),
+        captures: before = self.cx.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx.statements.mark() == before.next()
+            && self.cx.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Forked { .. }))),
     )]
     pub(super) fn fork(
         &mut self,
@@ -1660,7 +1664,7 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Computation(frame),
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, bound.node, &mut pieces)?;
+        read_pieces(self.cx.pbg, self.cx.tree, bound.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(FormName::FORK_EXPRESSION));
         }
@@ -1684,10 +1688,11 @@ impl<'source> Lowerer<'_, 'source>
         self.note_binder(binder, frame, name)?;
         self.read(protocol.node, Reading::ValueType(frame));
         let held = self
+            .cx
             .scope
             .extend_linear(frame, child_name, Maybe::Present(child_end.span));
         self.read(child.node, Reading::Computation(Frame::Inner(held)));
-        self.statements.push(Statement {
+        self.cx.statements.push(Statement {
             origin: statement.at.node,
             bound: bound.node,
             binding: StatementBinding::Forked {
@@ -1698,7 +1703,7 @@ impl<'source> Lowerer<'_, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend_linear(
+        Ok(Frame::Inner(self.cx.scope.extend_linear(
             frame,
             name,
             Maybe::Present(binder.span),
@@ -1733,7 +1738,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let operands = self.operands.read(payloads);
+        let operands = self.cx.operands.read(payloads);
         let mut carried: Vec<ValueTypeId> = Vec::with_capacity(operands.len());
         for &payload in operands {
             match self.value_type_at(payload) {
@@ -1751,6 +1756,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut states: BTreeMap<ProtocolState, ValueTypeId> = BTreeMap::new();
         let _root = states.insert(root, id);
         let context: Vec<String> = self
+            .cx
             .scope
             .telescope_names(written.frame, self.telescope_at(origin.node()))
             .into_iter()

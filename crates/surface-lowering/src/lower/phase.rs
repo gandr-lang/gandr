@@ -132,8 +132,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
     #[spec(ensures: |ret| match ret {
         | Err(LoweringRefusal::PhaseDependence { span, member, reached: read }) => span == site.at.span
-            && matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(own)).is_some_and(|slot| slot.name == member && Phase::of(slot) == Maybe::Present(Phase::Static)))
-            && self.collected.slots.get(usize::from(reached)).is_some_and(|slot| slot.name == read && Phase::of(slot) == Maybe::Present(Phase::Dynamic)),
+            && matches!(self.cx.collected.owner_of(site.at.node), Maybe::Present(own) if self.cx.collected.slots.get(usize::from(own)).is_some_and(|slot| slot.name == member && Phase::of(slot) == Maybe::Present(Phase::Static)))
+            && self.cx.collected.slots.get(usize::from(reached)).is_some_and(|slot| slot.name == read && Phase::of(slot) == Maybe::Present(Phase::Dynamic)),
         | Err(_) => false,
         | Ok(()) => true,
     })]
@@ -143,13 +143,13 @@ impl<'source> Lowerer<'_, 'source>
         reached: SlotIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
         else {
             return Ok(());
         };
         let (Some(reader), Some(read)) = (
-            self.collected.slots.get(usize::from(own)),
-            self.collected.slots.get(usize::from(reached)),
+            self.cx.collected.slots.get(usize::from(own)),
+            self.cx.collected.slots.get(usize::from(reached)),
         )
         else {
             return Ok(());
