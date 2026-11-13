@@ -3270,6 +3270,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::context::own_position
 INSERT INTO purpose VALUES('surface-lowering-base','lower::context::sources_of','function','Gives each node the source its top-level form starts in, so a pass reads a source''s own nodes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::delimited','function','Reads a comma-separated operand list between two tiles.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::delimited_list','function','Reads a comma-separated operand list between two tiles, and leaves the cursor past the closer for a second list.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::exactly','function','Reads the argument list of a call that takes exactly a stated count of arguments.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exhausted','function','Refuses a piece left after a form''s last.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::ElidableExit','struct','Holds an elidable exit, so the exit''s elision is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::Exit','enum','Names an exit, so the exit''s polarity is read.',NULL,'fits','sound',NULL);
@@ -3358,6 +3359,8 @@ INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Typed','enum'
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::Unwrapped','struct','Holds a form with its parentheses stripped.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::record_copied_since','function','Records the origin of each node minted since a mark, and each copy at the origin of the node that it copies.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::native::record_since','function','Records an origin for every node minted since a mark, and the root''s own origin for the root.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::native::substituted_type','function','Reads a declared type at the arguments that it is applied to, by a substitution of its quote.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::native::wrapped_point','function','Wraps a point and its carrier in reflexivity a stated count of times.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::natural::Generator','struct','Holds a constructor as the mint reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::natural::Naturals','struct','Holds the prelude''s binary naturals.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::opening::Opened','struct','Holds a module a block statement opens, and the bytes it is open over.',NULL,'fits','sound',NULL);

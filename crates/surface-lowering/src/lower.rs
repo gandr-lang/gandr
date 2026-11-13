@@ -595,6 +595,7 @@ use gandr_surface_lowering_base::lower::context::extend_sources;
 use gandr_surface_lowering_base::lower::context::own_positions;
 use gandr_surface_lowering_base::lower::delimited;
 use gandr_surface_lowering_base::lower::delimited_list;
+use gandr_surface_lowering_base::lower::exactly;
 use gandr_surface_lowering_base::lower::exhausted;
 use gandr_surface_lowering_base::lower::families::Families as _;
 use gandr_surface_lowering_base::lower::literal;
@@ -606,7 +607,6 @@ pub use gandr_surface_lowering_base::lower::scoped;
 pub use gandr_surface_lowering_base::lower::stated;
 use gandr_surface_lowering_base::lower::stretch;
 use gandr_surface_lowering_base::lower::unread_pattern;
-use gandr_surface_lowering_native::lower::native::constructed;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -691,6 +691,8 @@ use crate::lower::capability::Capability;
 use crate::lower::capability::CapabilityRef;
 use crate::lower::exits::Exits;
 use crate::lower::exits::ExitsRef;
+use crate::lower::identity::Identities;
+use crate::lower::identity::IdentitiesRef;
 use crate::lower::native::Native;
 use crate::lower::native::NativeRef;
 use crate::module::BodyScope;
@@ -834,8 +836,6 @@ pub use runs::RunOperand;
 pub use runs::RunSpelling;
 
 mod identity;
-
-pub use gandr_surface_lowering_base::lower::HERE;
 
 mod implicit;
 
@@ -1469,39 +1469,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 }
 
-/// The native family's calls that a body of the identity, model or arity
-/// family makes through its host, while the body stands in the lowering.
+/// The native family's calls that a body of the model or arity family makes
+/// through its host, while the body stands in the lowering.
 impl<'source> Lowerer<'_, 'source>
 {
-    /// The native family's `answered_type`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn answered_type(
-        &self,
-        answer: native::Answer,
-        sink: &mut Sink<'_>,
-    ) -> Maybe<CompTypeId, lowered::Absent>
-    {
-        NativeRef::over(&self.cx).answered_type(answer, sink)
-    }
-
-    /// The native family's `called_environment`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn called_environment(
-        &self,
-        declared: gandr_surface_lowering_base::lower::native::CalledAt,
-        written: NodeIndex,
-        sink: &Sink<'_>,
-    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>
-    {
-        NativeRef::over(&self.cx).called_environment(declared, written, sink)
-    }
-
     /// The native family's `called_result`.
     ///
     /// # Specification
@@ -1517,35 +1488,6 @@ impl<'source> Lowerer<'_, 'source>
         Native::new(self).called_result(site, frame, call)
     }
 
-    /// The native family's `construct`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn construct(
-        &mut self,
-        site: Site,
-        constructor: Constructor,
-        fields: Stretch,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        Native::new(self).construct(site, constructor, fields)
-    }
-
-    /// The native family's `constructor_head`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn constructor_head(
-        &mut self,
-        site: Site,
-        head: Placed,
-    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
-    {
-        Native::new(self).constructor_head(site, head)
-    }
-
     /// The native family's `held_at`.
     ///
     /// # Specification
@@ -1557,37 +1499,6 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<native::Holds, LoweringRefusal<'source>>
     {
         Native::new(self).held_at(stated)
-    }
-
-    /// The native family's `looped_point`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn looped_point(
-        &mut self,
-        point: Placed,
-    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
-    {
-        Native::new(self).looped_point(point)
-    }
-
-    /// The native family's `relocate`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn relocate(
-        &self,
-        arena: &mut CoreArena,
-        ty: CompTypeId,
-        from: Frame,
-        telescope: Telescope,
-        lift: Binders,
-        copies: Option<&mut Vec<gandr_core_term::Carried>>,
-    ) -> CompTypeId
-    {
-        NativeRef::over(&self.cx).relocate(arena, ty, from, telescope, lift, copies)
     }
 
     /// The native family's `relocate_value_type`.
@@ -1605,20 +1516,6 @@ impl<'source> Lowerer<'_, 'source>
     ) -> ValueTypeId
     {
         NativeRef::over(&self.cx).relocate_value_type(ty, frame, telescope, sink, origin)
-    }
-
-    /// The native family's `words_point`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn words_point(
-        &self,
-        arena: &mut CoreArena,
-        words: &crate::module::WordsForm,
-    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>
-    {
-        NativeRef::over(&self.cx).words_point(arena, words)
     }
 
     /// The native family's `written_telescope`.
@@ -2135,7 +2032,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.seed()?;
         Exits::new(self).survey()?;
         self.classify()?;
-        self.refuse_unsynthesised()?;
+        Identities::new(self).refuse_unsynthesised()?;
         self.propagate_manifests();
         while self.refuse_unrepresented().0 {
             self.propagate_manifests();
@@ -4111,6 +4008,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// trivial.
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn spread(
         &self,
         kept: FormStretch,
@@ -4890,10 +4791,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::LabelledSumType => self.labelled_sum_type(site, cursor),
             Former::LazyRecordType => self.lazy_record_type(site, cursor),
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
-            Former::PathType => self.path_type(site, cursor, Relating::Path),
-            Former::BridgeType => self.path_type(site, cursor, Relating::Bridge),
-            Former::FlowType => self.supplied_flow(site, cursor),
-            Former::RelationType => self.relation_type(site, cursor),
+            Former::PathType => Identities::new(self).path_type(site, cursor, Relating::Path),
+            Former::BridgeType => Identities::new(self).path_type(site, cursor, Relating::Bridge),
+            Former::FlowType => Identities::new(self).supplied_flow(site, cursor),
+            Former::RelationType => Identities::new(self).relation_type(site, cursor),
             Former::ManifestType => self.manifest_model(site, cursor),
             Former::CapabilityType => Capability::new(self).capability_type(site, cursor),
             Former::AtType => Capability::new(self).at_type(site, cursor),
@@ -10503,10 +10404,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _first = self.cx.packed.insert(site.at.node, labels);
         }
         if let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(operation) = self.identity_head(site, head)?
+            && let Maybe::Present(operation) = Identities::new(self).identity_head(site, head)?
         {
             let _head = cursor.operands();
-            return self.identity_call(site, operation, cursor);
+            return Identities::new(self).identity_call(site, operation, cursor);
         }
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present((former, stratum)) = self.stratum_head(site, head)?
@@ -10514,8 +10415,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _head = cursor.operands();
             return match former {
                 ua::Stratified::Ua => self.ua_call(site, stratum, cursor),
-                ua::Stratified::Compose => self.compose_call(site, stratum, cursor),
-                ua::Stratified::Fill => self.fill_call(site, stratum, cursor),
+                ua::Stratified::Compose => {
+                    Identities::new(self).compose_call(site, stratum, cursor)
+                },
+                ua::Stratified::Fill => Identities::new(self).fill_call(site, stratum, cursor),
             };
         }
         if let Run::One(head) = cursor.clone().operands()
@@ -10975,12 +10878,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `f64` suffix is `float64.neg`, so the printers' spelling of a negative
     ///   float, `-0.5f64`, lowers back to that float; the infix `then` is the
     ///   composite of two paths, or of two flows where a flow is answered, as
-    ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
+    ///   [`Identities::derive`] plans it; the cons `g ∷ p` is a word, as
     ///   `Native::cons` plans it; `left |> right` plugs every output of `left`
     ///   into `right`, as [`Self::plug`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
-    ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
-    ///   `Native::cons` does.
+    ///   are refused; `then` refuses as [`Identities::derive`] does, and the
+    ///   cons as `Native::cons` does.
     /// - panics: none.
     ///
     /// # Errors
@@ -12910,6 +12813,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
     /// - witness: `lower::tests::a_universe_level_at_or_past_the_greatest_has_none_above_2653`
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn universe_tiles(
         &self,
         site: Site,
@@ -13035,17 +12942,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   position where a type is quoted or a constructor applied.
     /// - ensures: a spine whose head is a path or bridge type that supplies its
     ///   carrier, `Path[.A = C] a b`, is that type over the spine's operands,
-    ///   as [`Self::carried_path`] plans it. An application standing where a
-    ///   value is read — an argument of a type-position call — whose head names
-    ///   a constructor of a data family declared strictly earlier stands as
-    ///   that constructor applied to the arguments, as `Native::construct`
-    ///   plans it. Otherwise a head naming a type family, as a component or a
-    ///   member, expands to the family's type over the arguments; a head naming
-    ///   a codata family stands as that family's computation type over the
-    ///   arguments; a head a binder or an earlier declaration answers is read
-    ///   as the static application of that code to the arguments, left to
-    ///   right, or, holding a function where a value is read, as its call; any
-    ///   other head is the type former [`Self::applied_head`] plans.
+    ///   as [`Identities::carried_path`] plans it. An application standing
+    ///   where a value is read — an argument of a type-position call — whose
+    ///   head names a constructor of a data family declared strictly earlier
+    ///   stands as that constructor applied to the arguments, as
+    ///   `Native::construct` plans it. Otherwise a head naming a type family,
+    ///   as a component or a member, expands to the family's type over the
+    ///   arguments; a head naming a codata family stands as that family's
+    ///   computation type over the arguments; a head a binder or an earlier
+    ///   declaration answers is read as the static application of that code to
+    ///   the arguments, left to right, or, holding a function where a value is
+    ///   read, as its call; any other head is the type former
+    ///   [`Self::applied_head`] plans.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -13089,10 +12997,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A path or bridge type that supplies its carrier heads the spine
         // that applies it to its endpoints, `Path[.A = C] a b`.
         if let Maybe::Present(Piece::Operand(head)) = cursor.peek()
-            && let Some(named) = self.carried_head(head)?
+            && let Some(named) = IdentitiesRef::new(self).carried_head(head)?
         {
             let (name, relating) = named;
-            return self.carried_path(site, (name, head), cursor, relating);
+            return Identities::new(self).carried_path(site, (name, head), cursor, relating);
         }
         let Maybe::Present(head) = cursor.type_head()
         else {
@@ -13207,17 +13115,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   sort's name beside the type it is, in written order.
     /// - ensures: the arguments leave the store; a head named `Path` or
     ///   `Bridge` and applied to two arguments is the path or bridge type
-    ///   [`Self::written_path`] plans, one named `Flow` and applied to two the
-    ///   directed identity type [`Self::flow_type`] plans, one named `Stack`
-    ///   and applied to two the continuation type [`Self::stack_type`] plans,
-    ///   one named `Iso` and applied to two the quasi-inverse `A ≅ B`
-    ///   [`Self::relation_of`] plans, one named `Model` and applied to one the
-    ///   bundled record [`Self::model_type`] plans with its manifest sorts, one
-    ///   named `Terms` and applied to one the theory's terms
-    ///   `Native::terms_type` plans; any other head applied to one argument
-    ///   resolves against the unary table, stands at the sort its former
-    ///   produces, reads its argument at the sort the former takes, and is
-    ///   planned over it.
+    ///   [`Identities::written_path`] plans, one named `Flow` and applied to
+    ///   two the directed identity type [`Identities::flow_type`] plans, one
+    ///   named `Stack` and applied to two the continuation type
+    ///   [`Self::stack_type`] plans, one named `Iso` and applied to two the
+    ///   quasi-inverse `A ≅ B` [`Identities::relation_of`] plans, one named
+    ///   `Model` and applied to one the bundled record [`Self::model_type`]
+    ///   plans with its manifest sorts, one named `Terms` and applied to one
+    ///   the theory's terms `Native::terms_type` plans; any other head applied
+    ///   to one argument resolves against the unary table, stands at the sort
+    ///   its former produces, reads its argument at the sort the former takes,
+    ///   and is planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
@@ -13299,12 +13207,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .into_iter()
                 .find(|relating| name.as_ref() == relating.head().as_ref())
         {
-            return self.written_path(site, written, relating);
+            return Identities::new(self).written_path(site, written, relating);
         }
         if let Some(written) = pair
             && name.as_ref() == identity::FLOW
         {
-            return self.flow_type(site, written);
+            return Identities::new(self).flow_type(site, written);
         }
         if let Some(written) = pair
             && name.as_ref() == STACK
@@ -13314,7 +13222,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(written) = pair
             && name.as_ref() == identity::ISO
         {
-            return self.relation_of(site, Relation::Isomorphism, written);
+            return Identities::new(self).relation_of(site, Relation::Isomorphism, written);
         }
         let former = self.cx.former(name);
         // The refusal marks the application it judged, head and arguments,
@@ -15988,7 +15896,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
         let mut manifests: Vec<NodeIndex> = stated.iter().map(|defined| defined.node).collect();
-        manifests.extend(self.synthesised_types());
+        manifests.extend(IdentitiesRef::new(self).synthesised_types());
         manifests.extend(
             self.cx
                 .answers
@@ -17208,9 +17116,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = loops::again(reentry, sink, origin);
                 Maybe::Present(sink.computation(id, origin))
             },
-            Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
+            Plan::Derived(derived) => IdentitiesRef::new(self).mint_derived(derived, sink, origin),
             Plan::TelescopeTransport(transported) => {
-                self.mint_telescope_transport(transported, sink, origin)
+                IdentitiesRef::new(self).mint_telescope_transport(transported, sink, origin)
             },
             Plan::Capability(ref authority, grade, region) => {
                 Capability::<Self>::mint_capability(authority, grade, region, sink, origin)
@@ -17248,13 +17156,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
             }),
-            Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
-            Plan::Dialogue(ref moves) => self.mint_dialogue(moves, sink, origin),
-            Plan::Decompose(dialogue) => self.mint_decompose(dialogue, sink, origin),
-            Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
-            Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
+            Plan::Recorded(ref moves) => {
+                IdentitiesRef::new(self).mint_recorded(moves, sink, origin)
+            },
+            Plan::Dialogue(ref moves) => {
+                IdentitiesRef::new(self).mint_dialogue(moves, sink, origin)
+            },
+            Plan::Decompose(dialogue) => {
+                IdentitiesRef::new(self).mint_decompose(dialogue, sink, origin)
+            },
+            Plan::Ride(motive, flow, value) => {
+                IdentitiesRef::new(self).mint_ride((motive, flow, value), sink, origin)
+            },
+            Plan::FlowThen(first, second) => {
+                IdentitiesRef::new(self).mint_flow_then(first, second, sink, origin)
+            },
             Plan::Relation(relation, left, right) => {
-                self.mint_relation(relation, [left, right], sink, origin)
+                IdentitiesRef::new(self).mint_relation(relation, [left, right], sink, origin)
             },
             Plan::Bundle(ref signature) => self.mint_model_type(signature, sink, origin),
             Plan::Packed(ref packed) => self.mint_packed(packed, sink, origin),
@@ -18365,7 +18283,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 composite,
                 generator,
                 cells,
-            } => self.mint_fill((composite, generator, cells), sink, origin),
+            } => IdentitiesRef::new(self).mint_fill((composite, generator, cells), sink, origin),
             Plan::ListNil => {
                 let id = sink.arena.value_list_nil();
                 Maybe::Present(sink.value(id, origin))
@@ -18377,7 +18295,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             }),
             Plan::Transport(abstraction, path, value) => {
-                self.mint_transport((abstraction, path, value), sink, origin)
+                IdentitiesRef::new(self).mint_transport((abstraction, path, value), sink, origin)
             },
             Plan::StaticLambda(body) => self.cx.value_at(body).map(|under| {
                 let id = sink.arena.value_static_lambda(under);
@@ -19876,7 +19794,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     domains.get(usize::from(place)).copied()
                 },
                 (Maybe::Present(written), None) => match self.cx.value_type_at(written) {
-                    Maybe::Present(domain) => Some(Native::<Self>::shared_domain(
+                    Maybe::Present(domain) => Some(Parameter::shared_domain(
                         parameters.get(.. index).unwrap_or_default(),
                         parameter,
                         |named| bool::from(self.cx.scope.mentioned(named.frame)),
@@ -22668,46 +22586,6 @@ fn unapplied<'source>(
             written.end.saturating_sub(written.start),
         ))))
     })
-}
-
-/// Read the argument list of a call that takes exactly `N` arguments.
-///
-/// # Specification
-/// - requires: `cursor` stands at the list's `(`.
-/// - ensures: the `N` arguments in written order; `written` holds what it held
-///   before, whatever the answer.
-/// - fails: the list's own refusal first; then, for a list of any other count,
-///   the arity boundary at `site`.
-/// - panics: none.
-///
-/// # Errors
-/// The list's refusal, or [`LoweringRefusal::OutOfFragment`] with the arity
-/// boundary at the call.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a generic's one argument, a composite's two, a fill's
-///   three and a statement's four lower in written order; a composite of one
-///   argument, a fill of two and a statement one short are each refused by
-///   their count.
-/// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
-/// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
-/// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
-/// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
-#[spec(captures: before = written.entries().len(), ensures: |_| written.entries().len() == before)]
-fn exactly<'source, const N: usize>(
-    site: Site,
-    cursor: &mut Cursor<'_>,
-    written: &mut ByForm<NodeIndex>,
-) -> Result<[NodeIndex; N], LoweringRefusal<'source>>
-{
-    let start = written.mark();
-    let read = arguments(site, cursor, written);
-    let appended = written.entries().get(usize::from(start) ..).unwrap_or(&[]);
-    let count = appended.len();
-    let exact = <[NodeIndex; N]>::try_from(appended).ok();
-    written.truncate(start);
-    read?;
-    exact.ok_or_else(|| site.out(FragmentBoundary::Arity(OperandCount::from(count))))
 }
 
 /// Read the argument lists a call in a type writes into `written`: the first,
@@ -25616,7 +25494,9 @@ mod tests
         lowerer.seed().unwrap();
         super::Exits::new(lowerer).survey().unwrap();
         lowerer.classify().unwrap();
-        lowerer.refuse_unsynthesised().unwrap();
+        super::Identities::new(lowerer)
+            .refuse_unsynthesised()
+            .unwrap();
         lowerer.propagate_manifests();
         while lowerer.refuse_unrepresented().0 {
             lowerer.propagate_manifests();

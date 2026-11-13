@@ -34,6 +34,7 @@ gandr-surface-grammar.workspace = true
 gandr-surface-lowering-base.workspace = true
 gandr-surface-lowering-capability.workspace = true
 gandr-surface-lowering-exits.workspace = true
+gandr-surface-lowering-identity.workspace = true
 gandr-surface-lowering-native.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-cell-complexes.workspace = true

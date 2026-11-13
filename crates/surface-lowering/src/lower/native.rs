@@ -28,8 +28,6 @@ pub(super) use gandr_surface_lowering_native::lower::native::Staging;
 pub(super) use gandr_surface_lowering_native::lower::native::Unwrapped;
 pub(super) use gandr_surface_lowering_native::lower::native::record_since;
 pub(super) use gandr_surface_lowering_native::lower::native::rooted;
-pub(super) use gandr_surface_lowering_native::lower::native::substituted_type;
-pub(super) use gandr_surface_lowering_native::lower::native::wrapped_point;
 
 #[cfg(test)]
 pub(super) mod tests;

@@ -5,7 +5,10 @@
 use alloc::vec::Vec;
 
 use gandr_core_term::Binders;
+use gandr_core_term::Carried;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::capability::RegionBinder;
@@ -19,7 +22,9 @@ use gandr_surface_lowering_base::form::Cursor;
 use gandr_surface_lowering_base::form::Former;
 use gandr_surface_lowering_base::form::Placed;
 use gandr_surface_lowering_base::form::TileName;
+use gandr_surface_lowering_base::form::Universe;
 use gandr_surface_lowering_base::lower::Block;
+use gandr_surface_lowering_base::lower::Function;
 use gandr_surface_lowering_base::lower::Lowered;
 use gandr_surface_lowering_base::lower::Plan;
 use gandr_surface_lowering_base::lower::Produced;
@@ -47,6 +52,7 @@ use gandr_surface_lowering_base::lower::model::ModelSlot;
 use gandr_surface_lowering_base::lower::model::Supplied;
 use gandr_surface_lowering_base::lower::named;
 use gandr_surface_lowering_base::lower::native::Answer;
+use gandr_surface_lowering_base::lower::native::CalledAt;
 use gandr_surface_lowering_base::lower::native::Unwrapped;
 use gandr_surface_lowering_base::lower::native::answered;
 use gandr_surface_lowering_base::lower::native::constructed;
@@ -57,6 +63,7 @@ use gandr_surface_lowering_base::module::SlotIndex;
 use gandr_surface_lowering_base::module::StructureIndex;
 use gandr_surface_lowering_base::module::TelescopeEntry;
 use gandr_surface_lowering_base::module::TypeComponent;
+use gandr_surface_lowering_base::module::WordsForm;
 use gandr_surface_lowering_base::namespace::NamePath;
 use gandr_surface_lowering_base::origin::Origin;
 use gandr_surface_lowering_base::resolve::Frame;
@@ -77,11 +84,27 @@ use super::Lowerer;
 use super::capability::Capability;
 use super::exits::Exits;
 use super::exits::ExitsRef;
+use super::identity::Identities;
+use super::identity::IdentitiesRef;
 use super::native::Native;
 use super::native::NativeRef;
 
 impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
 {
+    /// The native family's `answered_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn answered_type(
+        &self,
+        answer: Answer,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<CompTypeId, lowered::Absent>
+    {
+        NativeRef::over(&self.cx).answered_type(answer, sink)
+    }
+
     /// The lowering's own `answering_model`.
     ///
     /// # Specification
@@ -216,6 +239,49 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::boxes(self, at)
     }
 
+    /// The native family's `called_environment`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn called_environment(
+        &self,
+        declared: CalledAt,
+        written: NodeIndex,
+        sink: &Sink<'_>,
+    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>
+    {
+        NativeRef::over(&self.cx).called_environment(declared, written, sink)
+    }
+
+    /// The identity family's `callee_result`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn callee_result(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<NodeIndex>
+    {
+        IdentitiesRef::new(self).callee_result(constant)
+    }
+
+    /// The native family's `construct`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn construct(
+        &mut self,
+        site: Site,
+        constructor: Constructor,
+        fields: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Native::new(self).construct(site, constructor, fields)
+    }
+
     /// The lowering's own `constructed_at`.
     ///
     /// # Specification
@@ -228,6 +294,20 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     )
     {
         Lowerer::constructed_at(self, span, constructor);
+    }
+
+    /// The native family's `constructor_head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn constructor_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        Native::new(self).constructor_head(site, head)
     }
 
     /// The native family's `definition_written`.
@@ -267,6 +347,19 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         Lowerer::domains(self, domain)
+    }
+
+    /// The identity family's `function_of`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn function_of(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<Function>
+    {
+        IdentitiesRef::new(self).function_of(constant)
     }
 
     /// The lowering's own `hole`.
@@ -349,6 +442,19 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         Lowerer::located_type(self, site, operand, constant)
+    }
+
+    /// The native family's `looped_point`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn looped_point(
+        &mut self,
+        point: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        Native::new(self).looped_point(point)
     }
 
     /// The lowering's own `mint_block`.
@@ -663,6 +769,24 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::region_binder(self, at, name)
     }
 
+    /// The native family's `relocate`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn relocate(
+        &self,
+        arena: &mut CoreArena,
+        ty: CompTypeId,
+        from: Frame,
+        telescope: Telescope,
+        lift: Binders,
+        copies: Option<&mut Vec<Carried>>,
+    ) -> CompTypeId
+    {
+        NativeRef::over(&self.cx).relocate(arena, ty, from, telescope, lift, copies)
+    }
+
     /// The lowering's own `require`.
     ///
     /// # Specification
@@ -675,6 +799,22 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
         Lowerer::require(self, site, produced)
+    }
+
+    /// The lowering's own `resident`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn resident<Count>(
+        &self,
+        site: Site,
+        resident: Placed,
+    ) -> Result<Count, LoweringRefusal<'source>>
+    where
+        Count: From<usize> + PartialEq,
+    {
+        Lowerer::resident(self, site, resident)
     }
 
     /// The lowering's own `resolve_name`.
@@ -748,6 +888,19 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Capability::new(self).session_type(site)
     }
 
+    /// The lowering's own `spread`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn spread(
+        &self,
+        kept: FormStretch,
+    ) -> Stretch
+    {
+        Lowerer::spread(self, kept)
+    }
+
     /// The lowering's own `stated_entries`.
     ///
     /// # Specification
@@ -797,7 +950,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::stated_named(self, site, name)
     }
 
-    /// The lowering's own `stated_relation`.
+    /// The identity family's `stated_relation`.
     ///
     /// # Specification
     /// trivial.
@@ -807,7 +960,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         stated: NodeIndex,
     ) -> Result<Maybe<Layout, related::Absent>, LoweringRefusal<'source>>
     {
-        Lowerer::stated_relation(self, stated)
+        Identities::new(self).stated_relation(stated)
     }
 
     /// The lowering's own `supplied_carrier`.
@@ -911,6 +1064,20 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         Lowerer::ungrouped_target(self, target, anchor)
     }
 
+    /// The lowering's own `universe_tiles`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn universe_tiles(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<Universe, LoweringRefusal<'source>>
+    {
+        Lowerer::universe_tiles(self, site, cursor)
+    }
+
     /// The native family's `unwrapped`.
     ///
     /// # Specification
@@ -922,6 +1089,20 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>
     {
         Native::new(self).unwrapped(node)
+    }
+
+    /// The native family's `words_point`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn words_point(
+        &self,
+        arena: &mut CoreArena,
+        words: &WordsForm,
+    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>
+    {
+        NativeRef::over(&self.cx).words_point(arena, words)
     }
 
     /// The lowering's own `written_group`.

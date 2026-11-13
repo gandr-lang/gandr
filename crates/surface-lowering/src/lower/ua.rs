@@ -256,6 +256,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
     /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| self.cx.text_at(resident).as_ref().parse::<usize>().map(Count::from).as_ref() == Ok(value)))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn resident<Count>(
         &self,
         site: Site,
