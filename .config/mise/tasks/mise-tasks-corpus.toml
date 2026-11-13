@@ -141,6 +141,42 @@ END { printf "\nwall %s, peak resident set %s bytes\n", wall, peak }
 uptime | awk -F 'load averages?: ' '{ printf "load %s\n", $2 }'
 '''
 
+# The small-device measure (#7308): four paths of gandr under a bound of cores
+# and of memory, the frame of a device with little of both. A built program
+# runs, the kernel replays `library/std` with no recorded verdict, a small
+# module checks cold, and a host serves the world `far` that a crossing
+# reaches. Each path runs at 1 and 2 cores and at 64 MiB, 256 MiB and 1 GiB,
+# and its row gives its wall time, the time to its first line, its peak
+# resident set, the peak that its scope charged and why it stopped.
+# `.config/bench/small-device.bash` states each path and the bound, and
+# `.config/bench/small-device.jq` writes each row, held to `check:bench`'s
+# cases. The measure needs a user scope of systemd that bounds memory, so on
+# macOS it refuses before the driver is built. The riscv64 host's table is the
+# verdict, and a fast host's table is never one. `--gandr` names a built
+# driver in place of this checkout's release build. That driver must come
+# from this checkout: a driver reads `library/std` of the tree that it was
+# built from (`package::lock::standard`), so the `std` of another tree loses
+# its host interfaces. `--limit` gives the seconds that bound each run.
+["bench:small-device"]
+description = "Run four paths of gandr under bounds of cores and of memory, each with its wall time, its first line, its peak resident set, its charged peak and its stop"
+usage = '''
+flag "--gandr <binary>" help="a gandr built from this checkout, in place of its release build"
+flag "--limit <seconds>" help="the wall-clock limit of each run" default="300"
+'''
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# The bound refuses here, before the driver is built, where no bound takes.
+.config/bench/small-device.bash --check-host
+gandr=${usage_gandr:-}
+if [[ -z $gandr ]]; then
+  .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
+  gandr=target/release/gandr
+fi
+.config/bench/small-device.bash "$gandr" "${usage_limit:?}"
+'''
+
 # Catt's wall time on one example, the oracle the rows at dimension 3 are read
 # against (#3833). Catt is the repository `thibautbenjamin/catt` at the
 # revision below, built once into the user's cache with an opam root of its
