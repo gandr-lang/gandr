@@ -61,8 +61,14 @@ const SMOKE_WIDTHS: [Count; 2] = [Count(1), Count(2)];
 const PLANES: [&str; 2] = ["chunks", "nodes"];
 
 /// A count of files, threads or objects.
+#[repr(transparent)]
 #[derive(Clone, Copy)]
 struct Count(usize);
+
+/// A count of objects over each second of a wall time.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct Rate(u128);
 
 /// The objects that one pass moves, and the wall time it takes.
 #[derive(Clone, Copy)]
@@ -80,13 +86,15 @@ impl Pass
     ///
     /// # Specification
     /// trivial.
-    fn rate(self) -> u128
+    fn rate(self) -> Rate
     {
         let objects = u128::try_from(self.objects.0).expect("a count fits in 128 bits");
-        objects
-            .saturating_mul(1_000_000)
-            .checked_div(self.wall.as_micros().max(1))
-            .unwrap_or_default()
+        Rate(
+            objects
+                .saturating_mul(1_000_000)
+                .checked_div(self.wall.as_micros().max(1))
+                .unwrap_or_default(),
+        )
     }
 }
 
@@ -160,6 +168,13 @@ fn objects(store: &Path) -> Vec<PathBuf>
 ///
 /// # Specification
 /// trivial.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: each row measures the store at a fixed count of producers, so it starts the threads it counts"
+    )
+)]
 fn load(
     store: &Path,
     files: &[PathBuf],
@@ -214,29 +229,35 @@ fn fold(
 }
 
 /// Print one row: `width`, the objects and the wall of `pass`, its put rate,
-/// and that rate over `fold_rate`.
+/// and that rate over `fold`.
 ///
 /// # Specification
 /// trivial.
 fn row(
     width: Count,
     pass: Pass,
-    fold_rate: u128,
+    fold: Rate,
 )
 {
-    let put_rate = pass.rate();
+    let put = pass.rate();
     println!(
-        "| {} | {} | {} | {put_rate} | {} |",
+        "| {} | {} | {} | {} | {} |",
         width.0,
         pass.objects.0,
         pass.wall.as_millis(),
-        put_rate
+        put.0,
+        put.0
             .saturating_mul(100)
-            .checked_div(fold_rate.max(1))
+            .checked_div(fold.0.max(1))
             .unwrap_or_default()
     );
 }
 
+/// Load the source tree at each width and print a row for each, beside the
+/// fold of one writer.
+///
+/// # Specification
+/// trivial.
 fn main()
 {
     let full = std::env::args().any(|argument| argument == "--bench");
@@ -259,10 +280,11 @@ fn main()
     if full {
         println!(
             "store load of {} files of {FILE_BYTES} bytes; the fold of one writer renames {} \
-             objects in {} ms, {fold_rate} objects per second",
+             objects in {} ms, {} objects per second",
             files.0,
             folded.objects.0,
-            folded.wall.as_millis()
+            folded.wall.as_millis(),
+            fold_rate.0
         );
         println!("| width | objects | wall (ms) | puts per second | puts over the fold (%) |");
         println!("| ---: | ---: | ---: | ---: | ---: |");
