@@ -1308,15 +1308,12 @@ pub struct AdmittedDeclaration
     /// Its rank in the source of the revision that holds it: what every
     /// reader of "admitted before" compares.
     rank: SourceRank,
-    /// Its kind: live, or retired by a readmission.
-    kind: EntryKind,
     /// The positions of the unit that admitted it: its own position alone,
     /// or the members of its mutual block.
     unit: Unit,
 }
 
-/// The parts of an admitted declaration that an admission hands the record:
-/// each part but its kind, since an admitted declaration enters live.
+/// The parts of an admitted declaration that an admission hands the record.
 pub struct AdmittedParts
 {
     /// The declaration itself.
@@ -1356,24 +1353,6 @@ pub struct AdmittedParts
     /// The positions of the unit that admitted it: its own position alone,
     /// or the members of its mutual block.
     pub unit: Unit,
-}
-
-/// The kind of an entry: live, or retired by a readmission.
-///
-/// A retired entry keeps its position and its content, so no other entry
-/// moves. No read sees it, no rank table holds it, and its rank is free.
-/// `Environment::keep` makes it live again, at a new rank, when its own
-/// key says that its check reads what it read.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum EntryKind
-{
-    /// The entry stands live: a read sees it, and the tables hold it.
-    Live,
-    /// A readmission retired the entry: no read sees it.
-    Retired,
 }
 
 /// The positions of the unit that admitted an entry, `first .. end`, and
@@ -1634,7 +1613,6 @@ impl AdmittedDeclaration
             census,
             key,
             rank,
-            kind: EntryKind::Live,
             unit,
         }
     }
@@ -1658,17 +1636,6 @@ impl AdmittedDeclaration
     pub const fn rank(&self) -> SourceRank
     {
         self.rank
-    }
-
-    /// The entry's kind: live, or retired by a readmission.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn kind(&self) -> EntryKind
-    {
-        self.kind
     }
 
     /// What the declaration's check charged, goal by goal: its admission's
@@ -1804,14 +1771,16 @@ pub struct EntryLog
 }
 
 /// The slot at one position of the entries: an admitted declaration, the
-/// vacancy that a refused declaration leaves, or the reservation of a
-/// released declaration whose commit has not come.
+/// vacancy that a refused declaration leaves, the reservation of a released
+/// declaration whose commit has not come, or the name of a retired entry.
 ///
 /// A refused declaration keeps its position, so no later position moves when
 /// a refusal comes after it. Its content leaves the arena, or stays as an
 /// orphan below later content, so its slot holds no declaration. No read sees
 /// a vacancy, no rank table holds it, no reach holds it, and the chain passes
-/// it. No read sees a reservation either, until its commit fills it.
+/// it. No read sees a reservation either, until its commit fills it. A
+/// retired entry keeps its position as a name in the same way, and its slot
+/// frees its declaration, its key and its rows.
 ///
 /// # Specification
 /// trivial.
@@ -1823,18 +1792,21 @@ pub struct EntryLog
 )]
 pub enum Slot
 {
-    /// An admitted declaration, live or retired.
+    /// A live admitted declaration.
     Admitted(AdmittedDeclaration),
     /// The position of a refused declaration.
     Vacant,
     /// The position of a released declaration whose commit has not come.
     Reserved,
+    /// The position of an entry that a readmission retired: a name that no
+    /// later entry takes.
+    Retired,
 }
 
 impl Slot
 {
-    /// The admitted declaration in this slot: none for a vacancy or a
-    /// reservation.
+    /// The admitted declaration in this slot: none for a vacancy, a
+    /// reservation or a retired entry.
     ///
     /// # Specification
     /// trivial.
@@ -1844,12 +1816,12 @@ impl Slot
     {
         match *self {
             Self::Admitted(ref entry) => Some(entry),
-            Self::Vacant | Self::Reserved => None,
+            Self::Vacant | Self::Reserved | Self::Retired => None,
         }
     }
 
     /// The admitted declaration in this slot, to change in place: none for a
-    /// vacancy or a reservation.
+    /// vacancy, a reservation or a retired entry.
     ///
     /// # Specification
     /// trivial.
@@ -1858,7 +1830,7 @@ impl Slot
     {
         match *self {
             Self::Admitted(ref mut entry) => Some(entry),
-            Self::Vacant | Self::Reserved => None,
+            Self::Vacant | Self::Reserved | Self::Retired => None,
         }
     }
 }
@@ -1938,22 +1910,6 @@ impl Entries
         self.log.as_deref().map_or(&NO_FAMILY, |log| &log.family)
     }
 
-    /// The admitted declaration at `offset`, live or retired, read outside
-    /// any support: none for a vacancy, and none past the entries.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn at<Offset>(
-        &self,
-        offset: Offset,
-    ) -> Option<&AdmittedDeclaration>
-    where
-        Offset: Into<gandr_kernel_term::ArenaLength>,
-    {
-        self.family().get(offset).and_then(Slot::admitted)
-    }
-
     /// How many slots there are, each vacancy and each reservation included:
     /// the position that the next admission takes. A running check reads the
     /// position of the declaration that it admits.
@@ -1974,15 +1930,16 @@ impl Entries
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the count of [`Self::iter`], read in constant time.
+    /// - ensures: the count of [`Self::iter`] and the retired slots, read in
+    ///   constant time.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the count of [`Self::iter`] walks every slot, and a
-    ///   clause may not walk the entries.
+    /// - executable: none — the count walks every slot, and a clause may not
+    ///   walk the entries.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a count that misses a vacancy or an entry that a
-    ///   refused block drops differs from the count of [`Self::iter`].
+    ///   refused block drops differs from the count of the slots.
     /// - witness: `gandr-kernel-core::tests::recursive_data::a_mutual_block_is_refused_whole`
     #[inline]
     #[must_use]
@@ -2035,7 +1992,7 @@ impl Entries
         let position = usize::from(offset.into());
         let log = self.log.as_deref()?;
         let entry = log.family.get(position)?.admitted()?;
-        if entry.kind == EntryKind::Retired || entry.rank >= self.horizon() {
+        if entry.rank >= self.horizon() {
             return None;
         }
         let Some(support) = self.support.as_deref()
@@ -2070,8 +2027,8 @@ impl Entries
         Offset: Into<gandr_kernel_term::ArenaLength>,
     {
         let position = usize::from(offset.into());
-        let entry = self.at(position)?;
-        if entry.kind == EntryKind::Retired || entry.rank >= self.horizon() {
+        let entry = self.live(ConstantIndex::from(position))?;
+        if entry.rank >= self.horizon() {
             return None;
         }
         let read = self
@@ -2088,8 +2045,8 @@ impl Entries
         }
     }
 
-    /// The entry admitted last, read outside any support: a vacancy after it
-    /// is passed.
+    /// The live entry admitted last, read outside any support: a vacancy or a
+    /// retired entry after it is passed.
     ///
     /// # Specification
     /// trivial.
@@ -2100,9 +2057,9 @@ impl Entries
         self.family().iter().rev().find_map(Slot::admitted)
     }
 
-    /// Every admitted entry, live or retired, in admission order, read outside
-    /// any support: for a reader outside a check. A vacancy gives nothing, so
-    /// a reader that needs each position counts it from [`Self::len`], and a
+    /// Every live entry, in admission order, read outside any support: for a
+    /// reader outside a check. A vacancy and a retired entry give nothing, so a
+    /// reader that needs each position counts it from [`Self::len`], and a
     /// reader that needs the count of entries reads [`Self::admitted`].
     ///
     /// # Specification
@@ -2115,8 +2072,8 @@ impl Entries
     }
 
     /// How a memo key names a reference to each position, in admission
-    /// order: as the admission of its entry named it, and a vacancy by its
-    /// position, which no read reaches.
+    /// order: as the admission of its entry named it, and a vacancy or a
+    /// retired entry by its position, which no read reaches.
     ///
     /// # Specification
     /// trivial.
@@ -2187,7 +2144,7 @@ impl Entries
     }
 
     /// The live entry at `position`, read outside any support: none for a
-    /// retired entry, and none past the entries.
+    /// vacancy, a reservation or a retired entry, and none past the entries.
     ///
     /// # Specification
     /// trivial.
@@ -2198,8 +2155,9 @@ impl Entries
         position: ConstantIndex,
     ) -> Option<&AdmittedDeclaration>
     {
-        self.at(usize::from(position))
-            .filter(|entry| entry.kind == EntryKind::Live)
+        self.family()
+            .get(usize::from(position))
+            .and_then(Slot::admitted)
     }
 
     /// The rank of the live entry at `position`, read outside any support.
@@ -2511,17 +2469,18 @@ impl Entries
         }
     }
 
-    /// Retire the live entry at `position`: no read sees it after, and its
-    /// rank is free.
+    /// Retire the live entry at `position`, its content in `arena`: no read
+    /// sees it after, and its rank is free.
     ///
-    /// The entry keeps its position, its content and its row in the role
-    /// index. A reader of that index reads the live entries alone, through
-    /// their ranks.
+    /// The slot keeps the position as a name, so no other entry moves. The
+    /// declaration, its key and its rows in the tables leave the record.
     ///
     /// # Specification
     /// - requires: the entry at `position` stands live.
-    /// - ensures: the entry is retired; the digest index and the presentations
-    ///   hold no row of it; every other entry and row is unchanged.
+    /// - ensures: the slot at `position` is retired and holds no declaration;
+    ///   the digest index, the ruled index, the role index and the
+    ///   presentations hold no row of it; every other entry and row is
+    ///   unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses state the tables before and after the
@@ -2529,92 +2488,53 @@ impl Entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::retire`.
-    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `gandr-kernel-core::environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     #[inline]
     pub fn retire(
         &mut self,
+        arena: &TermArena,
         position: ConstantIndex,
     )
     {
         let log = self.log_mut();
-        let Some(entry) = log
+        let Some(slot) = log
             .family
             .get_mut(usize::from(position))
-            .and_then(Slot::admitted_mut)
+            .filter(|slot| matches!(**slot, Slot::Admitted(_)))
         else {
             return;
         };
-        entry.kind = EntryKind::Retired;
-        let key_name = entry.key_name;
-        if let ConstantName::Definition { digest, .. } = key_name
-            && let Some(positions) = log.definitions.get_mut(&digest)
-        {
-            positions.retain(|&held| held != position);
-        }
-        log.presentations.retire(position);
-    }
-
-    /// Stand the retired entry at `position` live again at the rank `rank`,
-    /// named `key_name`, its content in `arena`.
-    ///
-    /// # Specification
-    /// - requires: the entry at `position` is retired, and no live entry holds
-    ///   `rank`.
-    /// - ensures: the entry stands live at `rank` under `key_name`; the digest
-    ///   index, the ruled index and the presentations hold its rows at `rank`.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the clauses state the tables before and after the
-    ///   change, which a predicate may not capture whole.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as `Environment::keep`.
-    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
-    #[inline]
-    pub fn reinstate(
-        &mut self,
-        arena: &TermArena,
-        (position, rank): (ConstantIndex, SourceRank),
-        key_name: ConstantName,
-    )
-    {
-        let log = self.log_mut();
-        let Some(entry) = log
-            .family
-            .get_mut(usize::from(position))
-            .and_then(Slot::admitted_mut)
-        else {
-            return;
-        };
-        entry.kind = EntryKind::Live;
-        entry.rank = rank;
-        entry.key_name = key_name;
-        let EntryLog {
-            ref family,
-            ref mut presentations,
-            ref mut ruled,
-            ref mut definitions,
-            ..
-        } = *log;
-        let Some(entry) = family.get(usize::from(position)).and_then(Slot::admitted)
+        let Slot::Admitted(entry) = core::mem::replace(slot, Slot::Retired)
         else {
             return;
         };
         let declaration = &entry.declaration;
-        presentations.admit(
-            (position, rank),
-            declaration,
-            sort_constructors(family, declaration),
-        );
+        // A later definition with the same fixpoint takes its row, and a
+        // retire leaves that row.
         if let DeclarationContent::Def { body, .. } = *declaration.content()
             && !declaration.operation_rules().rules().is_empty()
             && let Some(&Value::Thunk(root)) = arena.value(body)
+            && log.ruled.get(&root) == Some(&position)
         {
-            let _previous = ruled.insert(root, position);
+            let _held = log.ruled.remove(&root);
         }
-        if let ConstantName::Definition { digest, .. } = key_name {
-            place_definition(family, definitions, digest, (position, rank));
+        if let Maybe::Present(role) = declaration.role()
+            && let Some(holders) = log.roles.get_mut(&role)
+        {
+            holders.retain(|&held| held != position);
+            if holders.is_empty() {
+                let _holders = log.roles.remove(&role);
+            }
         }
+        if let ConstantName::Definition { digest, .. } = entry.key_name
+            && let Some(positions) = log.definitions.get_mut(&digest)
+        {
+            positions.retain(|&held| held != position);
+            if positions.is_empty() {
+                let _positions = log.definitions.remove(&digest);
+            }
+        }
+        log.presentations.retire(position);
     }
 
     /// Give each live entry that `ranks` names its rank there, in the entries
@@ -2720,7 +2640,7 @@ impl Entries
         let (vacant, reserved) = log.family.iter().rev().take(dropped).fold(
             (0_usize, 0_usize),
             |(vacant, reserved), slot| match *slot {
-                Slot::Admitted(_) => (vacant, reserved),
+                Slot::Admitted(_) | Slot::Retired => (vacant, reserved),
                 Slot::Vacant => (vacant.saturating_add(1), reserved),
                 Slot::Reserved => (vacant, reserved.saturating_add(1)),
             },

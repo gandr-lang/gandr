@@ -726,15 +726,15 @@ fn keyed() -> Environment
     )
 }
 
-/// A readmission that keeps an entry and appends the reach of an edit
-/// orients a law as a fresh admission of the edited source does. The source
-/// holds `a`, `b` and `c`, each the identity on the booleans as a ruled
-/// operation. The edit touches `a`, and it gives `c` the law `c(a(x)) ==>
-/// c(b(x))`, which orients only when `a` ranks above `b`. A fresh admission
-/// ranks `b` above `a` and refuses the law. The readmission retires `a`, `b`
-/// and `c`, offers `a` again at rank 1, keeps `b` at rank 2 and offers `c`
-/// at rank 3. The new `a` stands at a later position than `b`, but the law
-/// is refused, as the fresh admission refuses it.
+/// A readmission that keeps an entry in place and appends the reach of an
+/// edit orients a law as a fresh admission of the edited source does. The
+/// source holds `a`, `b` and `c`, each the identity on the booleans as a
+/// ruled operation. The edit touches `a`, and it gives `c` the law `c(a(x))
+/// ==> c(b(x))`, which orients only when `a` ranks above `b`. A fresh
+/// admission ranks `b` above `a` and refuses the law. The readmission retires
+/// `a` and `c`, keeps `b` in place at rank 2, and offers `a` again at rank 1
+/// and `c` at rank 3. The new `a` stands at a later position than `b`, but
+/// the law is refused, as the fresh admission refuses it.
 #[test]
 fn an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621()
 {
@@ -770,32 +770,26 @@ fn an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621()
     }
     let watermark = readmitted.arena().watermark();
     assert_eq!(
-        readmitted.retire(&[at(1_usize), at(2_usize), at(3_usize)]),
+        readmitted.retire(&[at(1_usize), at(3_usize)]),
         Ok(()),
-        "the readmission retires `a`, `b` and `c`"
+        "the readmission retires `a` and `c`"
+    );
+    assert_eq!(
+        readmitted
+            .keep_in_place(at(2_usize))
+            .map(CheckedId::position),
+        Ok(at(2_usize)),
+        "`b` is kept in place at position 2"
     );
     assert_eq!(
         readmitted.arena().watermark(),
         watermark,
-        "the retire mints nothing"
+        "the retire and the keep mint nothing"
     );
     assert_eq!(
         admit_identity(&mut readmitted, rank(1_usize), plain),
         Ok(()),
         "`a` admits again, at position 4"
-    );
-    let watermark = readmitted.arena().watermark();
-    assert_eq!(
-        readmitted
-            .keep((at(2_usize), &[rank(2_usize)]))
-            .map(CheckedId::position),
-        Ok(at(2_usize)),
-        "`b` is kept at position 2"
-    );
-    assert_eq!(
-        readmitted.arena().watermark(),
-        watermark,
-        "the keep mints nothing"
     );
     let readmitted_law = admit_identity(&mut readmitted, rank(3_usize), law(4, 2));
     assert_eq!(
@@ -812,12 +806,13 @@ fn an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621()
     );
 }
 
-/// A keep is refused when the precedence that the entry's check reads
-/// changed. `c` carries the law `c(a(x)) ==> b(x)`, which orients under
+/// A keep in place is refused when the precedence that the entry's check
+/// reads changed. `c` carries the law `c(a(x)) ==> b(x)`, which orients under
 /// either order of `a` and `b`. An edit swaps `a` and `b` in the source. The
-/// readmission keeps each of them at its new rank. The key of `c` holds the
-/// rank order of the operations its rules name, so the keep of `c` is
-/// refused and `c` stays retired. Offered again, `c` admits.
+/// readmission gives each operation its new rank and keeps it in place. The
+/// key of `c` holds the rank order of the operations its rules name, so the
+/// keep of `c` in place is refused, and the readmission retires `c`. Offered
+/// again, `c` admits.
 #[test]
 fn a_keep_whose_precedence_changed_is_refused_6621()
 {
@@ -845,32 +840,38 @@ fn a_keep_whose_precedence_changed_is_refused_6621()
         Ok(()),
         "`c` admits"
     );
-    assert_eq!(
-        environment.retire(&[at(1_usize), at(2_usize), at(3_usize)]),
-        Ok(()),
-        "the readmission retires `a`, `b` and `c`"
-    );
     // The edit puts `b` first: `b` at rank 1, `a` at rank 2.
-    for (position, place) in [(2_usize, 1_usize), (1, 2)] {
+    assert_eq!(
+        environment.rerank(&[
+            (at(0_usize), rank(0_usize)),
+            (at(1_usize), rank(2_usize)),
+            (at(2_usize), rank(1_usize)),
+            (at(3_usize), rank(3_usize)),
+        ]),
+        Ok(()),
+        "the readmission gives each entry its new rank"
+    );
+    for position in [2_usize, 1] {
         assert_eq!(
             environment
-                .keep((at(position), &[rank(place)]))
+                .keep_in_place(at(position))
                 .map(CheckedId::position),
             Ok(at(position)),
-            "an operation whose rules name only itself is kept at its new rank"
+            "an operation whose rules name only itself is kept in place at its new rank"
         );
     }
     assert_eq!(
-        environment.keep((at(3_usize), &[rank(3_usize)])),
+        environment.keep_in_place(at(3_usize)),
         Err(KernelError::Unkept {
             position: at(3_usize),
             refusal: KeepRefusal::KeyChanged,
         }),
         "the precedence of what `c` names changed"
     );
-    assert!(
-        environment.entries().get(3_usize).is_none(),
-        "`c` stays retired"
+    assert_eq!(
+        environment.retire(&[at(3_usize)]),
+        Ok(()),
+        "the readmission retires `c`"
     );
     assert_eq!(
         admit_identity(&mut environment, rank(3_usize), law(1, 2)),

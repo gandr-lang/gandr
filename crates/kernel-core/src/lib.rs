@@ -768,7 +768,6 @@ pub use crate::env::Admission;
 pub use crate::env::AdmittedDeclaration;
 pub use crate::env::CheckedId;
 pub use crate::env::Entries;
-pub use crate::env::EntryKind;
 pub use crate::env::OutstandingContent;
 pub use crate::env::OutstandingCount;
 pub use crate::env::StagedDeclaration;
