@@ -397,6 +397,9 @@ pub struct Environment
     /// The atoms whose minting admission is open, ascending: what a
     /// declaration admitted now reads as its representation.
     manifest: Vec<ConstantIndex>,
+    /// The position of each abstract type admitted, ascending, open or
+    /// closed: the atoms whose scopes a key reads.
+    atoms: Vec<ConstantIndex>,
     /// The verdict state: the policy, the key chain, the receipts verified
     /// and the verdicts checked here.
     verdicts: crate::verdict::Verdicts,
@@ -521,6 +524,7 @@ impl Environment
             admission_floor: self.admission_floor,
             outstanding: self.outstanding.clone(),
             manifest: self.manifest.clone(),
+            atoms: self.atoms.clone(),
             verdicts: self.verdicts.handed_on(),
             names: self.names.carried(),
             admitting: crate::admitted::AdmissionPolicy::Derive,
@@ -2017,6 +2021,7 @@ impl Environment
                     alloc::sync::Arc::make_mut(&mut self.commits).stale_all();
                 }
                 self.manifest = manifest;
+                self.atoms.retain(|&atom| atom < ConstantIndex::from(base));
                 self.arena.truncate_to(rejected);
                 Err(error)
             },
@@ -2338,6 +2343,41 @@ impl Environment
                 Some(_) | None => return Err(KernelError::UnboundConstant { index: reference }),
             }
         }
+        let Maybe::Present(key) = self.unit_key(entry, (first, ranks))
+        else {
+            return Err(unkept(KeepRefusal::Unkeyed));
+        };
+        for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
+            match self
+                .entries
+                .live(ConstantIndex::from(member))
+                .map(AdmittedDeclaration::key)
+            {
+                Some(Maybe::Present(held))
+                    if held == key.member(crate::verdict::KeyedCount::from(offset)) => {},
+                Some(Maybe::Present(_)) => return Err(unkept(KeepRefusal::KeyChanged)),
+                Some(Maybe::Absent(_)) | None => return Err(unkept(KeepRefusal::Unkeyed)),
+            }
+        }
+        Ok(())
+    }
+
+    /// The key of the unit whose first member `entry` stands at `first`, at
+    /// the ranks `ranks`, as a fresh admission at those ranks computes it:
+    /// its content key over its stored content and the entries live now,
+    /// counted among the generative contents ranked below it when a member
+    /// is generative.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unit_key(
+        &self,
+        entry: &AdmittedDeclaration,
+        (first, ranks): (ConstantIndex, &[SourceRank]),
+    ) -> Maybe<UnitKey, crate::verdict::keyed::Absent>
+    {
+        let unit = entry.unit();
+        let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
         let content = match unit.shape {
             UnitShape::Lone => {
                 self.content_key(core::slice::from_ref(entry.declaration()), (first, ranks))
@@ -2351,6 +2391,10 @@ impl Environment
                 self.content_key(&declarations, (first, ranks))
             },
         };
+        let content = match content {
+            Maybe::Present(content) => content,
+            Maybe::Absent(absent) => return Maybe::Absent(absent),
+        };
         let generative = (usize::from(unit.first) .. usize::from(unit.end))
             .filter_map(|member| self.entries.live(ConstantIndex::from(member)))
             .any(|member| {
@@ -2359,38 +2403,69 @@ impl Environment
                     DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
                 )
             });
-        let Maybe::Present(content) = content
-        else {
-            return Err(unkept(KeepRefusal::Unkeyed));
-        };
-        let unit_key = if generative {
-            content.generative(
-                crate::build_identity(),
-                self.commits.generative_count(&self.entries, content, below),
-            )
-        }
-        else {
-            content
-        };
-        for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
-            let expected = match unit.shape {
-                UnitShape::Lone => unit_key,
-                UnitShape::Block => unit_key.member(
+        Maybe::Present(if generative {
+            UnitKey {
+                key: content.generative(
                     crate::build_identity(),
-                    crate::verdict::KeyedCount::from(offset),
+                    self.commits.generative_count(&self.entries, content, below),
                 ),
-            };
-            match self
-                .entries
-                .live(ConstantIndex::from(member))
-                .map(AdmittedDeclaration::key)
-            {
-                Some(Maybe::Present(held)) if held == expected => {},
-                Some(Maybe::Present(_)) => return Err(unkept(KeepRefusal::KeyChanged)),
-                Some(Maybe::Absent(_)) | None => return Err(unkept(KeepRefusal::Unkeyed)),
+                shape: unit.shape,
+                generative: Some(content),
             }
         }
-        Ok(())
+        else {
+            UnitKey {
+                key: content,
+                shape: unit.shape,
+                generative: None,
+            }
+        })
+    }
+
+    /// Key the atom at `atom`, closed at `extent`, and each unit in its scope
+    /// that holds no key, in the order of their positions: the keys that a
+    /// fresh admission of the closed module gives. A member admitted while
+    /// the seal was open read the atom open, so it took no key.
+    ///
+    /// # Specification
+    /// trivial.
+    fn key_scope(
+        &mut self,
+        atom: ConstantIndex,
+        extent: SealExtent,
+    )
+    {
+        let end = usize::from(atom)
+            .saturating_add(usize::from(extent))
+            .saturating_add(1);
+        let mut at = usize::from(atom);
+        while at < end {
+            let position = ConstantIndex::from(at);
+            let Some(entry) = self.entries.live(position)
+            else {
+                at = at.saturating_add(1);
+                continue;
+            };
+            let unit = entry.unit();
+            at = usize::from(unit.end).max(at.saturating_add(1));
+            if unit.first != position || matches!(entry.key(), Maybe::Present(_)) {
+                continue;
+            }
+            let ranks = self.unit_ranks(unit);
+            let Maybe::Present(key) = self.unit_key(entry, (position, &ranks))
+            else {
+                continue;
+            };
+            for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
+                self.entries.rekey(
+                    ConstantIndex::from(member),
+                    key.member(crate::verdict::KeyedCount::from(offset)),
+                );
+            }
+            if let Some(content) = key.generative {
+                alloc::sync::Arc::make_mut(&mut self.commits).generative(content, position);
+            }
+        }
     }
 
     /// Give each live entry ranked at or above `floor` the rank `ranks` names
@@ -2876,8 +2951,10 @@ impl Environment
     ///   is refused.
     /// - ensures: on success the atom is not manifest, its held declaration's
     ///   scope is closed at the number of declarations admitted after it, and
-    ///   that extent is returned. Every other face of the environment is
-    ///   unchanged, and on failure nothing changes.
+    ///   that extent is returned. Each unit of the closed scope that holds no
+    ///   key takes the key a fresh admission of the closed module gives it.
+    ///   Every other face of the environment is unchanged, and on failure
+    ///   nothing changes.
     /// - provides: the close a producer sealing a module issues once its
     ///   members are admitted.
     /// - fails: [`KernelError::SealNotOpen`] when `atom` names no abstract type
@@ -2894,6 +2971,7 @@ impl Environment
     ///   refused, and a second close of the same atom is refused.
     /// - witness: `environment::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
     /// - witness: `environment::tests::an_atom_seals_once`
+    /// - witness: `environment::tests::a_seal_keys_its_scope_as_an_admission_of_the_closed_module_7200`
     #[spec(
         captures: [entry_len = self.entries.len(), entry_manifest = self.manifest.len()],
         ensures: |ret| self.entries.len() == entry_len && ret.as_ref().map_or_else(
@@ -2936,6 +3014,7 @@ impl Environment
         let _closed = self.manifest.remove(held);
         // Each key reads the manifest whole.
         alloc::sync::Arc::make_mut(&mut self.commits).stale_all();
+        self.key_scope(position, extent);
         Ok(extent)
     }
 
@@ -3086,6 +3165,7 @@ impl Environment
         let Self {
             ref entries,
             ref mut manifest,
+            ref mut atoms,
             ref mut commits,
             ..
         } = *self;
@@ -3107,10 +3187,13 @@ impl Environment
             }
         });
         let mut changed = manifest.len() != before;
-        match entries
+        let content = entries
             .get(usize::from(position))
-            .map(AdmittedDeclaration::content)
-        {
+            .map(AdmittedDeclaration::content);
+        if matches!(content, Some(&DeclarationContent::AbstractType { .. })) {
+            atoms.push(position);
+        }
+        match content {
             Some(&DeclarationContent::AbstractType {
                 scope: SealScope::Open,
                 ..
@@ -3229,25 +3312,32 @@ impl Environment
                 reached.extend_from_slice(segment.named());
             }
         }
-        // An atom manifest at the first member stays manifest for each member
-        // its closed scope still reaches.
-        let mut manifest = Vec::with_capacity(self.manifest.len());
-        for &atom in &self.manifest {
-            let (
-                Maybe::Present(key),
+        // Each atom whose scope holds the first member is manifest for each
+        // member its scope reaches. The scopes give the atoms manifest at the
+        // admission, so a key computed again after a seal closes reads them
+        // as the admission read them.
+        let mut manifest = Vec::new();
+        let atoms = self.atoms.partition_point(|&atom| atom < first);
+        for &atom in self.atoms.get(.. atoms).unwrap_or_default() {
+            let reach = match self.entries.live(atom).map(AdmittedDeclaration::content) {
                 Some(&DeclarationContent::AbstractType {
                     scope: SealScope::Closed(extent),
                     ..
-                }),
-            ) = (
-                self.entries.key(atom),
-                self.entries.live(atom).map(AdmittedDeclaration::content),
-            )
+                }) => usize::from(atom).saturating_add(usize::from(extent)),
+                Some(&DeclarationContent::AbstractType {
+                    scope: SealScope::Open,
+                    ..
+                }) => return Maybe::Absent(Absent::Unkeyed),
+                Some(_) | None => continue,
+            };
+            if reach < usize::from(first) {
+                continue;
+            }
+            let Maybe::Present(key) = self.entries.key(atom)
             else {
                 return Maybe::Absent(Absent::Unkeyed);
             };
-            let read_by = usize::from(atom)
-                .saturating_add(usize::from(extent))
+            let read_by = reach
                 .saturating_add(1)
                 .saturating_sub(usize::from(first))
                 .min(members.len());
@@ -3677,6 +3767,39 @@ enum Way
     Recalled(check::Accessibility),
     /// The check's own scope, and what its judgement reads beside it.
     Checking(Scope, Judged),
+}
+
+/// The key of one unit, computed in place, with the shape that gives each
+/// member's key from it.
+#[derive(Clone, Copy, Debug)]
+struct UnitKey
+{
+    /// The unit's key: its content key, counted among the generative
+    /// contents ranked below it when a member is generative.
+    key: crate::verdict::VerdictKey,
+    /// Whether the unit is one declaration or a block.
+    shape: UnitShape,
+    /// The unit's content key when a member is generative: the row the
+    /// generative index holds for it.
+    generative: Option<crate::verdict::VerdictKey>,
+}
+
+impl UnitKey
+{
+    /// The key of the member at `offset` in the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    fn member(
+        self,
+        offset: crate::verdict::KeyedCount,
+    ) -> crate::verdict::VerdictKey
+    {
+        match self.shape {
+            UnitShape::Lone => self.key,
+            UnitShape::Block => self.key.member(crate::build_identity(), offset),
+        }
+    }
 }
 
 /// How a keep in place answers for a unit's check.
@@ -6118,6 +6241,45 @@ mod tests
                 index: open.position()
             }),
             "and closes once"
+        );
+    }
+
+    #[test]
+    fn a_seal_keys_its_scope_as_an_admission_of_the_closed_module_7200()
+    {
+        let mut open = keyed();
+        let atom = integer_atom(&mut open, SealScope::Open);
+        let atom = open.add_decl(atom).expect("an open atom admits");
+        let member = seven_at(&mut open, Some(atom.position()));
+        let member = open
+            .add_decl(member)
+            .expect("a member checks at the representation")
+            .position();
+        assert!(
+            matches!(open.entries().key(member), Maybe::Absent(_)),
+            "a member that reads an open atom holds no key"
+        );
+        let extent = open.seal(atom).expect("the open atom seals");
+        let mut closed = keyed();
+        let replayed = integer_atom(&mut closed, SealScope::Closed(extent));
+        let replayed = closed
+            .add_decl(replayed)
+            .expect("a closed atom admits")
+            .position();
+        let inside = seven_at(&mut closed, Some(replayed));
+        let inside = closed
+            .add_decl(inside)
+            .expect("a member inside the closed scope admits")
+            .position();
+        let sealed = [atom.position(), member].map(|position| open.entries().key(position));
+        assert!(
+            sealed.iter().all(|key| matches!(key, Maybe::Present(_))),
+            "the seal keys its atom and its member: {sealed:?}"
+        );
+        assert_eq!(
+            sealed,
+            [replayed, inside].map(|position| closed.entries().key(position)),
+            "each key is the one an admission of the closed module gives"
         );
     }
 

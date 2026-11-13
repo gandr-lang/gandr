@@ -2167,6 +2167,8 @@ impl Crossed
                 // together; a resumed formation's export name counts past them.
                 formations: positions.formations.clone(),
                 content: positions.content.clone(),
+                // A walk that misplaces a formation records nothing.
+                misplaced: false,
             },
             readmitted: readmitted.to_vec(),
             encoded: None,
@@ -2953,6 +2955,7 @@ where
                 leading,
                 held,
                 renames,
+                sealed,
             }) => (
                 Some(judged_all.len()),
                 keys,
@@ -2960,6 +2963,7 @@ where
                     held,
                     renames,
                     recall,
+                    sealed,
                 }),
                 (recalling(environment, recall), positions, leading),
             ),
@@ -3161,6 +3165,10 @@ struct Keeping<'crossed>
     renames: BTreeMap<ConstantIndex, ConstantIndex>,
     /// The recall the whole readmission admits under.
     recall: &'crossed Recall,
+    /// The kernel positions that a closed seal of the record holds: each
+    /// atom and its scope. A keep refused there crosses at another extent
+    /// than a whole readmission draws, so the walk readmits whole.
+    sealed: BTreeSet<ConstantIndex>,
 }
 
 /// A readmission under way: the environment and the bridge's record of what
@@ -3360,6 +3368,17 @@ where
                             });
                     return Releasing::Settled(lead(&mut self.slots, item, entries));
                 }
+                // A sealed member that crosses again draws another extent
+                // than a whole readmission draws.
+                if held.iter().copied().flatten().any(|entry| {
+                    matches!(
+                        keep::position_of(&entry.outcome),
+                        Maybe::Present(position) if keeping.sealed.contains(&position)
+                    )
+                }) {
+                    self.misplaced = true;
+                    return Releasing::Settled(Answer::Skipped);
+                }
                 for entry in held.iter().copied().flatten() {
                     keep::retire_unit(&mut self.environment, entry);
                 }
@@ -3393,6 +3412,10 @@ where
                         Some(Tail::Last)
                     }
                     else {
+                        if keeping.sealed.contains(&position) {
+                            self.misplaced = true;
+                            return Releasing::Settled(Answer::Skipped);
+                        }
                         keep::retire_unit(&mut self.environment, entry);
                         None
                     }
@@ -3770,8 +3793,11 @@ where
     {
         let Crossing { entry, tail } = crossing;
         // A rejected crossing of a walk that keeps may read an entry its
-        // place misplaced, so the whole readmission answers instead.
-        if self.keeping.is_some() && matches!(entry.outcome, Outcome::Rejected(_)) {
+        // place misplaced, so the whole readmission answers instead. So does
+        // a crossing that reads a formation its place misplaces.
+        if self.keeping.is_some()
+            && (matches!(entry.outcome, Outcome::Rejected(_)) || self.positions.misplaced)
+        {
             self.misplaced = true;
         }
         let constant = entry.constant;
@@ -5682,9 +5708,13 @@ fn model_name(
 /// - requires: `at` names a patched type of `arena`, whose base is a record
 ///   type that holds each fixed label.
 /// - ensures: on success `positions.formed` holds `at` and
-///   `positions.formations` holds its key. The kernel admitted every witness of
-///   a key no earlier formation held, and nothing for a key one held. Otherwise
-///   the outcome of the first witness that did not cross.
+///   `positions.formations` holds its key with each witness's position. The
+///   kernel admitted every witness of a key no earlier formation held, and
+///   nothing for a key one held. In a walk that keeps, a formation that the
+///   place misplaces sets `positions.misplaced` and admits nothing: a kept
+///   formation whose witnesses rank past the next rank, or a new one below a
+///   kept witness. Otherwise the outcome of the first witness that did not
+///   cross.
 /// - fails: as above.
 /// - panics: none.
 ///
@@ -5761,7 +5791,31 @@ where
         &records,
         vouch,
     )?;
-    if positions.formations.contains(&key) {
+    // A walk that keeps sets a next rank for each place. A kept formation
+    // whose witnesses rank past it stands below a later reader than a whole
+    // readmission places it. A new formation below a kept one takes another
+    // ordinal than a whole readmission gives. Either way the walk readmits
+    // whole, until #7245 names a witness by its key.
+    if let Maybe::Present(next) = environment.next_rank() {
+        let ahead = |witnesses: &Vec<ConstantIndex>| {
+            witnesses.iter().any(|&witness| {
+                environment
+                    .entries()
+                    .get(usize::from(witness))
+                    .map(gandr_kernel_core::AdmittedDeclaration::rank)
+                    .is_some_and(|rank| rank > next)
+            })
+        };
+        let misplaced = positions
+            .formations
+            .get(&key)
+            .map_or_else(|| positions.formations.values().any(ahead), ahead);
+        if misplaced {
+            positions.misplaced = true;
+            return Err(invariant());
+        }
+    }
+    if positions.formations.contains_key(&key) {
         positions.formed.insert(at);
         return Ok(());
     }
@@ -5775,6 +5829,7 @@ where
                 .collect::<Vec<_>>(),
         )
     };
+    let mut witnesses = Vec::with_capacity(rounds.len().saturating_mul(2));
     for (index, round) in rounds.iter().enumerate() {
         // Round zero is the fixed record with its meets in place; a later
         // round is its meets' record, which the key holds already.
@@ -5804,6 +5859,7 @@ where
             &[],
             (vouch, name("record", index)),
         )?;
+        witnesses.push(record);
         if round.is_empty() {
             continue;
         }
@@ -5827,7 +5883,7 @@ where
             .filter(|&(ref label, _)| !round.contains_key(label))
             .collect();
         let declared = arena.value_type_record(kept);
-        witness(
+        let restriction = witness(
             environment,
             arena,
             (
@@ -5841,8 +5897,9 @@ where
             &[(reserved, record)],
             (vouch, name("meets", index)),
         )?;
+        witnesses.push(restriction);
     }
-    positions.formations.insert(key);
+    positions.formations.insert(key, witnesses);
     positions.formed.insert(at);
     Ok(())
 }
@@ -6158,11 +6215,16 @@ struct Positions
     /// ([`formed`]).
     formed: BTreeSet<ValueTypeId>,
     /// The key of each formation whose witnesses the kernel admitted: the
-    /// content of its records ([`formation_key`]).
-    formations: BTreeSet<Vec<gandr_kernel_core::ContentId>>,
+    /// content of its records ([`formation_key`]), with the kernel position
+    /// of each witness in admission order.
+    formations: BTreeMap<Vec<gandr_kernel_core::ContentId>, Vec<ConstantIndex>>,
     /// The content of the checks the formation keys name, for the length of
     /// one readmission.
     content: gandr_kernel_core::ContentTable,
+    /// Whether a crossing of a walk that keeps reads a formation that its
+    /// place misplaces ([`formed`]). The walk then readmits whole, until
+    /// #7245 names a witness by its key.
+    misplaced: bool,
 }
 
 impl Positions

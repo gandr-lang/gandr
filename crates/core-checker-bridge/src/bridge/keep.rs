@@ -19,6 +19,17 @@
 //! retires with each entry that reads it, and the crossing of its first reader
 //! in the edited source seeds it again.
 //!
+//! A seal stays whole or the readmission keeps nothing. The kernel keys a
+//! sealed module when its seal closes, so a kept atom and each kept member
+//! stand by their own keys. A readmission whose edit touches a seal
+//! readmits whole. Each extent is then the one a whole readmission draws.
+//!
+//! The witnesses of a formation are seeds of their first reader, and each
+//! keeps by its own key. A readmission whose edit touches that reader
+//! readmits whole, and so does a walk that places a formation elsewhere.
+//! The name of a witness counts the formations formed before it, so it
+//! cannot move until #7245 names it by its key.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: a kept entry stands
@@ -71,11 +82,16 @@ quenchant_shape::reason_enum! {
             /// The record or the report has no content key for each of its
             /// declarations.
             Unkeyed,
-            /// The record holds the witnesses of a formation, whose readers
-            /// find them by content and not by position.
+            /// An edit touches the first reader of a formation's witness.
+            /// The name of a witness counts the formations formed before
+            /// it, so the witness cannot move until #7245 names it by its
+            /// key.
             Formed,
-            /// The report seals an abstract type, whose scope the walk
-            /// closes as it crosses.
+            /// A seal of the report does not stay whole. The match keeps no
+            /// record entry for one of its abstract types, or the reach
+            /// holds a position of a record seal. An atom or a member that
+            /// crosses again draws another extent than a whole readmission
+            /// draws.
             Sealed,
             /// The kernel refused to retire the reach or to rewrite the
             /// ranks.
@@ -138,6 +154,10 @@ pub(super) struct Kept<'record>
     /// the readmission keeps past the run, by its module position in the
     /// record.
     pub renames: BTreeMap<ConstantIndex, ConstantIndex>,
+    /// The kernel positions that a closed seal of the record holds: each
+    /// atom and its scope. A keep refused there crosses at another extent
+    /// than a whole readmission draws, so the walk readmits whole.
+    pub sealed: BTreeSet<ConstantIndex>,
 }
 
 /// The kernel position an outcome took, when the kernel admitted it.
@@ -457,10 +477,10 @@ fn leading_run(
 ///   Nothing past the run is read, retired or ranked when the run holds every
 ///   declaration of the record and of `report`. The record is unchanged.
 /// - fails: never; absent as [`keeping::Absent::Unkeyed`] without keys, as
-///   [`keeping::Absent::Formed`] when the record holds a formation, as
-///   [`keeping::Absent::Sealed`] when the report seals an abstract type, as
-///   [`keeping::Absent::Unresumed`] when the record does not resume the run,
-///   and as [`keeping::Absent::Unranked`] when the kernel refuses the
+///   [`keeping::Absent::Formed`] when the reach holds a witness of a formation,
+///   as [`keeping::Absent::Sealed`] when a seal of `report` does not stay
+///   whole, as [`keeping::Absent::Unresumed`] when the record does not resume
+///   the run, and as [`keeping::Absent::Unranked`] when the kernel refuses the
 ///   retirement or the rank rewrite.
 /// - panics: none.
 ///
@@ -471,6 +491,8 @@ fn leading_run(
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
 /// - witness: `bridge::tests::a_seed_whose_first_reader_leaves_retires_6846`
 /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
+/// - witness: `bridge::tests::a_readmission_keeps_a_sealed_module_whose_seal_stays_whole_7200`
+/// - witness: `bridge::tests::a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref kept) => kept.held.len() == keys.len(),
     Maybe::Absent(_) => true,
@@ -484,12 +506,6 @@ pub(super) fn keeping<'record>(
     let judged = report.judged();
     if record.keys.len() != record.readmitted.len() || keys.len() != judged.len() {
         return Maybe::Absent(keeping::Absent::Unkeyed);
-    }
-    if !record.positions.formations.is_empty() {
-        return Maybe::Absent(keeping::Absent::Formed);
-    }
-    if !report.abstract_types().is_empty() {
-        return Maybe::Absent(keeping::Absent::Sealed);
     }
     // The leading run that the edit leaves stands as the record holds it, as
     // the run of a resumed readmission stands.
@@ -578,7 +594,10 @@ pub(super) fn keeping<'record>(
     // A seed stands just below its first reader: the record declaration whose
     // entry ranks least past it. A crossing that read a kept seed first took
     // it below itself, so the position of a seed no longer says where it
-    // stands. A seed below the floor is read first in the run.
+    // stands. A seed below the floor is read first in the run. The
+    // witnesses of a formation stand below their first reader too, and each
+    // keeps by its own key, which its content gives.
+    let witnesses = || record.positions.formations.values().flatten().copied();
     let seeds: BTreeSet<ConstantIndex> = record
         .positions
         .native
@@ -586,6 +605,7 @@ pub(super) fn keeping<'record>(
         .chain(record.positions.assumed.values())
         .copied()
         .chain(record.positions.models.iter().map(|model| model.position))
+        .chain(witnesses())
         .filter(|&seed| rank_in_record(seed).is_some_and(|rank| rank >= floor))
         .collect();
     let owner_by_rank: BTreeMap<SourceRank, ConstantIndex> = owner_at
@@ -656,6 +676,65 @@ pub(super) fn keeping<'record>(
             break reach;
         }
     };
+    // A seal of the edited source stays whole, or the readmission keeps
+    // nothing: an atom or a member that crosses again draws another extent
+    // than a whole readmission draws. A scope as a set of positions is the
+    // general form, which this slice does not build.
+    let sealed: BTreeSet<ConstantIndex> = if report.abstract_types().is_empty() {
+        BTreeSet::new()
+    }
+    else {
+        record
+            .environment
+            .in_rank_order()
+            .filter_map(|atom| {
+                match record
+                    .environment
+                    .entries()
+                    .get(usize::from(atom))
+                    .map(gandr_kernel_core::AdmittedDeclaration::content)
+                {
+                    Some(&gandr_kernel_term::DeclarationContent::AbstractType {
+                        scope: gandr_kernel_term::SealScope::Closed(extent),
+                        ..
+                    }) => Some((atom, extent)),
+                    Some(_) | None => None,
+                }
+            })
+            .flat_map(|(atom, extent)| {
+                (usize::from(atom) ..= usize::from(atom).saturating_add(usize::from(extent)))
+                    .map(ConstantIndex::from)
+            })
+            .collect()
+    };
+    if !report.abstract_types().is_empty() {
+        // The run holds each of its declarations at its own position.
+        let held: BTreeSet<ConstantIndex> = judged
+            .iter()
+            .take(run)
+            .map(gandr_core_checker_base::Judged::constant)
+            .chain(
+                matched
+                    .iter()
+                    .filter(|&&(_, old)| !edited.contains(&old))
+                    .map(|&(new, _)| new),
+            )
+            .collect();
+        if report
+            .abstract_types()
+            .keys()
+            .any(|constant| !held.contains(constant))
+            || reach.iter().any(|position| sealed.contains(position))
+        {
+            return Maybe::Absent(keeping::Absent::Sealed);
+        }
+    }
+    // A witness moves only with an edit of its first reader. Its name counts
+    // the formations formed before it, so it cannot move until #7245 names
+    // it by its key.
+    if witnesses().any(|witness| reach.contains(&witness)) {
+        return Maybe::Absent(keeping::Absent::Formed);
+    }
     // Each kept declaration's seeds take the ranks from its place's on, in
     // the order they were seeded, which is their order of rank in the record,
     // and its own entry the rank after them.
@@ -713,6 +792,9 @@ pub(super) fn keeping<'record>(
     if let Some(entry) = past.first() {
         let _past = positions.admitted.split_off(&entry.constant);
     }
+    // The patched types formed name nodes of the record's arena; each
+    // crossing reads its formation again by its key.
+    positions.formed = BTreeSet::new();
     if !reach.is_empty() {
         positions
             .native
@@ -733,5 +815,6 @@ pub(super) fn keeping<'record>(
             .into_iter()
             .filter(|&(old, _)| !edited.contains(&old))
             .collect(),
+        sealed,
     })
 }
