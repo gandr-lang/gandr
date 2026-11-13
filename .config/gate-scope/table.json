@@ -166,6 +166,7 @@
       ],
       "check:gate-rows": [".config/claims/", ".config/gate-rows/", ".config/mise/"],
       "check:gh-budget": [".config/", ".github/"],
+      "check:gh-direct": [".config/", ".github/"],
       "check:hooks": ["prek.toml"],
       "check:host-lock": [".config/mise/"],
       "check:hotpath": [

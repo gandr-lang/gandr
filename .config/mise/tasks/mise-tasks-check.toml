@@ -2306,6 +2306,23 @@ fi
 echo "gh-budget check OK: $(jq length <<< "$sites") calls in $(jq '[.[] | [.file, .scope]] | unique | length' <<< "$sites") sites priced, each identity within its ceiling"
 '''
 
+# A read the change adds sources the wrapper before the call (#6253).
+# `.config/gh/direct.bash` reads the diff against the merge base. A read
+# is a call the wrapper would cache. The file sources the wrapper when a
+# line above the call sources budget.bash, or stack.bash, deps.bash or
+# stall.bash. In a task file the source stands in the same task.
+# `.config/gh/direct-cases.bash` holds the cases.
+["check:gh-direct"]
+description = "A read the change adds sources the wrapper before the call"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/gh/direct-cases.bash
+base=$(git merge-base HEAD origin/landing)
+.config/gh/direct.bash "$base" HEAD
+echo "gh-direct check OK"
+'''
+
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):
 # `.config/mise/host-lock-cases.bash` holds a scratch lock's slots and reads
 # the refusal, a waiter, a killed holder, a killed holder's running child, and
