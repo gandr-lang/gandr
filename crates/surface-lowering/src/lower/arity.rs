@@ -175,6 +175,7 @@ pub(super) use gandr_surface_lowering_base::lower::arity::Thunked;
 pub(super) use gandr_surface_lowering_base::lower::arity::arrange;
 pub(super) use gandr_surface_lowering_base::lower::arity::separated;
 pub(super) use gandr_surface_lowering_base::lower::arity::stated_labels;
+use gandr_surface_lowering_base::lower::families::Families as _;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::DeclPolarity;
@@ -197,8 +198,6 @@ use super::Site;
 use super::Stretch;
 use super::closed;
 use super::exhausted;
-use super::exits::Exits;
-use super::exits::ExitsRef;
 use super::lowered;
 use super::multiplicity_one;
 use super::native::Answer;
@@ -402,7 +401,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_builtin_type_s_lowercase_name_is_a_key_5561`
     /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
-    pub(super) fn type_entries(
+    #[inline]
+    pub fn type_entries(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
@@ -454,7 +454,7 @@ impl<'source> Lowerer<'_, 'source>
                 // word before the last is a mode tile over the rest.
                 let mut key = first;
                 loop {
-                    match self.cx.form_at(key)? {
+                    match self.cx().form_at(key)? {
                         // A builtin type's lowercase name, `f32`, is a word
                         // here, as it is where a parameter or a value's label
                         // is read.
@@ -463,20 +463,20 @@ impl<'source> Lowerer<'_, 'source>
                                 || name == FormName::TYPE_IDENTIFIER
                                 || (name == FormName::PRIMITIVE_TYPE
                                     && self
-                                        .cx
+                                        .cx()
                                         .text_at(key)
                                         .as_ref()
                                         .starts_with(|first: char| first.is_ascii_lowercase())) =>
                         {
                             entries.push(Entry {
-                                key: Key::Label(self.cx.name_at(key), key),
+                                key: Key::Label(self.cx().name_at(key), key),
                                 held,
                             });
                             break;
                         },
                         Some((_, Former::ModedType)) => {
                             let mut moded = Pieces::new();
-                            read_pieces(self.cx.pbg, self.cx.tree, key.node, &mut moded)?;
+                            read_pieces(self.cx().pbg, self.cx().tree, key.node, &mut moded)?;
                             let (
                                 Maybe::Absent(_),
                                 &[Piece::Tile { at: word, .. }, Piece::Operand(rest)],
@@ -485,7 +485,7 @@ impl<'source> Lowerer<'_, 'source>
                                 return Err(site.fault(key.span, FormFault::MisplacedTile));
                             };
                             entries.push(Entry {
-                                key: Key::Label(self.cx.name_at(word), word),
+                                key: Key::Label(self.cx().name_at(word), word),
                                 held,
                             });
                             key = rest;
@@ -531,7 +531,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| !matches!(entry.key, Key::Positional))))]
-    pub(super) fn dotted_entries(
+    #[inline]
+    pub fn dotted_entries(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
@@ -540,7 +541,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-            let key = self.cx.dotted(site, cursor)?;
+            let key = self.cx().dotted(site, cursor)?;
             let held = match key {
                 Key::Label(_, label)
                     if between == TileName::EQUALS
@@ -600,12 +601,12 @@ impl<'source> Lowerer<'_, 'source>
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
             let first = site.one(cursor.operands())?;
             let entry = if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
-                if !matches!(self.cx.form_at(first)?, Some((name, _)) if name == FormName::IDENTIFIER)
+                if !matches!(self.cx().form_at(first)?, Some((name, _)) if name == FormName::IDENTIFIER)
                 {
                     return Err(site.fault(first.span, FormFault::MisplacedTile));
                 }
                 Entry {
-                    key: Key::Label(self.cx.name_at(first), first),
+                    key: Key::Label(self.cx().name_at(first), first),
                     held: Held::Operand(site.one(cursor.operands())?),
                 }
             }
@@ -669,7 +670,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             closed(site, cursor, TileName::EQUALS)?;
             written.push(Entry {
-                key: Key::Label(self.cx.name_at(word), word),
+                key: Key::Label(self.cx().name_at(word), word),
                 held: Held::Operand(site.one(cursor.operands())?),
             });
             separated(site, cursor, TileName::BRACE_CLOSE)?;
@@ -714,13 +715,14 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn scrutinee_type(
+    #[inline]
+    pub fn scrutinee_type(
         &mut self,
         frame: Frame,
         scrutinee: Placed,
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
-        if !matches!(self.cx.form_at(scrutinee)?, Some((_, Former::Name))) {
+        if !matches!(self.cx().form_at(scrutinee)?, Some((_, Former::Name))) {
             return self.called_type(frame, scrutinee.node);
         }
         let named = Site {
@@ -728,20 +730,18 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
-
-        Ok(
-            match self.resolve_name(named, frame, self.cx.name_at(scrutinee))? {
-                Maybe::Present(Resolved::Binder(bound)) => match bound.declared {
-                    Maybe::Absent(binder_type::Absent::Untyped) => self.ran_type(bound.binder)?,
-                    declared @ (Maybe::Present(_)
-                    | Maybe::Absent(
-                        binder_type::Absent::Operand | binder_type::Absent::Instance,
-                    )) => declared,
-                },
-                Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-                Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        let spelled = self.cx().name_at(scrutinee);
+        Ok(match self.host().resolve_name(named, frame, spelled)? {
+            Maybe::Present(Resolved::Binder(bound)) => match bound.declared {
+                Maybe::Absent(binder_type::Absent::Untyped) => self.ran_type(bound.binder)?,
+                declared @ (Maybe::Present(_)
+                | Maybe::Absent(
+                    binder_type::Absent::Operand | binder_type::Absent::Instance,
+                )) => declared,
             },
-        )
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        })
     }
 
     /// The type the `let` binder `binder` holds, as the function its
@@ -770,13 +770,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
     #[spec(ensures: |ret| ret.is_err()
         || matches!(ret, Ok(Maybe::Absent(binder_type::Absent::Untyped)))
-        || self.cx.ran.contains_key(&binder))]
+        || self.cx().ran.contains_key(&binder))]
     fn ran_type(
         &mut self,
         binder: ScopeId,
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
-        let Some(&(frame, bound)) = self.cx.ran.get(&binder)
+        let Some(&(frame, bound)) = self.cx().ran.get(&binder)
         else {
             return Ok(Maybe::Absent(binder_type::Absent::Untyped));
         };
@@ -823,7 +823,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
         let untyped = Maybe::Absent(binder_type::Absent::Untyped);
-        let Maybe::Present(call) = Native::new(self).unwrapped(written)?
+        let Maybe::Present(call) = self.host().unwrapped(written)?
         else {
             return Ok(untyped);
         };
@@ -834,13 +834,13 @@ impl<'source> Lowerer<'_, 'source>
         // The call may be read before the walk reaches it, as a scrutinee is,
         // so its head takes its owner here: a name resolves only where a
         // declaration owns it.
-        self.inherit_owner(call.node);
-        let Some(tree) = self.cx.tree.node(head)
+        self.host().inherit_owner(call.node);
+        let Some(tree) = self.cx().tree.node(head)
         else {
             return Ok(untyped);
         };
         let head = Placed::of(head, tree);
-        if !matches!(self.cx.form_at(head)?, Some((_, Former::Name))) {
+        if !matches!(self.cx().form_at(head)?, Some((_, Former::Name))) {
             return Ok(untyped);
         }
         let named = Site {
@@ -848,21 +848,22 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
+        let spelled = self.cx().name_at(head);
         let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, frame, self.cx.name_at(head))?
+            self.host().resolve_name(named, frame, spelled)?
         else {
             return Ok(untyped);
         };
-        let Some(function) = self.function_of(constant)
+        let Some(function) = self.host().function_of(constant)
         else {
             return Ok(untyped);
         };
-        let parameters = self.cx.parameters.read(function.parameters).len();
+        let parameters = self.cx().parameters.read(function.parameters).len();
         let (Maybe::Present(result), true) = (function.result, parameters == arguments.len())
         else {
             return Ok(untyped);
         };
-        let Maybe::Present(read) = Native::new(self).unwrapped(result)?
+        let Maybe::Present(read) = self.host().unwrapped(result)?
         else {
             return Ok(untyped);
         };
@@ -952,7 +953,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::zoned`].
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(captures: before = self.cx.fuel.remaining(), ensures: |_| self.cx.fuel.remaining() <= before)]
+    #[spec(captures: before = self.cx().fuel.remaining(), ensures: |_| self.cx().fuel.remaining() <= before)]
     fn type_zone(
         &mut self,
         at: Placed,
@@ -961,8 +962,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut pending = Vec::from([at]);
         let mut pieces = Pieces::new();
         while let Some(next) = pending.pop() {
-            self.cx.fuel.spend()?;
-            let Some((name, former)) = self.cx.form_at(next)?
+            self.cx_mut().fuel.spend()?;
+            let Some((name, former)) = self.cx().form_at(next)?
             else {
                 return Ok(TypeZone::Ordinary);
             };
@@ -1044,7 +1045,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Unadmitted(_)
                 | Former::Misplaced => return Ok(TypeZone::Ordinary),
             };
-            read_pieces(self.cx.pbg, self.cx.tree, next.node, &mut pieces)?;
+            read_pieces(self.cx().pbg, self.cx().tree, next.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
                 return Err(repaired.refusal(name));
             }
@@ -1063,7 +1064,9 @@ impl<'source> Lowerer<'_, 'source>
                 pending.push(inner);
                 continue;
             }
-            let entries = self.type_entries(nested, &mut cursor, TileName::BRACE_CLOSE)?;
+            let entries = self
+                .shared()
+                .type_entries(nested, &mut cursor, TileName::BRACE_CLOSE)?;
             if entries.is_empty() {
                 return Ok(TypeZone::Ordinary);
             }
@@ -1084,20 +1087,20 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — every arity-shaped plan reads its entries here.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
-    #[spec(captures: before = self.cx.operands.entries().len(), ensures: |ret| ret.start == before && ret.end == self.cx.operands.entries().len())]
+    #[spec(captures: before = self.cx().operands.entries().len(), ensures: |ret| ret.start == before && ret.end == self.cx().operands.entries().len())]
     fn stored(
         &mut self,
         entries: &[Entry<'source>],
     ) -> Stretch
     {
-        let start = self.cx.operands.entries().len();
-        self.cx
+        let start = self.cx().operands.entries().len();
+        self.cx_mut()
             .operands
             .extend(entries.iter().map(|entry| entry.held.at().node));
 
         Stretch {
             start,
-            end: self.cx.operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         }
     }
 
@@ -1115,25 +1118,25 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::labelled_sum_type`] and
     ///   [`Self::lazy_record_type`].
     /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
-    #[spec(captures: before = self.cx.operands.entries().len(), ensures: |ret| ret.start == before && ret.end == self.cx.operands.entries().len() && (ret.end == ret.start || ret.end.saturating_sub(ret.start) == entries.len()))]
+    #[spec(captures: before = self.cx().operands.entries().len(), ensures: |ret| ret.start == before && ret.end == self.cx().operands.entries().len() && (ret.end == ret.start || ret.end.saturating_sub(ret.start) == entries.len()))]
     fn stored_labels(
         &mut self,
         entries: &[Entry<'source>],
     ) -> Stretch
     {
-        let start = self.cx.operands.entries().len();
+        let start = self.cx().operands.entries().len();
         if entries
             .iter()
             .all(|entry| matches!(entry.key, Key::Label(..)))
         {
-            self.cx
+            self.cx_mut()
                 .operands
                 .extend(entries.iter().map(|entry| entry.keyed_at().node));
         }
 
         Stretch {
             start,
-            end: self.cx.operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         }
     }
 
@@ -1162,7 +1165,7 @@ impl<'source> Lowerer<'_, 'source>
         for entry in entries {
             if let Key::Label(name, _) = entry.key {
                 let at = entry.held.at().node;
-                self.read(at, reading);
+                self.host().read(at, reading);
                 self.label_entry(entry, reading);
                 let _first = fields.insert(FieldLabel::from(String::from(name.as_ref())), at);
             }
@@ -1186,7 +1189,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Lowerer::record_labels`].
     /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
-    #[spec(captures: before = self.cx.labels.len(), ensures: self.cx.labels.len() <= before.saturating_add(1))]
+    #[spec(captures: before = self.cx().labels.len(), ensures: self.cx().labels.len() <= before.saturating_add(1))]
     pub(super) fn label_entry(
         &mut self,
         entry: &Entry<'source>,
@@ -1207,7 +1210,7 @@ impl<'source> Lowerer<'_, 'source>
             Reading::Value(_) | Reading::Computation(_) | Reading::Head(_) => LabelRead::Term,
             Reading::Unread | Reading::Function => return,
         };
-        self.labelled(written.span, held.node, read);
+        self.host().labelled(written.span, held.node, read);
     }
 
     /// Classify a telescope type, `#{A, …}` or `#{l : A, …}`.
@@ -1246,53 +1249,58 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
     /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
     /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Product(_) | Plan::RecordType(..) | Plan::Tuple(_)))))]
-    pub(super) fn telescope_type(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Product(_) | Plan::RecordType(..) | Plan::Tuple(_)))))]
+    #[inline]
+    pub fn telescope_type(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let valued = matches!(site.reading, Reading::Value(_))
-            && self.cx.valued_telescopes.contains_key(&site.at.node);
+            && self.cx().valued_telescopes.contains_key(&site.at.node);
         // A valued telescope reads a value or a type by its entries, so its
         // sort waits for them.
         let typed = if valued {
             None
         }
         else {
-            Some(self.require(site, Produced::ValueType)?)
+            Some(self.host().require(site, Produced::ValueType)?)
         };
         closed(site, &mut cursor, TileName::RECORD)?;
-        let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
+        let entries = self
+            .shared()
+            .type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         let arranged = arrange(site, entries)?;
         let frame = match (typed, &arranged) {
             (Some(frame), _) => frame,
-            (None, &Arranged::Positional(_)) => self.require(site, Produced::Value)?,
-            (None, &Arranged::Labelled(_)) => self.require(site, Produced::ValueType)?,
+            (None, &Arranged::Positional(_)) => self.host().require(site, Produced::Value)?,
+            (None, &Arranged::Labelled(_)) => self.host().require(site, Produced::ValueType)?,
         };
         let plan = match arranged {
             Arranged::Positional(entries) if valued => {
                 let members = self.stored(&entries);
-                self.classify_members(site, members, frame)?;
+                self.host().classify_members(site, members, frame)?;
                 let stated = self
-                    .cx
+                    .cx()
                     .valued_telescopes
                     .get(&site.at.node)
                     .copied()
                     .flatten();
                 self.valued_entries(site, stated, &entries)?;
                 for entry in &entries {
-                    self.read(entry.held.at().node, Reading::Value(frame));
+                    self.host()
+                        .read(entry.held.at().node, Reading::Value(frame));
                 }
-                Plan::Tuple(self.cx.kept(members))
+                Plan::Tuple(self.cx().kept(members))
             },
             Arranged::Positional(entries) => {
                 let components = self.stored(&entries);
                 for entry in &entries {
-                    self.read(entry.held.at().node, Reading::ValueType(frame));
+                    self.host()
+                        .read(entry.held.at().node, Reading::ValueType(frame));
                 }
-                Plan::Product(self.cx.kept(components))
+                Plan::Product(self.cx().kept(components))
             },
             Arranged::Labelled(entries) => {
                 let Some((last, binding)) = entries.split_last()
@@ -1301,7 +1309,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 let links = self.named_later(&entries)?;
                 let mut fields = BTreeMap::new();
-                let start = self.cx.parameters.mark();
+                let start = self.cx().parameters.mark();
                 let mut inner = frame;
                 for (entry, &Dependent(linked)) in binding.iter().zip(&links) {
                     let Key::Label(name, key) = entry.key
@@ -1309,20 +1317,20 @@ impl<'source> Lowerer<'_, 'source>
                         continue;
                     };
                     let declared = entry.held.at();
-                    self.read(declared.node, Reading::ValueType(inner));
+                    self.host().read(declared.node, Reading::ValueType(inner));
                     self.label_entry(entry, Reading::ValueType(inner));
                     let _first =
                         fields.insert(FieldLabel::from(String::from(name.as_ref())), declared.node);
-                    let extended = self.cx.scope.extend_typed(
+                    let extended = self.cx_mut().scope.extend_typed(
                         inner,
                         name,
                         declared.node,
                         Maybe::Present(key.span),
                     );
                     if linked {
-                        self.cx.scope.mention(extended);
+                        self.cx_mut().scope.mention(extended);
                     }
-                    self.cx.parameters.push(Parameter::elsewhere(
+                    self.cx_mut().parameters.push(Parameter::elsewhere(
                         key.node,
                         extended,
                         Maybe::Present(declared.node),
@@ -1330,7 +1338,7 @@ impl<'source> Lowerer<'_, 'source>
                     inner = Frame::Inner(extended);
                 }
                 let declared = last.held.at();
-                self.read(declared.node, Reading::ValueType(inner));
+                self.host().read(declared.node, Reading::ValueType(inner));
                 self.label_entry(last, Reading::ValueType(inner));
                 let labelled = if let Key::Label(name, key) = last.key {
                     let _first =
@@ -1342,13 +1350,13 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 Plan::RecordType(
                     fields,
-                    self.cx.parameters.since(start),
+                    self.cx().parameters.since(start),
                     declared.node,
                     labelled,
                 )
             },
         };
-        self.plan(site, plan);
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -1384,8 +1392,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   each asserted as the exact core value.
     /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
     #[spec(
-        captures: before = self.cx.valued_telescopes.len(),
-        ensures: |ret| ret.is_err() || self.cx.valued_telescopes.len() >= before,
+        captures: before = self.cx().valued_telescopes.len(),
+        ensures: |ret| ret.is_err() || self.cx().valued_telescopes.len() >= before,
     )]
     fn valued_entries(
         &mut self,
@@ -1402,7 +1410,7 @@ impl<'source> Lowerer<'_, 'source>
         // telescope type.
         let mut components: Option<Vec<Entry<'source>>> = None;
         for (place, entry) in entries.iter().enumerate() {
-            let Some(telescope) = Native::new(self).written_telescope(entry.held.at().node)?
+            let Some(telescope) = self.host().written_telescope(entry.held.at().node)?
             else {
                 continue;
             };
@@ -1423,9 +1431,9 @@ impl<'source> Lowerer<'_, 'source>
                 .as_ref()
                 .and_then(|found| found.get(place))
                 .map(|component| component.held.at().node)
-                && let Holds::Value(held) = Native::new(self).held_at(component)?
+                && let Holds::Value(held) = self.host().held_at(component)?
             {
-                let _first = self.cx.valued_telescopes.insert(telescope, held);
+                let _first = self.cx_mut().valued_telescopes.insert(telescope, held);
             }
         }
 
@@ -1452,33 +1460,35 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the empty sum, a positional and a labelled sum.
     /// - witness: `lower::arity::tests::a_sum_over_labels_lowers_to_the_sum_of_its_entries`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Sum(..) | Plan::Session(..)))))]
-    pub(super) fn labelled_sum_type(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Sum(..) | Plan::Session(..)))))]
+    #[inline]
+    pub fn labelled_sum_type(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         closed(site, &mut cursor, TileName::SUM_OPEN)?;
-        let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
+        let entries = self
+            .shared()
+            .type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         if self.zoned(site, &entries)? == TypeZone::Session {
-            return self.session_type(Site {
+            return self.host().session_type(Site {
                 name: FormName::SELECT_SESSION_TYPE,
                 ..site
             });
         }
-        let frame = self.require(site, Produced::ValueType)?;
+        let frame = self.host().require(site, Produced::ValueType)?;
         let (Arranged::Positional(entries) | Arranged::Labelled(entries)) = arrange(site, entries)?;
         let summands = self.stored(&entries);
         let labels = self.stored_labels(&entries);
         for entry in &entries {
-            self.read(entry.held.at().node, Reading::ValueType(frame));
+            self.host()
+                .read(entry.held.at().node, Reading::ValueType(frame));
             self.label_entry(entry, Reading::ValueType(frame));
         }
-        self.plan(
-            site,
-            Plan::Sum(self.cx.kept(summands), self.cx.kept(labels)),
-        );
+        let plan = Plan::Sum(self.cx().kept(summands), self.cx().kept(labels));
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -1503,33 +1513,35 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — none, one, two and three entries.
     /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Session(..) | &Plan::With(..))))]
-    pub(super) fn lazy_record_type(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Session(..) | &Plan::With(..))))]
+    #[inline]
+    pub fn lazy_record_type(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         closed(site, &mut cursor, TileName::LAZY_OPEN)?;
-        let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
+        let entries = self
+            .shared()
+            .type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         if self.zoned(site, &entries)? == TypeZone::Session {
-            return self.session_type(Site {
+            return self.host().session_type(Site {
                 name: FormName::OFFER_SESSION_TYPE,
                 ..site
             });
         }
-        let frame = self.require(site, Produced::CompType)?;
+        let frame = self.host().require(site, Produced::CompType)?;
         let (Arranged::Positional(entries) | Arranged::Labelled(entries)) = arrange(site, entries)?;
         let components = self.stored(&entries);
         let labels = self.stored_labels(&entries);
         for entry in &entries {
-            self.read(entry.held.at().node, Reading::CompType(frame));
+            self.host()
+                .read(entry.held.at().node, Reading::CompType(frame));
             self.label_entry(entry, Reading::CompType(frame));
         }
-        self.plan(
-            site,
-            Plan::With(self.cx.kept(components), self.cx.kept(labels)),
-        );
+        let plan = Plan::With(self.cx().kept(components), self.cx().kept(labels));
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -1558,37 +1570,41 @@ impl<'source> Lowerer<'_, 'source>
     ///   value.
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Tuple(_) | Plan::Record(_) | Plan::RecordUpdate(..)))))]
-    pub(super) fn telescope(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Tuple(_) | Plan::Record(_) | Plan::RecordUpdate(..)))))]
+    #[inline]
+    pub fn telescope(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Value)?;
+        let frame = self.host().require(site, Produced::Value)?;
         closed(site, &mut cursor, TileName::RECORD)?;
         let entries = if let Maybe::Present(_) = cursor.at(TileName::DOT) {
-            let entries = self.dotted_entries(site, &mut cursor, TileName::EQUALS)?;
+            let entries = self
+                .shared()
+                .dotted_entries(site, &mut cursor, TileName::EQUALS)?;
             // A punned entry `.l` holds the variable `l`: its label tile
             // stands as that name.
             for entry in &entries {
                 if let Held::Punned(label) = entry.held {
-                    self.pun(label, frame)?;
+                    self.host().pun(label, frame)?;
                 }
             }
             entries
         }
         else {
-            match self.hole_entries(site, &mut cursor)? {
+            match self.shared().hole_entries(site, &mut cursor)? {
                 Telescoped::Entries(entries) => entries,
                 Telescoped::Update(base, written) => {
                     let Arranged::Labelled(written) = arrange(site, written)?
                     else {
                         return Err(site.fault(base.span, FormFault::MisplacedTile));
                     };
-                    self.read(base.node, Reading::Value(frame));
+                    self.host().read(base.node, Reading::Value(frame));
                     let fields = self.fields(&written, Reading::Value(frame));
-                    self.plan(site, Plan::RecordUpdate(base.node, fields));
+                    self.host()
+                        .plan(site, Plan::RecordUpdate(base.node, fields));
                     return Ok(());
                 },
             }
@@ -1596,17 +1612,18 @@ impl<'source> Lowerer<'_, 'source>
         let plan = match arrange(site, entries)? {
             Arranged::Positional(entries) => {
                 let members = self.stored(&entries);
-                self.classify_members(site, members, frame)?;
+                self.host().classify_members(site, members, frame)?;
                 for entry in &entries {
-                    self.read(entry.held.at().node, Reading::Value(frame));
+                    self.host()
+                        .read(entry.held.at().node, Reading::Value(frame));
                 }
-                Plan::Tuple(self.cx.kept(members))
+                Plan::Tuple(self.cx().kept(members))
             },
             Arranged::Labelled(entries) => {
                 Plan::Record(self.fields(&entries, Reading::Value(frame)))
             },
         };
-        self.plan(site, plan);
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -1633,7 +1650,8 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn stated_entries(
+    #[inline]
+    pub fn stated_entries(
         &mut self,
         site: Site,
         node: NodeIndex,
@@ -1690,7 +1708,8 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn stated_form(
+    #[inline]
+    pub fn stated_form(
         &mut self,
         site: Site,
         node: NodeIndex,
@@ -1703,22 +1722,22 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut at = node;
         let mut through = thunked;
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let found = loop {
-            if let Err(refusal) = self.cx.fuel.spend() {
+            if let Err(refusal) = self.cx_mut().fuel.spend() {
                 break Err(refusal);
             }
-            let Some(tree) = self.cx.tree.node(at)
+            let Some(tree) = self.cx().tree.node(at)
             else {
                 break Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
             };
             let placed = Placed::of(at, tree);
-            let (name, held) = match self.cx.form_at(placed) {
+            let (name, held) = match self.cx().form_at(placed) {
                 Ok(Some(form)) => form,
                 Ok(None) => break Ok(Maybe::Absent(stated_labels::Absent::Otherwise)),
                 Err(refusal) => break Err(refusal),
             };
-            if let Err(refusal) = read_pieces(self.cx.pbg, self.cx.tree, at, &mut scratch) {
+            if let Err(refusal) = read_pieces(self.cx().pbg, self.cx().tree, at, &mut scratch) {
                 break Err(refusal);
             }
             if let Maybe::Present(repaired) = scratch.repair {
@@ -1742,7 +1761,10 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 let opened = closed(stated, &mut cursor, opener);
                 break opened
-                    .and_then(|()| self.type_entries(stated, &mut cursor, TileName::BRACE_CLOSE))
+                    .and_then(|()| {
+                        self.shared()
+                            .type_entries(stated, &mut cursor, TileName::BRACE_CLOSE)
+                    })
                     .map(|entries| Maybe::Present((at, entries)));
             }
             let chain = match (held, former) {
@@ -1780,7 +1802,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             at = inner.node;
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
 
         found
     }
@@ -1809,7 +1831,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   observation of a stream writes, read for the next link of a chain.
     /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present(constant) if self.cx.collected.slots.get(usize::from(constant)).is_none())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present(constant) if self.cx().collected.slots.get(usize::from(constant)).is_none())))]
     fn stated_family(
         &mut self,
         site: Site,
@@ -1819,17 +1841,17 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut at = node;
         let mut through = thunked;
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let head = loop {
-            if let Err(refusal) = self.cx.fuel.spend() {
+            if let Err(refusal) = self.cx_mut().fuel.spend() {
                 break Err(refusal);
             }
-            let Some(tree) = self.cx.tree.node(at)
+            let Some(tree) = self.cx().tree.node(at)
             else {
                 break Ok(None);
             };
             let placed = Placed::of(at, tree);
-            let held = match self.cx.form_at(placed) {
+            let held = match self.cx().form_at(placed) {
                 Ok(Some((_, held))) => held,
                 Ok(None) => break Ok(None),
                 Err(refusal) => break Err(refusal),
@@ -1837,7 +1859,7 @@ impl<'source> Lowerer<'_, 'source>
             if held == Former::TypeHead {
                 break Ok(Some(placed));
             }
-            if let Err(refusal) = read_pieces(self.cx.pbg, self.cx.tree, at, &mut scratch) {
+            if let Err(refusal) = read_pieces(self.cx().pbg, self.cx().tree, at, &mut scratch) {
                 break Err(refusal);
             }
             if held == Former::TypeApplication {
@@ -1868,18 +1890,25 @@ impl<'source> Lowerer<'_, 'source>
             };
             at = inner.node;
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         let Some(head) = head?
         else {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         };
         let named = Site { at: head, ..site };
+        let spelled = self.cx().name_at(head);
         let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, frame, self.cx.name_at(head))?
+            self.host().resolve_name(named, frame, spelled)?
         else {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         };
-        if self.cx.collected.slots.get(usize::from(constant)).is_none() {
+        if self
+            .cx()
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .is_none()
+        {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         }
         Ok(Maybe::Present(constant))
@@ -1912,7 +1941,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Vec<Name>, stated_labels::Absent>, LoweringRefusal<'source>>
     {
         Ok(match self.stated_family(site, written, thunked)? {
-            Maybe::Present(constant) => self.codata_observations(constant),
+            Maybe::Present(constant) => self.shared().codata_observations(constant),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         })
     }
@@ -1940,8 +1969,12 @@ impl<'source> Lowerer<'_, 'source>
         Place(index): Place,
     ) -> Option<ConstantIndex>
     {
-        let slot = self.cx.collected.slots.get(usize::from(constant))?;
-        let Maybe::Present(entry) = self.cx.collected.descriptions.get(&slot.introduced_by.node)
+        let slot = self.cx().collected.slots.get(usize::from(constant))?;
+        let Maybe::Present(entry) = self
+            .cx()
+            .collected
+            .descriptions
+            .get(&slot.introduced_by.node)
         else {
             return None;
         };
@@ -1972,11 +2005,16 @@ impl<'source> Lowerer<'_, 'source>
         constant: ConstantIndex,
     ) -> Maybe<Vec<Name>, stated_labels::Absent>
     {
-        let Some(slot) = self.cx.collected.slots.get(usize::from(constant))
+        let Some(slot) = self.cx().collected.slots.get(usize::from(constant))
         else {
             return Maybe::Absent(stated_labels::Absent::Otherwise);
         };
-        match self.cx.collected.descriptions.get(&slot.introduced_by.node) {
+        match self
+            .cx()
+            .collected
+            .descriptions
+            .get(&slot.introduced_by.node)
+        {
             Maybe::Present(entry)
                 if entry.description.polarity == DeclPolarity::Codata
                     && !entry.description.ctors.is_empty() =>
@@ -2033,11 +2071,11 @@ impl<'source> Lowerer<'_, 'source>
         let mut entries = Vec::new();
         let mut pending = Vec::from([chain]);
         while let Some(operand) = pending.pop() {
-            self.cx.fuel.spend()?;
-            if let Some([first, second]) = self.chained(site, operand, link)? {
+            self.cx_mut().fuel.spend()?;
+            if let Some([first, second]) = self.host().chained(site, operand, link)? {
                 pending.extend([second, first]);
             }
-            else if let Some(node) = self.cx.tree.node(operand) {
+            else if let Some(node) = self.cx().tree.node(operand) {
                 entries.push(Entry {
                     key: Key::Positional,
                     held: Held::Operand(Placed::of(operand, node)),
@@ -2071,16 +2109,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   and a label the sum lacks.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::arity::tests::labelled_forms_take_their_order_from_the_definition_s_signature_4376`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Injection(..))))]
-    pub(super) fn injection(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Injection(..))))]
+    #[inline]
+    pub fn injection(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Value)?;
+        let frame = self.host().require(site, Produced::Value)?;
         closed(site, &mut cursor, TileName::SUM_OPEN)?;
-        let key = self.cx.dotted(site, &mut cursor)?;
+        let key = self.cx().dotted(site, &mut cursor)?;
         closed(site, &mut cursor, TileName::EQUALS)?;
         let body = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
@@ -2088,7 +2127,7 @@ impl<'source> Lowerer<'_, 'source>
         let summand = match key {
             Key::Index(index, ..) => index,
             Key::Label(name, written) => {
-                let (Some(annotation), _) = self.stated_value(site)?
+                let (Some(annotation), _) = self.host().stated_value(site)?
                 else {
                     return Err(site.out(FragmentBoundary::Unannotated));
                 };
@@ -2101,8 +2140,9 @@ impl<'source> Lowerer<'_, 'source>
             },
             Key::Positional => return Err(site.fault(body.span, FormFault::MisplacedTile)),
         };
-        self.read(body.node, Reading::Value(frame));
-        self.plan(site, Plan::Injection(Summand::from(summand), body.node));
+        self.host().read(body.node, Reading::Value(frame));
+        self.host()
+            .plan(site, Plan::Injection(Summand::from(summand), body.node));
 
         Ok(())
     }
@@ -2134,21 +2174,24 @@ impl<'source> Lowerer<'_, 'source>
     ///   labelled clauses with neither, one clause and none.
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
     /// - witness: `lower::arity::tests::labelled_forms_take_their_order_from_the_definition_s_signature_4376`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Copattern(_))))]
-    pub(super) fn copattern(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Copattern(_))))]
+    #[inline]
+    pub fn copattern(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         closed(site, &mut cursor, TileName::LAZY_OPEN)?;
-        let entries = self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?;
+        let entries = self
+            .shared()
+            .dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?;
         let answer = self
-            .cx
+            .cx()
             .answers
             .get(&site.at.node)
-            .or_else(|| self.cx.thunked.get(&site.at.node))
+            .or_else(|| self.cx().thunked.get(&site.at.node))
             .copied();
         let stated = match answer {
             Some(answer) => {
@@ -2186,12 +2229,12 @@ impl<'source> Lowerer<'_, 'source>
                 },
             },
         };
-        let start = self.cx.operands.entries().len();
+        let start = self.cx().operands.entries().len();
         for &(clause, typed) in &clauses {
             let body = clause.held.at().node;
-            self.cx.operands.push(body);
-            let _first = self.cx.cocased.insert(body);
-            self.read(body, Reading::Computation(frame));
+            self.cx_mut().operands.push(body);
+            let _first = self.cx_mut().cocased.insert(body);
+            self.host().read(body, Reading::Computation(frame));
             let stated = match (answer, typed) {
                 (Some(answer), Some(typed)) => {
                     let stated = Answer {
@@ -2200,17 +2243,15 @@ impl<'source> Lowerer<'_, 'source>
                         over: super::native::Over::Written,
                         arm: answer.arm,
                     };
-                    let _first = self.cx.answers.insert(body, stated);
+                    let _first = self.cx_mut().answers.insert(body, stated);
                     Maybe::Present(stated)
                 },
                 _ => Maybe::Absent(answered::Absent::Unstated),
             };
-            Exits::new(self).open_body(site, clause_body(body), stated)?;
+            self.host().open_body(site, clause_body(body), stated)?;
         }
-        self.plan(
-            site,
-            Plan::Copattern(self.cx.operands.since(At::from(start))),
-        );
+        let plan = Plan::Copattern(self.cx().operands.since(At::from(start)));
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -2355,8 +2396,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
     /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Observe(..))))]
-    pub(super) fn observation(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Observe(..))))]
+    #[inline]
+    pub fn observation(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -2377,13 +2419,18 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let numbered = self.cx.text_at(selected).as_ref().parse::<usize>().is_ok();
+        let numbered = self
+            .cx()
+            .text_at(selected)
+            .as_ref()
+            .parse::<usize>()
+            .is_ok();
         let frame = site.reading.frame();
         let Some(subject) = self.observed_subject(site, frame, target)?
         else {
             return Ok(Planned(false));
         };
-        let label = self.cx.name_at(selected);
+        let label = self.cx().name_at(selected);
         let (entries, thunked) = match subject {
             Subject::Written(declared, thunked, _) => (
                 self.stated_entries(site, declared, Former::LazyRecordType, thunked)?,
@@ -2409,7 +2456,7 @@ impl<'source> Lowerer<'_, 'source>
                     Subject::Written(declared, thunked, resolved) => {
                         self.stated_observations(site, (declared, resolved), thunked)?
                     },
-                    Subject::Family(family) => self.codata_observations(family),
+                    Subject::Family(family) => self.shared().codata_observations(family),
                 };
                 let Maybe::Present(observed) = observed
                 else {
@@ -2433,15 +2480,15 @@ impl<'source> Lowerer<'_, 'source>
                 (index, observed.len())
             },
         };
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         let operand = if thunked.0 {
             Reading::Value(frame)
         }
         else {
             Reading::Computation(frame)
         };
-        self.read(target.node, operand);
-        self.plan(
+        self.host().read(target.node, operand);
+        self.host().plan(
             site,
             Plan::Observe(target.node, Observed { index, count }, thunked),
         );
@@ -2517,7 +2564,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|subject| match subject { Subject::Written(node, ..) => self.cx.tree.node(node).is_some(), Subject::Family(family) => self.cx.collected.slots.get(usize::from(family)).is_some() })))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|subject| match subject { Subject::Written(node, ..) => self.cx().tree.node(node).is_some(), Subject::Family(family) => self.cx().collected.slots.get(usize::from(family)).is_some() })))]
     fn observed_subject(
         &mut self,
         site: Site,
@@ -2527,17 +2574,19 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut links = Vec::new();
         let mut root = target;
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let walked = loop {
-            if let Err(refusal) = self.cx.fuel.spend() {
+            if let Err(refusal) = self.cx_mut().fuel.spend() {
                 break Err(refusal);
             }
-            match self.cx.form_at(root) {
+            match self.cx().form_at(root) {
                 Ok(Some((_, Former::Projection))) => {},
                 Ok(_) => break Ok(()),
                 Err(refusal) => break Err(refusal),
             }
-            if let Err(refusal) = read_pieces(self.cx.pbg, self.cx.tree, root.node, &mut scratch) {
+            if let Err(refusal) =
+                read_pieces(self.cx().pbg, self.cx().tree, root.node, &mut scratch)
+            {
                 break Err(refusal);
             }
             let Some((inner, selected)) = Self::selection_link(site, &scratch.pieces, root.span)
@@ -2547,26 +2596,27 @@ impl<'source> Lowerer<'_, 'source>
             links.push(selected);
             root = inner;
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         walked?;
         // `(f a).l.m` observes its chain off `f(a)`, as `f(a).l.m` does.
         let Some(root) = self.ungrouped_target(root, site.at.node)?
         else {
             return Ok(None);
         };
-        let mut subject = if matches!(self.cx.form_at(root)?, Some((_, Former::Name))) {
+        let mut subject = if matches!(self.cx().form_at(root)?, Some((_, Former::Name))) {
             let named = Site {
                 at: root,
                 name: FormName::IDENTIFIER,
                 reading: Reading::Value(frame),
             };
-            let declared = match self.resolve_name(named, frame, self.cx.name_at(root)) {
+            let spelled = self.cx().name_at(root);
+            let declared = match self.host().resolve_name(named, frame, spelled) {
                 Ok(Maybe::Present(Resolved::Binder(bound))) => {
                     // A binder's type is written in the declaration the
                     // selection belongs to, and may lie where the walk has
                     // not yet given it that owner its names resolve by.
                     if let Maybe::Present(written) = bound.declared {
-                        self.own_written(written, site.at.node);
+                        self.host().own_written(written, site.at.node);
                     }
                     bound.declared
                 },
@@ -2588,7 +2638,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             // A call's callee writes its result in its own declaration, at the
             // outermost frame of the source both stand in.
-            let Some(result) = Native::new(self).called_result(site, frame, root)?
+            let Some(result) = self.host().called_result(site, frame, root)?
             else {
                 return Ok(None);
             };
@@ -2605,11 +2655,11 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Ok(None);
             };
-            let Maybe::Present(labels) = self.codata_observations(family)
+            let Maybe::Present(labels) = self.shared().codata_observations(family)
             else {
                 return Ok(None);
             };
-            let name = self.cx.name_at(selected);
+            let name = self.cx().name_at(selected);
             let index = name.as_ref().parse::<usize>().map_or_else(
                 |_unnumbered| {
                     labels
@@ -2618,7 +2668,8 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 |place| (place < labels.len()).then_some(place),
             );
-            let Some(returned) = index.and_then(|index| self.observed_family(family, Place(index)))
+            let Some(returned) =
+                index.and_then(|index| self.shared().observed_family(family, Place(index)))
             else {
                 return Ok(None);
             };
@@ -2686,14 +2737,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
     /// - witness: `lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.cx.form_at(at), Ok(Some((_, Former::Name)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.cx().form_at(at), Ok(Some((_, Former::Name)))))]
     pub(super) fn name_type(
         &mut self,
         frame: Frame,
         at: Placed,
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
-        if !matches!(self.cx.form_at(at)?, Some((_, Former::Name))) {
+        if !matches!(self.cx().form_at(at)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(binder_type::Absent::Untyped));
         }
         let named = Site {
@@ -2701,14 +2752,12 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
-
-        Ok(
-            match self.resolve_name(named, frame, self.cx.name_at(at))? {
-                Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-                Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-                Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
-            },
-        )
+        let spelled = self.cx().name_at(at);
+        Ok(match self.host().resolve_name(named, frame, spelled)? {
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        })
     }
 
     /// The entries of the type written for the operand `target` of a
@@ -2736,7 +2785,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
     /// - witness: `lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present((node, _)) if self.cx.tree.node(node).is_none())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present((node, _)) if self.cx().tree.node(node).is_none())))]
     fn written_entries(
         &mut self,
         site: Site,
@@ -2753,8 +2802,9 @@ impl<'source> Lowerer<'_, 'source>
         };
         // A name written at a type member states the record the member's
         // definition writes (#5826).
-        let stated = match self.cx.tree.node(declared) {
+        let stated = match self.cx().tree.node(declared) {
             Some(tree) => self
+                .host()
                 .member_definition(frame, Placed::of(declared, tree))?
                 .map_or(declared, |(defined, _)| defined),
             None => declared,
@@ -2787,8 +2837,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the first and the last entry of a dependent record of
     ///   two and of three, and a label it lacks.
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Select(..))))]
-    pub(super) fn selection(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Select(..))))]
+    #[inline]
+    pub fn selection(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -2808,7 +2859,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Ok(Planned(false));
         }
-        let index = match Context::labelled_in(&stated, self.cx.name_at(selected), selected) {
+        let index = match Context::labelled_in(&stated, self.cx().name_at(selected), selected) {
             Ok((Place(index), _)) => index,
             // A record no entry depends on is projected at the label, which
             // the checker refuses as a field the record lacks, as it refuses a
@@ -2819,10 +2870,10 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(_) => return Err(lacked),
             },
         };
-        let label = FieldLabel::from(String::from(self.cx.name_at(selected).as_ref()));
-        let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Value(frame));
-        self.plan(
+        let label = FieldLabel::from(String::from(self.cx().name_at(selected).as_ref()));
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(target.node, Reading::Value(frame));
+        self.host().plan(
             site,
             Plan::Select(
                 target.node,
@@ -2866,8 +2917,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   patched type.
     /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
     /// - witness: `lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Field(..))))]
-    pub(super) fn field(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Field(..))))]
+    #[inline]
+    pub fn field(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -2877,7 +2929,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let member = self.cx.name_at(selected);
+        let member = self.cx().name_at(selected);
         if !member
             .as_ref()
             .chars()
@@ -2889,10 +2941,10 @@ impl<'source> Lowerer<'_, 'source>
         let mut head = target;
         let mut chain = Pieces::new();
         loop {
-            self.cx.fuel.spend()?;
-            match self.cx.form_at(head)? {
+            self.cx_mut().fuel.spend()?;
+            match self.cx().form_at(head)? {
                 Some((_, Former::Projection)) => {
-                    read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut chain)?;
+                    read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut chain)?;
                     if let Maybe::Present(_) = chain.repair {
                         return Ok(Planned(false));
                     }
@@ -2906,20 +2958,20 @@ impl<'source> Lowerer<'_, 'source>
                 Some(_) | None => return Ok(Planned(false)),
             }
         }
-        let name = self.cx.name_at(head);
+        let name = self.cx().name_at(head);
         if name.as_ref().chars().next().is_none_or(char::is_uppercase) {
             return Ok(Planned(false));
         }
         // The head lies under links the walk has not reached: it resolves by
         // the declaration the selection belongs to.
-        self.own_written(head.node, site.at.node);
+        self.host().own_written(head.node, site.at.node);
         let frame = site.reading.frame();
         let named = Site {
             at: head,
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
-        let declared = match self.resolve_name(named, frame, name)? {
+        let declared = match self.host().resolve_name(named, frame, name)? {
             Maybe::Present(Resolved::Binder(bound)) => bound.declared,
             Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
             Maybe::Absent(_) => return Ok(Planned(false)),
@@ -2929,14 +2981,14 @@ impl<'source> Lowerer<'_, 'source>
         // reads off the patched type (#5579).
         if head.node == target.node
             && let Maybe::Present(written) = declared
-            && self.patched_at(written)? == Maybe::Absent(())
+            && self.host().patched_at(written)? == Maybe::Absent(())
         {
             return Ok(Planned(false));
         }
         let label = FieldLabel::from(String::from(member.as_ref()));
-        let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Value(frame));
-        self.plan(site, Plan::Field(target.node, label));
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(target.node, Reading::Value(frame));
+        self.host().plan(site, Plan::Field(target.node, label));
 
         Ok(Planned(true))
     }
@@ -2966,8 +3018,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   of its fields, one of a record no type states, a label the record
     ///   lacks, and a value that is no name.
     /// - witness: `lower::arity::tests::a_sub_record_binds_each_field_and_returns_their_record`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::SubRecord(..))))]
-    pub(super) fn sub_record(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::SubRecord(..))))]
+    #[inline]
+    pub fn sub_record(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -2976,15 +3029,17 @@ impl<'source> Lowerer<'_, 'source>
         let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
         let target = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::SUB_RECORD_OPEN)?;
-        let entries = self.dotted_entries(site, &mut cursor, TileName::EQUALS)?;
+        let entries = self
+            .shared()
+            .dotted_entries(site, &mut cursor, TileName::EQUALS)?;
         let Arranged::Labelled(entries) = arrange(site, entries)?
         else {
             return Err(site.fault(target.span, FormFault::MisplacedTile));
         };
         let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection));
-        if !matches!(self.cx.form_at(target)?, Some((_, Former::Name)))
+        if !matches!(self.cx().form_at(target)?, Some((_, Former::Name)))
             || self
-                .cx
+                .cx()
                 .name_at(target)
                 .as_ref()
                 .chars()
@@ -3034,9 +3089,10 @@ impl<'source> Lowerer<'_, 'source>
                 projection,
             });
         }
-        let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Value(frame));
-        self.plan(site, Plan::SubRecord(target.node, selected));
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(target.node, Reading::Value(frame));
+        self.host()
+            .plan(site, Plan::SubRecord(target.node, selected));
 
         Ok(())
     }
@@ -3071,8 +3127,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   place off a value with no written type.
     /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair_401`
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Select(..))))]
-    pub(super) fn positional(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Select(..))))]
+    #[inline]
+    pub fn positional(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -3089,7 +3146,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         };
         let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection));
-        let Ok(index) = self.cx.text_at(position).as_ref().parse::<usize>()
+        let Ok(index) = self.cx().text_at(position).as_ref().parse::<usize>()
         else {
             return Err(unadmitted());
         };
@@ -3099,7 +3156,7 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(LoweringRefusal::UnresolvedName {
                         span: position.span,
-                        name: self.cx.name_at(position),
+                        name: self.cx().name_at(position),
                     });
                 };
                 let labelled = match entry.key {
@@ -3116,9 +3173,9 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(_) if index < 2_usize => (2_usize, None),
             Maybe::Absent(_) => return Err(unadmitted()),
         };
-        let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Value(frame));
-        self.plan(
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(target.node, Reading::Value(frame));
+        self.host().plan(
             site,
             Plan::Select(target.node, Observed { index, count }, labelled),
         );
@@ -3156,7 +3213,8 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn dependent_links(
+    #[inline]
+    pub fn dependent_links(
         &mut self,
         typed: &[Entry<'source>],
     ) -> Result<Maybe<Vec<Dependent>, stated_labels::Absent>, LoweringRefusal<'source>>
@@ -3227,22 +3285,22 @@ impl<'source> Lowerer<'_, 'source>
             );
             let mut named = false;
             while let Some(node) = pending.pop() {
-                self.cx.fuel.spend()?;
-                let Some(tree) = self.cx.tree.node(node)
+                self.cx_mut().fuel.spend()?;
+                let Some(tree) = self.cx().tree.node(node)
                 else {
                     continue;
                 };
                 let placed = Placed::of(node, tree);
-                let form = self.cx.form_at(placed)?;
+                let form = self.cx().form_at(placed)?;
                 if matches!(form, Some((_, Former::Name | Former::TypeHead)))
-                    && self.cx.text_at(placed).as_ref() == label.as_ref()
+                    && self.cx().text_at(placed).as_ref() == label.as_ref()
                 {
                     named = true;
                     break;
                 }
                 let keyed = self.keyed_entries(placed, form);
                 if keyed.is_empty() {
-                    pending.extend(self.cx.tree.children(node));
+                    pending.extend(self.cx().tree.children(node));
                     continue;
                 }
                 // A nested key binds its name rather than reading it, and
@@ -3295,18 +3353,19 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::Unread,
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut scratch).and_then(|()| {
-            if let Maybe::Present(_) = scratch.repair {
-                return Ok(Vec::new());
-            }
-            let mut cursor = Cursor::new(&scratch.pieces, at.span);
-            if let Maybe::Absent(_) = cursor.tile(opener) {
-                return Ok(Vec::new());
-            }
-            self.type_entries(list, &mut cursor, closer)
-        });
-        self.cx.scratch = scratch;
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read =
+            read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut scratch).and_then(|()| {
+                if let Maybe::Present(_) = scratch.repair {
+                    return Ok(Vec::new());
+                }
+                let mut cursor = Cursor::new(&scratch.pieces, at.span);
+                if let Maybe::Absent(_) = cursor.tile(opener) {
+                    return Ok(Vec::new());
+                }
+                self.shared().type_entries(list, &mut cursor, closer)
+            });
+        self.cx_mut().scratch = scratch;
 
         read.unwrap_or_default()
     }
@@ -3343,8 +3402,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   list and before one type.
     /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
     /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Telescope(..))))]
-    pub(super) fn telescope_function(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Telescope(..))))]
+    #[inline]
+    pub fn telescope_function(
         &mut self,
         site: Site,
         frame: Frame,
@@ -3355,7 +3415,7 @@ impl<'source> Lowerer<'_, 'source>
         let entries = match self.implicit_entries(domain, frame)? {
             Some((mut implicit, explicit)) => {
                 if matches!(
-                    self.cx.form_at(explicit)?,
+                    self.cx().form_at(explicit)?,
                     Some((_, Former::ParenthesizedType))
                 ) {
                     implicit.extend(self.domain_entries(explicit, frame)?);
@@ -3377,20 +3437,20 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         }
         let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
-        let start = self.cx.parameters.mark();
+        let start = self.cx().parameters.mark();
         let mut inner = frame;
         for entry in &entries {
             let declared = entry.held.at();
             // Names that share a type, `x y : a`, read it once, under the
             // first name's frame; the mint lifts it past the names between.
-            let shared = self.cx.parameters.mark() > start
+            let shared = self.cx().parameters.mark() > start
                 && self
-                    .cx
+                    .cx()
                     .parameters
                     .last()
                     .is_some_and(|last| last.declared == Maybe::Present(declared.node));
             if !shared {
-                self.read(declared.node, Reading::ValueType(inner));
+                self.host().read(declared.node, Reading::ValueType(inner));
             }
             self.label_entry(entry, Reading::ValueType(inner));
             let (binder, bound, written) = match entry.key {
@@ -3403,7 +3463,7 @@ impl<'source> Lowerer<'_, 'source>
                         });
                     }
                     let _first = seen.insert(bound, key);
-                    self.note_binder(key, inner, bound)?;
+                    self.host().note_binder(key, inner, bound)?;
                     (key, bound, Maybe::Present(key.span))
                 },
                 Key::Positional | Key::Index(..) => (
@@ -3413,22 +3473,20 @@ impl<'source> Lowerer<'_, 'source>
                 ),
             };
             let extended = self
-                .cx
+                .cx_mut()
                 .scope
                 .extend_typed(inner, bound, declared.node, written);
-            self.cx.parameters.push(Parameter::elsewhere(
+            self.cx_mut().parameters.push(Parameter::elsewhere(
                 binder.node,
                 extended,
                 Maybe::Present(declared.node),
             ));
             inner = Frame::Inner(extended);
         }
-        let output = self.box_output(codomain, inner)?;
-        self.read(codomain.node, output);
-        self.plan(
-            site,
-            Plan::Telescope(self.cx.parameters.since(start), codomain.node),
-        );
+        let output = self.host().box_output(codomain, inner)?;
+        self.host().read(codomain.node, output);
+        let plan = Plan::Telescope(self.cx().parameters.since(start), codomain.node);
+        self.host().plan(site, plan);
 
         Ok(Planned(true))
     }
@@ -3450,14 +3508,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::output_group`].
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.cx.form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
-    pub(super) fn written_group(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.cx().form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
+    #[inline]
+    pub fn written_group(
         &mut self,
         at: Placed,
         frame: Frame,
     ) -> Result<Grouped, LoweringRefusal<'source>>
     {
-        if !matches!(self.cx.form_at(at)?, Some((_, Former::ParenthesizedType))) {
+        if !matches!(self.cx().form_at(at)?, Some((_, Former::ParenthesizedType))) {
             return Ok(Grouped(false));
         }
         let entries = self.domain_entries(at, frame)?;
@@ -3487,8 +3546,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — two named outputs, two unnamed, none, and one named
     ///   output whose type a later one names.
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Returns(_))))]
-    pub(super) fn output_group(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Returns(_))))]
+    #[inline]
+    pub fn output_group(
         &mut self,
         site: Site,
         frame: Frame,
@@ -3498,13 +3558,13 @@ impl<'source> Lowerer<'_, 'source>
         if !groups(&entries).0 {
             return Ok(Planned(false));
         }
-        let _frame = self.require(site, Produced::CompType)?;
+        let _frame = self.host().require(site, Produced::CompType)?;
         let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
-        let start = self.cx.parameters.mark();
+        let start = self.cx().parameters.mark();
         let mut inner = frame;
         for entry in &entries {
             let declared = entry.held.at();
-            self.read(declared.node, Reading::ValueType(inner));
+            self.host().read(declared.node, Reading::ValueType(inner));
             self.label_entry(entry, Reading::ValueType(inner));
             let (binder, bound, written) = match entry.key {
                 Key::Label(bound, key) => {
@@ -3516,7 +3576,7 @@ impl<'source> Lowerer<'_, 'source>
                         });
                     }
                     let _first = seen.insert(bound, key);
-                    self.note_binder(key, inner, bound)?;
+                    self.host().note_binder(key, inner, bound)?;
                     (key, bound, Maybe::Present(key.span))
                 },
                 Key::Positional | Key::Index(..) => (
@@ -3526,17 +3586,18 @@ impl<'source> Lowerer<'_, 'source>
                 ),
             };
             let extended = self
-                .cx
+                .cx_mut()
                 .scope
                 .extend_typed(inner, bound, declared.node, written);
-            self.cx.parameters.push(Parameter::elsewhere(
+            self.cx_mut().parameters.push(Parameter::elsewhere(
                 binder.node,
                 extended,
                 Maybe::Present(declared.node),
             ));
             inner = Frame::Inner(extended);
         }
-        self.plan(site, Plan::Returns(self.cx.parameters.since(start)));
+        let plan = Plan::Returns(self.cx().parameters.since(start));
+        self.host().plan(site, plan);
 
         Ok(Planned(true))
     }
@@ -3574,50 +3635,52 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
     /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
     /// - witness: `lower::arity::tests::an_operation_s_outputs_are_selected_and_bound_by_label_5147`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.cx.form_at(bound), Ok(Some((_, Former::Call)))))]
-    pub(super) fn called_outputs(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.cx().form_at(bound), Ok(Some((_, Former::Call)))))]
+    #[inline]
+    pub fn called_outputs(
         &mut self,
         frame: Frame,
         bound: Placed,
         anchor: NodeIndex,
     ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::Call)) = self.cx.form_at(bound)?
+        let Some((name, Former::Call)) = self.cx().form_at(bound)?
         else {
             return Ok(None);
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, bound.node, &mut scratch).map(|()| {
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, bound.node, &mut scratch).map(|()| {
             match Cursor::new(&scratch.pieces, bound.span).operands() {
                 Run::One(head) => Some(head),
                 Run::Empty(_) | Run::Several { .. } => None,
             }
         });
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         let Some(head) = read?
         else {
             return Ok(None);
         };
-        if !matches!(self.cx.form_at(head)?, Some((written, _)) if written == FormName::IDENTIFIER)
+        if !matches!(self.cx().form_at(head)?, Some((written, _)) if written == FormName::IDENTIFIER)
         {
             return Ok(None);
         }
         // The name is read before the walk reaches it, so it takes the
         // statement's owner now, which its resolution reads.
-        self.own_written(bound.node, anchor);
+        self.host().own_written(bound.node, anchor);
         let site = Site {
             at: head,
             name,
             reading: Reading::Head(frame),
         };
-        let callee = match self.resolve_name(site, frame, self.cx.name_at(head))? {
+        let spelled = self.cx().name_at(head);
+        let callee = match self.host().resolve_name(site, frame, spelled)? {
             // A callee classified ahead of this call gives its result; one
             // the walk has not reached is read off the box its signature
             // writes.
             Maybe::Present(Resolved::Declaration { constant, declared }) => {
                 // An operation of several outputs writes them as ports.
                 if let Some(plan) = self
-                    .cx
+                    .cx()
                     .collected
                     .operations
                     .get(&crate::module::SlotIndex::from(usize::from(constant)))
@@ -3637,7 +3700,7 @@ impl<'source> Lowerer<'_, 'source>
                                     else {
                                         return None;
                                     };
-                                    let text = self.cx.tree.spanned(span)?;
+                                    let text = self.cx().tree.spanned(span)?;
                                     Some(Entry {
                                         key: Key::Label(SurfaceName::from(text), Placed {
                                             node: bound.node,
@@ -3660,9 +3723,9 @@ impl<'source> Lowerer<'_, 'source>
                     });
                     return Ok((count > 1).then_some(entries));
                 }
-                match (self.callee_result(constant), declared) {
+                match (self.host().callee_result(constant), declared) {
                     (Some(at), _) => Some(at),
-                    (None, Maybe::Present(written)) => self.written_output(written)?,
+                    (None, Maybe::Present(written)) => self.shared().written_output(written)?,
                     (None, Maybe::Absent(_)) => None,
                 }
             },
@@ -3670,24 +3733,24 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(Resolved::Binder(Bound {
                 declared: Maybe::Present(written),
                 ..
-            })) => self.written_output(written)?,
+            })) => self.shared().written_output(written)?,
             Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_) => None,
         };
         let Some(mut at) = callee
         else {
             return Ok(None);
         };
-        while let Some(&Plan::Transparent(inner)) = self.cx.plans.get(at) {
+        while let Some(&Plan::Transparent(inner)) = self.cx().plans.get(at) {
             at = inner;
         }
         // The group is read off its syntax, whether or not the walk has
         // reached the callee yet, under any row its returner writes.
-        let Some(tree) = self.cx.tree.node(at)
+        let Some(tree) = self.cx().tree.node(at)
         else {
             return Ok(None);
         };
-        let result = self.returned(Placed::of(at, tree))?;
-        if !matches!(self.cx.plans.get(result.node), Some(&Plan::Returns(_)))
+        let result = self.shared().returned(Placed::of(at, tree))?;
+        if !matches!(self.cx().plans.get(result.node), Some(&Plan::Returns(_)))
             && !self.written_group(result, frame)?.0
         {
             return Ok(None);
@@ -3712,22 +3775,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a call of a box signature and of a parameter at a box
     ///   each bind every output.
     /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.is_none_or(|node| self.cx.tree.node(node).is_some())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.is_none_or(|node| self.cx().tree.node(node).is_some())))]
     fn written_output(
         &self,
         written: NodeIndex,
     ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
     {
-        let Some(tree) = self.cx.tree.node(written)
+        let Some(tree) = self.cx().tree.node(written)
         else {
             return Ok(None);
         };
         let written = Placed::of(written, tree);
-        if !matches!(self.cx.form_at(written)?, Some((_, Former::ArrowType))) {
+        if !matches!(self.cx().form_at(written)?, Some((_, Former::ArrowType))) {
             return Ok(None);
         }
         let mut pieces = Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, written.node, &mut pieces)?;
+        read_pieces(self.cx().pbg, self.cx().tree, written.node, &mut pieces)?;
 
         Ok(match pieces.pieces.last() {
             Some(&Piece::Operand(output)) => Some(output.node),
@@ -3755,8 +3818,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::pair`].
     /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
     /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || (matches!(site.reading, Reading::Computation(_)) && self.cx.exits.contains(&site.at.node)))]
-    pub(super) fn answered_outputs(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || (matches!(site.reading, Reading::Computation(_)) && self.cx().exits.contains(&site.at.node)))]
+    #[inline]
+    pub fn answered_outputs(
         &mut self,
         site: Site,
     ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
@@ -3766,10 +3830,10 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let Some(&answer) = self
-            .cx
+            .cx()
             .answers
             .get(&site.at.node)
-            .filter(|_| self.cx.exits.contains(&site.at.node))
+            .filter(|_| self.cx().exits.contains(&site.at.node))
         else {
             return Ok(None);
         };
@@ -3777,15 +3841,15 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         }
         let mut at = answer.node;
-        while let Some(&Plan::Transparent(inner)) = self.cx.plans.get(at) {
+        while let Some(&Plan::Transparent(inner)) = self.cx().plans.get(at) {
             at = inner;
         }
-        let Some(tree) = self.cx.tree.node(at)
+        let Some(tree) = self.cx().tree.node(at)
         else {
             return Ok(None);
         };
-        let result = self.returned(Placed::of(at, tree))?;
-        if !matches!(self.cx.plans.get(result.node), Some(&Plan::Returns(_)))
+        let result = self.shared().returned(Placed::of(at, tree))?;
+        if !matches!(self.cx().plans.get(result.node), Some(&Plan::Returns(_)))
             && !self.written_group(result, frame)?.0
         {
             return Ok(None);
@@ -3808,17 +3872,17 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a group under a row is the callee's outputs.
     /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.cx.form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.cx().form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
     fn returned(
         &self,
         at: Placed,
     ) -> Result<Placed, LoweringRefusal<'source>>
     {
-        if !matches!(self.cx.form_at(at)?, Some((_, Former::ReturnerType))) {
+        if !matches!(self.cx().form_at(at)?, Some((_, Former::ReturnerType))) {
             return Ok(at);
         }
         let mut pieces = Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut pieces)?;
+        read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
 
         Ok(match pieces.pieces.last() {
             Some(&Piece::Operand(argument)) => argument,
@@ -3854,8 +3918,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   returns each value at its own output, and a group standing as a value
     ///   is refused.
     /// - witness: `lower::arity::tests::a_labelled_group_returns_each_value_at_its_output`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::ReturnAll(_))))]
-    pub(super) fn labelled_outputs(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::ReturnAll(_))))]
+    #[inline]
+    pub fn labelled_outputs(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
@@ -3865,13 +3930,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::WrongSort));
         };
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         // Each label in written order, and each label's key and value.
         let mut order: Vec<(SurfaceName<'source>, Placed)> = Vec::new();
         let mut written: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
-            let Key::Label(label, key) = self.cx.dotted(site, &mut cursor)?
+            let Key::Label(label, key) = self.cx().dotted(site, &mut cursor)?
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
@@ -3905,17 +3970,15 @@ impl<'source> Lowerer<'_, 'source>
         }
         // Each label names a distinct output and there are as many: every
         // output has its value.
-        let start = self.cx.operands.entries().len();
+        let start = self.cx().operands.entries().len();
         for name in names {
             if let Some(&(_, value)) = written.get(&name) {
-                self.cx.operands.push(value.node);
-                self.read(value.node, Reading::Value(frame));
+                self.cx_mut().operands.push(value.node);
+                self.host().read(value.node, Reading::Value(frame));
             }
         }
-        self.plan(
-            site,
-            Plan::ReturnAll(self.cx.operands.since(At::from(start))),
-        );
+        let plan = Plan::ReturnAll(self.cx().operands.since(At::from(start)));
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -3941,8 +4004,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — each output of a two-output call, selected, returns
     ///   its own binder.
     /// - witness: `lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::SelectedOutput { .. })))]
-    pub(super) fn selected_output(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::SelectedOutput { .. })))]
+    #[inline]
+    pub fn selected_output(
         &mut self,
         site: Site,
         pieces: &Pieces,
@@ -3961,16 +4025,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let label = self.cx.name_at(selected);
+        let label = self.cx().name_at(selected);
         let Some(index) = outputs
             .iter()
             .position(|output| matches!(output.key, Key::Label(name, _) if name == label))
         else {
             return Ok(Planned(false));
         };
-        let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Computation(frame));
-        self.plan(site, Plan::SelectedOutput {
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(target.node, Reading::Computation(frame));
+        self.host().plan(site, Plan::SelectedOutput {
             call: target.node,
             arity: gandr_core_term::ComponentCount::from(outputs.len()),
             index,
@@ -4009,16 +4073,17 @@ impl<'source> Lowerer<'_, 'source>
         clippy::same_name_method,
         reason = "the host's `Families` method of this name calls it"
     )]
-    pub(super) fn ungrouped_target(
+    #[inline]
+    pub fn ungrouped_target(
         &mut self,
         mut target: Placed,
         anchor: NodeIndex,
     ) -> Result<Option<Placed>, LoweringRefusal<'source>>
     {
         let written = target;
-        while let Some((_, Former::Parenthesized)) = self.cx.form_at(target)? {
+        while let Some((_, Former::Parenthesized)) = self.cx().form_at(target)? {
             let mut grouped = Pieces::new();
-            read_pieces(self.cx.pbg, self.cx.tree, target.node, &mut grouped)?;
+            read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut grouped)?;
             let mut cursor = Cursor::new(&grouped.pieces, target.span);
             let _open = cursor.tile(TileName::PAREN_OPEN);
             let Run::One(inner) = cursor.operands()
@@ -4028,7 +4093,7 @@ impl<'source> Lowerer<'_, 'source>
             target = inner;
         }
         if target.node != written.node {
-            self.own_written(written.node, anchor);
+            self.host().own_written(written.node, anchor);
         }
 
         Ok(Some(target))
@@ -4055,30 +4120,31 @@ impl<'source> Lowerer<'_, 'source>
     ///   two inputs in order, and a call of one value plugs it into a function
     ///   of one.
     /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Plugged { .. })))]
-    pub(super) fn plug(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Plugged { .. })))]
+    #[inline]
+    pub fn plug(
         &mut self,
         site: Site,
         left: Placed,
         right: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         let arity = self
             .called_outputs(frame, left, site.at.node)?
             .map_or(1_usize, |outputs| outputs.len());
-        self.read(left.node, Reading::Computation(frame));
+        self.host().read(left.node, Reading::Computation(frame));
         // The outputs bind no name the source writes.
         let mut inner = frame;
         for _ in 0 .. arity {
-            inner = Frame::Inner(self.cx.scope.extend(
+            inner = Frame::Inner(self.cx_mut().scope.extend(
                 inner,
                 SurfaceName::from(""),
                 Maybe::Absent(binder_site::Absent::Unwritten),
             ));
         }
-        self.read(right.node, Reading::Head(inner));
-        self.plan(site, Plan::Plugged {
+        self.host().read(right.node, Reading::Head(inner));
+        self.host().plan(site, Plan::Plugged {
             left: left.node,
             right: right.node,
             arity: gandr_core_term::ComponentCount::from(arity),
@@ -4103,18 +4169,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::plug`].
     /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_plugged(
+    #[inline]
+    pub fn mint_plugged(
         &self,
         (left, right, arity): (NodeIndex, NodeIndex, gandr_core_term::ComponentCount),
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let bound = match self.cx.computation_at(left) {
+        let bound = match self.cx().computation_at(left) {
             Maybe::Present(bound) => bound,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut applied = match self.cx.computation_at(right) {
+        let mut applied = match self.cx().computation_at(right) {
             Maybe::Present(applied) => applied,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -4151,14 +4218,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::selected_output`].
     /// - witness: `lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_selected_output(
+    #[inline]
+    pub fn mint_selected_output(
         &self,
         (call, arity, index): (NodeIndex, gandr_core_term::ComponentCount, Place),
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let bound = match self.cx.computation_at(call) {
+        let bound = match self.cx().computation_at(call) {
             Maybe::Present(bound) => bound,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -4198,7 +4266,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   named outputs, and of unnamed ones the tuple.
     /// - witness: `lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_record_of_outputs(
+    #[inline]
+    pub fn mint_record_of_outputs(
         call: ComputationId,
         labels: &[Option<FieldLabel>],
         sink: &mut Sink<'_>,
@@ -4268,7 +4337,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ParenthesizedType)) = self.cx.form_at(domain)?
+        let Some((name, Former::ParenthesizedType)) = self.cx().form_at(domain)?
         else {
             return Ok(Vec::new());
         };
@@ -4277,9 +4346,9 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::ValueType(frame),
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let read =
-            read_pieces(self.cx.pbg, self.cx.tree, domain.node, &mut scratch).and_then(|()| {
+            read_pieces(self.cx().pbg, self.cx().tree, domain.node, &mut scratch).and_then(|()| {
                 if let Maybe::Present(_) = scratch.repair {
                     return Ok(Vec::new());
                 }
@@ -4287,9 +4356,10 @@ impl<'source> Lowerer<'_, 'source>
                 if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
                     return Ok(Vec::new());
                 }
-                self.type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
+                self.shared()
+                    .type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
             });
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
 
         read
     }
@@ -4322,7 +4392,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<Option<(Vec<Entry<'source>>, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ReturnerType)) = self.cx.form_at(domain)?
+        let Some((name, Former::ReturnerType)) = self.cx().form_at(domain)?
         else {
             return Ok(None);
         };
@@ -4331,9 +4401,9 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::ValueType(frame),
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let read =
-            read_pieces(self.cx.pbg, self.cx.tree, domain.node, &mut scratch).and_then(|()| {
+            read_pieces(self.cx().pbg, self.cx().tree, domain.node, &mut scratch).and_then(|()| {
                 if let Maybe::Present(_) = scratch.repair {
                     return Ok(None);
                 }
@@ -4341,7 +4411,9 @@ impl<'source> Lowerer<'_, 'source>
                 if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
                     return Ok(None);
                 }
-                let entries = self.listed_entries(group, &mut cursor, TileName::BRACKET_CLOSE)?;
+                let entries =
+                    self.shared()
+                        .listed_entries(group, &mut cursor, TileName::BRACKET_CLOSE)?;
                 if entries.is_empty()
                     || entries
                         .iter()
@@ -4353,7 +4425,7 @@ impl<'source> Lowerer<'_, 'source>
                 exhausted(group, &cursor)?;
                 Ok(Some((entries, explicit)))
             });
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
 
         read
     }
@@ -4381,16 +4453,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(
-        captures: before = self.cx.operands.entries().len(),
-        ensures: self.cx.operands.entries().len() == before,
+        captures: before = self.cx().operands.entries().len(),
+        ensures: self.cx().operands.entries().len() == before,
     )]
-    pub(super) fn alias_domains(
+    #[inline]
+    pub fn alias_domains(
         &mut self,
         domain: NodeIndex,
         frame: Frame,
     ) -> Result<Option<Vec<NodeIndex>>, LoweringRefusal<'source>>
     {
-        let Some(tree) = self.cx.tree.node(domain)
+        let Some(tree) = self.cx().tree.node(domain)
         else {
             return Ok(None);
         };
@@ -4404,9 +4477,9 @@ impl<'source> Lowerer<'_, 'source>
                 entries.iter().map(|entry| entry.held.at().node).collect(),
             ));
         }
-        let start = self.cx.operands.entries().len();
-        let listed = self.domains(placed);
-        let domains = self.cx.operands.split_off(At::from(start));
+        let start = self.cx().operands.entries().len();
+        let listed = self.host().domains(placed);
+        let domains = self.cx_mut().operands.split_off(At::from(start));
         listed?;
 
         Ok(Some(domains))
@@ -4432,13 +4505,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a lambda under `(a : Empty) -> C` binds `Empty`, as
     ///   one under `Empty -> C` does.
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
-    pub(super) fn binder_type(
+    #[inline]
+    pub fn binder_type(
         &mut self,
         domain: NodeIndex,
         frame: Frame,
     ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
     {
-        let Some(tree) = self.cx.tree.node(domain)
+        let Some(tree) = self.cx().tree.node(domain)
         else {
             return Ok(None);
         };
@@ -4472,8 +4546,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   the binder before it, mint the same telescope the value-function alias
     ///   spells, and a binder nothing names mints the plain arrow.
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::DependentArrow(..))))]
-    pub(super) fn dependent_arrow(
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::DependentArrow(..))))]
+    #[inline]
+    pub fn dependent_arrow(
         &mut self,
         site: Site,
         frame: Frame,
@@ -4485,24 +4560,24 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        self.read(declared.node, Reading::ValueType(frame));
-        self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
-        self.note_binder(key, frame, bound)?;
+        self.host().read(declared.node, Reading::ValueType(frame));
+        self.host()
+            .labelled(key.span, declared.node, LabelRead::ValueType(frame));
+        self.host().note_binder(key, frame, bound)?;
         let extended =
-            self.cx
+            self.cx_mut()
                 .scope
                 .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
-        let start = self.cx.parameters.mark();
-        self.cx.parameters.push(Parameter::elsewhere(
+        let start = self.cx().parameters.mark();
+        self.cx_mut().parameters.push(Parameter::elsewhere(
             key.node,
             extended,
             Maybe::Present(declared.node),
         ));
-        self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
-        self.plan(
-            site,
-            Plan::DependentArrow(self.cx.parameters.since(start), codomain.node),
-        );
+        self.host()
+            .read(codomain.node, Reading::CompType(Frame::Inner(extended)));
+        let plan = Plan::DependentArrow(self.cx().parameters.since(start), codomain.node);
+        self.host().plan(site, plan);
 
         Ok(Planned(true))
     }
@@ -4533,7 +4608,7 @@ impl<'source> Lowerer<'_, 'source>
         domain: Placed,
     ) -> Result<Option<(Placed, SurfaceName<'source>, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ParenthesizedType)) = self.cx.form_at(domain)?
+        let Some((name, Former::ParenthesizedType)) = self.cx().form_at(domain)?
         else {
             return Ok(None);
         };
@@ -4542,9 +4617,9 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::ValueType(frame),
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let read =
-            read_pieces(self.cx.pbg, self.cx.tree, domain.node, &mut scratch).and_then(|()| {
+            read_pieces(self.cx().pbg, self.cx().tree, domain.node, &mut scratch).and_then(|()| {
                 if let Maybe::Present(_) = scratch.repair {
                     return Ok(Vec::new());
                 }
@@ -4552,9 +4627,10 @@ impl<'source> Lowerer<'_, 'source>
                 if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
                     return Ok(Vec::new());
                 }
-                self.type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
+                self.shared()
+                    .type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
             });
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         let entries = read?;
         let &[
             Entry {
@@ -4593,8 +4669,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   one where a value type is read, each asserted as the exact core node
     ///   read back out of the arena.
     /// - witness: `lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::LinearArrow(..))))]
-    pub(super) fn linear_arrow(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::LinearArrow(..))))]
+    #[inline]
+    pub fn linear_arrow(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
@@ -4610,41 +4687,43 @@ impl<'source> Lowerer<'_, 'source>
         else {
             Produced::CompType
         };
-        let frame = self.require(site, produced)?;
+        let frame = self.host().require(site, produced)?;
         let domain = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::LINEAR_ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
-        let (binder, declared, extended) = if let Some((key, bound, declared)) =
-            self.arrow_binder(frame, domain)?
-        {
-            self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
-            self.note_binder(key, frame, bound)?;
-            let extended =
-                self.cx
-                    .scope
-                    .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
-            (key.node, declared, extended)
-        }
-        else {
-            let extended = self.cx.scope.extend_typed(
-                frame,
-                SurfaceName::from(""),
-                domain.node,
-                Maybe::Absent(binder_site::Absent::Unwritten),
-            );
-            (domain.node, domain, extended)
-        };
-        self.read(declared.node, Reading::ValueType(frame));
-        self.cx.scope.mention(extended);
-        let start = self.cx.parameters.mark();
-        self.cx.parameters.push(Parameter::elsewhere(
+        let (binder, declared, extended) =
+            if let Some((key, bound, declared)) = self.arrow_binder(frame, domain)? {
+                self.host()
+                    .labelled(key.span, declared.node, LabelRead::ValueType(frame));
+                self.host().note_binder(key, frame, bound)?;
+                let extended = self.cx_mut().scope.extend_typed(
+                    frame,
+                    bound,
+                    declared.node,
+                    Maybe::Present(key.span),
+                );
+                (key.node, declared, extended)
+            }
+            else {
+                let extended = self.cx_mut().scope.extend_typed(
+                    frame,
+                    SurfaceName::from(""),
+                    domain.node,
+                    Maybe::Absent(binder_site::Absent::Unwritten),
+                );
+                (domain.node, domain, extended)
+            };
+        self.host().read(declared.node, Reading::ValueType(frame));
+        self.cx_mut().scope.mention(extended);
+        let start = self.cx().parameters.mark();
+        self.cx_mut().parameters.push(Parameter::elsewhere(
             binder,
             extended,
             Maybe::Present(declared.node),
         ));
         let inner = Frame::Inner(extended);
-        self.read(
+        self.host().read(
             codomain.node,
             if boxed {
                 Reading::Result(inner)
@@ -4653,14 +4732,12 @@ impl<'source> Lowerer<'_, 'source>
                 Reading::CompType(inner)
             },
         );
-        self.plan(
-            site,
-            Plan::LinearArrow(
-                self.cx.parameters.since(start),
-                codomain.node,
-                crate::form::Boxed(boxed),
-            ),
+        let plan = Plan::LinearArrow(
+            self.cx().parameters.since(start),
+            codomain.node,
+            crate::form::Boxed(boxed),
         );
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -4691,7 +4768,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
     /// - witness: `lower::arity::tests::each_record_link_keeps_its_labels_3934`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
-    pub(super) fn mint_labelled_type(
+    #[inline]
+    pub fn mint_labelled_type(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
         binders: FormStretch,
@@ -4703,31 +4781,31 @@ impl<'source> Lowerer<'_, 'source>
         if !bool::from(self.binds_any(binders, last)) {
             return self.mint_record_type(fields, sink, origin);
         }
-        let written = self.cx.parameters.read(binders);
-        let mut nested = match self.cx.value_type_at(last) {
+        let written = self.cx().parameters.read(binders);
+        let mut nested = match self.cx().value_type_at(last) {
             Maybe::Present(nested) => nested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         // The last entry's label, which the innermost link holds as its
         // second component. Every link further out holds the next link
         // there, whose own first label names it, so it records none.
-        let mut second = labelled.map(|label| self.cx.origin_at(label));
+        let mut second = labelled.map(|label| self.cx().origin_at(label));
         for parameter in written.iter().rev() {
             let Maybe::Present(declared) = parameter.declared
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
-            let first = match self.cx.value_type_at(declared) {
+            let first = match self.cx().value_type_at(declared) {
                 Maybe::Present(first) => first,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
-            nested = if bool::from(self.names_own_binder(last, parameter.frame)) {
+            nested = if bool::from(self.host_ref().names_own_binder(last, parameter.frame)) {
                 sink.arena.value_type_sigma(first, nested)
             }
             else {
                 sink.arena.value_type_product(&[first, nested])
             };
-            if let Maybe::Present(label) = self.cx.origin_at(parameter.binder) {
+            if let Maybe::Present(label) = self.cx().origin_at(parameter.binder) {
                 sink.origins.record_pair(nested, label);
             }
             if let Some(Maybe::Present(label)) = second.take() {
@@ -4752,7 +4830,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::telescope_type`].
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
-    pub(super) fn mint_record_type(
+    #[inline]
+    pub fn mint_record_type(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
         sink: &mut Sink<'_>,
@@ -4761,7 +4840,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut minted = BTreeMap::new();
         for (label, &field) in fields {
-            match self.cx.value_type_at(field) {
+            match self.cx().value_type_at(field) {
                 Maybe::Present(id) => {
                     let _first = minted.insert(label.clone(), id);
                 },
@@ -4787,7 +4866,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::telescope`].
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
-    pub(super) fn mint_record(
+    #[inline]
+    pub fn mint_record(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
         sink: &mut Sink<'_>,
@@ -4796,7 +4876,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut minted = BTreeMap::new();
         for (label, &field) in fields {
-            match self.cx.value_at(field) {
+            match self.cx().value_at(field) {
                 Maybe::Present(id) => {
                     let _first = minted.insert(label.clone(), id);
                 },
@@ -4823,7 +4903,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::telescope`].
     /// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
-    pub(super) fn mint_record_update(
+    #[inline]
+    pub fn mint_record_update(
         &self,
         base: NodeIndex,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
@@ -4831,7 +4912,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let base = match self.cx.value_at(base) {
+        let base = match self.cx().value_at(base) {
             Maybe::Present(id) => id,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -4861,7 +4942,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_sum_over_labels_lowers_to_the_sum_of_its_entries`
     /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
-    pub(super) fn mint_sum(
+    #[inline]
+    pub fn mint_sum(
         &self,
         summands: FormStretch,
         labels: FormStretch,
@@ -4869,10 +4951,10 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = self.cx.operands.read(summands);
+        let written = self.cx().operands.read(summands);
         let mut parts: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for &summand in written {
-            match self.cx.value_type_at(summand) {
+            match self.cx().value_type_at(summand) {
                 Maybe::Present(part) => parts.push(part),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -4899,19 +4981,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_sum`].
     /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|origins| !origins.is_empty() && origins.len() == self.cx.operands.read(labels).len()))]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|origins| !origins.is_empty() && origins.len() == self.cx().operands.read(labels).len()))]
     fn label_origins(
         &self,
         labels: FormStretch,
     ) -> Option<Vec<Origin>>
     {
-        let written = self.cx.operands.read(labels);
+        let written = self.cx().operands.read(labels);
         if written.is_empty() {
             return None;
         }
         written
             .iter()
-            .map(|&label| match self.cx.origin_at(label) {
+            .map(|&label| match self.cx().origin_at(label) {
                 Maybe::Present(origin) => Some(origin),
                 Maybe::Absent(_) => None,
             })
@@ -4931,7 +5013,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::injection`].
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
-    pub(super) fn mint_injection(
+    #[inline]
+    pub fn mint_injection(
         &self,
         summand: Summand,
         body: NodeIndex,
@@ -4939,7 +5022,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        self.cx.value_at(body).map(|injected| {
+        self.cx().value_at(body).map(|injected| {
             let id = sink.arena.value_injection(summand, injected);
             sink.value(id, origin)
         })
@@ -4961,7 +5044,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
-    pub(super) fn mint_with(
+    #[inline]
+    pub fn mint_with(
         &self,
         entries: FormStretch,
         labels: FormStretch,
@@ -4969,10 +5053,10 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = self.cx.operands.read(entries);
+        let written = self.cx().operands.read(entries);
         let mut parts: Vec<CompTypeId> = Vec::with_capacity(written.len());
         for &entry in written {
-            match self.cx.comp_type_at(entry) {
+            match self.cx().comp_type_at(entry) {
                 Maybe::Present(part) => parts.push(part),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -5000,17 +5084,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::copattern`].
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_copattern(
+    #[inline]
+    pub fn mint_copattern(
         &self,
         clauses: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = self.cx.operands.read(clauses);
+        let written = self.cx().operands.read(clauses);
         let mut parts: Vec<ComputationId> = Vec::with_capacity(written.len());
         for &clause in written {
-            match ExitsRef::new(self).mint_body(clause_body(clause), sink, origin) {
+            match self.host_ref().mint_body(clause_body(clause), sink, origin) {
                 Maybe::Present(part) => parts.push(part),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -5038,7 +5123,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_observe(
+    #[inline]
+    pub fn mint_observe(
         &self,
         subject: NodeIndex,
         observed: Observed,
@@ -5048,7 +5134,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let observing = if thunked.0 {
-            let thunk: ValueId = match self.cx.value_at(subject) {
+            let thunk: ValueId = match self.cx().value_at(subject) {
                 Maybe::Present(thunk) => thunk,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
@@ -5057,7 +5143,7 @@ impl<'source> Lowerer<'_, 'source>
             forced
         }
         else {
-            match self.cx.computation_at(subject) {
+            match self.cx().computation_at(subject) {
                 Maybe::Present(run) => run,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -5100,7 +5186,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
     /// - witness: `tests::modules::models::an_operation_is_selected_off_a_model_binder_2246`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_select(
+    #[inline]
+    pub fn mint_select(
         &self,
         subject: NodeIndex,
         selected: Observed,
@@ -5109,7 +5196,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let held: ValueId = match self.cx.value_at(subject) {
+        let held: ValueId = match self.cx().value_at(subject) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -5139,7 +5226,7 @@ impl<'source> Lowerer<'_, 'source>
         label: &'label FieldLabel,
     ) -> Option<&'label FieldLabel>
     {
-        match self.cx.plans.get(stated) {
+        match self.cx().plans.get(stated) {
             Some(&Plan::RecordType(_, binders, last, _))
                 if !bool::from(self.binds_any(binders, last)) =>
             {
@@ -5172,7 +5259,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::sub_record`].
     /// - witness: `lower::arity::tests::a_sub_record_binds_each_field_and_returns_their_record`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_sub_record(
+    #[inline]
+    pub fn mint_sub_record(
         &self,
         subject: NodeIndex,
         selected: &[Selected],
@@ -5180,7 +5268,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let held: ValueId = match self.cx.value_at(subject) {
+        let held: ValueId = match self.cx().value_at(subject) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -5257,7 +5345,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
     #[spec(ensures: |ret| matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
-    pub(super) fn project(
+    #[inline]
+    pub fn project(
         mut held: ValueId,
         selected: Observed,
         record: Option<&FieldLabel>,
@@ -5311,18 +5400,18 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_labelled_type`].
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
-    #[spec(ensures: |ret| !bool::from(ret) || !self.cx.parameters.read(binders).is_empty())]
+    #[spec(ensures: |ret| !bool::from(ret) || !self.cx().parameters.read(binders).is_empty())]
     fn binds_any(
         &self,
         binders: FormStretch,
         last: NodeIndex,
     ) -> Mentioned
     {
-        self.cx
+        self.cx()
             .parameters
             .read(binders)
             .iter()
-            .map(|parameter| self.names_own_binder(last, parameter.frame))
+            .map(|parameter| self.host_ref().names_own_binder(last, parameter.frame))
             .find(|&mentioned| bool::from(mentioned))
             .unwrap_or_default()
     }
@@ -5344,7 +5433,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::telescope_function`].
     /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
-    pub(super) fn mint_telescope(
+    #[inline]
+    pub fn mint_telescope(
         &self,
         entries: FormStretch,
         codomain: NodeIndex,
@@ -5352,18 +5442,18 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = self.cx.parameters.read(entries);
+        let written = self.cx().parameters.read(entries);
         let mut domains: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for (index, parameter) in written.iter().enumerate() {
             let Maybe::Present(declared) = parameter.declared
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
-            match self.cx.value_type_at(declared) {
+            match self.cx().value_type_at(declared) {
                 Maybe::Present(domain) => domains.push(Native::<Self>::shared_domain(
                     written.get(.. index).unwrap_or_default(),
                     parameter,
-                    |named| bool::from(self.names_own_binder(codomain, named.frame)),
+                    |named| bool::from(self.host_ref().names_own_binder(codomain, named.frame)),
                     domain,
                     sink,
                     origin,
@@ -5371,14 +5461,14 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let mut arrow = match self.box_returns(codomain, sink, origin) {
+        let mut arrow = match self.host_ref().box_returns(codomain, sink, origin) {
             Maybe::Present(arrow) => arrow,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         for (parameter, &domain) in written.iter().zip(&domains).rev() {
-            arrow = if bool::from(self.names_own_binder(codomain, parameter.frame)) {
+            arrow = if bool::from(self.host_ref().names_own_binder(codomain, parameter.frame)) {
                 let id = sink.arena.comp_type_pi(domain, arrow);
-                if let Maybe::Present(binder) = self.cx.origin_at(parameter.binder) {
+                if let Maybe::Present(binder) = self.cx().origin_at(parameter.binder) {
                     sink.origins.record_arrow(id, binder);
                 }
                 id
@@ -5411,7 +5501,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
-    pub(super) fn mint_dependent_arrow(
+    #[inline]
+    pub fn mint_dependent_arrow(
         &self,
         entries: FormStretch,
         codomain: NodeIndex,
@@ -5424,22 +5515,22 @@ impl<'source> Lowerer<'_, 'source>
             frame,
             binder,
             ..
-        }) = self.cx.parameters.read(entries).first()
+        }) = self.cx().parameters.read(entries).first()
         else {
             return Maybe::Absent(lowered::Absent::Unstated);
         };
         let (domain, body) = match (
-            self.cx.value_type_at(declared),
-            self.cx.comp_type_at(codomain),
+            self.cx().value_type_at(declared),
+            self.cx().comp_type_at(codomain),
         ) {
             (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
             (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                 return Maybe::Absent(reason);
             },
         };
-        let id = if bool::from(self.names_own_binder(codomain, frame)) {
+        let id = if bool::from(self.host_ref().names_own_binder(codomain, frame)) {
             let id = sink.arena.comp_type_pi(domain, body);
-            if let Maybe::Present(binder) = self.cx.origin_at(binder) {
+            if let Maybe::Present(binder) = self.cx().origin_at(binder) {
                 sink.origins.record_arrow(id, binder);
             }
             id
@@ -5474,7 +5565,8 @@ impl<'source> Lowerer<'_, 'source>
         | Maybe::Present(Lowered::CompType(_)) => !boxed.0,
         | Maybe::Present(_) => false,
     })]
-    pub(super) fn mint_linear_arrow(
+    #[inline]
+    pub fn mint_linear_arrow(
         &self,
         entries: FormStretch,
         codomain: NodeIndex,
@@ -5487,13 +5579,13 @@ impl<'source> Lowerer<'_, 'source>
             declared: Maybe::Present(declared),
             binder,
             ..
-        }) = self.cx.parameters.read(entries).first()
+        }) = self.cx().parameters.read(entries).first()
         else {
             return Maybe::Absent(lowered::Absent::Unstated);
         };
         let (domain, body) = match (
-            self.cx.value_type_at(declared),
-            self.cx.comp_type_at(codomain),
+            self.cx().value_type_at(declared),
+            self.cx().comp_type_at(codomain),
         ) {
             (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
             (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
@@ -5508,7 +5600,7 @@ impl<'source> Lowerer<'_, 'source>
         // A nameless binder, `A ⊸ C`, stands at its own type and names
         // nothing to record.
         if binder != declared
-            && let Maybe::Present(binder) = self.cx.origin_at(binder)
+            && let Maybe::Present(binder) = self.cx().origin_at(binder)
         {
             sink.origins.record_arrow(id, binder);
         }
@@ -5539,7 +5631,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
-    pub(super) fn mint_returns(
+    #[inline]
+    pub fn mint_returns(
         &self,
         entries: FormStretch,
         effects: gandr_core_term::effect::EffectRow,
@@ -5547,14 +5640,14 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = self.cx.parameters.read(entries);
+        let written = self.cx().parameters.read(entries);
         let mut results: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for parameter in written {
             let Maybe::Present(declared) = parameter.declared
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
-            match self.cx.value_type_at(declared) {
+            match self.cx().value_type_at(declared) {
                 Maybe::Present(result) => results.push(result),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }

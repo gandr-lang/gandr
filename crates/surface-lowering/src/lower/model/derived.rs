@@ -118,21 +118,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a group's inverse of a product mints its lemmas and
     ///   itself, which the checker accepts.
     /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
-    pub(in crate::lower) fn mint_derived_rules(
+    #[inline]
+    pub fn mint_derived_rules(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
         let slots: Vec<SlotIndex> = self
-            .cx
+            .cx()
             .collected
             .derived
-            .range(SlotIndex::from(self.cx.current.slots) ..)
+            .range(SlotIndex::from(self.cx().current.slots) ..)
             .map(|(&slot, _)| slot)
             .collect();
         let mut refused: BTreeMap<SlotIndex, LoweringRefusal<'source>> = BTreeMap::new();
         for slot in slots {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -142,24 +143,24 @@ impl<'source> Lowerer<'_, 'source>
             let (span, name) = (entry.introduced_by.span, entry.name);
             let origin = Origin::new(entry.named.node, entry.named.span);
             let run = self
-                .cx
+                .cx()
                 .collected
                 .derived
                 .get(&slot)
                 .map(|derived| derived.run);
             if let Some(&refusal) = run.and_then(|run| refused.get(&run)) {
-                let _first = self.cx.faults.insert(slot, refusal);
+                let _first = self.cx_mut().faults.insert(slot, refusal);
                 continue;
             }
             let refusal = match self.derived_rule(slot, sink, origin) {
                 Ok(minted) => {
-                    let _first = self.cx.derivations.insert(slot, minted);
+                    let _first = self.cx_mut().derivations.insert(slot, minted);
                     continue;
                 },
                 Err(Missing::Refused(refusal)) => refusal,
                 Err(Missing::Unlowered) => LoweringRefusal::Unminted { span, name },
             };
-            let _first = self.cx.faults.insert(slot, refusal);
+            let _first = self.cx_mut().faults.insert(slot, refusal);
             if let Some(run) = run {
                 let _first = refused.insert(run, refusal);
             }
@@ -187,16 +188,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   such refusal.
     /// - witness: `tests::modules::models::a_model_writing_a_derived_rule_is_refused_naming_it_4106`
     #[spec(
-        captures: [slots = self.cx.collected.slots.len(), faults = self.cx.faults.len()],
-        ensures: self.cx.collected.slots.len() == slots && self.cx.faults.len() >= faults,
+        captures: [slots = self.cx().collected.slots.len(), faults = self.cx().faults.len()],
+        ensures: self.cx().collected.slots.len() == slots && self.cx().faults.len() >= faults,
     )]
-    pub(in crate::lower) fn refuse_derived_components(&mut self)
+    #[inline]
+    pub fn refuse_derived_components(&mut self)
     {
         // Each rule a theory derives, by the theory's slot and the rule's name,
         // beside the bytes of its declaration.
         let mut derived: BTreeMap<(SlotIndex, SurfaceName<'source>), ByteSpan> = BTreeMap::new();
-        for (&slot, rule) in &self.cx.collected.derived {
-            if let Some(entry) = self.cx.collected.slots.get(usize::from(slot)) {
+        for (&slot, rule) in &self.cx().collected.derived {
+            if let Some(entry) = self.cx().collected.slots.get(usize::from(slot)) {
                 let _first = derived
                     .entry((rule.presented, entry.name))
                     .or_insert(entry.introduced_by.span);
@@ -205,19 +207,19 @@ impl<'source> Lowerer<'_, 'source>
         if derived.is_empty() {
             return;
         }
-        let source = self.cx.current.source;
+        let source = self.cx().current.source;
         let mut refusals = Vec::new();
-        for structure in &self.cx.collected.structures {
+        for structure in &self.cx().collected.structures {
             let Maybe::Present(model) = structure.model
             else {
                 continue;
             };
-            let Some(&theory) = self.cx.collected.model_theories.get(&model)
+            let Some(&theory) = self.cx().collected.model_theories.get(&model)
             else {
                 continue;
             };
             let Some(theory_name) = self
-                .cx
+                .cx()
                 .collected
                 .slots
                 .get(usize::from(theory))
@@ -230,13 +232,13 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     continue;
                 };
-                let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+                let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
                 else {
                     continue;
                 };
                 if entry.role != Role::Declared
                     || matches!(entry.refusal, Maybe::Present(_))
-                    || self.cx.collected.unit.source_at(entry.named.span.start()) != source
+                    || self.cx().collected.unit.source_at(entry.named.span.start()) != source
                 {
                     continue;
                 }
@@ -251,7 +253,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         for (slot, refusal) in refusals {
-            let _first = self.cx.faults.entry(slot).or_insert(refusal);
+            let _first = self.cx_mut().faults.entry(slot).or_insert(refusal);
         }
     }
 
@@ -285,7 +287,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(ValueTypeId, ValueId), Missing<'source>>
     {
         let derived = self
-            .cx
+            .cx()
             .collected
             .derived
             .get(&slot)
@@ -311,7 +313,8 @@ impl<'source> Lowerer<'_, 'source>
             named: derived.theory.node,
             manifests: Vec::new(),
         };
-        let Maybe::Present(Lowered::ValueType(model)) = self.mint_bundle(&bundled, sink, origin)
+        let Maybe::Present(Lowered::ValueType(model)) =
+            self.shared().mint_bundle(&bundled, sink, origin)
         else {
             return Err(Missing::Unlowered);
         };
@@ -328,14 +331,16 @@ impl<'source> Lowerer<'_, 'source>
             }),
             origin: origin.inserted(Insertion::Derived),
         };
-        let law = self.mint_form(&derived.lemma.law, &minting, sink)?;
+        let law = self
+            .shared()
+            .mint_form(&derived.lemma.law, &minting, sink)?;
         let returner = sink.arena.comp_type_returner(law);
         sink.origins.record_comp_type(returner, origin);
         let quantified = sink.arena.comp_type_pi(model, returner);
         sink.origins.record_comp_type(quantified, origin);
         let declared = sink.arena.value_type_thunk(quantified);
         sink.origins.record_value_type(declared, origin);
-        let proof = self.proof(&derived, &minting, signature, sink)?;
+        let proof = self.shared().proof(&derived, &minting, signature, sink)?;
         let returned = sink.arena.computation_return(proof);
         sink.origins.record_computation(returned, minting.origin);
         let lambda = sink.arena.computation_lambda(returned);
@@ -546,7 +551,7 @@ impl<'source> Lowerer<'_, 'source>
             Fired::Lemma(place) => {
                 let slot = SlotIndex::from(usize::from(proving.run).saturating_add(place.0));
                 let lemma = self
-                    .cx
+                    .cx()
                     .collected
                     .derived
                     .get(&slot)
@@ -556,7 +561,7 @@ impl<'source> Lowerer<'_, 'source>
                     return Err(Missing::Unlowered);
                 };
                 let constant = self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(slot))

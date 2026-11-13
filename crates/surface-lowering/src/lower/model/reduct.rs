@@ -281,20 +281,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   the checker accepts and inserts.
     /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
-    pub(in crate::lower) fn mint_reducts(
+    #[inline]
+    pub fn mint_reducts(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
         let slots: Vec<SlotIndex> = self
-            .cx
+            .cx()
             .collected
             .reducts
-            .range(SlotIndex::from(self.cx.current.slots) ..)
+            .range(SlotIndex::from(self.cx().current.slots) ..)
             .map(|(&slot, _)| slot)
             .collect();
         for slot in slots {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -303,16 +304,16 @@ impl<'source> Lowerer<'_, 'source>
             }
             let (span, name) = (entry.named.span, entry.name);
             let origin = Origin::new(entry.named.node, entry.named.span);
-            match self.reduct(slot, sink, origin) {
+            match self.shared().reduct(slot, sink, origin) {
                 Ok(minted) => {
-                    let _first = self.cx.derivations.insert(slot, minted);
+                    let _first = self.cx_mut().derivations.insert(slot, minted);
                 },
                 Err(Missing::Refused(refusal)) => {
-                    let _first = self.cx.faults.insert(slot, refusal);
+                    let _first = self.cx_mut().faults.insert(slot, refusal);
                 },
                 Err(Missing::Unlowered) => {
                     let _first = self
-                        .cx
+                        .cx_mut()
                         .faults
                         .insert(slot, LoweringRefusal::Unminted { span, name });
                 },
@@ -351,7 +352,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(ValueTypeId, ValueId), Missing<'source>>
     {
         let reduct = self
-            .cx
+            .cx()
             .collected
             .reducts
             .get(&slot)
@@ -477,7 +478,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Bundle, Missing<'source>>
     {
         let held = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(theory))
@@ -485,7 +486,11 @@ impl<'source> Lowerer<'_, 'source>
         let Maybe::Present(&crate::description::DescribedDeclaration {
             presentation: Maybe::Present(ref presentation),
             ..
-        }) = self.cx.collected.descriptions.get(&held.introduced_by.node)
+        }) = self
+            .cx()
+            .collected
+            .descriptions
+            .get(&held.introduced_by.node)
         else {
             return Err(Missing::Unlowered);
         };

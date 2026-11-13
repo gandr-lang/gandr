@@ -101,24 +101,25 @@ impl<'source> Lowerer<'_, 'source>
     ///   is no binding, and a map onto a type that is no theory's models.
     /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
     /// - witness: `tests::modules::models::a_written_forgetting_map_names_only_its_theory_s_sorts_2130`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Called(Code::Constant(_), _))))]
-    pub(in crate::lower) fn forget_model(
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Called(Code::Constant(_), _))))]
+    #[inline]
+    pub fn forget_model(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         closed(site, &mut cursor, TileName::FORGET)?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
         let mut written: Vec<(Placed, Placed)> = Vec::new();
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let read = loop {
             let entry = match site.one(cursor.operands()) {
                 Ok(entry) => entry,
                 Err(refusal) => break Err(refusal),
             };
-            match self.binding(site, entry, &mut scratch) {
+            match self.shared().binding(site, entry, &mut scratch) {
                 Ok(pair) => written.push(pair),
                 Err(refusal) => break Err(refusal),
             }
@@ -132,7 +133,7 @@ impl<'source> Lowerer<'_, 'source>
                 break Ok(());
             }
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let model = site.one(cursor.operands())?;
@@ -143,28 +144,28 @@ impl<'source> Lowerer<'_, 'source>
         };
         let stated = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
-        let theory = self.stated_theory(
+        let theory = self.shared().stated_theory(
             Site { at: stated, ..site },
             site.fault(at.span, FormFault::MisplacedTile),
         )?;
-        let named = theory.name(self.cx.tree);
+        let named = theory.name(self.cx().tree);
         let read = Site {
             at: theory.last,
             ..site
         };
         let theories = self.bundled(read, (site.at.span.start(), &theory))?;
-        let prefix = self.theory_prefix(&theory);
-        let (slot, _) = self.cx.collected.presented_theory_in(
+        let prefix = self.shared().theory_prefix(&theory);
+        let (slot, _) = self.cx().collected.presented_theory_in(
             site.at.span.start(),
             &prefix,
             theory.last.span,
-            self.cx.name_at(theory.last),
+            self.cx().name_at(theory.last),
         )?;
         // Each carrier by the sort it is written for, then in the order the
         // signature states the sorts.
         let mut by_sort: BTreeMap<&str, (Placed, Placed)> = BTreeMap::new();
         for &(sort, carrier) in &written {
-            let name = self.cx.tree.fragment(sort.node).map_or("", <&str>::from);
+            let name = self.cx().tree.fragment(sort.node).map_or("", <&str>::from);
             if by_sort.insert(name, (sort, carrier)).is_some() {
                 return Err(site.fault(sort.span, FormFault::MisplacedTile));
             }
@@ -185,40 +186,38 @@ impl<'source> Lowerer<'_, 'source>
             return Err(LoweringRefusal::UnknownMember {
                 span: sort.span,
                 module: named,
-                member: self.cx.name_at(sort),
+                member: self.cx().name_at(sort),
             });
         }
         let map = self
-            .cx
+            .cx()
             .collected
             .forgets
             .iter()
             .find(|&(_, forgetting)| {
                 forgetting.theory == slot && forgetting.onto == slot && forgetting.fixed == fixed
             })
-            .and_then(|(&map, _)| self.cx.collected.slots.get(usize::from(map)))
+            .and_then(|(&map, _)| self.cx().collected.slots.get(usize::from(map)))
             .map(|entry| entry.constant)
             .ok_or_else(|| {
                 site.out(crate::error::FragmentBoundary::Unadmitted(
                     Unbuilt::ForgetModel,
                 ))
             })?;
-        let start = self.cx.operands.entries().len();
-        self.cx.operands.extend(ordered);
-        self.cx.operands.push(model.node);
+        let start = self.cx().operands.entries().len();
+        self.cx_mut().operands.extend(ordered);
+        self.cx_mut().operands.push(model.node);
         let arguments = Stretch {
             start,
-            end: self.cx.operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         };
         for position in arguments.start .. arguments.end {
-            if let Some(&argument) = self.cx.operands.entries().get(position) {
-                self.read(argument, Reading::Value(frame));
+            if let Some(&argument) = self.cx().operands.entries().get(position) {
+                self.host().read(argument, Reading::Value(frame));
             }
         }
-        self.plan(
-            site,
-            Plan::Called(Code::Constant(map), self.cx.kept(arguments)),
-        );
+        let plan = Plan::Called(Code::Constant(map), self.cx().kept(arguments));
+        self.host().plan(site, plan);
 
         Ok(())
     }
@@ -238,20 +237,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   inserts where a counter whose carrier is manifest is asked for a
     ///   counter.
     /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
-    pub(in crate::lower) fn mint_forgets(
+    #[inline]
+    pub fn mint_forgets(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
         let slots: Vec<SlotIndex> = self
-            .cx
+            .cx()
             .collected
             .forgets
-            .range(SlotIndex::from(self.cx.current.slots) ..)
+            .range(SlotIndex::from(self.cx().current.slots) ..)
             .map(|(&slot, _)| slot)
             .collect();
         for slot in slots {
-            let Some(entry) = self.cx.collected.slots.get(usize::from(slot))
+            let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
             else {
                 continue;
             };
@@ -260,17 +260,17 @@ impl<'source> Lowerer<'_, 'source>
             }
             let (span, name) = (entry.named.span, entry.name);
             let origin = Origin::new(entry.named.node, entry.named.span);
-            match self.forget(slot, sink, origin) {
+            match self.shared().forget(slot, sink, origin) {
                 Ok((ty, body, sorts)) => {
-                    let _first = self.cx.derivations.insert(slot, (ty, body));
-                    let _sorts = self.cx.forgotten.insert(slot, sorts);
+                    let _first = self.cx_mut().derivations.insert(slot, (ty, body));
+                    let _sorts = self.cx_mut().forgotten.insert(slot, sorts);
                 },
                 Err(Missing::Refused(refusal)) => {
-                    let _first = self.cx.faults.insert(slot, refusal);
+                    let _first = self.cx_mut().faults.insert(slot, refusal);
                 },
                 Err(Missing::Unlowered) => {
                     let _first = self
-                        .cx
+                        .cx_mut()
                         .faults
                         .insert(slot, LoweringRefusal::Unminted { span, name });
                 },
@@ -314,7 +314,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(ValueTypeId, ValueId, Vec<Name>), Missing<'source>>
     {
         let plan = self
-            .cx
+            .cx()
             .collected
             .forgets
             .get(&slot)

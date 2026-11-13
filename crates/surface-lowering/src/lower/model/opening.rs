@@ -71,11 +71,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::model::opening::tests::a_model_opens_as_a_bind_over_the_rest_of_its_block_4788`
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
     #[spec(
-        captures: before = self.cx.statements.mark(),
-        ensures: |ret| ret.is_err() || (self.cx.statements.mark() == before.next()
-            && self.cx.statements.last().is_some_and(|last| last.origin == lead.node && matches!(last.binding, StatementBinding::Opening { .. }))),
+        captures: before = self.cx().statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx().statements.mark() == before.next()
+            && self.cx().statements.last().is_some_and(|last| last.origin == lead.node && matches!(last.binding, StatementBinding::Opening { .. }))),
     )]
-    pub(in crate::lower) fn module_statement(
+    #[inline]
+    pub fn module_statement(
         &mut self,
         cursor: &mut Cursor<'_>,
         lead: Placed,
@@ -95,12 +96,12 @@ impl<'source> Lowerer<'_, 'source>
         let opened = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         let stated = self.opened_declared(opened, frame)?;
-        let _first = self.cx.opened_models.insert(opened.node, stated);
-        let name = self.cx.name_at(binder);
-        self.note_binder(binder, frame, name)?;
-        let _result = self.cx.results.insert(opened.node);
-        self.read(opened.node, Reading::Computation(frame));
-        self.cx.statements.push(Statement {
+        let _first = self.cx_mut().opened_models.insert(opened.node, stated);
+        let name = self.cx().name_at(binder);
+        self.host().note_binder(binder, frame, name)?;
+        let _result = self.cx_mut().results.insert(opened.node);
+        self.host().read(opened.node, Reading::Computation(frame));
+        self.cx_mut().statements.push(Statement {
             origin: lead.node,
             bound: opened.node,
             binding: StatementBinding::Opening {
@@ -111,7 +112,7 @@ impl<'source> Lowerer<'_, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.cx.scope.extend_typed(
+        Ok(Frame::Inner(self.cx_mut().scope.extend_typed(
             frame,
             name,
             stated,
@@ -137,7 +138,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::module_statement`].
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.form_at(opened), Ok(Some((_, Former::Name)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().form_at(opened), Ok(Some((_, Former::Name)))))]
     fn opened_declared(
         &mut self,
         opened: Placed,
@@ -146,7 +147,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let refused = LoweringRefusal::NotAModel {
             span: opened.span,
-            name: self.cx.name_at(opened),
+            name: self.cx().name_at(opened),
         };
         match self.name_type(frame, opened)? {
             Maybe::Present(stated) => Ok(stated),
@@ -172,25 +173,26 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::module_statement`].
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
-    #[spec(ensures: |ret| ret.is_ok() || self.cx.opened_models.contains_key(&site.at.node))]
-    pub(in crate::lower) fn opened_model(
+    #[spec(ensures: |ret| ret.is_ok() || self.cx().opened_models.contains_key(&site.at.node))]
+    #[inline]
+    pub fn opened_model(
         &self,
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Some(&stated) = self.cx.opened_models.get(&site.at.node)
+        let Some(&stated) = self.cx().opened_models.get(&site.at.node)
         else {
             return Ok(());
         };
         let mut at = stated;
         loop {
-            match self.cx.plans.get(at) {
+            match self.cx().plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::Bundle(_)) => return Ok(()),
                 _ => {
                     return Err(LoweringRefusal::NotAModel {
                         span: site.at.span,
-                        name: self.cx.name_at(site.at),
+                        name: self.cx().name_at(site.at),
                     });
                 },
             }
