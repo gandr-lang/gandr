@@ -12,6 +12,8 @@
 #   concerns  `ledger/concerns.sql` at the head and at the base:
 #             {ids: [id], base: [id], sites: [{concern, crate, module}]}
 #   added     the paths the change adds under `crates/*/src/`
+#   held      the modules of `added` that a crate of the base already holds,
+#             each as its path below `src`, no `.rs` and no `/mod` (#7055)
 #   regressions  the lines the change adds to corpus sources, Rust test files,
 #             `.config` cases and `contrib/` TypeScript: [{path, text}]
 #   surface   the paths the change touches under `crates/surface-parser/`,
@@ -284,19 +286,23 @@ def readings:
       | "#\($n)'s `## Readings` still leaves an axis unstated: restate each row on the issue as `yes — <what it gives this unit>` or `no — <why it does not reach it>`, then run `pr:open` again:\n"
         + ([axes[] | . as $axis | select(any($unstated[]; .axis == $axis)) | "  - `\($axis)`: \(questions[$axis])"] | join("\n")));
 
-# An added source path's module as {path, crate, name}: its last segment, or
-# for a crate root the crate's name past its category; null for a test file
-# or a path outside a crate's `src`.
+# An added source path's module as {path, crate, rest, root, name}: `rest` is
+# its path below `src`, no `.rs` and no `/mod`; `name` its last segment, or for
+# a crate root the crate's name past its category; null for a test file or a
+# path outside a crate's `src`.
 def addition:
   . as $path
   | (capture("^crates/(?<crate>[^/]+)/src/(?<rest>.+)\\.rs$") // null)
   | if . == null or (.rest | test("(^|/)tests(/|$)")) then null
     else .crate as $crate
     | (.rest | sub("/mod$"; "")) as $rest
-    | {path: $path, crate: $crate, name: (if $rest == "lib" or $rest == "main" then $crate | sub("^[a-z]+-"; "") else $rest | split("/") | last end)}
+    | ($rest == "lib" or $rest == "main") as $root
+    | {path: $path, crate: $crate, rest: $rest, root: $root, name: (if $root then $crate | sub("^[a-z]+-"; "") else $rest | split("/") | last end)}
     end;
 
-# The refusals of `## Concerns` against the ledger and the modules added.
+# The refusals of `## Concerns` against the ledger and the modules added. A
+# module that a crate of the base already holds at its path moves, and adds
+# nothing to a concern (#7055); a crate root is always new.
 def concerns:
   (.concerns // {ids: [], base: [], sites: []}) as $ledger
   | "`within`, `consolidated: <what merged>` or `new concern: <why none fits>`" as $verdicts
@@ -315,9 +321,10 @@ def concerns:
         else empty
         end),
     ([$named[] | select(.verdict == "new concern" and .known and (.had | not))] | length > 0) as $new
+    | (.held // []) as $held
     | (.added // [])[]
     | addition
-    | select(. != null)
+    | select(. != null and (.root or (.rest | IN($held[]) | not)))
     | . as $added
     | ([$ledger.ids[] | select(. == $added.name)] + [$ledger.sites[] | select(.module != "" and (.module | split("::") | last) == $added.name) | .concern] | unique)[]
     | . as $concern

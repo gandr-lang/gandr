@@ -4622,6 +4622,12 @@ sites=$(concerns_at HEAD 'SELECT concern, crate, module FROM site ORDER BY conce
 concerns=$(jq -n --argjson ids "${ids:-[]}" --argjson had "${had:-[]}" --argjson sites "${sites:-[]}" \
   '{ids: [$ids[].id], rows: $ids, base: [$had[].id], sites: $sites}')
 added=$(git diff --no-renames --name-only --diff-filter=A "$from" HEAD -- ':(glob)crates/*/src/**/*.rs' | jq -R . | jq -s .)
+# The added modules that a crate of the base already holds at the same path
+# below `src` (#7055): a module moved between crates is no new module of a
+# concern. Each side is written with no `.rs` and no `/mod`.
+module_paths() { awk '{ sub(/^crates\/[^\/]+\/src\//, ""); sub(/\.rs$/, ""); sub(/\/mod$/, ""); print }' | sort -u; }
+held=$(comm -12 <(jq -r '.[]' <<< "$added" | module_paths) \
+  <(git ls-tree -r --name-only "$from" -- crates | awk -F/ '$3 == "src" && /\.rs$/' | module_paths) | jq -R . | jq -s .)
 # The lines the change adds where a defect's regression is named (#2524,
 # #3538), every file kind `opening.jq`'s `regression` reads (#4863).
 regressions=$("$claims/regressions.bash" "$from")

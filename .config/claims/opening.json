@@ -551,6 +551,36 @@
     "output": "the change adds `crates/surface-fork/src/lib.rs`, a module of the concern `fork`, whose sites lie in `core-checker::fork`, `surface-dispatcher::pool`: declare `- `fork` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again"
   },
   {
+    "name": "#7055: a module that a crate of the base holds at its path moves and opens, a crate root and a new module stay refused",
+    "input": {
+      "branch": "triage-7055-moved-module",
+      "body": "Closes #7055\n\n## Refactoring\n\nno\n",
+      "concerns": {
+        "ids": ["collapse", "fork"],
+        "base": ["collapse", "fork"],
+        "sites": [
+          {
+            "concern": "collapse",
+            "crate": "theory-discrete-morse",
+            "module": "reduct"
+          },
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          }
+        ]
+      },
+      "added": [
+        "crates/surface-lowering-base/src/module/reduct.rs",
+        "crates/surface-fork/src/lib.rs",
+        "crates/surface-lowering-base/src/lower/reduct.rs"
+      ],
+      "held": ["lib", "module/reduct"]
+    },
+    "output": "the change adds `crates/surface-fork/src/lib.rs`, a module of the concern `fork`, whose sites lie in `core-checker::fork`: declare `- `fork` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again\nthe change adds `crates/surface-lowering-base/src/lower/reduct.rs`, a module of the concern `collapse`, whose sites lie in `theory-discrete-morse::reduct`: declare `- `collapse` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again"
+  },
+  {
     "name": "an unknown concern, an item without a verdict and an item naming none are refused",
     "input": {
       "branch": "workflow-2523-concerns",
