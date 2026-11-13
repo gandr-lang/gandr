@@ -98,6 +98,9 @@
 //!   child at a cost a derivation cannot meet stores the edges.
 
 use anodized::spec;
+use gandr_kernel_check_memo::TableHash;
+use gandr_kernel_check_memo::TablePosition;
+use gandr_kernel_check_memo::TableSlot;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::BaseType;
@@ -107,6 +110,8 @@ use gandr_kernel_term::Family;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
 
+use self::index::Index;
+use self::index::Interned;
 use crate::classifier::Sort;
 use crate::effect::capability::Region;
 use crate::hole::HoleId;
@@ -124,6 +129,103 @@ use crate::syntax::ValueType;
 use crate::syntax::Zone;
 
 mod carried;
+mod index;
+
+/// How a constructor of a [`CoreArena`] mints a node.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Mint
+{
+    /// A node of its own, which the index never files, so no probe returns
+    /// it: what every constructor mints.
+    Occurrence,
+    /// The node the index files for the content, minted and filed when the
+    /// index files none: what a canonical import mints.
+    Interned,
+}
+
+/// The hash of `node` and where a probe of `index` for it ends: the filed
+/// node of `family` equal to it, or the slot that files `node`.
+///
+/// # Specification
+/// - requires: `index` files positions of `family` alone, each under the hash
+///   of its node.
+/// - ensures: `Found(position)` names a row of `family` whose node equals
+///   `node`. Otherwise `index` files no row of `family` with a node equal to
+///   it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal content minted twice in each family, and unequal
+///   content under one former, distinguish a probe that trusts the hash from
+///   one that compares the nodes.
+/// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+#[spec(ensures: |ret| match ret.1 {
+    Interned::Found(position) => family
+        .get(ArenaLength::from(usize::from(position)))
+        .is_some_and(|row| row.node == *node),
+    Interned::Vacant(_) => true,
+})]
+#[inline]
+fn probed<Node>(
+    family: &Family<Row<Node>>,
+    index: &Index,
+    node: &Node,
+) -> (TableHash, Interned)
+where
+    Node: core::hash::Hash + PartialEq,
+{
+    let hash = TableHash::of(node);
+    let interned = index.probe(hash, |position| {
+        family
+            .get(ArenaLength::from(usize::from(position)))
+            .is_some_and(|row| row.node == *node)
+    });
+    (hash, interned)
+}
+
+/// File the node appended at `offset` under `hash` at `slot` of `index`. A
+/// position past the last one an index can file is left unfiled, so the node
+/// stays an occurrence that no probe finds.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn filed(
+    index: &mut Index,
+    (slot, hash): (TableSlot, TableHash),
+    offset: ArenaLength,
+)
+{
+    if let Ok(position) = TablePosition::try_from(usize::from(offset)) {
+        index.insert(slot, hash, position);
+    }
+}
+
+/// Take each node of `family` at or past `from` out of `index`, before a
+/// truncation removes it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn unfiled<Node>(
+    family: &Family<Row<Node>>,
+    index: &mut Index,
+    from: ArenaLength,
+) where
+    Node: core::hash::Hash,
+{
+    for offset in usize::from(from) .. usize::from(family.len()) {
+        if let (Some(row), Ok(position)) = (
+            family.get(ArenaLength::from(offset)),
+            TablePosition::try_from(offset),
+        ) {
+            index.remove(TableHash::of(&row.node), position);
+        }
+    }
+}
 
 /// The id of a [`Value`] node in a [`CoreArena`].
 ///
@@ -509,6 +611,15 @@ struct Row<Node>
 /// froze are shared by every clone made after, so such a clone copies, and
 /// its drop releases, only the rows minted since.
 ///
+/// Each family files its interned nodes by their one-level records. A
+/// constructor mints an occurrence: a node of its own that no probe returns,
+/// so a reader that keys a table by node, such as the origins of a lowering or
+/// a decision of the checker, tells two sites apart.
+/// [`Self::canonical_value_type`] answers one canonical node for each content:
+/// the interned node of its record over the canonical nodes of its children.
+/// The atoms of a node, a seal site, a hole or a mark, are part of its record,
+/// so two generative instantiations stay two contents.
+///
 /// The context, the chain and the environment store ids and never dereference
 /// them. A lookup refuses an id the arena does not hold, but it cannot tell an
 /// id another arena minted, so the caller keeps every id with its arena.
@@ -524,6 +635,14 @@ pub struct CoreArena
     value_types: Family<Row<ValueType>>,
     /// The computation-type nodes and their supports.
     comp_types: Family<Row<CompType>>,
+    /// The interned values, filed by their content.
+    value_index: Index,
+    /// The interned computations, filed by their content.
+    computation_index: Index,
+    /// The interned value types, filed by their content.
+    value_type_index: Index,
+    /// The interned computation types, filed by their content.
+    comp_type_index: Index,
     /// The words of every support wider than a slot.
     words: WordArena,
     /// The watermark just before the arena's first node naming a region
@@ -814,8 +933,10 @@ impl CoreArena
     ///   watermark-many leading nodes, and a mark above the entry lengths
     ///   leaves that family where it was. Removed nodes do not resolve
     ///   immediately after truncation; later allocation can reuse their
-    ///   indices, so the caller discards the corresponding ids. A truncation
-    ///   that drops the first value type naming a region binder forgets it, so
+    ///   indices, so the caller discards the corresponding ids. The index of
+    ///   each family unfiles the nodes that the truncation removes, so a later
+    ///   interned mint of equal content files a node anew. A truncation that
+    ///   drops the first value type naming a region binder forgets it, so
     ///   [`Self::value_type_binder_precedence`] reads the arena left.
     /// - provides: the wholesale truncation a per-run arena is torn down by.
     ///   The clause checks the four family lengths and the word arena's,
@@ -833,6 +954,7 @@ impl CoreArena
     ///   the post-truncation lookup of a dropped id asserted to be absent.
     /// - witness: `arena::tests::truncating_to_a_watermark_drops_later_nodes`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
     #[inline]
     #[spec(
         captures: entry = self.watermark(),
@@ -850,13 +972,22 @@ impl CoreArena
         watermark: ArenaWatermark,
     )
     {
-        self.values.truncate(ArenaLength::from(watermark.values));
-        self.computations
-            .truncate(ArenaLength::from(watermark.computations));
-        self.value_types
-            .truncate(ArenaLength::from(watermark.value_types));
-        self.comp_types
-            .truncate(ArenaLength::from(watermark.comp_types));
+        let values = ArenaLength::from(watermark.values);
+        let computations = ArenaLength::from(watermark.computations);
+        let value_types = ArenaLength::from(watermark.value_types);
+        let comp_types = ArenaLength::from(watermark.comp_types);
+        unfiled(&self.values, &mut self.value_index, values);
+        unfiled(
+            &self.computations,
+            &mut self.computation_index,
+            computations,
+        );
+        unfiled(&self.value_types, &mut self.value_type_index, value_types);
+        unfiled(&self.comp_types, &mut self.comp_type_index, comp_types);
+        self.values.truncate(values);
+        self.computations.truncate(computations);
+        self.value_types.truncate(value_types);
+        self.comp_types.truncate(comp_types);
         self.words.truncate(watermark.words);
         if self.region_binders_from.is_some_and(|from| {
             usize::from(self.values.len()) <= from.values
@@ -873,9 +1004,9 @@ impl CoreArena
         }
     }
 
-    /// Share every node minted so far with every clone of the arena made
-    /// after: such a clone copies, and its drop releases, only the nodes
-    /// minted after the freeze.
+    /// Share every node minted so far, and the index that files it, with every
+    /// clone of the arena made after: such a clone copies, and its drop
+    /// releases, only the nodes and the entries made after the freeze.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -904,6 +1035,10 @@ impl CoreArena
         self.computations.freeze();
         self.value_types.freeze();
         self.comp_types.freeze();
+        self.value_index.freeze();
+        self.computation_index.freeze();
+        self.value_type_index.freeze();
+        self.comp_type_index.freeze();
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -1234,35 +1369,63 @@ impl CoreArena
             .map(|row| self.support_of(row.support))
     }
 
-    /// Append a value node and return its fresh id.
+    /// Mint a value node as an occurrence ([`Self::mint_value`]).
     ///
     /// # Specification
-    /// - requires: every child of `value` is minted in this arena.
-    /// - ensures: appends `value` to the value family and returns the id at the
-    ///   family's previous end, which is above every value id already minted;
-    ///   records its support beside it.
-    /// - provides: the single append point every value constructor goes
-    ///   through.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — unequal children and distinct formers exercise append
-    ///   identity, family separation and child order; truncation then
-    ///   reallocation separates fresh allocation from a stale-slot alias.
-    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(
-        captures: [entry = usize::from(self.values.len()), kind = core::mem::discriminant(&value)],
-        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.values.len()))
-            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.values.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
-    )]
+    /// trivial.
     #[inline]
     pub(crate) fn alloc_value(
         &mut self,
         value: Value,
     ) -> ValueId
     {
+        self.mint_value(value, Mint::Occurrence)
+    }
+
+    /// Mint a value node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `value` is minted in this arena.
+    /// - ensures: the id names a value equal to `value`. An interned mint of a
+    ///   content that the index files answers the filed node, and the family
+    ///   does not grow. Otherwise `value` is appended at the family's previous
+    ///   end, above every value id already minted, with its support beside it,
+    ///   and an interned mint files it.
+    /// - provides: the single mint every value constructor goes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal content minted twice separates an occurrence
+    ///   from an interned find. Unequal children and distinct formers separate
+    ///   a find that trusts the hash from one that compares the nodes, and a
+    ///   truncation then a mint separates fresh allocation from a stale-slot
+    ///   alias.
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.values.len()), wanted = value.clone(), asked = mint],
+        ensures: |ret| self.value(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.values.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.values.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_value(
+        &mut self,
+        value: Value,
+        mint: Mint,
+    ) -> ValueId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => match probed(&self.values, &self.value_index, &value) {
+                (_, Interned::Found(position)) => {
+                    return ValueId(id_index(ArenaLength::from(usize::from(position))).0);
+                },
+                (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+            },
+        };
         let id = ValueId(id_index(self.values.len()).0);
         if self.region_binders_from.is_none()
             && matches!(value, Value::Row(ref row) if row.regions().any(|region| matches!(region, Region::Bound(_))))
@@ -1274,44 +1437,72 @@ impl CoreArena
             node: value,
             support,
         });
+        if let Some(filing) = filing {
+            filed(&mut self.value_index, filing, id.offset());
+        }
         id
     }
 
-    /// Append a computation node and return its fresh id.
+    /// Mint a computation node as an occurrence ([`Self::mint_computation`]).
     ///
     /// # Specification
-    /// - requires: every child of `computation` is minted in this arena.
-    /// - ensures: appends `computation` to the computation family and returns
-    ///   the id at the family's previous end, which is above every computation
-    ///   id already minted; records its support beside it.
-    /// - provides: the single append point every computation constructor goes
-    ///   through.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — unequal children and distinct formers exercise append
-    ///   identity, family separation and child order; truncation then
-    ///   reallocation separates fresh allocation from a stale-slot alias.
-    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(
-        captures: [entry = usize::from(self.computations.len()), kind = core::mem::discriminant(&computation)],
-        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.computations.len()))
-            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.computations.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
-    )]
+    /// trivial.
     #[inline]
     pub(crate) fn alloc_computation(
         &mut self,
         computation: Computation,
     ) -> ComputationId
     {
+        self.mint_computation(computation, Mint::Occurrence)
+    }
+
+    /// Mint a computation node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `computation` is minted in this arena.
+    /// - ensures: as [`Self::mint_value`], in the computation family.
+    /// - provides: the single mint every computation constructor goes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_value`].
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.computations.len()), wanted = computation.clone(), asked = mint],
+        ensures: |ret| self.computation(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.computations.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.computations.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_computation(
+        &mut self,
+        computation: Computation,
+        mint: Mint,
+    ) -> ComputationId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => {
+                match probed(&self.computations, &self.computation_index, &computation) {
+                    (_, Interned::Found(position)) => {
+                        return ComputationId(id_index(ArenaLength::from(usize::from(position))).0);
+                    },
+                    (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+                }
+            },
+        };
         let id = ComputationId(id_index(self.computations.len()).0);
         let support = self.computation_carried(&computation);
         self.computations.push(Row {
             node: computation,
             support,
         });
+        if let Some(filing) = filing {
+            filed(&mut self.computation_index, filing, id.offset());
+        }
         id
     }
 
@@ -1346,36 +1537,59 @@ impl CoreArena
         self.alloc_value(Value::Primitive { primitive, body })
     }
 
-    /// Append a value-type node and return its fresh id.
+    /// Mint a value-type node as an occurrence ([`Self::mint_value_type`]).
     ///
     /// # Specification
-    /// - requires: every child of `value_type` is minted in this arena.
-    /// - ensures: appends `value_type` to the value-type family and returns the
-    ///   id at the family's previous end, which is above every value-type id
-    ///   already minted; records its support beside it, and the watermark
-    ///   before it when it is the arena's first type naming a region binder.
-    /// - provides: the single append point every value-type constructor goes
-    ///   through.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — unequal children and distinct formers exercise append
-    ///   identity, family separation and child order; truncation then
-    ///   reallocation separates fresh allocation from a stale-slot alias.
-    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(
-        captures: [entry = usize::from(self.value_types.len()), kind = core::mem::discriminant(&value_type)],
-        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.value_types.len()))
-            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.value_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
-    )]
+    /// trivial.
     #[inline]
     pub(crate) fn alloc_value_type(
         &mut self,
         value_type: ValueType,
     ) -> ValueTypeId
     {
+        self.mint_value_type(value_type, Mint::Occurrence)
+    }
+
+    /// Mint a value-type node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `value_type` is minted in this arena.
+    /// - ensures: as [`Self::mint_value`], in the value-type family. An append
+    ///   records the watermark before the arena's first type naming a region
+    ///   binder, and the offset of its first qubit type.
+    /// - provides: the single mint every value-type constructor goes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_value`].
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.value_types.len()), wanted = value_type.clone(), asked = mint],
+        ensures: |ret| self.value_type(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.value_types.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.value_types.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_value_type(
+        &mut self,
+        value_type: ValueType,
+        mint: Mint,
+    ) -> ValueTypeId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => {
+                match probed(&self.value_types, &self.value_type_index, &value_type) {
+                    (_, Interned::Found(position)) => {
+                        return ValueTypeId(id_index(ArenaLength::from(usize::from(position))).0);
+                    },
+                    (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+                }
+            },
+        };
         let id = ValueTypeId(id_index(self.value_types.len()).0);
         if self.region_binders_from.is_none()
             && matches!(
@@ -1399,38 +1613,65 @@ impl CoreArena
             node: value_type,
             support,
         });
+        if let Some(filing) = filing {
+            filed(&mut self.value_type_index, filing, id.offset());
+        }
         id
     }
 
-    /// Append a computation-type node and return its fresh id.
+    /// Mint a computation-type node as an occurrence
+    /// ([`Self::mint_comp_type`]).
     ///
     /// # Specification
-    /// - requires: every child of `comp_type` is minted in this arena.
-    /// - ensures: appends `comp_type` to the computation-type family and
-    ///   returns the id at the family's previous end, which is above every
-    ///   computation-type id already minted; records its support beside it.
-    /// - provides: the single append point every computation-type constructor
-    ///   goes through.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — unequal children and distinct formers exercise append
-    ///   identity, family separation and child order; truncation then
-    ///   reallocation separates fresh allocation from a stale-slot alias.
-    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(
-        captures: [entry = usize::from(self.comp_types.len()), kind = core::mem::discriminant(&comp_type)],
-        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.comp_types.len()))
-            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.comp_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
-    )]
+    /// trivial.
     #[inline]
     pub(crate) fn alloc_comp_type(
         &mut self,
         comp_type: CompType,
     ) -> CompTypeId
     {
+        self.mint_comp_type(comp_type, Mint::Occurrence)
+    }
+
+    /// Mint a computation-type node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `comp_type` is minted in this arena.
+    /// - ensures: as [`Self::mint_value`], in the computation-type family. An
+    ///   append records the watermark before the arena's first returner whose
+    ///   row names a region binder.
+    /// - provides: the single mint every computation-type constructor goes
+    ///   through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_value`].
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.comp_types.len()), wanted = comp_type.clone(), asked = mint],
+        ensures: |ret| self.comp_type(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.comp_types.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.comp_types.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_comp_type(
+        &mut self,
+        comp_type: CompType,
+        mint: Mint,
+    ) -> CompTypeId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => match probed(&self.comp_types, &self.comp_type_index, &comp_type) {
+                (_, Interned::Found(position)) => {
+                    return CompTypeId(id_index(ArenaLength::from(usize::from(position))).0);
+                },
+                (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+            },
+        };
         let id = CompTypeId(id_index(self.comp_types.len()).0);
         if self.region_binders_from.is_none()
             && matches!(comp_type, CompType::Returner { ref effects, .. } if effects.regions().any(|region| matches!(region, Region::Bound(_))))
@@ -1442,7 +1683,42 @@ impl CoreArena
             node: comp_type,
             support,
         });
+        if let Some(filing) = filing {
+            filed(&mut self.comp_type_index, filing, id.offset());
+        }
         id
+    }
+
+    /// The canonical node of the content of the value type `at`: the node the
+    /// index files for its record over the canonical nodes of its children.
+    /// A content that no filed node holds yet is minted once and filed, so a
+    /// later call answers the same node.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a value type of this arena, whose content equals the content
+    ///   of `at` at every depth. Two types of equal content answer one node.
+    ///   None when `at`, or a node it reaches, is not in this arena.
+    /// - provides: the node a table keyed by content reads, beside the
+    ///   occurrences that a table keyed by place reads.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two equal types over separate occurrences of equal
+    ///   children answer one node, a type that differs in one leaf answers
+    ///   another, and a second call answers the first call's node without a
+    ///   mint.
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    #[spec(ensures: |ret| ret.is_none_or(|canonical| self.value_type(canonical).is_some()))]
+    #[inline]
+    pub fn canonical_value_type(
+        &mut self,
+        at: ValueTypeId,
+    ) -> Option<ValueTypeId>
+    {
+        crate::import::TypeImporter::within(self)
+            .value_type(at)
+            .ok()
     }
 
     // Value constructors. Each mints over already-allocated children, which is
@@ -1489,7 +1765,7 @@ impl CoreArena
     ) -> Option<ValueId>
     {
         let node = self.value(at)?.clone();
-        Some(self.alloc_value(node))
+        Some(self.mint_value(node, Mint::Occurrence))
     }
 
     /// Mint the unit value, the tuple of no components.

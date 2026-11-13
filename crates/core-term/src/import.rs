@@ -17,6 +17,7 @@ use crate::Value;
 use crate::ValueId;
 use crate::ValueType;
 use crate::ValueTypeId;
+use crate::arena::Mint;
 
 /// An annotation graph contains an unresolved child.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -483,6 +484,20 @@ impl Image
     }
 }
 
+/// The arena an import reads: its source, or its target when the import
+/// interns within one arena.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn read<'arena>(
+    source: Option<&'arena CoreArena>,
+    target: &'arena CoreArena,
+) -> &'arena CoreArena
+{
+    source.unwrap_or(target)
+}
+
 /// One iterative postorder step.
 #[derive(Debug)]
 enum Task
@@ -499,14 +514,17 @@ enum Task
 /// literal payloads and replay evidence are preserved; only arena ids change.
 /// Source and destination must therefore use the same declaration and binder
 /// context. Dropping this importer or either arena is independent of term
-/// depth.
+/// depth. An import within one arena ([`Self::within`]) interns each node over
+/// its children's images, so the image of a node is its canonical node.
 #[derive(Debug)]
 pub struct TypeImporter<'source, 'target>
 {
-    /// The source annotation arena.
-    source: &'source CoreArena,
+    /// The source annotation arena, or none when the import reads its target.
+    source: Option<&'source CoreArena>,
     /// The receiving annotation arena.
     target: &'target mut CoreArena,
+    /// How each image is minted.
+    mint: Mint,
     /// Imported nodes, shared by every requested root.
     images: BTreeMap<Node, Node>,
     /// The explicit postorder stack.
@@ -527,8 +545,28 @@ impl<'source, 'target> TypeImporter<'source, 'target>
     ) -> Self
     {
         Self {
-            source,
+            source: Some(source),
             target,
+            mint: Mint::Occurrence,
+            images: BTreeMap::new(),
+            pending: Vec::new(),
+        }
+    }
+
+    /// Start a session that interns graphs of `arena` within it: the image of
+    /// each node is the node that `arena` files for its record over its
+    /// children's images.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub(crate) fn within(arena: &'target mut CoreArena) -> Self
+    {
+        Self {
+            source: None,
+            target: arena,
+            mint: Mint::Interned,
             images: BTreeMap::new(),
             pending: Vec::new(),
         }
@@ -695,23 +733,20 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                     if self.images.contains_key(&node) {
                         continue;
                     }
+                    let source = read(self.source, self.target);
                     let mut image = match node {
-                        Node::Value(id) => self.source.value(id).cloned().map(Image::Value),
+                        Node::Value(id) => source.value(id).cloned().map(Image::Value),
                         Node::Computation(id) => {
-                            self.source.computation(id).cloned().map(Image::Computation)
+                            source.computation(id).cloned().map(Image::Computation)
                         },
-                        Node::ValueType(id) => {
-                            self.source.value_type(id).cloned().map(Image::ValueType)
-                        },
-                        Node::CompType(id) => {
-                            self.source.comp_type(id).cloned().map(Image::CompType)
-                        },
+                        Node::ValueType(id) => source.value_type(id).cloned().map(Image::ValueType),
+                        Node::CompType(id) => source.comp_type(id).cloned().map(Image::CompType),
                     }
                     .ok_or(ImportFault)?;
                     let children = image.edges().map(|edge| edge.map(|edge| edge.node()));
                     self.pending.push(Task::Close(node, image));
                     if let Node::CompType(id) = node
-                        && let Some(ty) = self.source.comp_type(id)
+                        && let Some(ty) = source.comp_type(id)
                         && let CompType::Returner { ref effects, .. }
                         | CompType::Returns { ref effects, .. } = *ty
                     {
@@ -724,7 +759,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                     }
                     match node {
                         Node::Value(id) => {
-                            let value = self.source.value(id).ok_or(ImportFault)?;
+                            let value = source.value(id).ok_or(ImportFault)?;
                             match *value {
                                 Value::Constructor { ref fields, .. } => self.pending.extend(
                                     fields
@@ -826,7 +861,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                             }
                         },
                         Node::Computation(id) => {
-                            let computation = self.source.computation(id).ok_or(ImportFault)?;
+                            let computation = source.computation(id).ok_or(ImportFault)?;
                             match *computation {
                                 Computation::Case { ref branches, .. }
                                 | Computation::With(ref branches) => {
@@ -953,7 +988,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                             }
                         },
                         Node::ValueType(id) => {
-                            let ty = self.source.value_type(id).ok_or(ImportFault)?;
+                            let ty = source.value_type(id).ok_or(ImportFault)?;
                             match *ty {
                                 ValueType::Data { ref arguments, .. } => self.pending.extend(
                                     arguments
@@ -967,11 +1002,17 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
-                                ValueType::Patched { ref fixed, .. } => self.pending.extend(
+                                ValueType::Patched {
+                                    ref fixed,
+                                    ref meets,
+                                    ..
+                                } => self.pending.extend(
                                     fixed
                                         .values()
+                                        .copied()
+                                        .chain(meets.iter().map(|&(_, value)| value))
                                         .rev()
-                                        .map(|&value| Task::Open(Node::Value(value))),
+                                        .map(|value| Task::Open(Node::Value(value))),
                                 ),
                                 ValueType::Product(ref components)
                                 | ValueType::Sum(ref components) => self.pending.extend(
@@ -1025,7 +1066,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Stack { .. } => {},
                             }
                         },
-                        Node::CompType(id) => match self.source.comp_type(id) {
+                        Node::CompType(id) => match source.comp_type(id) {
                             Some(&CompType::Codata { ref arguments, .. }) => {
                                 self.pending.extend(
                                     arguments
@@ -1117,8 +1158,15 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 *value = map_value(*value)?;
                             }
                         },
-                        Image::ValueType(ValueType::Patched { ref mut fixed, .. }) => {
-                            for value in fixed.values_mut() {
+                        Image::ValueType(ValueType::Patched {
+                            ref mut fixed,
+                            ref mut meets,
+                            ..
+                        }) => {
+                            for value in fixed
+                                .values_mut()
+                                .chain(meets.iter_mut().map(|&mut (_, ref mut value)| value))
+                            {
                                 *value = map_value(*value)?;
                             }
                         },
@@ -1340,13 +1388,16 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         | Image::ValueType(_)
                         | Image::CompType(_) => {},
                     }
+                    let mint = self.mint;
                     let copied = match image {
-                        Image::Value(value) => Node::Value(self.target.alloc_value(value)),
+                        Image::Value(value) => Node::Value(self.target.mint_value(value, mint)),
                         Image::Computation(comp) => {
-                            Node::Computation(self.target.alloc_computation(comp))
+                            Node::Computation(self.target.mint_computation(comp, mint))
                         },
-                        Image::ValueType(ty) => Node::ValueType(self.target.alloc_value_type(ty)),
-                        Image::CompType(ty) => Node::CompType(self.target.alloc_comp_type(ty)),
+                        Image::ValueType(ty) => {
+                            Node::ValueType(self.target.mint_value_type(ty, mint))
+                        },
+                        Image::CompType(ty) => Node::CompType(self.target.mint_comp_type(ty, mint)),
                     };
                     let _previous = self.images.insert(node, copied);
                 },

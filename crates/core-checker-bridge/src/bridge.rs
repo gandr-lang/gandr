@@ -2106,12 +2106,12 @@ impl Crossed
     ///   ([`Environment::handed_on`]: its key chain and the outcomes its checks
     ///   kept, without the verdicts this readmission checked or recalled, which
     ///   its own receipt answers for), the entries, and the positions with no
-    ///   core body and no open seal. A record made freezes the readmission's
-    ///   environment ([`Environment::freeze`]) before keeping it, so the record
-    ///   and every readmission [`Crossed::resume`] starts from it share its
-    ///   arena. A marked, suspended or refused entry stays in the record: a
-    ///   resume over it starts from no record, and a readmission that keeps
-    ///   crosses it again, which offers the kernel nothing.
+    ///   core body, no open seal and no canonical node. A record made freezes
+    ///   the readmission's environment ([`Environment::freeze`]) before keeping
+    ///   it, so the record and every readmission [`Crossed::resume`] starts
+    ///   from it share its arena. A marked, suspended or refused entry stays in
+    ///   the record: a resume over it starts from no record, and a readmission
+    ///   that keeps crosses it again, which offers the kernel nothing.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2163,7 +2163,10 @@ impl Crossed
                 open: Vec::new(),
                 withheld: BTreeSet::new(),
                 presentations: positions.presentations.clone(),
-                formed: positions.formed.clone(),
+                // The canonical nodes name nodes of this arena, and a record
+                // resumes over another, so each crossing finds its formation
+                // again by its key.
+                formed: BTreeMap::new(),
                 // The keys name content in the table, so the two carry on
                 // together.
                 formations: positions.formations.clone(),
@@ -5744,10 +5747,14 @@ fn model_name(
 /// witness takes the name of the formation's content ([`formation_segment`]),
 /// so a formation takes one name wherever and whenever a walk forms it,
 /// unless a record reads a constant by its kernel position ([`NameReads`]).
+/// Within one arena, the erasure seeds each formation at the canonical node of
+/// its type ([`CoreArena::canonical_value_type`]). So a later patched type of
+/// equal content computes no key.
 ///
 /// # Specification
-/// - requires: `at` names a patched type of `arena`, whose base is a record
-///   type that holds each fixed label.
+/// - requires: `at` is the canonical node of a patched type of `arena`, whose
+///   base is a record type that holds each fixed label, and `positions.formed`
+///   does not hold it.
 /// - ensures: on success `positions.formed` holds `at` and
 ///   `positions.formations` holds its key with each witness's position. The
 ///   kernel admitted every witness of a key no earlier formation held, and
@@ -6336,9 +6343,10 @@ struct Positions
     /// The presented types the kernel admitted, whose terms its replay reads
     /// by their normal forms.
     presentations: Presentations,
-    /// The patched types whose formation the kernel replayed, by core node,
-    /// each with its formation's key: each crosses its witnesses once, or
-    /// stands on an equal formation's ([`formed`]).
+    /// The canonical node of each patched type whose formation the kernel
+    /// replayed, or that stands on an equal formation's, in the arena of this
+    /// readmission, each with its formation's key ([`formed`]). A record holds
+    /// none, because it resumes over another arena.
     formed: BTreeMap<ValueTypeId, Vec<gandr_kernel_core::ContentId>>,
     /// Each formation whose witnesses the kernel admitted, by its key: the
     /// content of its records ([`formation_key`]).

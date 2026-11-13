@@ -179,6 +179,7 @@ digraph crates {
   "core-session" -> "kernel-core";
   "core-session" -> "kernel-term";
   "core-session" -> "theory-deep-inference";
+  "core-term" -> "kernel-check-memo";
   "core-term" -> "kernel-strata";
   "core-term" -> "kernel-term";
   "core-term" -> "theory-levitation";

@@ -139,7 +139,9 @@
 //! static applications. These are scoped witnesses, not a proof of equivalence
 //! for ungenerated terms.
 //!
-//! Run the crate with executable specifications enabled:
+//! A `#[spec(...)]` clause runs only when the whole build graph compiles with
+//! `--cfg anodized_panic`. Run the crate with executable specifications
+//! enabled:
 //!
 //! ```sh
 //! RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-core-term --all-targets
