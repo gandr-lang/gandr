@@ -307,7 +307,11 @@ fn check(
     let platform = Platform::host();
     let listing = Listing::read(&mise(Query::Tools)?)?;
     let off = disabled(&mise(Query::Disabled)?)?;
-    let found = lacks(&listing, &off, Machine::host())?;
+    let checkout = std::env::current_dir().map_err(|error| HostToolsError::Io {
+        path: PathBuf::from("."),
+        message: error.to_string(),
+    })?;
+    let found = lacks(&listing, &off, Machine::host(), &checkout)?;
     let mut needs = String::new();
     for lack in &found {
         say(format_args!("host-tools: {platform} {lack}"))?;

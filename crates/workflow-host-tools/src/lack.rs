@@ -1,11 +1,14 @@
 //! The tools that a host lacks, read from mise's listing of a checkout.
 //!
 //! `mise ls --current --json` lists each tool of a checkout with its version,
-//! its install state and its install path. A tool lacks in three cases: mise
-//! holds no install of it, its install path holds no program, or one of its
-//! programs is an ELF file of another machine. A tool whose backend needs a
-//! tool that the host disables stays out: the host runs none of it, as the
-//! tools of `npm:` where `node` is off.
+//! its install state, its install path and the configuration it comes from.
+//! The listing also holds the tools of the host's own configuration, so a
+//! tool whose configuration lies outside the checkout stays out: a tool that
+//! a host pins for itself is no tool of the checkout. A tool lacks in three
+//! cases: mise holds no install of it, its install path holds no program, or
+//! one of its programs is an ELF file of another machine. A tool whose backend
+//! needs a tool that the host disables stays out: the host runs none of it, as
+//! the tools of `npm:` where `node` is off.
 
 extern crate alloc;
 
@@ -118,8 +121,8 @@ impl Platform
 /// One tool of mise's listing at one version.
 ///
 /// # Specification
-/// - provides: the version, whether mise holds an install of it, and the
-///   install's path.
+/// - provides: the version, whether mise holds an install of it, the install's
+///   path and the configuration it comes from.
 /// - executable: none — a plain record.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct Entry
@@ -130,6 +133,22 @@ pub struct Entry
     pub installed: bool,
     /// The install's path, as mise prints it.
     pub install_path: String,
+    /// The configuration that pins the tool, when mise names one.
+    #[serde(default)]
+    pub source: Option<Source>,
+}
+
+/// The configuration that pins a tool of mise's listing.
+///
+/// # Specification
+/// - provides: the path of the configuration file.
+/// - executable: none — a plain record.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Source
+{
+    /// The path of the configuration file, as mise prints it.
+    pub path: String,
 }
 
 /// mise's listing of a checkout's tools, `mise ls --current --json`.
@@ -283,11 +302,12 @@ pub enum Inspection
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each tool whose backend needs a tool of `disabled` stays out.
-///   Each other entry gives [`Lack::Absent`] when mise holds no install of it,
+/// - ensures: each entry whose configuration lies outside `checkout` stays out,
+///   and each tool whose backend needs a tool of `disabled` stays out. Each
+///   other entry gives [`Lack::Absent`] when mise holds no install of it,
 ///   [`Lack::Empty`] when [`inspect`] finds no program in its install, and
 ///   [`Lack::Foreign`] when [`inspect`] finds a program of another machine than
-///   `host`.
+///   `host`. An entry with no configuration stays in.
 /// - provides: the refusal's reading of a host.
 /// - fails: every refusal of [`inspect`].
 /// - panics: none.
@@ -297,15 +317,18 @@ pub enum Inspection
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an absent tool, a tool of a disabled backend, an install
-///   of another machine and an empty install each give their verdict.
+///   of another machine, an empty install and a tool of the host's own
+///   configuration each give their verdict.
 /// - witness: `lack::tests::a_tool_whose_backend_needs_a_disabled_tool_stays_out`
 /// - witness: `lack::tests::an_install_of_another_machine_and_an_empty_install_lack`
+/// - witness: `lack::tests::a_tool_that_the_host_pins_for_itself_stays_out_7262`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
 #[inline]
 pub fn lacks(
     listing: &Listing,
     disabled: &[ToolKey],
     host: Option<Machine>,
+    checkout: &Path,
 ) -> Result<Vec<Lack>, HostToolsError>
 {
     let skipped: BTreeSet<&str> = BACKEND_NEEDS
@@ -323,6 +346,13 @@ pub fn lacks(
             continue;
         }
         for entry in entries {
+            if entry
+                .source
+                .as_ref()
+                .is_some_and(|source| !Path::new(&source.path).starts_with(checkout))
+            {
+                continue;
+            }
             let lack = if entry.installed {
                 match inspect(Path::new(&entry.install_path), host)? {
                     Inspection::Fit => None,
@@ -588,11 +618,11 @@ mod tests
         };
         let host = Some(Machine::RISCV);
         assert_eq!(
-            lacks(&listing, &[ToolKey::from("node")], host),
+            lacks(&listing, &[ToolKey::from("node")], host, &root),
             Ok(vec![worktrunk.clone()])
         );
         assert_eq!(
-            lacks(&listing, &[], host),
+            lacks(&listing, &[], host, &root),
             Ok(vec![worktrunk, Lack::Absent {
                 tool: "npm:oxfmt".into(),
                 version: Version::from("0.75.0"),
@@ -605,6 +635,43 @@ mod tests
         );
         assert_eq!(disabled(&Json::from("[]\n")), Ok(Vec::new()));
         assert!(disabled(&Json::from("node")).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_tool_that_the_host_pins_for_itself_stays_out_7262()
+    {
+        let root = scratch();
+        let checkout = root.join("checkout");
+        let json = Json::from(
+            format!(
+                r#"{{
+                    "github:j178/prek": [{{"version": "0.5.9", "installed": false, "install_path": "{absent}",
+                        "source": {{"type": "mise.toml", "path": "{checkout}/mise.toml"}}}}],
+                    "github:KSXGitHub/parallel-disk-usage": [{{"version": "0.24.0", "installed": false, "install_path": "{absent}",
+                        "source": {{"type": "mise.toml", "path": "{home}/.config/mise/config.toml"}}}}],
+                    "rust": [{{"version": "1.95.0", "installed": false, "install_path": "{absent}"}}]
+                }}"#,
+                absent = root.join("absent").display(),
+                checkout = checkout.display(),
+                home = root.join("home").display(),
+            )
+            .as_str(),
+        );
+        let listing = Listing::read(&json).unwrap();
+        assert_eq!(
+            lacks(&listing, &[], Some(Machine::RISCV), &checkout),
+            Ok(vec![
+                Lack::Absent {
+                    tool: "github:j178/prek".into(),
+                    version: Version::from("0.5.9"),
+                },
+                Lack::Absent {
+                    tool: "rust".into(),
+                    version: Version::from("1.95.0"),
+                },
+            ])
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
