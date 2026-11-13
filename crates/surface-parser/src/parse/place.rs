@@ -72,7 +72,9 @@
 //! declaration that holds a repair is read from its first top-level form
 //! through the forms after it that open no declaration. Its first closer that
 //! no opener before it balances takes its opener at the start of each token
-//! before it, nearest first. The first copy that molds with no repair as
+//! before it, nearest first: a plain opener at each place, then a compound
+//! opener, as `type(`, at each place where a plain one doubles a pair. The
+//! first copy that molds with no repair as
 //! declarations alone gives the parse, with the opener minted there as an
 //! empty prefix grout and owed alone. That parse is kept only where it owes
 //! fewer obligations than the melder's reading and than the search above.
@@ -1060,10 +1062,13 @@ fn heads(
 /// that holds a repair is read from its first top-level form through the forms
 /// after it that open no declaration. The first closer in it that no opener
 /// before it in the source balances takes its opener at the start of each
-/// token before it, nearest first, at most [`PLACES`] times. A place counts
-/// only where an author leaves an opener out ([`left_out`]): its group holds
-/// two tokens or more and doubles no pair. A closer written twice, as the
-/// second `]` of `Type[-]]`, stands for no opener left out (#2051). A
+/// token before it, nearest first, at most twice [`PLACES`] times. A place
+/// counts only where an author leaves an opener out ([`left_out`]): its group
+/// holds two tokens or more and doubles no pair. A closer written twice, as the
+/// second `]` of `Type[-]]`, stands for no opener left out (#2051). A plain
+/// opener is tried at each place first. Then each compound opener of the
+/// class, as `type(`, is tried at each place where a plain one doubles a pair,
+/// as the `type(` of `(type(Path(x, y)))` left out does (#6323). A
 /// broken parse can start a declaration inside an open bracket, so the count
 /// runs from the source's start. The first [`BRACKETS`] declarations that hold
 /// a repair are read in source order. The search keeps a copy only where its
@@ -1163,6 +1168,7 @@ fn opened<'source>(
 /// - hypothesis: L3 — as [`opened`].
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
 /// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
+/// - witness: `parse::place::tests::a_compound_opener_left_out_inside_a_group_is_minted_6323`
 fn reopened<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
@@ -1188,53 +1194,66 @@ fn reopened<'source>(
         balance(SourceFragment::from(form), &tokens, open).err()?
     };
     let text_of_form = SourceFragment::from(form);
-    let opener = SourceText::from(match class {
+    let plain = SourceText::from(match class {
         ClosingClass::Paren => "(",
         ClosingClass::Bracket => "[",
         ClosingClass::Brace => return None,
     });
-    let width = <&str>::from(opener).len();
-    let mut shared = Shared::new(pbg, SourceText::from(form));
-    let (place, sort) = recent_places(&tokens, closer)
-        .filter(|&(index, _)| {
-            bool::from(left_out(
-                text_of_form,
-                &tokens,
-                TokenIndex::from(index),
-                class,
-            ))
+    // Each place an opener may take, nearest the closer first, with which
+    // opener it takes.
+    let places: Vec<(usize, LeftOut)> = recent_places(&tokens, closer)
+        .filter_map(|(index, token)| {
+            let verdict = left_out(text_of_form, &tokens, TokenIndex::from(index), class);
+            (verdict != LeftOut::Neither).then_some((usize::try_from(token.start).ok()?, verdict))
         })
-        .filter_map(|(_, token)| usize::try_from(token.start).ok())
-        .find_map(|at| {
-            let place = ByteOffset::from(usize::from(run.start()).checked_add(at)?);
-            let copy = written(source, run, place, opener, SourceText::from(""))?;
-            let copied = shared.copy(SourceText::from(copy.as_str()))?;
-            let end = ByteOffset::from(at.checked_add(width)?);
-            let mold = copied
-                .positions()
-                .filter_map(|position| copied.node(position))
-                .find_map(|node| match node.label() {
-                    NodeLabel::Tile(mold)
-                        if node.span().start() == ByteOffset::from(at)
-                            && node.span().end() == end =>
-                    {
-                        Some(mold)
-                    },
-                    NodeLabel::Wald
-                    | NodeLabel::Meld(_)
-                    | NodeLabel::Tile(_)
-                    | NodeLabel::Grout { .. }
-                    | NodeLabel::GhostClose { .. }
-                    | NodeLabel::Space
-                    | NodeLabel::Doc => None,
-                })?;
-            bool::from(declared(pbg, &copied))
-                .then(|| {
-                    pbg.mold(mold)
-                        .ok()
-                        .map(|def| (place, def.sort.grout_sort()))
-                })
-                .flatten()
+        .collect();
+    let mut shared = Shared::new(pbg, SourceText::from(form));
+    let mut minted = |at: usize, opener: SourceText<'static>| {
+        let place = ByteOffset::from(usize::from(run.start()).checked_add(at)?);
+        let copy = written(source, run, place, opener, SourceText::from(""))?;
+        let copied = shared.copy(SourceText::from(copy.as_str()))?;
+        let end = ByteOffset::from(at.checked_add(<&str>::from(opener).len())?);
+        let mold = copied
+            .positions()
+            .filter_map(|position| copied.node(position))
+            .find_map(|node| match node.label() {
+                NodeLabel::Tile(mold)
+                    if node.span().start() == ByteOffset::from(at) && node.span().end() == end =>
+                {
+                    Some(mold)
+                },
+                NodeLabel::Wald
+                | NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => None,
+            })?;
+        bool::from(declared(pbg, &copied))
+            .then(|| {
+                pbg.mold(mold)
+                    .ok()
+                    .map(|def| (place, def.sort.grout_sort(), opener))
+            })
+            .flatten()
+    };
+    // A plain opener goes first, at every place. A compound opener of the
+    // class, as `type(`, goes after, at each place where a plain one doubles a
+    // pair, so that it never takes a nearer place from a plain opener that the
+    // source left out (#6323).
+    let (place, sort, opener) = places
+        .iter()
+        .filter(|&&(_, verdict)| verdict == LeftOut::Plain)
+        .find_map(|&(at, _)| minted(at, plain))
+        .or_else(|| {
+            let mut doubled = places
+                .iter()
+                .filter(|&&(_, verdict)| verdict == LeftOut::Compound)
+                .peekable();
+            doubled.peek()?;
+            let compound = compound_openers(pbg, class);
+            doubled.find_map(|&(at, _)| compound.iter().find_map(|&opener| minted(at, opener)))
         })?;
     let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
     let copy = written(source, whole, place, opener, SourceText::from(""))?;
@@ -1253,9 +1272,44 @@ fn reopened<'source>(
     )
 }
 
+/// The compound openers of `class` that the grammar spells, as `type(` for a
+/// parenthesis, sorted, each once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each label of a mold of `pbg` longer than one byte that
+///   [`ClosingClass::opening`] reads as `class`, sorted and deduplicated.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`reopened`].
+/// - witness: `parse::place::tests::a_compound_opener_left_out_inside_a_group_is_minted_6323`
+fn compound_openers(
+    pbg: &Pbg,
+    class: ClosingClass,
+) -> Vec<SourceText<'static>>
+{
+    let mut openers: Vec<&'static str> = (0 .. pbg.mold_count().0)
+        .filter_map(|index| u32::try_from(index).ok())
+        .filter_map(|index| pbg.mold(MoldId::from(index)).ok())
+        .map(|def| def.label)
+        .filter(|&spelling| {
+            spelling.len() > 1
+                && ClosingClass::opening(DelimSpelling::from(spelling)) == Some(class)
+        })
+        .collect();
+    openers.sort_unstable();
+    openers.dedup();
+    openers.into_iter().map(SourceText::from).collect()
+}
+
 /// The iterator returns the recent non-space token places before `closer`.
 ///
-/// It returns at most [`PLACES`] places.
+/// It returns at most twice [`PLACES`] places: an opener left out can stand
+/// far before the closer that no opener balances, as a `type(` inside the
+/// arguments of a declaration's result type does (#6323).
 ///
 /// # Specification
 ///
@@ -1272,7 +1326,7 @@ fn recent_places(
         .enumerate()
         .rev()
         .filter(|&(_, token)| token.lexeme != Lexeme::Space)
-        .take(PLACES)
+        .take(PLACES.saturating_mul(2))
 }
 
 /// The parentheses and brackets that `tokens` of `text` leave open, counted
@@ -1362,14 +1416,27 @@ fn bracketing(
     }
 }
 
-primitive_copy_wrapper!(
-    /// Whether an opener minted at a place is one an author leaves out.
-    struct LeftOut(bool);
-);
+/// Which opener minted at a place is one an author leaves out.
+///
+/// # Specification
+/// - ensures: as [`left_out`] reads a place.
+/// - panics: none.
+/// - executable: none — a plain value; [`left_out`] carries the clause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LeftOut
+{
+    /// A plain opener of the class, as `(`.
+    Plain,
+    /// Only a compound opener of the class, as `type(`: a plain opener there
+    /// doubles a pair of its class, and a compound one opens another form.
+    Compound,
+    /// No opener.
+    Neither,
+}
 
-/// Whether an opener of `class` minted before the token at `index` of
-/// `tokens` is one an author leaves out: its group holds two tokens or more,
-/// and it doubles no pair.
+/// Which opener of `class` minted before the token at `index` of `tokens` is
+/// one an author leaves out: its group holds two tokens or more, and a plain
+/// opener there doubles no pair, else only a compound opener counts.
 ///
 /// The minted opener closes at the first closer from `index` that finds none
 /// open ([`balance`]). An opener before an empty group or one token, as `(`
@@ -1382,10 +1449,11 @@ primitive_copy_wrapper!(
 ///
 /// # Specification
 /// - requires: `tokens` are the labels of `text`.
-/// - ensures: true exactly when that closer exists, two tokens or more stand
-///   from `index` up to it, and neither the token before `index` opens `class`
-///   while the token after that closer closes it, nor the token at `index`
-///   opens `class` while its own closer is the token before that closer; blanks
+/// - ensures: [`LeftOut::Neither`] when that closer does not exist or fewer
+///   than two tokens stand from `index` up to it. Else [`LeftOut::Compound`]
+///   when the token before `index` opens `class` while the token after that
+///   closer closes it, or the token at `index` opens `class` while its own
+///   closer is the token before that closer. Else [`LeftOut::Plain`]. Blanks
 ///   never count as a token.
 /// - fails: never.
 /// - panics: none.
@@ -1393,8 +1461,9 @@ primitive_copy_wrapper!(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — no place of a universe's `]` or a parameter list's `)`
-///   written twice counts, and the place before a juxtaposed operand left
-///   without its `(` does.
+///   written twice counts for a plain opener, the place before a juxtaposed
+///   operand left without its `(` does, and the place of a `type(` left out
+///   inside a group counts for a compound opener alone.
 /// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
 fn left_out(
@@ -1432,7 +1501,7 @@ fn left_out(
     };
     let Some(close) = closes(index)
     else {
-        return LeftOut::from(false);
+        return LeftOut::Neither;
     };
     let held = tokens
         .get(index .. close)
@@ -1444,7 +1513,15 @@ fn left_out(
     let inside = is(before(index), Bracket::Open) && is(after(close), Bracket::Close);
     let around = is(Some(index), Bracket::Open)
         && before(close).is_some_and(|last| index.checked_add(1).and_then(closes) == Some(last));
-    LeftOut::from(held && !inside && !around)
+    if !held {
+        LeftOut::Neither
+    }
+    else if inside || around {
+        LeftOut::Compound
+    }
+    else {
+        LeftOut::Plain
+    }
 }
 
 /// A top-level form's own molding, which every copy of it the search tries
@@ -2826,6 +2903,35 @@ mod tests
         );
     }
 
+    /// #6323: the `type(` of `(type(Path[.A = A](x, y)))` left out. A plain
+    /// `(` before `Path` doubles the group around it, so the search mints the
+    /// compound opener there, and the parse owes that one repair.
+    #[test]
+    fn a_compound_opener_left_out_inside_a_group_is_minted_6323()
+    {
+        let pbg = built_in().unwrap();
+        let source = include_str!(
+            "place/unformatted/a-compound-opener-left-out-inside-a-group-is-minted-6323.gandr"
+        );
+        let place = source.find("Path[").unwrap();
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        assert_eq!(
+            reconstruct(parsed.tree()),
+            source,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == place
+                    && repair.span.start() == repair.span.end()
+            ),
+            "one repair stands, at `Path`: {:?}",
+            parsed.obligations()
+        );
+    }
+
     /// #6323: a member of a module's block whose `type` is left out. The
     /// melder closes the block over it, so the root holds the module, and the
     /// member reads as a type. The member takes the `type` that another member
@@ -3067,8 +3173,10 @@ mod tests
     fn an_opener_search_bounds_a_long_form_6169()
     {
         let pbg = built_in().unwrap();
+        // The walk takes twice `PLACES` places (#6323).
+        let bound = PLACES * 2;
         let mut source = String::from("def long = 0");
-        for _ in 0_usize .. PLACES {
+        for _ in 0_usize .. bound {
             source.push_str(" + 0");
         }
         source.push_str(" ;");
@@ -3083,14 +3191,14 @@ mod tests
             tokens
                 .iter()
                 .filter(|token| token.lexeme != Lexeme::Space)
-                .take(PLACES + 1)
+                .take(bound + 1)
                 .count()
-                > PLACES,
+                > bound,
             "the form has more non-space tokens than the limit",
         );
         assert_eq!(
             recent_places(&tokens, TokenIndex::from(tokens.len())).count(),
-            PLACES,
+            bound,
             "the opener search takes only the limit's most recent places",
         );
     }
