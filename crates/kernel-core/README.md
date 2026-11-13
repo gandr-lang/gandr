@@ -48,7 +48,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 ## Examples
 
-The rustdoc of `Environment` in [`env`](src/env.rs) holds the admission example. The example stages a declaration, admits it, refuses a second one and audits the environment.
+The rustdoc of [`Environment`](src/environment.rs) holds the admission example. The example stages a declaration, admits it, refuses a second one and audits the environment.
 
 [`src/lib.rs`](src/lib.rs) names what each integration test holds. Run them with the unit tests, then the enforcing twin:
 

@@ -78,19 +78,12 @@ use crate::env::AdmittedDeclaration;
 use crate::env::Entries;
 use crate::error::ExpectedComputationShape;
 use crate::error::KernelError;
+pub(super) use crate::occurrence::Unstaged;
 use crate::rewrite;
 use crate::stage_order::Fit;
 use crate::stage_order::StageOrder;
 use crate::stage_order::below;
 use crate::support::SupportContext;
-
-/// Why a type opens no stage.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) enum Unstaged
-{
-    /// The type is refined at no stage.
-    Plain,
-}
 
 /// Why a case reads no constant as its definition's self binder.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

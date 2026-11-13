@@ -18,7 +18,7 @@ use gandr_kernel_term::TheoryRuleRefusal;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
-use crate::env::Environment;
+use crate::Environment;
 use crate::error::KernelError;
 
 /// The presentation.

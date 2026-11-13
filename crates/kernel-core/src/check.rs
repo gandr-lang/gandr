@@ -318,6 +318,7 @@ use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
 use crate::conv::pending_endpoints;
 use crate::encoding::ObligationGoal;
+pub(crate) use crate::encoding::Partiality;
 use crate::encoding::RecordName;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
@@ -961,18 +962,6 @@ pub struct Judgement<'session>
     forking: crate::fork::Forking<'session>,
 }
 
-/// Whether a fixpoint without termination evidence may recurse at a type that
-/// ends in a returner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Partiality
-{
-    /// It may not: every call in the kernel's fragment returns.
-    Refused,
-    /// It may: the declaration is a ruled operation, whose rules the kernel
-    /// admits only oriented, so its recursion terminates.
-    Ruled,
-}
-
 /// A walk's parameters as the kept memo names them. A walk names them at its
 /// first miss. A walk never changes its judgement.
 #[derive(Clone, Copy, Debug)]
@@ -1152,7 +1141,7 @@ impl<'session> Judgement<'session>
     ///   formed, another admitted at its position one level up, and a third
     ///   whose field names it. Parameters without the block serve the refused
     ///   declaration's level to the third.
-    /// - witness: `env::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
     #[spec(ensures: |ret| ret.is_none()
         == (matches!(self.block, Block::Mutual { .. }) || !self.related.is_empty()))]
     pub(crate) fn parameters(&self) -> Option<crate::encoding::Parameters<'session>>
@@ -3670,8 +3659,8 @@ fn strengthened(
 /// - hypothesis: L3 — a prior declaration supplies its type; a forward
 ///   reference refuses instead of resolving an unrelated entry; a universe's
 ///   field names its decoder at the decoder's declared type.
-/// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
-/// - witness: `env::tests::a_forward_constant_reference_is_unbound`
+/// - witness: `environment::tests::a_definition_referencing_a_prior_one_checks`
+/// - witness: `environment::tests::a_forward_constant_reference_is_unbound`
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 ///
 /// [`Absent::Unadmitted`]: constant_type::Absent::Unadmitted
@@ -7559,7 +7548,7 @@ fn check_sealing_provenance(
 /// - witness: `check::tests::an_axiom_checks_only_its_type`
 /// - witness: `check::tests::a_sealed_atom_checks_only_its_kind`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
-/// - witness: `env::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
+/// - witness: `environment::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
 #[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
         && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
@@ -9020,8 +9009,8 @@ mod tests
     use super::TypeLevelGoal;
     use super::run;
     use super::type_level;
+    use crate::Environment;
     use crate::census::ExpansionCensus;
-    use crate::env::Environment;
     use crate::error::ExpectedValueShape;
     use crate::error::KernelError;
     use crate::error::NonInferableForm;

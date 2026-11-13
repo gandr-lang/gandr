@@ -392,7 +392,7 @@ pub(crate) struct Parameters<'parameters>
     /// stage.
     pub following: Option<ComputationId>,
     /// Whether a fixpoint without termination evidence may recurse.
-    pub partiality: crate::check::Partiality,
+    pub partiality: Partiality,
 }
 
 /// The declaration a judgement has in scope beside the admitted prefix, as
@@ -2544,7 +2544,7 @@ impl ContentTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::name_constants`], and a kept unit reads as
     ///   a fresh admission of it.
-    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len()
             == named_before.max(usize::from(entries.len()).min(usize::from(end))))]
@@ -5512,8 +5512,8 @@ fn write_parameters<const NAMED: bool>(
         }
     }
     record.put_tag(match parameters.partiality {
-        crate::check::Partiality::Refused => WireTag::from(0x00_u8),
-        crate::check::Partiality::Ruled => WireTag::from(0x01_u8),
+        Partiality::Refused => WireTag::from(0x00_u8),
+        Partiality::Ruled => WireTag::from(0x01_u8),
     });
 }
 
@@ -6273,6 +6273,18 @@ impl<'table> MintNames<'table>
     {
         let _id = self.0.place(arena, image);
     }
+}
+
+/// Whether a fixpoint without termination evidence may recurse at a type that
+/// ends in a returner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Partiality
+{
+    /// It may not: every call in the kernel's fragment returns.
+    Refused,
+    /// It may: the declaration is a ruled operation, whose rules the kernel
+    /// admits only oriented, so its recursion terminates.
+    Ruled,
 }
 
 #[cfg(test)]
@@ -7535,12 +7547,12 @@ mod tests
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
     /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
     fn reference_environment(
-        referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
+        referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
         order: ReferentOrder,
-    ) -> (crate::env::Environment, ValueId, ValueTypeId)
+    ) -> (crate::Environment, ValueId, ValueTypeId)
     {
-        let mut environment = crate::env::Environment::new();
-        let pair = |environment: &mut crate::env::Environment| {
+        let mut environment = crate::Environment::new();
+        let pair = |environment: &mut crate::Environment| {
             let mut staging = environment.stage();
             let unit = staging.arena().value_type_unit();
             let declared = staging.arena().value_type_product(&[unit, unit]);
@@ -7589,7 +7601,7 @@ mod tests
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
     /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
     fn reference_stream(
-        referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
+        referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
         order: ReferentOrder,
     ) -> ContentEncoding
     {
@@ -7622,7 +7634,7 @@ mod tests
     /// - witness: `encoding::tests::a_goal_takes_one_name_in_either_admission_order_864`
     /// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
     fn goal_name(
-        referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
+        referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
         order: ReferentOrder,
         state: TableState,
     ) -> (ContentId, RecordName)
@@ -7664,7 +7676,7 @@ mod tests
     /// - hypothesis: L3 — the unit axiom admits in every environment.
     /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
     /// - witness: `encoding::tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
-    fn unit_axiom(environment: &mut crate::env::Environment) -> ConstantIndex
+    fn unit_axiom(environment: &mut crate::Environment) -> ConstantIndex
     {
         let mut staging = environment.stage();
         let declared = staging.arena().value_type_unit();
@@ -7689,7 +7701,7 @@ mod tests
     /// - hypothesis: L3 — the unit definition admits in every environment.
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
     /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
-    fn unit_definition(environment: &mut crate::env::Environment) -> ConstantIndex
+    fn unit_definition(environment: &mut crate::Environment) -> ConstantIndex
     {
         let mut staging = environment.stage();
         let declared = staging.arena().value_type_unit();
@@ -7810,7 +7822,7 @@ mod tests
     #[test]
     fn each_twin_of_one_content_ranks_past_the_latest_3686()
     {
-        let mut environment = crate::env::Environment::new();
+        let mut environment = crate::Environment::new();
         let left = unit_definition(&mut environment);
         let right = unit_definition(&mut environment);
         let mut staging = environment.stage();
@@ -7885,7 +7897,7 @@ mod tests
     /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
     fn definition_digest(
         table: &mut ContentTable,
-        (arena, environment): (&TermArena, &crate::env::Environment),
+        (arena, environment): (&TermArena, &crate::Environment),
         declared: ValueTypeId,
         body: ValueId,
     ) -> gandr_kernel_check_memo::ContentDigest
@@ -7904,7 +7916,7 @@ mod tests
     #[test]
     fn a_definition_takes_one_digest_in_either_admission_order()
     {
-        let environment = crate::env::Environment::new();
+        let environment = crate::Environment::new();
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let declared = arena.value_type_product(&[unit, unit]);
@@ -7936,7 +7948,7 @@ mod tests
     #[test]
     fn a_definition_named_at_mint_is_named_with_no_walk()
     {
-        let environment = crate::env::Environment::new();
+        let environment = crate::Environment::new();
         let mut arena = TermArena::new();
         let mut table = ContentTable::named();
         let unit = arena.value_type_unit();
@@ -8119,7 +8131,7 @@ mod tests
 
         use super::Parameters;
         use super::ParametersBlock;
-        use crate::check::Partiality;
+        use crate::encoding::Partiality;
 
         let mut arena = TermArena::new();
         let mut table = ContentTable::new();

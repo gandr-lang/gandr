@@ -230,9 +230,9 @@ fn neutral_fibres_do_not_decide_equality()
 ///
 /// # Specification
 /// trivial.
-pub(super) fn shapes() -> crate::env::Environment
+pub(super) fn shapes() -> crate::Environment
 {
-    let mut environment = crate::env::Environment::new();
+    let mut environment = crate::Environment::new();
     let mut staging = environment.stage();
     let kind = staging
         .arena()

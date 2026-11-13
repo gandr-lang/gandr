@@ -28,7 +28,7 @@
 //! The declaration's level parameters and the environment's admission log are
 //! *not* in the key. They are fixed for the whole of one declaration's check,
 //! and a memo never outlives that — see
-//! [`check_declaration_with_memo`](crate::check::check_declaration_with_memo).
+//! `check::check_declaration_with_memo`.
 //!
 //! # The read binders are the judgement's own output
 //!
@@ -101,7 +101,6 @@ use gandr_kernel_term::WIDEST;
 use gandr_kernel_term::read_indices;
 use quenchant_shape::shape::Maybe;
 
-use crate::element_identity::BinderUse;
 use crate::encoding::ContentTable;
 use crate::encoding::RecordName;
 use crate::encoding::SupportGoal;
@@ -504,8 +503,8 @@ impl SupportContext
     ///   admissions of generated environments keep. The environments reuse
     ///   refused positions. The reference checks each declaration on an empty
     ///   session.
-    /// - witness: `env::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
-    /// - witness: `env::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    /// - witness: `environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
     pub(crate) fn recall_kept(
         &mut self,
         arena: &TermArena,
@@ -592,7 +591,7 @@ impl SupportContext
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::recall_kept`].
-    /// - witness: `env::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    /// - witness: `environment::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
     pub(crate) fn keep(
         &mut self,
         support: &NodeSupport,
@@ -1470,7 +1469,7 @@ impl MemoKey for KeptSupport
     /// # Adequacy
     /// - hypothesis: L3 — as [`ContentTable::parameters`]. One goal kept under
     ///   two parameter sets takes two entries.
-    /// - witness: `env::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
         == (matches!(self.support.agreement(&other.support), ContentAgreement::Agree)
             && self.parameters == other.parameters))]
@@ -1595,6 +1594,16 @@ fn read_binders<'buffer>(
     Maybe::Present(read.as_slice())
 }
 
+/// What a family does with its innermost binder.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BinderUse
+{
+    /// The family provably ignores variable zero.
+    Ignored,
+    /// The family may read variable zero.
+    Read,
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1614,8 +1623,8 @@ mod tests
     use super::SupportPlane;
     use super::innermost;
     use super::read_telescope;
-    use crate::element_identity::BinderUse;
     use crate::encoding::SupportGoal;
+    use crate::support::BinderUse;
 
     /// The set of the indices `indices`.
     ///

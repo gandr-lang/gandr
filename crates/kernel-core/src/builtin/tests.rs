@@ -14,7 +14,7 @@ use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueTypeId;
 
-use crate::env::Environment;
+use crate::Environment;
 use crate::error::KernelError;
 
 /// Which part of a canonical form a fixture departs at.

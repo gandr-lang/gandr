@@ -68,7 +68,7 @@
 //!
 //! The replay takes [`normal_form`] in weak head form, once it has read the
 //! leaves that are returned endpoints: `Replay::read_returned_leaves` in
-//! [`mod@crate::replay`] records which leaves are read, how, and why.
+//! the kernel's `replay` module records which leaves are read, how, and why.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -208,9 +208,9 @@ impl Presentations
     /// - requires: nothing.
     /// - ensures: exactly the data declarations among `entries` whose
     ///   presentation holds a rule, each with its rules and arities.
-    /// - provides: the table [`crate::replay::Unfoldings::presenting`] hands
-    ///   every replay over the environment; the environment keeps it, so this
-    ///   reads no entry.
+    /// - provides: the table `replay::Unfoldings::presenting` hands every
+    ///   replay over the environment; the environment keeps it, so this reads
+    ///   no entry.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1292,7 +1292,7 @@ mod tests
     use gandr_kernel_term::RuleVariable;
     use gandr_kernel_term::TermArena;
 
-    use crate::env::Environment;
+    use crate::Environment;
     use crate::error::KernelError;
 
     /// A constructor of the test's circle, `mark` taking a field of another
@@ -1776,7 +1776,7 @@ mod tests
             matches!(
                 reflexivity,
                 Err(KernelError::Identity(
-                    crate::element_identity::IdentityError::EndpointsDiffer { .. }
+                    crate::error::identity::IdentityError::EndpointsDiffer { .. }
                 ))
             ),
             "the same words over a free circle are two terms: {reflexivity:?}"

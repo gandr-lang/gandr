@@ -72,7 +72,7 @@ struct Row
 /// - hypothesis: L3 — the reach of each edit of a generated environment equals
 ///   the entries whose support holds an edited entry, after refused blocks roll
 ///   back.
-/// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+/// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
 #[derive(Clone, Debug, Default)]
 pub struct Dependents
 {
@@ -96,7 +96,7 @@ impl Dependents
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Dependents`].
-    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
     #[spec(captures: rows = self.rows.len(), ensures: self.rows.len() == rows.saturating_add(references.len()))]
     pub fn admit(
         &mut self,
@@ -134,7 +134,7 @@ impl Dependents
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Dependents`].
-    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
     #[spec(captures: rows = self.rows.len(), ensures: self.rows.len() == rows.saturating_sub(references.len()))]
     pub fn forget(
         &mut self,
@@ -302,7 +302,7 @@ impl Walk
 /// - hypothesis: L3 — the reach of each edit of a generated environment equals
 ///   the entries whose support holds an edited entry, and a type of words
 ///   reaches an entry after it through its sort and no entry before it.
-/// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+/// - witness: `environment::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
 /// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| position < ConstantIndex::from(length)))]
 pub fn reach<Words, Edited>(

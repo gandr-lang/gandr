@@ -143,7 +143,7 @@ fn a_presented_constructor_is_set_aside_on_either_side()
         .into(),
         [x].into(),
     )]);
-    let mut environment = crate::env::Environment::new();
+    let mut environment = crate::Environment::new();
     let mut staging = environment.stage();
     let kind = staging
         .arena()

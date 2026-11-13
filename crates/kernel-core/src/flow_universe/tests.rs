@@ -32,6 +32,7 @@ use crate::encoding::ContentTable;
 use crate::path_universe::Dialogue;
 use crate::path_universe::Reduction;
 use crate::replay::EngineClaim;
+use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 use crate::rewrite::BinderDepth;
 

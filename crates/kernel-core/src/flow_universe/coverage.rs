@@ -1205,7 +1205,7 @@ mod tests
     #[test]
     fn a_data_code_covers_as_its_constructors()
     {
-        let mut environment = crate::env::Environment::new();
+        let mut environment = crate::Environment::new();
         let mut staging = environment.stage();
         let kind = staging
             .arena()
