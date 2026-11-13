@@ -25,6 +25,8 @@ use crate::accounting::MemoError;
 use crate::digest::ContentAgreement;
 use crate::digest::ContentDigest;
 use crate::key::MemoKey;
+use crate::overlay::Disagreement;
+use crate::overlay::OverlaidMemo;
 use crate::table::HashIndex;
 use crate::table::Probe;
 use crate::table::TableHash;
@@ -339,6 +341,65 @@ where
         &self,
         plane: Support::Plane,
     ) -> MemoEntryCount;
+
+    /// Open a child of this memo at a fork point: an overlay that reads this
+    /// memo as it stands and records apart. A memo that cannot open one
+    /// answers none, and the consumer then runs its children serially.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none for a memo that cannot fork; otherwise a child that
+    ///   serves each support as this memo served it before the call, and holds
+    ///   no entry of its own.
+    /// - provides: the memo a forked job reads and records into.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the child's entries are the overlay's own, whose
+    ///   fork checks its predicate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OverlaidMemo::fork`].
+    /// - witness: `overlay::tests::a_child_reads_the_memo_as_it_stood_at_the_fork`
+    #[inline]
+    fn fork_child(&mut self) -> Option<OverlaidMemo<Support, Outcome>>
+    {
+        None
+    }
+
+    /// Fold `child`, a child that [`CheckMemo::fork_child`] opened, into this
+    /// memo, keeping each entry that `keep` answers for.
+    ///
+    /// # Specification
+    /// - requires: `child` was opened by this memo's [`CheckMemo::fork_child`].
+    ///   The caller folds the children of one fork point in their order.
+    /// - ensures: as [`OverlaidMemo::join`]; a memo that cannot fork drops the
+    ///   child.
+    /// - provides: the fold of a forked job's memo at its join.
+    /// - fails: as [`OverlaidMemo::join`]; a memo that cannot fork never fails.
+    /// - panics: none.
+    /// - executable: none — as [`OverlaidMemo::join`].
+    ///
+    /// # Errors
+    /// As [`OverlaidMemo::join`]: [`Disagreement`] when the child keeps an
+    /// outcome under a support that this memo holds with another outcome.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OverlaidMemo::join`].
+    /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
+    /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+    #[inline]
+    fn join_child<Keep>(
+        &mut self,
+        _child: OverlaidMemo<Support, Outcome>,
+        _keep: Keep,
+    ) -> Result<(), Disagreement<Support, Outcome>>
+    where
+        Keep: FnMut(&Support, &Outcome) -> bool,
+        Support: Clone,
+        Outcome: Clone + PartialEq,
+    {
+        Ok(())
+    }
 }
 
 /// The memo that never answers: the unmemoized path, as a type parameter.

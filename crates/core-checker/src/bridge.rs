@@ -567,6 +567,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::content_digest;
+use gandr_kernel_core::fork::SharedFork;
 use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
@@ -2328,6 +2329,8 @@ pub struct Recall
     policy: TrustPolicy,
     /// Where receipts are read.
     source: Arc<dyn VerdictSource>,
+    /// The fork that each check's last drain runs its obligations through.
+    fork: SharedFork,
 }
 
 impl Recall
@@ -2343,6 +2346,7 @@ impl Recall
         Self {
             policy: TrustPolicy::Recheck,
             source: Arc::new(NoVerdicts),
+            fork: SharedFork::serial(),
         }
     }
 
@@ -2357,7 +2361,26 @@ impl Recall
         source: Arc<dyn VerdictSource>,
     ) -> Self
     {
-        Self { policy, source }
+        Self {
+            policy,
+            source,
+            fork: SharedFork::serial(),
+        }
+    }
+
+    /// The same recall, each kernel check running the obligations of its
+    /// last drain as `fork` states. The fork changes no verdict.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forking(
+        self,
+        fork: SharedFork,
+    ) -> Self
+    {
+        Self { fork, ..self }
     }
 
     /// An empty environment under this recall.
@@ -2367,6 +2390,7 @@ impl Recall
     fn environment(&self) -> Environment
     {
         Environment::recalling(self.policy.clone(), Arc::clone(&self.source))
+            .forking(self.fork.clone())
     }
 }
 
@@ -2577,7 +2601,7 @@ where
                 Maybe::Absent(_) => None,
             },
             recall.environment(),
-            Some(&recall.source),
+            Some(recall),
         ),
     };
     let (environment, mut positions, mut readmitted) = offered
@@ -2590,10 +2614,15 @@ where
                     Vec::with_capacity(judged_all.len()),
                 )
             },
-            |(mut environment, positions, readmitted)| {
-                if let Some(recalled) = recalled {
-                    environment.reading(Arc::clone(recalled));
-                }
+            |(environment, positions, readmitted)| {
+                let environment = match recalled {
+                    Some(recall) => {
+                        let mut environment = environment.forking(recall.fork.clone());
+                        environment.reading(Arc::clone(&recall.source));
+                        environment
+                    },
+                    None => environment,
+                };
                 (environment, positions, readmitted)
             },
         );

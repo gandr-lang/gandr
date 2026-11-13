@@ -1822,8 +1822,8 @@ struct Scope
 }
 
 /// What a released check's judgement reads beside its scope: the levels of
-/// the declaration, the atoms open at its release and the policy of
-/// admitted results.
+/// the declaration, the atoms open at its release, the policy of admitted
+/// results and the fork of its last drain.
 ///
 /// # Specification
 /// trivial.
@@ -1836,6 +1836,9 @@ struct Judged
     manifest: Vec<ConstantIndex>,
     /// Whether the check takes a closed pair's admitted result.
     admitting: crate::admitted::AdmissionPolicy,
+    /// The fork that the last drain of the check runs its obligations
+    /// through, if any.
+    forking: crate::fork::SharedFork,
 }
 
 /// What a released check found: its outcome and its tally, with the scope
@@ -1913,7 +1916,7 @@ impl Check
                 scope: Maybe::Absent(ran::Absent::Recalled),
             },
             Way::Checking(mut scope, judged) => {
-                let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+                let taken = crate::admitted::Tally::new();
                 let mut census = ExpansionCensus::new();
                 let outcome = {
                     let Scope {
@@ -1925,7 +1928,8 @@ impl Check
                         arena,
                         check::Judgement::new(view, &judged.levels)
                             .unsealing(&judged.manifest)
-                            .taking(crate::admitted::Taking::under(judged.admitting, &taken)),
+                            .taking(crate::admitted::Taking::under(judged.admitting, &taken))
+                            .forking(judged.forking.forking()),
                         &declaration,
                         session,
                         &mut census,
@@ -3375,6 +3379,9 @@ pub struct Environment
     admitting: crate::admitted::AdmissionPolicy,
     /// How many admitted results this environment's checks took.
     admitted: crate::admitted::AdmittedCount,
+    /// The fork that the last drain of each check runs its obligations
+    /// through, if any.
+    forking: crate::fork::SharedFork,
 }
 
 impl Environment
@@ -3426,6 +3433,25 @@ impl Environment
         }
     }
 
+    /// The same environment, the last drain of each of its checks running its
+    /// obligations as `fork` states. The fork changes no verdict: a part that
+    /// refuses sends the check back to its serial drain.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forking(
+        self,
+        fork: crate::fork::SharedFork,
+    ) -> Self
+    {
+        Self {
+            forking: fork,
+            ..self
+        }
+    }
+
     /// This environment for a later run that resumes it: the same arena,
     /// declarations and key chain, and the names and kept outcomes of its
     /// session, without the verdicts this run checked or recalled, which its
@@ -3468,6 +3494,7 @@ impl Environment
             names: self.names.carried(),
             admitting: crate::admitted::AdmissionPolicy::Derive,
             admitted: crate::admitted::AdmittedCount::NONE,
+            forking: crate::fork::SharedFork::serial(),
         }
     }
 
@@ -4031,6 +4058,7 @@ impl Environment
                     levels,
                     manifest: self.manifest.clone(),
                     admitting: self.admitting,
+                    forking: self.forking.clone(),
                 })
             },
         };
@@ -4210,10 +4238,7 @@ impl Environment
     fn within_view<T>(
         &mut self,
         (roots, rank): (&[ConstantIndex], SourceRank),
-        (levels, taken): (
-            &LevelContext,
-            &core::cell::Cell<crate::admitted::AdmittedCount>,
-        ),
+        (levels, taken): (&LevelContext, &crate::admitted::Tally),
         check: impl FnOnce(
             &mut TermArena,
             check::Judgement<'_>,
@@ -4232,7 +4257,8 @@ impl Environment
                 arena,
                 check::Judgement::new(view, levels)
                     .unsealing(&self.manifest)
-                    .taking(crate::admitted::Taking::under(self.admitting, taken)),
+                    .taking(crate::admitted::Taking::under(self.admitting, taken))
+                    .forking(self.forking.forking()),
                 session,
             )
         };
@@ -4690,7 +4716,7 @@ impl Environment
         let named = block_references(&self.arena, members, first);
         let mut admitted = Vec::with_capacity(members.len());
         // A block records no verdict, so what its checks take is only counted.
-        let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+        let taken = crate::admitted::Tally::new();
         // Each member's tally: its declared type's formation here, then its
         // own check.
         let mut censuses = alloc::vec![ExpansionCensus::new(); members.len()];
@@ -9412,7 +9438,7 @@ mod tests
         )
         .expect("no level parameter admits");
         let check = |environment: &mut Environment, roots: &[ConstantIndex]| {
-            let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+            let taken = crate::admitted::Tally::new();
             // The check runs on copies of the arena and of the session, so the
             // environment stays as the admission below finds it.
             environment.within_view(

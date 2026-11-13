@@ -45,6 +45,7 @@ use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
 use gandr_core_checker::bridge;
 use gandr_core_term::CoreArena;
+use gandr_kernel_core::fork::SharedFork;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::StoredReceipt;
@@ -65,6 +66,12 @@ static RECHECK: LazyLock<bridge::Recall> = LazyLock::new(bridge::Recall::recheck
 // host that needs two at once (the language server's background kernel)
 // threads one through the composition's admission instead.
 static INSTALLED: OnceLock<VerdictCache> = OnceLock::new();
+
+/// The fork this process installed for the obligations of each kernel check.
+// economy: one fork per process, read where every readmission funnels, as
+// the verdict cache is. #2802 threads the fork through the admission when
+// the frames of a check fork.
+static FORKING: OnceLock<SharedFork> = OnceLock::new();
 
 /// Where a cache keeps the receipts its kernel signs, and reads them from.
 #[derive(Debug)]
@@ -267,7 +274,7 @@ impl VerdictCache
                 store: Arc::clone(store),
             }),
         };
-        bridge::Recall::trusting(self.policy.clone(), source)
+        bridge::Recall::trusting(self.policy.clone(), source).forking(forking())
     }
 
     /// Count what `readmission` recalled, and keep the receipt for what it
@@ -393,6 +400,32 @@ pub fn install_verdict_cache(cache: VerdictCache) -> Result<(), AlreadyInstalled
     INSTALLED.set(cache).map_err(|_refused| AlreadyInstalled)
 }
 
+/// Install `fork` for the last drain of each kernel check this process makes.
+///
+/// A fork installed already stays. A process that installs none drains the
+/// obligations of each check on the calling thread.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`AlreadyInstalled`].
+#[inline]
+pub fn install_obligation_fork(fork: SharedFork) -> Result<(), AlreadyInstalled>
+{
+    FORKING.set(fork).map_err(|_refused| AlreadyInstalled)
+}
+
+/// The fork this process installed for the obligations of each kernel check,
+/// or the serial drain.
+///
+/// # Specification
+/// trivial.
+fn forking() -> SharedFork
+{
+    FORKING.get().cloned().unwrap_or_default()
+}
+
 quenchant_shape::reason_enum! {
     /// Why a process has no verdict tally.
     pub mod tallied {
@@ -482,7 +515,14 @@ where
 {
     let polled = match INSTALLED.get() {
         Some(cache) => cache.readmit(arena, report, leading, (retirement, stopwatch)),
-        None => bridge::readmit_retiring(arena, report, leading, &RECHECK, retirement, stopwatch),
+        None => bridge::readmit_retiring(
+            arena,
+            report,
+            leading,
+            &RECHECK.clone().forking(forking()),
+            retirement,
+            stopwatch,
+        ),
     };
     if let Polled::Whole((ref readmission, _)) = polled {
         crate::tier::took(readmission.environment().admitted());

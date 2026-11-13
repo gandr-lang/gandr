@@ -460,6 +460,56 @@ where
                 sum.saturating_add(layer.plane_entry_count(plane))
             })
     }
+
+    /// A child of this memo at this fork point, as [`Self::fork`] opens it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: some child, as [`Self::fork`] ensures.
+    /// - provides: the memo a forked job of a check records into.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::fork`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OverlaidMemo`].
+    /// - witness: `overlay::tests::a_child_reads_the_memo_as_it_stood_at_the_fork`
+    #[inline]
+    fn fork_child(&mut self) -> Option<Self>
+    {
+        Some(self.fork())
+    }
+
+    /// Fold `child` into this memo, as [`Self::join`] folds it.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::join`].
+    /// - ensures: as [`Self::join`].
+    /// - provides: the fold of a forked job's memo at its join.
+    /// - fails: as [`Self::join`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::join`].
+    ///
+    /// # Errors
+    /// As [`Self::join`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OverlaidMemo`].
+    /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
+    /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+    #[inline]
+    fn join_child<Keep>(
+        &mut self,
+        child: Self,
+        keep: Keep,
+    ) -> Result<(), Disagreement<Support, Outcome>>
+    where
+        Keep: FnMut(&Support, &Outcome) -> bool,
+        Support: Clone,
+        Outcome: Clone + PartialEq,
+    {
+        self.join(child, keep)
+    }
 }
 
 #[cfg(test)]

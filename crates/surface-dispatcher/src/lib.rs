@@ -501,6 +501,7 @@ pub use crate::unfolding::observe_unfoldings;
 pub use crate::verdicts::AlreadyInstalled;
 pub use crate::verdicts::VerdictCache;
 pub use crate::verdicts::VerdictTally;
+pub use crate::verdicts::install_obligation_fork;
 pub use crate::verdicts::install_verdict_cache;
 pub use crate::verdicts::tallied;
 pub use crate::verdicts::verdict_tally;
