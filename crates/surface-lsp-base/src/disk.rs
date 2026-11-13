@@ -14,8 +14,8 @@
 //!
 //! Directories are watched rather than files: an editor that saves by writing
 //! a new file and renaming it over the old one replaces the file a per-file
-//! watch held. A path is followed as [`named_path`] names it, and matched to
-//! the system's events by the path it resolves to.
+//! watch held. A path is followed as the dispatcher's `named_path` names it,
+//! and matched to the system's events by the path it resolves to.
 //!
 //! The system's watcher is asked on a thread of its own. On macOS a watch
 //! restarts the event stream, a call to `fseventsd` that every process's
@@ -23,8 +23,6 @@
 //! connection may keep its client waiting. While a registration is pending,
 //! the followed files are read every [`POLL`] instead, so a change made then
 //! is still handed on.
-//!
-//! [`named_path`]: gandr_surface_dispatcher::named_path
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -49,8 +47,8 @@ use notify::RecommendedWatcher;
 use notify::RecursiveMode;
 use notify::Watcher as _;
 
+use crate::inbox::Changes;
 use crate::peer::Peer;
-use crate::quiet::Changes;
 
 /// How often the followed files are read while a registration is pending.
 pub const POLL: Duration = Duration::from_millis(50);
@@ -337,7 +335,7 @@ impl Disk
     ///   disk, with no notification sent; the watch hands a followed file on
     ///   when it is created, changed or removed, and not when it is only opened
     ///   or closed.
-    /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    /// - witness: `gandr-surface-lsp::hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
     /// - witness: `disk::tests::only_a_write_to_a_followed_file_is_handed_on`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -409,7 +407,7 @@ impl Disk
     ///   pairs, return while a followed file is rewritten without pause; the
     ///   hub's witness run as 64 concurrent processes, whose registrations
     ///   `fseventsd` answers one at a time, is told of the rewrite in each.
-    /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    /// - witness: `gandr-surface-lsp::hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
     /// - witness: `disk::tests::a_connection_follows_exactly_what_it_named_last`
     /// - witness: `disk::tests::a_follow_returns_while_its_files_keep_changing_1898`
     #[spec(captures: following = !named.is_empty(),
@@ -499,9 +497,9 @@ mod tests
     use super::handed;
     use super::lock;
     use super::polled;
+    use crate::inbox::Inbox;
+    use crate::inbox::tests::handed as received;
     use crate::peer::Peer;
-    use crate::quiet::Inbox;
-    use crate::quiet::tests::handed as received;
 
     /// A file a connection follows is handed on when it is created, changed
     /// or removed, and not when it is only opened or closed: a save closes

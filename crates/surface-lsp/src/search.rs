@@ -18,36 +18,14 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_lowering::SourceIndex;
-use gandr_surface_lowering::Visibility;
 use gandr_surface_syntax::SourceText;
 
-use crate::position::Range;
+use crate::elsewhere::Declared;
 use crate::protocol::SymbolKind;
 use crate::reading::Reading;
 
 /// The most symbols one workspace-symbol request answers.
 pub const FOUND_HELD: usize = 128;
-
-/// One name a text declares: its name, the name folded to lower case, what it
-/// declares, the declaration holding it and the range of its name in the
-/// text.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Declared
-{
-    /// The name folded to lower case, which a query is compared with.
-    pub folded: String,
-    /// The name as written.
-    pub name: String,
-    /// What it declares, as the outline names it.
-    pub kind: SymbolKind,
-    /// The name of the declaration holding it; none at the top of its
-    /// source.
-    pub container: Option<String>,
-    /// The range of its name in the text.
-    pub range: Range,
-    /// Whether its source exports it, as the outline reads its `pub` mark.
-    pub exported: Visibility,
-}
 
 /// A workspace-symbol query, folded to lower case once.
 #[repr(transparent)]
@@ -280,6 +258,7 @@ mod tests
 {
     use alloc::string::String;
     use alloc::vec::Vec;
+    use std::path::Path;
 
     use gandr_surface_lowering::SourceIndex;
     use gandr_surface_syntax::SourceText;
@@ -288,8 +267,18 @@ mod tests
     use super::Entry;
     use super::Found;
     use super::Query;
+    use super::declared;
+    use crate::elsewhere::Elsewhere;
+    use crate::elsewhere::Unimported;
+    use crate::missing::UNRESOLVED_NAME;
+    use crate::missing::additions;
     use crate::position::Range;
+    use crate::protocol::Diagnostic;
+    use crate::protocol::DocumentUri;
+    use crate::protocol::Severity;
     use crate::protocol::SymbolKind;
+    use crate::protocol::TextEdit;
+    use crate::toolkit::grammar;
 
     #[test]
     fn a_query_finds_the_names_holding_its_characters_in_order()
@@ -337,6 +326,95 @@ mod tests
         assert!(
             names("q").is_empty(),
             "a character no name holds finds nothing"
+        );
+    }
+
+    #[test]
+    fn an_unresolved_name_is_offered_the_import_declaring_it()
+    {
+        let far = declared(SourceText::from(include_str!(
+            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-far.gandr"
+        )));
+        let twin = declared(SourceText::from(include_str!(
+            "missing/unformatted/an-unresolved-name-is-offered-the-import-declaring-it-twin.gandr"
+        )));
+        let hidden = declared(SourceText::from(include_str!(
+            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-hidden.gandr"
+        )));
+        let far = Unimported {
+            path: Path::new("/folder/far.gandr"),
+            names: &far,
+        };
+        let twin = Unimported {
+            path: Path::new("/folder/twin.gandr"),
+            names: &twin,
+        };
+        let hidden = Unimported {
+            path: Path::new("/folder/hidden.gandr"),
+            names: &hidden,
+        };
+        let uri = DocumentUri::from("file:///folder/typing.gandr");
+        let range = |line: u32, start: u32, end: u32| -> Range {
+            serde_json::from_value(
+                serde_json::json!({"start": {"line": line, "character": start},
+                "end": {"line": line, "character": end}}),
+            )
+            .expect("a range")
+        };
+        let import = |path: &Path| {
+            Vec::from([TextEdit {
+                range: Range::default(),
+                new_text: format!(
+                    "import \"./{}\" ;\n",
+                    path.file_name().unwrap_or_default().display()
+                ),
+            }])
+        };
+        let offered = |text: &str, (refused, asked): (Range, Range), sources: &[Unimported<'_>]| {
+            let mut refusal = Diagnostic::new(refused, Severity::ERROR, String::from("nothing"));
+            refusal.code = Some(String::from(UNRESOLVED_NAME));
+            additions(
+                &uri,
+                grammar().expect("the grammar builds"),
+                (&[refusal], SourceText::from(text)),
+                (asked, &[]),
+                Elsewhere {
+                    sources,
+                    import: &import,
+                },
+            )
+            .into_iter()
+            .map(|action| (action.title, action.is_preferred))
+            .collect::<Vec<_>>()
+        };
+        let value = include_str!(
+            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-value.gandr"
+        );
+        let at_value = range(1, 11, 18);
+        assert_eq!(
+            offered(value, (at_value, at_value), &[far, hidden]),
+            [(String::from("Import `./far.gandr`"), true)],
+            "the one source exporting the value is offered, preferred; one declaring it \
+             privately is not, since its import would not bring the name into scope"
+        );
+        assert_eq!(
+            offered(value, (at_value, at_value), &[far, twin]),
+            [
+                (String::from("Import `./far.gandr`"), false),
+                (String::from("Import `./twin.gandr`"), false)
+            ],
+            "two sources declaring it are each offered, neither preferred"
+        );
+        let at_type = range(0, 11, 16);
+        assert_eq!(
+            offered("def here : Shape ;\n", (at_type, at_type), &[far, twin]),
+            [(String::from("Import `./far.gandr`"), true)],
+            "a name written as a type finds the family, never a value of its name"
+        );
+        assert_eq!(
+            offered(value, (at_value, range(0, 0, 3)), &[far]),
+            [],
+            "a range elsewhere is offered no import"
         );
     }
 }

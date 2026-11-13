@@ -24,9 +24,9 @@ use gandr_surface_syntax::SourceText;
 use serde::Deserialize as _;
 use serde_json::Value;
 
-use crate::complete::Elsewhere;
-use crate::complete::Unimported;
-use crate::complete::unimported_as;
+use crate::elsewhere::Elsewhere;
+use crate::elsewhere::Unimported;
+use crate::elsewhere::unimported_as;
 use crate::inline::Labeled;
 use crate::inline::Slot;
 use crate::position::Range;
@@ -38,9 +38,11 @@ use crate::protocol::WorkspaceEdit;
 /// The code the refusal of a name that names nothing carries.
 pub const UNRESOLVED_NAME: &str = "UnresolvedName";
 
-/// The quick fixes importing a source for each name of the document at `uri`
-/// that `published` refuses as naming nothing and `asked` meets, the name read
-/// in `text` and its slot under `grammar`, the sources `elsewhere` holds.
+/// The quick fixes that import a source for each name that names nothing.
+///
+/// Each name is one of the document at `uri` that `published` refuses as
+/// naming nothing and `asked` meets, the name read in `text` and its slot
+/// under `grammar`, the sources `elsewhere` holds.
 ///
 /// # Specification
 /// - requires: `published` are the diagnostics last published for `text`, and
@@ -65,10 +67,11 @@ pub const UNRESOLVED_NAME: &str = "UnresolvedName";
 ///   two sources export is offered both, none preferred; a name written as a
 ///   type is not offered a source declaring it only as a value; a range
 ///   elsewhere is offered none.
-/// - witness: `missing::tests::an_unresolved_name_is_offered_the_import_declaring_it`
+/// - witness: `gandr-surface-lsp::search::tests::an_unresolved_name_is_offered_the_import_declaring_it`
 #[spec(ensures: |ret| ret.iter().all(|action| action.kind == "quickfix"
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
+#[inline]
 pub fn additions(
     uri: &DocumentUri,
     grammar: &Pbg,
@@ -136,113 +139,4 @@ pub fn additions(
         }
     }
     offered
-}
-
-#[cfg(test)]
-mod tests
-{
-    use std::path::Path;
-
-    use gandr_surface_syntax::SourceText;
-
-    use super::UNRESOLVED_NAME;
-    use super::additions;
-    use crate::complete::Elsewhere;
-    use crate::complete::Unimported;
-    use crate::position::Range;
-    use crate::protocol::Diagnostic;
-    use crate::protocol::DocumentUri;
-    use crate::protocol::Severity;
-    use crate::protocol::TextEdit;
-    use crate::search::declared;
-    use crate::toolkit::grammar;
-
-    #[test]
-    fn an_unresolved_name_is_offered_the_import_declaring_it()
-    {
-        let far = declared(SourceText::from(include_str!(
-            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-far.gandr"
-        )));
-        let twin = declared(SourceText::from(include_str!(
-            "missing/unformatted/an-unresolved-name-is-offered-the-import-declaring-it-twin.gandr"
-        )));
-        let hidden = declared(SourceText::from(include_str!(
-            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-hidden.gandr"
-        )));
-        let far = Unimported {
-            path: Path::new("/folder/far.gandr"),
-            names: &far,
-        };
-        let twin = Unimported {
-            path: Path::new("/folder/twin.gandr"),
-            names: &twin,
-        };
-        let hidden = Unimported {
-            path: Path::new("/folder/hidden.gandr"),
-            names: &hidden,
-        };
-        let uri = DocumentUri::from("file:///folder/typing.gandr");
-        let range = |line: u32, start: u32, end: u32| -> Range {
-            serde_json::from_value(
-                serde_json::json!({"start": {"line": line, "character": start},
-                "end": {"line": line, "character": end}}),
-            )
-            .expect("a range")
-        };
-        let import = |path: &Path| {
-            Vec::from([TextEdit {
-                range: Range::default(),
-                new_text: format!(
-                    "import \"./{}\" ;\n",
-                    path.file_name().unwrap_or_default().display()
-                ),
-            }])
-        };
-        let offered = |text: &str, (refused, asked): (Range, Range), sources: &[Unimported<'_>]| {
-            let mut refusal = Diagnostic::new(refused, Severity::ERROR, String::from("nothing"));
-            refusal.code = Some(String::from(UNRESOLVED_NAME));
-            additions(
-                &uri,
-                grammar().expect("the grammar builds"),
-                (&[refusal], SourceText::from(text)),
-                (asked, &[]),
-                Elsewhere {
-                    sources,
-                    import: &import,
-                },
-            )
-            .into_iter()
-            .map(|action| (action.title, action.is_preferred))
-            .collect::<Vec<_>>()
-        };
-        let value = include_str!(
-            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-value.gandr"
-        );
-        let at_value = range(1, 11, 18);
-        assert_eq!(
-            offered(value, (at_value, at_value), &[far, hidden]),
-            [(String::from("Import `./far.gandr`"), true)],
-            "the one source exporting the value is offered, preferred; one declaring it \
-             privately is not, since its import would not bring the name into scope"
-        );
-        assert_eq!(
-            offered(value, (at_value, at_value), &[far, twin]),
-            [
-                (String::from("Import `./far.gandr`"), false),
-                (String::from("Import `./twin.gandr`"), false)
-            ],
-            "two sources declaring it are each offered, neither preferred"
-        );
-        let at_type = range(0, 11, 16);
-        assert_eq!(
-            offered("def here : Shape ;\n", (at_type, at_type), &[far, twin]),
-            [(String::from("Import `./far.gandr`"), true)],
-            "a name written as a type finds the family, never a value of its name"
-        );
-        assert_eq!(
-            offered(value, (at_value, range(0, 0, 3)), &[far]),
-            [],
-            "a range elsewhere is offered no import"
-        );
-    }
 }

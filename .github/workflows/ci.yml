@@ -1184,7 +1184,7 @@ jobs:
               gandr-surface-tui
           - shard: checker
             packages: &checker-shard >-
-              gandr-core-checker gandr-core-incremental gandr-surface-lsp
+              gandr-core-checker gandr-core-incremental gandr-surface-lsp gandr-surface-lsp-base
           - shard: lowering
             packages: &lowering-shard >-
               gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-pretty

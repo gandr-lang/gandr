@@ -87,7 +87,6 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Semantic tokens | [`tokens`](src/tokens.rs) |
 | Completion | [`complete`](src/complete.rs) |
 | Signature help | [`signature`](src/signature.rs) |
-| The outline | [`outline`](src/outline.rs) |
 | Hover | [`hover`](src/hover.rs) |
 | Definitions, declarations | [`goto`](src/goto.rs) |
 | Workspace symbols | [`search`](src/search.rs) |
@@ -99,7 +98,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | The render bus | [`bus`](src/bus.rs) |
 | The hub's fold of the activity ring | [`activity`](src/activity.rs) |
 | `gandr doc`'s site | [`site`](src/site.rs) |
-| The protocol, positions, the transport, inline completion, a session across builds | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
+| The protocol, positions, the transport, inline completion, a session across builds, the outline, unused names, missing imports, the watch of the files on disk | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
 
 ## References

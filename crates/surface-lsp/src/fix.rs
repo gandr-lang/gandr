@@ -40,8 +40,8 @@ use gandr_surface_syntax::SourceText;
 use serde::Deserialize as _;
 use serde_json::Value;
 
-use crate::complete::Elsewhere;
 use crate::complete::completions;
+use crate::elsewhere::Elsewhere;
 use crate::hover::Hovering;
 use crate::inline::Forms;
 use crate::inline::Labeled;

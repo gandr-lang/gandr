@@ -29,12 +29,12 @@
 //! After them, for a word that is not empty, come the names the closure does
 //! not reach: those of every source of the projects the opened folders root
 //! that the document does not import, as the workspace-symbol index reads them
-//! ([`Unimported`]). A slot offers such a name as it would a declared one,
-//! only when importing the source brings it into scope — a top-level value, a
-//! top-level family, a constructor of a top-level family — and never a name
-//! something before it offers. Each carries its source's import line as its
-//! detail and the edit writing that line as its additional edit, made once
-//! per source that offers a name.
+//! ([`Unimported`](crate::elsewhere::Unimported)). A slot offers such a name as
+//! it would a declared one, only when importing the source brings it into scope
+//! — a top-level value, a top-level family, a constructor of a top-level family
+//! — and never a name something before it offers. Each carries its source's
+//! import line as its detail and the edit writing that line as its additional
+//! edit, made once per source that offers a name.
 //!
 //! Each item carries what it is in the list itself, so a reader sees the types
 //! before choosing: a binder its type, read off the table at its written name,
@@ -61,7 +61,6 @@
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
-use std::path::Path;
 
 use anodized::spec;
 use gandr_surface_dispatcher::NameKind;
@@ -69,7 +68,6 @@ use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_grammar::Pbg;
-use gandr_surface_lowering::Visibility;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::LineIndex;
@@ -77,6 +75,8 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::elsewhere::Elsewhere;
+use crate::elsewhere::unimported_as;
 use crate::hover::Hovering;
 use crate::inline::Category;
 use crate::inline::Forms;
@@ -93,10 +93,8 @@ use crate::protocol::InsertTextFormat;
 use crate::protocol::LabelDetails;
 use crate::protocol::LabelsDetailed;
 use crate::protocol::MarkupContent;
-use crate::protocol::SymbolKind;
 use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
-use crate::search::Declared;
 use crate::signature::Calling;
 
 /// One item of a completion before it is numbered: its label, its kind, its
@@ -304,82 +302,6 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
         CompletionItemKind::FUNCTION => Some(NameKind::Value),
         CompletionItemKind::CONSTRUCTOR => Some(NameKind::Constructor),
         CompletionItemKind::ENUM => Some(NameKind::Family),
-        _ => None,
-    }
-}
-
-/// A source the document's import closure does not reach, under a folder an
-/// editor opened: its path and the names its file declares.
-#[derive(Clone, Copy, Debug)]
-pub struct Unimported<'held>
-{
-    /// Its path, as [`gandr_surface_dispatcher::named_path`] names it.
-    pub path: &'held Path,
-    /// The names its file declares, as [`crate::search::declared`] reads them.
-    pub names: &'held [Declared],
-}
-
-/// The sources of the opened folders' projects a document does not import, and
-/// how an import of one is written into it.
-#[derive(Clone, Copy)]
-pub struct Elsewhere<'held>
-{
-    /// The sources, each once.
-    pub sources: &'held [Unimported<'held>],
-    /// The edit importing the source at a path into the document, as
-    /// [`crate::reading::Reading::imported`] writes it.
-    pub import: &'held dyn Fn(&Path) -> Vec<TextEdit>,
-}
-
-/// How a slot of `category` offers `declared`, a name of a source the document
-/// does not import, among `names`, every name that source declares: as the
-/// protocol's kind for it, or not at all.
-///
-/// # Specification
-/// - ensures: only a name its source exports is offered, since importing the
-///   source brings no other into scope: a value or a computation offers a value
-///   declared at its source's top as a function; a value, a computation or a
-///   pattern offers a constructor whose family is declared at its source's top
-///   as a constructor; a type offers a family declared at its source's top as
-///   an enum; nothing else is offered, a module's or a theory's member among
-///   it.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the clause is the match itself.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the unimported witness offers a function in a body, a
-///   family in a type and a constructor in a pattern, and a module's member and
-///   a private value nowhere.
-/// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
-pub fn unimported_as(
-    category: Category,
-    declared: &Declared,
-    names: &[Declared],
-) -> Option<CompletionItemKind>
-{
-    if declared.exported == Visibility::Private {
-        return None;
-    }
-    let top = declared.container.is_none();
-    match (category, declared.kind) {
-        (Category::Value | Category::Computation, SymbolKind::FUNCTION | SymbolKind::VARIABLE)
-            if top =>
-        {
-            Some(CompletionItemKind::FUNCTION)
-        },
-        (Category::Value | Category::Computation | Category::Pattern, SymbolKind::CONSTRUCTOR)
-            if names.iter().any(|family| {
-                family.container.is_none()
-                    && matches!(family.kind, SymbolKind::ENUM | SymbolKind::STRUCT)
-                    && declared.container.as_deref() == Some(family.name.as_str())
-            }) =>
-        {
-            Some(CompletionItemKind::CONSTRUCTOR)
-        },
-        (Category::Type, SymbolKind::ENUM | SymbolKind::STRUCT) if top => {
-            Some(CompletionItemKind::ENUM)
-        },
         _ => None,
     }
 }
@@ -754,9 +676,9 @@ mod tests
     use gandr_surface_syntax::SourceText;
 
     use super::Elsewhere;
-    use super::Unimported;
     use super::completions;
     use super::resolved;
+    use crate::elsewhere::Unimported;
     use crate::hover::Hovering;
     use crate::hover::hovering;
     use crate::position::Position;

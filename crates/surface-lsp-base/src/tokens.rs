@@ -66,7 +66,7 @@ impl AsRef<[u32]> for TokenStream
     /// # Adequacy
     /// - hypothesis: L3 — a stream of five integers, read back whole, differs
     ///   from an empty stream and from any stream of one integer.
-    /// - witness: `tokens::tests::a_stream_lends_the_integers_it_holds`
+    /// - witness: `gandr-surface-lsp::tokens::tests::a_one_line_keyword_encodes_as_five_integers`
     #[inline]
     fn as_ref(&self) -> &[u32]
     {
@@ -96,10 +96,9 @@ impl ResultId
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two equal reports share an id, a report with one
-    ///   field changed has another, and each id is the digest of the report's
-    ///   JSON text.
-    /// - witness: `tokens::tests::an_answer_is_named_by_the_digest_of_its_json_text`
+    /// - hypothesis: L3 — a report pulled twice over one publication shares its
+    ///   id, and one pulled after an edit changed it has another.
+    /// - witness: `gandr-surface-lsp::server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
     #[spec(ensures: |ret| ret.0.len() == 64
         && ret.0.bytes().all(|digit| digit.is_ascii_digit() || (b'a' ..= b'f').contains(&digit)))]
     #[inline]
@@ -220,53 +219,8 @@ impl TokenStream
 #[cfg(test)]
 mod tests
 {
-    use super::ResultId;
     use super::TokenStream;
     use super::TokensEdit;
-
-    #[test]
-    fn a_stream_lends_the_integers_it_holds()
-    {
-        let stream = TokenStream::from(vec![0, 0, 3, 0, 0]);
-        assert_eq!(
-            stream.as_ref(),
-            [0, 0, 3, 0, 0],
-            "the stream lends the integers it holds"
-        );
-        assert_ne!(
-            stream.as_ref(),
-            TokenStream::default().as_ref(),
-            "a stream of one token is not the empty stream"
-        );
-        assert_ne!(
-            stream.as_ref(),
-            TokenStream::from(vec![0]).as_ref(),
-            "a stream of one token is not a stream of one integer"
-        );
-    }
-
-    #[test]
-    fn an_answer_is_named_by_the_digest_of_its_json_text()
-    {
-        let report = serde_json::json!({"kind": "full", "items": [{"message": "refused"}]});
-        let edited = serde_json::json!({"kind": "full", "items": [{"message": "settled"}]});
-        assert_eq!(
-            ResultId::of_json(&report),
-            ResultId::of_json(&report.clone()),
-            "a report named twice shares its id"
-        );
-        assert_ne!(
-            ResultId::of_json(&edited),
-            ResultId::of_json(&report),
-            "a report with one field changed has another"
-        );
-        let text = serde_json::to_vec(&report).expect("the report encodes");
-        assert_eq!(
-            serde_json::to_value(ResultId::of_json(&report)).expect("the id encodes"),
-            serde_json::Value::String(blake3::hash(&text).to_hex().to_string()),
-            "the id is the digest of the report's JSON text"
-        );
-    }
 
     #[test]
     fn a_delta_replaces_the_tokens_between_the_shared_ends()

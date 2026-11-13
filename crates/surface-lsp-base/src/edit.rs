@@ -39,7 +39,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — successive ranged changes, one after a character beyond
 ///   the basic plane, an inverted range, and a rangeless change, each asserted
 ///   at the exact text it leaves and the caret it leaves.
-/// - witness: `edit::tests::ranged_changes_edit_the_text_in_order`
+/// - witness: `gandr-surface-lsp::server::tests::ranged_changes_edit_the_held_text_in_order`
 #[spec(
     captures: [length = text.len(), replaced = change.text.len(), whole = change.range.is_none()],
     ensures: |ret| if whole { text.len() == replaced && matches!(ret, Maybe::Absent(_)) }
@@ -76,50 +76,4 @@ pub fn edit_text(
 )
 {
     let _caret = apply(text, change);
-}
-
-#[cfg(test)]
-mod tests
-{
-    use gandr_surface_syntax::ByteOffset;
-    use quenchant_shape::shape::Maybe;
-
-    use super::apply;
-    use super::uncareted;
-    use crate::protocol::ContentChange;
-
-    #[test]
-    fn ranged_changes_edit_the_text_in_order()
-    {
-        let changes: Vec<ContentChange> = serde_json::from_str(include_str!(
-            "edit/unformatted/ranged-changes-edit-the-text-in-order.gandr"
-        ))
-        .expect("the changes decode");
-        let mut text = String::from("def f = 42 ;\n");
-        let carets: Vec<_> = changes
-            .into_iter()
-            .map(|change| apply(&mut text, change))
-            .collect();
-        assert_eq!(
-            text, "def f = 7 !;\ndef g = \"𝄞x\" ;\n",
-            "each change applies to the text the ones before it left, counted in UTF-16 units, \
-             an inverted range inserting at its start"
-        );
-        assert_eq!(
-            carets.last(),
-            Some(&Maybe::Present(ByteOffset::from(11_usize))),
-            "the caret is where the last change's text ends: after its `!`"
-        );
-        let whole: ContentChange =
-            serde_json::from_str(r#"{"text":"def f = 42 ;\n"}"#).expect("the change decodes");
-        assert_eq!(
-            apply(&mut text, whole),
-            Maybe::Absent(uncareted::Absent::Unranged),
-            "a rangeless change leaves no caret"
-        );
-        assert_eq!(
-            text, "def f = 42 ;\n",
-            "a rangeless change replaces the whole text"
-        );
-    }
 }

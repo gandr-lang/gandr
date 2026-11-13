@@ -42,9 +42,9 @@ use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
 
+use crate::inbox::Inbox;
 use crate::protocol::DocumentUri;
 use crate::quiet::Deadlines;
-use crate::quiet::Inbox;
 use crate::quiet::Met;
 use crate::rpc::Classified;
 use crate::rpc::Incoming;
