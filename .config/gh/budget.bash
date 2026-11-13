@@ -59,6 +59,32 @@ gh_budget_reads() {
   esac
 }
 
+# The branch whose pull request `gh "$@"` reads, or nothing when the read
+# names what it reads (#7143). `pr status` reads the checkout's branch, and so
+# do `pr view`, `pr checks` and `pr diff` with no number, URL or branch. A
+# detached head gives its commit. So two branches of one host never share
+# the answer of such a read, and a read that names its pull request keeps one
+# entry for the host.
+gh_budget_branch() {
+  local a skip=0
+  [[ ${1:-} == pr ]] || return 0
+  case ${2:-} in
+    status) ;;
+    view | checks | diff)
+      for a in "${@:3}"; do
+        if ((skip)); then skip=0; continue; fi
+        case $a in
+          --json | -q | --jq | -t | --template | -R | --repo | -i | --interval | --color) skip=1 ;;
+          -*) ;;
+          *) return 0 ;;
+        esac
+      done
+      ;;
+    *) return 0 ;;
+  esac
+  git symbolic-ref -q HEAD 2> /dev/null || git rev-parse -q --verify HEAD 2> /dev/null || :
+}
+
 # Seconds since the epoch.
 gh_budget_now() { date +%s; }
 
@@ -142,11 +168,12 @@ gh_budget_lock() {
 }
 
 # A read: answered from the host's cache while fresh, else fetched once under
-# the reading's lock, with its arguments as the caller wrote them.
+# the reading's lock, with its arguments as the caller wrote them. The key
+# holds the branch a read of the checkout's branch answers for.
 gh_budget_read() {
   local key entry status=0 fresh_after now
   mkdir -p "$gh_budget_dir"
-  key=$(printf '%s\n' "$(type -P gh)" "${GH_REPO:-}" "$(git config --get remote.origin.url 2> /dev/null)" "$@" | git hash-object --stdin)
+  key=$(printf '%s\n' "$(type -P gh)" "${GH_REPO:-}" "$(git config --get remote.origin.url 2> /dev/null)" "$(gh_budget_branch "$@")" "$@" | git hash-object --stdin)
   entry=$gh_budget_dir/$key
   gh_budget_wait read
   if ! gh_budget_lock "$entry.lock"; then

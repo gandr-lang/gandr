@@ -2270,7 +2270,9 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # hours. `.config/gh/budget.jq` reads them against `.config/gh/calls.toml`
 # and sums each of the 24 hours, and `.config/gh/cases.json` holds its
 # cases. A new call site, a changed one or a price over a ceiling fails
-# here, before it spends the shared limit.
+# here, before it spends the shared limit. `.config/gh/budget-cases.bash`
+# holds the cases of the wrapper's cache: a read of the checkout's branch
+# keeps its answer for that branch (#7143).
 ["check:gh-budget"]
 description = "Every gh call site has a measured price in .config/gh/calls.toml, and each identity's hour of calls stays within its ceiling"
 tools.jq = "1.8.1"
@@ -2280,6 +2282,7 @@ run = '''
 set -euo pipefail
 failed=0
 .config/cases/run.bash gh-budget .config/gh/cases.json --program .config/gh/budget.jq || failed=1
+.config/gh/budget-cases.bash || failed=1
 sites=$(git ls-files -z -- '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' \
   | xargs -0 awk -v text=1 -f .config/gh/sites.awk \
   | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t")
