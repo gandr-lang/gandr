@@ -3255,9 +3255,9 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
     // def a : Integer = 1 ; data d = A | B ;
     // def f : *{port : d, tls}[.port = d.A] = {tls = 1} ;
     //
-    // The formation's name reads the kernel position of the data `d`. An
-    // edit that deletes `a` moves `d` to another position in a whole
-    // readmission than in a walk that keeps, so the walk readmits whole.
+    // The formation's name reads the data `d` by the content key that the kernel
+    // gave it, and that key reads no position. An edit that deletes `a` moves
+    // `d`, and the walk keeps `d` and the formation's reader.
     let (_, record) = recorded(&[
         (Named(0), Formable::Plain(1)),
         (Named(1), Formable::Data),
@@ -3269,8 +3269,8 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
             (Named(1), Formable::Data),
             (Named(2), Formable::ReadsData(0)),
         ],
-        (0, 0),
-        "an edit that moves a position a formation's name reads",
+        (0, 2),
+        "an edit that moves the data a formation reads",
     );
 }
 
@@ -3327,6 +3327,146 @@ fn a_formation_takes_one_name_in_each_readmission_7245()
     assert!(
         below.contains(name),
         "the formation takes its name below another one: {below:?}"
+    );
+}
+
+#[test]
+fn a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261()
+{
+    // def lead : Integer = 1 ;
+    // module M :> #{ type T, one : Integer, two : Integer } { type T = Integer ;
+    //                                     def one = 7 ; def two = 7 ; }
+    // def first : *{port, tls}[.port = M.one] = {tls = 1} ;
+    // def second : *{port, tls}[.port = M.two] = {tls = 1} ;
+    //
+    // `one` and `two` stand under the open atom, so the kernel names each by
+    // its position, and the two take one content key. The formation table names
+    // both by that key, so the two readers share one formation, whose
+    // witnesses read `one`. An edit that deletes `first` retires those
+    // witnesses with it. The walk resumes the four declarations before it,
+    // and `second` forms the formation again from `two`, as a whole
+    // readmission forms it.
+    use gandr_kernel_term::SealExtent;
+
+    use crate::declaration::AbstractType;
+    use crate::seal::ComponentOrdinal;
+    use crate::seal::SealSite;
+    use crate::seal::SealingSite;
+    let judged = |readers: &[u8]| {
+        let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let literal = |arena: &mut CoreArena, value: u8| {
+            arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{value}"))
+                        .unwrap(),
+                ),
+            ))
+        };
+        let record_type = arena.value_type_record(BTreeMap::from([
+            (label("port"), integer),
+            (label("tls"), integer),
+        ]));
+        let led = literal(&mut arena, 1);
+        let one = literal(&mut arena, 7);
+        let two = literal(&mut arena, 7);
+        let mut declarations = Vec::from([
+            declaration(At(0), Maybe::Present(integer), Maybe::Present(led)),
+            Declaration::abstract_type(
+                ConstantIndex::from(1_usize),
+                AbstractType::new(
+                    small,
+                    integer,
+                    SealExtent::from(2_usize),
+                    SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+                ),
+                origin(At(1)),
+            ),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(one)),
+            declaration(At(3), Maybe::Present(integer), Maybe::Present(two)),
+        ]);
+        let mut words = Vec::from([1, 0, 7, 7]);
+        for &read in readers {
+            let fixed = arena.value_constant(ConstantIndex::from(usize::from(read)));
+            let system = arena.value_type_system(
+                record_type,
+                BTreeMap::from([(label("port"), fixed)]),
+                Vec::new(),
+            );
+            let free = literal(&mut arena, 1);
+            let body = arena.value_record(BTreeMap::from([(label("tls"), free)]));
+            declarations.push(declaration(
+                At(declarations.len()),
+                Maybe::Present(system),
+                Maybe::Present(body),
+            ));
+            words.push(u64::from(read) << 8_u32);
+        }
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &declarations)
+        };
+        let keys: Vec<super::DeclarationKey> = words
+            .into_iter()
+            .enumerate()
+            .map(|(place, word)| {
+                Maybe::Present(ContentDigest::new(
+                    gandr_kernel_check_memo::DigestWord::from(u64::try_from(place).unwrap()),
+                    gandr_kernel_check_memo::DigestWord::from(word),
+                ))
+            })
+            .collect();
+        (arena, report, keys)
+    };
+    let (mut arena, report, keys) = judged(&[2, 3]);
+    let (whole, record) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    assert_eq!(
+        usize::from(whole.environment().entries().len()),
+        7,
+        "the two readers share one witness"
+    );
+    let (mut arena, report, keys) = judged(&[3]);
+    let (readmission, _) = super::readmit_keeping(
+        &mut arena,
+        &report,
+        (&keys, held(&record)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    let (mut whole_arena, whole_report, _) = judged(&[3]);
+    let whole = readmit(&mut whole_arena, &whole_report);
+    assert_eq!(
+        (
+            usize::from(readmission.resumed()),
+            usize::from(readmission.kept())
+        ),
+        (4, 0),
+        "the declarations resumed and kept after the edit"
+    );
+    assert_eq!(
+        agreed(&readmission),
+        agreed(&whole),
+        "each entry agrees after the edit"
+    );
+    assert_eq!(
+        readmission.export(BTreeMap::new()),
+        whole.export(BTreeMap::new()),
+        "the export is the whole one's after the edit"
     );
 }
 

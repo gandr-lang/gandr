@@ -296,7 +296,11 @@ fn each_twin_of_one_content_ranks_past_the_latest_3686()
             .map(crate::env::AdmittedDeclaration::key_name)
         {
             Some(crate::encoding::ConstantName::Definition { rank, .. }) => rank,
-            Some(crate::encoding::ConstantName::Position) | None => {
+            Some(
+                crate::encoding::ConstantName::Position
+                | crate::encoding::ConstantName::Admitted { .. },
+            )
+            | None => {
                 panic!("a plain definition is named by its content")
             },
         }
