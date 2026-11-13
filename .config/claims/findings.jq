@@ -22,9 +22,10 @@
 #   (#2955); a refused row quotes the axis's question. The `general` row
 #   (#5951) names the level of the unit's result, `yes — general: <level>`,
 #   or a shadow of it, `yes — shadow: <what>, general form in `<key>`, owed
-#   by #<n>`. A shadow with no backquoted source key or no issue is refused.
-#   An issue the coordinator signed is not judged on `general`, so no unit
-#   signed before the axis becomes unclaimable;
+#   by #<n>`, or says `no — <reason>`. A `yes` in another form, or a shadow
+#   with no backquoted source key or no issue, is refused. A signed issue is
+#   read so too, at the frame now (#7018): a unit signed before the axis
+#   meets the refusal at its next `pr:open`;
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
 #   `yes` or `no` (#2795). A concern that the ledger gains after the issue
 #   asks no row of it (#5308): the issue's number is at or below the
@@ -198,7 +199,6 @@ def findings($labels; $number):
     (if section("Readings") == null then "`## Readings` is missing"
      else [marks] as $marks
      | (axes[] | . as $axis
-         | select($axis != "general" or ($labels | index("shape:signed")) == null)
          | [$marks[] | select(.axis == $axis)] as $rows
          | if ($rows | length) == 0 then "`## Readings` has no row for `\($axis)`; the axis asks \(questions[$axis])"
            elif ([$rows[] | select(.mark != null)] | length) == 0 then "`## Readings` marks `\($axis)` neither `yes` nor `no`; the axis asks \(questions[$axis])"
@@ -206,12 +206,15 @@ def findings($labels; $number):
              "`## Readings` marks `\($axis)` `\(first($rows[] | select(.mark != null)).mark)` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks \(questions[$axis])"
            else empty
            end),
-       (select(($labels | index("shape:signed")) == null)
-         | $marks[]
-         | select(.axis == "general" and .mark == "yes" and (.reason // "" | test("^shadow:")))
+       ($marks[]
+         | select(.axis == "general" and .mark == "yes")
          | "write `yes — shadow: <what>, general form in `<source key>`, owed by #<n>`; the axis asks \(questions.general)" as $form
-         | (if .reason | test("`[^`]+`") then empty else "`## Readings` answers `general` as a shadow with no source key in backquotes: \($form)" end),
-           (if .reason | test("#[0-9]+") then empty else "`## Readings` answers `general` as a shadow with no issue that owes the general form: \($form)" end))
+         | if .reason // "" | test("^general:") then empty
+           elif .reason // "" | test("^shadow:") then
+             (if .reason | test("`[^`]+`") then empty else "`## Readings` answers `general` as a shadow with no source key in backquotes: \($form)" end),
+             (if .reason | test("#[0-9]+") then empty else "`## Readings` answers `general` as a shadow with no issue that owes the general form: \($form)" end)
+           else "`## Readings` answers `general` `yes` in neither form: write `yes — general: <the form>`, or `yes — shadow: <what>, general form in `<source key>`, owed by #<n>`; the axis asks \(questions.general)"
+           end)
      end),
     (if section("Concerns") == null then "`## Concerns` is missing"
      else [concern_marks] as $marks
