@@ -705,6 +705,7 @@ pub use crate::module::TypedModule;
 pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
+pub use crate::module::taken;
 pub use crate::module::type_module;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;

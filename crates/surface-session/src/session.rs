@@ -299,9 +299,11 @@ use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Deciding;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
+use gandr_core_checker::Taking;
 use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge::DeclarationKey;
@@ -382,8 +384,8 @@ use gandr_surface_dispatcher::Supporting;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::judge_member;
-use gandr_surface_dispatcher::judge_member_after_retiring;
 use gandr_surface_dispatcher::judge_member_tabled_retiring;
+use gandr_surface_dispatcher::judge_member_taking;
 use gandr_surface_dispatcher::lower_closure;
 use gandr_surface_dispatcher::lower_onto_closure;
 use gandr_surface_dispatcher::lower_parsed;
@@ -1940,6 +1942,11 @@ pub struct Session<Store, Blocks>
     /// Whether the incremental pass takes each changed item's verdict from
     /// the revision's judgement.
     verdicts: Verdicts,
+    /// Whether an untabled judgement takes each declaration whose checkpoint
+    /// stands from the last pass.
+    reusing: Reusing,
+    /// How many declarations the last judgement took from the last pass.
+    taken: ItemCount,
     /// The latest untabled judgement, which a revision moving no lowered node
     /// takes rather than judging again.
     recorded: Recorded,
@@ -1980,6 +1987,24 @@ pub enum Verdicts
     /// does not adopt: the decision a taken verdict stands for, which the
     /// corpus witness compares against.
     Decided,
+}
+
+/// Whether a session's untabled judgement takes each declaration whose
+/// checkpoint stands from the last pass, or decides each declaration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Reusing
+{
+    /// The judgement decides each declaration. The held admission reads the
+    /// node tables of each declaration that it crosses, which only a decision
+    /// leaves in the context.
+    #[default]
+    Decided,
+    /// The judgement takes each declaration whose checkpoint stands from the
+    /// last pass ([`gandr_core_incremental::Reuse`]), and decides the rest.
+    Standing,
 }
 
 /// A kernel admission a judgement left to run, beside the import closure its
@@ -2251,6 +2276,8 @@ impl<Store, Blocks> Session<Store, Blocks>
             kept: None,
             tables: Tables::Unkept,
             verdicts: Verdicts::Taken,
+            reusing: Reusing::Decided,
+            taken: ItemCount::default(),
             recorded: Recorded::default(),
             account: Account::default(),
         }
@@ -2422,6 +2449,8 @@ impl<Store, Blocks> Session<Store, Blocks>
                 kept: None,
                 tables: Tables::Unkept,
                 verdicts: Verdicts::Taken,
+                reusing: Reusing::Decided,
+                taken: ItemCount::default(),
                 recorded: Recorded::default(),
                 account: Account::default(),
             },
@@ -2930,9 +2959,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   the incremental pass led over their items ([`Closure::led`]), once per
     ///   process and root; the document is lowered onto the arena that pass
     ///   left, which extends the judgement's ([`lower_onto_closure`]), judged
-    ///   on a copy of the judgement's state ([`judge_member_after_retiring`]),
-    ///   or, untabled, handed the session's last judgement when that one
-    ///   lowered to the same nodes, and submitted after the pass's state
+    ///   on a copy of the judgement's state ([`judge_member_taking`]), or,
+    ///   untabled, handed the session's last judgement when that one lowered to
+    ///   the same nodes, and submitted after the pass's state
     ///   ([`IncrementalSession::submit_after`]) — onto the judgement's own
     ///   arena and submitted whole when the pass holds no state — and otherwise
     ///   the module is the closure's lowering resumed over the tree
@@ -3261,23 +3290,44 @@ impl<Store, Blocks> Session<Store, Blocks>
                     Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
                     Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
                 },
-                Tables::Unkept => match judge_member_after_retiring::<Evaluator, _>(
-                    self.root.corpus_root(),
-                    (module, revision),
-                    arena,
-                    (&HostGrant::UNBOUNDED, checking),
-                    base,
-                    (
-                        retirement,
-                        Recording::Recorded(&mut self.recorded),
-                        supporting,
-                    ),
-                ) {
-                    Polled::Whole(judged) => Polled::Whole((
-                        judged.into_parts(),
-                        Maybe::Absent(tabled::Absent::Untabled),
-                    )),
-                    Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+                Tables::Unkept => {
+                    // At the trace layer the judgement decides each item, so
+                    // the machine writes the steps of each one.
+                    #[cfg(feature = "instrument")]
+                    let tracing = matches!(sink.trace(), Maybe::Present(_));
+                    #[cfg(not(feature = "instrument"))]
+                    let tracing = false;
+                    let mut reuse = match self.reusing {
+                        Reusing::Standing if !tracing => {
+                            Some(self.incremental.reuse(&items, led.map(Led::leading)))
+                        },
+                        Reusing::Standing | Reusing::Decided => None,
+                    };
+                    let taking: &mut dyn Taking = match reuse {
+                        Some(ref mut reuse) => reuse,
+                        None => &mut Deciding,
+                    };
+                    let judged = judge_member_taking::<Evaluator, _>(
+                        self.root.corpus_root(),
+                        (module, revision),
+                        arena,
+                        (&HostGrant::UNBOUNDED, checking),
+                        base,
+                        (
+                            retirement,
+                            Recording::Recorded(&mut self.recorded),
+                            supporting,
+                            taking,
+                        ),
+                    );
+                    self.taken = reuse.map_or_else(ItemCount::default, |reuse| reuse.taken());
+                    match judged {
+                        Polled::Whole(judged) => Polled::Whole((
+                            judged.into_parts(),
+                            Maybe::Absent(tabled::Absent::Untabled),
+                        )),
+                        Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+                    }
                 },
             };
             // Retired before a declaration or the settle: as retired before an
@@ -3855,6 +3905,31 @@ impl<Store, Blocks> Session<Store, Blocks>
     )
     {
         self.verdicts = verdicts;
+    }
+
+    /// Have every untabled judgement from here on take each declaration whose
+    /// checkpoint stands, or decide each declaration, as `reusing` says.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn reuse(
+        &mut self,
+        reusing: Reusing,
+    )
+    {
+        self.reusing = reusing;
+    }
+
+    /// How many declarations the last judgement took from the last pass.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn taken(&self) -> ItemCount
+    {
+        self.taken
     }
 
     /// The grammar every revision is parsed under.

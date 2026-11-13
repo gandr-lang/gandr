@@ -196,6 +196,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
+use gandr_core_checker::Deciding;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::Demand;
 use gandr_core_checker::Formations;
@@ -210,6 +211,7 @@ use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
 use gandr_core_checker::SealSite;
 use gandr_core_checker::SealingSite;
+use gandr_core_checker::Taking;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
@@ -3141,6 +3143,41 @@ where
     E: Engine,
     Poll: Retirement,
 {
+    judge_member_taking::<E, _>(
+        root,
+        (module, text),
+        arena,
+        (grant, checking),
+        base,
+        (retirement, recording, supporting, &mut Deciding),
+    )
+}
+
+/// [`judge_member_after_retiring`], taking from `taking` the decision of each
+/// declaration that the run judges alone and that `taking` holds
+/// ([`ModuleRun::judge_taking`]).
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn judge_member_taking<'source, E, Poll>(
+    root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    (grant, checking): (&HostGrant, Checking<'source>),
+    base: ByteOffset,
+    (retirement, recording, supporting, taking): (
+        &Poll,
+        Recording<'_>,
+        Supporting,
+        &mut dyn Taking,
+    ),
+) -> Polled<Judged<'source>, Poll::Retired, ()>
+where
+    E: Engine,
+    Poll: Retirement,
+{
     judge_member_on::<E, _>(
         root,
         (module, text),
@@ -3152,13 +3189,13 @@ where
             recording,
             Scheduling::Sequential,
             MemoActivity::Active,
-            supporting,
+            (supporting, taking),
         ),
     )
 }
 
-/// [`judge_member_after_retiring`], the runs of its settlement on the
-/// schedule `scheduling` names.
+/// [`judge_member_taking`], the runs of its settlement on the schedule
+/// `scheduling` names.
 ///
 /// # Specification
 /// trivial.
@@ -3168,12 +3205,12 @@ fn judge_member_on<'source, E, Poll>(
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     base: ByteOffset,
-    (retirement, recording, scheduling, memo, supporting): (
+    (retirement, recording, scheduling, memo, (supporting, taking)): (
         &Poll,
         Recording<'_>,
         Scheduling<'_>,
         MemoActivity,
-        Supporting,
+        (Supporting, &mut dyn Taking),
     ),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
@@ -3196,7 +3233,7 @@ where
             recording,
             scheduling,
             memo,
-            supporting,
+            (supporting, taking),
         ),
         retirement,
     ) {
@@ -3301,7 +3338,7 @@ where
             Recording::Unrecorded,
             Scheduling::Sequential,
             MemoActivity::Active,
-            supporting,
+            (supporting, &mut Deciding),
         ),
         retirement,
     ) {
@@ -3455,13 +3492,13 @@ fn judge_members<'source, E, Poll>(
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
-    (spelled, tabling, recording, scheduling, memo, supporting): (
+    (spelled, tabling, recording, scheduling, memo, (supporting, taking)): (
         &mut SpellingCount,
         Tabling<'_>,
         Recording<'_>,
         Scheduling<'_>,
         MemoActivity,
-        Supporting,
+        (Supporting, &mut dyn Taking),
     ),
     retirement: &Poll,
 ) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
@@ -3544,7 +3581,7 @@ where
             run.keep_supports();
         }
         if let Polled::Retired(retired, ()) =
-            run.judge_retiring(&mut context, judged, |_, _, _| {}, retirement)
+            run.judge_taking(&mut context, judged, |_, _, _| {}, (retirement, taking))
         {
             return Polled::Retired(retired, ());
         }
@@ -4202,7 +4239,7 @@ where
                     Recording::Unrecorded,
                     Scheduling::Sequential,
                     MemoActivity::Active,
-                    Supporting::Unkept,
+                    (Supporting::Unkept, &mut Deciding),
                 ),
                 &Unretired,
             )
@@ -4642,7 +4679,7 @@ where
                 Recording::Unrecorded,
                 scheduling,
                 memo,
-                Supporting::Unkept,
+                (Supporting::Unkept, &mut Deciding),
             ),
         )
         .whole()

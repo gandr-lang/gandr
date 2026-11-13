@@ -2383,7 +2383,7 @@ impl ModuleRun
     where
         Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
         Poll: Retirement,
-        Take: Taking,
+        Take: Taking + ?Sized,
     {
         for (index, declaration) in declarations.iter().enumerate() {
             if let Demand::Retired(retired) = retirement.demand() {

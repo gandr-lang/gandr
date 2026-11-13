@@ -22,6 +22,7 @@ use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::compose;
 use gandr_surface_evaluate::Evaluator;
+use gandr_surface_session::Reusing;
 use gandr_surface_session::Revision;
 use gandr_surface_session::Session;
 use gandr_surface_session::SurfaceItems;
@@ -337,6 +338,72 @@ fn a_constructor_of_another_family_is_judged_again_5400()
             "the definition whose constructor changes its family is judged, not adopted"
         );
     }
+}
+
+/// How many declarations a judgement of `edited` after `base` takes from the
+/// last pass, once its report equals the batch pipeline's and its resumed
+/// typings a fresh checker's.
+///
+/// # Specification
+/// trivial.
+fn taken<'text>(
+    base: impl Into<Text<'text>>,
+    edited: impl Into<Text<'text>>,
+) -> ItemCount
+{
+    let Text(base) = base.into();
+    let Text(edited) = edited.into();
+    let mut session = session(SourceRoot::Strict);
+    session.reuse(Reusing::Standing);
+    let _base = submit(&mut session, base);
+    let submission = submit(&mut session, edited);
+    let grammar = &*GRAMMAR;
+    let composed = compose::<Evaluator>(
+        grammar,
+        SourceRoot::Strict.corpus_root(),
+        SourceText::from(edited),
+        &mut LoweringCount::default(),
+    )
+    .expect("the edited revision composes");
+    assert_eq!(
+        *submission.composed(),
+        composed,
+        "a judgement that takes the standing declarations reports what the batch pipeline reports\n base:   {base:?}\n edited: {edited:?}"
+    );
+    let program = SurfaceItems::new(grammar.clone())
+        .items(&Revision::from(edited))
+        .expect("the edited revision is offered");
+    assert_eq!(
+        resumed(&session),
+        batch(&program),
+        "the pass after a judgement that takes declarations types as a fresh checker\n base:   {base:?}\n edited: {edited:?}"
+    );
+    session.taken()
+}
+
+/// A keystroke's judgement takes each declaration whose checkpoint stands
+/// from the last pass, and decides the rest (#6620). The thunk that reads
+/// only the edited function's unchanged type is taken; the two families that
+/// a changed definition builds at are taken, and the definition is decided.
+/// Each report equals the batch pipeline's.
+#[test]
+fn a_keystroke_takes_each_standing_declaration_and_reports_as_the_whole_judgement_6620()
+{
+    assert_eq!(
+        taken(INCREMENTAL_BASE, INCREMENTAL_EDITED),
+        ItemCount::from(1_usize),
+        "the thunk is taken; the edited function is decided"
+    );
+    let families = include_str!(
+        "incremental/fixtures/a-constructor-of-another-family-is-judged-again-5400-families.gandr"
+    );
+    let genuine = format!("{families}def v = (Fah 20 : Fahrenheit);\n");
+    let namesake = format!("{families}def v = (Cel 20 : Fahrenheit);\n");
+    assert_eq!(
+        taken(genuine.as_str(), namesake.as_str()),
+        ItemCount::from(2_usize),
+        "the two families are taken; the definition is decided"
+    );
 }
 
 #[test]

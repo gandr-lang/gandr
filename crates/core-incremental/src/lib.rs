@@ -224,6 +224,7 @@ pub use crate::checkpoint::recall;
 pub use crate::checkpoint::resume;
 pub use crate::checkpoint::resume_after;
 pub use crate::checkpoint::resume_from;
+pub use crate::checkpoint::reuse::Reuse;
 pub use crate::codec::CheckpointBytes;
 pub use crate::codec::UnsupportedPersistence;
 pub use crate::content::AbstractRoots;

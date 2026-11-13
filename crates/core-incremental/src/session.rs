@@ -20,6 +20,7 @@ use crate::checkpoint::ResumeError;
 use crate::checkpoint::Resuming;
 use crate::checkpoint::resume_after_retiring;
 use crate::checkpoint::resume_or_check;
+use crate::checkpoint::reuse::Reuse;
 use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointAddress;
 use crate::persistence::CheckpointObserver;
@@ -311,6 +312,28 @@ impl<Store> IncrementalSession<Store>
                 Ok(Maybe::Absent(_)) | Err(_) => held,
             },
         }
+    }
+
+    /// The taker that offers the held resume's standing checkpoints to the
+    /// judgement of `program`, laid after `leading` when the revision has one.
+    /// A session that holds no resume offers none, and the judgement decides
+    /// each declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn reuse<'held>(
+        &'held self,
+        program: &'held Program,
+        leading: Option<&'held Arc<Leading>>,
+    ) -> Reuse<'held>
+    {
+        let resume = match self.last {
+            Maybe::Present(ref resume) => Some(resume),
+            Maybe::Absent(_) => None,
+        };
+        Reuse::of(resume, program, leading)
     }
 
     /// Submit a revision: resume from the latest one, or judge it whole, then

@@ -3756,23 +3756,7 @@ fn decided(
         (supported.verdict(), supported.failure()),
         (&item.content, &support),
     );
-    let answer = match *(declaration.content()) {
-        gandr_core_checker::DeclarationContent::Value { .. } => answer_of(
-            context.signature(declaration.constant()),
-            arena,
-            layout,
-            types,
-        ),
-        gandr_core_checker::DeclarationContent::Data(_) => Answer::Data(
-            context
-                .data_signatures()
-                .get(&declaration.constant())
-                .map(|signature| crate::content::DataContent::of(arena, layout, signature)),
-        ),
-        gandr_core_checker::DeclarationContent::Codata(_) => Answer::Codata,
-        gandr_core_checker::DeclarationContent::Abstract(_)
-        | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
-    };
+    let answer = answer_in(context, declaration, layout, types);
     let (entry, body) = match EntryContent::of(
         context,
         (layout, types),
@@ -3813,6 +3797,38 @@ fn decided(
         (support, typing, answer, (entered, entry), (failure, report)),
         supported,
     )
+}
+
+/// The answer that `context` holds for `declaration`: what a later item reads
+/// of it.
+///
+/// # Specification
+/// trivial.
+fn answer_in(
+    context: &CheckingContext<'_>,
+    declaration: &gandr_core_checker::Declaration,
+    layout: &Layout,
+    types: &crate::content::TypeMemo,
+) -> Answer
+{
+    let arena = context.arena();
+    match *(declaration.content()) {
+        gandr_core_checker::DeclarationContent::Value { .. } => answer_of(
+            context.signature(declaration.constant()),
+            arena,
+            layout,
+            types,
+        ),
+        gandr_core_checker::DeclarationContent::Data(_) => Answer::Data(
+            context
+                .data_signatures()
+                .get(&declaration.constant())
+                .map(|signature| crate::content::DataContent::of(arena, layout, signature)),
+        ),
+        gandr_core_checker::DeclarationContent::Codata(_) => Answer::Codata,
+        gandr_core_checker::DeclarationContent::Abstract(_)
+        | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
+    }
 }
 
 /// A refused item's failure as content, or why a checkpoint keeps none.
@@ -5108,6 +5124,8 @@ fn close_value_changes(
     census.value_changed = ItemCount::from(changed.len());
     changed
 }
+
+pub mod reuse;
 
 #[cfg(test)]
 mod tests;

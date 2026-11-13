@@ -447,6 +447,18 @@ impl Layout
             .unwrap_or(Reference::Unoccupied)
     }
 
+    /// The ordinal of the item at the admission position `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn ordinal(
+        &self,
+        position: ConstantIndex,
+    ) -> Option<ItemOrdinal>
+    {
+        self.occupied.get(&position).copied()
+    }
+
     /// The source ordinal of the item `reference` names.
     ///
     /// # Specification
