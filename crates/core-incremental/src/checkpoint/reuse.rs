@@ -17,7 +17,6 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ConversionCount;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::DeclarationContent;
-use gandr_core_checker::Entered;
 use gandr_core_checker::Synthesised;
 use gandr_core_checker::Taken;
 use gandr_core_checker::Taking;
@@ -235,17 +234,18 @@ impl Taking for Reuse<'_>
     /// The decision of `declaration` when its last checkpoint stands, entered
     /// into `context` as the pass adopts it.
     ///
-    /// A checkpoint is taken when its item is entered as written, keeps no
-    /// report and no failure, and is typed as data, checked or synthesised.
-    /// Every other declaration is decided.
+    /// The run takes a checkpoint that keeps no report and no failure and that
+    /// is typed as data, checked or synthesised. The take seats an item that
+    /// its judgement elaborated from the table parts its checkpoint keeps. The
+    /// run decides every other declaration.
     ///
     /// # Specification
     /// - requires: the run has judged each declaration before `declaration`.
     /// - ensures: on a decision, `context` holds `declaration` as the pass's
     ///   adoption leaves it, and the verdict is the one the checkpoint's typing
-    ///   names over the written body and the type the context now holds; on an
-    ///   absence, `context` is unchanged but for a type that a synthesised item
-    ///   mints.
+    ///   names over the body the item is seated at and the type the context now
+    ///   holds; on an absence, `context` is unchanged but for a type that a
+    ///   synthesised item mints.
     /// - panics: none.
     /// - executable: none — the decision's agreement with a judgement is the
     ///   witness's claim.
@@ -289,12 +289,14 @@ impl Taking for Reuse<'_>
         else {
             return unheld;
         };
-        if checkpoint.entered() != Entered::AsWritten
-            || !matches!(
-                checkpoint.report(),
-                Maybe::Absent(reported::Absent::Unreported)
-            )
-            || matches!(checkpoint.failure(), Maybe::Present(_))
+        // A report keeps one row for nodes of equal content, so a seated
+        // nested elaboration shares what the judgement kept apart, and the
+        // origin of each occurrence after the first is lost; such an item is
+        // judged.
+        if !matches!(
+            checkpoint.report(),
+            Maybe::Absent(reported::Absent::Unreported)
+        ) || matches!(checkpoint.failure(), Maybe::Present(_))
         {
             return unheld;
         }
@@ -334,22 +336,28 @@ impl Taking for Reuse<'_>
             ordinal,
             value_changed: &self.value_changed,
         });
-        let Maybe::Present((_support, _typing, answer)) = adopted
+        let Maybe::Present((_support, _typing, seated)) = adopted
         else {
             return unheld;
         };
-        self.supplied.own.push(answer);
+        self.supplied.own.push(seated.answer);
         self.taken = ItemCount::from(usize::from(self.taken).saturating_add(1));
+        // An elaborated item stands at the judged body its checkpoint keeps,
+        // the body its verdict names.
+        let judged = |written| match seated.body {
+            Maybe::Present(judged) => judged,
+            Maybe::Absent(_) => written,
+        };
         let verdict = match (kind, context.signature(declaration.constant())) {
             (Kind::Data, _) => Verdict::Data,
             (Kind::Checked(conversions, body), Maybe::Present(declared)) => Verdict::Checked {
                 declared,
-                body,
+                body: judged(body),
                 evidence: Checked::new(conversions),
             },
             (Kind::Synthesised(conversions, body), Maybe::Present(declared)) => {
                 Verdict::Synthesised {
-                    body,
+                    body: judged(body),
                     synthesised: Synthesised::new(declared, conversions),
                 }
             },
