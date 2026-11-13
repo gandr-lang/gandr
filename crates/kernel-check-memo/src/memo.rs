@@ -25,6 +25,7 @@ use crate::accounting::MemoError;
 use crate::digest::ContentAgreement;
 use crate::digest::ContentDigest;
 use crate::key::MemoKey;
+use crate::overlay::Disagreement;
 use crate::overlay::OverlaidMemo;
 use crate::table::HashIndex;
 use crate::table::Probe;
@@ -374,21 +375,30 @@ where
     /// - ensures: as [`OverlaidMemo::join`]; a memo that cannot fork drops the
     ///   child.
     /// - provides: the fold of a forked job's memo at its join.
-    /// - fails: never.
+    /// - fails: as [`OverlaidMemo::join`]; a memo that cannot fork never fails.
     /// - panics: none.
     /// - executable: none — as [`OverlaidMemo::join`].
+    ///
+    /// # Errors
+    /// As [`OverlaidMemo::join`]: [`Disagreement`] when the child keeps an
+    /// outcome under a support that this memo holds with another outcome.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo::join`].
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
+    /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
     #[inline]
     fn join_child<Keep>(
         &mut self,
         _child: OverlaidMemo<Support, Outcome>,
         _keep: Keep,
-    ) where
+    ) -> Result<(), Disagreement<Support, Outcome>>
+    where
         Keep: FnMut(&Support, &Outcome) -> bool,
+        Support: Clone,
+        Outcome: Clone + PartialEq,
     {
+        Ok(())
     }
 }
 

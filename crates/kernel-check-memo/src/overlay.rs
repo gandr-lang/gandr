@@ -486,22 +486,29 @@ where
     /// - requires: as [`Self::join`].
     /// - ensures: as [`Self::join`].
     /// - provides: the fold of a forked job's memo at its join.
-    /// - fails: never.
+    /// - fails: as [`Self::join`].
     /// - panics: none.
     /// - executable: none — as [`Self::join`].
+    ///
+    /// # Errors
+    /// As [`Self::join`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo`].
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
+    /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
     #[inline]
     fn join_child<Keep>(
         &mut self,
         child: Self,
         keep: Keep,
-    ) where
+    ) -> Result<(), Disagreement<Support, Outcome>>
+    where
         Keep: FnMut(&Support, &Outcome) -> bool,
+        Support: Clone,
+        Outcome: Clone + PartialEq,
     {
-        self.join(child, keep);
+        self.join(child, keep)
     }
 }
 

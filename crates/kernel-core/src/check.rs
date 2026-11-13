@@ -8382,7 +8382,7 @@ where
 {
     if let Some(fork) = judgement.forking.fork()
         && owed.len() >= FORKED_DRAIN
-        && let Some(ledger) = drain_forked(arena, judgement, fork, memo, session, census, &owed)
+        && let Some(ledger) = drain_forked(arena, judgement, fork, memo, session, census, &owed)?
     {
         ledger.record(memo, session);
         return Ok(());
@@ -8753,8 +8753,14 @@ impl crate::fork::Job for DrainPart<'_>
 ///   more than the ceiling. The arena's nodes, the memo's answers, the
 ///   session's names and the census are then as the call found them.
 /// - provides: the fork of a declaration's last drain.
-/// - fails: never; a refusal is the serial drain's to give.
+/// - fails: two parts that keep two outcomes under one key, which do not glue.
+///   Any other refusal is the serial drain's to give.
 /// - panics: a panic of a part.
+///
+/// # Errors
+/// [`KernelError::KeptOutcomesDisagree`], naming the key by its content digest
+/// and both outcomes, when the memo or the session of a part keeps an outcome
+/// under a key that an earlier part kept with another outcome.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — declarations whose drains pass and refuse, checked at
@@ -8770,7 +8776,7 @@ fn drain_forked<M>(
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
     owed: &[CodeObligation],
-) -> Option<DrainLedger>
+) -> Result<Option<DrainLedger>, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
@@ -8778,12 +8784,16 @@ where
         .get()
         .min(owed.len().div_euclid(FORKED_PART));
     if runs < 2 {
-        return None;
+        return Ok(None);
     }
     let run = owed.len().div_ceil(runs);
     let mut memos = Vec::with_capacity(runs);
     for _run in owed.chunks(run) {
-        memos.push(memo.fork_child()?);
+        let Some(child) = memo.fork_child()
+        else {
+            return Ok(None);
+        };
+        memos.push(child);
     }
     let taken = judgement.taking.taken();
     arena.freeze();
@@ -8821,9 +8831,13 @@ where
     if !passed {
         judgement.taking.reset(taken);
     }
+    // A reader that names nodes by their positions forgets each part's own
+    // before any fold, so a refused fold leaves none of them behind.
+    for part in &parts {
+        arena.dropped(&part.arena);
+    }
     let mut ledger = DrainLedger::default();
     for part in parts {
-        arena.dropped(&part.arena);
         let DrainPart {
             memo: part_memo,
             session: part_session,
@@ -8841,14 +8855,20 @@ where
                     NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
                     NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
                 }
-        });
+        })
+        .map_err(|disagreement| {
+            let (key, held, offered) = disagreement.into_parts();
+            KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                crate::error::KeptOutcomes::new(key.digest(), held, offered),
+            ))
+        })?;
         if passed {
-            session.join(arena, part_session);
+            session.join(arena, part_session)?;
             census.absorb(&part_census);
             ledger.fold(part_ledger);
         }
     }
-    passed.then_some(ledger)
+    Ok(passed.then_some(ledger))
 }
 
 /// Check a closed value without admitting a declaration or retaining a memo.
