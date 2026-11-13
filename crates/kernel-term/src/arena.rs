@@ -933,12 +933,13 @@ pub struct TermArena
 ///
 /// Those frozen by [`Family::freeze`] come first, shared with every clone of
 /// the family made after, then the nodes minted since. The frozen nodes stand
-/// in chunks of 64 nodes, the last one alone shorter, so a read finds a frozen
-/// node in one step by its offset. A freeze fills the last chunk in place
-/// while no clone shares it, and copies its nodes first when one does. A
-/// write to one frozen node copies the list of chunks and the chunk that holds
-/// the node, and no other node. [`TermArena`] keeps its four families so, and
-/// an arena outside the kernel may keep its own.
+/// in whole chunks of 64 nodes and one shorter tail after them. A chunk holds
+/// its nodes inline after its counts, so a read finds a frozen node by its
+/// offset in one step, with one load past the list. A freeze fills the tail in
+/// place while no clone shares it, and copies its nodes first when one does.
+/// A write to one frozen node copies the list of chunks and the chunk or the
+/// tail that holds the node, and no other node. [`TermArena`] keeps its four
+/// families so, and an arena outside the kernel may keep its own.
 ///
 /// # Specification
 /// - executable: none — a data declaration; [`Self::get`], [`Self::get_mut`],
@@ -954,31 +955,37 @@ pub struct TermArena
 #[derive(Clone, Debug)]
 pub struct Family<Node>
 {
-    /// The nodes frozen before the family's own, in chunks of [`CHUNK`]
-    /// nodes, the last one alone shorter, oldest first. Each clone shares the
-    /// list and each chunk by reference.
+    /// The whole chunks of the frozen nodes, [`CHUNK`] nodes each, oldest
+    /// first. Each clone shares the list and each chunk by reference.
     #[expect(
         clippy::rc_buffer,
-        reason = "a freeze fills the last chunk and pushes chunks onto the list in place while no \
-                  clone shares them"
+        reason = "a freeze pushes chunks onto the list in place while no clone shares it"
     )]
     frozen: Option<alloc::sync::Arc<Vec<Chunk<Node>>>>,
-    /// How many nodes the chunks hold, so a read finds its side at once.
+    /// The frozen nodes after the whole chunks, fewer than [`CHUNK`], shared
+    /// by reference with each clone.
+    #[expect(
+        clippy::rc_buffer,
+        reason = "a freeze extends the tail in place while no clone shares it"
+    )]
+    tail: Option<alloc::sync::Arc<Vec<Node>>>,
+    /// How many nodes the chunks and the tail hold, so a read finds its side
+    /// at once.
     frozen_len: usize,
     /// The nodes minted after them.
     own: Vec<Node>,
 }
 
-/// A frozen chunk of a family: at most [`CHUNK`] nodes, shared by reference
-/// with each clone of the family.
-type Chunk<Node> = alloc::sync::Arc<Vec<Node>>;
+/// A whole chunk of a family's frozen nodes: [`CHUNK`] nodes inline after the
+/// reference counts, shared by reference with each clone of the family.
+type Chunk<Node> = alloc::sync::Arc<[Node]>;
 
 /// The binary logarithm of [`CHUNK`]: a frozen node's chunk is its offset
 /// shifted right by it.
 const CHUNK_SHIFT: u32 = 6;
 
-/// How many nodes a frozen chunk holds, but the last: a write to one frozen
-/// node copies at most this many nodes.
+/// How many nodes a whole chunk holds: a write to one frozen node copies at
+/// most this many nodes.
 const CHUNK: usize = 1 << CHUNK_SHIFT;
 
 /// The mask of a frozen node's place in its chunk.
@@ -995,6 +1002,7 @@ impl<Node> Default for Family<Node>
     {
         Self {
             frozen: None,
+            tail: None,
             frozen_len: 0,
             own: Vec::new(),
         }
@@ -1012,6 +1020,7 @@ impl<Node> From<Vec<Node>> for Family<Node>
     {
         Self {
             frozen: None,
+            tail: None,
             frozen_len: 0,
             own: nodes,
         }
@@ -1031,10 +1040,12 @@ impl<Node: PartialEq> PartialEq for Family<Node>
         other: &Self,
     ) -> bool
     {
-        // Two families frozen over one shared list hold its nodes alike, so
-        // only the nodes minted since are read.
-        if let (Some(mine), Some(theirs)) = (self.frozen.as_ref(), other.frozen.as_ref())
-            && alloc::sync::Arc::ptr_eq(mine, theirs)
+        // Two families frozen over one shared list and one shared tail hold
+        // their frozen nodes alike, so only the nodes minted since are read.
+        if self.frozen.as_ref().map(alloc::sync::Arc::as_ptr)
+            == other.frozen.as_ref().map(alloc::sync::Arc::as_ptr)
+            && self.tail.as_ref().map(alloc::sync::Arc::as_ptr)
+                == other.tail.as_ref().map(alloc::sync::Arc::as_ptr)
         {
             return self.own == other.own;
         }
@@ -1058,14 +1069,16 @@ impl<Node> Family<Node>
     {
         Self {
             frozen: None,
+            tail: None,
             frozen_len: 0,
             own: Vec::new(),
         }
     }
 
     /// How many of this family's frozen nodes `other` holds by the same
-    /// reference: the nodes of each chunk, from the oldest, that both hold at
-    /// one place. Zero when they share no chunk.
+    /// reference: the nodes of each whole chunk, from the oldest, that both
+    /// hold at one place, and the tail when both share every chunk and the
+    /// tail. Zero when they share no chunk.
     ///
     /// # Specification
     /// trivial.
@@ -1076,18 +1089,26 @@ impl<Node> Family<Node>
         other: &Self,
     ) -> ArenaLength
     {
-        ArenaLength(
-            self.chunks()
-                .iter()
-                .zip(other.chunks())
-                .take_while(|&(left, right)| alloc::sync::Arc::ptr_eq(left, right))
-                .fold(0_usize, |shared, (chunk, _)| {
-                    shared.saturating_add(chunk.len())
-                }),
-        )
+        let (mine, theirs) = (self.chunks(), other.chunks());
+        let whole = mine
+            .iter()
+            .zip(theirs)
+            .take_while(|&(left, right)| alloc::sync::Arc::ptr_eq(left, right))
+            .count();
+        let tail = if whole == mine.len()
+            && whole == theirs.len()
+            && let (Some(left), Some(right)) = (self.tail.as_ref(), other.tail.as_ref())
+            && alloc::sync::Arc::ptr_eq(left, right)
+        {
+            left.len()
+        }
+        else {
+            0
+        };
+        ArenaLength(whole.saturating_mul(CHUNK).saturating_add(tail))
     }
 
-    /// The frozen chunks, oldest first.
+    /// The whole chunks of the frozen nodes, oldest first.
     ///
     /// # Specification
     /// trivial.
@@ -1098,7 +1119,8 @@ impl<Node> Family<Node>
     }
 
     /// The frozen node at `offset`, or `None` at or past the frozen length:
-    /// the chunk the offset's high bits name, at the place its low bits name.
+    /// the chunk the offset's high bits name, or the tail after the last
+    /// chunk, at the place its low bits name.
     ///
     /// # Specification
     /// trivial.
@@ -1108,9 +1130,13 @@ impl<Node> Family<Node>
         offset: ArenaLength,
     ) -> Option<&Node>
     {
-        self.chunks()
-            .get(offset.0 >> CHUNK_SHIFT)?
-            .get(offset.0 & WITHIN)
+        let (at, within) = (offset.0 >> CHUNK_SHIFT, offset.0 & WITHIN);
+        let chunks = self.chunks();
+        match chunks.get(at) {
+            Some(chunk) => chunk.get(within),
+            None if at == chunks.len() => self.tail.as_deref()?.get(within),
+            None => None,
+        }
     }
 
     /// The nodes minted since the last freeze: what a clone copies.
@@ -1165,6 +1191,7 @@ impl<Node> Family<Node>
     {
         self.own
             .last()
+            .or_else(|| self.tail.as_deref()?.last())
             .or_else(|| self.chunks().last().and_then(|chunk| chunk.last()))
     }
 
@@ -1179,6 +1206,7 @@ impl<Node> Family<Node>
         self.chunks()
             .iter()
             .flat_map(|chunk| chunk.iter())
+            .chain(self.tail.as_deref().into_iter().flatten())
             .chain(&self.own)
     }
 
@@ -1205,9 +1233,10 @@ impl<Node: Clone> Family<Node>
     /// - requires: nothing.
     /// - ensures: the family holds its first `length.min(entry)` nodes, each as
     ///   it was. A truncation into the frozen nodes keeps each chunk below
-    ///   `length` by reference. The chunk that `length` cuts keeps its first
-    ///   nodes in place while no clone shares it; otherwise the family takes
-    ///   its own copy of them. So no clone made before the truncation changes.
+    ///   `length` by reference. The nodes that `length` keeps of the chunk or
+    ///   the tail it cuts become the tail. They stay in place when the cut is
+    ///   in the tail and no clone shares it; otherwise the family takes its own
+    ///   copy of them. So no clone made before the truncation changes.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1230,31 +1259,33 @@ impl<Node: Clone> Family<Node>
             return;
         }
         self.own.clear();
-        // Into the frozen nodes: the chunks past `length` go, and the chunk
-        // that `length` cuts keeps its first nodes, in place while no clone
-        // shares it and in a copy of them when one does.
         let (whole, cut) = (length.0 >> CHUNK_SHIFT, length.0 & WITHIN);
-        if let Some(list) = self.frozen.as_mut() {
+        if let Some(list) = self.frozen.as_mut()
+            && whole < list.len()
+        {
+            // A cut chunk: the chunks from it on go, and the nodes it keeps
+            // take a tail of their own.
             let chunks = alloc::sync::Arc::make_mut(list);
-            chunks.truncate(if cut == 0 {
-                whole
+            let kept = chunks
+                .get(whole)
+                .filter(|_| cut != 0)
+                .map(|chunk| chunk.get(.. cut).unwrap_or_default().to_vec());
+            chunks.truncate(whole);
+            self.tail = kept.map(alloc::sync::Arc::new);
+        }
+        else if let Some(tail) = self.tail.as_mut() {
+            if let Some(nodes) = alloc::sync::Arc::get_mut(tail) {
+                nodes.truncate(cut);
             }
             else {
-                whole.saturating_add(1)
-            });
-            if cut != 0
-                && let Some(last) = chunks.last_mut()
-            {
-                if let Some(nodes) = alloc::sync::Arc::get_mut(last) {
-                    nodes.truncate(cut);
-                }
-                else {
-                    *last = alloc::sync::Arc::new(last.get(.. cut).unwrap_or_default().to_vec());
-                }
+                *tail = alloc::sync::Arc::new(tail.get(.. cut).unwrap_or_default().to_vec());
             }
         }
         if self.chunks().is_empty() {
             self.frozen = None;
+        }
+        if self.tail.as_ref().is_some_and(|tail| tail.is_empty()) {
+            self.tail = None;
         }
         self.frozen_len = length.0;
     }
@@ -1266,11 +1297,12 @@ impl<Node: Clone> Family<Node>
     /// - requires: nothing.
     /// - ensures: the family holds the same nodes in the same order, all of
     ///   them frozen. The freeze moves the nodes minted since the last one, at
-    ///   an amortized cost of those nodes. They fill the last chunk first, in
-    ///   place when no clone shares it and in a copy of its nodes when one
-    ///   does, and then take chunks of their own. So a freeze copies at most 63
-    ///   nodes that a clone shares. The list of chunks is copied first when a
-    ///   clone shares it.
+    ///   an amortized cost of those nodes. They fill the tail first, in place
+    ///   when no clone shares it and in a copy of its nodes when one does. A
+    ///   full tail and each run of 64 nodes after it become whole chunks, and
+    ///   the rest start a new tail. So a freeze copies at most 63 nodes that a
+    ///   clone shares, and moves each node at most twice. The list of chunks is
+    ///   copied first when a clone shares it.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1291,20 +1323,26 @@ impl<Node: Clone> Family<Node>
             return;
         }
         self.frozen_len = self.frozen_len.saturating_add(self.own.len());
-        let chunks = alloc::sync::Arc::make_mut(self.frozen.get_or_insert_default());
         let mut nodes = self.own.drain(..);
-        if let Some(last) = chunks.last_mut()
-            && last.len() < CHUNK
-        {
-            let room = CHUNK.saturating_sub(last.len());
-            alloc::sync::Arc::make_mut(last).extend(nodes.by_ref().take(room));
-        }
-        loop {
-            let chunk: Vec<Node> = nodes.by_ref().take(CHUNK).collect();
-            if chunk.is_empty() {
-                break;
+        if let Some(shared) = self.tail.as_mut() {
+            let tail = alloc::sync::Arc::make_mut(shared);
+            tail.extend(nodes.by_ref().take(CHUNK.saturating_sub(tail.len())));
+            if tail.len() == CHUNK {
+                let chunk: Chunk<Node> = core::mem::take(tail).into();
+                alloc::sync::Arc::make_mut(self.frozen.get_or_insert_default()).push(chunk);
+                self.tail = None;
             }
-            chunks.push(alloc::sync::Arc::new(chunk));
+        }
+        if nodes.len() >= CHUNK {
+            let chunks = alloc::sync::Arc::make_mut(self.frozen.get_or_insert_default());
+            while nodes.len() >= CHUNK {
+                chunks.push(nodes.by_ref().take(CHUNK).collect());
+            }
+        }
+        if !nodes.as_slice().is_empty() {
+            let mut tail = Vec::with_capacity(CHUNK);
+            tail.extend(nodes);
+            self.tail = Some(alloc::sync::Arc::new(tail));
         }
     }
 
@@ -1314,9 +1352,10 @@ impl<Node: Clone> Family<Node>
     /// - requires: nothing.
     /// - ensures: the node [`Self::get`] reads at `offset`. A node among the
     ///   frozen ones is reached through the family's own copy of the list of
-    ///   chunks and of the chunk that holds it, each taken when another clone
-    ///   shares it. So the write copies at most 64 nodes, and no clone made
-    ///   before the change sees it; the family's length is unchanged.
+    ///   chunks and of the chunk that holds it, or of the tail, each taken when
+    ///   another clone shares it. So the write copies at most 64 nodes, and no
+    ///   clone made before the change sees it; the family's length is
+    ///   unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer borrows the family mutably, so no clause
@@ -1340,9 +1379,14 @@ impl<Node: Clone> Family<Node>
         if let Some(own) = offset.0.checked_sub(self.frozen_len) {
             return self.own.get_mut(own);
         }
-        let chunks = alloc::sync::Arc::make_mut(self.frozen.as_mut()?);
-        alloc::sync::Arc::make_mut(chunks.get_mut(offset.0 >> CHUNK_SHIFT)?)
-            .get_mut(offset.0 & WITHIN)
+        let (at, within) = (offset.0 >> CHUNK_SHIFT, offset.0 & WITHIN);
+        if let Some(list) = self.frozen.as_mut()
+            && at < list.len()
+        {
+            let chunk = alloc::sync::Arc::make_mut(list).get_mut(at)?;
+            return alloc::sync::Arc::make_mut(chunk).get_mut(within);
+        }
+        alloc::sync::Arc::make_mut(self.tail.as_mut()?).get_mut(within)
     }
 }
 
