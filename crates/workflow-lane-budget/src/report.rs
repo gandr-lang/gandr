@@ -65,8 +65,8 @@ impl fmt::Display for RunId
     }
 }
 
-/// A class of saved build state, as the nightly workflow keys it: such as
-/// `cargo-test-enforcing`.
+/// A class of saved build state, as the nightly-sweeps workflow keys it: such
+/// as `cargo-test-enforcing`.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateClass(String);
@@ -626,9 +626,9 @@ impl Report
 /// table collapsed under a one-line summary: lane, class, median, budget,
 /// sample count and standing, the class `integration` for a row of the
 /// integration dispatches, `main` for one of the pushes to `main`, `daily` for
-/// one of the CI workflow's scheduled window and `nightly` for one of the
-/// nightly workflow's, then the runs. A table of [`Window::Main`] holds no
-/// budget: its budget is written `—` and its standing `information`.
+/// one of the landing-checks workflow's scheduled window and `nightly` for one
+/// of the nightly-sweeps workflow's, then the runs. A table of [`Window::Main`]
+/// holds no budget: its budget is written `—` and its standing `information`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -767,9 +767,9 @@ impl fmt::Display for Report
         writeln!(
             f,
             "This report holds each CI lane's median job time against its budget in \
-             `nightly.yml`.\n\nThe table holds each lane's median over the last {} merge-queue \
-             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
-             class.\n",
+             `nightly-sweeps.yml`.\n\nThe table holds each lane's median over the last {} \
+             merge-queue and pull-request runs of `landing-checks.yml`. The cone a landing \
+             touches gives each lane its class.\n",
             self.runs.len()
         )?;
         table(f, &self.rows, Window::Landing, &self.runs)?;
@@ -779,24 +779,24 @@ impl fmt::Display for Report
                 Window::Integration => writeln!(
                     f,
                     "\nThe table holds the test lanes' medians over the last {count} dispatches \
-                     of `ci.yml` on `integration`. A merge group on `landing` skips these lanes, \
-                     so only the cycle holds them.\n"
+                     of `landing-checks.yml` on `integration`. A merge group on `landing` skips \
+                     these lanes, so only the cycle holds them.\n"
                 )?,
                 Window::Main => writeln!(
                     f,
                     "\nThe table holds the same lanes' medians over the last {count} pushes of \
-                     `ci.yml` to `main`. No gate waits on such a run, so the table is \
-                     information and holds no budget.\n"
+                     `landing-checks.yml` to `main`. No gate waits on such a run, so the table \
+                     is information and holds no budget.\n"
                 )?,
                 Window::Landing | Window::Scheduled => writeln!(
                     f,
                     "\nThe table holds the daily lanes' medians over the last {count} scheduled \
-                     runs of `ci.yml`.\n"
+                     runs of `landing-checks.yml`.\n"
                 )?,
                 Window::Nightly => writeln!(
                     f,
                     "\nThe table holds the nightly lanes' medians over the last {count} scheduled \
-                     runs of `nightly.yml`.\n"
+                     runs of `nightly-sweeps.yml`.\n"
                 )?,
             }
             table(f, &scheduled.rows, scheduled.window, &scheduled.runs)?;
@@ -898,9 +898,9 @@ mod tests
         assert_eq!(
             report.to_string(),
             "This report holds each CI lane's median job time against its budget in \
-             `nightly.yml`.\n\nThe table holds each lane's median over the last 2 merge-queue \
-             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
-             class.\n\n\
+             `nightly-sweeps.yml`.\n\nThe table holds each lane's median over the last 2 \
+             merge-queue and pull-request runs of `landing-checks.yml`. The cone a landing \
+             touches gives each lane its class.\n\n\
              <details><summary>2 lanes — within: 0 over, 1 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
@@ -939,9 +939,9 @@ mod tests
         assert_eq!(
             report.to_string(),
             "This report holds each CI lane's median job time against its budget in \
-             `nightly.yml`.\n\nThe table holds each lane's median over the last 2 merge-queue \
-             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
-             class.\n\n\
+             `nightly-sweeps.yml`.\n\nThe table holds each lane's median over the last 2 \
+             merge-queue and pull-request runs of `landing-checks.yml`. The cone a landing \
+             touches gives each lane its class.\n\n\
              <details><summary>2 lanes — within: 0 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
@@ -1091,16 +1091,16 @@ mod tests
         assert_eq!(
             report.to_string(),
             "This report holds each CI lane's median job time against its budget in \
-             `nightly.yml`.\n\nThe table holds each lane's median over the last 1 merge-queue \
-             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
-             class.\n\n\
+             `nightly-sweeps.yml`.\n\nThe table holds each lane's median over the last 1 \
+             merge-queue and pull-request runs of `landing-checks.yml`. The cone a landing \
+             touches gives each lane its class.\n\n\
              <details><summary>1 lane — within: 0 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | check Clippy wall | surface | 3m 20s | 5m 0s | 1 | within |\n\
              \nThe table reads runs 12.\n\n</details>\n\
              \nThe table holds the daily lanes' medians over the last 2 scheduled runs of \
-             `ci.yml`.\n\n\
+             `landing-checks.yml`.\n\n\
              <details><summary>1 lane — over: 1 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
@@ -1155,7 +1155,7 @@ mod tests
                 "| mutate the night's crate (linux) | daily | 13m 20s | 14m 0s | 1 | within |\n\
                  \nThe table reads runs 9.\n\n</details>\n\
                  \nThe table holds the nightly lanes' medians over the last 2 scheduled runs of \
-                 `nightly.yml`.\n\n\
+                 `nightly-sweeps.yml`.\n\n\
                  <details><summary>1 lane — over: 1 over, 0 unmeasured</summary>\n\n\
                  | lane | class | median | budget | jobs | standing |\n\
                  | --- | --- | ---: | ---: | ---: | --- |\n\

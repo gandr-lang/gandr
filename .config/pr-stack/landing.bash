@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The server-side landing watcher and CI depth gate (#2701, #5074).
-# `.github/workflows/landing.yml` runs the watcher on each CI completion.
-# `.github/workflows/ci.yml` runs `depth` before other pull request jobs.
+# `.github/workflows/landing-queue.yml` runs the watcher on each CI completion.
+# `.github/workflows/landing-checks.yml` runs `depth` before other pull request jobs.
 # The watcher reads each open pull request once.
 # `landing.jq` decides each action.
 # `stack.bash` applies the stacking rule.
@@ -25,9 +25,9 @@ source "$pr_stack_dir/sweep.bash"
 # shellcheck source=landed-heads.bash
 source "$pr_stack_dir/landed-heads.bash"
 token=${LANDING_TOKEN_HELD:-false}
-# The CI workflow, which `landing.yml` runs on and the depth gate cancels:
-# the `name` of `.github/workflows/ci.yml`.
-ci_workflow=CI
+# The landing-checks workflow, which `landing-queue.yml` runs on and the depth gate cancels:
+# the `name` of `.github/workflows/landing-checks.yml`.
+ci_workflow=landing-checks
 
 # The open pull requests, held ones left out (a draft, or the owner's
 # `hold:owner`, #3253), as `landing.jq` reads them. The head and base of
@@ -306,7 +306,7 @@ done < <(jq -c '.[]' <<< "$actions")
 # Actions permission, so GitHub refuses it the rerun (HTTP 403).
 limit=$(depth_limit)
 while read -r number oid; do
-  run=$(gh api "repos/$repo/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$oid&per_page=1" \
+  run=$(gh api "repos/$repo/actions/workflows/landing-checks.yml/runs?event=pull_request&head_sha=$oid&per_page=1" \
     --jq '.workflow_runs[0] | select(.conclusion == "cancelled") | .id') || continue
   [[ -n $run ]] || continue
   if GH_TOKEN=${RERUN_TOKEN:-$GH_TOKEN} gh api --method POST "repos/$repo/actions/runs/$run/rerun" > /dev/null 2> "$err"; then

@@ -291,8 +291,8 @@
 //! past the 30 s every test is held to, so each sweep sits in a `sweeps`
 //! module and visits a sample its constant states under every pull-request
 //! profile, and every source under the `nightly` nextest profile, which the
-//! nightly workflow runs enforced — the erasure over the night's slice of
-//! the corpus and the typing over the night's part of sixteen of every
+//! nightly-sweeps workflow runs enforced — the erasure over the night's slice
+//! of the corpus and the typing over the night's part of sixteen of every
 //! source, the whole of either every few nights. A sample ranks the corpus by
 //! its BLAKE3 digest under the sweep's name, holds a source of each corpus
 //! class, and adds every source the change adds or modifies

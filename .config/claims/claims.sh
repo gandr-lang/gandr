@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The claim lifecycle (#1270), run by `.github/workflows/claims.yml`:
+# The claim lifecycle (#1270), run by `.github/workflows/tracker-release-claims.yml`:
 #
 #   claims.sh merged [--dry-run]   after a merge; the body is $CLAIMS_MERGED_BODY
 #   claims.sh sweep [--dry-run]    the scheduled sweep

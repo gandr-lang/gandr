@@ -7,9 +7,9 @@ use anodized::spec;
 /// The nextest profile that runs every sweep whole.
 pub const SWEEPS_PROFILE: &str = "sweeps";
 
-/// The nextest profile the nightly workflow runs: every input a sweep visits
-/// is visited whole, and a rotating sweep visits the night's slice of its
-/// inputs ([`Rotation`]).
+/// The nextest profile the nightly-sweeps workflow runs: every input a sweep
+/// visits is visited whole, and a rotating sweep visits the night's slice of
+/// its inputs ([`Rotation`]).
 ///
 /// [`Rotation`]: crate::rotation::Rotation
 pub const NIGHTLY_PROFILE: &str = "nightly";

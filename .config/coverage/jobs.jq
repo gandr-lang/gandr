@@ -4,7 +4,7 @@
 # matrix entry names its part, and the parts together are the whole: each
 # nextest slice `hash:<k>/<n>` for k from 1 to n once, and `plain` once.
 #
-# Input: `.github/workflows/coverage.yml`'s `jobs`, anchors expanded, as JSON.
+# Input: `.github/workflows/report-coverage.yml`'s `jobs`, anchors expanded, as JSON.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 
 def measures: (.steps // []) | any((.run // "") | test("\\bci:coverage(\\s|$)"));

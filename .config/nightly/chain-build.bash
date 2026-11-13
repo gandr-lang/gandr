@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The cold build of the night's chain report (#6893), one architecture's
-# half: `nightly.yml`'s `chain` and `chain-riscv64` run it, and a seat can run
+# half: `nightly-sweeps.yml`'s `chain` and `chain-riscv64` run it, and a seat can run
 # it on a host by hand. It builds the driver, `gandr-lang`, in the dev profile
 # into an empty target directory under `<out>`, under the flags of
 # `.cargo/config.toml` (#6882). Cargo's build analysis log records every unit

@@ -1,7 +1,7 @@
 # The integration cycle's decision (#5440), read by `ci:cycle`. The input
 # holds the tips of `landing` and `integration`, GitHub's comparison of
 # `integration...landing` (`ahead`, `behind`, `identical` or `diverged`), and
-# the newest dispatched runs of ci.yml on `integration`, newest first.
+# the newest dispatched runs of landing-checks.yml on `integration`, newest first.
 #
 # The verdict is the newest run that completed with a pass or a failure. A
 # cancelled run gives no verdict. While a run is queued or in progress,

@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: Coverage
+name: report-coverage
 
 # Daily on main when main moved since the last upload, never per landing: an
 # instrumented run pays a cold instrumented build and two to three times the
@@ -32,9 +32,9 @@ env:
   CARGO_TERM_COLOR: always
   MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
   MISE_CARGO_BINSTALL_NATIVE: "true"
-  # Must match ci.yml and the image. The image checks the list at build time.
+  # Must match landing-checks.yml and the image. The image checks the list at build time.
   MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
-  # Must match ci.yml: a job's mise writes no line of `mise.lock` (#6976).
+  # Must match landing-checks.yml: a job's mise writes no line of `mise.lock` (#6976).
   MISE_LOCKFILE_MODE: merge
   # Empty selects the bare runner. A set value selects the pin-file tag,
   # and only a published tag is used: this workflow does not publish.
@@ -51,7 +51,7 @@ jobs:
   template:
     if: false
     needs: ci-image-ref
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: &linux ubuntu-24.04-arm
     permissions: &image-read-permissions
       contents: read
@@ -158,7 +158,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          uploaded=$(gh run list --workflow coverage.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha // ""')
+          uploaded=$(gh run list --workflow report-coverage.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha // ""')
           if [ "$uploaded" = "$GITHUB_SHA" ]; then
             echo "main is at $GITHUB_SHA, the commit the last successful upload covered: nothing to measure"
             echo "stale=false" >> "$GITHUB_OUTPUT"

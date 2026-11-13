@@ -9,7 +9,7 @@
 # never a required check: a regression lands red rather than blocks. The
 # comment is posted only when the comparison finds a change.
 #
-# The report counts allocations (`HOTPATH_ALLOC_METRIC: count` in ci.yml),
+# The report counts allocations (`HOTPATH_ALLOC_METRIC: count` in landing-checks.yml),
 # and a function budget takes its `alloc` only in bytes. Thus the budgets of
 # the series are in hotpath/gandr-bytes-policy.toml, which judges a report
 # in bytes.

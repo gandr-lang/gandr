@@ -1342,31 +1342,31 @@
     "input": [
       {
         "databaseId": 39581619497,
-        "workflowName": "PR title",
+        "workflowName": "landing-title-and-deletes",
         "startedAt": "2026-10-21T10:02:36Z",
         "conclusion": "success"
       },
       {
         "databaseId": 39581595024,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "success"
       },
       {
         "databaseId": 39581594890,
-        "workflowName": "PR title",
+        "workflowName": "landing-title-and-deletes",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "cancelled"
       },
       {
         "databaseId": 39581595108,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "cancelled"
       },
       {
         "databaseId": 39581594567,
-        "workflowName": "PR title",
+        "workflowName": "landing-title-and-deletes",
         "startedAt": "2026-10-21T10:02:24Z",
         "conclusion": "success"
       }
@@ -1379,13 +1379,13 @@
     "input": [
       {
         "databaseId": 39581595024,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:40:00Z",
         "conclusion": "success"
       },
       {
         "databaseId": 39581595108,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "cancelled"
       }
@@ -1398,13 +1398,13 @@
     "input": [
       {
         "databaseId": 39581595024,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "failure"
       },
       {
         "databaseId": 39581595108,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "cancelled"
       }
@@ -1417,13 +1417,13 @@
     "input": [
       {
         "databaseId": 39581595108,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:25Z",
         "conclusion": "cancelled"
       },
       {
         "databaseId": 39581599999,
-        "workflowName": "CI",
+        "workflowName": "landing-checks",
         "startedAt": "2026-10-21T10:02:30Z",
         "conclusion": ""
       }
@@ -4035,14 +4035,14 @@
       ],
       "workflow_dispatch": {}
     },
-    "output": "[\"`schedule`: GitHub ran this repository's schedules four to five hours late, so a reading must follow events, never a cron (#2984)\",\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `dequeued`: no `CI` completion marks it, so it starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
+    "output": "[\"`schedule`: GitHub ran this repository's schedules four to five hours late, so a reading must follow events, never a cron (#2984)\",\"no `workflow_run` of `landing-checks` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `dequeued`: no `landing-checks` completion marks it, so it starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `landing-checks` completion marks it, so it starts no reading (#2984)\"]"
   },
   {
-    "name": "#2984: landing on `CI`'s completion, a dequeue and a draft taken back holds",
+    "name": "#2984: landing on `landing-checks`'s completion, a dequeue and a draft taken back holds",
     "program": "triggers.jq",
     "input": {
       "workflow_run": {
-        "workflows": ["CI"],
+        "workflows": ["landing-checks"],
         "types": ["completed"]
       },
       "pull_request": {
@@ -4053,18 +4053,18 @@
     "output": "[]"
   },
   {
-    "name": "#2984: `CI` read on `requested` rather than `completed`, and `ready_for_review` missing, are each refused",
+    "name": "#2984: `landing-checks` read on `requested` rather than `completed`, and `ready_for_review` missing, are each refused",
     "program": "triggers.jq",
     "input": {
       "workflow_run": {
-        "workflows": ["CI"],
+        "workflows": ["landing-checks"],
         "types": ["requested"]
       },
       "pull_request": {
         "types": ["dequeued"]
       }
     },
-    "output": "[\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
+    "output": "[\"no `workflow_run` of `landing-checks` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `landing-checks` completion marks it, so it starts no reading (#2984)\"]"
   },
   {
     "name": "#3849: a new top opened above the measured one, sharing no path with the branch, takes the branch without measuring again",
@@ -4469,7 +4469,7 @@
     "program": "unstarted.jq",
     "args": {
       "required": ["lint the pull request title", "test the workspace (linux)"],
-      "workflow": "CI"
+      "workflow": "landing-checks"
     },
     "input": [
       {
@@ -4477,14 +4477,14 @@
         "name": "test the workspace (linux)",
         "status": "COMPLETED",
         "conclusion": "CANCELLED",
-        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
       },
       {
         "__typename": "CheckRun",
         "name": "lint the pull request title",
         "status": "COMPLETED",
         "conclusion": "SUCCESS",
-        "checkSuite": { "workflowRun": { "workflow": { "name": "PR title" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-title-and-deletes" } } }
       }
     ],
     "output": "true"
@@ -4494,7 +4494,7 @@
     "program": "unstarted.jq",
     "args": {
       "required": ["lint the pull request title", "test the workspace (linux)"],
-      "workflow": "CI"
+      "workflow": "landing-checks"
     },
     "input": [
       {
@@ -4502,20 +4502,20 @@
         "name": "test the workspace (linux)",
         "status": "IN_PROGRESS",
         "conclusion": null,
-        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
       },
       {
         "__typename": "CheckRun",
         "name": "lint the pull request title",
         "status": "COMPLETED",
         "conclusion": "SUCCESS",
-        "checkSuite": { "workflowRun": { "workflow": { "name": "PR title" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-title-and-deletes" } } }
       }
     ],
     "output": "false"
   },
   {
-    "name": "#5517: a gated head waits though the brake, a required job of the CI workflow that runs on a merge group only, skips on its pull request",
+    "name": "#5517: a gated head waits though the brake, a required job of the landing-checks workflow that runs on a merge group only, skips on its pull request",
     "program": "unstarted.jq",
     "args": {
       "required": [
@@ -4523,7 +4523,7 @@
         "lint the pull request title",
         "prepare the run"
       ],
-      "workflow": "CI"
+      "workflow": "landing-checks"
     },
     "input": [
       {
@@ -4531,21 +4531,21 @@
         "name": "prepare the run",
         "status": "COMPLETED",
         "conclusion": "CANCELLED",
-        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
       },
       {
         "__typename": "CheckRun",
         "name": "hold the landings while main lags",
         "status": "COMPLETED",
         "conclusion": "SKIPPED",
-        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
       },
       {
         "__typename": "CheckRun",
         "name": "lint the pull request title",
         "status": "COMPLETED",
         "conclusion": "SUCCESS",
-        "checkSuite": { "workflowRun": { "workflow": { "name": "PR title" } } }
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-title-and-deletes" } } }
       }
     ],
     "output": "true"

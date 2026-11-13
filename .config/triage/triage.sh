@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every issue is filed with a `kind:` and an `area:` label (#2538), run by
-# `.github/workflows/triage.yml` on every opened, labelled or unlabelled
+# `.github/workflows/tracker-check-labels.yml` on every opened, labelled or unlabelled
 # issue, or by hand:
 #
 #   triage.sh <issue> [--dry-run]

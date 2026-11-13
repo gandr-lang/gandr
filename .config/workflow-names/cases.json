@@ -1,0 +1,45 @@
+[
+  {
+    "name": "#7099: a name that is the stem of its file, with its area first, holds",
+    "input": [
+      { "path": ".github/workflows/landing-checks.yml", "name": "landing-checks" },
+      { "path": ".github/workflows/tracker-check-labels.yml", "name": "tracker-check-labels" }
+    ],
+    "output": ""
+  },
+  {
+    "name": "#7099: a name that differs from the stem of its file is refused",
+    "input": [{ "path": ".github/workflows/landing-checks.yml", "name": "landing-check" }],
+    "output": ".github/workflows/landing-checks.yml: its name `landing-check` differs from the stem of its file, `landing-checks`"
+  },
+  {
+    "name": "#7099: a name in another case is refused, as is its file's stem",
+    "input": [{ "path": ".github/workflows/ci.yml", "name": "CI" }],
+    "output": ".github/workflows/ci.yml: its name `CI` differs from the stem of its file, `ci`\n.github/workflows/ci.yml: its name `CI` is not lower case with hyphens\n.github/workflows/ci.yml: its name `CI` starts with `CI`, which is no area of `landing`, `nightly`, `report`, `build`, `tracker`"
+  },
+  {
+    "name": "#7099: a name with a space is refused",
+    "input": [{ "path": ".github/workflows/report-hotpath.yaml", "name": "report hotpath" }],
+    "output": ".github/workflows/report-hotpath.yaml: its name `report hotpath` differs from the stem of its file, `report-hotpath`\n.github/workflows/report-hotpath.yaml: its name `report hotpath` is not lower case with hyphens\n.github/workflows/report-hotpath.yaml: its name `report hotpath` starts with `report hotpath`, which is no area of `landing`, `nightly`, `report`, `build`, `tracker`"
+  },
+  {
+    "name": "#7099: a name that starts with no area of the list is refused",
+    "input": [{ "path": ".github/workflows/claims-release.yml", "name": "claims-release" }],
+    "output": ".github/workflows/claims-release.yml: its name `claims-release` starts with `claims`, which is no area of `landing`, `nightly`, `report`, `build`, `tracker`"
+  },
+  {
+    "name": "#7099: a name that is its area alone, with no act, is refused",
+    "input": [{ "path": ".github/workflows/landing.yml", "name": "landing" }],
+    "output": ".github/workflows/landing.yml: its name `landing` is its area alone; an act follows the area"
+  },
+  {
+    "name": "#7099: a workflow that sets no name is refused, as GitHub then shows its path",
+    "input": [{ "path": ".github/workflows/nightly-sweeps.yml", "name": null }],
+    "output": ".github/workflows/nightly-sweeps.yml: it sets no `name:`; its name is `nightly-sweeps`"
+  },
+  {
+    "name": "#7099: a doubled hyphen is refused",
+    "input": [{ "path": ".github/workflows/build--image.yml", "name": "build--image" }],
+    "output": ".github/workflows/build--image.yml: its name `build--image` is not lower case with hyphens"
+  }
+]

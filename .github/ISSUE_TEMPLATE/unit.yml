@@ -1,6 +1,6 @@
 # The web's one way to file a unit (#3113, `units.md` § units-issue). GitHub
 # writes each field under a `### <label>` heading; the issues workflow
-# (`.github/workflows/issues.yml`) turns a body this form wrote into a unit's
+# (`.github/workflows/tracker-check-unit-form.yml`) turns a body this form wrote into a unit's
 # `## ` sections and its kind and areas into labels (`.config/issues/form.jq`),
 # then runs `unit:check`'s reading over it. A form binds only the web: an
 # issue filed through the API is checked by the same workflow.

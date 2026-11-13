@@ -1,5 +1,5 @@
 //! Each workflow's completed runs timed whole, wall time and job time summed,
-//! and held to the summed budget and ceiling `nightly.yml` states for a
+//! and held to the summed budget and ceiling `nightly-sweeps.yml` states for a
 //! workflow.
 //!
 //! A run's summed time is the times of its completed jobs on hosted runners
@@ -784,7 +784,7 @@ impl fmt::Display for Workflows
         writeln!(
             f,
             "\nThe table holds each workflow's summed job time and wall time over its last {} \
-             completed runs against the summed budgets in `nightly.yml`.\n",
+             completed runs against the summed budgets in `nightly-sweeps.yml`.\n",
             usize::from(self.asked)
         )?;
         writeln!(
@@ -909,11 +909,11 @@ mod tests
         assert_eq!(summed.limits.budget, Seconds::from(900));
         assert_eq!(summed.limits.ceiling, Seconds::from(1200));
         for text in [
-            "Nightly=900",
-            "Nightly=900/12.5",
+            "nightly-sweeps=900",
+            "nightly-sweeps=900/12.5",
             "=900/1200",
-            "Nightly=1200/900",
-            "Nightly",
+            "nightly-sweeps=1200/900",
+            "nightly-sweeps",
         ] {
             assert_eq!(
                 text.parse::<Summed>(),
@@ -943,18 +943,20 @@ mod tests
     fn a_budgeted_workflow_is_held_by_its_summed_median()
     {
         let budgets = [
-            "Nightly=500/700".parse::<Summed>().unwrap(),
-            "Coverage=60/120".parse::<Summed>().unwrap(),
+            "nightly-sweeps=500/700".parse::<Summed>().unwrap(),
+            "report-coverage=60/120".parse::<Summed>().unwrap(),
         ];
         let table = |nightly: &[(u64, &str)]| {
             Workflows::new(
                 &budgets,
                 "3".parse::<RunCount>().unwrap(),
                 vec![
-                    (WorkflowName::from("CI"), vec![timed!("31", 2000, [(
-                        3000, "test",
-                    )])]),
-                    (WorkflowName::from("Nightly"), vec![
+                    (WorkflowName::from("landing-checks"), vec![timed!(
+                        "31",
+                        2000,
+                        [(3000, "test",)]
+                    )]),
+                    (WorkflowName::from("nightly-sweeps"), vec![
                         timed!("6", 400, nightly),
                         timed!("5", 300, [(400, "sweep"), (100, "test")]),
                         timed!("4", 200, [(300, "sweep"), (200, "test")]),
@@ -970,14 +972,15 @@ mod tests
         assert_eq!(
             within.to_string(),
             "\nThe table holds each workflow's summed job time and wall time over its last 3 \
-             completed runs against the summed budgets in `nightly.yml`.\n\n\
+             completed runs against the summed budgets in `nightly-sweeps.yml`.\n\n\
              <details><summary>3 workflows — within: 0 over, 1 unmeasured</summary>\n\n\
              | workflow | runs | wall median | wall max | summed median | past budget | past \
              ceiling | standing |\n\
              | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n\
-             | CI | 1 | 33m 20s | 33m 20s | 50m 0s | — | — | unbudgeted |\n\
-             | Nightly | 3 | 5m 0s | 6m 40s | 8m 20s | 1 past 8m 20s | 0 past 11m 40s | within |\n\
-             | Coverage | 0 | — | — | — | 0 past 1m 0s | 0 past 2m 0s | unmeasured |\n\
+             | landing-checks | 1 | 33m 20s | 33m 20s | 50m 0s | — | — | unbudgeted |\n\
+             | nightly-sweeps | 3 | 5m 0s | 6m 40s | 8m 20s | 1 past 8m 20s | 0 past 11m 40s | \
+             within |\n\
+             | report-coverage | 0 | — | — | — | 0 past 1m 0s | 0 past 2m 0s | unmeasured |\n\
              \nThe Actions cache holds 8.0 GiB in 144 caches.\n\n</details>\n"
         );
         // Summed 700, 500 and 600 after the third run grows: the median, 600,
@@ -985,7 +988,7 @@ mod tests
         let over = Workflows::new(
             &budgets,
             "3".parse::<RunCount>().unwrap(),
-            vec![(WorkflowName::from("Nightly"), vec![
+            vec![(WorkflowName::from("nightly-sweeps"), vec![
                 timed!("6", 400, [(600, "sweep"), (100, "test")]),
                 timed!("5", 300, [(400, "sweep"), (100, "test")]),
                 timed!("4", 200, [(400, "sweep"), (200, "test")]),
@@ -995,7 +998,7 @@ mod tests
         assert_eq!(over.standing(), Standing::Over);
         assert!(
             over.to_string()
-                .contains("| Nightly | 3 | 5m 0s | 6m 40s | 10m 0s | 2 past 8m 20s | 0 past 11m 40s | **over** |"),
+                .contains("| nightly-sweeps | 3 | 5m 0s | 6m 40s | 10m 0s | 2 past 8m 20s | 0 past 11m 40s | **over** |"),
             "{over}"
         );
     }
@@ -1003,13 +1006,13 @@ mod tests
     #[test]
     fn a_run_over_the_ceiling_names_the_job_that_grew()
     {
-        let budgets = ["Nightly=900/1000".parse::<Summed>().unwrap()];
+        let budgets = ["nightly-sweeps=900/1000".parse::<Summed>().unwrap()];
         // The sweep is the longest job every night and steady; the tests grew
         // on run 6, which alone passes the ceiling.
         let table = Workflows::new(
             &budgets,
             "3".parse::<RunCount>().unwrap(),
-            vec![(WorkflowName::from("Nightly"), vec![
+            vec![(WorkflowName::from("nightly-sweeps"), vec![
                 timed!("6", 700, [(600, "sweep"), (500, "test"), (10, "file")]),
                 timed!("5", 600, [(610, "sweep"), (200, "test"), (10, "file")]),
                 timed!("4", 600, [(590, "sweep"), (210, "test"), (10, "file")]),
@@ -1020,12 +1023,12 @@ mod tests
         let text = table.to_string();
         assert!(
             text.contains(
-                "| Nightly | 3 | 10m 0s | 11m 40s | 13m 40s | 1 past 15m 0s | 1 past 16m 40s | \
+                "| nightly-sweeps | 3 | 10m 0s | 11m 40s | 13m 40s | 1 past 15m 0s | 1 past 16m 40s | \
                  **over** |\n\
                  \nThe table gives each run past its ceiling and the job that grew the most in \
                  it.\n\n| workflow | run | summed | ceiling | job | time | median |\n\
                  | --- | ---: | ---: | ---: | --- | ---: | ---: |\n\
-                 | Nightly | 6 | 18m 30s | 16m 40s | `test` | 8m 20s | 3m 30s |\n\
+                 | nightly-sweeps | 6 | 18m 30s | 16m 40s | `test` | 8m 20s | 3m 30s |\n\
                  \nThe Actions cache holds"
             ),
             "{text}"
@@ -1036,7 +1039,7 @@ mod tests
     fn only_the_newest_run_past_the_ceiling_refuses()
     {
         let budgets = [
-            "Nightly=900/1200".parse::<Summed>().unwrap(),
+            "nightly-sweeps=900/1200".parse::<Summed>().unwrap(),
             "Weekly=900/1200".parse::<Summed>().unwrap(),
         ];
         let runs = |newest: u64| {
@@ -1045,13 +1048,13 @@ mod tests
                 timed!("8", 900, [(1300, "sweep"), (200, "test")]),
             ]
         };
-        // Nightly's newest run passes the ceiling; Weekly's only an older one
+        // nightly-sweeps' newest run passes the ceiling; Weekly's only an older one
         // does; Release, unbudgeted, passes every limit.
         let table = Workflows::new(
             &budgets,
             "2".parse::<RunCount>().unwrap(),
             vec![
-                (WorkflowName::from("Nightly"), runs(1100)),
+                (WorkflowName::from("nightly-sweeps"), runs(1100)),
                 (WorkflowName::from("Weekly"), runs(500)),
                 (WorkflowName::from("Release"), runs(5000)),
             ],
@@ -1063,21 +1066,23 @@ mod tests
             .map(ToString::to_string)
             .collect();
         assert_eq!(past, [
-            "Nightly run 9: 21m 40s summed, past its 20m 0s ceiling"
+            "nightly-sweeps run 9: 21m 40s summed, past its 20m 0s ceiling"
         ]);
     }
 
     #[test]
     fn a_cache_past_its_bound_holds_the_issue_open_6951()
     {
-        let budgets = ["Nightly=900/1200".parse::<Summed>().unwrap()];
+        let budgets = ["nightly-sweeps=900/1200".parse::<Summed>().unwrap()];
         let table = |cache: &str| {
             Workflows::new(
                 &budgets,
                 "1".parse::<RunCount>().unwrap(),
-                vec![(WorkflowName::from("Nightly"), vec![timed!("9", 600, [(
-                    600, "sweep"
-                )])])],
+                vec![(WorkflowName::from("nightly-sweeps"), vec![timed!(
+                    "9",
+                    600,
+                    [(600, "sweep")]
+                )])],
                 cache.parse::<CacheUsage>().unwrap(),
             )
         };

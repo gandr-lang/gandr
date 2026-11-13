@@ -15,7 +15,7 @@
   },
   {
     "name": "#6144: a base that moves no path a row reads makes nothing due",
-    "moved": ["docs/README.md", ".github/workflows/ci.yml"],
+    "moved": ["docs/README.md", ".github/workflows/landing-checks.yml"],
     "own": [
       "crates/surface-parser/src/meld.rs",
       "crates/surface-parser/tests/recovery/fixture/surface/circuit-cells.recovery"

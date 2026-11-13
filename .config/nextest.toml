@@ -44,7 +44,7 @@ path = "junit.xml"
 inherits = "ci"
 
 # The riscv64 lane runs the tests from an archive that an x86-64 runner
-# builds (`riscv64.yml`). The driver runs itself, not the default toolchain,
+# builds (`nightly-riscv64-tests.yml`). The driver runs itself, not the default toolchain,
 # when its directory holds Cargo's `.cargo-lock` (#4510). So the archive
 # carries that file, and the extracted directory is a profile directory, as
 # the build's directory is.
@@ -108,7 +108,7 @@ inherits = "ci-enforcing"
 slow-timeout = { period = "60s", terminate-after = 10 }
 
 # A sweep that reaches the coverage limit ends there and passes, so the upload
-# still runs (#3975); `coverage.yml` files it as the nightly does.
+# still runs (#3975); `report-coverage.yml` files it as the nightly does.
 [[profile.coverage.overrides]]
 filter = "test(/(^|::)sweeps::/)"
 slow-timeout = { period = "60s", terminate-after = 10, on-timeout = "pass" }

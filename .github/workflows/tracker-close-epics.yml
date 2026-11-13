@@ -6,7 +6,7 @@
 # </critical>
 # Lists we produce are displayed collapsed: in `<details>` under a one-line
 # summary of what, how many and the verdict.
-name: epics
+name: tracker-close-epics
 
 # An epic closes itself when every issue it is blocked by and every
 # sub-issue it holds is closed, never with none (#3398, #4972, `tracker.md`
@@ -32,7 +32,7 @@ permissions:
 jobs:
   epics:
     name: close an epic whose last open blocked-by issue closed
-    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     permissions:

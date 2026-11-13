@@ -14,9 +14,9 @@
 # to the seconds it was first read with no online runner.
 def classes:
   [
-    {class: "integration", labels: ["integration"], workflows: ["Nightly", "riscv64"]},
+    {class: "integration", labels: ["integration"], workflows: ["nightly-sweeps", "nightly-riscv64-tests"]},
     {class: "factory", labels: ["factory"], workflows: []},
-    {class: "RISCV64", labels: ["Linux", "RISCV64"], workflows: ["Nightly", "riscv64"]}
+    {class: "RISCV64", labels: ["Linux", "RISCV64"], workflows: ["nightly-sweeps", "nightly-riscv64-tests"]}
   ];
 
 def has_labels($need):
