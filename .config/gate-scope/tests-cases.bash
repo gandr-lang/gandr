@@ -57,13 +57,15 @@ setup() {
 
 # The suite over the scope that the gate reads, as the gate runs it. The case
 # runs every test past a red one, so its output names each package it ran;
-# the watcher's scope asks for that already.
+# the watcher's scope asks for that already. The scratch workspace defines no
+# nextest profile, so the suite runs without the caller's `NEXTEST_PROFILE`
+# (#7075).
 suite() {
   local args
   args=$("$scope" 2> /dev/null)
   [[ $args == *--no-fail-fast* ]] || args+=" --no-fail-fast"
   # shellcheck disable=SC2086 # the scope is a list of arguments
-  cargo nextest run $args --locked 2>&1
+  env -u NEXTEST_PROFILE cargo nextest run $args --locked 2>&1
 }
 
 # The packages whose tests a suite's output ran, one a line.
@@ -108,6 +110,17 @@ got=$(
   ran "$out"
 )
 [[ $got == $'refused\nran red\nran green\nran dispatcher' ]] || fail "#6738, #6750, #6812: the head watcher's gate runs the whole workspace, and a red test of an untouched package refuses a change to another" "$got"
+
+# A caller's nextest profile, as `NEXTEST_PROFILE=ci mise run gate:all` sets
+# it, leaves the scratch suite as it is (#7075): the scratch workspace defines
+# no profile, and nextest refuses a profile that it does not find.
+got=$(
+  setup "$scratch/profile"
+  printf '\n#[test]\nfn subtracts() {\n    assert_eq!(2 - 1, 1);\n}\n' >> green/src/lib.rs
+  if out=$(NEXTEST_PROFILE=ci suite); then echo "passed"; else echo "refused"; fi
+  ran "$out"
+)
+[[ $got == $'passed\nran green\nran dispatcher' ]] || fail "#7075: a caller's NEXTEST_PROFILE stopped the scratch suite before it ran a test" "$got"
 
 (( failed == 0 )) || exit 1
 echo "gate tests OK: a broken test of a touched package is refused, a lane's suite runs the touched package and the dispatcher alone, and the watcher's whole suite refuses a red untouched package"

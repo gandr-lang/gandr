@@ -70,10 +70,12 @@ printf '#[cfg(test)]\nmod tests {\n    #[test]\n    fn red_one() {\n        pani
 mkdir -p "$crate/tests"
 printf 'mod sweeps {\n    #[test]\n    fn red_two() {\n        panic!("red");\n    }\n}\n' > "$crate/tests/tests.rs"
 export CARGO_TARGET_DIR=$scratch/target
-if (cd "$crate" && cargo nextest run --no-fail-fast > "$scratch/plain.log" 2>&1); then
+# The scratch crate defines no nextest profile, so its suite runs without the
+# caller's `NEXTEST_PROFILE` (#7075).
+if (cd "$crate" && env -u NEXTEST_PROFILE cargo nextest run --no-fail-fast > "$scratch/plain.log" 2>&1); then
   fail "#7061: the scratch suite passed with its red test"
 fi
-(cd "$crate" && cargo nextest run -E "$filter" > "$scratch/filtered.log" 2>&1) \
+(cd "$crate" && env -u NEXTEST_PROFILE cargo nextest run -E "$filter" > "$scratch/filtered.log" 2>&1) \
   || fail "#7061: the filter left the red test in the suite: $(< "$scratch/filtered.log")"
 
 (( failed == 0 )) || exit 1
