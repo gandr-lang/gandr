@@ -3,6 +3,7 @@
 # repository and run by `check:claims`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 repo=$(mktemp -d)
 trap 'rm -rf "$repo"' EXIT
 failed=0
@@ -14,7 +15,7 @@ fail() {
 }
 
 git init --quiet --initial-branch=main "$repo"
-git -C "$repo" config commit.gpgsign false
+identity "$repo"
 mkdir -p "$repo/crates/a/src" "$repo/crates/b/src"
 printf '/// a fact the file keeps\nfn kept() {}\n' > "$repo/crates/a/src/gone.rs"
 printf '/// a fact that moves\nfn moved() {}\n' > "$repo/crates/a/src/moved.rs"

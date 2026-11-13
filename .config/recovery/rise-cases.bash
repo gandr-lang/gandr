@@ -6,6 +6,7 @@
 # third changes its nodes alone.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 rise=$here/rise.bash
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -23,9 +24,7 @@ record=$records/fixture/a.recovery
 setup() {
   git init -q -b main "$1"
   cd "$1"
-  git config user.email case@example.invalid
-  git config user.name case
-  git config commit.gpgsign false
+  identity
   mkdir -p corpus "$records/fixture"
   printf 'def a = 1\n' > corpus/a.gandr
   printf '# The dropped-token rows that read worse than they owe.\n' > "$owed"

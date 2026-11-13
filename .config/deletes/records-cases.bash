@@ -22,6 +22,7 @@
 # Usage: records-cases.bash [--build [<package>=<directory>...]]
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 # shellcheck source=records.bash
 source "$here/records.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-records-cases.XXXXXX")
@@ -100,11 +101,11 @@ echo tools > "$tree/crates/tools/gen.txt"
 echo rules > "$tree/crates/rules/surface.rs"
 git -C "$tree" init --quiet
 git -C "$tree" config core.excludesFile /dev/null
-git -C "$tree" config commit.gpgsign false
+identity "$tree"
 git -C "$tree" config core.hooksPath /dev/null
 git -C "$tree" add -A
-git -C "$tree" -c user.name=cases -c user.email=cases@invalid commit --quiet -m fixture
-commit() { git -C "$tree" add -A && git -C "$tree" -c user.name=cases -c user.email=cases@invalid commit --quiet -m case; }
+git -C "$tree" commit --quiet -m fixture
+commit() { git -C "$tree" add -A && git -C "$tree" commit --quiet -m case; }
 restore() { git -C "$tree" reset --quiet --hard "${1:-HEAD}" && git -C "$tree" clean --quiet -fd; }
 fixture=$(git -C "$tree" rev-parse HEAD)
 

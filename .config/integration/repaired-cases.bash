@@ -8,6 +8,7 @@
 # or red, and the stub of the search records that it runs.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-watch-repaired.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 export XDG_STATE_HOME=$work/state
@@ -19,8 +20,8 @@ fail() {
   echo "  got: $2"
   failed=1
 }
-git() { command git -c user.name=case -c user.email=case@example.invalid -c commit.gpgsign=false "$@"; }
 git init --quiet "$watch_tree"
+identity "$watch_tree"
 git -C "$watch_tree" commit --quiet --allow-empty -m main
 git -C "$watch_tree" update-ref refs/watch/main HEAD
 git -C "$watch_tree" commit --quiet --allow-empty -m red

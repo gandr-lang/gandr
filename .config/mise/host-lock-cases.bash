@@ -16,6 +16,7 @@
 # runtime directory (#6182).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
+source "${BASH_SOURCE[0]%/*}/../cases/scratch.bash"
 scratch=$(mktemp -d)
 pids=()
 cleanup() {
@@ -257,7 +258,8 @@ wait "$flex_a" 2> /dev/null || true
 # worktrees `repo.flex-a-7046-lane` and `repo.lane-flex-b` are the lanes
 # `flex-a` and `flex-b`, not `repo.flex` and `repo.lane`.
 git init --quiet "$scratch/repo"
-git -C "$scratch/repo" -c user.name=cases -c user.email=cases@example.invalid commit --quiet --no-gpg-sign --allow-empty -m root
+identity "$scratch/repo"
+git -C "$scratch/repo" commit --quiet --allow-empty -m root
 for tree in flex-a-7046-lane lane-flex-b; do
   git -C "$scratch/repo" worktree add --quiet --detach "$scratch/repo.$tree"
 done

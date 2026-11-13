@@ -20,6 +20,7 @@
 #     as deleted.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-deletes-acts.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
@@ -32,9 +33,7 @@ fail() {
 repo=$work/repo
 mkdir -p "$repo/crates/k/src"
 git -C "$repo" init --quiet
-git -C "$repo" config user.email cases@example.invalid
-git -C "$repo" config user.name cases
-git -C "$repo" config commit.gpgsign false
+identity "$repo"
 cat > "$repo/crates/k/src/a.rs" << 'EOF'
 pub fn shift(x: u32) -> u32 {
     x + 1

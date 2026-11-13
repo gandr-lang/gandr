@@ -2,6 +2,7 @@
 # Cases for a read of a task file, and for a read the change adds (#6253).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$here/../cases/scratch.bash"
 check=$here/direct.bash
 fail=0
 work=$(mktemp -d)
@@ -15,9 +16,7 @@ init() {
   rm -rf "$work/repo"
   mkdir -p "$work/repo"
   git -C "$work/repo" init -q
-  git -C "$work/repo" config user.email test@example.com
-  git -C "$work/repo" config user.name test
-  git -C "$work/repo" config commit.gpgsign false
+  identity "$work/repo"
   git -C "$work/repo" commit -q --allow-empty -m base
 }
 

@@ -14,6 +14,7 @@
 # the group's base reads its change from their merge base (#6999).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 source "$here/moved.bash"
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-deletes-moved.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -27,9 +28,7 @@ fail() {
 repo=$work/repo
 mkdir -p "$repo/ledger" "$repo/src"
 git -C "$repo" init --quiet --initial-branch landing
-git -C "$repo" config user.email cases@example.invalid
-git -C "$repo" config user.name cases
-git -C "$repo" config commit.gpgsign false
+identity "$repo"
 commit() { git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m "$1" && git -C "$repo" rev-parse HEAD; }
 printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Gone', 2);\nINSERT INTO purpose VALUES (3);\n" > "$repo/ledger/purposes.sql"
 printf 'pub enum E {\n    Kept,\n    Gone,\n}\n' > "$repo/src/error.rs"
@@ -107,9 +106,7 @@ got=$(cd "$repo" && joined "$fork2" "$base" Gone | tr '\n' ' ')
 # `gandr-user`, to a ledger row and to the comment of a script.
 crates_repo=$work/crates
 git init --quiet --initial-branch landing "$crates_repo"
-git -C "$crates_repo" config user.email cases@example.invalid
-git -C "$crates_repo" config user.name cases
-git -C "$crates_repo" config commit.gpgsign false
+identity "$crates_repo"
 manifest() {
   mkdir -p "$crates_repo/crates/$1/src"
   printf '[package]\nname = "gandr-%s"\n\n[dependencies]\n' "$1" > "$crates_repo/crates/$1/Cargo.toml"
@@ -185,9 +182,7 @@ from=$(cd "$repo" && change_base "$base" "$head")
 # the fork that `signed_fork` gives, not the refusal of the old deepening.
 origin=$work/origin
 git init --quiet --initial-branch landing "$origin"
-git -C "$origin" config user.email cases@example.invalid
-git -C "$origin" config user.name cases
-git -C "$origin" config commit.gpgsign false
+identity "$origin"
 git -C "$origin" config uploadpack.allowAnySHA1InWant true
 at() { git -C "$origin" commit --quiet --no-verify --allow-empty -m "$1" && git -C "$origin" rev-parse HEAD; }
 at root > /dev/null
@@ -215,9 +210,7 @@ got=$(cd "$work/clone" && signed_fork "$shallow_signed" "$shallow_base") || got=
 # reads it.
 served_origin=$work/served-origin
 git init --quiet --initial-branch landing "$served_origin"
-git -C "$served_origin" config user.email cases@example.invalid
-git -C "$served_origin" config user.name cases
-git -C "$served_origin" config commit.gpgsign false
+identity "$served_origin"
 git -C "$served_origin" config uploadpack.allowReachableSHA1InWant true
 git -C "$served_origin" config uploadpack.allowFilter true
 git -C "$served_origin" commit --quiet --no-verify --allow-empty -m root
@@ -227,9 +220,7 @@ pushed=$(git -C "$served_origin" rev-parse HEAD)
 git -C "$served_origin" commit --quiet --no-verify --allow-empty -m 'pushed, then left behind'
 left=$(git -C "$served_origin" rev-parse HEAD)
 git clone --quiet "file://$served_origin" "$work/seat"
-git -C "$work/seat" config user.email cases@example.invalid
-git -C "$work/seat" config user.name cases
-git -C "$work/seat" config commit.gpgsign false
+identity "$work/seat"
 git -C "$work/seat" checkout --quiet change
 git -C "$work/seat" commit --quiet --no-verify --allow-empty -m 'rebased, never pushed'
 unpushed=$(git -C "$work/seat" rev-parse HEAD)

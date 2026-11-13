@@ -16,6 +16,7 @@
 # exit 2.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../cases/scratch.bash"
 root=$(git -C "$here" rev-parse --show-toplevel)
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-queue-cases.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -25,23 +26,26 @@ fail() {
   echo "  got: $2"
   failed=1
 }
+# The commit rules read the author with `git var GIT_AUTHOR_IDENT` where
+# commitlint runs, outside the scratch history, so the author of the cases
+# comes from the environment. `identity` keeps the host's signing out.
 export GIT_AUTHOR_NAME=case GIT_AUTHOR_EMAIL=case@example.invalid GIT_COMMITTER_NAME=case GIT_COMMITTER_EMAIL=case@example.invalid
-
 # A scratch history at `$1` whose two pull requests commit the headers `$2`
 # and `$3`, each with a body. It reads the check's `.config` through a link
 # to this tree's own.
 history() {
   local repo=$1 number
   git init --quiet --initial-branch=landing "$repo"
+  identity "$repo"
   ln -s "$root/.config" "$repo/.config"
-  git -C "$repo" add -A && git -C "$repo" commit --quiet --no-gpg-sign -m 'base'
+  git -C "$repo" add -A && git -C "$repo" commit --quiet -m 'base'
   for number in 1 2; do
     git -C "$repo" switch --quiet -c "pr-$number" landing
     echo "$number" > "$repo/file-$number"
     git -C "$repo" add -A
-    git -C "$repo" commit --quiet --no-gpg-sign -m "${@:$((number + 1)):1}" -m "The change $number of the case."
+    git -C "$repo" commit --quiet -m "${@:$((number + 1)):1}" -m "The change $number of the case."
     git -C "$repo" switch --quiet landing
-    git -C "$repo" merge --quiet --no-ff --no-gpg-sign -m "fix(workflow): change $number (#$number)" "pr-$number"
+    git -C "$repo" merge --quiet --no-ff -m "fix(workflow): change $number (#$number)" "pr-$number"
   done
 }
 repo=$work/repo
@@ -108,7 +112,7 @@ out=$(cd "$work/clean" && "$here/entries.bash" "$(git rev-parse HEAD~2)" > "$wor
 status=0
 out=$(cd "$repo" && "$here/entries.bash" 0000000000000000000000000000000000000000 2>&1) || status=$?
 [[ $status == 2 ]] || fail "#6839: a base that the history does not reach is refused with exit 2" "status $status: $out"
-git -C "$repo" commit --quiet --no-gpg-sign --allow-empty -m 'a push outside the queue'
+git -C "$repo" commit --quiet --allow-empty -m 'a push outside the queue'
 status=0
 out=$(cd "$repo" && "$here/entries.bash" "$base" 2>&1) || status=$?
 [[ $status == 2 ]] || fail "#6839: a commit that is no merge of a pull request is refused with exit 2" "status $status: $out"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source .config/references/ledger.bash
+source .config/cases/scratch.bash
 case=$(jq -c '.[0]' .config/references/vault-cases.json)
 old=$(jq -r .old <<< "$case")
 new=$(jq -r .new <<< "$case")
@@ -9,9 +10,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 git init --bare --quiet "$scratch/origin"
 git init --quiet "$scratch/writer"
-git -C "$scratch/writer" config user.name test
-git -C "$scratch/writer" config user.email test@example.invalid
-git -C "$scratch/writer" config commit.gpgsign false
+identity "$scratch/writer"
 git -C "$scratch/writer" remote add origin "$scratch/origin"
 printf 'mint: %s\n' "$old" > "$scratch/writer/page.md"
 git -C "$scratch/writer" add page.md
