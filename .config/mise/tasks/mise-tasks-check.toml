@@ -206,10 +206,12 @@ gate_ran=1
 # 0 s at p90 on each host, so the load chooses the host (`choose.jq`). The
 # task runs `mise run check` on the head in a clone of the lane on the host
 # with the least load for each core and a free slot, and records the pass
-# here under the head's tree, with the host's name. `pr:open` and `pr:land`
-# read that record as a local one. The hosts are the factory's
-# configuration, `gate-hosts.json` under `$XDG_CONFIG_HOME/gandr`. Its name
-# keeps it out of the `check:*` glob, so no gate runs it.
+# here under the head's tree, with the host's name. The host's tools come
+# first (`mise run tools:check`, #7127): a lack stops the gate before its
+# build, with status 2. `pr:open` and `pr:land` read that record as a local
+# one. The hosts are the factory's configuration, `gate-hosts.json` under
+# `$XDG_CONFIG_HOME/gandr`. Its name keeps it out of the `check:*` glob, so
+# no gate runs it.
 ["gate:remote"]
 description = "The landing's gate of the branch's head on the host of ours with the least load for each core and a free gate slot, its pass recorded here"
 tools.jq = "1.8.1"
@@ -2352,8 +2354,9 @@ run = ".config/gate-rows/cases.bash"
 # comment selects both, and a corpus comment edit selects `check:prose`.
 # `.config/gate-scope/remote-cases.bash` runs the gate on another host
 # (#6996) through a stand-in `ssh` and `mise`: a far pass comes here with its
-# host after the push, a far red records nothing, work beyond HEAD is refused
-# and the probe counts the free slots.
+# host after the push, a far red records nothing, a far host that lacks a
+# tool stops before its gate (#7127), work beyond HEAD is refused and the
+# probe counts the free slots.
 # `.config/gate-scope/known-red-cases.bash` reads a recorded known-red list
 # in a scratch repository (#7061): a list below the branch's base leaves each
 # listed test of the suite's scope out of a scratch crate's red suite, and
