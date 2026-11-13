@@ -10,13 +10,6 @@ license.workspace = true
 keywords = ["gandr", "language", "ledger"]
 categories = ["development-tools"]
 publish.workspace = true
-autotests = false
-
-# One integration target, so a witness path of an integration case reads
-# `tests::<area>::<name>`. The unit tests stay beside the reader.
-[[test]]
-name = "tests"
-path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the executable specifications. A row and
 # a shown feature are written as JSON through serde_json's value tree.
