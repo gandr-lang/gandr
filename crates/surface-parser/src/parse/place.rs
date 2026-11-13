@@ -1822,7 +1822,8 @@ fn settled<'source>(
     // `def f : ( -> T = …`, takes its closer directly after that opener as
     // well, after every other place: the melder's minted close holds the rest
     // of the line inside the group, and no later place gives the source back
-    // (#6323).
+    // (#6323). That place counts only where no other place parses, so the mark
+    // of a closer that another place takes does not reach back to the opener.
     let opener_last = target.class.is_some_and(|class| {
         tiles_ending_at(tree, target.end).any(|span| {
             text.get(usize::from(span.start()) .. usize::from(span.end()))
@@ -1831,8 +1832,11 @@ fn settled<'source>(
                 })
         })
     });
-    if opener_last && target.leading != LeadingSlot::Empty && !places.contains(&target.end) {
-        places.push(target.end);
+    let after_opener =
+        (opener_last && target.leading != LeadingSlot::Empty && !places.contains(&target.end))
+            .then_some(target.end);
+    if let Some(place) = after_opener {
+        places.push(place);
     }
     // The melder's close goes first, unless it stands at the end of the form's
     // last written tile and a written operand follows, which a closer there
@@ -1894,15 +1898,21 @@ fn settled<'source>(
     let (place, closer, first) = if target.class.is_some() {
         let mut first: Option<ByteOffset> = None;
         let mut last: Option<(ByteOffset, SourceText<'static>)> = None;
+        let mut alone: Option<(ByteOffset, SourceText<'static>)> = None;
         for candidate in tried {
-            if accepts(&candidate, SourceText::from("")) {
+            if Some(candidate.0) == after_opener {
+                if alone.is_none() && accepts(&candidate, SourceText::from("")) {
+                    alone = Some(candidate);
+                }
+            }
+            else if accepts(&candidate, SourceText::from("")) {
                 first = Some(first.map_or(candidate.0, |at| at.min(candidate.0)));
                 if last.is_none_or(|(at, _)| at < candidate.0) {
                     last = Some(candidate);
                 }
             }
         }
-        let (place, closer) = last?;
+        let (place, closer) = last.or(alone)?;
         (place, closer, first)
     }
     else {
