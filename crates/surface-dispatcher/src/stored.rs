@@ -58,9 +58,11 @@ use gandr_storage_values::ChunkDigest;
 use gandr_storage_values::ContentPtr;
 use quenchant_shape::shape::Maybe;
 
-use crate::package::export::EXPORT_ROOTS;
 use crate::receipts::RECEIPT_ROOTS;
 use crate::strata::STRATUM_ROOTS;
+
+/// The prefix of every root naming the export of a package.
+pub const EXPORT_ROOTS: &str = "export/";
 
 /// What a value of the store is, by the name that finds it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

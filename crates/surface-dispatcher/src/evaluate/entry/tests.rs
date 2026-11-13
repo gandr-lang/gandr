@@ -17,13 +17,13 @@ use super::Entry;
 use super::ExitStatus;
 use super::argument_list;
 use super::program_entry;
-use crate::evaluate::Captured;
-use crate::evaluate::Console;
-use crate::evaluate::Evaluation;
-use crate::evaluate::Input;
-use crate::evaluate::Line;
-use crate::evaluate::Printed;
-use crate::evaluate::RealsProfile;
+use crate::entry::console::Captured;
+use crate::entry::console::Console;
+use crate::entry::console::Input;
+use crate::entry::console::Line;
+use crate::entry::console::Printed;
+use crate::entry::entered::RealsProfile;
+use crate::entry::evaluation::Evaluation;
 use crate::evaluate::tests::listed_program;
 use crate::evaluate::tests::program;
 use crate::tests::Listed;
@@ -102,7 +102,7 @@ fn an_entry_runs_to_its_exit_status_1881()
                 &mut Captured::default(),
                 (None, None, RealsProfile::Default)
             ),
-            Entered::Exited(ExitStatus(wanted)),
+            Entered::Exited(ExitStatus::from(wanted)),
             "{source}"
         );
     }
@@ -172,7 +172,7 @@ fn an_exit_status_keeps_the_low_byte_1881()
         let literal = IntegerLiteral::new(sign, magnitude);
         assert_eq!(
             ExitStatus::from(&literal),
-            ExitStatus(wanted),
+            ExitStatus::from(wanted),
             "{sign:?}{digits}"
         );
     }
@@ -198,7 +198,7 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
             &mut Captured::default(),
             (None, None, RealsProfile::Default)
         ),
-        Entered::Exited(ExitStatus(2)),
+        Entered::Exited(ExitStatus::from(2)),
         "the branch holding the hole is not taken"
     );
     let written =
@@ -244,7 +244,7 @@ fn an_entry_prints_through_its_console_2279()
             &mut console,
             (None, None, RealsProfile::Default)
         ),
-        Entered::Exited(ExitStatus(0)),
+        Entered::Exited(ExitStatus::from(0)),
         "the unit exits with 0"
     );
     assert_eq!(console.lines(), ["hello", "world"], "each line, in order");
@@ -285,7 +285,7 @@ fn an_entry_prints_through_its_authority_2970()
             &mut console,
             (None, None, RealsProfile::Default)
         ),
-        Entered::Exited(ExitStatus(0)),
+        Entered::Exited(ExitStatus::from(0)),
         "the unit exits with 0"
     );
     assert_eq!(console.lines(), ["hello", "world"], "each line, in order");
@@ -313,7 +313,7 @@ fn an_entry_reads_and_writes_the_three_streams_2970()
             &mut console,
             (None, None, RealsProfile::Default)
         ),
-        Entered::Exited(ExitStatus(0)),
+        Entered::Exited(ExitStatus::from(0)),
         "the unit exits with 0"
     );
     assert_eq!(console.lines(), ["hello\n"], "the line read, newline kept");

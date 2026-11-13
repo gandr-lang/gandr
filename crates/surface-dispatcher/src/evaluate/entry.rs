@@ -26,9 +26,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::host::PROC;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostReply;
@@ -46,7 +44,6 @@ use gandr_surface_lowering::Role;
 use gandr_surface_lowering::entry_shape;
 use quenchant_shape::shape::Maybe;
 
-use super::Console;
 use super::Evaluation;
 use super::Program;
 use super::Start;
@@ -56,103 +53,17 @@ use super::net;
 use super::rand;
 use super::reals;
 use super::reals::Reals;
-use super::reals::RealsProfile;
 use super::worlds;
-use super::worlds::Worlds;
+use crate::entry::console::Console;
+use crate::entry::entered::Entered;
+use crate::entry::entered::Entry;
+use crate::entry::entered::ExitStatus;
+use crate::entry::entered::RealsProfile;
+use crate::entry::entered::program_entry;
+use crate::entry::worlds::Worlds;
 
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
-
-/// The declaration a program starts at, and what it takes.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Entry
-{
-    /// The entry's admission position.
-    pub constant: ConstantIndex,
-    /// Whether it reads the program's arguments.
-    pub arguments: Arguments,
-}
-
-/// The status a process leaves with: the low eight bits of the integer an
-/// entry returns or exits with, as a POSIX `exit` keeps them.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ExitStatus(u8);
-
-impl From<ExitStatus> for u8
-{
-    /// The status's byte.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(status: ExitStatus) -> Self
-    {
-        status.0
-    }
-}
-
-impl From<u8> for ExitStatus
-{
-    /// The status of the byte `code`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(code: u8) -> Self
-    {
-        Self(code)
-    }
-}
-
-impl From<&IntegerLiteral> for ExitStatus
-{
-    /// The low eight bits of `literal`, read in two's complement, so `-1` is
-    /// `255` and `256` is `0`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the integer modulo 256, taken non-negative.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — zero, a small code, 255, 256, a long magnitude and a
-    ///   negative integer.
-    /// - witness: `evaluate::entry::tests::an_exit_status_keeps_the_low_byte_1881`
-    #[spec(
-        captures: [odd = literal.magnitude().as_ref().bytes().last().is_some_and(|digit| digit % 2 == 1)],
-        ensures: |ret| (ret.0 % 2 == 1) == odd,
-    )]
-    #[inline]
-    fn from(literal: &IntegerLiteral) -> Self
-    {
-        let residue = literal
-            .magnitude()
-            .as_ref()
-            .bytes()
-            .fold(0_u16, |held, digit| {
-                held.saturating_mul(10)
-                    .saturating_add(u16::from(digit.saturating_sub(b'0')))
-                    .rem_euclid(256)
-            });
-        let residue = match literal.sign() {
-            Sign::NonNegative => residue,
-            Sign::Negative => 256_u16.saturating_sub(residue).rem_euclid(256),
-        };
-        Self(u8::try_from(residue).unwrap_or(u8::MAX))
-    }
-}
-
-/// What running a program's entry came to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Entered<'source>
-{
-    /// The entry returned an integer, or exited with one.
-    Exited(ExitStatus),
-    /// The run ended short of an exit status: unrunnable, blamed, stuck at a
-    /// hole or elsewhere, or unfinished, or it returned no integer.
-    Ended(Evaluation<'source>),
-}
 
 /// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
 /// its console, a `Net` operation goes to its network when it has one, a
@@ -484,19 +395,6 @@ pub(super) fn reaches(
         .and_then(|lowered| module.worlds(lowered).get(1 ..))
         .map(<[ConstantIndex]>::to_vec)
         .unwrap_or_default()
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a program has no entry.
-    pub mod program_entry {
-        /// The program's source declares no `main` at its top level at an
-        /// entry's type.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No `main` stands at the top level of the source run.
-            Undeclared,
-        }
-    }
 }
 
 #[cfg(test)]

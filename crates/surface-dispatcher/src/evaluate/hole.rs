@@ -18,6 +18,8 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
+use crate::entry::evaluation::hole_site;
+
 /// Where `module` writes each hole a run can reach, by its name: the span of
 /// the one hole bearing it, or the shared absence where holes of several
 /// sources share one name.
@@ -111,20 +113,6 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// Any other command.
             Other,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a reached hole has no site to report.
-    pub mod hole_site {
-        /// The hole is not one the program's sources write at one place.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// Holes of several sources bear its name.
-            Shared,
-            /// No computation of the program's sources writes it.
-            Unwritten,
         }
     }
 }

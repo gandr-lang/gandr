@@ -35,17 +35,17 @@ use crate::compose::LoweringCount;
 use crate::compose::compose;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
-use crate::evaluate::Console;
-use crate::evaluate::Entered;
-use crate::evaluate::Entry;
-use crate::evaluate::Hosted;
-use crate::evaluate::MigrationCount;
-use crate::evaluate::ProgramKey;
-use crate::evaluate::RealsProfile;
-use crate::evaluate::RunStatus;
-use crate::evaluate::WorldBindings;
-use crate::evaluate::Worlds;
-use crate::evaluate::declaration_name;
+use crate::entry::console::Console;
+use crate::entry::entered::Entered;
+use crate::entry::entered::Entry;
+use crate::entry::entered::RealsProfile;
+use crate::entry::evaluation::RunStatus;
+use crate::entry::evaluation::declaration_name;
+use crate::entry::worlds::Hosted;
+use crate::entry::worlds::MigrationCount;
+use crate::entry::worlds::ProgramKey;
+use crate::entry::worlds::WorldBindings;
+use crate::entry::worlds::Worlds;
 use crate::reader::Reader;
 use crate::walk::SourceFault;
 use crate::walk::Standing;
@@ -715,10 +715,10 @@ mod tests
     use super::Ran;
     use super::run_source;
     use crate::compose::LoweringCount;
-    use crate::evaluate::Captured;
-    use crate::evaluate::Entered;
-    use crate::evaluate::ExitStatus;
-    use crate::evaluate::RunStatus;
+    use crate::entry::console::Captured;
+    use crate::entry::entered::Entered;
+    use crate::entry::entered::ExitStatus;
+    use crate::entry::evaluation::RunStatus;
 
     #[test]
     fn each_kind_of_source_has_its_status()

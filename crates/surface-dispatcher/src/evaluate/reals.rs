@@ -97,9 +97,10 @@ use gandr_theory_exact_reals::validate;
 
 use self::machine::Machines;
 use self::machine::Verdict;
-use super::Console;
-use super::Printed;
-use super::console::Line;
+use crate::entry::console::Console;
+use crate::entry::console::Line;
+use crate::entry::console::Printed;
+use crate::entry::entered::RealsProfile;
 
 mod machine;
 
@@ -118,36 +119,8 @@ const RESTORE: &str = "restore";
 /// The operation of [`REALS`] that gives the work counters of a machine.
 const REPORT: &str = "report";
 
-/// The quotas of the exact reals of a run.
-///
-/// `[reals] profile` in the configuration of the driver names a profile, and a
-/// run with no configuration takes [`Self::Default`]. A profile sets every
-/// quota of `theory-exact-reals`: the sizes of a plan and of a certificate, the
-/// finest precision of `enclose` and the quanta of one `decide`. It also sets
-/// the most plans and machines that a run holds.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub enum RealsProfile
-{
-    /// The quotas of stage A for a plan, and the default quotas of the
-    /// checker. An `enclose` goes to `2^-4096`, and a `decide` runs at most
-    /// 1024 quanta. A run holds at most 64 plans and 64 machines.
-    #[default]
-    Default,
-    /// The quotas of a host that serves plans that it does not trust. A plan
-    /// holds at most 64 KiB, 4096 nodes, a height of 256 and 16 binders. Its
-    /// mantissas hold at most 4096 bits, and its powers go up to 64. A
-    /// certificate holds at most 4096 steps and mantissas of 4096 bits. An
-    /// `enclose` goes to `2^-256`, a `decide` runs at most 256 quanta, and a
-    /// run holds at most 16 plans and 16 machines.
-    Bounded,
-}
-
 impl RealsProfile
 {
-    /// Each profile, in the order that a refusal of an unknown name lists
-    /// them.
-    pub const ALL: [Self; 2] = [Self::Default, Self::Bounded];
-
     /// The quotas that the profile sets.
     ///
     /// # Specification
@@ -182,25 +155,6 @@ impl RealsProfile
                 machines: 16,
             },
         }
-    }
-}
-
-impl fmt::Display for RealsProfile
-{
-    /// Write the name of the profile, as the configuration names it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(match *self {
-            Self::Default => "default",
-            Self::Bounded => "bounded",
-        })
     }
 }
 

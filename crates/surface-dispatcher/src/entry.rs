@@ -64,8 +64,13 @@ use crate::walk::Standing;
 use crate::walk::Step;
 use crate::workspace::stepped_alone;
 
+pub mod answered;
+pub mod console;
+pub mod entered;
+pub mod evaluation;
 pub mod exercised;
 pub mod report;
+pub mod worlds;
 
 use self::report::Lints;
 use self::report::Reach;
