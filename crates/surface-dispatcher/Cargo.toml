@@ -10,12 +10,21 @@ keywords = ["gandr", "language", "toolchain"]
 categories = ["development-tools"]
 publish.workspace = true
 autotests = false
+autobenches = false
 
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
 name = "tests"
 path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench that times one dependence
+# schedule of the pool over three graphs and three job times, at each width
+# that the run names, with percentiles and allocations.
+[[bench]]
+harness = false
+name = "schedule"
+path = "benches/schedule.rs"
 
 # The composition names every stage it runs: the grammar and the parser, the
 # lowering, the checker and the kernel bridge it carries, the settle
@@ -106,8 +115,10 @@ tracing = { workspace = true, optional = true }
 # feature on. A test that composes, walks or judges a source names the run
 # stage's engine, and reads the items it needs through the crate's own
 # `fixture` feature. Cargo admits the cycle of a dev-dependency, and the test
-# links one copy of this crate.
+# links one copy of this crate. The schedule bench counts the allocations of
+# one schedule through allocation-counter.
 [dev-dependencies]
+allocation-counter.workspace = true
 gandr-surface-dispatcher = { workspace = true, features = ["fixture", "instrument"] }
 gandr-surface-evaluate.workspace = true
 gandr-theory-cellular-sheaves.workspace = true

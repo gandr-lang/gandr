@@ -109,6 +109,7 @@ publish = false
 # consumers:
 # - core-checker (dev)
 # - core-fork (dev)
+# - surface-dispatcher (dev)
 # - surface-session (dev)
 # - theory-exact-reals (dev)
 # - theory-probability (dev)
