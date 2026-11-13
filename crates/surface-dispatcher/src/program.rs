@@ -1710,7 +1710,7 @@ fn reaches(
 /// # Adequacy
 /// - hypothesis: L3 — the far world of the offers model requires the console,
 ///   and a host serving it prints the line its migration prints.
-/// - witness: `gandr-surface-driver::tests::net::two_processes_print_at_the_far_site_of_offers_3546`
+/// - witness: `tests::run::a_host_prints_the_line_its_migration_prints_3546`
 fn world_rows(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, EffectRow>
 {
     module

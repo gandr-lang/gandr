@@ -642,6 +642,7 @@ INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surfa
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-dispatcher','manifold','lineage','6478f18ac13e022b0020fc99dc160e5ebbbc6e77','2026-11-10','16ae9d0a7483dddae61450dcbff1145e158f5243');
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-driver','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-evaluate','evaluate','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-evaluate','evaluate::worlds','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-grammar','surface::term','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-lowering-base','module::functor','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-lsp-core','complete','background',NULL,NULL,NULL);

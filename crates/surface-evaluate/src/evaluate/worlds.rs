@@ -47,6 +47,10 @@
 //! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage
 //!   programme, § storage-programme-worlds-sessions: a world a locus the host
 //!   binds, and a migration shipped by content and run at the destination.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: the compilation
+//!   ruling, § compilation-recipe-refinements: a deployment binds a world to
+//!   the host that serves it and never enters the program's identity, so the
+//!   far host answers a migration with its own handler, beside the program.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -193,7 +197,7 @@ impl Machine<'_, '_>
     ///   each migration; a host prints on its own console the line a
     ///   migration's body prints.
     /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
-    /// - witness: `gandr-surface-driver::tests::net::two_processes_print_at_the_far_site_of_offers_3546`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_host_prints_the_line_its_migration_prints_3546`
     #[inline]
     pub fn host(
         &self,

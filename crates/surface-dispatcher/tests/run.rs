@@ -1234,6 +1234,59 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
     );
 }
 
+/// #3546: a migration's print runs at the host that serves its world. A host
+/// of the offers model serves `far`, whose row names the console. The run
+/// binds `far` to that host and exits 42, and it prints nothing itself. The
+/// host prints `far`, the line of the migration's body, before its own line
+/// for the migration.
+#[test]
+fn a_host_prints_the_line_its_migration_prints_3546()
+{
+    let offers =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/deployments/offers.gandr");
+    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .and_then(|probe| probe.local_addr())
+        .expect("a free loopback port");
+    let host = Secret::from_str(HOST_SECRET).expect("the secret is hex");
+    let peer = Peer::new(host.node_id()).at(socket);
+    let far = WorldName::from("far");
+    let hosting = thread::spawn({
+        let (path, peer, far) = (offers.clone(), peer.clone(), far.clone());
+        move || {
+            hosted(
+                &path,
+                (bound(&host, socket), &far, &peer),
+                (MigrationCount::from(1_usize), Duration::ZERO),
+            )
+        }
+    });
+    let mut script = Script::new(offers);
+    script.network(Net::new(
+        Binding::new(Secret::generate()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+    ));
+    script.bindings(bindings(&far, &peer));
+    let mut console = Captured::default();
+    let run = script.run::<Evaluator>(&mut console);
+    let ScriptRun::Source { ref ran, .. } = run
+    else {
+        panic!("the source runs: {run:?}");
+    };
+    assert!(
+        matches!(ran, Ran::Entered { entered: Entered::Exited(status), .. } if *status == ExitStatus::from(42_u8)),
+        "across hosts the run answers 42: {ran:?}"
+    );
+    assert!(
+        console.lines().is_empty(),
+        "the run prints nothing itself: {:?}",
+        console.lines()
+    );
+    assert_eq!(
+        hosting.join().expect("the host ends"),
+        ["far", "ran a migration at far, fetching 0 chunks"],
+        "the host prints the migration's line, then its own"
+    );
+}
+
 /// A host binds a socket that another holder releases late. The holder keeps
 /// the socket for [`LATE`]. A loaded host can release a socket this late. The
 /// bind takes the socket when the holder releases it.
