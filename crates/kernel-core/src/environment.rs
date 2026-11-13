@@ -1023,7 +1023,7 @@ impl Environment
     /// - witness: `env::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
     /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     #[inline]
-    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1) && !self.entries.has_horizon())]
+    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| usize::from(self.entries.len()) == usize::from(entry_len).saturating_add(1) && self.entries.check_horizon().is_none())]
     pub fn settle(
         &mut self,
         pending: Pending,
@@ -1158,7 +1158,7 @@ impl Environment
     ///   and an entry ranked above the declaration is unbound to its check.
     /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     /// - witness: `env::tests::a_reference_to_an_entry_ranked_above_the_declaration_is_unbound_6621`
-    #[spec(ensures: !self.entries.has_horizon())]
+    #[spec(ensures: self.entries.check_horizon().is_none())]
     fn within_view<T>(
         &mut self,
         (roots, rank): (&[ConstantIndex], SourceRank),

@@ -1,7 +1,9 @@
-//! The record of admitted declarations: its entries, each admitted
-//! declaration with its block and its unit, and the staging of the content
-//! of a declaration. The record names no part of the judgement.
-//! `Environment` admits each declaration into the record.
+//! The record of admitted declarations.
+//!
+//! The record holds its entries, each admitted declaration with its block
+//! and its unit, and the staging of the content of a declaration. It names
+//! no part of the judgement. `Environment` admits each declaration into the
+//! record.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -2113,16 +2115,16 @@ impl Entries
         self.log.as_deref()
     }
 
-    /// Whether a check runs over the entries: the check that opens one
-    /// sets the rank it reads below.
+    /// The rank the check that runs reads below, with its presentations:
+    /// none until a check opens one.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn has_horizon(&self) -> bool
+    pub(crate) const fn check_horizon(&self) -> Option<&Horizon>
     {
-        self.horizon.is_some()
+        self.horizon.as_ref()
     }
 
     /// The live entry at `position`, read outside any support: none for a

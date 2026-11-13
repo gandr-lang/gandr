@@ -236,31 +236,6 @@ impl fmt::Display for ReplayRefusal
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TracePosition(usize);
 
-impl TracePosition
-{
-    /// The position `index` decisions from the trace's start.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub(crate) const fn new(index: usize) -> Self
-    {
-        Self(index)
-    }
-
-    /// The count of decisions before the position.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub(crate) const fn index(self) -> usize
-    {
-        self.0
-    }
-}
-
 impl From<usize> for TracePosition
 {
     /// The decision at `position`, counted from zero.

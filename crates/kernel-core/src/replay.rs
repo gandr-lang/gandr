@@ -10720,9 +10720,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Specification
     /// trivial.
-    const fn at(&self) -> TracePosition
+    fn at(&self) -> TracePosition
     {
-        TracePosition::new(self.position)
+        TracePosition::from(self.position)
     }
 
     /// The refusal for `next` read where it does not apply.
@@ -10740,11 +10740,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   produce different refusals after the same force prefix.
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
     #[spec(ensures: |ret| match (next, ret) {
-        (Next::Decision(_), Stop::Refused(ReplayRefusal::Inapplicable { at })) => at.index() == self.position,
+        (Next::Decision(_), Stop::Refused(ReplayRefusal::Inapplicable { at })) => usize::from(at) == self.position,
         (Next::End, Stop::Refused(ReplayRefusal::Exhausted)) => true,
         _ => false,
     })]
-    const fn refuse(
+    fn refuse(
         &self,
         next: Next,
     ) -> Stop
