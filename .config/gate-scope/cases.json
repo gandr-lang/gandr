@@ -1313,6 +1313,31 @@
     ]
   },
   {
+    "name": "#7173: a change that moves a source reads each tracked Markdown file, whose links can name the old path",
+    "program": "format.jq",
+    "input": {
+      "changed": ["crates/core-nbe-base/src/arena.rs"],
+      "deleted": ["crates/core-nbe/src/arena.rs"],
+      "tracked": [
+        "README.md",
+        "crates/core-nbe-base/src/arena.rs",
+        "crates/core-nbe/README.md",
+        "crates/core-nbe/src/lib.rs"
+      ]
+    },
+    "output": ["README.md", "crates/core-nbe-base/src/arena.rs", "crates/core-nbe/README.md"]
+  },
+  {
+    "name": "#7173: a change that deletes no path reads no Markdown file that it does not touch",
+    "program": "format.jq",
+    "input": {
+      "changed": ["crates/core-term/src/lib.rs"],
+      "deleted": [],
+      "tracked": ["README.md", "crates/core-term/src/lib.rs"]
+    },
+    "output": ["crates/core-term/src/lib.rs"]
+  },
+  {
     "name": "#6883: a change of a formatter's configuration reads the whole tree",
     "program": "format.jq",
     "input": {

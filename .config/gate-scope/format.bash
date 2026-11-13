@@ -8,9 +8,10 @@
 #
 # The change is every path that the working tree changes against the base
 # and every untracked path that git does not ignore, as `select.bash` reads
-# it. A deleted path is no file to format. The gandr formatter stays out:
-# `check:corpus-format` checks each gandr source with the driver that the
-# Rust checks build, and here the driver would build from nothing.
+# it. A deleted path is no file to format, but a link of a Markdown file can
+# name it, so `format.jq` reads the deleted paths too. The gandr formatter
+# stays out: `check:corpus-format` checks each gandr source with the driver
+# that the Rust checks build, and here the driver would build from nothing.
 # The type-aware lint of TypeScript reads the extension's packages, so the
 # check installs them only when it formats a TypeScript source.
 #
@@ -34,11 +35,12 @@ fi
   git diff --no-renames --name-only --diff-filter=d "$GATE_BASE"
   git ls-files --others --exclude-standard
 } > "$work/changed"
+git diff --no-renames --name-only --diff-filter=D "$GATE_BASE" > "$work/deleted"
 git ls-files > "$work/tracked"
 # The paths reach jq as files, never as arguments: a large change makes a
 # list longer than one argument can hold (#5220).
-jq -n --rawfile changed "$work/changed" --rawfile tracked "$work/tracked" \
-  '{changed: ($changed | split("\n") | map(select(length > 0))), tracked: ($tracked | split("\n") | map(select(length > 0)))}' \
+jq -n --rawfile changed "$work/changed" --rawfile deleted "$work/deleted" --rawfile tracked "$work/tracked" \
+  '[$changed, $deleted, $tracked] | map(split("\n") | map(select(length > 0))) | {changed: .[0], deleted: .[1], tracked: .[2]}' \
   | jq -c -L "$here" -f "$here/format.jq" > "$work/paths"
 if [[ $(< "$work/paths") == '"tree"' ]]; then
   # The paths that read as configuration or a pin, named for the log (#6976).
