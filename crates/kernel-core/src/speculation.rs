@@ -43,10 +43,10 @@ impl fmt::Display for Setting
     #[inline]
     fn fmt(
         &self,
-        formatter: &mut fmt::Formatter<'_>,
+        f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        formatter.write_str(match *self {
+        f.write_str(match *self {
             Self::Off => "off",
             Self::On => "on",
         })
@@ -120,11 +120,11 @@ impl fmt::Display for Speculation
     #[inline]
     fn fmt(
         &self,
-        formatter: &mut fmt::Formatter<'_>,
+        f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
         write!(
-            formatter,
+            f,
             "rank {}, order.generative {}, order.twin {}, order.manifest {}",
             self.rank, self.order.generative, self.order.twin, self.order.manifest
         )
@@ -178,9 +178,9 @@ impl fmt::Display for Rollbacks
     #[inline]
     fn fmt(
         &self,
-        formatter: &mut fmt::Formatter<'_>,
+        f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        write!(formatter, "{}", self.0)
+        write!(f, "{}", self.0)
     }
 }
