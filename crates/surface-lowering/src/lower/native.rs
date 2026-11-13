@@ -26,8 +26,6 @@ pub(super) use gandr_surface_lowering_native::lower::native::Native;
 pub(super) use gandr_surface_lowering_native::lower::native::NativeRef;
 pub(super) use gandr_surface_lowering_native::lower::native::Staging;
 pub(super) use gandr_surface_lowering_native::lower::native::Unwrapped;
-pub(super) use gandr_surface_lowering_native::lower::native::record_since;
-pub(super) use gandr_surface_lowering_native::lower::native::rooted;
 
 #[cfg(test)]
 pub(super) mod tests;

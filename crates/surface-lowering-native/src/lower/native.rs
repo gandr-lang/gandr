@@ -420,6 +420,7 @@ pub(super) use gandr_surface_lowering_base::lower::native::Constructed;
 use gandr_surface_lowering_base::lower::native::Depth;
 pub(super) use gandr_surface_lowering_base::lower::native::FieldOf;
 pub(super) use gandr_surface_lowering_base::lower::native::Fielded;
+pub use gandr_surface_lowering_base::lower::native::Holds;
 use gandr_surface_lowering_base::lower::native::LoopArm;
 pub(super) use gandr_surface_lowering_base::lower::native::Over;
 pub(super) use gandr_surface_lowering_base::lower::native::ParameterAt;
@@ -634,30 +635,6 @@ pub struct Decoded(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Alone(pub bool);
-
-/// What a place inside a type holds, by the type the place states: a code,
-/// or a value that is no code. A telescope type written at a place that holds
-/// a value reads as a tuple (#5208, #5500).
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: `Code` for a place whose type is a universe, or that states no
-///   type the walk reads; `Value` for any other place, with the type the place
-///   writes when it writes one.
-/// - executable: none — the record holds no place to check against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as `Lowerer::held_at`.
-/// - witness: `gandr-surface-lowering::lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Holds
-{
-    /// A code: the place's type is a universe.
-    Code,
-    /// A value that is no code, of the written type when the place writes
-    /// one.
-    Value(Option<NodeIndex>),
-}
 
 /// Whether a type application writes a recursive function's descent where a
 /// type is read, `own[<](…)`.

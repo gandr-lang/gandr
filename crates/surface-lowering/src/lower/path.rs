@@ -53,6 +53,7 @@ use super::exits::record_copies;
 use super::functor::rename_type;
 use super::functor::rename_value;
 use super::model::Bundled;
+use super::model::ModelsRef;
 use super::model::packed_record;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
@@ -156,11 +157,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `template` is a path's body.
-    /// - ensures: each signature's bundle as [`Self::theory_bundle`] reads it
-    ///   and the type [`Self::mint_bundle_fixed`] mints for it, with no sort
-    ///   fixed; the unminted refusal at the body's keyword when a type does not
-    ///   mint.
-    /// - fails: as [`Self::theory_bundle`].
+    /// - ensures: each signature's bundle as `ModelsRef::theory_bundle` reads
+    ///   it and the type `ModelsRef::mint_bundle_fixed` mints for it, with no
+    ///   sort fixed; the unminted refusal at the body's keyword when a type
+    ///   does not mint.
+    /// - fails: as `ModelsRef::theory_bundle`.
     /// - panics: none.
     ///
     /// # Errors
@@ -193,14 +194,14 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::PATH,
             reading: Reading::ValueType(Frame::Outermost),
         };
-        let domain_bundle = self.theory_bundle(site(domain.named), domain)?;
-        let codomain_bundle = self.theory_bundle(site(codomain.named), codomain)?;
+        let domain_bundle = ModelsRef::new(self).theory_bundle(site(domain.named), domain)?;
+        let codomain_bundle = ModelsRef::new(self).theory_bundle(site(codomain.named), codomain)?;
         let (
             Maybe::Present(Lowered::ValueType(domain_type)),
             Maybe::Present(Lowered::ValueType(codomain_type)),
         ) = (
-            self.mint_bundle_fixed(&domain_bundle, &[], sink, origin),
-            self.mint_bundle_fixed(&codomain_bundle, &[], sink, origin),
+            ModelsRef::new(self).mint_bundle_fixed(&domain_bundle, &[], sink, origin),
+            ModelsRef::new(self).mint_bundle_fixed(&codomain_bundle, &[], sink, origin),
         )
         else {
             return Err(unminted);
@@ -720,7 +721,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `component` is a place of `signature`, and `held` is a value
     ///   of the bundle's type.
-    /// - ensures: as [`Lowerer::project`] off `held`, at the member's label
+    /// - ensures: as `ModelsRef::project` off `held`, at the member's label
     ///   when the bundle is a record keyed by its labels.
     /// - fails: never.
     /// - panics: none.
@@ -743,7 +744,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let label = (bundle.dependent() == arity::Dependent(false))
             .then(|| FieldLabel::from(alloc::string::String::from(member.name.as_ref())));
-        Self::project(
+        ModelsRef::<Self>::project(
             held,
             arity::Observed {
                 index: usize::from(component),

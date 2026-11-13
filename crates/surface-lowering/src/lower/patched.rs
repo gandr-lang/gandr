@@ -75,6 +75,8 @@ use super::arity::separated;
 use super::closed;
 use super::exhausted;
 use super::lowered;
+use super::model::Models;
+use super::model::ModelsRef;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -564,7 +566,12 @@ impl<'source> Lowerer<'_, 'source>
             record = defined;
             held = Some(member);
         }
-        let entries = match self.stated_form(site, record, Former::TelescopeType, Thunked(false))? {
+        let entries = match Models::new(self).stated_form(
+            site,
+            record,
+            Former::TelescopeType,
+            Thunked(false),
+        )? {
             Maybe::Present((_, entries))
                 if entries
                     .iter()
@@ -600,6 +607,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.cx().form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn member_definition(
         &mut self,
@@ -672,7 +683,7 @@ impl<'source> Lowerer<'_, 'source>
                 name: label,
             });
         }
-        if let Maybe::Present(_) = self.dependent_links(entries)? {
+        if let Maybe::Present(_) = Models::new(self).dependent_links(entries)? {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::DependentPatch)));
         }
 
@@ -715,7 +726,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let base = match self.mint_record_type(fields, sink, origin) {
+        let base = match ModelsRef::new(self).mint_record_type(fields, sink, origin) {
             Maybe::Present(Lowered::ValueType(base)) => base,
             minted @ (Maybe::Present(_) | Maybe::Absent(_)) => return minted,
         };
@@ -754,7 +765,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the record's entries in written order, each label once.
     /// - fails: [`Unbuilt::FixedValue`] for a value that is no record written
     ///   with labels; the record's own malformation and its labels' refusals,
-    ///   as [`Self::dotted_entries`] and [`arrange`] read them.
+    ///   as `ModelsRef::dotted_entries` and [`arrange`] read them.
     /// - panics: none.
     ///
     /// # Errors
@@ -792,7 +803,8 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Absent(_) = cursor.at(TileName::DOT) {
             return Err(declined());
         }
-        let entries = self.dotted_entries(written, &mut cursor, TileName::EQUALS)?;
+        let entries =
+            ModelsRef::new(self).dotted_entries(written, &mut cursor, TileName::EQUALS)?;
         match arrange(written, entries)? {
             Arranged::Labelled(entries) => Ok(entries),
             Arranged::Positional(_) => Err(declined()),
@@ -805,6 +817,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// trivial.
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn patched_at(
         &self,

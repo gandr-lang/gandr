@@ -12,11 +12,11 @@
 //! - `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
 
 use anodized::spec;
+pub(super) use gandr_surface_lowering_base::lower::inert::Read;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
 use super::Site;
-use crate::SurfaceName;
 use crate::error::LoweringRefusal;
 use crate::module::Container;
 use crate::module::DeclarationSlot;
@@ -122,6 +122,10 @@ impl<'source> Lowerer<'_, 'source>
         | Err(_) => false,
         | Ok(()) => true,
     })]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     #[inline]
     pub fn inert_read(
         &self,
@@ -151,15 +155,4 @@ impl<'source> Lowerer<'_, 'source>
             Some(_) | None => Ok(()),
         }
     }
-}
-
-/// What a read resolved to, for [`Lowerer::inert_read`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Read<'source>
-{
-    /// A declaration, by its slot.
-    Slot(SlotIndex),
-    /// A component its theory marks inert, selected off a model binder, by
-    /// its name.
-    Selected(SurfaceName<'source>),
 }

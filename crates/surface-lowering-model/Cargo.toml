@@ -1,0 +1,40 @@
+[package]
+name = "gandr-surface-lowering-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The model and arity family of gandr's lowering: type families, derived model signatures, model implicits, reducts and the arity of the type forms, over the lowering's base crate"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "lowering", "models", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The pinned anodized facade supplies the executable specifications. The base
+# crate holds the lowering's context, the records that the families share and
+# the `Families` trait, through which this family reads the context and calls
+# the other families. The kernel and core crates name the terms the family
+# mints and the levels of a universe, the syntax crate the tree it reads, and
+# the levitation crate the theories a model signature derives from. `hotpath`
+# profiles a model slot's candidates and a reduct's maps for the benchmark
+# report.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-levitation.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+
+# `hotpath` times the profiled functions and counts their allocations for the
+# benchmark report (the driver's `hotpath` bench).
+[features]
+hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "hotpath/hotpath"]
+
+[lints]
+workspace = true

@@ -26,7 +26,9 @@ use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
+use super::Code;
 use super::Function;
+use super::LabelRead;
 use super::Lowered;
 use super::Plan;
 use super::Produced;
@@ -46,12 +48,15 @@ use super::context::Context;
 use super::identity::Layout;
 use super::identity::related;
 use super::implicit::Nomination;
+use super::inert::Read;
 use super::lowered;
 use super::method::unindexing;
+use super::model;
 use super::model::ComponentPlace;
 use super::model::ModelSlot;
 use super::model::Supplied;
 use super::named;
+use super::native;
 use super::native::Answer;
 use super::native::CalledAt;
 use super::native::Unwrapped;
@@ -69,6 +74,8 @@ use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::Universe;
 use crate::module::Constructor;
+use crate::module::DeclarationOutcome;
+use crate::module::DeclarationSlot;
 use crate::module::SlotIndex;
 use crate::module::StructureIndex;
 use crate::module::TelescopeEntry;
@@ -77,6 +84,7 @@ use crate::module::WordsForm;
 use crate::namespace::NamePath;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::resolve::Mentioned;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
@@ -138,6 +146,75 @@ pub trait Families<'run, 'source>
         slot: &ModelSlot,
     ) -> Result<Supplied, LoweringRefusal<'source>>;
 
+    /// How a box reads its output `codomain` under `frame`: a group of
+    /// outputs, `(q : A, r : B)` or `()`, and a row before a type, `[E] B`, as
+    /// a definition's result is read; any other output as a value type, the
+    /// returner inserted when the box is minted.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn box_output(
+        &mut self,
+        codomain: Placed,
+        frame: Frame,
+    ) -> Result<Reading, LoweringRefusal<'source>>;
+
+    /// The computation type a box returns, its output `codomain` minted: the
+    /// returner of a value type, and a group or a rowed returner as it stands.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn box_returns(
+        &self,
+        codomain: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<CompTypeId, lowered::Absent>;
+
+    /// The result type the declaration a call names writes after its
+    /// parameter list.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn called_result(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        call: Placed,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>;
+
     /// `ty`, a value type read under `from` in `telescope`, carried into the
     /// term context of `to`, a frame whose chain passes through `from`.
     ///
@@ -160,6 +237,54 @@ pub trait Families<'run, 'source>
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> ValueTypeId;
+
+    /// The two operands of `operand` when it is an unparenthesized form of
+    /// `former`, a link of the chain a form of `former` heads.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn chained(
+        &mut self,
+        site: Site,
+        operand: NodeIndex,
+        former: Former,
+    ) -> Result<Option<[NodeIndex; 2]>, LoweringRefusal<'source>>;
+
+    /// Give each member of the eager product at `site` the component its
+    /// stated product writes at the member's place.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn classify_members(
+        &mut self,
+        site: Site,
+        members: Stretch,
+        frame: Frame,
+    ) -> Result<(), LoweringRefusal<'source>>;
 
     /// The constructor `name`, written at `site`, names: one of a data family
     /// admitted strictly before the declaration `site` belongs to, declared
@@ -496,6 +621,28 @@ pub trait Families<'run, 'source>
         constant: ConstantIndex,
     ) -> Option<Function>;
 
+    /// What a place inside a type whose written type is `stated` holds: a
+    /// code when that type is a universe, and a value of it otherwise.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn held_at(
+        &mut self,
+        stated: NodeIndex,
+    ) -> Result<native::Holds, LoweringRefusal<'source>>;
+
     /// The name of the hole written at `at`: its form's group, and its place
     /// among the group's holes in the order the text writes them. A hole
     /// keeps its name however the text around it is spelled or laid out,
@@ -570,6 +717,29 @@ pub trait Families<'run, 'source>
         entry: TelescopeEntry<'source>,
     ) -> Result<Option<(Placed, ModelSlot)>, LoweringRefusal<'source>>;
 
+    /// Refuse the read, at `site`, of `reached` when it is inert and the
+    /// declaration `site` belongs to is not.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn inert_read(
+        &self,
+        site: Site,
+        reached: Read<'source>,
+    ) -> Result<(), LoweringRefusal<'source>>;
+
     /// Give every unowned child of `position` the declaration its parent
     /// belongs to.
     ///
@@ -586,6 +756,26 @@ pub trait Families<'run, 'source>
     fn inherit_owner(
         &mut self,
         position: NodeIndex,
+    );
+
+    /// Keep the label written at `written` against the entry at `held`, read
+    /// as `read`, for `record_labels`.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn labelled(
+        &mut self,
+        written: ByteSpan,
+        held: NodeIndex,
+        read: LabelRead,
     );
 
     /// Push onto `links` the link from `target` to `selected` through the
@@ -688,6 +878,30 @@ pub trait Families<'run, 'source>
         point: Placed,
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>;
 
+    /// The definition the manifest type member named at `at` writes, with
+    /// that member's held slot, when `at`, read under `frame`, is a type name
+    /// that names one.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn member_definition(
+        &mut self,
+        frame: Frame,
+        at: Placed,
+    ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>;
+
     /// Mint a block: its statements bound over its last computation.
     ///
     /// # Specification
@@ -726,6 +940,27 @@ pub trait Families<'run, 'source>
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<ComputationId, lowered::Absent>;
+
+    /// Mint a code: its head, applied statically to the arguments `arguments`
+    /// names in the operand store, left to right.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn mint_code(
+        &self,
+        code: Code,
+        arguments: FormStretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueId, lowered::Absent>;
 
     /// Mint a function's group of outputs: the many-value returner of its
     /// entries' types, each under the entries before it, at the row
@@ -815,6 +1050,27 @@ pub trait Families<'run, 'source>
         module: Placed,
         slot: &ModelSlot,
     ) -> Result<Supplied, LoweringRefusal<'source>>;
+
+    /// Whether the type at `node`, which introduces `binder`, names it: in the
+    /// telescope [`Self::name_in_type`] counted the type's reads in, so a type
+    /// a body quotes depends on a binder its own reads name, and any other
+    /// type on one a signature type names (#583).
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn names_own_binder(
+        &self,
+        node: NodeIndex,
+        binder: ScopeId,
+    ) -> Mentioned;
 
     /// Nominate a hole for `nomination`, an implicit a call omits, a component
     /// of the model a capability scope names none of, a wildcard or a
@@ -958,6 +1214,61 @@ pub trait Families<'run, 'source>
         origin: Origin,
     ) -> Maybe<ValueTypeId, lowered::Absent>;
 
+    /// What the slot at `position` amounts to in the lowered module.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn outcome(
+        &self,
+        position: SlotIndex,
+        slot: &DeclarationSlot<'source>,
+    ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>;
+
+    /// Give every unowned node written at `written` the declaration `anchor`
+    /// belongs to, ahead of the walk.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn own_written(
+        &mut self,
+        written: NodeIndex,
+        anchor: NodeIndex,
+    );
+
+    /// The value component the parameter at `parameter` states under `member`.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn parameter_export(
+        &self,
+        parameter: StructureIndex,
+        member: SurfaceName<'source>,
+    ) -> Option<SlotIndex>;
+
     /// Pass the model implicit `implicit` of `function`, whose slot is `slot`,
     /// at the call `site` read under `frame`: one operand per component,
     /// the value the resident `value` supplies when it is written
@@ -1009,6 +1320,29 @@ pub trait Families<'run, 'source>
         outer: NodeIndex,
         inner: NodeIndex,
     );
+
+    /// Present when `declared`, the type a name's binder or declaration is
+    /// written with, is a patched type: a staged type whose bracket writes a
+    /// field form or a face form.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn patched_at(
+        &self,
+        declared: NodeIndex,
+    ) -> Result<Maybe<(), ()>, LoweringRefusal<'source>>;
 
     /// The head of the chain of type paths whose innermost operand is
     /// `target`, each link it walks pushed onto `links`, from the outermost.
@@ -1115,6 +1449,57 @@ pub trait Families<'run, 'source>
         frame: Frame,
     );
 
+    /// Plan the model slot `slot` left to the models in scope at `site`, its
+    /// components the nominated `holes`: each hole kept with the names of the
+    /// slot's candidates, and the slot planned at `site` under the declaration
+    /// holding it.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn plan_slot(
+        &mut self,
+        site: Site,
+        slot: &model::ModelSlot,
+        holes: Vec<gandr_core_term::hole::HoleId>,
+    ) -> Result<(), LoweringRefusal<'source>>;
+
+    /// Plan the label tile `label` of a punned entry, `.l` in a record or in
+    /// an instantiation slot, as the name `l` it spells, read as a value under
+    /// `frame`. The tile is a piece of its entry's form, so the sweep never
+    /// classifies it as a form of its own.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn pun(
+        &mut self,
+        label: Placed,
+        frame: Frame,
+    ) -> Result<(), LoweringRefusal<'source>>;
+
     /// Read `position` as `reading`.
     ///
     /// # Specification
@@ -1175,6 +1560,28 @@ pub trait Families<'run, 'source>
         lift: Binders,
         copies: Option<&mut Vec<Carried>>,
     ) -> CompTypeId;
+
+    /// `ty`, a value type read under `frame` in `telescope`, carried into the
+    /// term context of the same frame.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn relocate_value_type(
+        &self,
+        ty: ValueTypeId,
+        frame: Frame,
+        telescope: Telescope,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId;
 
     /// The binder frame of a form whose position demands `produced`, with the
     /// bridge the position writes over it.
@@ -1459,6 +1866,28 @@ pub trait Families<'run, 'source>
         stated: NodeIndex,
     ) -> Result<Maybe<Layout, related::Absent>, LoweringRefusal<'source>>;
 
+    /// The type a list or a tuple at `site` is written at, and the answer it
+    /// was read off when it is answered rather than written.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn stated_value(
+        &mut self,
+        site: Site,
+    ) -> Result<(Option<NodeIndex>, Option<native::Answer>), LoweringRefusal<'source>>;
+
     /// The slot `slot`'s carrier, its one unfixed unindexed sort, beside the
     /// type `supplied` gives it.
     ///
@@ -1733,4 +2162,25 @@ pub trait Families<'run, 'source>
         &mut self,
         at: NodeIndex,
     ) -> Result<capability::Stated, LoweringRefusal<'source>>;
+
+    /// The telescope type `node` writes, read through parentheses.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn written_telescope(
+        &mut self,
+        node: NodeIndex,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>;
 }

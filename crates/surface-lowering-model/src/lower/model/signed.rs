@@ -46,12 +46,15 @@ use anodized::spec;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_type_syntax;
+use gandr_surface_lowering_base::lower::families::Families;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 use super::Fields;
 use super::Members;
 use super::Minting;
+use super::Models;
+use super::ModelsRef;
 use crate::error::LoweringRefusal;
 use crate::error::MatchFault;
 use crate::form::Placed;
@@ -61,7 +64,6 @@ use crate::import::Renaming;
 use crate::import::RenamingFault;
 use crate::import::Translation;
 use crate::lower::DeclarationOutcome;
-use crate::lower::Lowerer;
 use crate::lower::Sink;
 use crate::model::ModelForm;
 use crate::model::derive;
@@ -109,7 +111,7 @@ struct Verdict<'source>
     unmatched: Unmatched<'source>,
 }
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
 {
     /// Refuse every declaration of the current source whose import is
     /// written at a signature its source's `pub` interface does not hold, or
@@ -121,18 +123,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: for each import of the current source written at a signature
     ///   and resolved to a source, every slot whose name stands in the current
     ///   source holds, as a fault, the first refusal the match finds. An import
-    ///   read as written is matched by [`Self::unmatched`]:
+    ///   read as written is matched by [`ModelsRef::unmatched`]:
     ///   [`LoweringRefusal::SignatureMismatch`] at the signature's name, naming
     ///   the member, or the refusal of a signature naming no theory. An import
     ///   read through a renaming has its pairs checked first by
-    ///   [`Self::unrenamed`], then is matched as one read as written, each
+    ///   [`ModelsRef::unrenamed`], then is matched as one read as written, each
     ///   member read through the renaming. An import read through a flow has
     ///   its source matched against the flow's domain, refused at the flow's
     ///   name, then the signature against the flow's codomain by
-    ///   [`Self::uncovered`], refused at the signature's name, and the flow's
-    ///   instance over a refused source declares nothing. A slot of a functor's
-    ///   template, which declares nothing, is not refused, and a slot already
-    ///   refused, or already faulted, keeps its own.
+    ///   [`ModelsRef::uncovered`], refused at the signature's name, and the
+    ///   flow's instance over a refused source declares nothing. A slot of a
+    ///   functor's template, which declares nothing, is not refused, and a slot
+    ///   already refused, or already faulted, keeps its own.
     /// - fails: never; a refusal is carried by each declaration.
     /// - panics: none.
     ///
@@ -145,12 +147,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   each of the three refusals of a translation names its site; an import
     ///   through a renaming settles, and a pair reading no member or giving a
     ///   name the source keeps is refused at the pair.
-    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
-    /// - witness: `tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
-    /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
-    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     #[spec(
         captures: before = self.cx().collected.slots.len(),
         ensures: self.cx().collected.slots.len() == before,
@@ -233,7 +235,10 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// What the import at `signature`, read through `translation`, of the
     /// source `target`, does not hold.
     ///
@@ -250,9 +255,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - executable: none — as [`Self::unmatched`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::match_signatures`].
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     fn untranslated(
         &self,
         signature: &ImportSignature<'source>,
@@ -321,8 +326,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   each pair against those names once.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::match_signatures`].
-    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     fn unrenamed(
         &self,
         signature: &ImportSignature<'source>,
@@ -399,9 +404,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   restate it whole.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::match_signatures`].
-    /// - witness: `tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
-    /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     fn unmatched(
         &self,
         prefix: &[(ByteSpan, SurfaceName<'source>)],
@@ -487,8 +492,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - executable: none — as [`Self::unmatched`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::match_signatures`].
-    /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     fn uncovered(
         &self,
         signature: &ImportSignature<'source>,
@@ -572,8 +577,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::match_signatures`].
-    /// - witness: `tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
+    /// - hypothesis: L3 — as [`Models::match_signatures`].
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || usize::from(position) < self.cx().collected.slots.len())]
     fn written_type(
         &self,

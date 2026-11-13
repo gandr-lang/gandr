@@ -1089,6 +1089,30 @@ pub struct LoopArm
     pub named: Placed,
 }
 
+/// What a place inside a type holds, by the type the place states: a code,
+/// or a value that is no code. A telescope type written at a place that holds
+/// a value reads as a tuple (#5208, #5500).
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `Code` for a place whose type is a universe, or that states no
+///   type the walk reads; `Value` for any other place, with the type the place
+///   writes when it writes one.
+/// - executable: none — the record holds no place to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as `Lowerer::held_at`.
+/// - witness: `gandr-surface-lowering::lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Holds
+{
+    /// A code: the place's type is a universe.
+    Code,
+    /// A value that is no code, of the written type when the place writes
+    /// one.
+    Value(Option<NodeIndex>),
+}
+
 quenchant_shape::reason_enum! {
     /// Why the nodes minted since a mark carry no written root.
     pub mod rooted {

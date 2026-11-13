@@ -43,6 +43,7 @@ members = [
   "crates/surface-lowering-capability",
   "crates/surface-lowering-exits",
   "crates/surface-lowering-identity",
+  "crates/surface-lowering-model",
   "crates/surface-lowering-native",
   "crates/surface-lsp",
   "crates/surface-lsp-base",
@@ -184,6 +185,7 @@ default-features = false
 # - surface-lowering-capability
 # - surface-lowering-exits
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
@@ -513,6 +515,7 @@ path = "crates/core-session"
 # - surface-lowering-capability
 # - surface-lowering-exits
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-pretty
 # - surface-repl
@@ -590,6 +593,7 @@ path = "crates/kernel-core-base"
 # - surface-dispatcher
 # - surface-lowering
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-pretty
 # - surface-session (dev)
@@ -620,6 +624,7 @@ path = "crates/kernel-strata"
 # - surface-lowering-capability
 # - surface-lowering-exits
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-pretty
 # - surface-repl (dev)
@@ -856,6 +861,7 @@ path = "crates/surface-lowering"
 # - surface-lowering-capability
 # - surface-lowering-exits
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 [workspace.dependencies.gandr-surface-lowering-base]
 path = "crates/surface-lowering-base"
@@ -883,6 +889,14 @@ path = "crates/surface-lowering-exits"
 # - surface-lowering
 [workspace.dependencies.gandr-surface-lowering-identity]
 path = "crates/surface-lowering-identity"
+
+# The model and arity family of the lowering: type families, derived model
+# signatures, model implicits, reducts and the arity of the type forms, over
+# the lowering's base.
+# consumers:
+# - surface-lowering
+[workspace.dependencies.gandr-surface-lowering-model]
+path = "crates/surface-lowering-model"
 
 # The native family of the lowering: data families, constructors, a data
 # declaration's signature and a match compiled to native eliminations, over
@@ -1020,6 +1034,7 @@ path = "crates/surface-session"
 # - surface-lowering-capability
 # - surface-lowering-exits
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base
@@ -1227,6 +1242,7 @@ default-features = false
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lowering-capability
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-pretty (dev)
 # - theory-computads
@@ -1435,6 +1451,7 @@ default-features = false
 # - surface-dispatcher
 # - surface-driver
 # - surface-lowering
+# - surface-lowering-model
 # - surface-lsp
 # - theory-coherent-resolutions
 [workspace.dependencies.hotpath]
@@ -1739,6 +1756,7 @@ default-features = false
 # - surface-lowering-capability
 # - surface-lowering-exits
 # - surface-lowering-identity
+# - surface-lowering-model
 # - surface-lowering-native
 # - surface-lsp
 # - surface-lsp-base

@@ -28,16 +28,18 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_surface_lowering_base::lower::families::Families;
 use quenchant_shape::shape::Maybe;
 
 use super::Bundled;
 use super::Missing;
+use super::Models;
+use super::ModelsRef;
 use super::bundle_dependence;
 use super::packed_record;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
 use crate::lower::Lowered;
-use crate::lower::Lowerer;
 use crate::lower::Reading;
 use crate::lower::Sink;
 use crate::lower::Site;
@@ -145,8 +147,8 @@ impl Destructured
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Lowerer::mint_reducts`].
-    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - hypothesis: L3 — as [`Models::mint_reducts`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[spec(ensures: |ret| ret.is_none() || usize::from(field) < self.count)]
     pub(super) fn bound_at(
         &self,
@@ -182,7 +184,7 @@ impl Destructured
     /// # Adequacy
     /// - hypothesis: L3 — a counter's manifest model, its fields labelled, read
     ///   past its own binders.
-    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
     #[spec(ensures: |ret| ret.is_none_or(|depth| {
         usize::try_from(u32::from(depth)).is_ok_and(|depth| depth <= self.count.saturating_mul(2))
     }))]
@@ -213,10 +215,10 @@ impl Destructured
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Lowerer::mint_reducts`], and a forgetting map's
+    /// - hypothesis: L3 — as [`Models::mint_reducts`], and a forgetting map's
     ///   labelled manifest model.
-    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
-    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
     #[spec(ensures: |ret| ret.is_none_or(|wrapped| sink.arena.computation(wrapped).is_some()))]
     pub(super) fn wrap(
         &self,
@@ -264,7 +266,7 @@ impl Destructured
     }
 }
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
 {
     /// Mint each reduct the current source's theories take.
     ///
@@ -279,7 +281,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a monoid's model restricted to its semigroup's, which
     ///   the checker accepts and inserts.
-    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
     #[inline]
     pub fn mint_reducts(
@@ -320,7 +322,10 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'host, F>
+{
     /// The type and body of the reduct slot `slot`, every node of both
     /// carrying `origin` marked [`Insertion::Derived`]: the `include` the slot
     /// is named at answers with the theory it names, never with the reduct.
@@ -341,8 +346,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_reducts`].
-    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - hypothesis: L3 — as [`Models::mint_reducts`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ty, body)| sink.arena.value_type(ty).is_some() && sink.arena.value(body).is_some()))]
     fn reduct(
         &self,
@@ -467,8 +472,8 @@ impl<'source> Lowerer<'_, 'source>
     /// As the fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_reducts`].
-    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - hypothesis: L3 — as [`Models::mint_reducts`].
+    /// - witness: `gandr-surface-lowering::tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |bundle| sink.arena.value_type(bundle.model).is_some()))]
     pub(super) fn reduct_bundle(
         &self,
