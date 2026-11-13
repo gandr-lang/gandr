@@ -274,6 +274,7 @@ impl Environment
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn bindings(
         &self,
         zone: Zone,
@@ -373,8 +374,8 @@ impl ValueClosure
     ///   environments are observed by the suspended body, captured lookup and
     ///   code comparisons; changing the body, dropping a binding or reading the
     ///   wrong index changes an observation.
-    /// - witness: `eval::tests::normalizes_beta_redex`
-    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    /// - witness: `gandr-core-nbe::eval::tests::normalizes_beta_redex`
+    /// - witness: `gandr-core-nbe::code::tests::a_quoted_variable_is_read_through_the_environment`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.body == body)]
@@ -860,9 +861,9 @@ impl CompClosure
     ///   source faces and returned value; losing the captured outer binding,
     ///   selecting the inner argument or changing the suspended body changes
     ///   the result.
-    /// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
-    /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
-    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    /// - witness: `gandr-core-nbe::eval::tests::a_closed_lambda_keeps_its_source_face`
+    /// - witness: `gandr-core-nbe::eval::tests::a_redex_fires_and_the_body_sees_the_argument`
+    /// - witness: `gandr-core-nbe::eval::tests::native_transport_sequences_product_components`
     #[inline]
     #[must_use]
     #[spec(captures: [intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear)], ensures: |ret| ret.body == body && ret.environment.depth(Zone::Intuitionistic) == intuitionistic && ret.environment.depth(Zone::Linear) == linear)]

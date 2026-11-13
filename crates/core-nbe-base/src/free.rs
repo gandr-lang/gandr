@@ -120,6 +120,7 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn single(count: Count) -> Self
     {
         Self {
@@ -147,6 +148,7 @@ where
     /// - witness: `free::tests::lowered_union_agrees_with_a_set_model`
     #[spec(ensures: |ret| matches!(ret, Membership::Held)
         == (self.counts.get(self.counts.partition_point(|held| *held < count)) == Some(&count)))]
+    #[inline]
     pub fn holds(
         &self,
         count: Count,
@@ -162,6 +164,8 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn least(&self) -> Option<Count>
     {
         self.counts.first().copied()
@@ -171,6 +175,8 @@ where
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn counts(&self) -> &[Count]
     {
         &self.counts
@@ -211,6 +217,7 @@ where
             && other.counts.iter().all(|&count| u32::from(count).checked_sub(lowering.0)
                 .is_none_or(|lowered| self.counts.binary_search(&Count::from(lowered)).is_ok())),
     )]
+    #[inline]
     pub fn join_lowered(
         &mut self,
         other: &Self,
@@ -289,6 +296,8 @@ impl Free
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn intuitionistic(&self) -> &Outward<DeBruijnIndex>
     {
         &self.intuitionistic
@@ -298,6 +307,8 @@ impl Free
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn linear(&self) -> &Outward<DeBruijnIndex>
     {
         &self.linear
@@ -464,6 +475,7 @@ impl FreeIndices
         }),
         CoreTerm::Computation(id) => core.computation(id).is_some(),
     }))]
+    #[inline]
     pub fn of(
         &mut self,
         core: &CoreArena,
@@ -499,9 +511,10 @@ impl FreeIndices
     /// - hypothesis: L3 — a carrier closed over the binder lets the singleton
     ///   transport compute and a carrier that reads it keeps the transport
     ///   stuck.
-    /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
+    /// - witness: `gandr-core-nbe::identity::tests::transport_in_the_singleton_returns_the_path`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |free| !matches!(core.value_type(ty), Some(&ValueType::Base(_)))
         || (free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty())))]
+    #[inline]
     pub fn of_type(
         &mut self,
         core: &CoreArena,
@@ -1047,8 +1060,8 @@ impl<'arena> Children<'arena>
     /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
     /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
     /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
-    /// - witness: `tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
-    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    /// - witness: `gandr-core-nbe::tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    /// - witness: `gandr-core-nbe::eval::tests::native_transport_sequences_product_components`
     #[spec(ensures: |ret| (ret.is_ok() == match node {
         Reached::Term(CoreTerm::Value(id)) => core.value(id).is_some(),
         Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_some(),

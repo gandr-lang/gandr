@@ -805,7 +805,7 @@ impl Overlay
     ///   prefix; the deep four-family fixture separates heap teardown from
     ///   host-stack depth.
     /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
-    /// - witness: `tests::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
+    /// - witness: `gandr-core-nbe::tests::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
     #[inline]
     #[spec(
         captures: entry_mark = self.watermark(),
@@ -1377,6 +1377,7 @@ impl Overlay
          OverlayId::CompType(id) => self.comp_type(id).map(CompTypeNode::shape),
         }.ok_or(OverlayRefusal::Unresolved{node})
     )]
+    #[inline]
     pub fn shape(
         &self,
         node: OverlayId,
@@ -2358,6 +2359,8 @@ impl Erased
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn root(&self) -> CoreId
     {
         self.root
@@ -2367,6 +2370,8 @@ impl Erased
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn legs(&self) -> &[CoreId]
     {
         &self.legs
@@ -2404,6 +2409,7 @@ impl Erased
         matches!((erased.root,root),(CoreId::Value(_),OverlayId::Value(_))|(CoreId::Computation(_),OverlayId::Computation(_))|(CoreId::ValueType(_),OverlayId::ValueType(_))|(CoreId::CompType(_),OverlayId::CompType(_))) && (match erased.root { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() })
         && erased.legs.iter().all(|&id| match id { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() }))
 )]
+#[inline]
 pub fn erase_with_legs(
     overlay: &Overlay,
     root: OverlayId,

@@ -224,7 +224,7 @@ pub enum Fibre
 /// - hypothesis: L3 — one carrier per clause, an abstract atom and a decode of
 ///   a variable both open, a record unclassified; moving a former to another
 ///   clause changes its answer.
-/// - witness: `identity::tests::every_carrier_selects_its_clause`
+/// - witness: `gandr-core-nbe::identity::tests::every_carrier_selects_its_clause`
 #[spec(ensures: |ret| core.value_type(carrier).is_some() || ret == Err(IdentityFault::DanglingTerm))]
 #[inline]
 pub fn clause(
@@ -311,14 +311,14 @@ pub fn clause(
 ///   matching cases, and a stuck endpoint separately from a canonical one;
 ///   pairing the wrong coordinates, conflating the two emptiness cases with the
 ///   matching ones, or classifying an open carrier changes an answer.
-/// - witness: `identity::tests::unit_and_discrete_carriers_unfold_by_their_endpoints`
-/// - witness: `identity::tests::different_injections_have_no_path`
-/// - witness: `identity::tests::matching_injections_recurse_into_the_payload`
-/// - witness: `identity::tests::product_paths_are_componentwise`
-/// - witness: `identity::tests::list_paths_follow_the_constructors`
-/// - witness: `identity::tests::function_paths_relate_inputs_to_results`
-/// - witness: `identity::tests::open_carriers_unfold_to_nothing`
-/// - witness: `identity::tests::a_product_endpoint_of_another_width_is_refused_on_either_side`
+/// - witness: `gandr-core-nbe::identity::tests::unit_and_discrete_carriers_unfold_by_their_endpoints`
+/// - witness: `gandr-core-nbe::identity::tests::different_injections_have_no_path`
+/// - witness: `gandr-core-nbe::identity::tests::matching_injections_recurse_into_the_payload`
+/// - witness: `gandr-core-nbe::identity::tests::product_paths_are_componentwise`
+/// - witness: `gandr-core-nbe::identity::tests::list_paths_follow_the_constructors`
+/// - witness: `gandr-core-nbe::identity::tests::function_paths_relate_inputs_to_results`
+/// - witness: `gandr-core-nbe::identity::tests::open_carriers_unfold_to_nothing`
+/// - witness: `gandr-core-nbe::identity::tests::a_product_endpoint_of_another_width_is_refused_on_either_side`
 #[spec(ensures: |ret| core.value_type(carrier).is_some() || ret == Err(IdentityFault::DanglingTerm))]
 #[inline]
 pub fn fibre(
@@ -500,8 +500,8 @@ pub enum Motives
 ///   bindings pair up, two telescope motives written apart in one syntax are
 ///   alike, and transports at two different motives give unlike ones; comparing
 ///   ids instead of bodies, or dropping the bindings, changes the answer.
-/// - witness: `identity::tests::stuck_transports_compare_by_motive_and_operand`
-/// - witness: `identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
+/// - witness: `gandr-core-nbe::identity::tests::stuck_transports_compare_by_motive_and_operand`
+/// - witness: `gandr-core-nbe::identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
 #[spec(ensures: |ret| match (domain.value_closure(left), domain.value_closure(right)) {
     | (Some(one), Some(other)) => ret.as_ref().is_ok_and(|motives| matches!(motives, Motives::Alike(_)) == (one_body(core, one.body(), other.body()) == CertificateEquality::Equal
         && [Zone::Intuitionistic, Zone::Linear].iter().all(|&zone| one.environment().depth(zone) == other.environment().depth(zone)))),
@@ -553,7 +553,7 @@ pub fn motives(
 /// - hypothesis: L3 — one telescope motive written at two nodes is one body,
 ///   and a motive at another endpoint is not; comparing the nodes alone changes
 ///   the first answer.
-/// - witness: `identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
+/// - witness: `gandr-core-nbe::identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
 fn one_body(
     core: &CoreArena,
     one: crate::ValueBody,
@@ -621,9 +621,9 @@ pub enum TransportFamily
 /// - hypothesis: L3 — the singleton returns the path, a ride in the flow
 ///   singleton composes, `back` along `ua(e)` is held, and a family whose
 ///   moving endpoint's partner reads the binder keeps the transport stuck.
-/// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
-/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
-/// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+/// - witness: `gandr-core-nbe::identity::tests::transport_in_the_singleton_returns_the_path`
+/// - witness: `gandr-core-nbe::identity::tests::rides_compute_by_the_kernels_rows`
+/// - witness: `gandr-core-nbe::identity::tests::transport_back_along_univalence_applies_the_left_inverse`
 #[spec(ensures: |ret| match ret {
     Ok(TransportFamily::Singleton) => matches!(
         core.value_type(family),
@@ -637,6 +637,7 @@ pub enum TransportFamily
     ),
     Ok(TransportFamily::Other) | Err(_) => true,
 })]
+#[inline]
 pub fn transport_family(
     core: &CoreArena,
     family: ValueTypeId,
@@ -713,7 +714,8 @@ pub fn transport_family(
 /// # Adequacy
 /// - hypothesis: L3 — a ride along a stuck flow in a constant motive returns
 ///   its value, and in the identity motive stays stuck.
-/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
+/// - witness: `gandr-core-nbe::identity::tests::rides_compute_by_the_kernels_rows`
+#[inline]
 pub fn binder_read(
     core: &CoreArena,
     family: ValueTypeId,
@@ -751,8 +753,9 @@ pub fn binder_read(
 /// - hypothesis: L3 — `Path.ap` of the transport of a point along its argument
 ///   is the lifted family, and a family whose fixed endpoint moves is no such
 ///   family.
-/// - witness: `identity::tests::transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530`
+/// - witness: `gandr-core-nbe::identity::tests::transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|point| core.value(point).is_some())))]
+#[inline]
 pub fn universe_cell(
     core: &CoreArena,
     family: ValueTypeId,
@@ -846,8 +849,9 @@ pub enum CellIdentity
 /// # Adequacy
 /// - hypothesis: L3 — `ua` of the identity record converts with reflexivity,
 ///   and `ua` of the record of negation does not.
-/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+/// - witness: `gandr-core-nbe::identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
 #[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
+#[inline]
 pub fn identity_cell(
     core: &CoreArena,
     domain: &DomainArena,
@@ -925,7 +929,7 @@ enum Returns
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`identity_cell`].
-/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+/// - witness: `gandr-core-nbe::identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
 #[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
 fn identity_map(
     core: &CoreArena,
@@ -992,7 +996,8 @@ fn identity_map(
 /// # Adequacy
 /// - hypothesis: L3 — a returned type naming neither entry, one naming only the
 ///   endpoint and one naming only the identity over it separate the answers.
-/// - witness: `identity::tests::a_telescope_motive_reads_an_entry_when_its_returned_type_names_one`
+/// - witness: `gandr-core-nbe::identity::tests::a_telescope_motive_reads_an_entry_when_its_returned_type_names_one`
+#[inline]
 pub fn telescope_read(
     core: &CoreArena,
     body: ValueTypeId,

@@ -50,6 +50,7 @@ digraph crates {
     "core-fork";
     "core-incremental";
     "core-nbe";
+    "core-nbe-base";
     "core-publish";
     "core-sequent";
     "core-session";
@@ -149,13 +150,17 @@ digraph crates {
   "core-incremental" -> "theory-levitation";
   "core-incremental" -> "theory-order-maintenance";
   "core-incremental" -> "theory-sites";
+  "core-nbe" -> "core-nbe-base";
   "core-nbe" -> "core-session";
   "core-nbe" -> "core-term";
   "core-nbe" -> "kernel-check-memo";
   "core-nbe" -> "kernel-conversion-trace";
   "core-nbe" -> "kernel-strata";
   "core-nbe" -> "kernel-term";
-  "core-nbe" -> "theory-spec-combinators";
+  "core-nbe-base" -> "core-term";
+  "core-nbe-base" -> "kernel-strata";
+  "core-nbe-base" -> "kernel-term";
+  "core-nbe-base" -> "theory-spec-combinators";
   "core-sequent" -> "core-term";
   "core-sequent" -> "kernel-strata";
   "core-sequent" -> "kernel-term";
@@ -483,7 +488,8 @@ digraph crates {
   "core-checker" -> "core-checker-bridge" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-checker-bridge" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
-  "core-nbe" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "core-nbe" -> "core-nbe-base" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "core-nbe-base" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-term" -> "kernel-check-memo" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "kernel-check-memo" -> "kernel-conversion-trace" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "kernel-conversion-trace" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];

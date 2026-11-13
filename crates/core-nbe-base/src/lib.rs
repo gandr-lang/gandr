@@ -33,7 +33,7 @@ pub mod guard;
 pub mod identity;
 pub mod measure;
 pub mod overlay;
-pub mod spec;
+mod spec;
 pub mod stage;
 
 pub use crate::closure::ValueBody;

@@ -776,7 +776,7 @@ impl DomainArena
     ///   rigid one.
     /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
-    /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    /// - witness: `gandr-core-nbe::conv::tests::family_spines_are_separated_by_head_index_and_arity`
     /// - witness: `arena::tests::a_hole_or_mark_head_is_never_rigid`
     #[spec(ensures: |ret| matches!(ret, Guard::Flexible) ==
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
@@ -868,8 +868,8 @@ impl DomainArena
     ///   desynchronizing guards changes an observation.
     /// - witness: `arena::tests::a_child_id_is_strictly_below_its_parent`
     /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
-    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
-    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
+    /// - witness: `gandr-core-nbe::readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `gandr-core-nbe::readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
     #[spec(
         captures: entry_length = self.values.len(),
@@ -909,8 +909,8 @@ impl DomainArena
     ///   desynchronizing guards changes an observation.
     /// - witness: `arena::tests::a_child_id_is_strictly_below_its_parent`
     /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
-    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
-    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
+    /// - witness: `gandr-core-nbe::readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `gandr-core-nbe::readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
     #[spec(
         captures: entry_length = self.computations.len(),
@@ -947,7 +947,7 @@ impl DomainArena
     /// - hypothesis: L1 — rebuilding a lift recovers its nonzero level and body
     ///   through the level table, while teardown makes the target dangle; a
     ///   wrong slot or discarded level changes the reconstructed term.
-    /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
+    /// - witness: `gandr-core-nbe::readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
     /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[spec(
@@ -1053,7 +1053,7 @@ impl DomainArena
     ///   recovers the original variable indices; swapping the body, dropping
     ///   the environment or returning an earlier closure changes the
     ///   reconstructed binding.
-    /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+    /// - witness: `gandr-core-nbe::readback::tests::a_quote_reads_back_through_its_environment`
     #[inline]
     #[spec(
         captures: entry_length = self.value_closures.len(),
@@ -1091,8 +1091,8 @@ impl DomainArena
     ///   recovers the original variable indices; swapping the body, dropping
     ///   the environment or returning an earlier closure changes the
     ///   reconstructed binding.
-    /// - witness: `readback::tests::nested_binders_read_back_as_the_indices_that_name_them`
-    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    /// - witness: `gandr-core-nbe::readback::tests::nested_binders_read_back_as_the_indices_that_name_them`
+    /// - witness: `gandr-core-nbe::eval::tests::native_transport_sequences_product_components`
     #[inline]
     #[spec(
         captures: entry_length = self.comp_closures.len(),
@@ -1131,8 +1131,8 @@ impl DomainArena
     ///   the second component before pairing them in source order. The identity
     ///   continuation must return what it binds, and a fused pair of
     ///   continuations must run the inner before the outer.
-    /// - witness: `eval::tests::native_transport_sequences_product_components`
-    /// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
+    /// - witness: `gandr-core-nbe::eval::tests::native_transport_sequences_product_components`
+    /// - witness: `gandr-core-nbe::machine::tests::the_laws_of_bind_convert_by_their_decisions`
     #[inline]
     #[spec(captures: entry_length = self.comp_closures.len(), ensures: |ret|
         self.comp_closures.len().checked_sub(1) == Some(entry_length)
@@ -1166,7 +1166,7 @@ impl DomainArena
     /// - hypothesis: L3 — a three-component product motive moves its components
     ///   in order and returns them in source order; a lost or reordered binding
     ///   changes the read-back tuple.
-    /// - witness: `identity::tests::a_product_motive_binds_each_component_before_the_next`
+    /// - witness: `gandr-core-nbe::identity::tests::a_product_motive_binds_each_component_before_the_next`
     #[inline]
     #[spec(captures: [entry_length = self.comp_closures.len(), depth = environment.depth(gandr_core_term::Zone::Intuitionistic)], ensures: |ret|
         self.comp_closures.len().checked_sub(1) == Some(entry_length)
@@ -1197,7 +1197,7 @@ impl DomainArena
     /// - hypothesis: L1 — unit beneath a pair is rebuilt as unit rather than a
     ///   different leaf; a wrong former, payload or source face changes the
     ///   observed term.
-    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `gandr-core-nbe::readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[spec(ensures: |ret| self.value(ret).and_then(|value| self.components(value)).is_some_and(<[DomainValueId]>::is_empty))]
     pub fn value_unit(
@@ -1225,7 +1225,7 @@ impl DomainArena
     /// - hypothesis: L1 — a literal retains its payload id through rebuilding
     ///   rather than being replaced or copied; a wrong former, payload or
     ///   source face changes the observed term.
-    /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
+    /// - witness: `gandr-core-nbe::readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Literal { literal, face }))]
     pub fn value_literal(
@@ -1255,7 +1255,7 @@ impl DomainArena
     /// - hypothesis: L1 — different left and right children are reconstructed
     ///   in their original order; a wrong former, payload or source face
     ///   changes the observed term.
-    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `gandr-core-nbe::readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[spec(captures: start = self.fields.len(), ensures: |ret| self.value(ret).and_then(|value| self.components(value)).is_some_and(|held| held.len() == self.fields.len().saturating_sub(start)))]
     pub fn value_tuple<Components>(
@@ -1292,7 +1292,7 @@ impl DomainArena
     ///   reflexivity over a pair and an empty list separate the tuple arm, its
     ///   field order and every other former.
     /// - witness: `arena::tests::a_tuple_s_components_are_its_fields_in_order_and_no_other_former_has_any`
-    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `gandr-core-nbe::readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
@@ -1332,7 +1332,7 @@ impl DomainArena
     ///
     /// # Adequacy
     /// - hypothesis: L3 — List fold readback separates native lists from sums.
-    /// - witness: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
+    /// - witness: `gandr-core-nbe::readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::ListNil { face }))]
     #[inline]
     pub fn value_list_nil(
@@ -1355,7 +1355,7 @@ impl DomainArena
     ///
     /// # Adequacy
     /// - hypothesis: L3 — List fold readback separates native lists from sums.
-    /// - witness: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
+    /// - witness: `gandr-core-nbe::readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::ListCons { first, second, face }))]
     #[inline]
     pub fn value_list_cons(
@@ -1394,7 +1394,7 @@ impl DomainArena
     /// - hypothesis: L1 — a right injection retains its side and ordered pair
     ///   payload; a wrong former, payload or source face changes the observed
     ///   term.
-    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `gandr-core-nbe::readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Injection { summand, body, face }))]
     pub fn value_injection(
@@ -1432,8 +1432,8 @@ impl DomainArena
     /// - hypothesis: L3 — transport along reflexivity returns its operand
     ///   unchanged, and two reflexivities compare by their points; a wrong
     ///   former or point changes the transported result or the verdict.
-    /// - witness: `identity::tests::transport_along_here_is_the_identity`
-    /// - witness: `identity::tests::reflexivities_convert_by_their_points`
+    /// - witness: `gandr-core-nbe::identity::tests::transport_along_here_is_the_identity`
+    /// - witness: `gandr-core-nbe::identity::tests::reflexivities_convert_by_their_points`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Here { point, face }))]
     pub fn value_here(
@@ -1461,7 +1461,7 @@ impl DomainArena
     /// # Adequacy
     /// - hypothesis: L3 — transport along univalence applies the forward map to
     ///   the operand; a wrong part changes the transported result.
-    /// - witness: `identity::tests::transport_along_univalence_applies_the_forward_map`
+    /// - witness: `gandr-core-nbe::identity::tests::transport_along_univalence_applies_the_forward_map`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Univalence { record, forward, face }))]
     pub fn value_univalence(
@@ -1505,7 +1505,7 @@ impl DomainArena
     /// - hypothesis: L3 — transport along the held `back` of `ua(e)` applies
     ///   the record's left inverse; a wrong part changes the transported
     ///   result.
-    /// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+    /// - witness: `gandr-core-nbe::identity::tests::transport_back_along_univalence_applies_the_left_inverse`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::HeldTransport { motive, path, value, face }))]
     pub fn value_held_transport(
@@ -1544,7 +1544,7 @@ impl DomainArena
     /// # Adequacy
     /// - hypothesis: L3 — a stay and a composite read back as their own former
     ///   over their parts, and two flows of one former compare by their parts.
-    /// - witness: `identity::tests::flows_read_back_and_compare_by_their_parts`
+    /// - witness: `gandr-core-nbe::identity::tests::flows_read_back_and_compare_by_their_parts`
     #[inline]
     #[spec(captures: start = self.fields.len(), ensures: |ret| matches!(self.value(ret), Some(&DomainValue::Flow { former: held, parts, .. }) if held == former && self.fields(parts).is_ok_and(|kept| kept.len() == self.fields.len().saturating_sub(start))))]
     pub fn value_flow<Parts>(
@@ -1591,7 +1591,7 @@ impl DomainArena
     /// - hypothesis: L1 — retaining a closed thunk reuses its source while
     ///   rebuilding enters the suspended returner; a wrong former, payload or
     ///   source face changes the observed term.
-    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
+    /// - witness: `gandr-core-nbe::readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Thunk { body, face }))]
     pub fn value_thunk(
@@ -1618,7 +1618,7 @@ impl DomainArena
     /// - hypothesis: L1 — a lifted unit recovers the nonzero level from the
     ///   table and rebuilds the correct body; a wrong former, payload or source
     ///   face changes the observed term.
-    /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
+    /// - witness: `gandr-core-nbe::readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Lift { target, body, face }))]
     pub fn value_lift(
@@ -1655,7 +1655,7 @@ impl DomainArena
     /// - hypothesis: L1 — a quote under a lambda reads the captured binder back
     ///   as the original index; a wrong former, payload or source face changes
     ///   the observed term.
-    /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+    /// - witness: `gandr-core-nbe::readback::tests::a_quote_reads_back_through_its_environment`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Code { code, face }))]
     pub fn value_code(
@@ -1823,7 +1823,7 @@ impl DomainArena
     /// # Adequacy
     /// - hypothesis: L3 — native record readback retains labels and ordered
     ///   fields.
-    /// - witness: `eval::tests::native_records_and_cases_compute`
+    /// - witness: `gandr-core-nbe::eval::tests::native_records_and_cases_compute`
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| self.value(*id) == Some(&DomainValue::Record {source,fields,face})))]
     #[inline]
     pub fn value_record(
@@ -1867,8 +1867,8 @@ impl DomainArena
     /// # Adequacy
     /// - hypothesis: L3 — a recorded run reads back with its moves and its
     ///   payloads in order, and a dialogue's decomposition as its web.
-    /// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
-    /// - witness: `identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
+    /// - witness: `gandr-core-nbe::identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
+    /// - witness: `gandr-core-nbe::identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| self.value(*id) == Some(&DomainValue::Recorded {source,fields,face,reading})))]
     #[inline]
     pub fn value_recorded(
@@ -1911,7 +1911,7 @@ impl DomainArena
     /// - hypothesis: L3 — extensionally equal translator programs can differ
     ///   syntactically, while distinct evidence can describe the same maps.
     ///   Collapsing the programs or hashing certificate ids changes equality.
-    /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+    /// - witness: `gandr-core-nbe::eval::tests::native_certificate_conversion_retains_map_syntax`
     #[inline]
     #[spec(captures: entry_length = self.values.len(), ensures: |ret|
         self.values.len().checked_sub(1) == Some(entry_length)
@@ -1943,7 +1943,7 @@ impl DomainArena
     /// - hypothesis: L3 — first and second components independently become
     ///   neutral or reduce. Swapping components or dropping either continuation
     ///   changes the final pair or its stuck spine.
-    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    /// - witness: `gandr-core-nbe::eval::tests::native_transport_sequences_product_components`
     #[inline]
     #[spec(captures: entry_length = self.values.len(), ensures: |ret|
         self.values.len().checked_sub(1) == Some(entry_length)
@@ -1986,7 +1986,7 @@ impl DomainArena
     ///   by variant before its body is read back under a fresh binder. Swapping
     ///   the nested binders or losing the source face changes the retained id
     ///   or the rebuilt indices.
-    /// - witness: `readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
+    /// - witness: `gandr-core-nbe::readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
     #[inline]
     #[spec(ensures: |ret| matches!(
         self.value(ret),
@@ -2082,7 +2082,7 @@ impl DomainArena
     /// - hypothesis: L1 — opening an identity lambda reconstructs its bound
     ///   variable rather than substituting another body; a wrong former,
     ///   payload or source face changes the observed term.
-    /// - witness: `readback::tests::a_lambda_reads_back_with_its_binder_as_an_index`
+    /// - witness: `gandr-core-nbe::readback::tests::a_lambda_reads_back_with_its_binder_as_an_index`
     #[inline]
     #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Lambda { body, abstraction, face }))]
     pub fn comp_lambda(
@@ -2116,7 +2116,7 @@ impl DomainArena
     /// - hypothesis: L1 — rebuilding a suspended returner produces the unit
     ///   held by its result; a wrong former, payload or source face changes the
     ///   observed term.
-    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
+    /// - witness: `gandr-core-nbe::readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
     #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Return { value, face }))]
     pub fn comp_return(
@@ -2142,7 +2142,7 @@ impl DomainArena
     /// # Adequacy
     /// - hypothesis: L1 — a return of two values reads back as the same two
     ///   values in order; a swapped or dropped value changes the observed term.
-    /// - witness: `readback::tests::a_return_of_several_values_reads_back_in_order`
+    /// - witness: `gandr-core-nbe::readback::tests::a_return_of_several_values_reads_back_in_order`
     #[spec(ensures: |ret| matches!(self.computation(ret), Some(&DomainComp::ReturnAll { face: minted, .. }) if minted == face))]
     #[inline]
     pub fn comp_return_all(
@@ -2188,7 +2188,7 @@ impl DomainArena
     /// - hypothesis: L1 — a force followed by an application is rebuilt with
     ///   the original argument and elimination order; a wrong former, payload
     ///   or source face changes the observed term.
-    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
+    /// - witness: `gandr-core-nbe::readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Neutral { neutral, face }))]
     pub fn comp_neutral(
@@ -2281,8 +2281,8 @@ impl DomainArena
     /// # Adequacy
     /// - hypothesis: L3 — a bare fixpoint reads back as itself, and a stuck one
     ///   keeps its binder; a wrong closure or face changes the observed term.
-    /// - witness: `readback::tests::a_fixpoint_reads_back_with_its_self_binder`
-    /// - witness: `eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
+    /// - witness: `gandr-core-nbe::readback::tests::a_fixpoint_reads_back_with_its_self_binder`
+    /// - witness: `gandr-core-nbe::eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
     #[inline]
     #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Fixpoint { recursive, leading, face }))]
     pub fn comp_fixpoint(

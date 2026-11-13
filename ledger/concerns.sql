@@ -136,10 +136,10 @@ INSERT INTO site VALUES('sharing','core-incremental','','implements','incrementa
 INSERT INTO site VALUES('sharing','core-nbe','duplicate','implements','spinal','Spinal atomic duplication, admitted under the testing stance on its agreement with the copying stance.');
 INSERT INTO site VALUES('sharing','core-nbe','eval','implements','spinal','The machine''s leg sharing: a leg''s first weak head in one configuration remembered, and taken by every later occurrence read in it.');
 INSERT INTO site VALUES('sharing','core-nbe','machine','implements','courant-leroy','The lazy concurrent convertibility search and its memo, its channels keyed per body and, under the spinal granularity, per prefix of a spine.');
-INSERT INTO site VALUES('sharing','core-nbe','overlay','implements','spinal','The overlay a spinal leg''s evaluation is shared through.');
 INSERT INTO site VALUES('sharing','core-nbe','readback','implements','useful-sharing','Readback''s table for one run: a shared domain value read once at each binder depth, so the normal form keeps the sharing the domain held.');
 INSERT INTO site VALUES('sharing','core-nbe','resharing','implements','courant-leroy','The memo''s resharing of a comparison already decided.');
 INSERT INTO site VALUES('sharing','core-nbe','traced','implements','spinal','The spinal stance on the certifying path: a root evaluated through its own duplicate, its shared legs handed to the machine, its conversions recorded for replay.');
+INSERT INTO site VALUES('sharing','core-nbe-base','overlay','implements','spinal','The overlay a spinal leg''s evaluation is shared through.');
 INSERT INTO site VALUES('sharing','core-term','handler::subject','implements','effect-laws','A theory''s laws as rewrites of a scope''s subject: a run of requests a law''s left side covers glued into its right side''s fewer before the scope runs.');
 INSERT INTO site VALUES('sharing','core-term','syntax::shared','implements','sharing-equality','The blind check: two readings compared as the graphs they are shared as, in time linear in the nodes they reach.');
 INSERT INTO site VALUES('sharing','kernel-check-memo','','implements','incremental-memo','The check-memo seam a checker consults.');

@@ -474,7 +474,7 @@ impl Neutral
     ///   head or dropping or reversing the spine changes an observation.
     /// - witness: `domain::tests::forcing_adds_a_reading_and_keeps_the_neutral_form`
     /// - witness: `domain::tests::forcing_preserves_nonempty_spines_on_every_outcome`
-    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
+    /// - witness: `gandr-core-nbe::readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.head == head && ret.unfolding == unfolding)]
@@ -522,7 +522,7 @@ impl Neutral
     ///   changes the reconstructed term or retained spine.
     /// - witness: `domain::tests::forcing_adds_a_reading_and_keeps_the_neutral_form`
     /// - witness: `domain::tests::forcing_preserves_nonempty_spines_on_every_outcome`
-    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
+    /// - witness: `gandr-core-nbe::readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.len() == self.spine.len())]
@@ -858,8 +858,8 @@ impl DomainValue
     ///   allocation, or reconstructed ordered children. Losing a source,
     ///   inventing one for a reduced value or returning a stale face changes
     ///   these observations.
-    /// - witness: `readback::tests::an_unreduced_value_reads_back_as_its_own_source`
-    /// - witness: `readback::tests::a_reduced_value_is_rebuilt_from_the_domain`
+    /// - witness: `gandr-core-nbe::readback::tests::an_unreduced_value_reads_back_as_its_own_source`
+    /// - witness: `gandr-core-nbe::readback::tests::a_reduced_value_is_rebuilt_from_the_domain`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
@@ -1051,8 +1051,8 @@ impl DomainComp
     ///   force/application are observed by source-id reuse without allocation
     ///   and ordered spine reconstruction. Losing the retained source or
     ///   inventing one for the stuck computation changes the result.
-    /// - witness: `readback::tests::an_unreduced_weak_head_reads_back_as_its_own_source`
-    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
+    /// - witness: `gandr-core-nbe::readback::tests::an_unreduced_weak_head_reads_back_as_its_own_source`
+    /// - witness: `gandr-core-nbe::readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
