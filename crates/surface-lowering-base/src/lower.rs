@@ -16,6 +16,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
@@ -48,6 +49,7 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
+use crate::by_form::ByForm;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -63,6 +65,8 @@ use crate::form::Run;
 use crate::form::TileName;
 use crate::form::Universe;
 use crate::form::declined_feature;
+use crate::lower::native::record_copied_since;
+use crate::lower::native::rooted;
 use crate::module::FamilyIndex;
 use crate::module::InstanceIndex;
 use crate::module::SlotIndex;
@@ -71,6 +75,7 @@ use crate::origin::Origin;
 use crate::origin::OriginTable;
 use crate::resolve::Bound;
 use crate::resolve::Frame;
+use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::Telescope;
 use crate::resolve::TypeAtom;
@@ -1010,6 +1015,72 @@ impl Parameter
             component: Some(component),
             listed: Listed::Elsewhere,
         }
+    }
+
+    /// `domain`, the type `parameter` states, read past the binders of the
+    /// names before it that share its written type: `y` in `x y : a` reads `a`
+    /// past `x` when a later type names `x`.
+    ///
+    /// # Specification
+    /// - requires: `domain` is minted from `parameter`'s written type, under
+    ///   the frame of the first name that shares it; `earlier` holds the
+    ///   parameters before `parameter`, in written order; `binds` answers
+    ///   whether a parameter's arrow is a Π, as the caller mints it.
+    /// - ensures: `domain` itself when no name just before `parameter` that
+    ///   shares its written type binds; otherwise `domain` with every free
+    ///   index raised by the names that bind, each copy recorded as
+    ///   `NativeRef::lift_value_type` records its own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two names that share a type a later type names
+    ///   declare what the names written apart declare, in a def head and in a
+    ///   box's group.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == domain)]
+    #[inline]
+    #[expect(
+        clippy::use_self,
+        reason = "the body keeps the tokens it had in the native family, which named the type"
+    )]
+    #[expect(
+        clippy::impl_trait_in_params,
+        reason = "the model family's crate and the lowering call it, and the lowering names no type for the closure"
+    )]
+    pub fn shared_domain(
+        earlier: &[Parameter],
+        parameter: &Parameter,
+        binds: impl Fn(&Parameter) -> bool,
+        domain: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let binding = earlier
+            .iter()
+            .rev()
+            .take_while(|named| named.declared == parameter.declared)
+            .filter(|&named| binds(named))
+            .count();
+        let lift = Binders::from(u32::try_from(binding).unwrap_or(u32::MAX));
+        if lift == Binders::NONE {
+            return domain;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let lifted = gandr_core_term::shift_value_type(sink.arena, domain, lift)
+            .settle_traced(sink.arena, &mut copies);
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        lifted
     }
 }
 
@@ -2812,6 +2883,47 @@ where
         TileName::PAREN_OPEN,
         TileName::PAREN_CLOSE,
     )
+}
+
+/// Read the argument list of a call that takes exactly `N` arguments.
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `(`.
+/// - ensures: the `N` arguments in written order; `written` holds what it held
+///   before, whatever the answer.
+/// - fails: the list's own refusal first; then, for a list of any other count,
+///   the arity boundary at `site`.
+/// - panics: none.
+///
+/// # Errors
+/// The list's refusal, or [`LoweringRefusal::OutOfFragment`] with the arity
+/// boundary at the call.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a generic's one argument, a composite's two, a fill's
+///   three and a statement's four lower in written order; a composite of one
+///   argument, a fill of two and a statement one short are each refused by
+///   their count.
+/// - witness: `gandr-surface-lowering::lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
+/// - witness: `gandr-surface-lowering::lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
+/// - witness: `gandr-surface-lowering::lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
+/// - witness: `gandr-surface-lowering::lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
+#[spec(captures: before = written.entries().len(), ensures: |_| written.entries().len() == before)]
+#[inline]
+pub fn exactly<'source, const N: usize>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut ByForm<NodeIndex>,
+) -> Result<[NodeIndex; N], LoweringRefusal<'source>>
+{
+    let start = written.mark();
+    let read = arguments(site, cursor, written);
+    let appended = written.entries().get(usize::from(start) ..).unwrap_or(&[]);
+    let count = appended.len();
+    let exact = <[NodeIndex; N]>::try_from(appended).ok();
+    written.truncate(start);
+    read?;
+    exact.ok_or_else(|| site.out(FragmentBoundary::Arity(OperandCount::from(count))))
 }
 
 /// Read a comma-separated operand list between the tiles `open` and `close`

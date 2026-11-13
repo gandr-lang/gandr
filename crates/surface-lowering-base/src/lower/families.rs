@@ -8,7 +8,10 @@
 use alloc::vec::Vec;
 
 use gandr_core_term::Binders;
+use gandr_core_term::Carried;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::capability::RegionBinder;
@@ -23,6 +26,7 @@ use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
+use super::Function;
 use super::Lowered;
 use super::Plan;
 use super::Produced;
@@ -49,6 +53,7 @@ use super::model::ModelSlot;
 use super::model::Supplied;
 use super::named;
 use super::native::Answer;
+use super::native::CalledAt;
 use super::native::Unwrapped;
 use super::native::answered;
 use super::native::constructed;
@@ -62,11 +67,13 @@ use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::TileName;
+use crate::form::Universe;
 use crate::module::Constructor;
 use crate::module::SlotIndex;
 use crate::module::StructureIndex;
 use crate::module::TelescopeEntry;
 use crate::module::TypeComponent;
+use crate::module::WordsForm;
 use crate::namespace::NamePath;
 use crate::origin::Origin;
 use crate::resolve::Frame;
@@ -84,6 +91,27 @@ use crate::resolve::type_head;
 /// the lowering's own method of the same name.
 pub trait Families<'run, 'source>
 {
+    /// The computation type `answer` states, read under its own frame: the
+    /// written computation type, the returner over a written value type the
+    /// position returns, or the arrows an alias stands for past the domains
+    /// taken.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn answered_type(
+        &self,
+        answer: Answer,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<CompTypeId, lowered::Absent>;
+
     /// The model answering the capability scope at `site` over `theory`,
     /// which names none: one hole per component of `slot`, each nominated as
     /// the scope's, the slot planned at the scope with every module of the
@@ -284,6 +312,68 @@ pub trait Families<'run, 'source>
         at: NodeIndex,
     ) -> Result<Boxed, LoweringRefusal<'source>>;
 
+    /// The type written at `written`, read under the parameters before the one
+    /// `declared` names, beside the arguments the call writes for the
+    /// parameters it names.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn called_environment(
+        &self,
+        declared: CalledAt,
+        written: NodeIndex,
+        sink: &Sink<'_>,
+    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>;
+
+    /// The node a call of the declaration at `constant` reads its result off.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn callee_result(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<NodeIndex>;
+
+    /// Classify `constructor` applied to the fields `fields` holds in the
+    /// operand store, written at `site`.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn construct(
+        &mut self,
+        site: Site,
+        constructor: Constructor,
+        fields: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>;
+
     /// Keep that the name written at `span` names `constructor`.
     ///
     /// # Specification
@@ -301,6 +391,28 @@ pub trait Families<'run, 'source>
         span: ByteSpan,
         constructor: Constructor,
     );
+
+    /// The constructor `head`, the head of a call written at `site`, names.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn constructor_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>;
 
     /// The node of the body a top-level definition of `constant` writes: the
     /// one form of `= e ;`, or the declaration form of a function tail
@@ -365,6 +477,24 @@ pub trait Families<'run, 'source>
         &mut self,
         domain: Placed,
     ) -> Result<(), LoweringRefusal<'source>>;
+
+    /// The function tail the declaration at `constant` is written with, by its
+    /// signature or its definition.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn function_of(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<Function>;
 
     /// The name of the hole written at `at`: its form's group, and its place
     /// among the group's holes in the order the text writes them. A hole
@@ -534,6 +664,29 @@ pub trait Families<'run, 'source>
         operand: Placed,
         constant: ConstantIndex,
     ) -> Result<(), LoweringRefusal<'source>>;
+
+    /// The empty word `Path.here(point)` is, when `point` spells the point a
+    /// family's loops are at, inside as many `Path.here` calls as the loops'
+    /// point is wrapped in.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn looped_point(
+        &mut self,
+        point: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>;
 
     /// Mint a block: its statements bound over its last computation.
     ///
@@ -999,6 +1152,30 @@ pub trait Families<'run, 'source>
         name: SurfaceName<'source>,
     ) -> Option<RegionBinder>;
 
+    /// `ty`, a computation type read under `from` in `telescope`, carried into
+    /// the term context of `from` and then under `lift` more binders, each node
+    /// it rewrote reported into `copies` when given.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn relocate(
+        &self,
+        arena: &mut CoreArena,
+        ty: CompTypeId,
+        from: Frame,
+        telescope: Telescope,
+        lift: Binders,
+        copies: Option<&mut Vec<Carried>>,
+    ) -> CompTypeId;
+
     /// The binder frame of a form whose position demands `produced`, with the
     /// bridge the position writes over it.
     ///
@@ -1021,6 +1198,32 @@ pub trait Families<'run, 'source>
         site: Site,
         produced: Produced,
     ) -> Result<Frame, LoweringRefusal<'source>>;
+
+    /// The count a resident of `ua[n, k]`, `compose[n, k]` or `fill[n, k]`
+    /// writes, a degree or a catalogue bound, or the cell count of the chain
+    /// `chain(m)` names.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn resident<Count>(
+        &self,
+        site: Site,
+        resident: Placed,
+    ) -> Result<Count, LoweringRefusal<'source>>
+    where
+        Count: From<usize> + PartialEq;
 
     /// What `name`, written at `site` under `frame`, resolves to: the innermost
     /// binder carrying it, else a declaration strictly earlier than the one
@@ -1136,6 +1339,25 @@ pub trait Families<'run, 'source>
         &mut self,
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>;
+
+    /// The positions of the operands that the key `kept` names, for a read that
+    /// walks them by position; no position for a key the store does not hold
+    /// whole.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn spread(
+        &self,
+        kept: FormStretch,
+    ) -> Stretch;
 
     /// The entries of the type over labels `former` the type at `node` states,
     /// read through parentheses and, when `thunked`, one `+U`.
@@ -1402,6 +1624,29 @@ pub trait Families<'run, 'source>
         anchor: NodeIndex,
     ) -> Result<Option<Placed>, LoweringRefusal<'source>>;
 
+    /// The universe the `Type` tile at `cursor` and the bracket after it spell,
+    /// the cursor left past them.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn universe_tiles(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<Universe, LoweringRefusal<'source>>;
+
     /// The form `node` writes once its parentheses are stripped: its former,
     /// the first tile it is written with and its operands.
     ///
@@ -1423,6 +1668,25 @@ pub trait Families<'run, 'source>
         &mut self,
         node: NodeIndex,
     ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>;
+
+    /// The carrier and the point of `words`: the family's type, and the closed
+    /// term the point spells over it, before any wrapping in reflexivity.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn words_point(
+        &self,
+        arena: &mut CoreArena,
+        words: &WordsForm,
+    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>;
 
     /// Whether `at` is written as a group of outputs, the operand of `-F (A,
     /// B)`: a parenthesised type of no entry, several, or one labelled entry.

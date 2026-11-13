@@ -201,7 +201,6 @@ use super::lowered;
 use super::multiplicity_one;
 use super::native::Answer;
 use super::native::Holds;
-use super::native::Native;
 use super::native::answered;
 use crate::by_form::At;
 use crate::by_form::FormStretch;
@@ -5438,7 +5437,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.cx().value_type_at(declared) {
-                Maybe::Present(domain) => domains.push(Native::<Self>::shared_domain(
+                Maybe::Present(domain) => domains.push(Parameter::shared_domain(
                     written.get(.. index).unwrap_or_default(),
                     parameter,
                     |named| bool::from(self.host_ref().names_own_binder(codomain, named.frame)),

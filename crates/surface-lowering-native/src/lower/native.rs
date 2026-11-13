@@ -447,8 +447,10 @@ use gandr_surface_lowering_base::lower::native::record_copied_since;
 pub use gandr_surface_lowering_base::lower::native::record_since;
 pub use gandr_surface_lowering_base::lower::native::rooted;
 pub use gandr_surface_lowering_base::lower::native::settled;
+pub use gandr_surface_lowering_base::lower::native::substituted_type;
 pub use gandr_surface_lowering_base::lower::native::unfolding;
 pub use gandr_surface_lowering_base::lower::native::worded;
+pub use gandr_surface_lowering_base::lower::native::wrapped_point;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
@@ -464,7 +466,6 @@ use super::Function;
 use super::LabelRead;
 use super::LabelSite;
 use super::Lowered;
-use super::Parameter;
 use super::Plan;
 use super::Produced;
 use super::Reading;
@@ -1499,56 +1500,6 @@ fn instantiated(
     let substituted = substituted_type(declared, environment, sink.arena, Some(&mut carried));
     exits::record_copies(sink, mark, &carried, origin);
     substituted
-}
-
-/// `declared` quoted, its binders replaced by `environment`, the innermost
-/// first, and read back as a type, each node the substitution carries pushed
-/// onto `carried` when one is given.
-///
-/// # Specification
-/// - requires: `environment` holds one value per binder `declared` reads, the
-///   innermost first.
-/// - ensures: the type the substituted quote holds; nothing when the
-///   substitution leaves no quoted type. With `carried`, each node the
-///   substitution carried, as
-///   [`gandr_core_term::substitute_environment_traced`] records it; the caller
-///   records their origins.
-/// - provides: the one reading of a declared type at the arguments it is
-///   applied to.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a constructor's classifier, a projected field's type and
-///   a called parameter's type, each over its arguments.
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_data_field_is_the_case_returning_it_1106`
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
-/// - witness: `gandr-surface-lowering::lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
-#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if arena.value_type(id).is_some()))]
-#[inline]
-pub fn substituted_type(
-    declared: ValueTypeId,
-    environment: &[ValueId],
-    arena: &mut gandr_core_term::CoreArena,
-    carried: Option<&mut Vec<Carried>>,
-) -> Maybe<ValueTypeId, lowered::Absent>
-{
-    let code = TermId::Value(arena.value_quote(declared));
-    let substituted = match carried {
-        Some(carried) => {
-            gandr_core_term::substitute_environment_traced(arena, code, environment, carried)
-        },
-        None => gandr_core_term::substitute_environment(arena, code, environment),
-    };
-    let TermId::Value(substituted) = substituted
-    else {
-        return Maybe::Absent(lowered::Absent::Unminted);
-    };
-    match arena.value(substituted) {
-        Some(&Value::Quote(ty)) => Maybe::Present(ty),
-        Some(_) | None => Maybe::Absent(lowered::Absent::Unminted),
-    }
 }
 
 /// The native family's reads of the lowering: each reads the context alone,
@@ -8782,68 +8733,6 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
             let _first = cx.termed.insert(index, data);
         }
     }
-
-    /// `domain`, the type `parameter` states, read past the binders of the
-    /// names before it that share its written type: `y` in `x y : a` reads `a`
-    /// past `x` when a later type names `x`.
-    ///
-    /// # Specification
-    /// - requires: `domain` is minted from `parameter`'s written type, under
-    ///   the frame of the first name that shares it; `earlier` holds the
-    ///   parameters before `parameter`, in written order; `binds` answers
-    ///   whether a parameter's arrow is a Π, as the caller mints it.
-    /// - ensures: `domain` itself when no name just before `parameter` that
-    ///   shares its written type binds; otherwise `domain` with every free
-    ///   index raised by the names that bind, each copy recorded as
-    ///   [`NativeRef::lift_value_type`] records its own.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — two names that share a type a later type names
-    ///   declare what the names written apart declare, in a def head and in a
-    ///   box's group.
-    /// - witness: `gandr-surface-lowering::lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
-    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == domain)]
-    #[inline]
-    #[expect(
-        clippy::impl_trait_in_params,
-        reason = "the family's crate calls it as the lowering did, and the lowering names no type for the closure"
-    )]
-    pub fn shared_domain(
-        earlier: &[Parameter],
-        parameter: &Parameter,
-        binds: impl Fn(&Parameter) -> bool,
-        domain: ValueTypeId,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ValueTypeId
-    {
-        let binding = earlier
-            .iter()
-            .rev()
-            .take_while(|named| named.declared == parameter.declared)
-            .filter(|&named| binds(named))
-            .count();
-        let lift = Binders::from(u32::try_from(binding).unwrap_or(u32::MAX));
-        if lift == Binders::NONE {
-            return domain;
-        }
-        let mark = sink.arena.watermark();
-        let mut copies = Vec::new();
-        let lifted = gandr_core_term::shift_value_type(sink.arena, domain, lift)
-            .settle_traced(sink.arena, &mut copies);
-        record_copied_since(
-            sink,
-            mark,
-            origin,
-            Maybe::Absent(rooted::Absent::Classifier),
-            &copies,
-        );
-
-        lifted
-    }
 }
 
 /// What every node of one match's tree reads: the scrutinee, and how many
@@ -9921,41 +9810,6 @@ fn spelled_point(
 }
 
 /// The carrier and the point a type of words reads its path at, its point
-/// `(carrier, point)` wrapped `reflexivities` times in its reflexivity.
-///
-/// # Specification
-/// - requires: `point` is a value of `carrier`.
-/// - ensures: `(carrier, point)` for no wrapping; otherwise `(Path[.A = c](p,
-///   p), here(p))` over the pair `(c, p)` for one wrapping fewer.
-/// - provides: the path a word above dimension one stands at, the sphere's
-///   `Path[.A = Path[.A = S2](Base, Base)](here(Base), here(Base))`.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Termination
-/// - reason: one `for` over the wrappings, not recursion.
-/// - measure: the wrappings left.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the sphere's 2-cell binds at the path at the reflexivity
-///   of its point.
-/// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_mints_the_words_at_its_point`
-#[spec(captures: before = (carrier, point), ensures: |ret| reflexivities != gandr_kernel_term::Reflexivities::NONE || ret == before)]
-#[inline]
-pub fn wrapped_point(
-    arena: &mut CoreArena,
-    (carrier, point): (ValueTypeId, ValueId),
-    reflexivities: gandr_kernel_term::Reflexivities,
-) -> (ValueTypeId, ValueId)
-{
-    let (mut carrier, mut point) = (carrier, point);
-    for _ in 0 .. usize::from(reflexivities) {
-        carrier = arena.value_type_path(carrier, point, point);
-        point = arena.value_here(point);
-    }
-    (carrier, point)
-}
-
 /// `ty`, read under `context` binders, with the value `scrutinee` abstracted
 /// as one binder more: the motive a dependent split reads.
 ///

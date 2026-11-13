@@ -19,6 +19,7 @@ crates/
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
 ├── surface-lowering-capability/   the lowering's capability family
 ├── surface-lowering-exits/        the lowering's exits family
+├── surface-lowering-identity/     the lowering's identity family
 ├── surface-lowering-native/       the lowering's native family
 ├── surface-lsp/                   the language server: its handlers and the hub
 ├── surface-lsp-base/              the server's base: the protocol, positions, markup, inline completion
