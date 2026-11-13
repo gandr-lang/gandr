@@ -260,6 +260,10 @@ quenchant_shape::reason_enum! {
             /// siblings before they stand, so the pass decides it in its block
             /// and adopts no member alone.
             Mutual,
+            /// The pass records the trace of each item it judges, and an
+            /// adopted item leaves no trace, so a view that reads the item's
+            /// derivation finds none. The declaration is judged again.
+            Traced,
         }
     }
 }
@@ -3495,6 +3499,12 @@ where
         );
         let adopted = match (membership, candidates.get(index)) {
             (Membership::Member, _) => Maybe::Absent(recall::Absent::Mutual),
+            #[cfg(feature = "instrument")]
+            (Membership::Alone, Some(&Maybe::Present(_)))
+                if matches!(context.trace(), Maybe::Present(_)) =>
+            {
+                Maybe::Absent(recall::Absent::Traced)
+            },
             (Membership::Alone, Some(&Maybe::Present(ref candidate))) => {
                 adopt(&mut context, &AdoptionInput {
                     candidate,
@@ -3558,7 +3568,8 @@ where
                     | recall::Absent::Elaborated
                     | recall::Absent::Derived
                     | recall::Absent::Marked
-                    | recall::Absent::Mutual => {},
+                    | recall::Absent::Mutual
+                    | recall::Absent::Traced => {},
                 }
                 bump(&mut census.judged);
                 let taken = match (membership, judgement) {
