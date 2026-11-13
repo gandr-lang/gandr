@@ -30,7 +30,7 @@ use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 use serde_json::json;
 
-use crate::server::Served;
+use crate::protocol::Served;
 use crate::server::Workspace;
 use crate::server::serve;
 use crate::transport::Body;

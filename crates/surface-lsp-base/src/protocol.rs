@@ -3305,6 +3305,16 @@ pub enum Answer
     Nothing,
 }
 
+/// How a session ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Served
+{
+    /// `exit` arrived after `shutdown`, or the stream closed after it.
+    Clean,
+    /// `exit` arrived, or the stream closed, before `shutdown`.
+    Abrupt,
+}
+
 /// A link from the name a request was made at to where what it names is
 /// written.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

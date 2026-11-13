@@ -446,6 +446,24 @@ mod view;
 
 pub use gandr_surface_dispatcher::Pool;
 pub use gandr_surface_dispatcher::Width;
+#[cfg(unix)]
+pub use gandr_surface_lsp_base::hub::LINGER;
+#[cfg(unix)]
+pub use gandr_surface_lsp_base::hub::Relayed;
+#[cfg(unix)]
+pub use gandr_surface_lsp_base::hub::bind;
+#[cfg(unix)]
+pub use gandr_surface_lsp_base::hub::relay;
+#[cfg(unix)]
+pub use gandr_surface_lsp_base::hub::workspace_name;
+pub use gandr_surface_lsp_base::proposal::Proposal;
+pub use gandr_surface_lsp_base::proposal::ProposalRefusal;
+pub use gandr_surface_lsp_base::proposal::Settles;
+pub use gandr_surface_lsp_base::quiet::QUIET;
+pub use gandr_surface_lsp_base::session_trace::Divergence;
+pub use gandr_surface_lsp_base::session_trace::Parted;
+pub use gandr_surface_lsp_base::session_trace::Replayed;
+pub use gandr_surface_lsp_base::session_trace::TraceLine;
 pub use gandr_surface_lsp_base::tokens::TOKEN_MODIFIERS;
 pub use gandr_surface_lsp_base::tokens::TOKEN_TYPES;
 pub use gandr_surface_pretty::Spelling;
@@ -473,21 +491,11 @@ pub use crate::hub::Beside;
 #[cfg(unix)]
 pub use crate::hub::Face;
 #[cfg(unix)]
-pub use crate::hub::LINGER;
-#[cfg(unix)]
-pub use crate::hub::Relayed;
-#[cfg(unix)]
 pub use crate::hub::Unnamed;
-#[cfg(unix)]
-pub use crate::hub::bind;
-#[cfg(unix)]
-pub use crate::hub::relay;
 #[cfg(unix)]
 pub use crate::hub::run_hub;
 #[cfg(unix)]
 pub use crate::hub::socket_for;
-#[cfg(unix)]
-pub use crate::hub::workspace_name;
 pub use crate::inbox::Behind;
 pub use crate::inbox::Changes;
 pub use crate::inbox::Inbox;
@@ -497,14 +505,11 @@ pub use crate::position::Character;
 pub use crate::position::Line;
 pub use crate::position::Position;
 pub use crate::position::Range;
-pub use crate::proposal::Proposal;
-pub use crate::proposal::ProposalRefusal;
-pub use crate::proposal::Settles;
 pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;
 pub use crate::protocol::DocumentVersion;
-pub use crate::quiet::QUIET;
+pub use crate::protocol::Served;
 pub use crate::recheck::Reached;
 pub use crate::recheck::Tried;
 pub use crate::run::Prepared;
@@ -512,15 +517,10 @@ pub use crate::run::Unran;
 pub use crate::saved::Saved;
 pub use crate::server::Admissions;
 pub use crate::server::Awaiting;
-pub use crate::server::Served;
 pub use crate::server::Server;
 pub use crate::server::Settled;
 pub use crate::server::Workspace;
 pub use crate::server::serve;
-pub use crate::session_trace::Divergence;
-pub use crate::session_trace::Parted;
-pub use crate::session_trace::Replayed;
-pub use crate::session_trace::TraceLine;
 pub use crate::session_trace::replay;
 pub use crate::site::File;
 pub use crate::site::Sourced;

@@ -195,6 +195,8 @@ use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lsp_base::quiet::caret_form;
+use gandr_surface_lsp_base::quiet::formless;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
@@ -231,8 +233,6 @@ use crate::protocol::Location;
 use crate::protocol::RelatedInformation;
 use crate::protocol::Severity;
 use crate::protocol::TextEdit;
-use crate::quiet::caret_form;
-use crate::quiet::formless;
 use crate::reading::Reading;
 use crate::signature::Signatures;
 use crate::tier::Tier;
@@ -1932,6 +1932,7 @@ mod tests
 
     use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_grammar::Spelling;
+    use gandr_surface_lsp_base::quiet::formless;
     use gandr_surface_lsp_base::tokens::TokenStream;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -1953,7 +1954,6 @@ mod tests
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
     use crate::protocol::Severity;
-    use crate::quiet::formless;
     use crate::reading::Reading;
     use crate::tokens::encode;
 

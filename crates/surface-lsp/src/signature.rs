@@ -2152,11 +2152,11 @@ mod tests
         use alloc::sync::Arc;
 
         use gandr_surface_diagnostics::Verbosity;
+        use gandr_surface_lsp_base::quiet::formless;
         use gandr_surface_pretty::Spelling;
         use quenchant_shape::shape::Maybe;
 
         use crate::protocol::DocumentUri;
-        use crate::quiet::formless;
         use crate::recheck::open;
         use crate::recheck::recheck;
 

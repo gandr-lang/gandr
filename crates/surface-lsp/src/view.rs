@@ -161,7 +161,9 @@ mod tests
             &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             gandr_surface_grammar::Spelling::Unicode,
-            quenchant_shape::shape::Maybe::Absent(crate::quiet::formless::Absent::Uncareted),
+            quenchant_shape::shape::Maybe::Absent(
+                gandr_surface_lsp_base::quiet::formless::Absent::Uncareted,
+            ),
         )
         .diagnostics;
         // The pipeline publishes no goal for a hole yet; one is published as
