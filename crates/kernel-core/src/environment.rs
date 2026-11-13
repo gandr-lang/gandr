@@ -7171,6 +7171,8 @@ mod tests
     /// #7194: a retired entry keeps its position as a name and frees its
     /// declaration. `b` names `a`, and a readmission retires both. Neither
     /// retires again, each slot holds no declaration, and no position moves.
+    /// #7231: the entries count both as retired, and a truncation that drops
+    /// both counts none.
     #[test]
     fn a_retired_entry_keeps_its_position_and_frees_its_declaration_7194()
     {
@@ -7192,8 +7194,22 @@ mod tests
         .expect("`b` admits");
         let (a, b) = (a[0], b[0]);
         let length = environment.entries().len();
+        let admitted = environment.entries().admitted();
         let watermark = environment.arena().watermark();
+        assert_eq!(
+            usize::from(environment.entries().retired()),
+            0,
+            "nothing is retired yet"
+        );
         assert_eq!(environment.retire(&[a, b]), Ok(()), "`a` and `b` retire");
+        assert_eq!(
+            (
+                usize::from(environment.entries().retired()),
+                environment.entries().admitted()
+            ),
+            (2, admitted),
+            "two entries count as retired, and as admitted still"
+        );
         assert_eq!(
             environment.retire(&[a]),
             Err(KernelError::Retired { position: a }),
@@ -7217,6 +7233,14 @@ mod tests
             environment.arena().watermark(),
             watermark,
             "the retire mints nothing"
+        );
+        environment
+            .entries
+            .truncate(gandr_kernel_term::ArenaLength::from(usize::from(a)));
+        assert_eq!(
+            usize::from(environment.entries().retired()),
+            0,
+            "a truncation that drops both retired slots counts none"
         );
     }
 

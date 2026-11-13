@@ -1985,6 +1985,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// Whether a record's retired entries reach its live ones. The
+/// record holds the terms of each retired entry, so a record that reached
+/// it holds more terms than a whole readmission of its live entries alone.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Outgrown
+{
+    /// The record holds fewer retired entries than live ones, or none.
+    Within,
+    /// The record holds one retired entry or more, and at least as many as
+    /// live ones.
+    Reached,
+}
+
 /// The content key of one judged declaration.
 ///
 /// The key is the digest of the declaration's canonical content, as the
@@ -2162,6 +2175,47 @@ impl Crossed
         else {
             Maybe::Absent(record_keys::Absent::Leading)
         }
+    }
+
+    /// Whether the record's retired entries reach its live ones.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Outgrown::Reached`] when the record's environment holds one
+    ///   retired entry or more and at least as many retired entries as live
+    ///   ones; otherwise [`Outgrown::Within`]. It reads two counts, in constant
+    ///   time.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record that reads as within past its threshold
+    ///   keeps each retired term, and one that reads as reached too soon
+    ///   rebuilds at each edit.
+    /// - witness: `bridge::tests::a_kept_readmission_retires_no_suffix_6846`
+    #[inline]
+    #[must_use]
+    pub fn outgrown(&self) -> Outgrown
+    {
+        let entries = self.environment.entries();
+        let retired = usize::from(entries.retired());
+        let live = usize::from(entries.admitted()).saturating_sub(retired);
+        if retired > 0 && retired >= live {
+            Outgrown::Reached
+        }
+        else {
+            Outgrown::Within
+        }
+    }
+
+    /// The environment once the record's declarations crossed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn environment(&self) -> &Environment
+    {
+        &self.environment
     }
 
     /// The record of `built` — the environment, positions and entries of a

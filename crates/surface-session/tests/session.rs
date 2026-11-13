@@ -1599,6 +1599,92 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     let _removed = std::fs::remove_dir_all(&directory);
 }
 
+/// #7231: once the retired entries of the session's record reach its live
+/// ones, the next admission starts a whole readmission of its revision on the
+/// session's pool, and the admission after that keeps from the build's
+/// record. That record holds no retired entry and the arena of a fresh
+/// admission of its revision, and the admission exports what a whole one
+/// exports.
+#[test]
+fn an_outgrown_record_is_rebuilt_from_its_live_entries_7231()
+{
+    use gandr_core_checker::bridge::Outgrown;
+    use gandr_surface_syntax::SourceText;
+    type Kept = gandr_surface_session::Session<
+        gandr_core_incremental::MemoryCheckpointStore,
+        gandr_storage_records::InMemoryBlockStore,
+    >;
+    let text = |literal: usize| format!("def a : Integer = {literal} ;\ndef b : Integer = 2 ;\n");
+    let judged = |session: &mut Kept, text: &str| {
+        let _judged = session
+            .judge(SourceText::from(text))
+            .expect("the revision is judged");
+        let Maybe::Present(detached) = session.admission()
+        else {
+            panic!("the judgement left its admission");
+        };
+        detached
+    };
+    let settled = |session: &mut Kept, detached: gandr_surface_session::Detached| {
+        let ran = detached
+            .run(
+                &gandr_core_checker::Unretired,
+                &mut gandr_surface_session::Silent,
+            )
+            .whole();
+        let Ok(Maybe::Present(admitted)) = session.settle(ran)
+        else {
+            panic!("the admission settles");
+        };
+        admitted
+    };
+    let admitted = |session: &mut Kept, text: &str| {
+        let detached = judged(session, text);
+        settled(session, detached)
+    };
+    let outgrown = |session: &Kept| match session.record() {
+        Maybe::Present(record) => record.outgrown(),
+        Maybe::Absent(absent) => panic!("the session keeps a record: {absent:?}"),
+    };
+    let mut session = session(SourceRoot::Strict);
+    let mut literal = 1_usize;
+    let _first = admitted(&mut session, &text(literal));
+    while outgrown(&session) == Outgrown::Within {
+        literal = literal.saturating_add(1);
+        assert!(literal < 256, "each edit of `a` retires one entry");
+        let _edited = admitted(&mut session, &text(literal));
+    }
+    literal = literal.saturating_add(1);
+    let built = text(literal);
+    let _built = admitted(&mut session, &built);
+    literal = literal.saturating_add(1);
+    let next = text(literal);
+    let detached = judged(&mut session, &next);
+    let mut fresh = crate::common::session(SourceRoot::Strict);
+    let _fresh = admitted(&mut fresh, &built);
+    match (session.record(), fresh.record()) {
+        (Maybe::Present(swapped), Maybe::Present(fresh)) => {
+            assert_eq!(
+                usize::from(swapped.environment().entries().retired()),
+                0,
+                "the build's record holds no retired entry"
+            );
+            assert!(
+                swapped.environment().arena() == fresh.environment().arena(),
+                "the build's record holds the arena of a fresh admission of its revision"
+            );
+        },
+        (swapped, fresh) => panic!("both sessions keep a record: {swapped:?}, {fresh:?}"),
+    }
+    let kept = settled(&mut session, detached);
+    let mut whole = crate::common::session(SourceRoot::Strict);
+    let whole = admitted(&mut whole, &next);
+    assert!(
+        *kept.kernel() == *whole.kernel(),
+        "the admission that keeps from the build's record exports what a whole one exports"
+    );
+}
+
 /// #1547: a judgement retired before its first item leaves the session the
 /// resume it held, so the next judgement of the same revision judges and
 /// adopts what it would have with no retired one before it.

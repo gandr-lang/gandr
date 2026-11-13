@@ -11176,7 +11176,9 @@ fn a_kept_readmission_answers_as_a_whole_one_6846()
 /// entries. The edit of `n2`'s literal leaves `n3`, after it, live at the
 /// kernel position it took, and the readmission offers the kernel `n2`
 /// alone ([`Readmission::offered`]). #7235: it resumes `n0` and `n1`, the
-/// leading run the edit leaves, and keeps `n3` in place.
+/// leading run the edit leaves, and keeps `n3` in place. #7231: each edit of
+/// `n2` retires one entry, so four edits in a row bring the retired entries
+/// to the four live ones, and the fourth record reads as outgrown.
 #[test]
 fn a_kept_readmission_retires_no_suffix_6846()
 {
@@ -11244,6 +11246,44 @@ fn a_kept_readmission_retires_no_suffix_6846()
         "`n3`, after the edit and outside its reach, stays live where it was admitted"
     );
     assert_eq!(crossed_at(&kept, At(3)), after);
+    let outgrown = |record: &Maybe<super::Crossed, crossed::Absent>| match *record {
+        Maybe::Present(ref record) => record.outgrown(),
+        Maybe::Absent(ref absent) => panic!("the readmission records: {absent:?}"),
+    };
+    assert_eq!(
+        outgrown(&record),
+        super::Outgrown::Within,
+        "a whole readmission retires nothing"
+    );
+    let mut last = record;
+    let mut read = Vec::new();
+    for literal in 2 .. 6 {
+        let mut edited = first;
+        edited[2].shape = Shape::Element(Named(0), literal);
+        let (mut arena, report, keys) = keyed_module(&edited);
+        let (_, next) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(&last)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        read.push(outgrown(&next));
+        last = next;
+    }
+    assert_eq!(
+        read,
+        [
+            super::Outgrown::Within,
+            super::Outgrown::Within,
+            super::Outgrown::Within,
+            super::Outgrown::Reached,
+        ],
+        "the retired entries reach the four live ones at the fourth edit"
+    );
 }
 
 /// One declaration of a module whose declarations read the native `sub`.
