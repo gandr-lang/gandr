@@ -2816,7 +2816,7 @@ enum Formable
 /// # Specification
 /// trivial.
 fn formable_module(
-    module: &[(u8, Formable)]
+    module: &[(Named, Formable)]
 ) -> (CoreArena, ModuleReport, Vec<super::DeclarationKey>)
 {
     let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
@@ -2861,7 +2861,7 @@ fn formable_module(
             Maybe::Present(defined),
         ));
         keys.push(Maybe::Present(ContentDigest::new(
-            gandr_kernel_check_memo::DigestWord::from(u64::from(name)),
+            gandr_kernel_check_memo::DigestWord::from(u64::from(name.0)),
             gandr_kernel_check_memo::DigestWord::from(word),
         )));
     }
@@ -2886,10 +2886,10 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
     // answers as a whole readmission of its module answers.
     let reads = |port, tls| Formable::Reads { port, tls };
     let base = [
-        (0, Formable::Plain(1)),
-        (1, reads(1, 1)),
-        (2, Formable::Plain(2)),
-        (3, reads(2, 1)),
+        (Named(0), Formable::Plain(1)),
+        (Named(1), reads(1, 1)),
+        (Named(2), Formable::Plain(2)),
+        (Named(3), reads(2, 1)),
     ];
     let (mut arena, report, keys) = formable_module(&base);
     let (first, record) = super::readmit_keeping(
@@ -2916,7 +2916,7 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
     };
     let inserted = |shape: Formable| {
         let mut module = base.to_vec();
-        module.insert(0, (4, shape));
+        module.insert(0, (Named(4), shape));
         module
     };
     for (module, answered, edit) in [
