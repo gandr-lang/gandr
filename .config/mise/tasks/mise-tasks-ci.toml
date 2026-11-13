@@ -4480,19 +4480,20 @@ fi
 # #1420) as belt and braces. Nothing waits for the queue, and nothing opens a
 # second root on main.
 #
-# A prefix a landing is queueing carries the `landing` label (#1556) while
-# the landing waits on its members' required checks. A top carrying it is
-# waited out (`await_top`), never the queue: once the prefix is queued the
-# label is gone and the new pull request opens on the queued top. The top is
-# read at the start and again just before the push
-# (#1601): a landing started between the two reads holds and queues the
-# top. A top changed or restacked by
-# then is refused, to be opened again.
+# A new pull request stacks on the top only when the top can merge, carries
+# no hold, and its stack changes a path that the change changes (#7188,
+# `joins.jq`): a stacked change waits on the stack. A top that a landing is
+# queueing carries the `landing` label (#1556), and a draft, a top that
+# conflicts with the trunk, one that GitHub has not read mergeable, and a
+# stack that shares no path, each leave the new pull request on the trunk by
+# itself, with no wait. The top is read at the start and again just before
+# the push (#1601). A top changed or restacked by then is refused, to be
+# opened again, and a top held by then keeps the branch where it stands.
 #
 # The merge queue's own landings move the trunk past an open top, so a branch
 # stacked on it builds on a trunk that lacks each repair since: its gate fails
 # on a test the trunk already repairs (#6760, #6707 on #6759). A top behind
-# the trunk that is not queued, held or conflicting is therefore restacked
+# the trunk that is not queued is therefore restacked
 # onto the tip first, its whole stack in one push (`restack_behind`). A
 # restack that stops leaves the top, pages its lanes and the coordinator, and
 # the task opens on the trunk beside it.
@@ -4500,15 +4501,11 @@ fi
 # A top can still lack a change of the trunk that the new pull request builds
 # on (#3654): it forked before the change merged. The rebase onto it then
 # conflicts, though the own commits apply to the trunk. A top bound for the
-# trunk carries the change once it merges or its seat rebases it: one queued
-# and one conflicting with the trunk within its seat's claim window. Each is
-# a future event, so the task prints what it waits on and an `arm:` line for
-# `pr:await` on the top, and exits 0 (#4164, `bound.jq`): the seat arms the
-# job and ends its turn, and the job's exit wakes it to run `pr:open` again.
-# A top conflicting past the window has no seat rebasing it, so the task
-# stacks past it, on the highest pull request below it that does not
-# conflict, or on the trunk as a second bottom (`stack_on_top`). A top held
-# as a draft is refused, naming the changes it lacks.
+# trunk carries the change once it merges. It is a future event, so the task
+# prints what it waits on and an `arm:` line for `pr:await` on the top, and
+# exits 0 (#4164, `bound.jq`): the seat arms the job and ends its turn, and
+# the job's exit wakes it to run `pr:open` again. A top whose check failed is
+# refused, naming the changes it lacks.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
@@ -4802,7 +4799,7 @@ if [[ -n "$unblocks" ]]; then
     || { echo "the body must name #$unblocks, the pull request this fix unblocks" >&2; exit 2; }
   top=null
 else
-  top=$(await_top "$own")
+  top=$(stack_top "$own")
 fi
 git fetch --quiet origin "$trunk"
 stack_on_top "$own" "$top" || { status=$?; (( status == 3 )) && exit 0; exit 1; }
@@ -4834,8 +4831,8 @@ fi
 # A top that moved since it was read is restacked onto
 # when it stands above the measured fork and shares no path with the change,
 # and refused otherwise (#3849, `restack_moved`).
-# A branch stacked past a top no seat rebases stays where it stacked
-# (#4164): that top would read as moved.
+# A branch opened on the trunk past a top stays there (#4164, #7188): that
+# top would read as moved.
 if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
   restack_moved "$own" "$top" "$measured" || exit 2
   top=$stacked_top
@@ -5425,8 +5422,8 @@ echo "#$number released: its next \`pr:watch\` lands it once green"
 #   top-merged #n     the top merged (exit 0)
 #   top-current #n    the top holds every change of the trunk the branch
 #                     builds on, and does not conflict (exit 0)
-#   top-stale #n      the top has conflicted with the trunk past its seat's
-#                     claim window, so `pr:open` stacks past it (exit 0)
+#   top-conflicts #n  the top conflicts with the trunk, so `pr:open` opens
+#                     the branch on the trunk by itself (exit 0)
 #   issue-closed #n   the issue closed (exit 1)
 #   top-closed #n     the top closed without merging (exit 1)
 #   await-timeout #n  the deadline passed (exit 2)
@@ -5434,7 +5431,7 @@ echo "#$number released: its next \`pr:watch\` lands it once green"
 # reading that fails, a rate-limited one among them, is tried again at the
 # next poll. It runs in the branch's worktree, which `top-current` reads.
 ["pr:await"]
-description = "Wait for the future event pr:open waits on: an issue's sign-off, or a top that merged, is current or went stale"
+description = "Wait for the future event pr:open waits on: an issue's sign-off, or a top that merged, is current or conflicts"
 quiet = true
 usage = '''
 arg "<number>" help="the issue waiting on `shape:signed`, or the top pull request"
@@ -5466,8 +5463,8 @@ fi
 echo $$ > "$await_lock"
 trap 'rm -f "$await_lock"' EXIT
 # One poll's reading, as `awaited` reads it: an issue's state and labels; or
-# a pull request's state, merge state, the age of its head commit and whether
-# it still lacks a trunk change the branch builds on. An open pull request is
+# a pull request's state, merge state and whether it still lacks a trunk
+# change the branch builds on. An open pull request is
 # read from the host's one shared reading of the open pull requests
 # (`pulls_reading`), so the 30 s polls of every wait on the host cost one
 # query between them (#5061). Only an issue, or a pull request no longer
@@ -5485,8 +5482,7 @@ reading() {
     fi
     pull=$(pr_reading "$number") || return 1
   fi
-  pull=$(jq -c '{kind: "pull", state, merge: .mergeStateStatus, head: .headRefName,
-    age: (now - (.commits.nodes[0].commit.committedDate | fromdateiso8601) | floor)}' <<< "$pull") || return 1
+  pull=$(jq -c '{kind: "pull", state, merge: .mergeStateStatus, head: .headRefName}' <<< "$pull") || return 1
   if [[ $(jq -r .state <<< "$pull") == OPEN ]]; then
     head=$(jq -r .head <<< "$pull")
     git fetch --quiet origin "$head" "$trunk" || return 1

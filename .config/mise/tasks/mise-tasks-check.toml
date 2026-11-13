@@ -2171,17 +2171,16 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # and another tree names each differing path with its mode and its blob on
 # each side, the mode reason kept for a mode alone (#6020, `signed_replay`).
 # `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
-# repository, once per case in `.config/pr-stack/behind.json`: a lower behind
-# the trunk that is not queued, held or conflicting is restacked onto the
-# tip first, and the upper stacks on it; a restack that conflicts leaves the
-# lower, pages its lane and opens the upper on the trunk (#6760,
-# `restack_behind`). A lower that lacks the trunk change the upper builds on
-# arms `pr:await` while it is queued or conflicting within its seat's claim
-# window; it is stacked past once it has conflicted past the window, and
-# refused naming the change while it is held (#4124, #4164, `bound.jq`); a
-# conflict with the lower's own change is refused at once (#3654,
-# `stack_on_top`). A branch stacked once, over a lower restacked since,
-# replays its own commit alone (#3877, `stack_base`).
+# repository, once per case in `.config/pr-stack/behind.json`: a lower that
+# conflicts with the trunk, or a draft, takes no upper, which opens on the
+# trunk by itself (#7188, `joins.jq`); a lower behind the trunk that is not
+# queued is restacked onto the tip first, and the upper stacks on it; a
+# restack that conflicts leaves the lower, pages its lane and opens the upper
+# on the trunk (#6760, `restack_behind`). A queued lower that lacks the trunk
+# change the upper builds on arms `pr:await` (#4164, `bound.jq`); a conflict
+# with the lower's own change is refused at once (#3654, `stack_on_top`). A
+# branch stacked once, over a lower restacked since, replays its own commit
+# alone (#3877, `stack_base`).
 # `.config/pr-stack/past.bash` cuts a red member out of a
 # scratch repository's stack, once per case in `.config/pr-stack/past.json`:
 # the members above it replay their own commits onto the member below it, or

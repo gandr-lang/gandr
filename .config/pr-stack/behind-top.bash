@@ -7,8 +7,10 @@
 # - `top`: `behind` forks the lower from the base, before `trunk B`;
 #   `current` forks it from the trunk after `trunk B`.
 # - `lower`: `apart` has the lower edit another file; `clashes` has it edit
-#   `f.txt` too.
-# - `reading`: what `top_reading` reads for the lower (`bound.jq`'s input).
+#   `f.txt` too; `elsewhere` has it edit another file and leave `s.txt`, the
+#   path that the upper shares with the other two (#7188).
+# - `reading`: what `top_reading` reads for the lower (`joins.jq`'s and
+#   `bound.jq`'s input).
 # - `restacked` (#3877): the upper is stacked on the lower once, and the
 #   lower's own commit is then rewritten with another patch and pushed, as
 #   its seat's restack does, before the step runs.
@@ -42,6 +44,7 @@ scenario() {
   git clone --quiet "$1/origin.git" "$1/clone" 2> /dev/null
   cd "$1/clone"
   identity
+  printf '%s\n' 1 2 3 4 5 6 7 8 9 > s.txt && git add s.txt
   commit f.txt a base
   git push --quiet origin main
   if [[ $2 == behind ]]; then git switch --quiet --create lower; fi
@@ -50,6 +53,11 @@ scenario() {
     git push --quiet origin main
     git switch --quiet --create lower
   fi
+  # The lower's own commit edits the first line of `s.txt` and the upper's the
+  # last, so the upper shares a path with the lower's stack and stacks on it
+  # (#7188), and the rebase merges the two edits clean. An `elsewhere` lower
+  # leaves `s.txt` as it is, so the two share no path.
+  if [[ $3 != elsewhere ]]; then printf '%s\n' x 2 3 4 5 6 7 8 9 > s.txt && git add s.txt; fi
   if [[ $3 == clashes ]]; then commit f.txt x "lower's own"; else commit l.txt l "lower's own"; fi
   git push --quiet origin lower
   git switch --quiet main
@@ -58,6 +66,7 @@ scenario() {
     git push --quiet origin main
   fi
   git switch --quiet --create upper
+  printf '%s\n' 1 2 3 4 5 6 7 8 y > s.txt && git add s.txt
   commit f.txt c "upper's own"
   git fetch --quiet origin
 }

@@ -3,10 +3,6 @@
 # arms `pr:await` as a deferred job, ends its turn, and runs `pr:open` again
 # when the job exits.
 
-# A seat's claim window in seconds (`units.md`): a top conflicting with the
-# trunk whose head stood this long is stacked past.
-def window: 14400;
-
 # The line a seat's harness arms `pr:await <n>` on, as `pr:land` arms
 # `pr:watch`.
 def arm($n): "arm: /bin/bash -c 'mise run pr:await \($n)' timer-await-\($n)";
@@ -18,8 +14,7 @@ def arm($n): "arm: /bin/bash -c 'mise run pr:await \($n)' timer-await-\($n)";
 #   state   `OPEN`, `CLOSED` or, for a pull request, `MERGED`;
 #   labels  the issue's label names;
 #   merge   the top's `mergeStateStatus`;
-#   lacks   whether the top still lacks a trunk change the branch builds on;
-#   age     seconds since the top's head commit was made.
+#   lacks   whether the top still lacks a trunk change the branch builds on.
 # Output: null, or `{event, exit}`: exit 0 for an event `pr:open` reruns on,
 # 1 for a change that needs a hand.
 def awaited:
@@ -30,8 +25,7 @@ def awaited:
     end
   elif .state == "MERGED" then {event: "top-merged", exit: 0}
   elif .state != "OPEN" then {event: "top-closed", exit: 1}
-  elif .merge == "DIRTY" then
-    if (.age // 0) >= window then {event: "top-stale", exit: 0} else null end
+  elif .merge == "DIRTY" then {event: "top-conflicts", exit: 0}
   elif .lacks then null
   else {event: "top-current", exit: 0}
   end;
