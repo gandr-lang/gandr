@@ -50,6 +50,7 @@ use super::Helped;
 use super::ItemIndex;
 use super::Pool;
 use super::Pooled;
+use super::Spin;
 use super::each_indexed;
 use super::schedule_indexed;
 use crate::width::Threads;
@@ -329,9 +330,9 @@ where
             self.pool.forked()
         };
         match forked {
-            Ok(Forked::Pooled(threads, Pooled(workers))) => {
+            Ok(Forked::Pooled(threads, fork)) => {
                 let (start, marked) = (&start, &marked);
-                threads.install(move || each_indexed(workers, items, start, marked));
+                threads.install(move || each_indexed(fork.threads, items, start, marked));
             },
             Ok(Forked::Serial) | Err(_) => each_indexed(Threads::ONE, items, start, marked),
         }
@@ -419,19 +420,15 @@ where
             self.pool.forked()
         };
         match forked {
-            Ok(Forked::Pooled(threads, Pooled(workers))) => {
-                schedule_indexed(
-                    Some(threads),
-                    workers,
-                    items,
-                    after,
-                    release,
-                    marked,
-                    commit,
-                );
+            Ok(Forked::Pooled(threads, fork)) => {
+                schedule_indexed(Some(threads), fork, items, after, release, marked, commit);
             },
             Ok(Forked::Serial) | Err(_) => {
-                schedule_indexed(None, Threads::ONE, items, after, release, marked, commit);
+                let serial = Pooled {
+                    threads: Threads::ONE,
+                    spin: Spin::PARK,
+                };
+                schedule_indexed(None, serial, items, after, release, marked, commit);
             },
         }
     }

@@ -434,6 +434,7 @@ INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kerne
 INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-checker-base','judgement::native','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','form','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
+INSERT INTO reference VALUES('vault:01a12791-4fa7-7d23-852e-a50c09a02144','surface-dispatcher','pool::lane','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering-base','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering-capability','lower::capability','background',NULL,NULL,NULL);
@@ -742,6 +743,7 @@ INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','runti
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','storage-store','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','storage-store','register','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','surface-agentic','rap','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','surface-dispatcher','pool::lane','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

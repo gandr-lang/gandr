@@ -10,6 +10,10 @@
 //! lines, diagnostics of severity `Ledger`, because they record a source's
 //! standing rather than a fault in it.
 //!
+//! A diagnostic carries the lines of source it covers, its loci and the types
+//! its refusal names, so a face renders it without composing the source
+//! again.
+//!
 //! The walk owns this order because it owns the step: the diagnostics model
 //! builds one diagnostic from one subject and names no verb. The alternative
 //! was the walk in the model, which made the model depend on the dispatcher

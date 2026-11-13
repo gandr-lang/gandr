@@ -2681,6 +2681,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Version','s
 INSERT INTO purpose VALUES('surface-dispatcher','pool::ItemIndex','struct','The place of an item in the slice that a fork runs a job on.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The driver''s worker threads: one pool at one width, started on the first fork that has two items or more and reused by every later fork.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::PoolFault','struct','Why the driver''s pool could not start.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','pool::Spin','struct','How many empty polls a waiting party of a schedule makes before it parks, none by default.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::Presentation','struct','How a reader asks sources to be shown: the `[presentation]` table of the user''s configuration file or of a package''s manifest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::PresentationFault','enum','Why a `[presentation]` table could not be read: the file unread, not TOML, or naming a spelling there is none of.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::presented','function','Read the `[presentation]` table of a document another reader has already parsed, so one parse of a file serves each of its tables.',NULL,'fits','sound',NULL);

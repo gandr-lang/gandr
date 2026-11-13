@@ -27,10 +27,9 @@
 //! and every transport exercises the changed-rule refusal at all worker counts.
 //! `COMPRESSED` retains the scoped-thread baseline, with one worker executing
 //! directly. `POOLED` admits the same members through a standing `rayon` pool
-//! at 2, 4 and 8 threads on the dispatcher's schedule: one task per worker,
-//! each taking members from a shared cursor. Schema validation and
-//! fixed-content binding are timed separately; cloning and pool creation are
-//! outside batch timing.
+//! at 2, 4 and 8 threads: one task per worker, each taking members from a
+//! shared cursor. Schema validation and fixed-content binding are timed
+//! separately; cloning and pool creation are outside batch timing.
 //!
 //! These are observer-only dev-dependencies: channel/deque enable `std`,
 //! ringbuf enables `alloc`, and rtrb uses no default features. The established
@@ -331,10 +330,9 @@ fn admission_measure(
     Ok(result)
 }
 
-/// Measure independent compressed members through a standing `rayon` pool on
-/// the driver's schedule: one task per worker, at most one per member, each
-/// taking members from one shared cursor and making its row buffer on its
-/// first member.
+/// Measure independent compressed members through a standing `rayon` pool:
+/// one task per worker, at most one per member, each taking members from one
+/// shared cursor and making its row buffer on its first member.
 ///
 /// # Specification
 /// - requires: one row per member.
