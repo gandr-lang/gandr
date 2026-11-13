@@ -2716,13 +2716,6 @@ fn told<Log>(
     rows: &Rows,
     subscriptions: &Mutex<Subscriptions>,
     table: &Table,
-    #[cfg_attr(
-        not(feature = "instrument"),
-        expect(
-            unused_variables,
-            reason = "only a row that follows the activity is owed a state when its runtime takes one"
-        )
-    )]
     deliveries: &Deliveries,
     log: &Mutex<Log>,
 ) where
@@ -2731,6 +2724,9 @@ fn told<Log>(
     match (row, fate) {
         (&Row::Call(..), &Fate::Spent(..)) => {},
         (&Row::Call(..), &(Fate::Taken(_) | Fate::Refused(_))) => {
+            if matches!(*fate, Fate::Refused(_)) {
+                deliveries.forget(row);
+            }
             let settled = rows.settled(row);
             if let Err(error) = settled {
                 drop(writeln!(
@@ -2776,6 +2772,9 @@ fn told<Log>(
         (&Row::Subscription(..), &Fate::Refused(_)) => {
             let mut held = lock(subscriptions);
             let snapshot = held.remove(row).map(|_dropped| held.snapshot());
+            // The row's owes come under this lock, so once the row is gone and
+            // its refusal forgotten here, no state reaches its runtime.
+            deliveries.forget(row);
             // The removal of a row only ends a watch, which cannot fail.
             #[cfg(feature = "instrument")]
             drop(held.follow());
@@ -2801,6 +2800,7 @@ fn told<Log>(
             if matches!(*fate, Fate::Refused(_)) {
                 let mut held = lock(subscriptions);
                 drop(held.views.remove(row));
+                deliveries.forget(row);
                 // The removal of a view only ends a watch, which cannot fail.
                 drop(held.follow());
                 drop(held);

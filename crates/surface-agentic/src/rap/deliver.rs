@@ -232,6 +232,9 @@ struct Lane
     /// The ticket of the row's entry in the due heap. An entry with another
     /// ticket is stale.
     ticket: u64,
+    /// Whether a runtime refused the row. A state owed to it then goes nowhere
+    /// until the owner of the row forgets it.
+    refused: bool,
 }
 
 /// What the deliveries hold under their lock.
@@ -266,6 +269,9 @@ impl Table
     )
     {
         let lane = self.lanes.entry(row.clone()).or_default();
+        if lane.refused {
+            return;
+        }
         if lane.flying {
             lane.next = Some(post);
             return;
@@ -382,8 +388,8 @@ impl Deliveries
         self.ready.notify_all();
     }
 
-    /// Forget each state owed to `row`. A delivery in flight ends, and no retry
-    /// and no newer state follows it.
+    /// Forget each state owed to `row`, and its refusal. A delivery in flight
+    /// ends, and no retry and no newer state follows it.
     ///
     /// # Specification
     /// trivial.
@@ -495,7 +501,14 @@ impl Deliveries
             },
             Ok(Status(500 ..= 599)) => io::Error::other("the callback answered a server error"),
             Ok(status) => {
-                drop(table.lanes.remove(row));
+                // The row stays, refused, until its owner forgets it under the
+                // owner's own lock, so a state owed in between goes nowhere.
+                if let Some(lane) = table.lanes.get_mut(row) {
+                    *lane = Lane {
+                        refused: true,
+                        ..Lane::default()
+                    };
+                }
                 drop(table);
                 return Some(Fate::Refused(status));
             },
