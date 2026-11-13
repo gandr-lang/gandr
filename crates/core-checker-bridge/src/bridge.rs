@@ -2199,6 +2199,11 @@ impl Crossed
     /// - witness: `bridge::tests::a_kept_readmission_retires_no_suffix_6846`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| {
+        let retired = usize::from(self.environment.entries().retired());
+        let live = usize::from(self.environment.entries().admitted()).saturating_sub(retired);
+        (ret == Outgrown::Reached) == (retired > 0 && retired >= live)
+    })]
     pub fn outgrown(&self) -> Outgrown
     {
         let entries = self.environment.entries();
