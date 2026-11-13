@@ -1,0 +1,10 @@
+{
+  "owners": {
+    "CI": "fixer",
+    "Nightly": "fixer",
+    "integration": "fixer",
+    "riscv64": "fixer",
+    "triage": "fixer"
+  },
+  "workflows": ["CI", "Nightly", "integration", "riscv64", "triage"]
+}
