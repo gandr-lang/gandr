@@ -1456,9 +1456,10 @@ impl Environment
     ///   than the serial run.
     /// - witness: `environment::tests::a_drop_after_a_release_leaves_the_serial_run_3476`
     #[spec(captures: [entry_len = self.entries.len(), place = pending.place.0], ensures: |ret| match ret.as_ref() {
-        Ok(_) => usize::from(self.entries.len()) == usize::from(place).saturating_add(1),
+        Ok(&()) => usize::from(self.entries.len()) == usize::from(place).saturating_add(1),
         Err(_) => self.entries.len() == entry_len,
     })]
+    #[inline]
     pub fn drop_after(
         &mut self,
         pending: &Pending,
@@ -5212,8 +5213,10 @@ impl Ran
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Errors
+    /// The kernel's refusal of the check.
     #[inline]
-    #[must_use]
     pub const fn outcome(&self) -> Result<&crate::check::Accessibility, &KernelError>
     {
         self.outcome.as_ref()
