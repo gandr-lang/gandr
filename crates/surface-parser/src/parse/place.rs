@@ -187,11 +187,12 @@ primitive_copy_wrapper!(
     struct Owed(usize);
 );
 primitive_copy_wrapper!(
-    /// How many parentheses, or how many brackets, stand open.
+    /// How many parentheses, brackets or braces stand open.
     struct Depth(usize);
 );
 
-/// The parentheses and the brackets that stand open after a run of tokens.
+/// The parentheses, the brackets and the written braces that stand open
+/// after a run of tokens.
 ///
 /// # Specification
 /// trivial.
@@ -202,6 +203,8 @@ struct Open
     parens: Depth,
     /// The open brackets.
     brackets: Depth,
+    /// The open braces that the source writes (#7050).
+    braces: Depth,
 }
 
 /// A repair the search places: a form the melder closed, the tiles it may
@@ -1197,7 +1200,7 @@ fn reopened<'source>(
     let plain = SourceText::from(match class {
         ClosingClass::Paren => "(",
         ClosingClass::Bracket => "[",
-        ClosingClass::Brace => return None,
+        ClosingClass::Brace => "{",
     });
     // Each place an opener may take, nearest the closer first, with which
     // opener it takes.
@@ -1329,19 +1332,20 @@ fn recent_places(
         .take(PLACES.saturating_mul(2))
 }
 
-/// The parentheses and brackets that `tokens` of `text` leave open, counted
-/// from `open`, or the index and class of the first token that closes one of
-/// none.
+/// The parentheses, brackets and written braces that `tokens` of `text` leave
+/// open, counted from `open`, or the index and class of the first token that
+/// closes one of none.
 ///
 /// [`bracket`] tells whether a token opens or closes, so a compound opener
 /// such as `@[` or `type(` counts, and a bracket inside a string does not.
 ///
 /// # Specification
 /// - requires: `tokens` are the labels of `text`.
-/// - ensures: `Ok` holds the open parentheses and brackets after the last
-///   token; `Err` holds the first closer that finds none of its class open. A
-///   token's spelling ends in its class. A brace and a layout block are the
-///   layout's to place, so they count as no bracket.
+/// - ensures: `Ok` holds the open parentheses, brackets and braces after the
+///   last token; `Err` holds the first closer that finds none of its class
+///   open. A token's spelling ends in its class. A written brace counts, so a
+///   `}` whose `{` the source leaves out is one too many (#7050). A layout
+///   block writes no brace, so it counts as no bracket.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the count.
@@ -1349,6 +1353,7 @@ fn recent_places(
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`].
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+/// - witness: `parse::place::tests::a_brace_left_out_is_minted_where_its_block_opens_7050`
 fn balance(
     text: SourceFragment<'_>,
     tokens: &[Token],
@@ -1364,7 +1369,7 @@ fn balance(
         let depth = match class {
             ClosingClass::Paren => &mut open.parens,
             ClosingClass::Bracket => &mut open.brackets,
-            ClosingClass::Brace => continue,
+            ClosingClass::Brace => &mut open.braces,
         };
         match found {
             Bracket::Open => *depth = Depth::from(usize::from(*depth).saturating_add(1)),
@@ -1378,14 +1383,14 @@ fn balance(
     Ok(open)
 }
 
-/// Whether `token` of `text` opens or closes a parenthesis or a bracket, and
-/// which.
+/// Whether `token` of `text` opens or closes a parenthesis, a bracket or a
+/// written brace, and which.
 ///
 /// # Specification
 /// - requires: `token` is a label of `text`.
 /// - ensures: as [`balance`] reads one token: `None` where the token's spelling
-///   ends in no parenthesis and no bracket, or [`bracket`] says it neither
-///   opens nor closes.
+///   ends in no parenthesis, no bracket and no brace, or [`bracket`] says it
+///   neither opens nor closes.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the reading.
@@ -1394,6 +1399,7 @@ fn balance(
 /// - hypothesis: L3 — as [`opened`].
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
 /// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
+/// - witness: `parse::place::tests::a_brace_left_out_is_minted_where_its_block_opens_7050`
 fn bracketing(
     text: SourceFragment<'_>,
     token: Token,
@@ -1408,6 +1414,7 @@ fn bracketing(
     let class = match spelled.last().copied() {
         Some(b'(' | b')') => ClosingClass::Paren,
         Some(b'[' | b']') => ClosingClass::Bracket,
+        Some(b'{' | b'}') => ClosingClass::Brace,
         Some(_) | None => return None,
     };
     match bracket(token, SourceBytes::from(text.as_bytes())) {
@@ -2928,6 +2935,35 @@ mod tests
                     && repair.span.start() == repair.span.end()
             ),
             "one repair stands, at `Path`: {:?}",
+            parsed.obligations()
+        );
+    }
+
+    /// #7050: the `{` of a lambda's block left out, its `}` kept. The written
+    /// `}` finds no brace open, so the search mints the `{` where the block
+    /// opens, at `Path.step`, and the parse owes that one repair.
+    #[test]
+    fn a_brace_left_out_is_minted_where_its_block_opens_7050()
+    {
+        let pbg = built_in().unwrap();
+        let source = include_str!(
+            "place/unformatted/a-brace-left-out-is-minted-where-its-block-opens-7050.gandr"
+        );
+        let place = source.find("Path.step").unwrap();
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        assert_eq!(
+            reconstruct(parsed.tree()),
+            source,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == place
+                    && repair.span.start() == repair.span.end()
+            ),
+            "one repair stands, at `Path.step`: {:?}",
             parsed.obligations()
         );
     }
