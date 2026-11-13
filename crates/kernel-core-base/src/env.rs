@@ -1770,9 +1770,11 @@ pub struct EntryLog
     reservations: usize,
 }
 
-/// The slot at one position of the entries: an admitted declaration, the
-/// vacancy that a refused declaration leaves, the reservation of a released
-/// declaration whose commit has not come, or the name of a retired entry.
+/// The slot at one position of the entries.
+///
+/// A slot holds an admitted declaration, the vacancy that a refused
+/// declaration leaves, the reservation of a released declaration whose commit
+/// has not come, or the name of a retired entry.
 ///
 /// A refused declaration keeps its position, so no later position moves when
 /// a refusal comes after it. Its content leaves the arena, or stays as an
