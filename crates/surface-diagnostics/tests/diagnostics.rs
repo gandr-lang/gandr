@@ -66,6 +66,7 @@ use gandr_surface_dispatcher::compose;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_dispatcher::lower_unit_source;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::FormFault;
@@ -243,7 +244,7 @@ fn unsettled<'step>(
         root,
         text,
         base: gandr_surface_syntax::ByteOffset::from(0_usize),
-        composed: compose(
+        composed: compose::<Evaluator>(
             &grammar,
             root.corpus_root(),
             text,
@@ -267,7 +268,7 @@ fn printed(
 ) -> Vec<Diagnostic>
 {
     let step = unsettled(path, root, text);
-    entries(&step, verb).collect()
+    entries::<Evaluator>(&step, verb).collect()
 }
 
 /// The one diagnostic a strict source with `text` prints under plain
@@ -312,13 +313,14 @@ fn walked(
         text,
     );
     let mut printed = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            printed.extend(entries(&step, Verb::Check(Goals::Gated)));
-            ControlFlow::Continue(())
-        },
-    );
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                printed.extend(entries::<Evaluator>(&step, Verb::Check(Goals::Gated)));
+                ControlFlow::Continue(())
+            },
+        );
     printed
 }
 
@@ -1352,7 +1354,7 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
             .after(closure.tree(), text)
             .expect("the document lays after its closure")
     };
-    let judged = JudgedClosure::new(
+    let judged = JudgedClosure::new::<Evaluator>(
         Arc::clone(&closure),
         &HostGrant::UNBOUNDED,
         CorpusRoot::Strict,
@@ -1375,7 +1377,7 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
     else {
         panic!("the unit is one module");
     };
-    let after = spelled(judge_member_after(
+    let after = spelled(judge_member_after::<Evaluator>(
         CorpusRoot::Strict,
         (module, text),
         arena,
@@ -1394,7 +1396,7 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
     else {
         panic!("the unit is one module");
     };
-    let whole = spelled(judge_member(
+    let whole = spelled(judge_member::<Evaluator>(
         CorpusRoot::Strict,
         (module, text),
         arena,
@@ -2226,7 +2228,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
         "the attribute asks for the exit its declaration's body left out, and nowhere else"
     );
     let step = unsettled(path, SourceRoot::Strict, SourceText::from(text));
-    let everywhere: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+    let everywhere: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
         .linting(Lints::enabling([Lint::ExplicitExits]))
         .collect();
     assert_eq!(
@@ -2258,7 +2260,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
         "the lint enabled by the run finds every elided exit, each in source order"
     );
     assert!(
-        entries(&step, Verb::Test)
+        entries::<Evaluator>(&step, Verb::Test)
             .linting(Lints::enabling([Lint::ExplicitExits]))
             .all(|diagnostic| diagnostic.severity != Severity::Warning),
         "`test` prints settlements, never a lint's finding"
@@ -2279,7 +2281,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
     assert_eq!(
-        entries(&rechecked, Verb::Check(Goals::Gated))
+        entries::<Evaluator>(&rechecked, Verb::Check(Goals::Gated))
             .linting(Lints::enabling([Lint::ExplicitExits]))
             .collect::<Vec<_>>(),
         [],
@@ -2360,7 +2362,7 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
         )
     );
     let step = unsettled(path, SourceRoot::Strict, SourceText::from(text));
-    let everywhere: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+    let everywhere: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
         .linting(Lints::enabling([Lint::ExplicitRuns]))
         .collect();
     assert_eq!(
@@ -2393,7 +2395,7 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
     assert_eq!(
-        entries(&rechecked, Verb::Check(Goals::Gated))
+        entries::<Evaluator>(&rechecked, Verb::Check(Goals::Gated))
             .linting(Lints::enabling([Lint::ExplicitRuns]))
             .collect::<Vec<_>>(),
         [],
@@ -2656,7 +2658,7 @@ fn a_refusal_its_expectation_states_is_noted_as_stated()
         SourceRoot::Fixture,
         SourceText::from("@[ refuses(\"UnresolvedName\") ] def d = missing ;\n"),
     );
-    let held: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+    let held: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
         .refusals(Refusals::Every)
         .collect();
     let [ref diagnostic] = *held.as_slice()
@@ -2683,7 +2685,7 @@ fn a_parting_pair_names_its_peak_and_both_normal_forms()
         "../../../corpus/pathological/desc/rules-diverge.gandr"
     ));
     let step = unsettled(Path::new("rules-diverge.gandr"), SourceRoot::Fixture, text);
-    let held: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+    let held: Vec<Diagnostic> = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
         .refusals(Refusals::Every)
         .collect();
     let [ref diagnostic] = *held.as_slice()
@@ -2865,16 +2867,17 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
     );
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            found.extend(
-                entries(&step, Verb::Check(Goals::Reported))
-                    .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
-            );
-            ControlFlow::Continue(())
-        },
-    );
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                found.extend(
+                    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
+                        .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+                );
+                ControlFlow::Continue(())
+            },
+        );
     let [ref refusal] = *found.as_slice()
     else {
         panic!("the importer reports its one refusal: {found:?}");
@@ -2918,22 +2921,23 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
     let mut unit = String::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            if let Step::Source { path, ref text, .. } = step
-                && path.ends_with("user.gandr")
-            {
-                let laid: &str = text.as_ref();
-                laid.clone_into(&mut unit);
-            }
-            found.extend(
-                entries(&step, Verb::Check(Goals::Reported))
-                    .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
-            );
-            ControlFlow::Continue(())
-        },
-    );
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                if let Step::Source { path, ref text, .. } = step
+                    && path.ends_with("user.gandr")
+                {
+                    let laid: &str = text.as_ref();
+                    laid.clone_into(&mut unit);
+                }
+                found.extend(
+                    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
+                        .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+                );
+                ControlFlow::Continue(())
+            },
+        );
     let [ref refusal] = *found.as_slice()
     else {
         panic!("the importer reports its one refusal: {found:?}");
@@ -3032,43 +3036,44 @@ fn each_verb_prints_its_entries()
     let printed = |verb: Verb| {
         let mut printed = Vec::new();
         let mut line = String::new();
-        let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                for diagnostic in entries(&step, verb) {
-                    if diagnostic.severity == Severity::Ledger {
-                        let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
-                            .expect("a ledger line's JSON image parses");
-                        assert_eq!(image["level"], "line");
-                        line.clear();
-                        core::fmt::Write::write_fmt(
-                            &mut line,
-                            format_args!(
-                                "{}: {}",
-                                diagnostic.path.display(),
-                                diagnostic.message.text
-                            ),
-                        )
-                        .expect("a ledger line writes");
-                        assert_eq!(
-                            image["line"],
-                            line.as_str(),
-                            "the JSON image carries the line as the terminal prints it"
-                        );
+        let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    for diagnostic in entries::<Evaluator>(&step, verb) {
+                        if diagnostic.severity == Severity::Ledger {
+                            let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
+                                .expect("a ledger line's JSON image parses");
+                            assert_eq!(image["level"], "line");
+                            line.clear();
+                            core::fmt::Write::write_fmt(
+                                &mut line,
+                                format_args!(
+                                    "{}: {}",
+                                    diagnostic.path.display(),
+                                    diagnostic.message.text
+                                ),
+                            )
+                            .expect("a ledger line writes");
+                            assert_eq!(
+                                image["line"],
+                                line.as_str(),
+                                "the JSON image carries the line as the terminal prints it"
+                            );
+                        }
+                        printed.push((
+                            diagnostic
+                                .path
+                                .strip_prefix(&scratch.0)
+                                .expect("within scratch")
+                                .to_path_buf(),
+                            diagnostic.severity,
+                            diagnostic.detail.class,
+                        ));
                     }
-                    printed.push((
-                        diagnostic
-                            .path
-                            .strip_prefix(&scratch.0)
-                            .expect("within scratch")
-                            .to_path_buf(),
-                        diagnostic.severity,
-                        diagnostic.detail.class,
-                    ));
-                }
-                ControlFlow::Continue(())
-            },
-        );
+                    ControlFlow::Continue(())
+                },
+            );
         printed
     };
     let check = |hole: Severity, class: Class| {
@@ -3340,7 +3345,7 @@ mod sweeps
         // The walk composes the visited sources alone, each with its import
         // closure, so the sweep's cost is linear in its sample (#5217).
         let walk = Walk::new(visited.into_iter().map(|source| source.path).collect());
-        let ControlFlow::Continue(_report) = walk.visit(
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {
@@ -3359,7 +3364,7 @@ mod sweeps
                 for cut in cuts {
                     let typed =
                         SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
-                    let Ok(composed) = compose(
+                    let Ok(composed) = compose::<Evaluator>(
                         &grammar,
                         SourceRoot::Fixture.corpus_root(),
                         typed,
@@ -3391,7 +3396,7 @@ mod sweeps
                     };
                     severities.clear();
                     severities.extend(
-                        entries(&step, Verb::Check(Goals::Gated))
+                        entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
                             .map(|diagnostic| diagnostic.severity)
                             .filter(|&severity| {
                                 matches!(severity, Severity::Error | Severity::Note)
@@ -3720,7 +3725,7 @@ fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
     else {
         panic!("the unit is one module");
     };
-    let (settled, _admission) = judge_member(
+    let (settled, _admission) = judge_member::<Evaluator>(
         CorpusRoot::Strict,
         (module, SourceText::from(text.as_str())),
         arena,
@@ -3820,13 +3825,14 @@ fn a_mistake_is_reported_before_what_it_causes_2048()
     let scratch = Scratch::new(Path::new("strayed"));
     scratch.file(Path::new("strict/strayed.gandr"), SourceText::from(text));
     let mut printed = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            printed.extend(entries(&step, Verb::Check(Goals::Gated)));
-            ControlFlow::Continue(())
-        },
-    );
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                printed.extend(entries::<Evaluator>(&step, Verb::Check(Goals::Gated)));
+                ControlFlow::Continue(())
+            },
+        );
     let first = printed.first().expect("the stray is reported");
     assert_eq!(
         first.span,

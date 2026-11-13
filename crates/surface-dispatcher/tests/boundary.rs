@@ -35,6 +35,8 @@ use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::judge_member;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_dispatcher::lower_unit_source;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Runs as _;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_syntax::SourceText;
@@ -312,7 +314,7 @@ where
     else {
         panic!("the unit is read as a module");
     };
-    let Composed::Settled { mut program, .. } = judge_member(
+    let Composed::Settled { mut program, .. } = judge_member::<Evaluator>(
         CorpusRoot::Fixture,
         (module, source),
         arena,

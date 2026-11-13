@@ -82,6 +82,7 @@ gandr-storage-store.workspace = true
 gandr-surface-agentic.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
 gandr-surface-features.workspace = true
 gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true

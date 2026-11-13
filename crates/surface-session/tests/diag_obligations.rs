@@ -17,6 +17,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_parser::Oblig;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_parser::parse;
@@ -313,7 +314,7 @@ fn recovery_then_a_valid_declaration_reports_the_repair_and_keeps_both()
     );
     let path = Path::new("recovery.gandr");
     let step = submission.into_step(path);
-    let reports: Vec<_> = entries(&step, Verb::Check(Goals::Reported))
+    let reports: Vec<_> = entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
         .map(|diagnostic| {
             assert_ne!(
                 diagnostic.severity,
@@ -354,7 +355,7 @@ fn a_clean_source_keeps_every_surface_empty()
         Verb::Test,
     ] {
         assert_eq!(
-            entries(&step, verb).count(),
+            entries::<Evaluator>(&step, verb).count(),
             0_usize,
             "{verb:?} prints nothing for a clean source: no refusal, no goal, no ledger line"
         );

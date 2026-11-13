@@ -35,6 +35,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::lay_out;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::KernelCheckpoint;
 use gandr_surface_session::Session;
@@ -145,7 +146,7 @@ mod sweeps
             return;
         }
         let mut sources = Sources::default();
-        let ControlFlow::Continue(_report) = Walk::new(paths).visit(
+        let ControlFlow::Continue(_report) = Walk::new(paths).visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 submits_as_composed(&step, &mut sources);
@@ -295,8 +296,8 @@ fn submits_as_composed(
     );
     for verb in [Verb::Check(Goals::Reported), Verb::Test] {
         assert_eq!(
-            entries(&submitted, verb).collect::<Vec<_>>(),
-            entries(step, verb).collect::<Vec<_>>(),
+            entries::<Evaluator>(&submitted, verb).collect::<Vec<_>>(),
+            entries::<Evaluator>(step, verb).collect::<Vec<_>>(),
             "{}: the session prints the walk's entries under {verb:?}",
             path.display()
         );

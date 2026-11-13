@@ -250,7 +250,7 @@ impl ParsedBytes
     /// - hypothesis: L3 — a walk over an importer and its sibling parses the
     ///   importer's bytes once, within 2 % of the same source flat; a lost or
     ///   doubled count moves that ratio.
-    /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
+    /// - witness: `tests::walk::an_import_parses_its_importer_once_617`
     #[inline]
     #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(other.0))]
     pub(crate) fn absorb(
@@ -1324,8 +1324,8 @@ fn within_package(path: &Path) -> PathBuf
 ///   base it names only when read by its forms.
 /// - witness: `component::tests::a_component_lays_each_source_once`
 /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
-/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
-/// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+/// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
+/// - witness: `tests::walk::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
 /// - witness: `component::tests::importers_of_a_given_std_module_lay_it_apart_4856`
 #[spec(
     captures: [offered = given.len()],
@@ -2191,7 +2191,7 @@ impl Component
     /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
     /// - witness: `component::tests::a_component_read_whole_confirms_without_reading_its_imports`
     /// - witness: `component::tests::a_module_path_through_an_alias_confirms_as_its_forms_read_it_4715`
-    /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
+    /// - witness: `tests::walk::an_import_parses_its_importer_once_617`
     #[must_use]
     #[inline]
     #[spec(ensures: |ret| ret == Confirmation::Confirmed || self.reading == Reading::ImportForms)]

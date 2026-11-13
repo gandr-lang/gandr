@@ -45,6 +45,7 @@ use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::descent;
 use gandr_surface_dispatcher::judge_module;
 use gandr_surface_dispatcher::lower_source;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::ENTRY;
@@ -133,7 +134,7 @@ fn std_root() -> PathBuf
         && usize::from(ret.lowerings()) >= usize::from(ret.sources().read()))]
 fn run(paths: Vec<PathBuf>) -> RunReport
 {
-    let ControlFlow::Continue(report) = Walk::new(paths).visit(
+    let ControlFlow::Continue(report) = Walk::new(paths).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             if let Step::Fault { path, fault } = step {
@@ -361,7 +362,7 @@ fn the_identity_base_is_lowered_once_for_its_importers()
     let base = subject.join("circle-base.gandr");
     let mut certificates = Vec::new();
     let mut list_importers = 0_usize;
-    let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
+    let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -422,7 +423,7 @@ fn the_identity_base_is_spelled_once_for_its_importers_595()
 {
     let subject = fixture_root().join("model/identity");
     let mut components = BTreeSet::new();
-    let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
+    let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -599,7 +600,7 @@ fn a_planted_orphan_is_not_registered()
     planted.sort();
     let mut reached = BTreeSet::new();
     let ControlFlow::Continue(_report) =
-        Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]).visit(
+        Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]).visit::<Evaluator, _, _>(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 match step {
@@ -684,78 +685,81 @@ fn corpus() -> Corpus
         let mut reached = Vec::new();
         let mut model = Swept::default();
         let mut pathological = Swept::default();
-        let ControlFlow::Continue(report) = Walk::new(vec![strict_root(), fixture_root()]).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                let (path, root, composed) = match step {
-                    Step::Fault { path, fault } => {
-                        reached.push(path.display().to_string());
-                        faults.push(format!("{}: {fault}", path.display()));
-                        return ControlFlow::Continue(());
-                    },
-                    Step::Source {
-                        path,
-                        root,
-                        ref composed,
+        let ControlFlow::Continue(report) = Walk::new(vec![strict_root(), fixture_root()])
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    let (path, root, composed) = match step {
+                        Step::Fault { path, fault } => {
+                            reached.push(path.display().to_string());
+                            faults.push(format!("{}: {fault}", path.display()));
+                            return ControlFlow::Continue(());
+                        },
+                        Step::Source {
+                            path,
+                            root,
+                            ref composed,
+                            ..
+                        } => (path, root, composed),
+                    };
+                    reached.push(path.display().to_string());
+                    let Composed::Settled {
+                        ref program,
+                        ref report,
                         ..
-                    } => (path, root, composed),
-                };
-                reached.push(path.display().to_string());
-                let Composed::Settled {
-                    ref program,
-                    ref report,
-                    ..
-                } = *composed
-                else {
-                    return ControlFlow::Continue(());
-                };
-                if root == SourceRoot::Pending {
-                    return ControlFlow::Continue(());
-                }
-                let swept = if path
-                    .components()
-                    .any(|component| component.as_os_str() == "pathological")
-                {
-                    &mut pathological
-                }
-                else {
-                    &mut model
-                };
-                swept.composed.push(path.display().to_string());
-                swept.refusals.extend(
-                    program
-                        .focus_refusals()
-                        .filter(|&(_, refusal)| {
-                            !matches!(
-                                refusal,
-                                FocusRefusal::Code(_)
-                                    | FocusRefusal::ElementPath(_)
-                                    | FocusRefusal::ElementTransport(..)
-                                    | FocusRefusal::IncompleteValue(_)
-                                    | FocusRefusal::IncompleteComputation(_)
-                            )
-                        })
-                        .map(|(name, refusal)| format!("{}: `{name}`: {refusal}", path.display())),
-                );
-                for declaration in report.declarations() {
-                    if let Stated::Verdict(
-                        Outcome::Runs(ref spelled) | Outcome::RunsTracing(ref spelled, _),
-                    ) = *declaration.stated()
-                    {
-                        swept.runs.push((
-                            format!(
-                                "{}: `{}` states runs to {spelled}, {}",
-                                path.display(),
-                                declaration.name(),
-                                declaration.outcome(),
-                            ),
-                            declaration.settlement() == Settlement::Settled,
-                        ));
+                    } = *composed
+                    else {
+                        return ControlFlow::Continue(());
+                    };
+                    if root == SourceRoot::Pending {
+                        return ControlFlow::Continue(());
                     }
-                }
-                ControlFlow::Continue(())
-            },
-        );
+                    let swept = if path
+                        .components()
+                        .any(|component| component.as_os_str() == "pathological")
+                    {
+                        &mut pathological
+                    }
+                    else {
+                        &mut model
+                    };
+                    swept.composed.push(path.display().to_string());
+                    swept.refusals.extend(
+                        program
+                            .focus_refusals()
+                            .filter(|&(_, refusal)| {
+                                !matches!(
+                                    refusal,
+                                    FocusRefusal::Code(_)
+                                        | FocusRefusal::ElementPath(_)
+                                        | FocusRefusal::ElementTransport(..)
+                                        | FocusRefusal::IncompleteValue(_)
+                                        | FocusRefusal::IncompleteComputation(_)
+                                )
+                            })
+                            .map(|(name, refusal)| {
+                                format!("{}: `{name}`: {refusal}", path.display())
+                            }),
+                    );
+                    for declaration in report.declarations() {
+                        if let Stated::Verdict(
+                            Outcome::Runs(ref spelled) | Outcome::RunsTracing(ref spelled, _),
+                        ) = *declaration.stated()
+                        {
+                            swept.runs.push((
+                                format!(
+                                    "{}: `{}` states runs to {spelled}, {}",
+                                    path.display(),
+                                    declaration.name(),
+                                    declaration.outcome(),
+                                ),
+                                declaration.settlement() == Settlement::Settled,
+                            ));
+                        }
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
         Corpus {
             counted: Counted::of(&report),
             faults,
@@ -878,7 +882,7 @@ fn no_subject_declares_a_name_twice()
     let mut lowerings = LoweringCount::default();
     let model = fixture_root().join("model");
     let mut declared: BTreeMap<(PathBuf, String), BTreeSet<PathBuf>> = BTreeMap::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![model.clone()]).visit(
+    let ControlFlow::Continue(_report) = Walk::new(vec![model.clone()]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -949,7 +953,7 @@ fn a_reads_claim_settles_against_the_carried_footprint_2520()
     else {
         panic!("the module is read");
     };
-    let Composed::Settled { report, .. } = judge_module(
+    let Composed::Settled { report, .. } = judge_module::<Evaluator>(
         CorpusRoot::Fixture,
         (module, SourceText::from(text)),
         arena,
@@ -1023,7 +1027,7 @@ fn distribution_claims(
         .expect("the directories are created");
     std::fs::write(&source, <&str>::from(text)).expect("the source is written");
     let mut claims: Vec<(String, Outcome, Settlement)> = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![fixture]).visit(
+    let ControlFlow::Continue(_report) = Walk::new(vec![fixture]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -1456,7 +1460,7 @@ mod sweeps
             else {
                 continue;
             };
-            let (_judged, table) = judge_member_tabled(
+            let (_judged, table) = judge_member_tabled::<Evaluator>(
                 gandr_surface_corpus::CorpusRoot::Fixture,
                 (module, text),
                 arena,
@@ -1542,7 +1546,7 @@ mod sweeps
         let pool = Pool::new(Width::Threads(Threads::from(
             NonZeroUsize::MIN.saturating_add(3),
         )));
-        let settled = |text: SourceText<'_>, scheduling| match compose_on(
+        let settled = |text: SourceText<'_>, scheduling| match compose_on::<Evaluator>(
             &grammar,
             CorpusRoot::Fixture,
             text,
@@ -1646,7 +1650,7 @@ mod sweeps
             },
         };
         let grammar = built_in().expect("the built-in grammar builds");
-        let settled = |text: SourceText<'_>, memo| match compose_on(
+        let settled = |text: SourceText<'_>, memo| match compose_on::<Evaluator>(
             &grammar,
             CorpusRoot::Fixture,
             text,
@@ -2077,7 +2081,7 @@ mod sweeps
             else {
                 continue;
             };
-            let (settled, admission) = judge_member_after_retiring(
+            let (settled, admission) = judge_member_after_retiring::<Evaluator, _>(
                 root.corpus_root(),
                 (module, text),
                 arena,
@@ -2337,7 +2341,7 @@ mod sweeps
             else {
                 return;
             };
-            let (settled, admission) = judge_member_after_retiring(
+            let (settled, admission) = judge_member_after_retiring::<Evaluator, _>(
                 root.corpus_root(),
                 (module, text),
                 arena,
@@ -2612,7 +2616,7 @@ mod sweeps
             else {
                 continue;
             };
-            let (settled, _admission) = judge_member_after_retiring(
+            let (settled, _admission) = judge_member_after_retiring::<Evaluator, _>(
                 root.corpus_root(),
                 (judged, text),
                 judged_arena,
@@ -2890,7 +2894,7 @@ mod sweeps
             else {
                 return;
             };
-            let (settled, admission) = judge_member_after_retiring(
+            let (settled, admission) = judge_member_after_retiring::<Evaluator, _>(
                 root.corpus_root(),
                 (module, text),
                 arena,
@@ -3325,8 +3329,9 @@ mod sweeps
     ) -> (Vec<(PathBuf, Hashed)>, ControlFlow<Infallible, RunReport>)
     {
         let mut rows = Vec::new();
-        let visited =
-            Walk::new(paths.to_vec()).visit(&Pool::new(width), |step| -> ControlFlow<Infallible> {
+        let visited = Walk::new(paths.to_vec()).visit::<Evaluator, _, _>(
+            &Pool::new(width),
+            |step| -> ControlFlow<Infallible> {
                 if let Step::Fault { path, ref fault } = step {
                     panic!("{}: {fault}", path.display());
                 }
@@ -3338,7 +3343,8 @@ mod sweeps
                 };
                 rows.push((path, Hashed(core::hash::Hasher::finish(&digest.0))));
                 ControlFlow::Continue(())
-            });
+            },
+        );
         (rows, visited)
     }
 }

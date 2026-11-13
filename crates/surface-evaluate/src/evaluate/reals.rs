@@ -61,6 +61,10 @@ use gandr_kernel_term::StringLiteral;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Line;
+use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::RealsProfile;
 use gandr_theory_exact_reals::Answer;
 use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Budget;
@@ -97,10 +101,6 @@ use gandr_theory_exact_reals::validate;
 
 use self::machine::Machines;
 use self::machine::Verdict;
-use crate::entry::console::Console;
-use crate::entry::console::Line;
-use crate::entry::console::Printed;
-use crate::entry::entered::RealsProfile;
 
 mod machine;
 
@@ -119,42 +119,39 @@ const RESTORE: &str = "restore";
 /// The operation of [`REALS`] that gives the work counters of a machine.
 const REPORT: &str = "report";
 
-impl RealsProfile
+/// The quotas that `profile` sets.
+///
+/// # Specification
+/// trivial.
+fn limits(profile: RealsProfile) -> Limits
 {
-    /// The quotas that the profile sets.
-    ///
-    /// # Specification
-    /// trivial.
-    fn limits(self) -> Limits
-    {
-        match self {
-            Self::Default => Limits {
-                plan: Quotas::default(),
-                checker: CheckerQuotas::default(),
-                precision: 4096,
-                quanta: 1024,
-                plans: 64,
-                machines: 64,
+    match profile {
+        RealsProfile::Default => Limits {
+            plan: Quotas::default(),
+            checker: CheckerQuotas::default(),
+            precision: 4096,
+            quanta: 1024,
+            plans: 64,
+            machines: 64,
+        },
+        RealsProfile::Bounded => Limits {
+            plan: Quotas {
+                bytes: ByteLength::from(0x0001_0000_usize),
+                nodes: NodeCount::from(4096_usize),
+                height: Height::from(256_u32),
+                binders: Height::from(16_u32),
+                width: BitWidth::from(4096_u64),
+                power: Power::from(64_u32),
             },
-            Self::Bounded => Limits {
-                plan: Quotas {
-                    bytes: ByteLength::from(0x0001_0000_usize),
-                    nodes: NodeCount::from(4096_usize),
-                    height: Height::from(256_u32),
-                    binders: Height::from(16_u32),
-                    width: BitWidth::from(4096_u64),
-                    power: Power::from(64_u32),
-                },
-                checker: CheckerQuotas {
-                    steps: StepCount::from(4096_usize),
-                    width: BitWidth::from(4096_u64),
-                },
-                precision: 256,
-                quanta: 256,
-                plans: 16,
-                machines: 16,
+            checker: CheckerQuotas {
+                steps: StepCount::from(4096_usize),
+                width: BitWidth::from(4096_u64),
             },
-        }
+            precision: 256,
+            quanta: 256,
+            plans: 16,
+            machines: 16,
+        },
     }
 }
 
@@ -395,8 +392,8 @@ impl fmt::Display for Declined
     ///   unknown handle and a precision past the quota, each named on standard
     ///   error; a budget past the quota, an unknown machine and a corrupt
     ///   checkpoint, each named too.
-    /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     #[inline]
     fn fmt(
         &self,
@@ -478,8 +475,8 @@ impl fmt::Display for Declined
 ///   on standard error. `sqrt 2 < 3/2` holds, two boundary comparisons stop by
 ///   name, and a checkpoint after one quantum resumes to the uninterrupted
 ///   verdict.
-/// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
-/// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
 #[spec(
     captures: [real = request.signature.name().as_ref() == REALS],
     ensures: |ret| ret.is_none() != real,
@@ -517,7 +514,7 @@ impl Reals
     /// trivial.
     pub(super) fn new(profile: RealsProfile) -> Self
     {
-        Self::under(profile.limits())
+        Self::under(limits(profile))
     }
 
     /// The empty tables of a run under `limits`.
@@ -592,7 +589,7 @@ impl Reals
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`served`].
-    /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
     #[spec(
         captures: [before = self.plans.len()],
         ensures: |ret| ret.as_ref().map_or(self.plans.len() == before, |&handle| handle.0 == before && self.plans.len() == before.saturating_add(1)),
@@ -640,7 +637,7 @@ impl Reals
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`served`].
-    /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
     fn enclose(
         &self,
         handle: Handle,
@@ -808,7 +805,7 @@ fn spelled(value: &Dyadic) -> String
 /// # Adequacy
 /// - hypothesis: L3 — the plan of the exemplar, and text with a character that
 ///   is not a digit.
-/// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|bytes| bytes.0.len().checked_mul(2) == Some(AsRef::<str>::as_ref(text).len())))]
 fn hexadecimal(text: &StringLiteral) -> Option<Decoded>
 {
@@ -866,8 +863,8 @@ fn lowercase(bytes: &Decoded) -> String
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`served`].
-/// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
-/// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
 fn asked<'values>(
     operation: &OperationName,
     payload: HeapValueId,

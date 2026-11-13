@@ -96,7 +96,7 @@ enum Answered
 ///   drives `connect`, `transmit`, `receive` and `disconnect`, the endpoint
 ///   answering; a `transmit` on a stream no network minted is declined.
 ///   `accept` is driven by the driver's two-process case.
-/// - witness: `tests::run::a_script_pings_over_its_network_3186`
+/// - witness: `gandr-surface-dispatcher::tests::run::a_script_pings_over_its_network_3186`
 #[spec(
     captures: [networked = request.signature.name().as_ref() == NET],
     ensures: |ret| ret.is_none() != networked,

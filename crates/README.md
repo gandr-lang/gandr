@@ -1,6 +1,6 @@
 # crates
 
-This file is the naming authority for the workspace's crates. A crate lives at `crates/<category>-<name>` and its package is `gandr-<category>-<name>`; the driver is the one exception, package `gandr-lang`, the name the project holds on the registry, where `gandr` belongs to an unrelated crate.
+This file is the naming authority for the workspace's crates. A crate lives at `crates/<category>-<name>` and its package is `gandr-<category>-<name>`; the driver's row names the one exception, and its README gives the reason.
 
 Three disciplines: consult this file before naming a crate; when it is silent, derive the name from the layering below and the crates beside it; add the row in the same change that adds the crate. A divergence is recorded here, not smoothed over.
 
@@ -60,6 +60,7 @@ crates/
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
 ├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: its verbs and their exit codes
+├── surface-evaluate/              the run stage: the dispatcher's engine
 ├── surface-features/              the features ledger as data, read by the toolchain and the tools
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
@@ -123,7 +124,7 @@ A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README
 
 _Projection_ is the compiler: it takes a _choreography_, one program over named _roles_, to an _endpoint_ per role, a closed program whose protocol and crossing data are fixed, and the endpoint is the artifact. A _recipe_ names a program's endpoints. A _deployment_ binds each role to a world key, an instance count and discovery, never entering an artifact's identity, so one artifact runs as two processes or a fleet. A _local artifact_ is a one-role choreography's endpoint: the degenerate case, and the only one built today. A runtime component no type demands is a recipe policy, off by default.
 
-- `surface-dispatcher`: the run stage, a checked source's `main` as a local artifact.
+- `surface-evaluate`: the run stage, a checked source's `main` as a local artifact.
 - `runtime-emitter`: an endpoint's code, native under a content cache or on the portable executor.
 - `runtime-net`: the network an endpoint holds for `std.net.Eff` and for migrations.
 - Projection and the recipe have no crate yet.

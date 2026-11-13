@@ -39,6 +39,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
@@ -615,7 +616,7 @@ pub fn encode_submission(
     let mut step = submission.into_step(Path::new(""));
     let mut lines: Vec<(OutKind, String)> = Vec::new();
     let mut refused = false;
-    for diagnostic in entries(&step, Verb::Check(Goals::Reported)).spelling(spelling) {
+    for diagnostic in entries::<Evaluator>(&step, Verb::Check(Goals::Reported)).spelling(spelling) {
         let mut diagnostic = diagnostic;
         if let Subject::Prompt { line_start, .. } = subject {
             let absolute =

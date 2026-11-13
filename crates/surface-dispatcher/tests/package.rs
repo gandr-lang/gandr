@@ -76,6 +76,7 @@ use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::stepped_alone;
 use gandr_surface_dispatcher::workspace_root;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationCount;
@@ -341,7 +342,7 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
     )
     .expect("the package source is written");
     let walked = |paths: &[&str], working: &str| {
-        packaged(
+        packaged::<Evaluator>(
             paths.iter().map(|path| directory.join(path)).collect(),
             &directory.join(working),
         )
@@ -431,18 +432,19 @@ fn a_package_root_walks_each_source_once_3889()
         sourced(Path::new("src")),
     )
     .expect("the package source is written");
-    let (walked, ..) = packaged(Vec::from([directory.join("hello")]), &directory)
+    let (walked, ..) = packaged::<Evaluator>(Vec::from([directory.join("hello")]), &directory)
         .expect("the root stands in a package");
     let mut reached = Vec::new();
     let ControlFlow::Continue(_report) =
-        Walk::new(walked.iter().map(|path| directory.join(path)).collect()).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
-                reached.push(path.strip_prefix(&directory).unwrap_or(path).to_path_buf());
-                ControlFlow::Continue(())
-            },
-        );
+        Walk::new(walked.iter().map(|path| directory.join(path)).collect())
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
+                    reached.push(path.strip_prefix(&directory).unwrap_or(path).to_path_buf());
+                    ControlFlow::Continue(())
+                },
+            );
     assert_eq!(
         reached,
         Vec::from([
@@ -505,7 +507,7 @@ fn a_workspace_walks_every_member_it_names_2687()
     let hello = directory.join("hello");
     let tools = directory.join("tools");
     let walked = |paths: &[&Path], working: &str| {
-        packaged(
+        packaged::<Evaluator>(
             paths.iter().map(|path| path.to_path_buf()).collect(),
             &directory.join(working),
         )
@@ -630,22 +632,26 @@ fn manifest_at<'text>(
     else {
         panic!("the package is found");
     };
-    let composed = stepped_alone(source, SourceText::from(text.as_str()), |step| match step {
-        Step::Source {
-            composed:
-                Composed::Settled {
-                    mut program,
-                    report,
-                    ..
-                },
-            ..
-        } => Manifest::of(&mut program, &report, &package),
-        Step::Source {
-            composed: Composed::Refused(refusal),
-            ..
-        } => panic!("the package source settles: {refusal}"),
-        Step::Fault { fault, .. } => panic!("the package source composes: {fault}"),
-    });
+    let composed = stepped_alone::<Evaluator, _, _>(
+        source,
+        SourceText::from(text.as_str()),
+        |step| match step {
+            Step::Source {
+                composed:
+                    Composed::Settled {
+                        mut program,
+                        report,
+                        ..
+                    },
+                ..
+            } => Manifest::of::<Evaluator>(&mut program, &report, &package),
+            Step::Source {
+                composed: Composed::Refused(refusal),
+                ..
+            } => panic!("the package source settles: {refusal}"),
+            Step::Fault { fault, .. } => panic!("the package source composes: {fault}"),
+        },
+    );
     match composed {
         Ok(manifest) => manifest,
         Err(why) => panic!("the built-in grammar builds: {why:?}"),
@@ -1940,7 +1946,7 @@ fn a_workspace_s_packages_share_one_lock_4921()
         panic!("the scratch directory is a workspace");
     };
     let (members, gathered) = workspace
-        .members()
+        .members::<Evaluator>()
         .expect("the workspace names its members");
     assert_eq!(
         members.iter().map(Package::root).collect::<Vec<_>>(),
@@ -1959,7 +1965,9 @@ fn a_workspace_s_packages_share_one_lock_4921()
         "the manifest records the model's version, its members and its toolchain"
     );
     std::fs::write(directory.join("workspace.gandr"), stated("")).expect("the model is cut");
-    let (_members, gathered) = workspace.members().expect("the workspace still names them");
+    let (_members, gathered) = workspace
+        .members::<Evaluator>()
+        .expect("the workspace still names them");
     assert!(
         matches!(
             gathered.manifest,
@@ -2496,32 +2504,33 @@ fn exported_walk(
 {
     let mut exporting = Exporting::default();
     let mut admitted = BTreeMap::new();
-    let ControlFlow::Continue(_report) = Walk::new(vec![sources.to_path_buf()]).visit(
-        &Pool::new(Width::SERIAL),
-        |mut step| -> ControlFlow<Infallible> {
-            let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
-            let from = path
-                .canonicalize()
-                .expect("the source canonicalizes")
-                .strip_prefix(root)
-                .expect("the source is under the root")
-                .to_path_buf();
-            if let Step::Source {
-                composed:
-                    Composed::Settled {
-                        kernel: Maybe::Present(ref mut kernel),
-                        ..
-                    },
-                ..
-            } = step
-            {
-                let _first = admitted.insert(from.clone(), kernel.clone());
-                *kernel = alter(&from, core::mem::take(kernel));
-            }
-            exporting.take(&from, &step);
-            ControlFlow::Continue(())
-        },
-    );
+    let ControlFlow::Continue(_report) = Walk::new(vec![sources.to_path_buf()])
+        .visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |mut step| -> ControlFlow<Infallible> {
+                let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
+                let from = path
+                    .canonicalize()
+                    .expect("the source canonicalizes")
+                    .strip_prefix(root)
+                    .expect("the source is under the root")
+                    .to_path_buf();
+                if let Step::Source {
+                    composed:
+                        Composed::Settled {
+                            kernel: Maybe::Present(ref mut kernel),
+                            ..
+                        },
+                    ..
+                } = step
+                {
+                    let _first = admitted.insert(from.clone(), kernel.clone());
+                    *kernel = alter(&from, core::mem::take(kernel));
+                }
+                exporting.take(&from, &step);
+                ControlFlow::Continue(())
+            },
+        );
     (exporting.finish(), admitted)
 }
 

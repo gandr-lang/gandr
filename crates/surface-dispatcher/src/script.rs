@@ -35,6 +35,7 @@ use crate::compose::LoweringCount;
 use crate::compose::compose;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::console::Console;
 use crate::entry::entered::Entered;
 use crate::entry::entered::Entry;
@@ -94,8 +95,8 @@ impl Ran<'_>
     /// - hypothesis: L3 — refusal, a source declaring no `main`, an entry
     ///   exiting and an entry reaching a goal distinguish the statuses. These
     ///   fixtures do not enumerate every machine or readback failure.
-    /// - witness: `script::tests::each_kind_of_source_has_its_status`
-    /// - witness: `script::tests::a_source_declaring_main_runs_its_entry_1881`
+    /// - witness: `tests::script::each_kind_of_source_has_its_status`
+    /// - witness: `tests::script::a_source_declaring_main_runs_its_entry_1881`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
@@ -151,8 +152,8 @@ impl Ran<'_>
 ///   an empty source and an entry declared before another name have exact run
 ///   outcomes; arbitrary programs and resource failures are outside this finite
 ///   set.
-/// - witness: `script::tests::each_kind_of_source_has_its_status`
-/// - witness: `script::tests::a_source_declaring_main_runs_its_entry_1881`
+/// - witness: `tests::script::each_kind_of_source_has_its_status`
+/// - witness: `tests::script::a_source_declaring_main_runs_its_entry_1881`
 #[inline]
 #[spec(
     captures: [
@@ -180,12 +181,14 @@ impl Ran<'_>
         Ran::Hosted(_) => false,
     },
 )]
-pub fn execute<'source>(
+pub fn execute<'source, E>(
     composed: &mut Composed<'source>,
     arguments: &[String],
     console: &mut dyn Console,
     (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
 ) -> Ran<'source>
+where
+    E: Engine,
 {
     let Composed::Settled {
         ref report,
@@ -211,7 +214,7 @@ pub fn execute<'source>(
     match program.name(entry.constant) {
         Maybe::Present(name) => Ran::Entered {
             target: name,
-            entered: program.enter(entry, arguments, console, (net, worlds, profile)),
+            entered: E::enter(program, entry, arguments, console, (net, worlds, profile)),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
@@ -236,18 +239,20 @@ pub fn execute<'source>(
 ///   print a line for each.
 /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
 ///
-/// [`Program::host`]: crate::Program::host
+/// [`Program::host`]: crate::Engine::host
 #[inline]
-pub fn host<'source>(
-    composed: &Composed<'source>,
+pub fn host<'source, E>(
+    composed: &mut Composed<'source>,
     (net, worlds): (&mut Net, Worlds<'_>),
     migrations: MigrationCount,
     console: &mut dyn Console,
 ) -> Ran<'source>
+where
+    E: Engine,
 {
     let Composed::Settled {
         ref report,
-        ref program,
+        ref mut program,
         ..
     } = *composed
     else {
@@ -262,7 +267,7 @@ pub fn host<'source>(
     if refused {
         return Ran::Refused;
     }
-    Ran::Hosted(program.host(worlds, net, migrations, console))
+    Ran::Hosted(E::host(program, worlds, net, migrations, console))
 }
 
 /// Compose `source` under the strict root, as a source at no path, and run
@@ -287,7 +292,7 @@ pub fn host<'source>(
 ///   The parse-error counter branch is stated by the predicate, not
 ///   independently triggered by these valid built-in-grammar fixtures.
 /// - witness: `tests::run::run_source_runs_source_text`
-/// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
+/// - witness: `tests::script::run_source_counts_lowerings_with_saturation`
 #[inline]
 #[spec(
     captures: [before = usize::from(*lowerings)],
@@ -295,15 +300,17 @@ pub fn host<'source>(
         before
     } else { before.saturating_add(1_usize) },
 )]
-pub fn run_source<'source>(
+pub fn run_source<'source, E>(
     grammar: &Pbg,
     source: SourceText<'source>,
     lowerings: &mut LoweringCount,
     console: &mut dyn Console,
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
+where
+    E: Engine,
 {
-    let mut composed = compose(grammar, CorpusRoot::Strict, source, lowerings)?;
-    let ran = execute(
+    let mut composed = compose::<E>(grammar, CorpusRoot::Strict, source, lowerings)?;
+    let ran = execute::<E>(
         &mut composed,
         &[],
         console,
@@ -610,10 +617,12 @@ impl Script
             ScriptRun::Source { step: Step::Fault { .. }, .. } => false,
         },
     )]
-    pub fn run(
+    pub fn run<E>(
         &mut self,
         console: &mut dyn Console,
     ) -> ScriptRun<'_>
+    where
+        E: Engine,
     {
         let root = match read_source(&self.reader, &self.path, &mut self.text) {
             Ok(root) => root,
@@ -642,7 +651,7 @@ impl Script
         let source = SourceText::from(laid.text.as_str());
         let composed = lower_unit_source(grammar, source, &laid.unit, &mut self.lowerings)
             .and_then(|lowering| {
-                judge_lowering(
+                judge_lowering::<E>(
                     root.corpus_root(),
                     (lowering, source),
                     &HostGrant::UNBOUNDED,
@@ -673,12 +682,12 @@ impl Script
                 let net = self.net.as_deref_mut();
                 let ran = match (self.hosting, net, worlds) {
                     (Some(migrations), Some(net), Some(worlds)) => {
-                        host(&composed, (net, worlds), migrations, console)
+                        host::<E>(&mut composed, (net, worlds), migrations, console)
                     },
                     (Some(_), ..) => Ran::Hosted(Hosted::Faulted {
                         answered: MigrationCount::default(),
                     }),
-                    (None, net, worlds) => execute(
+                    (None, net, worlds) => execute::<E>(
                         &mut composed,
                         &self.arguments,
                         console,
@@ -702,143 +711,6 @@ impl Script
                 path: &self.path,
                 fault: SourceFault::Compose(fault),
             },
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests
-{
-    use gandr_surface_grammar::built_in;
-    use gandr_surface_syntax::SourceText;
-
-    use super::Ran;
-    use super::run_source;
-    use crate::compose::LoweringCount;
-    use crate::entry::console::Captured;
-    use crate::entry::entered::Entered;
-    use crate::entry::entered::ExitStatus;
-    use crate::entry::evaluation::RunStatus;
-
-    #[test]
-    fn each_kind_of_source_has_its_status()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let rows = [
-            (r#"def main() -> -F Integer { return 0 }"#, RunStatus::Value),
-            (
-                r#"def later : +U (-F Integer) ; def main : +U (-F Integer) ; def main = thunk { become force later } ;"#,
-                RunStatus::Failed,
-            ),
-            (
-                r#"def answer : Integer ; def answer = "forty-two" ;"#,
-                RunStatus::Unreached,
-            ),
-            (r#"// nothing to run"#, RunStatus::Unreached),
-            (
-                r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#,
-                RunStatus::Unreached,
-            ),
-        ];
-        for (source, status) in rows {
-            let mut lowerings = LoweringCount::default();
-            let (_composed, ran) = run_source(
-                &grammar,
-                SourceText::from(source),
-                &mut lowerings,
-                &mut Captured::default(),
-            )
-            .expect("the source composes");
-            assert_eq!(ran.status(), status, "`{source}` runs as pinned: {ran:?}");
-        }
-
-        let mut lowerings = LoweringCount::default();
-        let (_composed, ran) = run_source(
-            &grammar,
-            SourceText::from(r#"def answer : Integer ; def answer = "forty-two" ;"#),
-            &mut lowerings,
-            &mut Captured::default(),
-        )
-        .expect("the source composes");
-        assert_eq!(ran, Ran::Refused, "a refused source runs nothing");
-        for source in [
-            r#"// nothing to run"#,
-            r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#,
-        ] {
-            let (_composed, ran) = run_source(
-                &grammar,
-                SourceText::from(source),
-                &mut lowerings,
-                &mut Captured::default(),
-            )
-            .expect("the source composes");
-            assert_eq!(
-                ran,
-                Ran::NoProgram,
-                "a source declaring no `main` runs nothing, not its last declaration: `{source}`"
-            );
-        }
-    }
-
-    /// A source declaring `main` runs it, not its last declaration, and exits
-    /// with its integer; an entry reaching a goal ends with the status of its
-    /// evaluation (#1881).
-    #[test]
-    fn a_source_declaring_main_runs_its_entry_1881()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let mut lowerings = LoweringCount::default();
-        let (_composed, ran) = run_source(
-            &grammar,
-            SourceText::from(include_str!(
-                "script/fixtures/a-source-declaring-main-runs-its-entry-1881.gandr"
-            )),
-            &mut lowerings,
-            &mut Captured::default(),
-        )
-        .expect("the source composes");
-        let Ran::Entered { target, entered } = ran
-        else {
-            panic!("a source declaring `main` enters it: {ran:?}");
-        };
-        assert_eq!(
-            (target.as_ref(), entered),
-            ("main", Entered::Exited(ExitStatus::from(3_u8))),
-            "the entry runs and its integer is the status"
-        );
-        let (_composed, ran) = run_source(
-            &grammar,
-            SourceText::from("def main() -> -F Integer { ? }\n"),
-            &mut lowerings,
-            &mut Captured::default(),
-        )
-        .expect("the source composes");
-        let Ran::Entered {
-            entered: Entered::Ended(ref evaluation),
-            ..
-        } = ran
-        else {
-            panic!("an entry at a goal ends short of a status: {ran:?}");
-        };
-        assert_eq!(ran.status(), evaluation.status());
-        assert_ne!(ran.status(), RunStatus::Value);
-    }
-
-    #[test]
-    fn run_source_counts_lowerings_with_saturation()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let mut lowerings = LoweringCount::from(usize::MAX.saturating_sub(1));
-        for _ in 0_usize .. 2 {
-            let (_, ran) = run_source(
-                &grammar,
-                SourceText::from("// nothing to run"),
-                &mut lowerings,
-                &mut Captured::default(),
-            )
-            .expect("an empty program composes");
-            assert_eq!(Ran::NoProgram, ran);
-            assert_eq!(usize::MAX, usize::from(lowerings));
         }
     }
 }

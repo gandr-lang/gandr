@@ -27,8 +27,8 @@ use core::hint::black_box;
 use core::num::NonZeroU32;
 
 use gandr_kernel_term::StringLiteral;
-use gandr_surface_dispatcher::RealsAdapter;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_evaluate::RealsAdapter;
 use gandr_theory_exact_reals::Budget;
 use gandr_theory_exact_reals::CheckerQuotas;
 use gandr_theory_exact_reals::Demand;

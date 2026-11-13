@@ -31,6 +31,8 @@ use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::judge_module;
 use gandr_surface_dispatcher::lower_source;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Machine;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_syntax::SourceFragment;
@@ -532,7 +534,7 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             report,
             mut program,
             ..
-        } = judge_module(
+        } = judge_module::<Evaluator>(
             CorpusRoot::Fixture,
             (module, SourceText::from(text.as_str())),
             arena,
@@ -557,7 +559,7 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             }
             // The machine prints a value juxtaposed, `Succ Zero`; the engine
             // reads it in the inspection notation, `Succ(Zero)`.
-            let machine = program.run(constant);
+            let machine = Machine::new(&mut program).run(constant);
             let printed: &str = machine.as_ref();
             assert_eq!(
                 inspected(SourceFragment::from(printed)).as_deref(),

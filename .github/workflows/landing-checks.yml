@@ -1158,7 +1158,9 @@ jobs:
   # took 72 s of its 190 s, so the language server, the faces' largest package
   # (106 s of test time), is tested beside the checker. Every shard restores
   # the lane's one state; its join overlays what each built on that state and
-  # hands the whole on.
+  # hands the whole on. The run stage is tested in the dispatcher's shard: the
+  # witnesses of each crate name tests of the other, and a shard resolves its
+  # own members' witnesses alone.
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *rust-needs
@@ -1173,7 +1175,7 @@ jobs:
         include:
           - shard: dispatcher
             packages: &dispatcher-shard >-
-              gandr-surface-dispatcher
+              gandr-surface-dispatcher gandr-surface-evaluate
           - shard: engine
             packages: &engine-shard >-
               gandr-runtime-stencils gandr-surface-corpus gandr-surface-diagnostics

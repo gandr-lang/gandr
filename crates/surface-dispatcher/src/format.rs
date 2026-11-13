@@ -610,9 +610,9 @@ mod tests
     use super::FormatStep;
     use super::Formatting;
     use super::Rewrite;
+    use crate::fixture::Scratch;
     use crate::pool::Pool;
     use crate::reader::Reader;
-    use crate::walk::tests::Scratch;
     use crate::width::Threads;
     use crate::width::Width;
 

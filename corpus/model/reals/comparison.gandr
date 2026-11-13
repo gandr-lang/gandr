@@ -12,7 +12,7 @@
 // The same `decided` runs under a handler of this source, a second model of
 // the interface.
 //
-// - see: `crates/surface-dispatcher/src/evaluate/reals/machine.rs` — the
+// - see: `crates/surface-evaluate/src/evaluate/reals/machine.rs` — the
 //   machines that the host holds
 // - see: `corpus/model/reals/boundary.gandr` — comparisons that no budget
 //   decides

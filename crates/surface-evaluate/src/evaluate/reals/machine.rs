@@ -150,7 +150,7 @@ impl Machines
     /// - hypothesis: L3 — `sqrt 2 < 3/2` holds; `sqrt 2 · sqrt 2 < 2` spends
     ///   the smaller budgets and suspends at the checker's quota, and `sqrt 2 <
     ///   sqrt 2` spends each budget, neither read as false.
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn decide(
         &mut self,
         plan: Rc<ValidatedPlan>,
@@ -212,7 +212,7 @@ impl Machines
     /// # Adequacy
     /// - hypothesis: L3 — the resumed machine of the exemplar steps to the
     ///   verdict of an uninterrupted run.
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn step(
         &mut self,
         handle: MachineHandle,
@@ -245,7 +245,7 @@ impl Machines
     /// # Adequacy
     /// - hypothesis: L3 — the exemplar's checkpoint after one quantum resumes
     ///   to the outcome of an uninterrupted run.
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn checkpoint(
         &mut self,
         handle: MachineHandle,
@@ -290,7 +290,7 @@ impl Machines
     /// # Adequacy
     /// - hypothesis: L3 — the exemplar's checkpoint resumes; a checkpoint with
     ///   a byte changed is refused by name.
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn restore(
         &mut self,
         bytes: &Decoded,
@@ -361,7 +361,7 @@ impl Machines
     /// # Adequacy
     /// - hypothesis: L3 — the exemplar's resumed machine reports the work of
     ///   the uninterrupted one, and the exemplars report each counter.
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn report(
         &self,
         handle: MachineHandle,
@@ -413,7 +413,7 @@ impl Machine
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Machines::decide`].
-    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
     fn advance(
         &mut self,
         budget: Quanta,

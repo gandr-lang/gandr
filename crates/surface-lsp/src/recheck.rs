@@ -192,6 +192,7 @@ use gandr_surface_dispatcher::path_imports;
 use gandr_surface_dispatcher::shown;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_dispatcher::written;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_lowering::Unit;
@@ -1643,7 +1644,7 @@ fn diagnostics_of(
     let path = uri.path();
     let index = LineIndex::new(text.as_ref().into());
     let step = reported(submission.into_step(Path::new(&path)));
-    entries(&step, Verb::Check(Goals::Reported))
+    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
         .spelling(spelling)
         .map(|found| match found.severity {
             Seriousness::Ledger => {
@@ -2372,7 +2373,7 @@ mod tests
             root,
             text,
             base: gandr_surface_syntax::ByteOffset::from(0_usize),
-            composed: gandr_surface_dispatcher::compose(
+            composed: gandr_surface_dispatcher::compose::<gandr_surface_evaluate::Evaluator>(
                 &pbg,
                 root.corpus_root(),
                 text,
@@ -2382,7 +2383,11 @@ mod tests
             standing: gandr_surface_dispatcher::Standing::Unsettled,
         };
         let mut found: Vec<gandr_surface_diagnostics::Diagnostic> =
-            super::entries(&step, super::Verb::Check(super::Goals::Reported)).collect();
+            super::entries::<gandr_surface_evaluate::Evaluator>(
+                &step,
+                super::Verb::Check(super::Goals::Reported),
+            )
+            .collect();
         let [ref mut force] = *found.as_mut_slice()
         else {
             panic!("one shape mismatch");

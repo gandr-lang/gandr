@@ -89,6 +89,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
@@ -773,7 +774,7 @@ pub(super) fn sweep(
             .map_err(unwritable)?;
     }
     let mut reported: Vec<Option<Reported>> = vec![None; made.len()];
-    let ControlFlow::Continue(_run) = Walk::new(vec![folder.clone()]).visit(
+    let ControlFlow::Continue(_run) = Walk::new(vec![folder.clone()]).visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             if let Step::Source {
@@ -819,7 +820,7 @@ pub(super) fn sweep(
                     .and_then(|stem| stem.parse::<usize>().ok());
                 // An entry's span is measured from the source's own first
                 // byte, past the prelude laid before it.
-                let first = entries(&step, Verb::Check(Goals::Gated))
+                let first = entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
                     .find(|diagnostic| diagnostic.severity == Severity::Error);
                 if let (Some(slot), Some(diagnostic)) =
                     (index.and_then(|index| reported.get_mut(index)), first)

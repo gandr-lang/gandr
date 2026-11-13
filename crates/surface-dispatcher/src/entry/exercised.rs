@@ -251,7 +251,7 @@ impl Exercised
     /// - hypothesis: L3 — an empty source misses every row, while
     ///   representative settled declarations miss precisely the complement of
     ///   their rows.
-    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+    /// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
     #[spec(ensures: |ref ret| ret.iter().copied().eq(
         Row::ALL.into_iter().filter(|&row| usize::from(self.count(row)) == 0_usize)
     ))]
@@ -324,9 +324,9 @@ impl Exercised
     ///   formers count once per declaration, unsettled declarations count
     ///   nowhere, and settled near misses cannot masquerade as refusal rows.
     ///   These cases do not exhaust core syntax or possible refusal payloads.
-    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
-    /// - witness: `entry::exercised::tests::an_unsettled_declaration_carries_no_row`
-    /// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
+    /// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
+    /// - witness: `tests::exercised::an_unsettled_declaration_carries_no_row`
+    /// - witness: `tests::exercised::a_near_miss_carries_no_refusal_row`
     /// - witness: `tests::corpus::the_two_roots_exercise_every_row`
     #[spec(
         captures: [settled = report.declarations().iter()
@@ -377,7 +377,7 @@ impl Exercised
     /// # Adequacy
     /// - hypothesis: L3 — nested lambdas in one declaration mark its row once,
     ///   whereas lambdas in different declarations contribute separately.
-    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+    /// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
     #[spec(
         captures: [before = *self],
         ensures: |_| Row::ALL.into_iter().all(|candidate| self.count(candidate)
@@ -435,8 +435,8 @@ impl Exercised
 /// - hypothesis: L3 — representative checked, synthesised, owed and refused
 ///   declarations carry exact independent row counts; guarded outcomes and
 ///   every core constructor are not separately generated here.
-/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
+/// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
+/// - witness: `tests::exercised::a_near_miss_carries_no_refusal_row`
 #[spec(ensures: |ref ret| {
     Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= 1_usize)
         && match declaration.produced() {
@@ -486,7 +486,7 @@ fn carried(
 /// # Adequacy
 /// - hypothesis: L3 — accepted conversions contribute independently of the four
 ///   direction rows; refusal-only declarations contribute no bridge.
-/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
 #[spec(
     captures: [before = *rows],
     ensures: |_| Row::ALL.into_iter().all(|row| rows.count(row)
@@ -517,8 +517,8 @@ fn bridged(
 /// # Adequacy
 /// - hypothesis: L3 — each selected refusal and settled near misses have exact
 ///   counts; the table does not enumerate every unselected refusal variant.
-/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
+/// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
+/// - witness: `tests::exercised::a_near_miss_carries_no_refusal_row`
 #[spec(
     captures: [before = *rows],
     ensures: |_| {
@@ -612,8 +612,8 @@ fn is_whole_unsigned_body(
 /// - hypothesis: L3 — real source refusals distinguish the three selected
 ///   classes from an unadmitted form; other unselected variants are not
 ///   sampled.
-/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
-/// - witness: `entry::exercised::tests::a_near_miss_carries_no_refusal_row`
+/// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
+/// - witness: `tests::exercised::a_near_miss_carries_no_refusal_row`
 #[spec(
     captures: [before = *rows],
     ensures: |_| {
@@ -789,7 +789,7 @@ fn lowering_row(
 /// - hypothesis: L3 — admitted bodies exercise all four formers and repeated
 ///   lambdas; a missing root cannot visit stale scratch or erase prior rows.
 ///   Pair, injection, lift, bind and case wrappers are not separately sampled.
-/// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
 /// - witness: `entry::exercised::tests::a_missing_root_discards_stale_work`
 #[spec(
     captures: [before = *rows, missing = arena.value(body).is_none()],
@@ -1129,42 +1129,13 @@ enum WholeBody
 mod tests
 {
     use anodized::spec;
-    use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationCount;
     use gandr_surface_syntax::SourceText;
 
     use super::Exercised;
     use super::Row;
-    use crate::compose::Composed;
     use crate::compose::LoweringCount;
-    use crate::compose::compose;
-
-    /// The rows `source`'s settled declarations carry under the fixture root.
-    ///
-    /// # Specification
-    /// - requires: the built-in grammar builds and `source` composes without an
-    ///   engine fault or whole-module refusal under the fixture root.
-    /// - ensures: the returned rows belong to the composed source; an empty
-    ///   source contributes zero to every row.
-    /// - panics: if the fixture violates the composition premise.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — real empty, accepted and refused source declarations
-    ///   have independent exact row expectations, not a second composition.
-    /// - witness: `entry::exercised::tests::a_module_carries_exactly_its_rows`
-    #[spec(ensures: |ref ret| !source.as_ref().is_empty()
-        || Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) == 0_usize))]
-    fn rows_of(source: SourceText<'_>) -> Exercised
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let mut lowerings = LoweringCount::default();
-        match compose(&grammar, CorpusRoot::Fixture, source, &mut lowerings) {
-            Ok(Composed::Settled { exercised, .. }) => exercised,
-            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
-            Err(fault) => panic!("faulted: {fault}"),
-        }
-    }
 
     /// The count set holding `rows`' counts and zero elsewhere.
     ///
@@ -1190,113 +1161,6 @@ mod tests
             *exercised.slot(row) = count;
         }
         exercised
-    }
-
-    #[test]
-    fn a_module_carries_exactly_its_rows()
-    {
-        let table: &[(&str, &[(Row, usize)])] = &[
-            (
-                include_str!("exercised/fixtures/a-module-carries-exactly-its-rows-table.gandr"),
-                &[
-                    (Row::LambdaChecks, 2_usize),
-                    (Row::ReturnChecks, 2_usize),
-                    (Row::ForceSynthesises, 1_usize),
-                    (Row::ApplicationSynthesises, 1_usize),
-                    (Row::SubsumptionBridge, 4_usize),
-                ],
-            ),
-            // A synthesised literal converts nothing, so crosses no bridge.
-            ("def answer = 42 ;", &[]),
-            (r#"@[ refuses("UnresolvedName") ] def a = missing ;"#, &[(
-                Row::UndefinedTermName,
-                1_usize,
-            )]),
-            (
-                r#"@[ refuses("UnresolvedTypeHead") ] def a : Natural ;"#,
-                &[(Row::UndefinedTypeHead, 1_usize)],
-            ),
-            (
-                r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { return 3 } ;"#,
-                &[(Row::ShapeRefusal, 1_usize)],
-            ),
-            (
-                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become (fun (x) { return x }) 3 } ;"#,
-                &[(Row::NonSynthesisableHead, 1_usize)],
-            ),
-            (
-                r#"@[ refuses("NotSynthesisable") ] def a = thunk { return 3 } ;"#,
-                &[(Row::NonSynthesisableDefinition, 1_usize)],
-            ),
-            (
-                include_str!("exercised/fixtures/a-module-carries-exactly-its-rows.gandr"),
-                &[(Row::ReservedForm, 1_usize)],
-            ),
-            (r#"@[ owes(1) ] def a : Integer ;"#, &[(
-                Row::AddressableObligation,
-                1_usize,
-            )]),
-        ];
-        for &(source, rows) in table {
-            let carried = rows_of(SourceText::from(source));
-            for row in Row::ALL {
-                let expected = rows
-                    .iter()
-                    .find(|&&(candidate, _)| candidate == row)
-                    .map_or(0_usize, |&(_, count)| count);
-                assert_eq!(usize::from(carried.count(row)), expected, "{source}: {row}");
-            }
-            assert!(
-                carried.missing().into_iter().eq(Row::ALL
-                    .into_iter()
-                    .filter(|row| !rows.iter().any(|&(carried, _)| carried == *row))),
-                "{source} misses every other row"
-            );
-        }
-        assert_eq!(
-            rows_of(SourceText::from("")).missing().as_slice(),
-            &Row::ALL,
-            "an empty source misses every row"
-        );
-    }
-
-    #[test]
-    fn an_unsettled_declaration_carries_no_row()
-    {
-        let rows = rows_of(SourceText::from(include_str!(
-            "exercised/fixtures/an-unsettled-declaration-carries-no-row-rows.gandr"
-        )));
-        assert_eq!(
-            rows,
-            Exercised::default(),
-            "no unsettled declaration counts"
-        );
-    }
-
-    #[test]
-    fn a_near_miss_carries_no_refusal_row()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let source = SourceText::from(include_str!(
-            "exercised/fixtures/a-near-miss-carries-no-refusal-row.gandr"
-        ));
-        let mut lowerings = LoweringCount::default();
-        let Composed::Settled {
-            report, exercised, ..
-        } = compose(&grammar, CorpusRoot::Fixture, source, &mut lowerings)
-            .expect("the near misses compose")
-        else {
-            panic!("the near misses lower")
-        };
-        assert_eq!(report.declarations().len(), 3_usize);
-        assert!(report.declarations().iter().all(
-            |declaration| declaration.settlement() == gandr_surface_corpus::Settlement::Settled
-        ));
-        assert_eq!(
-            exercised,
-            Exercised::default(),
-            "settled near misses carry no refusal row"
-        );
     }
 
     #[test]

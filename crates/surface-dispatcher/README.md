@@ -1,6 +1,6 @@
 # gandr-surface-dispatcher
 
-Routes an understood `gandr` driver invocation to the outcome the driver renders, and composes the surface pipeline the `check`, `test` and `run` verbs run: parse, lower, check, settle, over every source under the paths given, and for `run` the run stage after the check: focus, run on the L machine, read back. The `fmt` verb reaches the same paths and lays each source out through `gandr-surface-format`.
+Routes an understood `gandr` driver invocation to the outcome the driver renders, and composes the surface pipeline the `check`, `test` and `run` verbs run: parse, lower, check, settle, over every source under the paths given, and for `run` the run stage after the check, through the `Engine` that `gandr-surface-evaluate` implements. The `fmt` verb reaches the same paths and lays each source out through `gandr-surface-format`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -39,7 +39,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `HostGrant`, `OperationName`, `WorldName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by, and the worlds every declaration is entered at, read against the worlds each module declares; `compose` and `test` judge under neither.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.
 - `Exercised` and `Row`: the fragment's exercised table.
-- `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `last_declared::Absent` and `declaration_name::Absent`: the run stage.
+- `Engine`: the run stage that each composition, walk, type table and run takes as a type parameter; `gandr-surface-evaluate`'s `Evaluator` implements it ([`engine`](src/engine.rs)). `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `last_declared::Absent` and `declaration_name::Absent`: a program's data and what a run answers ([`program`](src/program.rs)).
 - `Script`, `ScriptRun`, `Ran`, `execute`, `run_source` and `host`: the run and host verbs.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
@@ -47,6 +47,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `measure`, `Measure`, `measured::Absent`, `Walk::measuring`, `Positioning`, `ArtifactPositions`, `Placed` and `positioned::Absent`: each declaration's artifact sizes and tally ([`measure`](src/measure.rs)).
 - `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
+- `fixture`, off by default: the shared fixtures of the composition, and each private item a test of the run stage reads, for the tests of this crate and of `gandr-surface-evaluate` ([`fixture`](src/fixture.rs)).
 
 ## Expected features
 
@@ -66,6 +67,7 @@ use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::dispatch;
+use gandr_surface_evaluate::Evaluator;
 
 fn run(paths: Vec<std::path::PathBuf>) {
     let invocation = Invocation::Check { goals: Goals::Gated, paths, width: Width::PerformanceCores };
@@ -73,7 +75,7 @@ fn run(paths: Vec<std::path::PathBuf>) {
     else {
         return;
     };
-    let ControlFlow::Continue(report) = walk.visit(&Pool::new(width), |step| -> ControlFlow<core::convert::Infallible> {
+    let ControlFlow::Continue(report) = walk.visit::<Evaluator, _, _>(&Pool::new(width), |step| -> ControlFlow<core::convert::Infallible> {
         if let Step::Fault { path, fault } = step {
             eprintln!("{}: {fault}", path.display());
         }
@@ -97,7 +99,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | ----- | ------ |
 | Routing, specification evidence, optional tracing | [`src/lib.rs`](src/lib.rs) |
 | One composition, the kernel's re-derivation, a component judged once | [`compose`](src/compose.rs), [`component`](src/component.rs) |
-| The run stage, native universe-path boundaries | [`evaluate`](src/evaluate.rs) |
+| A program's data and its construction; the crossing to the run stage | [`program`](src/program.rs); [`engine`](src/engine.rs) |
 | What each verb prints of a step | [`entry`](src/entry.rs) |
 | Reading before judging, forking by component, judgement in walk order | [`walk`](src/walk.rs) |
 | The driver's pool, the reader | [`pool`](src/pool.rs), [`reader`](src/reader.rs) |
@@ -129,12 +131,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
-- `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — anchor: the first adapter of exact reals, a handle to a plan the host holds.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: § presented-spaces-crates puts the adapter of stage C here.
-- `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — anchor: a draw's native handler.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
-- `Taylor-2010-lambda_calculus_real_analysis` — exemplar: Taylor, _JLA_ 2:5, 2010, `doi:10.4115/jla.2010.2.5` — the laws a cut owes.
-- `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar: Escardó, _ENTCS_ 87, 2004, `doi:10.1016/j.entcs.2004.09.017` — a comparison as an open.
 - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — a row's bound as a semiring product.
 - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — a fresh name for each internal wire.
 

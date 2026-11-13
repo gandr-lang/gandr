@@ -10,6 +10,8 @@ use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Unrunnable;
 use gandr_surface_dispatcher::compose;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Runs as _;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -33,7 +35,8 @@ fn run(source: SourceText<'_>) -> Evaluation<'_>
     let grammar = built_in().expect("built-in grammar");
     let mut lowerings = LoweringCount::default();
     let Composed::Settled { mut program, .. } =
-        compose(&grammar, CorpusRoot::Fixture, source, &mut lowerings).expect("composition")
+        compose::<Evaluator>(&grammar, CorpusRoot::Fixture, source, &mut lowerings)
+            .expect("composition")
     else {
         panic!("module was refused");
     };

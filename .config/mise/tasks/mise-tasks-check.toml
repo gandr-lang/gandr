@@ -28,7 +28,8 @@
 # `main` moves (#5438). The merge group on `landing` runs no test lane. So the
 # gate runs the light checks, which take seconds, and of the heavy checks
 # Clippy and the compiler policy (`check:landing`). It runs the enforcing
-# suites of the packages the change touches and of `gandr-surface-dispatcher`
+# suites of the packages the change touches and of the corpus's readers,
+# `gandr-surface-dispatcher` and `gandr-surface-evaluate`
 # (`.config/gate-scope/test-scope.bash`, #6812): #6563 broke two tests of the
 # checker, and no stage before `landing` ran them (#6595), and #6709 and
 # #6712 each turned a test of the dispatcher red, a package they did not

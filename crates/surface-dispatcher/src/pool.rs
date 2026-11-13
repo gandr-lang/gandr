@@ -126,7 +126,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L2 — a walk and a staging forked on one pool at three threads
 ///   and at the host's width give the serial visit's and the serial run's
 ///   output.
-/// - witness: `walk::tests::a_tree_is_walked_in_order`
+/// - witness: `tests::walk::a_tree_is_walked_in_order`
 /// - witness: `stage::tests::every_width_stages_the_serial_run`
 #[derive(Debug)]
 pub struct Pool
@@ -238,7 +238,7 @@ impl Pool
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`Pool`].
-    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    /// - witness: `tests::walk::a_tree_is_walked_in_order`
     /// - witness: `pool::tests::a_serial_pool_starts_no_thread`
     #[spec(ensures: |ret| items.len() > 1_usize || matches!(ret, Maybe::Absent(alone::Absent::Serial)))]
     pub(crate) fn helpers<T>(

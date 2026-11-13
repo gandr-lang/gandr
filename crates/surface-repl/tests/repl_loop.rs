@@ -29,6 +29,7 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
@@ -275,7 +276,7 @@ where
         .submit(revision.into())
         .expect("the session does not fault")
         .into_step(Path::new(""));
-    entries(&step, Verb::Check(Goals::Reported))
+    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
         .filter_map(|diagnostic| match diagnostic.severity {
             Severity::Error | Severity::Note | Severity::Warning => {
                 let mut text = render(&diagnostic, style, Verbosity::User).to_string();

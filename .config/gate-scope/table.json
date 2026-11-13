@@ -29,7 +29,7 @@
     "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
     "prose": ["check:prose"]
   },
-  "readers": ["gandr-surface-dispatcher"],
+  "readers": ["gandr-surface-dispatcher", "gandr-surface-evaluate"],
   "light": ["check:cases", "check:spec-cost-landed"],
   "landing": [
     "check:corpus",

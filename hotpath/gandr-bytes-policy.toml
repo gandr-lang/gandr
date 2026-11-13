@@ -33,7 +33,7 @@ alloc = { avg = "1186 KB" }
 message = "a component's lowering resumed onto the prelude's copies the prelude's slots, structures and other collected tables, and its origins (#2461)"
 
 [[functions.budgets]]
-match = "gandr_surface_dispatcher::evaluate::after"
+match = "gandr_surface_dispatcher::program::after"
 alloc = { avg = "512 KB" }
 message = "a component's program continued from the prelude's copies the prelude's program (#2461)"
 

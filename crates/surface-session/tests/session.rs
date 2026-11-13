@@ -23,6 +23,7 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::namespace::DottedName;
@@ -1254,7 +1255,7 @@ fn admitted_after<'text>(
     else {
         panic!("the revision is not refused whole");
     };
-    let whole = judge_member(
+    let whole = judge_member::<Evaluator>(
         CorpusRoot::Strict,
         (module, text),
         arena,
@@ -1554,7 +1555,7 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     else {
         panic!("the revision is not refused whole");
     };
-    let whole = judge_member(
+    let whole = judge_member::<Evaluator>(
         CorpusRoot::Strict,
         (module, text),
         arena,
@@ -1842,7 +1843,7 @@ fn an_importer_lowers_its_closure_once_1033()
             )
             .expect("the closure is held"),
         );
-        let judged = JudgedClosure::new(
+        let judged = JudgedClosure::new::<Evaluator>(
             Arc::clone(&closure),
             &HostGrant::UNBOUNDED,
             CorpusRoot::Strict,
@@ -1871,7 +1872,7 @@ fn an_importer_lowers_its_closure_once_1033()
         else {
             panic!("the revision is not refused whole");
         };
-        let (settled, _admission) = judge_member_after(
+        let (settled, _admission) = judge_member_after::<Evaluator>(
             CorpusRoot::Strict,
             (module, text),
             arena,

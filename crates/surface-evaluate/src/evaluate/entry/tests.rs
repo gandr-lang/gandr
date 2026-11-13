@@ -8,25 +8,26 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_surface_dispatcher::Captured;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Entered;
+use gandr_surface_dispatcher::Entry;
+use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::ExitStatus;
+use gandr_surface_dispatcher::Input;
+use gandr_surface_dispatcher::Line;
+use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::fixture::Listed;
+use gandr_surface_dispatcher::program_entry;
 use gandr_surface_lowering::Arguments;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use super::Entered;
-use super::Entry;
-use super::ExitStatus;
 use super::argument_list;
-use super::program_entry;
-use crate::entry::console::Captured;
-use crate::entry::console::Console;
-use crate::entry::console::Input;
-use crate::entry::console::Line;
-use crate::entry::console::Printed;
-use crate::entry::entered::RealsProfile;
-use crate::entry::evaluation::Evaluation;
+use crate::Runs as _;
 use crate::evaluate::tests::listed_program;
 use crate::evaluate::tests::program;
-use crate::tests::Listed;
 
 /// The entry is the `main` the source run declares at its top level, with
 /// the arguments its type reads; a source with no `main`, and a module's

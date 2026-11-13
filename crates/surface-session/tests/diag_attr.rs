@@ -17,6 +17,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -205,7 +206,7 @@ fn reports<'text>(source: impl Into<Text<'text>>) -> Vec<Seen>
     let source = source.into();
     let step =
         submit(&mut session(SourceRoot::Fixture), source.0).into_step(Path::new("attribute.gandr"));
-    entries(&step, Verb::Check(Goals::Reported))
+    entries::<Evaluator>(&step, Verb::Check(Goals::Reported))
         .map(|diagnostic| {
             assert_ne!(
                 diagnostic.severity,

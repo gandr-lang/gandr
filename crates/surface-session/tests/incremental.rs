@@ -21,6 +21,7 @@ use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::compose;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_session::Revision;
 use gandr_surface_session::Session;
 use gandr_surface_session::SurfaceItems;
@@ -97,7 +98,7 @@ fn gate<'text>(
     let submission = submit(&mut session, edited);
     let grammar = &*GRAMMAR;
     let mut lowerings = LoweringCount::default();
-    let composed = compose(
+    let composed = compose::<Evaluator>(
         grammar,
         SourceRoot::Strict.corpus_root(),
         SourceText::from(edited),
@@ -390,7 +391,7 @@ proptest! {
             let text = render(&current);
             let submission = submit(&mut session, &text);
             let mut lowerings = LoweringCount::default();
-            let composed = compose(
+            let composed = compose::<Evaluator>(
                 grammar,
                 SourceRoot::Fixture.corpus_root(),
                 SourceText::from(text.as_str()),

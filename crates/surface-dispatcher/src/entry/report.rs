@@ -115,8 +115,8 @@ pub enum Reach
 ///   and under `explicit-exits` enabled, each printed or not; a pure and an
 ///   effectful inferred run under `explicit-runs` and under its `effects`
 ///   option, each printed or not.
-/// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
-/// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
+/// - witness: `tests::entry::an_inferred_exit_is_reported_where_a_lint_reaches`
+/// - witness: `tests::entry::an_inferred_run_is_reported_where_a_lint_reaches`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Lints
 {
@@ -223,8 +223,8 @@ pub enum Shown
 ///   plain declaration, settled declaration with no kernel image, goal-shaped
 ///   and refusal-shaped unsettled declaration, enumerated against a pinned
 ///   table.
-/// - witness: `entry::report::tests::each_verb_shows_its_declarations`
-/// - witness: `compose::tests::an_endpoint_loop_settles_with_no_kernel_image_6047`
+/// - witness: `tests::report::each_verb_shows_its_declarations`
+/// - witness: `tests::compose::an_endpoint_loop_settles_with_no_kernel_image_6047`
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| match ret {
@@ -288,8 +288,8 @@ enum Unsettled
 /// - hypothesis: L3 — real settled, owed and refused declarations are observed
 ///   through their printing and gating decisions. These cover the ordinary
 ///   checks/refusal boundary, not every malformed expectation.
-/// - witness: `entry::report::tests::each_verb_shows_its_declarations`
-/// - witness: `entry::report::tests::each_count_decides_its_verdict`
+/// - witness: `tests::report::each_verb_shows_its_declarations`
+/// - witness: `tests::report::each_count_decides_its_verdict`
 #[spec(ensures: |ret| (ret == Unsettled::Obligations)
     == matches!((declaration.stated(), declaration.outcome()),
         (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_))))]
@@ -529,7 +529,7 @@ impl SourceCount
     ///   maximum count; ordinary path faults exercise an increment below the
     ///   boundary. These distinguish wraparound and premature saturation.
     /// - witness: `entry::report::tests::source_counts_saturate_without_counting_refusals`
-    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
+    /// - witness: `tests::report::each_count_decides_its_verdict`
     #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1_usize))]
     const fn one_more(self) -> Self
     {
@@ -701,7 +701,7 @@ impl RunReport
     /// - hypothesis: L3 — each count that decides is set alone on an otherwise
     ///   settled report and the verdict asserted under every verb, with the
     ///   goals boundary at goals equal to and one below the unsettled count.
-    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
+    /// - witness: `tests::report::each_count_decides_its_verdict`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| {
@@ -758,7 +758,7 @@ impl RunReport
     ///   faults at the maximum preserve the root and refusal counts. This
     ///   distinguishes wrapping and changing an unrelated source
     ///   classification.
-    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
+    /// - witness: `tests::report::each_count_decides_its_verdict`
     /// - witness: `entry::report::tests::source_counts_saturate_without_counting_refusals`
     #[spec(
         captures: [sources = self.sources],
@@ -818,8 +818,8 @@ impl RunReport
     ///   distinguish source counting from declaration/goal absorption. Existing
     ///   gating fixtures distinguish refusal and engine counts. The
     ///   observations are finite compositions, not arbitrary tally states.
-    /// - witness: `entry::report::tests::pending_sources_do_not_contribute_declarations_or_goals`
-    /// - witness: `entry::report::tests::each_count_decides_its_verdict`
+    /// - witness: `tests::report::pending_sources_do_not_contribute_declarations_or_goals`
+    /// - witness: `tests::report::each_count_decides_its_verdict`
     #[spec(
         captures: [sources = self.sources, goals = usize::from(self.goals), lowerings = self.lowerings],
         ensures: |_| {
@@ -920,202 +920,10 @@ impl fmt::Display for RunReport
 #[cfg(test)]
 mod tests
 {
-    use gandr_core_checker::CheckBudget;
-    use gandr_core_checker::CheckingContext;
-    use gandr_core_checker::bridge;
-    use gandr_core_checker::check_module;
-    use gandr_core_term::CoreArena;
-    use gandr_core_term::FailureClass;
-    use gandr_surface_corpus::CorpusRoot;
-    use gandr_surface_corpus::settle;
-    use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationCount;
-    use gandr_surface_lowering::LoweringBudget;
-    use gandr_surface_lowering::lower_module;
-    use gandr_surface_lowering::namespace::Recognition;
-    use gandr_surface_parser::parse;
-    use gandr_surface_syntax::SourceText;
 
-    use super::Goals;
     use super::RunReport;
-    use super::RunVerdict;
-    use super::Shown;
-    use super::Verb;
-    use super::shown;
-    use crate::compose::Composed;
     use crate::compose::LoweringCount;
-    use crate::compose::adapt;
-    use crate::compose::compose;
-    use crate::entry::exercised::Exercised;
-    use crate::evaluate::Program;
-    use crate::root::SourceRoot;
-    use crate::walk::Standing;
-
-    /// The verbs, every one.
-    const VERBS: [Verb; 3_usize] = [
-        Verb::Check(Goals::Gated),
-        Verb::Check(Goals::Reported),
-        Verb::Test,
-    ];
-
-    #[test]
-    fn each_verb_shows_its_declarations()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let mut lowerings = LoweringCount::default();
-        let Ok(Composed::Settled { report, .. }) = compose(
-            &grammar,
-            CorpusRoot::Fixture,
-            SourceText::from(include_str!(
-                "report/fixtures/each-verb-shows-its-declarations.gandr"
-            )),
-            &mut lowerings,
-        )
-        else {
-            panic!("the module settles");
-        };
-        let rows = [
-            ("fixture", [Shown::Counted, Shown::Counted, Shown::Line]),
-            ("plain", [Shown::Counted, Shown::Counted, Shown::Counted]),
-            ("hole", [Shown::Line, Shown::Goal, Shown::Line]),
-            ("broken", [Shown::Line, Shown::Line, Shown::Line]),
-        ];
-        for ((name, expected), declaration) in rows.into_iter().zip(report.declarations()) {
-            assert_eq!(declaration.name().to_string(), name, "admission order");
-            for (verb, expected) in VERBS.into_iter().zip(expected) {
-                assert_eq!(shown(declaration, verb), expected, "{name} under {verb:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn each_count_decides_its_verdict()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let settled_source = |source: &'static str| {
-            let mut lowerings = LoweringCount::default();
-            let Ok(composed @ Composed::Settled { .. }) = compose(
-                &grammar,
-                CorpusRoot::Fixture,
-                SourceText::from(source),
-                &mut lowerings,
-            )
-            else {
-                panic!("{source} settles");
-            };
-            composed
-        };
-        let read = |source: &'static str, standing: Standing| {
-            let composed = settled_source(source);
-            let mut report = RunReport::default();
-            report.read(SourceRoot::Fixture, &composed, standing);
-            report
-        };
-        let all = |report: &RunReport| VERBS.map(|verb| report.verdict(verb));
-
-        assert_eq!(
-            all(&read("def a = 1 ;", Standing::Settled)),
-            [RunVerdict::Settled; 3_usize],
-            "a settled run is settled under every verb"
-        );
-        assert_eq!(
-            all(&read("def a : Integer ;", Standing::Unsettled)),
-            [
-                RunVerdict::Unsettled,
-                RunVerdict::Settled,
-                RunVerdict::Unsettled
-            ],
-            "an undeclared obligation is a goal under check --goals alone"
-        );
-        assert_eq!(
-            all(&read(
-                "def a : Integer ; def b = missing ;",
-                Standing::Unsettled
-            )),
-            [RunVerdict::Unsettled; 3_usize],
-            "one unsettled declaration beyond the goals fails every verb"
-        );
-        assert_eq!(
-            all(&read("def a = 1 ;", Standing::Refused)),
-            [RunVerdict::Unsettled; 3_usize],
-            "a source refused as a whole fails every verb"
-        );
-        assert_eq!(
-            all(&read("def a = 1 ;", Standing::Lowered)),
-            [RunVerdict::Unsettled; 3_usize],
-            "a pending source the lowering read fails every verb"
-        );
-        let mut faulted = read("def a : Integer ;", Standing::Unsettled);
-        faulted.faulted();
-        assert_eq!(
-            all(&faulted),
-            [RunVerdict::Faulted; 3_usize],
-            "a faulted path faults every verb, over any unsettled declaration"
-        );
-
-        let source = SourceText::from(r#"@[ refuses("BudgetExceeded") ] def a = 1 ;"#);
-        let tree = parse(&grammar, source).expect("parses").into_tree();
-        let mut arena = CoreArena::new();
-        let module = lower_module(
-            &grammar,
-            &tree,
-            &mut arena,
-            LoweringBudget::DEFAULT,
-            Recognition::default(),
-        )
-        .expect("the module lowers");
-        let declarations = adapt(&module, &arena);
-        let verdicts = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
-            &declarations,
-        );
-        let kernel = bridge::readmit(&mut arena, &verdicts).export(module.structured_names());
-        let mut program = Program::new(&arena, &module, &verdicts);
-        let composed = Composed::Settled {
-            report: settle(
-                CorpusRoot::Fixture,
-                &arena,
-                &module,
-                &verdicts,
-                &mut program,
-            )
-            .expect("the verdicts are the module's"),
-            exercised: Exercised::default(),
-            unstatable: Vec::new(),
-            kernel: quenchant_shape::shape::Maybe::Present(kernel),
-            positions: quenchant_shape::shape::Maybe::Absent(
-                crate::compose::positioned::Absent::Unasked,
-            ),
-            origins: module.into_origins(),
-            spellings: gandr_surface_diagnostics::TypeSpellings::default(),
-            failures: gandr_surface_diagnostics::Failures::default(),
-            shadowed: Vec::new(),
-            inferred: Vec::new(),
-            runs: Vec::new(),
-            deprecated: Vec::new(),
-            parted: Vec::new(),
-            unused: Vec::new(),
-            unreached: Vec::new(),
-            program,
-        };
-        let mut engine = RunReport::default();
-        engine.read(SourceRoot::Fixture, &composed, Standing::Settled);
-        assert_eq!(
-            engine.tally().refusals().count(FailureClass::EngineFault),
-            DeclarationCount::from(1_usize),
-            "an exhausted allowance is the engine's fault"
-        );
-        assert_eq!(
-            usize::from(engine.tally().declarations().unsettled()),
-            0_usize,
-            "the declaration states its refusal, so it settles"
-        );
-        assert_eq!(
-            all(&engine),
-            [RunVerdict::Faulted; 3_usize],
-            "an engine refusal faults every verb, even one a declaration states"
-        );
-    }
 
     #[test]
     fn source_counts_saturate_without_counting_refusals()
@@ -1142,59 +950,6 @@ mod tests
         assert_eq!(before.pending(), report.sources().pending());
         assert_eq!(before.refused(), report.sources().refused());
         assert_eq!(before.lowered_pending(), report.sources().lowered_pending());
-    }
-
-    #[test]
-    fn pending_sources_do_not_contribute_declarations_or_goals()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let compose_source = |source: &'static str| {
-            let mut lowerings = LoweringCount::default();
-            compose(
-                &grammar,
-                CorpusRoot::Fixture,
-                SourceText::from(source),
-                &mut lowerings,
-            )
-            .expect("the fixture composes")
-        };
-        let ordinary = compose_source(
-            "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ; def hole : Integer ;",
-        );
-        let pending = compose_source(include_str!("report/unformatted/str-pending.gandr"));
-        let mut report = RunReport::default();
-        report.read(
-            SourceRoot::Fixture,
-            &ordinary,
-            Standing::of(SourceRoot::Fixture, &ordinary),
-        );
-        assert_eq!(DeclarationCount::from(1_usize), report.goals());
-        assert_eq!(
-            DeclarationCount::from(1_usize),
-            report
-                .exercised()
-                .count(crate::entry::exercised::Row::LambdaChecks)
-        );
-        let before = report;
-        let standing = Standing::of(SourceRoot::Pending, &pending);
-        assert_eq!(Standing::Pending, standing);
-        report.read(SourceRoot::Pending, &pending, standing);
-        assert_eq!(before.tally(), report.tally());
-        assert_eq!(before.exercised(), report.exercised());
-        assert_eq!(before.goals(), report.goals());
-        assert_eq!(super::SourceCount(1), report.sources().pending());
-        let standing = Standing::of(SourceRoot::Pending, &ordinary);
-        assert_eq!(Standing::Lowered, standing);
-        report.read(SourceRoot::Pending, &ordinary, standing);
-        assert_eq!(super::SourceCount(2), report.sources().pending());
-        assert_eq!(super::SourceCount(1), report.sources().lowered_pending());
-        assert_eq!(DeclarationCount::from(2_usize), report.goals());
-        assert_eq!(
-            DeclarationCount::from(2_usize),
-            report
-                .exercised()
-                .count(crate::entry::exercised::Row::LambdaChecks)
-        );
     }
 
     #[test]

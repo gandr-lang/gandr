@@ -141,8 +141,8 @@
 //! destination becomes an explicit API requirement, rather than an incidental
 //! side effect of dispatch.
 
-// Module documentation that predates the shape lint: 82 headings outside the
-// vocabulary, 20 decision records, 41 issue references and 14 budgets
+// Module documentation that predates the shape lint: 77 headings outside the
+// vocabulary, 19 decision records, 42 issue references and 11 budgets
 // exceeded. Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -160,8 +160,10 @@ extern crate alloc;
 mod cells;
 mod component;
 mod compose;
+mod engine;
 mod entry;
-mod evaluate;
+#[cfg(any(test, feature = "fixture"))]
+pub mod fixture;
 mod format;
 mod generation;
 mod held;
@@ -173,6 +175,7 @@ mod meter;
 mod package;
 mod pool;
 mod presentation;
+mod program;
 mod reader;
 mod receipts;
 mod root;
@@ -189,12 +192,6 @@ mod verdicts;
 mod walk;
 mod width;
 mod workspace;
-
-// The digest of a corpus walk the tests of one nextest run share (#5256),
-// the integration tests' own module.
-#[cfg(test)]
-#[path = "../tests/digest.rs"]
-mod digest;
 
 use std::path::PathBuf;
 
@@ -283,6 +280,7 @@ pub use crate::compose::placement;
 pub use crate::compose::positioned;
 pub use crate::compose::scheduled;
 pub use crate::compose::tabled;
+pub use crate::engine::Engine;
 pub use crate::entry::Entries;
 pub use crate::entry::Refusals;
 pub use crate::entry::Repairs;
@@ -301,11 +299,13 @@ pub use crate::entry::entries;
 pub use crate::entry::evaluation::Evaluation;
 pub use crate::entry::evaluation::RunStatus;
 pub use crate::entry::evaluation::SealedRun;
+pub use crate::entry::evaluation::Terminal;
 pub use crate::entry::evaluation::Unfinished;
 pub use crate::entry::evaluation::Unrunnable;
 pub use crate::entry::evaluation::ValueSpelling;
 pub use crate::entry::evaluation::declaration_name;
 pub use crate::entry::evaluation::hole_site;
+pub use crate::entry::evaluation::last_declared;
 pub use crate::entry::exercised::Exercised;
 pub use crate::entry::exercised::Row;
 pub use crate::entry::report::Goals;
@@ -325,11 +325,6 @@ pub use crate::entry::worlds::WorldBinding;
 pub use crate::entry::worlds::WorldBindingError;
 pub use crate::entry::worlds::WorldBindings;
 pub use crate::entry::worlds::Worlds;
-pub use crate::evaluate::Engine;
-pub use crate::evaluate::Program;
-pub use crate::evaluate::RealsAdapter;
-pub use crate::evaluate::Terminal;
-pub use crate::evaluate::last_declared;
 pub use crate::format::FormatFault;
 pub use crate::format::FormatStep;
 pub use crate::format::Formatting;
@@ -425,6 +420,15 @@ pub use crate::presentation::Presentation;
 pub use crate::presentation::PresentationFault;
 pub use crate::presentation::presented;
 pub use crate::presentation::read_presentation;
+pub use crate::program::DeclaredRun;
+pub use crate::program::Focused;
+pub use crate::program::Opacity;
+pub use crate::program::Parts;
+pub use crate::program::Program;
+pub use crate::program::Slot;
+pub use crate::program::channel;
+pub use crate::program::concurrent;
+pub use crate::program::references;
 pub use crate::receipts::DamagedCount;
 pub use crate::receipts::StoredVerdicts;
 pub use crate::receipts::VerdictStoreError;
@@ -480,6 +484,7 @@ pub use crate::typed::TypeTable;
 pub use crate::typed::TypedSpan;
 pub use crate::typed::checked_against;
 pub use crate::typed::crossed;
+pub use crate::typed::hidden_members;
 pub use crate::typed::printed;
 pub use crate::typed::referred;
 pub use crate::typed::reprinted;
@@ -687,9 +692,9 @@ impl core::fmt::Display for StatusReport
 ///   arbitrary path lists or prove the complete walk order, which has its own
 ///   witnesses.
 /// - witness: `tests::status_routes_to_the_status_report`
-/// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
-/// - witness: `tests::the_test_verb_routes_to_a_walk`
-/// - witness: `tests::the_run_verb_routes_to_a_script`
+/// - witness: `tests::dispatch::check_routes_to_a_walk_under_the_check_verb`
+/// - witness: `tests::dispatch::the_test_verb_routes_to_a_walk`
+/// - witness: `tests::dispatch::the_run_verb_routes_to_a_script`
 /// - witness: `tests::the_stage_verb_routes_to_a_staging`
 /// - witness: `tests::the_format_verb_routes_to_a_formatting`
 /// - witness: `tests::the_cells_verb_routes_to_a_census`
@@ -771,191 +776,15 @@ pub fn dispatch(invocation: Invocation) -> Outcome
 #[cfg(test)]
 mod tests
 {
-    use core::ops::ControlFlow;
     use std::path::PathBuf;
 
-    use anodized::spec;
-    use gandr_surface_diagnostics::Lint;
     use quenchant_shape::shape::Maybe;
 
-    use super::Goals;
-    use super::HostGrant;
     use super::Invocation;
-    use super::Lints;
     use super::Outcome;
-    use super::Pool;
-    use super::ScriptRun;
     use super::StatusReport;
-    use super::Step;
-    use super::Threads;
-    use super::Verb;
     use super::Width;
     use super::dispatch;
-
-    /// The lines a source writes to import the module of every host interface
-    /// (#4523), after its own text.
-    pub const HOSTING: &str = include_str!("lib/unformatted/hosting.gandr");
-
-    /// A source laid after `std.list`, as the driver lays a source after the
-    /// module it imports: the module's text first, then the source, whose
-    /// path imports each resolve to it (#4520). The module declares nothing,
-    /// so it stands in for the host interfaces' modules as well (#4523).
-    pub struct Listed
-    {
-        /// The unit's text.
-        pub text: alloc::string::String,
-        /// Where each source starts and what the source's imports resolve to.
-        pub unit: gandr_surface_lowering::Unit,
-        /// Where the source's own text starts in `text`.
-        pub base: gandr_surface_syntax::ByteOffset,
-    }
-
-    impl Listed
-    {
-        /// `source` laid after the standard library's `std.list`.
-        ///
-        /// # Specification
-        /// - requires: each line of the source opening with `import ` is a path
-        ///   import of a module that declares nothing it reads by name.
-        /// - ensures: the text ends with `source`, which starts at `base`.
-        /// - provides: a source naming `List` or a host interface composed
-        ///   where it resolves.
-        /// - fails: never.
-        /// - panics: if the standard library is not checked out.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — the entry witnesses compose a source reading
-        ///   `List(String)` through here, and its entry is found.
-        /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
-        #[spec(ensures: |ref ret| ret.text.ends_with(<&str>::from(source)) && ret.text.len() == usize::from(ret.base).saturating_add(<&str>::from(source).len()))]
-        pub fn new(source: gandr_surface_syntax::SourceText<'_>) -> Self
-        {
-            use gandr_surface_lowering::ImportTarget;
-            use gandr_surface_lowering::SourceIndex;
-            use gandr_surface_lowering::Unit;
-            use gandr_surface_lowering::UnitSource;
-            use gandr_surface_syntax::ByteOffset;
-
-            let module = std::fs::read_to_string(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../library/std/src/list.gandr"),
-            )
-            .expect("the standard library is checked out");
-            let written: &str = source.into();
-            let imports = written
-                .lines()
-                .filter(|line| line.starts_with("import "))
-                .count();
-            let base = ByteOffset::from(module.len());
-            let unit = Unit::new(alloc::vec![
-                UnitSource::new(ByteOffset::from(0_usize), alloc::vec::Vec::new()),
-                UnitSource::new(
-                    base,
-                    alloc::vec![ImportTarget::Source(SourceIndex::from(0_usize)); imports]
-                ),
-            ])
-            .expect("the source imports the module before it");
-            Self {
-                text: alloc::format!("{module}{written}"),
-                unit,
-                base,
-            }
-        }
-
-        /// `source`, then [`HOSTING`], laid as [`Listed::new`] lays a source.
-        ///
-        /// # Specification
-        /// - requires: as [`Listed::new`].
-        /// - ensures: the text ends with [`HOSTING`], and `source` starts at
-        ///   `base`.
-        /// - provides: a source naming host interfaces composed where they
-        ///   resolve.
-        /// - fails: never.
-        /// - panics: as [`Listed::new`].
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — a program printing through the console runs.
-        /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
-        #[spec(ensures: |ref ret| ret.text.ends_with(HOSTING))]
-        pub fn hosted<Source>(source: Source) -> Self
-        where
-            Source: core::fmt::Display,
-        {
-            let written = alloc::format!("{source}{HOSTING}");
-            Self::new(gandr_surface_syntax::SourceText::from(written.as_str()))
-        }
-
-        /// The laid source composed as [`crate::compose()`] composes one source
-        /// alone, under `root`.
-        ///
-        /// # Specification
-        /// - requires: the unit lowers and judges without a fault.
-        /// - ensures: the composition of the source at `base`.
-        /// - provides: the listed counterpart of [`crate::compose()`].
-        /// - fails: never.
-        /// - panics: on a composition fault.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — as [`Listed::new`].
-        /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
-        #[spec(requires: !self.text.is_empty())]
-        pub fn composed(
-            &self,
-            root: gandr_surface_corpus::CorpusRoot,
-        ) -> super::Composed<'_>
-        {
-            let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-            let text = gandr_surface_syntax::SourceText::from(self.text.as_str());
-            super::lower_unit_source(
-                &grammar,
-                text,
-                &self.unit,
-                &mut super::LoweringCount::default(),
-            )
-            .and_then(|lowering| {
-                crate::compose::judge_lowering(
-                    root,
-                    (lowering, text),
-                    &HostGrant::UNBOUNDED,
-                    self.base,
-                )
-            })
-            .unwrap_or_else(|fault| panic!("the listed source composes: {fault}"))
-        }
-    }
-
-    /// The first fault a walk over `paths` reports, which names the first path
-    /// it visited when no path exists.
-    ///
-    /// # Specification
-    /// - requires: a run outcome whose first step is a fault.
-    /// - ensures: the path carried by that first fault.
-    /// - fails: never on the admitted domain.
-    /// - panics: a non-run outcome or non-fault first step violates the
-    ///   precondition.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — missing paths distinguish the first routed path under
-    ///   both check policies and test. Other outcomes and successful first
-    ///   steps are outside this helper's admitted domain.
-    /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
-    /// - witness: `tests::the_test_verb_routes_to_a_walk`
-    #[spec(requires: matches!(outcome, Outcome::Run { .. }))]
-    fn first_fault_path(outcome: Outcome) -> PathBuf
-    {
-        let Outcome::Run { walk, .. } = outcome
-        else {
-            panic!("a verb routes to a walk");
-        };
-        let ControlFlow::Break(path) = walk.visit(&Pool::new(Width::SERIAL), |step| match step {
-            Step::Fault { path, .. } => ControlFlow::Break(path.to_path_buf()),
-            Step::Source { .. } => panic!("an absent path faults"),
-        })
-        else {
-            panic!("an absent path faults");
-        };
-        path
-    }
 
     /// A bare invocation routes to the status report.
     #[test]
@@ -968,92 +797,6 @@ mod tests
         );
         let rendered = std::format!("{StatusReport}");
         assert!(!rendered.contains(['\n', '\r']));
-    }
-
-    /// `check` keeps its goals and lints settings, its width and its paths'
-    /// order.
-    #[test]
-    fn check_routes_to_a_walk_under_the_check_verb()
-    {
-        let three = Width::Threads(Threads::from(
-            core::num::NonZeroUsize::MIN.saturating_add(2),
-        ));
-        for (goals, lints, width) in [
-            (Goals::Gated, Lints::default(), Width::SERIAL),
-            (
-                Goals::Reported,
-                Lints::enabling([Lint::ExplicitExits]),
-                three,
-            ),
-        ] {
-            let paths = vec![
-                PathBuf::from("no/such/first.gandr"),
-                PathBuf::from("no/such/second.gandr"),
-            ];
-            let outcome = dispatch(Invocation::Check {
-                goals,
-                lints,
-                grant: HostGrant::UNBOUNDED,
-                paths,
-                width,
-            });
-            assert!(
-                matches!(outcome, Outcome::Run { verb: Verb::Check(routed), lints: routed_lints, width: routed_width, .. }
-                    if routed == goals && routed_lints == lints && routed_width == width),
-                "check routes under its own goals and lints settings and width"
-            );
-            assert_eq!(
-                first_fault_path(outcome),
-                PathBuf::from("no/such/first.gandr"),
-                "the walk starts at the first path given"
-            );
-        }
-    }
-
-    /// `test` routes to a walk under the test verb, at its width.
-    #[test]
-    fn the_test_verb_routes_to_a_walk()
-    {
-        let outcome = dispatch(Invocation::Test {
-            paths: vec![PathBuf::from("no/such/only.gandr")],
-            width: Width::PerformanceCores,
-        });
-        assert!(
-            matches!(outcome, Outcome::Run {
-                verb: Verb::Test,
-                width: Width::PerformanceCores,
-                ..
-            }),
-            "test routes under the test verb at its width"
-        );
-        assert_eq!(
-            first_fault_path(outcome),
-            PathBuf::from("no/such/only.gandr"),
-            "the walk visits the path given"
-        );
-    }
-
-    /// `run` routes to a script of its one path.
-    #[test]
-    fn the_run_verb_routes_to_a_script()
-    {
-        let outcome = dispatch(Invocation::Run {
-            path: PathBuf::from("no/such/script.gandr"),
-            arguments: Vec::new(),
-        });
-        let Outcome::Script(mut script) = outcome
-        else {
-            panic!("run routes to a script");
-        };
-        let ScriptRun::Fault { path, .. } = script.run(&mut crate::Captured::default())
-        else {
-            panic!("an absent script faults");
-        };
-        assert_eq!(
-            path,
-            PathBuf::from("no/such/script.gandr"),
-            "the script reads the path given"
-        );
     }
 
     /// `stage` routes to a staging of its programs, in order, at its width.

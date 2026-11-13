@@ -386,7 +386,7 @@ mod tests
     use super::Crossover;
     use super::Held;
     use super::Reader;
-    use crate::walk::tests::Scratch;
+    use crate::fixture::Scratch;
 
     #[test]
     fn an_unchanged_file_is_read_once()

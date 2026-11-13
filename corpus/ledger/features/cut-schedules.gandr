@@ -19,7 +19,7 @@
 /// The measuring machine has a 16-core Ryzen 9 9950X3D at load 25 on
 /// 32 hardware threads.
 ///
-/// - see: crates/surface-dispatcher/src/evaluate.rs
+/// - see: crates/surface-evaluate/src/evaluate.rs
 /// - see: crates/runtime-emitter/src/run.rs
 /// - see: crates/runtime-emitter/tests/cut.rs
 /// - owes: #2954 — the rule that spawns a writer at each independent cut

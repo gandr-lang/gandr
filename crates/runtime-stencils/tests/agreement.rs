@@ -48,11 +48,13 @@ use gandr_runtime_emitter::replay;
 use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
-use gandr_surface_dispatcher::Engine;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_evaluate::Engine;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Runs as _;
 use gandr_theory_cell_complexes::Polarity;
 
 use crate::generate::Generator;
@@ -264,7 +266,7 @@ fn the_corpus_runs_items_agree_on_both_executors()
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();
     let mut item = String::new();
     let mut rendered = String::new();
-    let ControlFlow::Continue(_report) = walk.visit(
+    let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             let Step::Source {

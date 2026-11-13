@@ -18,7 +18,7 @@
 // so those counts are zero.
 //
 // - see: `corpus/model/reals/resume.gandr` — the checkpoint and the restore
-// - see: `crates/surface-dispatcher/src/evaluate/reals/machine.rs` — the
+// - see: `crates/surface-evaluate/src/evaluate/reals/machine.rs` — the
 //   counters of a machine
 
 // The console's host interface.

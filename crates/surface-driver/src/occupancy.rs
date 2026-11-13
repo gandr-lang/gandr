@@ -77,7 +77,7 @@ pub fn recorded<Stop, Visitor>(
 where
     Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
 {
-    walk.visit_recording(
+    walk.visit_recording::<gandr_surface_evaluate::Evaluator, _, _, _>(
         &pool.recording(rings, (Task::Fork, World::from(0_u32)), |_| Declared::NONE),
         visitor,
     )
@@ -135,7 +135,8 @@ where
                 std::thread::sleep(TICK);
             }
         });
-        let visited = walk.visit_recording(&recording, visitor);
+        let visited =
+            walk.visit_recording::<gandr_surface_evaluate::Evaluator, _, _, _>(&recording, visitor);
         let ended = activity_clock();
         done.store(true, Ordering::Release);
         let (rows, events) = match hub.join() {

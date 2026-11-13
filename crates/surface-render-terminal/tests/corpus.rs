@@ -21,6 +21,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::render;
 
@@ -81,14 +82,14 @@ fn rendered(repository: &Path) -> BTreeMap<PathBuf, String>
     let roots = REFUSING.map(|directory| corpus.join(directory)).to_vec();
     let mut rendered = BTreeMap::new();
     let mut faults = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(roots).visit(
+    let ControlFlow::Continue(_report) = Walk::new(roots).visit::<Evaluator, _, _>(
         &Pool::new(Width::PerformanceCores),
         |step| -> ControlFlow<Infallible> {
             match step {
                 Step::Source { path, .. } => {
                     let mut text = String::new();
-                    for diagnostic in
-                        entries(&step, Verb::Check(Goals::Gated)).refusals(Refusals::Every)
+                    for diagnostic in entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
+                        .refusals(Refusals::Every)
                     {
                         if !text.is_empty() {
                             text.push('\n');
