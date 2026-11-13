@@ -4647,6 +4647,11 @@ budget=$("$claims/../gh/changed.bash" "$from")
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
+# The issues that a `spelling: replaces` line of the body cites and that stand
+# open (#6876): one read per issue cited, as for a ceiling.
+spelled=$({ grep -E 'spelling:[[:space:]]*replaces' "$body" || :; } | grep -oE '#[0-9]+' | tr -d '#' | sort -un \
+  | while IFS= read -r n; do gh api "repos/$repo/issues/$n" --jq 'select(.state == "open" and .pull_request == null) | .number' 2> /dev/null || :; done \
+  | jq -s -c .)
 # The vault pages the issues name, and the crates' citations of them (#2793).
 # With a vault checkout configured (`.config/references/vault.bash`), each
 # resolved page's `vault:<mint>` is written beside its filename in the body's
