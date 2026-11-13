@@ -81,7 +81,7 @@ scaling_measure() {
   widths=$(jq -c .widths <<< "$config")
   status=0
   scaling_run "$head" curve "${scaling_paths[@]}" || status=$?
-  if ! curve=$(jq -R -s -c --argjson widths "$widths" -f "$scaling_dir/curve.jq" < "$out" 2>&1) || (( status != 0 )); then
+  if ! curve=$(jq -R -s -c -L "$scaling_dir" --argjson widths "$widths" -f "$scaling_dir/curve.jq" < "$out" 2>&1) || (( status != 0 )); then
     echo "the curve exits $status: $(awk 'NF {line = $0} END {print line}' "$out"); $curve" >&2
     return 1
   fi

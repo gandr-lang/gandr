@@ -133,6 +133,15 @@
 # the measurement, or the issue naming the serial step. A row the issue marks
 # `n/a — <reason>` may answer `n/a`, or stay out.
 #
+# A `parallelism` answer reports the thread curve from the widest host
+# (#6881, `units.md` § units-engineering). An answer that is not `n/a` names
+# the commit that the wide host measured before the change and the commit
+# after it, as `before <sha>` and `after <sha>`. `### parallelism` under
+# `## Engineering` holds the measure's output for each commit, as
+# `.config/bench/measure.jq` reads it, with a point at 1, 16, 32 and 64
+# threads. An `n/a` answer states its reason, `n/a — <reason>`, which the
+# coordinator reads at the signature.
+#
 # A ceiling the change adds cites the open issue that removes it (#5039): a
 # `spec_clause_traversal` waiver or an `economy:` comment carries `#<n>` in
 # its extent, and one such issue is open. A reason string alone is refused
@@ -157,6 +166,7 @@
 
 include "targets";
 include "sections";
+include "measure";
 include "vault";
 
 def vocabulary: "`taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>`, `read: <what it informed>` or `n/a: <reason>`";
@@ -512,6 +522,43 @@ def engineering_answers:
       end
     end;
 
+# The threads at which a `parallelism` answer's curve is measured (#6881,
+# `units.md` § units-engineering).
+def curve_threads: [1, 16, 32, 64];
+
+# The refusals of the body's `parallelism` answer (#6881): an `n/a` with no
+# reason; an answer that names no commit before or after; no subsection
+# `### parallelism` in the body; no output of the wide host's measure there for
+# a named commit; or an output with no point at one of `curve_threads`.
+def curve_answers:
+  (.body // "" | section("Engineering")) as $section
+  | select($section != null)
+  | "(`units.md` § units-engineering), then run `pr:open` again" as $then
+  | ($section | engineering | select(.row == "parallelism") | .answer) as $answer
+  | if $answer == "" then empty
+    elif $answer | test("^n/?a\\b"; "i") then
+      if $answer | test("^n/?a\\s*—\\s*\\S"; "i") then empty
+      else "the body's `## Engineering` answers `parallelism` with `\($answer)` and no reason: write `n/a — <reason>`, which the coordinator reads at the signature \($then)"
+      end
+    else
+      (.body | subsection("parallelism")) as $curve
+      | ($curve // [] | measure_outputs) as $outputs
+      | ("before", "after") as $side
+      | ([$answer | capture("\\b\($side)\\s+`?(?<sha>[0-9a-f]{7,40})`?")] | first | .sha) as $sha
+      | if $sha == null then
+          "the body's `## Engineering` answers `parallelism` with no commit \($side): name it as `\($side) <sha>`, the commit that the wide host measured \($then)"
+        elif $curve == null then
+          if $side == "before" then "the body's `## Engineering` answers `parallelism` with no `### parallelism`: put there the wide host's output for the commit before and for the commit after, as the measure prints it \($then)" else empty end
+        else ([$outputs[] | select(.commit | startswith($sha))] | first) as $output
+          | if $output == null then
+              "`### parallelism` holds no output of the wide host's measure at commit `\($sha)`, which the `parallelism` answer names \($side): put that output there, as the measure prints it \($then)"
+            else (curve_threads - [$output.points[].threads]) as $missing
+              | select($missing | length > 0)
+              | "the wide host's output at commit `\($sha)` gives no point at \($missing | map(tostring) | join(", ")) threads: measure the curve at \(curve_threads | map(tostring) | join(", ")) threads \($then)"
+            end
+        end
+    end;
+
 # The refusals of a ceiling the change adds without an open issue that
 # removes it (#5039), each with its file and line.
 def ceilings:
@@ -613,4 +660,4 @@ def speedups:
   | select($lacks | length > 0)
   | "the body's line `\(gsub("^\\s+|\\s+$"; ""))` claims a speedup without \($lacks | join(" and ")): name both on the claim's line (#3479, the algorithm-first ruling of #320), then run `pr:open` again";
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, viewed, refactorings, collectors, engineering_answers, ceilings, api_budget, facts_kept, speedups
+claim, sources, citations, readings, concerns, defects, surface, keywords, viewed, refactorings, collectors, engineering_answers, curve_answers, ceilings, api_budget, facts_kept, speedups
