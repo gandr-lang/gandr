@@ -986,9 +986,10 @@ fn each_indexed<Item, State, Start, Job>(
 ///
 /// # Specification
 /// - ensures: as [`Pooled`]'s `schedule`, with the item's place handed to each
-///   job. A calling thread outside the pool has one task for each pool thread
+///   job. A calling thread outside the pool has one lane for each pool thread
 ///   beside it, and one inside the pool one for each other pool thread; no
-///   schedule has more tasks than items. Each party that waits polls up to
+///   schedule has more lanes than items. A lane's task starts when the lane
+///   takes a job that no task attends. Each party that waits polls up to
 ///   `fork`'s spin budget before it parks.
 /// - panics: a panic of `release`, `run` or `commit`, resumed on the calling
 ///   thread once it has returned.
@@ -1080,6 +1081,14 @@ enum Taken
     /// No lane held a job that no task runs.
     Idle,
 }
+
+/// How many releases a chained schedule puts off for each release that it
+/// tries beside a running job. A schedule runs as a chain after a release
+/// holds while a job runs: the next release reads what that job commits, so
+/// the calling thread runs the job itself, and a hand-off would only cost a
+/// task's start. A try stages the item and gives the staging back when it
+/// holds, so a chain spends one try in 64 releases on finding parallel work.
+const CHAIN_PROBE: usize = 64;
 
 /// One schedule's state that its tasks share.
 ///
@@ -1386,9 +1395,9 @@ where
         )
     }
 
-    /// Start one task for each lane, then release each item of `items` in
-    /// slice order and commit each item as its job returns, both on the
-    /// calling thread.
+    /// Release each item of `items` in slice order and commit each item as
+    /// its job returns, both on the calling thread. A lane's task starts when
+    /// the calling thread hands the lane a job.
     ///
     /// # Specification
     /// - ensures: `release` ran on every item in slice order, each first time
@@ -1397,11 +1406,15 @@ where
     ///   ran again once every released job was committed. `commit` ran once on
     ///   every item, with its job's result as the job returned, or with the
     ///   result of its release. Each commit counts down the items that wait on
-    ///   the committed one. After each release that gives a job, and after each
-    ///   result, the calling thread hands kept jobs to lanes with room. While
-    ///   it can neither release nor commit, it runs its oldest kept job, or
-    ///   else a job of a lane whose task does not run, or else it waits for a
-    ///   result. Once the call returns, each task ends.
+    ///   the committed one. After a release holds while a job runs, the
+    ///   schedule runs as a chain: the calling thread keeps each job that a
+    ///   release gives and runs it, and it tries a release beside a running job
+    ///   once in [`CHAIN_PROBE`] releases. A release that gives a job beside a
+    ///   running job ends the chain. Out of a chain, after each release that
+    ///   gives a job, and after each result, the calling thread hands kept jobs
+    ///   to lanes with room. While it can neither release nor commit, it runs
+    ///   its oldest kept job, or else a job of a lane whose task does not run,
+    ///   or else it waits for a result. Once the call returns, each task ends.
     /// - panics: the first panic of `release`, of a job or of `commit`, after
     ///   it ends the schedule so that no task starts another job.
     /// - executable: none — each release and commit is a call of the caller's
@@ -1413,7 +1426,7 @@ where
     /// - witness: `pool::tests::a_job_that_returns_first_commits_first`
     /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
-    /// - witness: `pool::tests::a_schedule_inside_a_scheduled_job_ends`
+    /// - witness: `pool::tests::a_chained_schedule_runs_its_jobs_on_the_calling_thread`
     fn drive<'scope, Item, Release, Commit>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
@@ -1428,17 +1441,18 @@ where
         Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
         Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
     {
-        for lane in &self.lanes {
-            scope.spawn(move |_scope| self.work(lane));
-        }
         let _ending = Ending(self);
         let count = items.len();
         // The next item to release, the released jobs that are not committed,
-        // the items committed, and whether a release holds.
+        // the items committed, whether a release holds, whether the schedule
+        // runs as a chain, and the releases that the chain put off since its
+        // last try.
         let mut next = ItemIndex(0);
         let mut outstanding = 0_usize;
         let mut committed = 0_usize;
         let mut holding = false;
+        let mut chained = false;
+        let mut put_off = 0_usize;
         let mut commit_one =
             |position: ItemIndex, item: &mut Item, out: Out, waiting: &mut Waiting| {
                 let place = gandr_core_fork::ItemIndex::from(position.0);
@@ -1451,6 +1465,16 @@ where
             };
         while committed < count {
             while !holding && waiting.free(next) == Released::Free {
+                // A chain releases beside a running job only once in
+                // `CHAIN_PROBE` releases: each other try stages the item and
+                // then gives the staging back.
+                if chained && outstanding > 0 {
+                    put_off = put_off.saturating_add(1);
+                    if put_off < CHAIN_PROBE {
+                        break;
+                    }
+                    put_off = 0;
+                }
                 let Some(item) = items.get_mut(next.0)
                 else {
                     break;
@@ -1461,12 +1485,20 @@ where
                         .unwrap_or_else(|panic| self.stop(panic));
                 match released {
                     Releasing::Run(job) => {
+                        if outstanding > 0 {
+                            chained = false;
+                        }
                         ledger.kept.push_back((next, job));
                         outstanding = outstanding.saturating_add(1);
                         next = ItemIndex(next.0.saturating_add(1));
-                        self.hand(scope, &mut ledger);
+                        if !chained {
+                            self.hand(scope, &mut ledger);
+                        }
                     },
-                    Releasing::Held(_) if outstanding > 0 => holding = true,
+                    Releasing::Held(_) if outstanding > 0 => {
+                        chained = true;
+                        holding = true;
+                    },
                     Releasing::Settled(out) | Releasing::Held(out) => {
                         commit_one(next, item, out, &mut waiting);
                         committed = committed.saturating_add(1);
@@ -1509,7 +1541,9 @@ where
                 if outstanding == 0 {
                     holding = false;
                 }
-                self.hand(scope, &mut ledger);
+                if !chained {
+                    self.hand(scope, &mut ledger);
+                }
                 continue;
             }
             // Neither a release nor a commit is possible: run a job here, or
@@ -1894,6 +1928,7 @@ mod tests
     use gandr_core_fork::Unwound;
     use quenchant_shape::shape::Maybe;
 
+    use super::CHAIN_PROBE;
     use super::Forked;
     use super::Pool;
     use super::Spin;
@@ -2720,6 +2755,51 @@ mod tests
         assert!(
             items.iter().all(|item| item.commits.len() == 1),
             "every item is committed once"
+        );
+    }
+
+    #[test]
+    fn a_chained_schedule_runs_its_jobs_on_the_calling_thread()
+    {
+        let caller = std::thread::current().id();
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let count = 256_usize;
+        // Each release holds while a released job is not committed, as a
+        // readmission whose next declaration reads the last one does.
+        let pending = core::cell::Cell::new(0_usize);
+        let releases = core::cell::Cell::new(0_usize);
+        let mut ran: Vec<Option<ThreadId>> = alloc::vec![None; count];
+        pool.schedule(
+            &mut ran,
+            &Dependences::default(),
+            |_position, _ran| {
+                releases.set(releases.get().saturating_add(1));
+                if pending.get() > 0 {
+                    return Releasing::<(), Option<ThreadId>>::Held(None);
+                }
+                pending.set(pending.get().saturating_add(1));
+                Releasing::Run(())
+            },
+            |()| Some(std::thread::current().id()),
+            |_position, ran, job| {
+                pending.set(pending.get().saturating_sub(1));
+                *ran = job;
+            },
+        );
+        let elsewhere = ran.iter().filter(|&&job| job != Some(caller)).count();
+        assert!(
+            elsewhere <= 1,
+            "only the job before the first hold leaves the calling thread, not {elsewhere}"
+        );
+        assert!(
+            releases.get()
+                <= count
+                    .saturating_add(1)
+                    .saturating_add(count.checked_div(CHAIN_PROBE).unwrap_or_default()),
+            "a chain tries one release beside a running job in {CHAIN_PROBE}, not {} releases for {count} items",
+            releases.get()
         );
     }
 
