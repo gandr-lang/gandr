@@ -60,9 +60,9 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::elsewhere::Declared;
 use crate::peer::Peer;
 use crate::relocate::Moves;
-use crate::search::Declared;
 use crate::search::declared;
 
 /// A source's place in the table, stable while the table lives.

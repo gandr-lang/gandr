@@ -376,12 +376,18 @@ extern crate alloc;
 
 use core::fmt;
 
+#[cfg(unix)]
+use gandr_surface_lsp_base::disk;
 use gandr_surface_lsp_base::edit;
+use gandr_surface_lsp_base::elsewhere;
 use gandr_surface_lsp_base::fragment;
 use gandr_surface_lsp_base::handover;
+use gandr_surface_lsp_base::inbox;
 use gandr_surface_lsp_base::inline;
 use gandr_surface_lsp_base::markup;
+use gandr_surface_lsp_base::missing;
 use gandr_surface_lsp_base::notebook;
+use gandr_surface_lsp_base::outline;
 use gandr_surface_lsp_base::peer;
 use gandr_surface_lsp_base::position;
 use gandr_surface_lsp_base::protocol;
@@ -390,6 +396,7 @@ use gandr_surface_lsp_base::syntax;
 use gandr_surface_lsp_base::toolkit;
 use gandr_surface_lsp_base::tracking;
 use gandr_surface_lsp_base::transport;
+use gandr_surface_lsp_base::unused;
 
 #[cfg(feature = "instrument")]
 mod activity;
@@ -404,8 +411,6 @@ pub mod client;
 mod complete;
 #[cfg(feature = "instrument")]
 mod derivation;
-#[cfg(unix)]
-mod disk;
 mod doc;
 mod files;
 mod fix;
@@ -416,8 +421,6 @@ mod hover;
 mod hub;
 mod inlay;
 mod instrument;
-mod missing;
-mod outline;
 mod paste;
 mod proposal;
 mod quiet;
@@ -438,7 +441,6 @@ mod stored;
 mod sweep;
 mod tier;
 mod tokens;
-mod unused;
 mod uses;
 mod view;
 
@@ -486,6 +488,10 @@ pub use crate::hub::run_hub;
 pub use crate::hub::socket_for;
 #[cfg(unix)]
 pub use crate::hub::workspace_name;
+pub use crate::inbox::Behind;
+pub use crate::inbox::Changes;
+pub use crate::inbox::Inbox;
+pub use crate::inbox::Unread;
 pub use crate::peer::Peer;
 pub use crate::position::Character;
 pub use crate::position::Line;
@@ -498,11 +504,7 @@ pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;
 pub use crate::protocol::DocumentVersion;
-pub use crate::quiet::Behind;
-pub use crate::quiet::Changes;
-pub use crate::quiet::Inbox;
 pub use crate::quiet::QUIET;
-pub use crate::quiet::Unread;
 pub use crate::recheck::Reached;
 pub use crate::recheck::Tried;
 pub use crate::run::Prepared;

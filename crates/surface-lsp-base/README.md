@@ -12,11 +12,11 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 
 ## Synopsis
 
-**What.** The protocol's messages as serde types, the base protocol's framing and the JSON-RPC envelope, and positions in UTF-16 code units. The semantic token stream and its legend, the forms an inline completion offers, and the markup that colours gandr text in a hover. The edits of a held text, a notebook's cells, the syntax tree view, a session handed across builds, and the process's one grammar. `gandr-surface-lsp` names each module at its old path and re-exports each item that it exported before.
+**What.** The protocol's messages as serde types, the base protocol's framing and the JSON-RPC envelope, and positions in UTF-16 code units. The semantic token stream and its legend, the forms an inline completion offers, and the markup that colours gandr text in a hover. The edits of a held text, a notebook's cells, the syntax tree view, a session handed across builds, and the process's one grammar. The document's outline, the hints and removals of unused names, the imports a missing name needs, and the hub's watch of the files on disk with the inbox it hands their changes to. `gandr-surface-lsp` names each module at its old path and re-exports each item that it exported before.
 
 **Why.** A cold build of the driver compiles the server after the dispatcher and the session. A part of the server that reads neither compiles in a crate of its own, beside them, and leaves the build's longest chain. Each later split of the server adds its parts here or in a family crate over this one.
 
-**How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate.
+**How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate, or tests of `gandr-surface-lsp` that read the item through the server, spelled with that package's name.
 
 ## Provided features
 
@@ -30,6 +30,10 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 - The syntax tree view ([`syntax`](src/syntax.rs)) and the gaps that a hover cannot show yet ([`tracking`](src/tracking.rs)).
 - `Handover`, `Carried` and `REPLAY`: a session handed across builds ([`handover`](src/handover.rs)); `Peer`: one connection of a workspace ([`peer`](src/peer.rs)).
 - One grammar, role table and form set per process, built at the first use ([`toolkit`](src/toolkit.rs)).
+- The outline: symbols, folding ranges and selection ranges read off the parsed tree ([`outline`](src/outline.rs)).
+- The hints of an unused binder and an unused import, and the removal of an unused import ([`unused`](src/unused.rs)).
+- The quick fix that imports a source for a name that names nothing ([`missing`](src/missing.rs)), over the names that sources elsewhere declare ([`elsewhere`](src/elsewhere.rs)).
+- `Inbox`, `Changes`, `Behind` and `Unread`: what a paced loop's reader and its watches hand it ([`inbox`](src/inbox.rs)); on Unix, the hub's watch of the files on disk ([`disk`](src/disk.rs)).
 
 ## Expected features
 
@@ -47,6 +51,9 @@ The base of gandr's language server: the parts of `gandr-surface-lsp` that read 
 | Inline completion | [`inline`](src/inline.rs) |
 | The markup of a hover | [`markup`](src/markup.rs), [`fragment`](src/fragment.rs) |
 | A session across builds | [`handover`](src/handover.rs) |
+| The outline | [`outline`](src/outline.rs) |
+| Unused names, missing imports | [`unused`](src/unused.rs), [`missing`](src/missing.rs), [`elsewhere`](src/elsewhere.rs) |
+| The watch of the files on disk | [`disk`](src/disk.rs), [`inbox`](src/inbox.rs) |
 
 ## License
 

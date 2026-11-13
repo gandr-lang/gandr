@@ -340,7 +340,7 @@ impl Reading
     ///   another text, disagrees at the keystroke that changed it.
     /// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
     /// - witness: `server::tests::a_path_import_links_to_the_file_it_names`
-    /// - witness: `outline::tests::declarations_nest_as_symbols`
+    /// - witness: `reading::tests::declarations_nest_as_symbols`
     /// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
     /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(ensures: |ret| match ret.0 {
@@ -815,7 +815,7 @@ impl Reading
     /// # Adequacy
     /// - hypothesis: L3 — a position inside a name, at a name's end and inside
     ///   an operand are asserted at their exact chains.
-    /// - witness: `outline::tests::a_selection_grows_from_the_innermost_form`
+    /// - witness: `reading::tests::a_selection_grows_from_the_innermost_form`
     #[spec(ensures: |ret| ret.len() == positions.len())]
     #[must_use]
     pub fn selections(
@@ -842,3 +842,6 @@ impl Reading
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests;

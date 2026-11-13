@@ -65,10 +65,11 @@ pub const UNUSED_IMPORT: &str = "UnusedImport";
 /// - hypothesis: L3 — an unused parameter, `let` binder, pattern variable and
 ///   lambda binder are hinted; a used binder, a name starting with `_`, an
 ///   unused fork end and an unused consumable capability are not.
-/// - witness: `server::tests::a_binder_no_use_refers_to_is_published_unnecessary`
+/// - witness: `gandr-surface-lsp::server::tests::a_binder_no_use_refers_to_is_published_unnecessary`
 #[spec(ensures: |ret| ret.iter().all(|hint| hint.severity == Severity::HINT
     && hint.tags == [DiagnosticTag::UNNECESSARY]))]
 #[must_use]
+#[inline]
 pub fn unused(
     binders: &[ByteSpan],
     text: SourceText<'_>,
@@ -111,10 +112,11 @@ pub fn unused(
 /// # Adequacy
 /// - hypothesis: L3 — an import nothing is read through is hinted; an import a
 ///   name is read through is not.
-/// - witness: `server::tests::an_import_no_lookup_reaches_is_published_unnecessary_1116`
+/// - witness: `gandr-surface-lsp::server::tests::an_import_no_lookup_reaches_is_published_unnecessary_1116`
 #[spec(ensures: |ret| ret.iter().all(|hint| hint.severity == Severity::HINT
     && hint.tags == [DiagnosticTag::UNNECESSARY]))]
 #[must_use]
+#[inline]
 pub fn unreached(
     imports: &[ByteSpan],
     text: SourceText<'_>,
@@ -164,10 +166,11 @@ pub fn unreached(
 ///   which leaves a document that still checks with the import's line gone; a
 ///   range elsewhere is offered none; a document hinting two imports is offered
 ///   their removal at once besides.
-/// - witness: `server::tests::an_unused_import_is_offered_its_removal_1116`
+/// - witness: `gandr-surface-lsp::server::tests::an_unused_import_is_offered_its_removal_1116`
 #[spec(ensures: |ret| ret.iter().all(|action| action.kind == "quickfix"
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
+#[inline]
 pub fn removals(
     uri: &DocumentUri,
     published: &[Diagnostic],
@@ -244,7 +247,7 @@ pub fn removals(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an import alone on its line takes the line with it.
-/// - witness: `server::tests::an_unused_import_is_offered_its_removal_1116`
+/// - witness: `gandr-surface-lsp::server::tests::an_unused_import_is_offered_its_removal_1116`
 fn deletion(
     range: Range,
     (text, index): (SourceText<'_>, &LineIndex<'_>),

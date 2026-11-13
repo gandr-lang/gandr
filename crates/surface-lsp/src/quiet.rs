@@ -73,7 +73,6 @@ use core::ops::ControlFlow;
 use core::time::Duration;
 use std::io::BufRead;
 use std::path::PathBuf;
-use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Instant;
 
@@ -85,6 +84,10 @@ use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::inbox::Behind;
+use crate::inbox::Inbox;
+use crate::inbox::Read;
+use crate::inbox::Unread;
 use crate::position::Range;
 use crate::protocol::Diagnostic;
 use crate::protocol::DocumentUri;
@@ -435,28 +438,6 @@ pub enum Met<'later>
     Closed,
 }
 
-/// What the reading thread, or a watch beside it, hands the loop.
-#[derive(Debug)]
-enum Read
-{
-    /// A message, classified, and whether the input held bytes past it.
-    Message(Classified, Behind),
-    /// Files changed on disk.
-    Changed(Vec<PathBuf>),
-    /// Files another connection's editor changed.
-    Edited(Vec<PathBuf>),
-    /// A checked fill of a document the loop's connection holds was kept.
-    Proposed,
-    /// An admission the loop's connection started ended.
-    Admitted,
-    /// The first view of the trace layer subscribed.
-    Traced,
-    /// The stream closed at a frame boundary.
-    Closed,
-    /// The stream failed.
-    Fault(TransportFault),
-}
-
 /// How the stream a loop reads ended.
 #[derive(Debug)]
 enum End
@@ -526,141 +507,6 @@ struct Woken(bool);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Traced(bool);
 
-/// Whether an input holds bytes past the last message the reader took: the
-/// start of a frame the client wrote with it.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Behind(pub bool);
-
-/// An input that says whether it holds bytes it read and did not hand out.
-pub trait Unread
-{
-    /// Whether bytes the input read are still to be handed out.
-    ///
-    /// # Specification
-    /// trivial.
-    fn unread(&self) -> Behind;
-}
-
-impl<Inner: ?Sized> Unread for std::io::BufReader<Inner>
-{
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn unread(&self) -> Behind
-    {
-        Behind(!self.buffer().is_empty())
-    }
-}
-
-/// Where a paced loop takes what it meets: its reader's messages and a
-/// watch's changes.
-#[derive(Debug)]
-pub struct Inbox
-{
-    /// The sending end, for the reader and each watch.
-    sending: mpsc::Sender<Read>,
-    /// The receiving end, the loop's.
-    receiving: mpsc::Receiver<Read>,
-}
-
-impl Default for Inbox
-{
-    /// An empty inbox.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn default() -> Self
-    {
-        let (sending, receiving) = mpsc::channel();
-        Self { sending, receiving }
-    }
-}
-
-impl Inbox
-{
-    /// A handle a watch hands this inbox's loop the files it saw change by.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn changes(&self) -> Changes
-    {
-        Changes(self.sending.clone())
-    }
-}
-
-/// A handle a watch, or another connection, hands a paced loop the files it
-/// saw change by.
-#[repr(transparent)]
-#[derive(Clone, Debug)]
-pub struct Changes(mpsc::Sender<Read>);
-
-impl Changes
-{
-    /// Hand the loop `paths`, changed on disk; nothing once the loop ended.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn hand(
-        &self,
-        paths: Vec<PathBuf>,
-    )
-    {
-        let _sent = self.0.send(Read::Changed(paths));
-    }
-
-    /// Hand the loop `paths`, changed in another connection's editor;
-    /// nothing once the loop ended.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn edited(
-        &self,
-        paths: Vec<PathBuf>,
-    )
-    {
-        let _sent = self.0.send(Read::Edited(paths));
-    }
-
-    /// Tell the loop another connection kept a checked fill of a document its
-    /// connection holds; nothing once the loop ended.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn proposed(&self)
-    {
-        let _sent = self.0.send(Read::Proposed);
-    }
-
-    /// Tell the loop an admission its connection started ended; nothing once
-    /// the loop ended.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn admitted(&self)
-    {
-        let _sent = self.0.send(Read::Admitted);
-    }
-
-    /// Tell the loop that the first view of the trace layer subscribed;
-    /// nothing once the loop ended.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn traced(&self)
-    {
-        let _sent = self.0.send(Read::Traced);
-    }
-}
-
 /// Serve `input` through `visit`: each message read, each deadline passed,
 /// each change a watch hands `inbox` and the end of the stream, in the order
 /// they come, until `visit` breaks.
@@ -678,14 +524,17 @@ impl Changes
 ///   before the next message, the files another connection's editor changed as
 ///   [`Met::Edited`] after them, and the fills another connection kept as one
 ///   [`Met::Proposed`] after those, and the admissions its connection started
-///   that ended, through [`Changes::admitted`], as one [`Met::Admitted`] after
-///   that, and the subscription of the first view of the trace layer, through
-///   [`Changes::traced`], as one [`Met::Traced`] after that; while nothing
-///   waits, each document whose deadline in the [`Deadlines`] `visit` arms
-///   passes is handed to `visit` as [`Met::Quiet`], disarmed; a stream closed
-///   at a frame boundary, or ended by `exit`, is [`Met::Closed`] once every
-///   message before it was handed over, whether or not a watch still holds a
-///   handle. The first break `visit` returns is returned.
+///   that ended, through
+///   [`Changes::admitted`](crate::inbox::Changes::admitted), as one
+///   [`Met::Admitted`] after that, and the subscription of the first view of
+///   the trace layer, through
+///   [`Changes::traced`](crate::inbox::Changes::traced), as one [`Met::Traced`]
+///   after that; while nothing waits, each document whose deadline in the
+///   [`Deadlines`] `visit` arms passes is handed to `visit` as [`Met::Quiet`],
+///   disarmed; a stream closed at a frame boundary, or ended by `exit`, is
+///   [`Met::Closed`] once every message before it was handed over, whether or
+///   not a watch still holds a handle. The first break `visit` returns is
+///   returned.
 /// - provides: the loop of [`crate::serve`] and of each hub connection, the
 ///   later messages a request is withdrawn by, and the hub's watch's way in.
 /// - fails: the first [`TransportFault`] of the stream, once every message
@@ -728,10 +577,7 @@ where
     Input: BufRead + Unread + Send,
     Visit: FnMut(Met<'_>, &mut Deadlines) -> Result<ControlFlow<Ended>, TransportFault>,
 {
-    let Inbox {
-        sending: read,
-        receiving: frames,
-    } = inbox;
+    let (read, frames) = inbox.ends();
     std::thread::scope(|scope| {
         let _reader = scope.spawn(move || {
             loop {
@@ -914,29 +760,6 @@ pub mod tests
     use crate::protocol::Diagnostic;
     use crate::protocol::Severity;
     use crate::toolkit::grammar;
-
-    /// The files a watch handed `inbox`'s loop, one list per handing, in the
-    /// order they came.
-    ///
-    /// # Specification
-    /// trivial.
-    pub fn handed(inbox: &super::Inbox) -> Vec<Vec<std::path::PathBuf>>
-    {
-        inbox
-            .receiving
-            .try_iter()
-            .filter_map(|read| match read {
-                super::Read::Changed(paths) => Some(paths),
-                super::Read::Message(..)
-                | super::Read::Edited(_)
-                | super::Read::Proposed
-                | super::Read::Admitted
-                | super::Read::Traced
-                | super::Read::Closed
-                | super::Read::Fault(_) => None,
-            })
-            .collect()
-    }
 
     /// The range from `start` to `end` on line zero.
     ///

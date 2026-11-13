@@ -10,7 +10,9 @@
 //! the semantic token stream. It holds the forms an inline completion offers
 //! and the markup that colours a fragment of gandr text. It also holds the
 //! edits of a held text, a notebook's cells, the syntax tree view, a session
-//! handed across builds, and the process's one grammar.
+//! handed across builds, and the process's one grammar. The document's
+//! outline, the hints of unused names, the imports a missing name needs, and
+//! the hub's watch of the files on disk with its inbox complete it.
 //!
 //! The server's families and its loop stay in `gandr-surface-lsp`. That crate
 //! re-exports each item of this crate that it exported before, at its old
@@ -45,12 +47,18 @@
 
 extern crate alloc;
 
+#[cfg(unix)]
+pub mod disk;
 pub mod edit;
+pub mod elsewhere;
 pub mod fragment;
 pub mod handover;
+pub mod inbox;
 pub mod inline;
 pub mod markup;
+pub mod missing;
 pub mod notebook;
+pub mod outline;
 pub mod peer;
 pub mod position;
 pub mod protocol;
@@ -60,3 +68,4 @@ pub mod tokens;
 pub mod toolkit;
 pub mod tracking;
 pub mod transport;
+pub mod unused;
