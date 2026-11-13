@@ -18,6 +18,8 @@
 #             `.config` cases and `contrib/` TypeScript: [{path, text}]
 #   surface   the paths the change touches under `crates/surface-parser/`,
 #             `crates/surface-grammar/` and `crates/surface-syntax/`
+#   spelled   the issues that a `spelling: replaces` line of the body cites
+#             and that stand open (#6876): [n]
 #   vault     the vault pages and the crates' citations (#2793), or null where
 #             no vault checkout is configured: {pages, tree, touched, cited},
 #             `pages` and `tree` as `vault.jq` reads them, `touched` the
@@ -96,6 +98,10 @@
 # non-blank `cost:` line (the keystroke scenario's numbers before and after,
 # the molder's candidates and windows on the form) and a non-blank
 # `demand: <site>` line naming the corpus source or program that needs it.
+# It states its spelling too (#6876), since the owner's rule of 2026-11-11
+# admits one spelling for each form: `spelling: sole`, or `spelling: replaces
+# <old>, refused here` where the change refuses the old spelling, or
+# `spelling: replaces <old>, refused by #n` where `#n` is an open issue.
 # The goldens `corpus:goldens` records there follow the corpus and ask for
 # none (#2756).
 #
@@ -379,18 +385,32 @@ def golden:
   test("^crates/surface-grammar/tests/highlight/.+\\.(?:roles|hover)$")
   or test("^crates/surface-parser/tests/recovery/.+\\.recovery$");
 
-# The refusal of a change to the parser whose body states no surface form.
+# The refusals of a change to the parser whose body states no surface form,
+# or a spelling in none of its three forms, or an old spelling whose unit
+# does not stand open (#6876).
 def surface:
   (.surface // [] | map(select(golden | not))) as $paths
   | select($paths | length > 0)
+  | (.spelled // []) as $open
   | (.body | subsection("Surface form")) as $form
   | ($form // [] | map(select(test("^\\s*(?:[-*]\\s+)?(?:\\*\\*)?cost:(?:\\*\\*)?\\s*\\S")))) as $cost
   | ($form // [] | map(select(test("^\\s*(?:[-*]\\s+)?(?:\\*\\*)?demand:(?:\\*\\*)?\\s*\\S")))) as $demand
-  | [if $form == null then "a `### Surface form` subsection" else empty end,
-     if $cost == [] then "a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form)" else empty end,
-     if $demand == [] then "a non-blank `demand: <site>` line naming the corpus source or program that needs the form" else empty end]
-  | select(length > 0)
-  | "the change touches the parser (\($paths[:3] | map("`\(.)`") | join(", "))\(if ($paths | length) > 3 then ", …" else "" end)) and the body lacks \(join(", and ")) (#2527); add it, then run `pr:open` again";
+  | [$form // [] | .[] | capture("^\\s*(?:[-*]\\s+)?(?:\\*\\*)?spelling:(?:\\*\\*)?\\s*(?<form>\\S.*)$").form] as $spelling
+  | "`spelling: sole`, `spelling: replaces <old>, refused here` or `spelling: replaces <old>, refused by #n`" as $forms
+  | ([if $form == null then "a `### Surface form` subsection" else empty end,
+      if $cost == [] then "a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form)" else empty end,
+      if $demand == [] then "a non-blank `demand: <site>` line naming the corpus source or program that needs the form" else empty end,
+      if $spelling == [] then "a `spelling:` line, \($forms) (#6876)" else empty end]
+     | select(length > 0)
+     | "the change touches the parser (\($paths[:3] | map("`\(.)`") | join(", "))\(if ($paths | length) > 3 then ", …" else "" end)) and the body lacks \(join(", and ")) (#2527); add it, then run `pr:open` again"),
+    ($spelling[]
+     | select(test("^sole\\b") or test("^replaces\\s+\\S.*,\\s*refused\\s+(here|by\\s+#[0-9]+)\\b") | not)
+     | "the line `spelling: \(.)` states none of the three forms, \($forms) (#6876); write one of them, then run `pr:open` again"),
+    ($spelling[]
+     | capture("^replaces\\s+\\S.*,\\s*refused\\s+by\\s+#(?<n>[0-9]+)\\b").n
+     | tonumber
+     | select(IN($open[]) | not)
+     | "the line `spelling: replaces …, refused by #\(.)` names #\(.), which does not stand open: name the open unit that refuses the old spelling, or refuse it in this change and write `refused here`, then run `pr:open` again");
 
 # The refusals of a body working a `collector` (#3326): closed by a keyword,
 # or advanced without `## Rows` naming its open rows.

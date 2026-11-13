@@ -1097,7 +1097,7 @@
     "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `// - see: #2621` or `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
-    "name": "#2527: a grammar change whose body has no `### Surface form` is refused, naming the subsection and both lines",
+    "name": "#2527: a grammar change whose body has no `### Surface form` is refused, naming the subsection and its three lines",
     "input": {
       "branch": "surface-9999-form",
       "body": "Closes #9999\n\n## Refactoring\n\nno\n",
@@ -1110,13 +1110,13 @@
       ],
       "surface": ["crates/surface-grammar/src/grammar.rs"]
     },
-    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`) and the body lacks a `### Surface form` subsection, and a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form), and a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
+    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`) and the body lacks a `### Surface form` subsection, and a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form), and a non-blank `demand: <site>` line naming the corpus source or program that needs the form, and a `spelling:` line, `spelling: sole`, `spelling: replaces <old>, refused here` or `spelling: replaces <old>, refused by #n` (#6876) (#2527); add it, then run `pr:open` again"
   },
   {
     "name": "#2527: a grammar change whose surface form leaves `demand:` blank is refused, naming it",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n\n## The change\n\n### Surface form\n\n- cost: keystroke scenario 41 ms before, 42 ms after; 3 candidates, 2 windows\n- demand:\n\n## Refactoring\n\nno\n",
+      "body": "Closes #9999\n\n## The change\n\n### Surface form\n\n- cost: keystroke scenario 41 ms before, 42 ms after; 3 candidates, 2 windows\n- demand:\n- spelling: sole\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1129,10 +1129,10 @@
     "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`) and the body lacks a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
   },
   {
-    "name": "a grammar change stating its cost and its demand opens",
+    "name": "a grammar change stating its cost, its demand and its spelling opens",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n\n### Surface form\n\n**cost:** keystroke scenario 41 ms before, 42 ms after; the molder offers 3 candidates in 2 windows\n**demand:** `corpus/model/data/vectors.gandr`\n\n## Sources read\n\n## Refactoring\n\nno\n",
+      "body": "Closes #9999\n\n### Surface form\n\n**cost:** keystroke scenario 41 ms before, 42 ms after; the molder offers 3 candidates in 2 windows\n**demand:** `corpus/model/data/vectors.gandr`\n**spelling:** sole, since the form has one spelling\n\n## Sources read\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1148,7 +1148,7 @@
     "name": "a surface form's lines are read under its own subsection, not under the next one",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n\n### Elsewhere\n\n- demand: `corpus/x.gandr`\n\n## Refactoring\n\nno\n",
+      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n- spelling: sole\n\n### Elsewhere\n\n- demand: `corpus/x.gandr`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1218,7 +1218,41 @@
         "crates/surface-parser/tests/recovery/fixture/model/data/vectors.recovery"
       ]
     },
-    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`, `crates/surface-grammar/tests/highlight.rs`) and the body lacks a `### Surface form` subsection, and a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form), and a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
+    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`, `crates/surface-grammar/tests/highlight.rs`) and the body lacks a `### Surface form` subsection, and a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form), and a non-blank `demand: <site>` line naming the corpus source or program that needs the form, and a `spelling:` line, `spelling: sole`, `spelling: replaces <old>, refused here` or `spelling: replaces <old>, refused by #n` (#6876) (#2527); add it, then run `pr:open` again"
+  },
+  {
+    "name": "#6876: a spelling line in none of its three forms, and a replaced spelling whose unit does not stand open, are refused",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n- demand: `corpus/x.gandr`\n- spelling: the new form\n- spelling: replaces `f(x)`, refused by #7000\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": ["crates/surface-grammar/src/grammar.rs"],
+      "spelled": [7001]
+    },
+    "output": "the line `spelling: the new form` states none of the three forms, `spelling: sole`, `spelling: replaces <old>, refused here` or `spelling: replaces <old>, refused by #n` (#6876); write one of them, then run `pr:open` again\nthe line `spelling: replaces …, refused by #7000` names #7000, which does not stand open: name the open unit that refuses the old spelling, or refuse it in this change and write `refused here`, then run `pr:open` again"
+  },
+  {
+    "name": "#6876: a replaced spelling refused in the change, or by an open unit, opens",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n- demand: `corpus/x.gandr`\n- spelling: replaces `f(x)`, refused here\n- spelling: replaces `f x y`, refused by #7001\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": ["crates/surface-grammar/src/grammar.rs"],
+      "spelled": [7001]
+    },
+    "output": ""
   },
   {
     "name": "a crate the change touches that cites no primary vault page of its issue is refused, naming the page and the key line (#2793)",
