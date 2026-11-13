@@ -3008,10 +3008,10 @@ where
     let from = readmitted.len();
     let count = judged_all.len().saturating_sub(from);
     // A pair the kernel reports undecided is answered, and its declaration is
-    // offered again at the next position, which a later release would take.
-    // economy: so each declaration of such a module waits for the ones before
-    // it, and the module readmits on the calling thread; #3476 lifts this when
-    // a later release can be dropped and released again.
+    // offered again at the next position, which a later release takes. So
+    // each check of such a module settles in module order, at the cursor, and
+    // a pair left undecided drops each later release; the cursor releases each
+    // of them again on the calling thread.
     let answerable = source.reflexivities.values().any(|reflexivity| {
         [EndpointSide::Left, EndpointSide::Right]
             .into_iter()
@@ -3039,6 +3039,7 @@ where
         slots: core::iter::repeat_with(|| Slot::Open).take(count).collect(),
         cursor: from,
         answerable,
+        serially: false,
         keys,
         keeping,
         kept: 0,
@@ -3165,6 +3166,15 @@ enum Slot<'report>
     Member(Crossing),
     /// Released to the kernel, its check running.
     Running(Offered<'report>, Pending),
+    /// Run, in a module whose pair the kernel may leave undecided: its settle
+    /// waits for the cursor, so a pair left undecided before it can drop it.
+    /// The run is boxed, so every other slot keeps the size of a running one.
+    Ran(
+        Offered<'report>,
+        Pending,
+        alloc::boxed::Box<Ran>,
+        AdmissionCost,
+    ),
     /// Settled by the kernel: its record waits.
     Settled(
         Offered<'report>,
@@ -3175,6 +3185,9 @@ enum Slot<'report>
     Crossed(Crossing),
     /// Released after a retirement: nothing to record.
     Skipped,
+    /// Dropped by a pair left undecided before it: the cursor releases it
+    /// again on the calling thread.
+    Dropped,
     /// Recorded.
     Recorded,
 }
@@ -3255,8 +3268,12 @@ where
     /// The index of the first declaration that is not recorded.
     cursor: usize,
     /// Whether the kernel may report a pair undecided whose answer offers
-    /// the declaration again: then each declaration crosses alone.
+    /// the declaration again: then each check settles at the cursor, and a
+    /// pair left undecided drops each later release.
     answerable: bool,
+    /// Whether the cursor releases a dropped declaration again: then the
+    /// declaration crosses on the calling thread.
+    serially: bool,
     /// The content key of each declaration, which a record of every
     /// declaration carries.
     keys: &'crossed [DeclarationKey],
@@ -3567,12 +3584,12 @@ where
     /// - requires: as [`Self::release`]; `offer` is the offer of `judged`.
     /// - ensures: [`Releasing::Run`] with the check that the kernel released,
     ///   its slot running, when the declaration stages with no seed and the
-    ///   kernel releases it, in a walk that keeps nothing and in a module with
-    ///   no undecided pair. [`Releasing::Held`] while a declaration before it
-    ///   is not recorded, when its staging stops, when the kernel holds it, or
-    ///   when the kernel may report a pair undecided. [`Releasing::Settled`]
-    ///   with the kernel's refusal of its release, or with [`cross`]'s crossing
-    ///   once each declaration before it is recorded.
+    ///   kernel releases it, in a walk that keeps nothing and outside the
+    ///   cursor's release of a dropped declaration. [`Releasing::Held`] while a
+    ///   declaration before it is not recorded, when its staging stops, or when
+    ///   the kernel holds it. [`Releasing::Settled`] with the kernel's refusal
+    ///   of its release, or with [`cross`]'s crossing once each declaration
+    ///   before it is recorded.
     /// - panics: none.
     /// - executable: none — as [`Self::release`].
     ///
@@ -3580,6 +3597,7 @@ where
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+    /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
     fn offer(
         &mut self,
         item: ItemIndex,
@@ -3602,10 +3620,9 @@ where
                 tail: Tail::Lone,
             }))
         };
-        if self.answerable || self.keeping.is_some() {
-            // An answered pair offers the declaration again at the next
-            // position, which no later release may take. A walk that keeps
-            // crosses each declaration at the ranks of its place.
+        if self.serially || self.keeping.is_some() {
+            // A dropped declaration crosses again at the cursor. A walk that
+            // keeps crosses each declaration at the ranks of its place.
             if !caught_up {
                 return Releasing::Held(Answer::Waits);
             }
@@ -3679,21 +3696,24 @@ where
     }
 
     /// Commit what the release of the declaration at `item` handed on: settle
-    /// a check that ran, keep a crossing found at the release, then record
-    /// each declaration whose turn has come.
+    /// a check that ran, or keep its run for the cursor in a module whose pair
+    /// the kernel may leave undecided; keep a crossing found at the release;
+    /// discard the run of a dropped release; then record each declaration
+    /// whose turn has come.
     ///
     /// # Specification
     /// - requires: `answer` is what the release of `item` handed on, or the run
     ///   of the check that the release gave.
-    /// - ensures: the slot of `item` settled by the kernel, crossed or skipped;
-    ///   then each declaration from the cursor on recorded, in module order, up
-    ///   to the first that is not.
+    /// - ensures: the slot of `item` settled by the kernel, run, crossed or
+    ///   skipped; then each declaration from the cursor on recorded, in module
+    ///   order, up to the first that is not.
     /// - panics: none.
     /// - executable: none — the settle is the kernel's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
     fn commit(
         &mut self,
         item: ItemIndex,
@@ -3701,98 +3721,109 @@ where
     )
     {
         let at = usize::from(item);
-        let report = self.report;
-        let Some(slot) = self.slots.get_mut(at)
-        else {
-            return;
-        };
-        *slot =
-            match answer {
-                Answer::Ran(ran, took) => match core::mem::replace(slot, Slot::Open) {
+        let next = match answer {
+            Answer::Ran(ran, took) => {
+                let Some(slot) = self.slots.get_mut(at)
+                else {
+                    self.environment.discard(ran);
+                    return;
+                };
+                match core::mem::replace(slot, Slot::Open) {
+                    Slot::Running(offered, pending) if self.answerable => {
+                        Slot::Ran(offered, pending, alloc::boxed::Box::new(ran), took)
+                    },
                     Slot::Running(offered, pending) => {
                         Slot::Settled(offered, self.environment.settle(pending, ran), took)
                     },
-                    // A run answers a running release alone.
+                    // A run answers a running release alone. A drop took the
+                    // release back, so its run is discarded.
                     unran @ (Slot::Open
                     | Slot::Member(_)
+                    | Slot::Ran(..)
                     | Slot::Settled(..)
                     | Slot::Crossed(_)
                     | Slot::Skipped
-                    | Slot::Recorded) => unran,
-                },
-                Answer::Crossed(crossing) => Slot::Crossed(crossing),
-                Answer::Skipped => Slot::Skipped,
-                // A release holds only while a check runs, and the schedule then
-                // releases it again, so no commit takes a hold.
-                Answer::Waits => report.judged().get(self.from.saturating_add(at)).map_or(
-                    Slot::Skipped,
-                    |judged| {
-                        Slot::Crossed(Crossing {
-                            entry: Readmitted {
-                                constant: judged.constant(),
-                                origin: judged.origin(),
-                                outcome: Outcome::Refused(Refusal::MachineInvariant),
-                                certificates: Vec::new(),
-                                took: UNOFFERED,
-                            },
-                            tail: Tail::Bare,
-                        })
+                    | Slot::Dropped
+                    | Slot::Recorded) => {
+                        self.environment.discard(ran);
+                        unran
                     },
-                ),
-            };
+                }
+            },
+            Answer::Crossed(crossing) => Slot::Crossed(crossing),
+            Answer::Skipped => Slot::Skipped,
+            // A release holds only while a check runs, and the schedule then
+            // releases it again, so no commit takes a hold.
+            Answer::Waits => self.unwaited(item).map_or(Slot::Skipped, Slot::Crossed),
+        };
+        if let Some(slot) = self.slots.get_mut(at) {
+            *slot = next;
+        }
         self.record();
     }
 
+    /// The crossing of the declaration at `item` when its release holds and
+    /// no check runs: the machine's refusal, or nothing past the report.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unwaited(
+        &self,
+        item: ItemIndex,
+    ) -> Option<Crossing>
+    {
+        self.report
+            .judged()
+            .get(self.from.saturating_add(usize::from(item)))
+            .map(|judged| Crossing {
+                entry: Readmitted {
+                    constant: judged.constant(),
+                    origin: judged.origin(),
+                    outcome: Outcome::Refused(Refusal::MachineInvariant),
+                    certificates: Vec::new(),
+                    took: UNOFFERED,
+                },
+                tail: Tail::Bare,
+            })
+    }
+
     /// Record each declaration from the cursor on whose turn has come, in
-    /// module order, as the serial readmission records it.
+    /// module order, as the serial readmission records it: settle a run kept
+    /// for the cursor, and release a dropped declaration again.
     ///
     /// # Specification
     /// - ensures: the cursor at the first declaration that is neither settled,
-    ///   crossed nor skipped; each declaration that it passed recorded.
+    ///   run, dropped, crossed nor skipped; each declaration that it passed
+    ///   recorded.
     /// - panics: none.
     /// - executable: none — as [`Self::commit`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
     fn record(&mut self)
     {
-        while let Some(slot) = self.slots.get_mut(self.cursor.saturating_sub(self.from)) {
+        loop {
+            let at = self.cursor.saturating_sub(self.from);
+            let Some(slot) = self.slots.get_mut(at)
+            else {
+                return;
+            };
             let crossing = match core::mem::replace(slot, Slot::Recorded) {
                 Slot::Settled(offered, settled, took) => {
-                    let Offered {
-                        constant,
-                        origin,
-                        offer,
-                        image,
-                        staged_as,
-                        replayed,
-                    } = offered;
-                    let outcome = match settled {
-                        Ok(admitted) => settle(
-                            &self.environment,
-                            self.source,
-                            &mut self.positions,
-                            (constant, offer, image),
-                            (staged_as, admitted),
-                        ),
-                        Err(error) => Outcome::Rejected(error),
-                    };
-                    Some(Crossing {
-                        entry: Readmitted {
-                            constant,
-                            origin,
-                            outcome,
-                            certificates: replayed,
-                            took,
-                        },
-                        tail: Tail::Lone,
-                    })
+                    Some(self.settled_crossing(offered, settled, took))
                 },
+                Slot::Ran(offered, pending, ran, took) => {
+                    Some(self.settle_at_cursor((offered, pending), (*ran, took)))
+                },
+                Slot::Dropped => self.again(ItemIndex::from(at)),
                 Slot::Crossed(crossing) => Some(crossing),
                 Slot::Skipped | Slot::Recorded => None,
                 unrecorded @ (Slot::Open | Slot::Member(_) | Slot::Running(..)) => {
-                    *slot = unrecorded;
+                    if let Some(slot) = self.slots.get_mut(at) {
+                        *slot = unrecorded;
+                    }
                     return;
                 },
             };
@@ -3800,6 +3831,210 @@ where
                 self.apply(crossing);
             }
             self.cursor = self.cursor.saturating_add(1);
+        }
+    }
+
+    /// The crossing of a declaration that the kernel settled: its outcome,
+    /// with the replayed verdicts of its staging and what its run spent.
+    ///
+    /// # Specification
+    /// trivial.
+    fn settled_crossing(
+        &mut self,
+        offered: Offered<'report>,
+        settled: Result<CheckedId, KernelError>,
+        took: AdmissionCost,
+    ) -> Crossing
+    {
+        let Offered {
+            constant,
+            origin,
+            offer,
+            image,
+            staged_as,
+            replayed,
+        } = offered;
+        let outcome = match settled {
+            Ok(admitted) => settle(
+                &self.environment,
+                self.source,
+                &mut self.positions,
+                (constant, offer, image),
+                (staged_as, admitted),
+            ),
+            Err(error) => Outcome::Rejected(error),
+        };
+        Crossing {
+            entry: Readmitted {
+                constant,
+                origin,
+                outcome,
+                certificates: replayed,
+                took,
+            },
+            tail: Tail::Lone,
+        }
+    }
+
+    /// Settle at the cursor the run that a module whose pair the kernel may
+    /// leave undecided kept for it. A pair that the run left undecided drops
+    /// each later release, and the refusal leaves a vacancy as the serial run
+    /// leaves it. When a reflexivity answers the pair, the declaration
+    /// crosses again at the next position with the answer, as [`cross`]
+    /// crosses it.
+    ///
+    /// # Specification
+    /// - requires: the cursor stands at the declaration of `offered`, and each
+    ///   later release that is not settled kept its run for the cursor.
+    /// - ensures: the crossing that the serial readmission records for the
+    ///   declaration. After a drop, each released slot after it is dropped up
+    ///   to the first open one, and each run that a dropped slot kept is
+    ///   discarded.
+    /// - panics: none.
+    /// - executable: none — the crossing is the serial run's, which no
+    ///   predicate over one call restates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair left undecided whose answer crosses at a
+    ///   position that a later release took, or whose later releases keep their
+    ///   runs, records other positions or outcomes than the serial run.
+    /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    fn settle_at_cursor(
+        &mut self,
+        (offered, pending): (Offered<'report>, Pending),
+        (ran, took): (Ran, AdmissionCost),
+    ) -> Crossing
+    {
+        let undecided =
+            match ran.outcome() {
+                Err(&KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsUndecided { point, side, .. },
+                )) => Some((point, side)),
+                Ok(_) | Err(_) => None,
+            };
+        let Some(pair) = undecided
+        else {
+            let settled = self.environment.settle(pending, ran);
+            return self.settled_crossing(offered, settled, took);
+        };
+        if self.environment.drop_after(&pending).is_err() {
+            let settled = self.environment.settle(pending, ran);
+            return self.settled_crossing(offered, settled, took);
+        }
+        let at = self.cursor.saturating_sub(self.from);
+        for slot in self.slots.iter_mut().skip(at.saturating_add(1)) {
+            match core::mem::replace(slot, Slot::Dropped) {
+                Slot::Open => {
+                    *slot = Slot::Open;
+                    break;
+                },
+                Slot::Ran(_, _, dropped, _) => self.environment.discard(*dropped),
+                Slot::Running(..)
+                | Slot::Member(_)
+                | Slot::Settled(..)
+                | Slot::Crossed(_)
+                | Slot::Skipped
+                | Slot::Dropped
+                | Slot::Recorded => {},
+            }
+        }
+        // The answer reads the next position, past the vacancy that the
+        // refusal leaves there.
+        let next = ConstantIndex::from(self.environment.entries().len());
+        let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+        let own = [(offered.constant, next)];
+        let crossing: &[(ConstantIndex, ConstantIndex)] = match offered.offer {
+            Offer::Data(_) | Offer::Codata(_) => &own,
+            Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+        };
+        let answers = answered(
+            self.arena,
+            (self.source, &self.positions),
+            (offered.offer, crossing, base),
+            pair,
+        );
+        let settled = self.environment.settle(pending, ran);
+        match (settled, answers) {
+            (
+                Err(KernelError::Identity(gandr_kernel_core::IdentityError::EndpointsUndecided {
+                    ..
+                })),
+                Some(answers),
+            ) => {
+                let (outcome, certificates, took) = cross(
+                    &mut self.environment,
+                    self.arena,
+                    Source {
+                        reflexivities: &answers,
+                        ..self.source
+                    },
+                    &mut self.positions,
+                    offered.constant,
+                    offered.offer,
+                    (self.vouch, &mut *self.stopwatch),
+                );
+                Crossing {
+                    entry: Readmitted {
+                        constant: offered.constant,
+                        origin: offered.origin,
+                        outcome,
+                        certificates,
+                        took,
+                    },
+                    tail: Tail::Lone,
+                }
+            },
+            (settled, _) => self.settled_crossing(offered, settled, took),
+        }
+    }
+
+    /// Release the dropped declaration at `item` again, at the cursor: it
+    /// crosses on the calling thread, as the serial readmission crosses it.
+    ///
+    /// # Specification
+    /// - requires: the cursor stands at `item`, and its slot was dropped.
+    /// - ensures: the crossing of its release, or nothing when the release came
+    ///   after a retirement.
+    /// - panics: none.
+    /// - executable: none — as [`Self::release`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::settle_at_cursor`].
+    /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    fn again(
+        &mut self,
+        item: ItemIndex,
+    ) -> Option<Crossing>
+    {
+        let at = usize::from(item);
+        self.serially = true;
+        let released = self.release(item);
+        self.serially = false;
+        let answer = match released {
+            Releasing::Settled(answer) | Releasing::Held(answer) => answer,
+            Releasing::Run((check, mut stopwatch)) => {
+                let (ran, took) = run_check(check, &mut stopwatch);
+                Answer::Ran(ran, took)
+            },
+        };
+        match answer {
+            Answer::Crossed(crossing) => Some(crossing),
+            Answer::Skipped => None,
+            Answer::Waits => self.unwaited(item),
+            Answer::Ran(ran, took) => {
+                let running = self
+                    .slots
+                    .get_mut(at)
+                    .map(|slot| core::mem::replace(slot, Slot::Recorded));
+                if let Some(Slot::Running(offered, pending)) = running {
+                    let settled = self.environment.settle(pending, ran);
+                    Some(self.settled_crossing(offered, settled, took))
+                }
+                else {
+                    self.environment.discard(ran);
+                    self.unwaited(item)
+                }
+            },
         }
     }
 
