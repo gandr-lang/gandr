@@ -1,5 +1,5 @@
 # The output of the wide host's measure, read one line at a time. The scaling
-# account (`curve.jq`, #6879) and `pr:open` (`opening.jq`, #6881) read it so.
+# account (`curve.jq`, #6879) reads it so.
 #
 # The head line, `<tool>: commit <sha>, NUMA nodes <nodes>, mutation run
 # <state>`, names the commit that the measure built and whether a mutation run
