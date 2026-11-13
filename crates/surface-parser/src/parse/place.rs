@@ -682,7 +682,13 @@ fn earlier<'source>(
 /// within a run from its last form back, with each such keyword written before
 /// that tile, a space after it, in mold order, the first [`COPIES`] copies in
 /// all. Each copy spans the form and the rest of its run. A run that holds no
-/// repair takes `def` alone.
+/// repair takes `def` alone. After the runs, each member of a declaration's
+/// block that reads as no member is tried the same way, when the declaration
+/// holds a repair: the member is a form after the block's opener whose mold
+/// heads no declaration, as `Same(a : Type) = a;` in a module whose `type` is
+/// left out. It takes only a keyword that another member of its block starts
+/// with, and a form at the root on a line indented past the declaration's
+/// head counts as such a member. Its copy spans the member.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
@@ -690,8 +696,8 @@ fn earlier<'source>(
 ///   alone is the parse: the source's tree read from the whole copy, the
 ///   keyword an empty prefix grout at its first tile and its space empty there,
 ///   with one [`Oblig::MissingTile`] over that tile beside the copy's other
-///   obligations, shifted back over the keyword; `None` where no copy tried
-///   parses.
+///   obligations, shifted back over the keyword; a member's parse only where it
+///   owes fewer obligations than `parsed`; `None` where no copy tried parses.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -702,9 +708,12 @@ fn earlier<'source>(
 ///   minted at its name and never at the misspelled word; a `def` left out
 ///   before `rec`, alone or after `pub`, is minted before the `rec`; a call at
 ///   the top level with a repair of its own that no keyword makes a declaration
-///   keeps its reading.
+///   keeps its reading; a module's member whose `type` is left out owes it
+///   alone at its name, and a theory's member gets no keyword its block does
+///   not spell.
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
 /// - witness: `parse::place::tests::a_def_left_out_before_rec_is_minted_at_rec_6029`
+/// - witness: `parse::place::tests::a_member_keyword_left_out_is_minted_at_its_name_6323`
 fn headed<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
@@ -738,12 +747,122 @@ fn headed<'source>(
         };
         Some((position, node.span(), declaration))
     };
+    // A member of a declaration's block that reads as no member, as
+    // `Same(a : Type) = a;` in `module Shapes where` with its `type` left out.
+    // The melder closes the block's fragment over it, so the root holds a
+    // declaration, and the member stands inside it: after the tile of no bytes
+    // that opens the block, a form whose mold heads no declaration. Only a
+    // declaration that holds a repair is read. The member takes a keyword
+    // that a declaration's head takes before its first tile and that another
+    // member of its block starts with: `type` in a module whose members start
+    // with `type`. Its copy alone parses as a declaration, as a run's copy
+    // does.
+    let spelt = |span: ByteSpan| {
+        let word =
+            <&str>::from(source).get(usize::from(span.start()) .. usize::from(span.end()))?;
+        RESERVED_WORDS
+            .iter()
+            .find(|&&reserved| reserved == word)
+            .map(|&reserved| SourceText::from(reserved))
+    };
+    // A member the minted close of the block leaves at the root still stands
+    // on a line indented past the declaration's head.
+    let column = |at: ByteOffset| {
+        let at = usize::from(at);
+        <&str>::from(source).get(.. at).map_or(0, |before| {
+            at.saturating_sub(before.rfind('\n').map_or(0, |line| line.saturating_add(1)))
+        })
+    };
+    let mut members: Vec<(NodeIndex, ByteSpan, Vec<SourceText<'static>>)> = Vec::new();
+    // The block's children after its opener, each with the keyword it starts
+    // with and whether it reads as no member: one buffer for every
+    // declaration.
+    let mut block: Vec<(NodeIndex, ByteSpan, Option<SourceText<'static>>, bool)> = Vec::new();
+    let repaired = tree.children(tree.root()).filter(|&position| {
+        tree.node(position).is_some_and(|node| {
+            matches!(node.label(), NodeLabel::Meld(mold) if bool::from(declaration_head(pbg, mold)))
+                && parsed.obligations.iter().any(|obligation| {
+                    node.span().start() <= obligation.span.start()
+                        && obligation.span.end() <= node.span().end()
+                })
+        })
+    });
+    for declaration in repaired {
+        block.clear();
+        let mut opened = false;
+        block.extend(tree.children(declaration).filter_map(|child| {
+            let node = tree.node(child)?;
+            match node.label() {
+                NodeLabel::Tile(_) if node.span().start() == node.span().end() => {
+                    opened = true;
+                    None
+                },
+                NodeLabel::Tile(_) if opened => {
+                    Some((child, node.span(), spelt(node.span()), false))
+                },
+                NodeLabel::Meld(mold) if opened => {
+                    let member = bool::from(declaration_head(pbg, mold));
+                    let keyword = first_tile(tree, child).and_then(|(_, first)| spelt(first));
+                    Some((child, node.span(), keyword.filter(|_| member), !member))
+                },
+                NodeLabel::Tile(_)
+                | NodeLabel::Meld(_)
+                | NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => None,
+            }
+        }));
+        let head = tree
+            .node(declaration)
+            .map_or(0, |node| column(node.span().start()));
+        block.extend(
+            tree.children(tree.root())
+                .skip_while(|&form| form != declaration)
+                .skip(1)
+                .filter(|&form| {
+                    tree.node(form)
+                        .is_some_and(|node| bool::from(node.label().significance()))
+                })
+                .take_while(|&form| {
+                    tree.node(form)
+                        .is_some_and(|node| column(node.span().start()) > head)
+                })
+                .filter_map(|form| {
+                    let node = tree.node(form)?;
+                    let NodeLabel::Meld(mold) = node.label()
+                    else {
+                        return None;
+                    };
+                    if !bool::from(declaration_head(pbg, mold)) {
+                        return None;
+                    }
+                    let keyword = first_tile(tree, form).and_then(|(_, first)| spelt(first));
+                    Some((form, node.span(), keyword, false))
+                }),
+        );
+        for &(child, span, _, stray) in &block {
+            if stray {
+                // The keywords of the block, sorted and each once, so the
+                // keywords of the head are looked up by a binary search.
+                let mut keywords: Vec<SourceText<'static>> = block
+                    .iter()
+                    .filter_map(|&(_, _, keyword, _)| keyword)
+                    .collect();
+                keywords.sort_unstable_by_key(|&keyword| <&str>::from(keyword));
+                keywords.dedup();
+                members.push((child, span, keywords));
+            }
+        }
+    }
     // A source of declarations alone, as every clean one is, allocates
     // nothing here.
-    if tree
-        .children(tree.root())
-        .filter_map(read)
-        .all(|(_, _, declaration)| declaration)
+    if members.is_empty()
+        && tree
+            .children(tree.root())
+            .filter_map(read)
+            .all(|(_, _, declaration)| declaration)
     {
         return None;
     }
@@ -763,8 +882,9 @@ fn headed<'source>(
         }
     }
     starts.sort_unstable_by_key(|&(head, at)| (head, core::cmp::Reverse(at)));
-    let mut written_keyword = String::new();
-    starts
+    // Each top-level run with the keywords a declaration's head takes, then
+    // each member with the keywords of its block.
+    let runs = starts
         .iter()
         .filter_map(|&(_, at)| {
             let &(position, span, _) = forms.get(at)?;
@@ -784,39 +904,58 @@ fn headed<'source>(
                 run.start() <= obligation.span.start() && obligation.span.end() <= run.end()
             });
             let (lead, lead_span) = first_tile(tree, position)?;
-            Some(
-                heads(pbg, lead)
-                    .into_iter()
-                    .filter(move |&keyword| repaired || <&str>::from(keyword) == "def")
-                    .map(move |keyword| (run, lead_span, keyword)),
-            )
+            let keywords: Vec<SourceText<'static>> = heads(pbg, lead)
+                .into_iter()
+                .filter(|&keyword| repaired || <&str>::from(keyword) == "def")
+                .collect();
+            Some((run, lead_span, keywords, false))
         })
-        .flatten()
-        .take(COPIES)
-        .find_map(|(run, lead, keyword)| {
-            let place = lead.start();
-            written_keyword.clear();
-            written_keyword.push_str(<&str>::from(keyword));
-            written_keyword.push(' ');
-            let tile = SourceText::from(written_keyword.as_str());
-            let copied = written(source, run, place, tile, SourceText::from(""))?;
-            let copied = SourceText::from(copied.as_str());
-            let declaration = unrepaired(pbg, copied)?;
-            if !bool::from(declared(pbg, &declaration)) {
-                return None;
-            }
-            let copy = written(source, whole, place, tile, SourceText::from(""))?;
-            let splice = Splice::new(place, tile, NodeLabel::Grout {
-                sort: BOUNDARY_SORT.grout_sort(),
-                shape: GroutShape::Prefix,
-            })?;
-            spliced(
-                molded(pbg, SourceText::from(copy.as_str())),
-                source,
-                &[splice],
-                [ObligationInstance::new(Oblig::MissingTile, lead)],
-            )
-        })
+        .chain(members.into_iter().filter_map(|(position, span, spelt)| {
+            let (lead, lead_span) = first_tile(tree, position)?;
+            let keywords: Vec<SourceText<'static>> = heads(pbg, lead)
+                .into_iter()
+                .filter(|&keyword| {
+                    spelt
+                        .binary_search_by_key(&<&str>::from(keyword), |&other| <&str>::from(other))
+                        .is_ok()
+                })
+                .collect();
+            Some((span, lead_span, keywords, true))
+        }))
+        .flat_map(|(run, lead, keywords, member)| {
+            keywords
+                .into_iter()
+                .map(move |keyword| (run, lead, keyword, member))
+        });
+    let mut written_keyword = String::new();
+    runs.take(COPIES).find_map(|(run, lead, keyword, member)| {
+        let place = lead.start();
+        written_keyword.clear();
+        written_keyword.push_str(<&str>::from(keyword));
+        written_keyword.push(' ');
+        let tile = SourceText::from(written_keyword.as_str());
+        // The copy of the run or the member alone parses as declarations.
+        let copied = written(source, run, place, tile, SourceText::from(""))?;
+        let copied = SourceText::from(copied.as_str());
+        let declaration = unrepaired(pbg, copied)?;
+        if !bool::from(declared(pbg, &declaration)) {
+            return None;
+        }
+        let copy = written(source, whole, place, tile, SourceText::from(""))?;
+        let splice = Splice::new(place, tile, NodeLabel::Grout {
+            sort: BOUNDARY_SORT.grout_sort(),
+            shape: GroutShape::Prefix,
+        })?;
+        spliced(
+            molded(pbg, SourceText::from(copy.as_str())),
+            source,
+            &[splice],
+            [ObligationInstance::new(Oblig::MissingTile, lead)],
+        )
+        // A member's copy stands inside the rest of the source, so its
+        // parse is kept only where it owes fewer obligations.
+        .filter(|headed| !member || headed.obligations.len() < parsed.obligations.len())
+    })
 }
 
 /// The first tile of the form at `position`, read down its first children.
@@ -2601,6 +2740,73 @@ mod tests
                 "{why}: the `def` is minted, empty, at the `rec`"
             );
         }
+    }
+
+    /// #6323: a member of a module's block whose `type` is left out. The
+    /// melder closes the block over it, so the root holds the module, and the
+    /// member reads as a type. The member takes the `type` that another member
+    /// of its block starts with, minted empty at its name, and the parse owes
+    /// that one repair. A theory's member whose block spells no keyword that a
+    /// declaration's head takes before it gets no keyword.
+    #[test]
+    fn a_member_keyword_left_out_is_minted_at_its_name_6323()
+    {
+        let pbg = built_in().unwrap();
+        let module = include_str!(
+            "place/unformatted/a-member-keyword-left-out-is-minted-at-its-name-6323-module.gandr"
+        );
+        let head = module.find("Same").unwrap();
+        let parsed = parse(&pbg, SourceText::from(module)).unwrap();
+        let tree = parsed.tree();
+        assert_eq!(
+            reconstruct(tree),
+            module,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == head
+                    && usize::from(repair.span.end()) == head.saturating_add(4)
+            ),
+            "one repair stands, over the member's name: {:?}",
+            parsed.obligations()
+        );
+        let minted: Vec<ByteOffset> = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| {
+                matches!(node.label(), NodeLabel::Grout {
+                    shape: GroutShape::Prefix,
+                    ..
+                }) && node.span().start() == node.span().end()
+            })
+            .map(|node| node.span().start())
+            .collect();
+        assert_eq!(
+            minted,
+            [ByteOffset::from(head)],
+            "the `type` is minted, empty, at the name"
+        );
+        let theory = include_str!(
+            "place/unformatted/a-member-keyword-left-out-is-minted-at-its-name-6323-theory.gandr"
+        );
+        let name = theory.find("add").unwrap();
+        let parsed = parse(&pbg, SourceText::from(theory)).unwrap();
+        assert!(
+            parsed
+                .tree()
+                .positions()
+                .filter_map(|position| parsed.tree().node(position))
+                .all(|node| {
+                    !(matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Prefix,
+                        ..
+                    }) && usize::from(node.span().start()) == name)
+                }),
+            "no keyword is minted at the theory member's name"
+        );
     }
 
     /// #6029: a `)` left out inside a declaration whose line before ends in a
