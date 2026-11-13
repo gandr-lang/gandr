@@ -131,7 +131,8 @@ impl fmt::Display for Speculation
     }
 }
 
-/// How many predictions the fold found wrong and set right.
+/// How many predictions the fold found wrong and set right, and how many
+/// outstanding releases a drop took back.
 ///
 /// # Specification
 /// trivial.

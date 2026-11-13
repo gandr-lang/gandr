@@ -24,6 +24,11 @@
 //! only as an order among the live entries, and the move keeps that order,
 //! so no check runs again.
 //!
+//! A release that comes before its reads may also drop: the releases after
+//! one release leave the queue, as if none of them was made, and the caller
+//! releases each of them again in module order. A drop forgets reservations
+//! and refusals alone. No admission past the release may be committed then.
+//!
 //! # References
 //!
 //! - gandr #3476 — the parallel replay, § "Where the next landing starts": the
@@ -207,6 +212,22 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why no slot left the queue at a drop.
+    pub mod dropped {
+        /// The reason nothing is dropped.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The cursor passed the position, or the position is past the
+            /// last slot.
+            Outside,
+            /// A slot past the position holds an admission, which entries and
+            /// tables beside the queue hold too.
+            Admitted,
+        }
+    }
+}
+
 /// The releases whose commits the cursor has not read, and what each
 /// outstanding release holds.
 ///
@@ -351,6 +372,20 @@ impl Releases
         else {
             return Maybe::Absent(reserved::Absent::Committed);
         };
+        self.forget(&reservation);
+        Maybe::Present(reservation)
+    }
+
+    /// Forget the outstanding release that `reservation` reserves: one
+    /// release less is outstanding, and no index holds the reservation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forget(
+        &mut self,
+        reservation: &Reservation,
+    )
+    {
         self.outstanding = self.outstanding.saturating_sub(1);
         if reservation.sway == Sway::Ordering {
             self.ordering = self.ordering.saturating_sub(1);
@@ -372,7 +407,64 @@ impl Releases
                 let _emptied = self.definitions.remove(&digest);
             }
         }
-        Maybe::Present(reservation)
+    }
+
+    /// Drop each slot past the slot at `offset` from the cursor: each
+    /// reservation and each refusal noted at a release leaves the queue, as if
+    /// no release after the one at `offset` was made.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: when `offset` holds a slot and no slot past it holds an
+    ///   admission, the queue ends at that slot, and no index holds a dropped
+    ///   reservation. Nothing changes otherwise.
+    /// - provides: how many outstanding releases left the queue, or why no slot
+    ///   left it ([`dropped::Absent`]).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a drop that keeps a reservation, or forgets one in an
+    ///   index, holds a later release on a rank or a content that no release
+    ///   reserves, and the release again differs from the serial run.
+    /// - witness: `environment::tests::a_drop_after_a_release_leaves_the_serial_run_3476`
+    #[spec(captures: [queued = self.unfolded.len(), outstanding = self.outstanding], ensures: |ret| match ret {
+        Maybe::Present(dropped) => self.unfolded.len() == usize::from(offset).saturating_add(1)
+            && self.outstanding.saturating_add(usize::from(dropped)) == outstanding,
+        Maybe::Absent(_) => self.unfolded.len() == queued && self.outstanding == outstanding,
+    })]
+    pub fn drop_after(
+        &mut self,
+        offset: gandr_kernel_term::ArenaLength,
+    ) -> Maybe<UnsettledCount, dropped::Absent>
+    {
+        let kept = usize::from(offset).saturating_add(1);
+        if self.unfolded.len() < kept {
+            return Maybe::Absent(dropped::Absent::Outside);
+        }
+        if self
+            .unfolded
+            .iter()
+            .skip(kept)
+            .any(|&(_, ref slot)| matches!(*slot, Unfolded::Admitted(..)))
+        {
+            return Maybe::Absent(dropped::Absent::Admitted);
+        }
+        let mut dropped = 0_usize;
+        while self.unfolded.len() > kept {
+            let Some((ranked, slot)) = self.unfolded.pop_back()
+            else {
+                break;
+            };
+            if ranked == Ranked::Predicted {
+                self.predicting = self.predicting.saturating_sub(1);
+            }
+            if let Unfolded::Reserved(ref reservation) = slot {
+                self.forget(reservation);
+                dropped = dropped.saturating_add(1);
+            }
+        }
+        Maybe::Present(UnsettledCount::from(dropped))
     }
 
     /// Take the slot at the cursor once its commit came, so the cursor passes

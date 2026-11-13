@@ -1469,6 +1469,195 @@ fn checks_committed_in_reverse_readmit_as_the_serial_run_3476()
     }
 }
 
+/// A tier that meets every pair: the checker decides no pair itself, so the
+/// kernel evaluates each.
+struct Agreeing;
+
+impl gandr_core_checker_base::tier::EndpointTier for Agreeing
+{
+    /// Every pair meets.
+    ///
+    /// # Specification
+    /// trivial.
+    fn meet(
+        &mut self,
+        _core: &CoreArena,
+        _definitions: &crate::code::CodeDefinitions,
+        _pair: (ValueId, ValueId),
+    ) -> gandr_core_checker_base::tier::Meeting
+    {
+        gandr_core_checker_base::tier::Meeting::Met
+    }
+}
+
+/// How many times [`undecided_beside_later`] doubles the run of `f0`.
+const DOUBLINGS: usize = 22;
+
+/// The module `f0 = λx. return x`, `f(k+1) = λx. fk x to y. fk y` up to
+/// [`DOUBLINGS`], `big : Unit = f22 ()`, `d : Unit = big`,
+/// `r : Path(big, d) = here(big)`, then three declarations that read
+/// nothing after `d`. It is judged under [`Agreeing`], so the tier met each
+/// pair of `r`. The kernel unfolds `big` first against `d`, and the run of
+/// `f22` takes more steps than its budget, so the pair is undecided. The
+/// machine's dialogue unfolds `d` to `big`, which answers the pair.
+///
+/// # Specification
+/// trivial.
+fn undecided_beside_later() -> (CoreArena, ModuleReport)
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit_type);
+    let arrow = arena.comp_type_arrow(unit_type, returns_unit);
+    let function_type = arena.value_type_thunk(arrow);
+    let variable = |arena: &mut CoreArena| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
+    };
+    let mut module = Vec::new();
+    let bound = variable(&mut arena);
+    let returned = arena.computation_return(bound);
+    let identity = arena.computation_lambda(returned);
+    let identity = arena.value_thunk(identity);
+    module.push(declaration(
+        At(0),
+        Maybe::Present(function_type),
+        Maybe::Present(identity),
+    ));
+    for doubled in 1 ..= DOUBLINGS {
+        let previous = arena.value_constant(ConstantIndex::from(doubled.saturating_sub(1)));
+        let [first, second] = [(), ()].map(|()| {
+            let argument = variable(&mut arena);
+            let forced = arena.computation_force(previous);
+            arena.computation_application(forced, argument)
+        });
+        let twice = arena.computation_bind(first, second);
+        let twice = arena.computation_lambda(twice);
+        let twice = arena.value_thunk(twice);
+        module.push(declaration(
+            At(doubled),
+            Maybe::Present(function_type),
+            Maybe::Present(twice),
+        ));
+    }
+    let big_at = DOUBLINGS.saturating_add(1);
+    let last = arena.value_constant(ConstantIndex::from(DOUBLINGS));
+    let unit = arena.value_unit();
+    let forced = arena.computation_force(last);
+    let applied = arena.computation_application(forced, unit);
+    let run = arena.value_returned(applied);
+    let big = arena.value_constant(ConstantIndex::from(big_at));
+    let d = arena.value_constant(ConstantIndex::from(big_at.saturating_add(1)));
+    let path = arena.value_type_path(unit_type, big, d);
+    let here = arena.value_here(big);
+    let constant_unit = {
+        let returned = arena.computation_return(unit);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let rest = [
+        (unit_type, run),
+        (unit_type, big),
+        (path, here),
+        (unit_type, d),
+        (unit_type, unit),
+        (function_type, constant_unit),
+    ];
+    for (offset, (declared, defined)) in rest.into_iter().enumerate() {
+        module.push(declaration(
+            At(big_at.saturating_add(offset)),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+        ));
+    }
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.decide_endpoints_on(
+            alloc::boxed::Box::new(Agreeing),
+            gandr_kernel_core::AdmissionPolicy::Derive,
+        );
+        check_module(&mut context, &module)
+    };
+    (arena, report)
+}
+
+/// A pair that the kernel leaves undecided at `r` drops the two releases
+/// after it, which run beside it on [`Reversed`] under the driver's group and
+/// finish first. The last declaration is the boundary of the record, so its
+/// release waits for the cursor, and the drop stops at its open slot. The
+/// refusal leaves a vacancy at the position of `r`, and the machine's
+/// dialogue answers the pair, so `r` is admitted at the next position. Each
+/// dropped declaration crosses again at the cursor. The readmission and the
+/// record at the boundary are the serial ones, and only the reversed run
+/// counts rollbacks.
+#[test]
+fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476()
+{
+    let (arena, report) = undecided_beside_later();
+    let leading = (
+        LeadingCount::from(report.judged().len().saturating_sub(1)),
+        Maybe::Absent(crossed::Absent::Unasked),
+    );
+    let (serial, serial_record) = readmit_retiring(
+        &mut arena.clone(),
+        &report,
+        leading,
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    let (reversed, reversed_record) = readmit_retiring(
+        &mut arena.clone(),
+        &report,
+        leading,
+        &Recall::recheck().speculating(gandr_kernel_core::speculation::Speculation::ON),
+        &Unretired,
+        &mut Untimed,
+        &Reversed,
+    )
+    .whole();
+    let r = DOUBLINGS.saturating_add(3);
+    let outcome = serial.readmitted().get(r).map(|entry| &entry.outcome);
+    assert!(
+        matches!(
+            outcome,
+            Some(&Outcome::Defined { admitted, .. })
+                if admitted.position() == ConstantIndex::from(r.saturating_add(1))
+        ),
+        "the answer admits `r` past the vacancy at its own position: {outcome:?}"
+    );
+    assert_eq!(
+        reversed.readmitted(),
+        serial.readmitted(),
+        "each declaration crosses as the serial run crosses it"
+    );
+    assert_eq!(
+        reversed.export(BTreeMap::new()),
+        serial.export(BTreeMap::new()),
+        "the artifact is the serial one, byte for byte"
+    );
+    let bounded = |record: &Maybe<super::Crossed, crossed::Absent>| match *record {
+        Maybe::Present(ref record) => Ok(record.boundary()),
+        Maybe::Absent(absent) => Err(absent),
+    };
+    assert_eq!(
+        bounded(&reversed_record),
+        bounded(&serial_record),
+        "the record at the boundary is the serial one"
+    );
+    assert_eq!(
+        usize::from(serial.environment().rollbacks()),
+        0,
+        "the serial run drops nothing"
+    );
+    assert_eq!(
+        usize::from(reversed.environment().rollbacks()),
+        2,
+        "the undecided pair drops the two releases that ran beside it"
+    );
+}
+
 /// A clock one microsecond past its last reading at each reading.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default)]

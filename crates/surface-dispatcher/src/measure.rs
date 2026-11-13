@@ -239,7 +239,8 @@ pub struct CheckSchedule
     bound: Bound,
     /// The speculation group that the admission ran under.
     speculation: Speculation,
-    /// How many predictions the kernel's fold found wrong and set right.
+    /// How many predictions the kernel's fold found wrong and set right, and
+    /// how many outstanding releases a drop took back.
     rollbacks: Rollbacks,
 }
 

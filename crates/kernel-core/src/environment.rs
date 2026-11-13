@@ -421,7 +421,8 @@ pub struct Environment
     releases: crate::releases::Releases,
     /// What a release behind the cursor predicts of the earlier commits.
     speculation: crate::speculation::Speculation,
-    /// How many predictions the fold found wrong and set right.
+    /// How many predictions the fold found wrong and set right, and how many
+    /// outstanding releases a drop took back.
     rollbacks: crate::speculation::Rollbacks,
 }
 
@@ -523,8 +524,9 @@ impl Environment
         self.speculation
     }
 
-    /// How many predictions the fold found wrong and set right since the
-    /// environment began, or since [`Self::handed_on`] made it.
+    /// How many predictions the fold found wrong and set right, and how many
+    /// outstanding releases a drop took back, since the environment began or
+    /// since [`Self::handed_on`] made it.
     ///
     /// # Specification
     /// trivial.
@@ -1425,6 +1427,102 @@ impl Environment
             marks,
             key_name,
         })
+    }
+
+    /// Drop each release after the release of `pending`: their reservations,
+    /// their slots and their staged content leave the environment, as if
+    /// none of them was made. The check of each dropped release comes back
+    /// through [`Self::discard`], and the caller releases each dropped
+    /// declaration again in module order.
+    ///
+    /// # Specification
+    /// - requires: `pending` comes from a [`Self::release`] of this
+    ///   environment, and no admission after its position is committed.
+    /// - ensures: the entries end past the position of `pending`, the queue of
+    ///   releases ends at its slot, the arena ends at the mark past its
+    ///   content, and the count of rollbacks grows by one for each outstanding
+    ///   release dropped. Nothing changes on an error.
+    /// - panics: none.
+    /// - executable: none — the state after the drop is the state before the
+    ///   later releases, which a predicate over one call would restate.
+    ///
+    /// # Errors
+    /// [`KernelError::UnboundConstant`] at the position of `pending` when the
+    /// cursor passed it, or when an admission after it is committed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a drop that keeps a later slot, an index or staged
+    ///   content gives the releases again other positions, ranks or content
+    ///   than the serial run.
+    /// - witness: `environment::tests::a_drop_after_a_release_leaves_the_serial_run_3476`
+    #[spec(captures: [entry_len = self.entries.len(), place = pending.place.0], ensures: |ret| match ret.as_ref() {
+        Ok(_) => usize::from(self.entries.len()) == usize::from(place).saturating_add(1),
+        Err(_) => self.entries.len() == entry_len,
+    })]
+    pub fn drop_after(
+        &mut self,
+        pending: &Pending,
+    ) -> Result<(), KernelError>
+    {
+        let (position, _) = pending.place;
+        let cursor =
+            usize::from(self.entries.len()).saturating_sub(usize::from(self.releases.unfolded()));
+        let Some(offset) = usize::from(position)
+            .checked_sub(cursor)
+            .map(gandr_kernel_term::ArenaLength::from)
+        else {
+            return Err(KernelError::UnboundConstant { index: position });
+        };
+        let Maybe::Present(dropped) = self.releases.drop_after(offset)
+        else {
+            return Err(KernelError::UnboundConstant { index: position });
+        };
+        self.entries.truncate(gandr_kernel_term::ArenaLength::from(
+            usize::from(position).saturating_add(1),
+        ));
+        // The content of each dropped release lies above the content of
+        // `pending`, and no admission after it raised the floor.
+        let (content_end, _) = pending.marks;
+        self.arena
+            .truncate_to(content_end.clamped_into(self.admission_floor, self.arena.watermark()));
+        for _ in 0 .. usize::from(dropped) {
+            self.rollbacks = self.rollbacks.and_one();
+        }
+        Ok(())
+    }
+
+    /// Discard the run of a dropped release: take back the scope that its
+    /// check ran in, and forget what the check found.
+    ///
+    /// # Specification
+    /// - requires: `ran` answers the check of a release that
+    ///   [`Self::drop_after`] dropped from this environment.
+    /// - ensures: the entries hold the buffer of the support of the check's
+    ///   view again, the arena forgets the nodes of the check's clone, and no
+    ///   outcome or record of the check reaches the environment.
+    /// - panics: none.
+    /// - executable: none — the scope is private to the run.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a discard that folds the check's session keeps the
+    ///   outcomes of a run that the serial run never makes.
+    /// - witness: `environment::tests::a_drop_after_a_release_leaves_the_serial_run_3476`
+    #[inline]
+    pub fn discard(
+        &mut self,
+        ran: Ran,
+    )
+    {
+        if let Maybe::Present(Scope {
+            mut view,
+            arena,
+            session: _,
+        }) = ran.scope
+        {
+            self.arena.dropped(&arena);
+            let _outside = view.close();
+            self.entries.restore(view);
+        }
     }
 
     /// Open a check's scope below `rank` for the declaration placed at `end`:
@@ -5108,6 +5206,20 @@ pub struct Ran
     scope: Maybe<Scope, ran::Absent>,
 }
 
+impl Ran
+{
+    /// The reading that the check found, or its refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn outcome(&self) -> Result<&crate::check::Accessibility, &KernelError>
+    {
+        self.outcome.as_ref()
+    }
+}
+
 quenchant_shape::reason_enum! {
     /// Why a check that ran holds no scope.
     pub mod ran {
@@ -8026,6 +8138,131 @@ mod tests
             folded(&released, &signer),
             folded(&serial, &signer),
             "the environment folds as the serial run's"
+        );
+    }
+
+    /// Release each offer of `source` in `environment` in order, ranked, with
+    /// none settled, and answer each release with the arena's mark after it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn release_each(
+        environment: &mut Environment,
+        source: &[Offer],
+    ) -> Vec<(
+        super::Pending,
+        super::Check,
+        gandr_kernel_term::ArenaWatermark,
+    )>
+    {
+        let scope = InScope::default();
+        source
+            .iter()
+            .map(|offer| {
+                let staged = stage_offer(environment, offer, &scope, Ranking::Ranked)
+                    .pop()
+                    .expect("a lone offer stages one declaration");
+                let Ok(Released::Running(pending, check)) = environment.release(staged)
+                else {
+                    panic!("each offer releases");
+                };
+                (pending, check, environment.arena.watermark())
+            })
+            .collect()
+    }
+
+    /// #3476: a drop after a release leaves the environment as if no later
+    /// release was made. The later releases leave the queue, the entries and
+    /// the arena, each counts one rollback, and their runs are discarded. The
+    /// same declarations admitted again fold as the serial run's. A drop past
+    /// a committed admission is refused, and nothing changes.
+    #[test]
+    fn a_drop_after_a_release_leaves_the_serial_run_3476()
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let source = [
+            Offer::Unit(None, Dip::Ascending),
+            Offer::Lone(Member::Refused, Dip::Ascending),
+            Offer::Lone(Member::Axiom(Field::Unit), Dip::Ascending),
+        ];
+        let mut serial = Environment::new();
+        let reference = admit_serially(&mut serial, &source, Ranking::Ranked);
+
+        let mut environment = Environment::new();
+        let mut released = release_each(&mut environment, &source).into_iter();
+        let (first, first_check, first_mark) = released.next().expect("three releases");
+        let (_, second_check, _) = released.next().expect("three releases");
+        let (_, third_check, _) = released.next().expect("three releases");
+        let second_ran = second_check.run();
+        assert_eq!(
+            environment.drop_after(&first),
+            Ok(()),
+            "no admission after the first release is committed"
+        );
+        assert_eq!(
+            usize::from(environment.entries().len()),
+            1_usize,
+            "the entries end past the first release"
+        );
+        assert_eq!(
+            usize::from(environment.releases.outstanding()),
+            1_usize,
+            "the first release alone stays outstanding"
+        );
+        assert_eq!(
+            usize::from(environment.rollbacks()),
+            2_usize,
+            "each dropped release counts one rollback"
+        );
+        assert_eq!(
+            environment.arena.watermark(),
+            first_mark,
+            "the arena ends past the content of the first release"
+        );
+        environment.discard(second_ran);
+        environment.discard(third_check.run());
+        let mut outcomes = vec![
+            environment
+                .settle(first, first_check.run())
+                .map(|id| vec![id.position()]),
+        ];
+        let scope = InScope::default();
+        for offer in source.get(1 ..).unwrap_or_default() {
+            let staged = stage_offer(&mut environment, offer, &scope, Ranking::Ranked)
+                .pop()
+                .expect("a lone offer stages one declaration");
+            outcomes.push(environment.add_decl(staged).map(|id| vec![id.position()]));
+        }
+        assert_eq!(
+            outcomes, reference,
+            "each offer resolves as in the serial run"
+        );
+        assert_eq!(
+            folded(&environment, &signer),
+            folded(&serial, &signer),
+            "the environment folds as the serial run's"
+        );
+
+        let mut committed = Environment::new();
+        let mut released = release_each(&mut committed, &source).into_iter();
+        let (first, ..) = released.next().expect("three releases");
+        let _second = released.next().expect("three releases");
+        let (third, third_check, _) = released.next().expect("three releases");
+        assert!(
+            committed.settle(third, third_check.run()).is_ok(),
+            "the third declaration admits"
+        );
+        assert_eq!(
+            committed.drop_after(&first),
+            Err(KernelError::UnboundConstant {
+                index: ConstantIndex::from(0_usize)
+            }),
+            "an admission after the first release refuses the drop"
+        );
+        assert_eq!(
+            usize::from(committed.entries().len()),
+            3_usize,
+            "the refused drop keeps every entry"
         );
     }
 
