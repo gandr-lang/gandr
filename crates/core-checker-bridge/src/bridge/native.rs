@@ -216,11 +216,15 @@ impl Erasure<'_, '_>
                         .extend(fields.values().rev().copied().map(value_type)),
                     // A patched type crosses as the record of its free fields:
                     // only those fields' types cross. Its formation crosses
-                    // first, as witnesses the kernel replays (`formed`).
+                    // first, as witnesses the kernel replays (`formed`), and
+                    // the declaration erased reads it.
                     ValueType::Patched { ref fixed, .. } => {
-                        if !fixed.is_empty() && !self.positions.formed.contains(&at) {
-                            self.unseeded = Some(super::Seed::Formation(at));
-                            return Err(Refusal::MachineInvariant);
+                        if !fixed.is_empty() {
+                            if !self.positions.formed.contains_key(&at) {
+                                self.unseeded = Some(super::Seed::Formation(at));
+                                return Err(Refusal::MachineInvariant);
+                            }
+                            self.formations.push(at);
                         }
                         let free = self
                             .arena

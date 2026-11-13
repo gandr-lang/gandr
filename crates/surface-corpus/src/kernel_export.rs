@@ -1453,10 +1453,12 @@ mod kernel_corpus_partition
     {
         let mut classes = BTreeMap::new();
         let mut seeded: BTreeSet<StructuredName> = BTreeSet::new();
+        let mut keys: BTreeSet<alloc::string::String> = BTreeSet::new();
         for exported in corpus(shard, None) {
             let path = exported.path.display();
             classes.clear();
             seeded.clear();
+            keys.clear();
             classes.extend(exported.classes.iter().copied());
             for &(declaration, named) in &exported.withheld {
                 assert!(
@@ -1503,18 +1505,23 @@ mod kernel_corpus_partition
             };
             // A patched type's formation crosses as witness definitions the
             // readmission admits ahead of the first declaration whose type
-            // holds it, named `formation.<n>.record.<k>` and
-            // `formation.<n>.meets.<k>`, with `n` the type's admission ordinal
-            // and `k` the round of its meets.
-            let formation = |name: &StructuredName| match *name.segments() {
-                [ref formation, ref ordinal, ref part, ref round]
-                    if formation.as_ref() == "formation"
-                        && matches!(part.as_ref(), "record" | "meets")
-                        && round.as_ref().parse::<usize>().is_ok() =>
-                {
-                    ordinal.as_ref().parse::<usize>().ok()
-                },
-                _ => None,
+            // holds it, named `formation.<key>.record.<k>` and
+            // `formation.<key>.meets.<k>`, with `key` the 64 lowercase
+            // hexadecimal digits of the digest of its content and `k` the
+            // round of its meets.
+            let formation = |name: &StructuredName| {
+                matches!(
+                    *name.segments(),
+                    [ref formation, ref key, ref part, ref round]
+                        if formation.as_ref() == "formation"
+                            && matches!(part.as_ref(), "record" | "meets")
+                            && round.as_ref().parse::<usize>().is_ok()
+                            && key.as_ref().len() == 64
+                            && key
+                                .as_ref()
+                                .bytes()
+                                .all(|digit| matches!(digit, b'0' ..= b'9' | b'a' ..= b'f'))
+                )
             };
             let (assumed, held): (Vec<&StructuredName>, Vec<&StructuredName>) = read
                 .declarations()
@@ -1523,9 +1530,8 @@ mod kernel_corpus_partition
                 .partition(|&name| session_assumption(name).is_some());
             let (models, held): (Vec<&StructuredName>, Vec<&StructuredName>) =
                 held.into_iter().partition(|&name| free_model(name));
-            let (formations, held): (Vec<&StructuredName>, Vec<&StructuredName>) = held
-                .into_iter()
-                .partition(|&name| formation(name).is_some());
+            let (formations, held): (Vec<&StructuredName>, Vec<&StructuredName>) =
+                held.into_iter().partition(|&name| formation(name));
             for (ordinal, &name) in assumed.iter().enumerate() {
                 assert_eq!(
                     session_assumption(name),
@@ -1540,15 +1546,16 @@ mod kernel_corpus_partition
                     .all(|(place, name)| models.iter().take(place).all(|before| before != name)),
                 "{path}: each free model is admitted once: {models:?}"
             );
-            let mut formed = 0_usize;
+            // Each formation crosses once, its witnesses together.
+            let mut last = None;
             for &name in &formations {
-                let ordinal = formation(name);
-                assert!(
-                    ordinal == Some(formed) || ordinal == formed.checked_sub(1),
-                    "{path}: the formations are numbered in admission order: {formations:?}"
-                );
-                if ordinal == Some(formed) {
-                    formed = formed.saturating_add(1);
+                let key = name.segments().get(1).map(AsRef::<str>::as_ref);
+                if key != last {
+                    assert!(
+                        key.is_some_and(|key| keys.insert(alloc::string::String::from(key))),
+                        "{path}: each formation crosses once, its witnesses together: {formations:?}"
+                    );
+                    last = key;
                 }
             }
             // Every other record is a declaration that crossed, in admission

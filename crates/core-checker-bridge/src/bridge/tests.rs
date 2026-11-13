@@ -2808,6 +2808,12 @@ enum Formable
         /// The value of the free field.
         tls: u8,
     },
+    /// `data _ = A | B`, two constructors without fields.
+    Data,
+    /// `def _ : *{port : D, tls : Integer}[.port = D.A] = {tls = 1}`, where
+    /// `D` is the data at the module position given. Its key leaves the
+    /// position out, as a content key names `D` by its name.
+    ReadsData(u8),
 }
 
 /// `module` judged over a fresh arena, with the key of each declaration: its
@@ -2837,8 +2843,14 @@ fn formable_module(
     let mut declarations = Vec::with_capacity(module.len());
     let mut keys = Vec::with_capacity(module.len());
     for (place, &(name, shape)) in module.iter().enumerate() {
-        let (declared, defined, word) = match shape {
-            Formable::Plain(value) => (integer, literal(&mut arena, value), u64::from(value)),
+        let (offered, word) = match shape {
+            Formable::Plain(value) => {
+                let body = literal(&mut arena, value);
+                (
+                    declaration(At(place), Maybe::Present(integer), Maybe::Present(body)),
+                    u64::from(value),
+                )
+            },
             Formable::Reads { port, tls } => {
                 let fixed = literal(&mut arena, port);
                 let system = arena.value_type_system(
@@ -2849,17 +2861,54 @@ fn formable_module(
                 let free = literal(&mut arena, tls);
                 let body = arena.value_record(BTreeMap::from([(label("tls"), free)]));
                 (
-                    system,
-                    body,
+                    declaration(At(place), Maybe::Present(system), Maybe::Present(body)),
                     (1 << 32_u32) | (u64::from(port) << 8_u32) | u64::from(tls),
                 )
             },
+            Formable::Data => {
+                let kind =
+                    arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+                let signature = Arc::new(gandr_core_term::DataSignature::new(
+                    Vec::new(),
+                    Vec::from([Vec::new(), Vec::new()]),
+                    kind,
+                ));
+                (
+                    Declaration::data(
+                        ConstantIndex::from(place),
+                        signature,
+                        OriginToken::from(place.saturating_add(100)),
+                    ),
+                    2 << 32_u32,
+                )
+            },
+            Formable::ReadsData(read) => {
+                let family = ConstantIndex::from(usize::from(read));
+                let datatype = arena.value_type_data(family, Vec::new());
+                let over_data = arena.value_type_record(BTreeMap::from([
+                    (label("port"), datatype),
+                    (label("tls"), integer),
+                ]));
+                let fixed = arena.value_constructor_of(
+                    family,
+                    Vec::new(),
+                    gandr_kernel_term::ConstructorTag::from(0_usize),
+                    Vec::new(),
+                );
+                let system = arena.value_type_system(
+                    over_data,
+                    BTreeMap::from([(label("port"), fixed)]),
+                    Vec::new(),
+                );
+                let free = literal(&mut arena, 1);
+                let body = arena.value_record(BTreeMap::from([(label("tls"), free)]));
+                (
+                    declaration(At(place), Maybe::Present(system), Maybe::Present(body)),
+                    3 << 32_u32,
+                )
+            },
         };
-        declarations.push(declaration(
-            At(place),
-            Maybe::Present(declared),
-            Maybe::Present(defined),
-        ));
+        declarations.push(offered);
         keys.push(Maybe::Present(ContentDigest::new(
             gandr_kernel_check_memo::DigestWord::from(u64::from(name.0)),
             gandr_kernel_check_memo::DigestWord::from(word),
@@ -2881,30 +2930,72 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
     // An unedited recheck resumes each entry. Each witness is a seed just
     // below its first reader, so an edit away from each formation keeps each
     // entry outside its reach, each witness by its own key. An edit of a
-    // first reader, a new formation below a kept one, and a kept formation
-    // that a new crossing reads first each readmit whole. Each readmission
-    // answers as a whole readmission of its module answers.
+    // first reader retires its formation's witnesses and edits each of its
+    // readers, so the first reader that crosses again forms it (#7245). A
+    // new formation below a kept one keeps each entry, since a witness's
+    // name reads its formation's content. A kept formation that a new
+    // crossing reads first readmits whole. Each readmission answers as a
+    // whole readmission of its module answers.
     let reads = |port, tls| Formable::Reads { port, tls };
+    let recorded = |module: &[(Named, Formable)]| {
+        let (mut arena, report, keys) = formable_module(module);
+        let (first, record) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        (usize::from(first.environment().entries().len()), record)
+    };
+    let check = |record: &Maybe<super::Crossed, crossed::Absent>,
+                 module: &[(Named, Formable)],
+                 answered: (usize, usize),
+                 edit: &str| {
+        let (mut arena, report, keys) = formable_module(module);
+        let (readmission, _) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, held(record)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        let (mut whole_arena, whole_report, _) = formable_module(module);
+        let whole = readmit(&mut whole_arena, &whole_report);
+        assert_eq!(
+            (
+                usize::from(readmission.resumed()),
+                usize::from(readmission.kept())
+            ),
+            answered,
+            "the declarations resumed and kept after {edit}"
+        );
+        assert_eq!(
+            agreed(&readmission),
+            agreed(&whole),
+            "each entry agrees after {edit}"
+        );
+        assert_eq!(
+            readmission.export(BTreeMap::new()),
+            whole.export(BTreeMap::new()),
+            "the export is the whole one's after {edit}"
+        );
+    };
     let base = [
         (Named(0), Formable::Plain(1)),
         (Named(1), reads(1, 1)),
         (Named(2), Formable::Plain(2)),
         (Named(3), reads(2, 1)),
     ];
-    let (mut arena, report, keys) = formable_module(&base);
-    let (first, record) = super::readmit_keeping(
-        &mut arena,
-        &report,
-        (&keys, Maybe::Absent(crossed::Absent::Unasked)),
-        &Recall::recheck(),
-        &Unretired,
-        &mut Untimed,
-        &Serial,
-    )
-    .whole();
+    let (entries, record) = recorded(&base);
     assert_eq!(
-        usize::from(first.environment().entries().len()),
-        6,
+        entries, 6,
         "each formation crosses one witness below its reader"
     );
     let edited = |place: usize, shape: Formable| {
@@ -2931,10 +3022,15 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
             (2, 1),
             "an edit between the formations",
         ),
-        (edited(1, reads(1, 3)), (0, 0), "an edit of a first reader"),
+        (edited(1, reads(1, 3)), (1, 2), "an edit of a first reader"),
+        (
+            edited(1, Formable::Plain(7)),
+            (1, 2),
+            "an edit that leaves a formation unread",
+        ),
         (
             inserted(reads(3, 1)),
-            (0, 0),
+            (0, 4),
             "a new formation below a kept one",
         ),
         (
@@ -2943,38 +3039,107 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
             "a new first reader of a kept formation",
         ),
     ] {
-        let (mut arena, report, keys) = formable_module(&module);
-        let (readmission, _) = super::readmit_keeping(
-            &mut arena,
-            &report,
-            (&keys, held(&record)),
-            &Recall::recheck(),
-            &Unretired,
-            &mut Untimed,
-            &Serial,
-        )
-        .whole();
-        let (mut whole_arena, whole_report, _) = formable_module(&module);
-        let whole = readmit(&mut whole_arena, &whole_report);
-        assert_eq!(
-            (
-                usize::from(readmission.resumed()),
-                usize::from(readmission.kept())
-            ),
-            answered,
-            "the declarations resumed and kept after {edit}"
-        );
-        assert_eq!(
-            agreed(&readmission),
-            agreed(&whole),
-            "each entry agrees after {edit}"
-        );
-        assert_eq!(
-            readmission.export(BTreeMap::new()),
-            whole.export(BTreeMap::new()),
-            "the export is the whole one's after {edit}"
-        );
+        check(&record, &module, answered, edit);
     }
+    // def a : Integer = 1 ; def f : *{port, tls}[.port = 1] = {tls = 1} ;
+    // def b : Integer = 2 ; def h : *{port, tls}[.port = 1] = {tls = 2} ;
+    //
+    // `h` reads the formation `f` forms. An edit that leaves `f` unreading
+    // moves the witness below `h`, which no kernel reference ties to it.
+    let shared = [
+        (Named(0), Formable::Plain(1)),
+        (Named(1), reads(1, 1)),
+        (Named(2), Formable::Plain(2)),
+        (Named(3), reads(1, 2)),
+    ];
+    let (entries, record) = recorded(&shared);
+    assert_eq!(entries, 5, "the two readers share one witness");
+    let mut moved = shared.to_vec();
+    if let Some(entry) = moved.get_mut(1) {
+        entry.1 = Formable::Plain(7);
+    }
+    check(
+        &record,
+        &moved,
+        (1, 1),
+        "an edit that leaves the first of two readers",
+    );
+    // def a : Integer = 1 ; data d = A | B ;
+    // def f : *{port : d, tls}[.port = d.A] = {tls = 1} ;
+    //
+    // The formation's name reads the kernel position of the data `d`. An
+    // edit that deletes `a` moves `d` to another position in a whole
+    // readmission than in a walk that keeps, so the walk readmits whole.
+    let (_, record) = recorded(&[
+        (Named(0), Formable::Plain(1)),
+        (Named(1), Formable::Data),
+        (Named(2), Formable::ReadsData(1)),
+    ]);
+    check(
+        &record,
+        &[
+            (Named(1), Formable::Data),
+            (Named(2), Formable::ReadsData(0)),
+        ],
+        (0, 0),
+        "an edit that moves a position a formation's name reads",
+    );
+}
+
+#[test]
+fn a_formation_takes_one_name_in_each_readmission_7245()
+{
+    // def f : *{port, tls}[.port = 1] = {tls = 1} alone, and below a plain
+    // definition and a reader of another formation. The formation at port 1
+    // takes one name in both modules: the 64 lowercase hexadecimal digits of
+    // the digest of its content, which count no earlier formation.
+    let reads = |port, tls| Formable::Reads { port, tls };
+    let names = |module: &[(Named, Formable)]| {
+        let (mut arena, report, _) = formable_module(module);
+        let readmission = readmit(&mut arena, &report);
+        let artifact =
+            decode(readmission.export(BTreeMap::new()).as_image()).expect("the module exports");
+        artifact
+            .declarations()
+            .iter()
+            .map(|marked| {
+                marked
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .map(|segment| String::from(AsRef::<str>::as_ref(segment)))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|segments| segments.first().is_some_and(|first| first == "formation"))
+            .collect::<Vec<_>>()
+    };
+    let alone = names(&[(Named(0), reads(1, 1))]);
+    let below = names(&[
+        (Named(1), Formable::Plain(2)),
+        (Named(2), reads(2, 1)),
+        (Named(0), reads(1, 1)),
+    ]);
+    let &[ref name] = alone.as_slice()
+    else {
+        panic!("a formation without meets crosses one witness: {alone:?}");
+    };
+    assert!(
+        name.get(1).is_some_and(|key| key.len() == 64
+            && key
+                .chars()
+                .all(|digit| digit.is_ascii_digit() || ('a' ..= 'f').contains(&digit))),
+        "the key segment is 64 lowercase hexadecimal digits: {name:?}"
+    );
+    assert_eq!(
+        below.len(),
+        2,
+        "each formation crosses one witness: {below:?}"
+    );
+    assert!(
+        below.contains(name),
+        "the formation takes its name below another one: {below:?}"
+    );
 }
 
 #[test]
