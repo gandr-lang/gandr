@@ -1,10 +1,11 @@
-//! The phase order a module's members stand in. A type member, and a type a
-//! signature states, is static; a module's value member and a parameter's
-//! value component are dynamic. The two points are ordered, static below
-//! dynamic, and a member reads only members at or below its own point: a type
-//! reads types, a value reads types and values. A top-level declaration is no
-//! module's member and stands outside the order, and so does a slot that only
-//! checks or carries another's form.
+//! The phase order a module's members stand in.
+//!
+//! A type member, and a type a signature states, is static; a module's value
+//! member and a parameter's value component are dynamic. The two points are
+//! ordered, static below dynamic, and a member reads only members at or below
+//! its own point: a type reads types, a value reads types and values. A
+//! top-level declaration is no module's member and stands outside the order,
+//! and so does a slot that only checks or carries another's form.
 //!
 //! # Witnesses
 //! - `tests::modules::a_type_member_reads_types_and_never_values`
@@ -21,7 +22,8 @@
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
-use super::Lowerer;
+use super::ExpressionsRef;
+use super::Families;
 use super::Site;
 use crate::error::LoweringRefusal;
 use crate::module::Container;
@@ -73,8 +75,8 @@ impl Phase
     /// - hypothesis: L3 — a type member reading a module's value, a type member
     ///   reading a parameter's value, and a value reading a type member, each
     ///   asserted as the exact refusal or reading.
-    /// - witness: `tests::modules::a_type_member_reads_types_and_never_values`
-    /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_reads_types_and_never_values`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
     #[spec(ensures: |ret| match (slot.role, slot.container) {
         | (Role::Held, Container::Module(_)) => ret == Maybe::Present(Self::Static),
         | (Role::Declared | Role::Parameter | Role::Admitted | Role::Discharged, Container::Module(_)) => ret == Maybe::Present(Self::Dynamic),
@@ -106,7 +108,7 @@ impl Phase
     }
 }
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
     /// Refuse the read, at `site`, of the member `reached` when it stands
     /// above the phase of the member `site` belongs to.
@@ -128,8 +130,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a type member reading a module's value, a type member
     ///   reading a parameter's value, and a value reading a type member, each
     ///   asserted as the exact refusal or reading.
-    /// - witness: `tests::modules::a_type_member_reads_types_and_never_values`
-    /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_reads_types_and_never_values`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
     #[spec(ensures: |ret| match ret {
         | Err(LoweringRefusal::PhaseDependence { span, member, reached: read }) => span == site.at.span
             && matches!(self.cx().collected.owner_of(site.at.node), Maybe::Present(own) if self.cx().collected.slots.get(usize::from(own)).is_some_and(|slot| slot.name == member && Phase::of(slot) == Maybe::Present(Phase::Static)))
@@ -137,10 +139,6 @@ impl<'source> Lowerer<'_, 'source>
         | Err(_) => false,
         | Ok(()) => true,
     })]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn phased(
         &self,

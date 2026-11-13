@@ -9,14 +9,11 @@ pub use gandr_surface_lowering_base::lower::exits::ElidableExit;
 pub use gandr_surface_lowering_base::lower::exits::Exit;
 pub use gandr_surface_lowering_base::lower::exits::Explicitness;
 pub use gandr_surface_lowering_base::lower::exits::InferredExit;
+#[cfg(test)]
 pub(super) use gandr_surface_lowering_base::lower::exits::Leaves;
-pub(super) use gandr_surface_lowering_base::lower::exits::Rest;
 pub use gandr_surface_lowering_base::lower::exits::Returned;
-pub(super) use gandr_surface_lowering_base::lower::exits::mark_copies;
-pub(super) use gandr_surface_lowering_base::lower::exits::record_copies;
 pub(super) use gandr_surface_lowering_exits::lower::exits::Exits;
 pub(super) use gandr_surface_lowering_exits::lower::exits::ExitsRef;
-pub(super) use gandr_surface_lowering_exits::lower::exits::unwind;
 
 #[cfg(test)]
 pub(in crate::lower) mod tests;

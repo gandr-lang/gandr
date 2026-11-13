@@ -12,7 +12,9 @@
 #
 # The cases read the tree's witnesses and its packages. The tree's `landing-checks.yml`
 # gives no refusal. A copy whose `lowering` shard leaves the base crate out
-# gives the refusal that names it.
+# gives a refusal that names it, from a member of `lowering` whose witness
+# names a test of the base crate (#6904 moves those witnesses into
+# `gandr-surface-lowering-expression`).
 set -euo pipefail
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -56,7 +58,7 @@ got=$(refusals .github/workflows/landing-checks.yml)
 
 awk '{ sub(/ gandr-surface-lowering-base$/, ""); print }' .github/workflows/landing-checks.yml > "$scratch/landing-checks.yml"
 got=$(refusals "$scratch/landing-checks.yml")
-[[ $got == *"gandr-surface-lowering in lowering names a test of gandr-surface-lowering-base in rest"* ]] \
+[[ $got == *" in lowering names a test of gandr-surface-lowering-base in rest"* ]] \
   || fail "#7089: a lowering shard without gandr-surface-lowering-base gave no refusal: ${got:-none}"
 
 (( failed == 0 )) || exit 1

@@ -5,13 +5,8 @@
 //! `ModelsRef::new(self)`. The family's tests stay here, because each case
 //! lowers a source.
 
-pub(super) use gandr_surface_lowering_base::lower::model::Bundled;
-pub(super) use gandr_surface_lowering_base::lower::model::ComponentPlace;
-pub(super) use gandr_surface_lowering_base::lower::model::ModelSlot;
-pub(super) use gandr_surface_lowering_base::lower::model::PlannedModel;
 pub(super) use gandr_surface_lowering_model::lower::model::Models;
 pub(super) use gandr_surface_lowering_model::lower::model::ModelsRef;
-pub(super) use gandr_surface_lowering_model::lower::model::packed_record;
 
 #[cfg(test)]
 mod opening;

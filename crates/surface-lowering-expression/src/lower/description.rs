@@ -59,7 +59,9 @@ use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
 use super::Context;
-use super::Lowerer;
+use super::Expressions;
+use super::ExpressionsRef;
+use super::Families;
 use super::Reading;
 use super::Sink;
 use crate::FragmentBoundary;
@@ -86,7 +88,7 @@ use crate::unbuilt::Unbuilt;
 #[derive(Clone, Copy)]
 struct NativelyRead(bool);
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
 {
     /// Whether the native data reading owns the described declaration
     /// `entry`: a data declaration form, which it reads whole.
@@ -104,8 +106,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a data family keeps its native signature while the
     ///   codata family beside it is left to the decoder.
-    /// - witness: `tests::description::native_data_keeps_telescope_and_nominal_heads`
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::tests::description::native_data_keeps_telescope_and_nominal_heads`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     fn natively_read(
         cx: &Context<'_, 'source>,
@@ -148,8 +150,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a parameterised codata family reaches the decoder
     ///   with its parameter and observation types minted, and a data family
     ///   beside it is seeded once, natively.
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
-    /// - witness: `tests::description::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
     #[spec(
         captures: before = seeds.len(),
         ensures: |ret| ret.is_err() || seeds.len() >= before,
@@ -221,7 +223,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a codata family decodes to its observations while the
     ///   data family beside it keeps its native signature.
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -355,7 +357,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a clean theory's definition is read back out of the
     ///   arena as the constructor tree its value encodes, and a program
     ///   matching on it counts its operations.
-    /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
+    /// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
     #[spec(
         captures: before = (self.cx().data.len(), self.cx().presented.len()),
         ensures: |result| result.is_err() || (self.cx().data.len() >= before.0 && self.cx().presented.len() >= before.1),
@@ -492,7 +494,10 @@ impl<'source> Lowerer<'_, 'source>
         }
         Ok(())
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
     /// Record the origin of the form at `node` on every value and value type
     /// minted since `before`.
     ///
@@ -506,8 +511,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   held before.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_presentations`].
-    /// - witness: `tests::theory::a_theory_block_defines_its_presentation`
+    /// - hypothesis: L3 — as
+    ///   [`Self::mint_presentations`](crate::lower::Expressions::mint_presentations).
+    /// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
     fn record_since(
         &self,
         sink: &mut Sink<'_>,
@@ -549,8 +555,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a parameterised codata family decodes under its
     ///   telescope to its observations, beside a data family read natively, and
     ///   a tail written at its parameters swapped keeps them swapped.
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
-    /// - witness: `tests::description::a_codata_self_reference_keeps_its_written_arguments_2188`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_self_reference_keeps_its_written_arguments_2188`
     #[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.parameters().len() == entry.parameters.len()))]
     fn decode_family(
         &self,
@@ -668,8 +674,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a tail at the parameters swapped, at the family
     ///   applied again, at the parameters in order and at a data family each
     ///   reach the checker as written.
-    /// - witness: `tests::description::a_codata_self_reference_keeps_its_written_arguments_2188`
-    /// - witness: `tests::description::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_self_reference_keeps_its_written_arguments_2188`
+    /// - witness: `gandr-surface-lowering::tests::description::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
     #[spec(ensures: |result| result.as_ref().map_or(true, |&id| matches!(arena.comp_type(id), Some(&CompType::Codata { declaration, .. }) if declaration == constant)))]
     fn self_application(
         &self,
@@ -740,7 +746,7 @@ enum Step<'value>
 /// - hypothesis: L3 — a presentation of one sort, one operation and one rule
 ///   reads back as the constructor tree its value encodes, names and tags
 ///   included.
-/// - witness: `tests::theory::a_theory_block_defines_its_presentation`
+/// - witness: `gandr-surface-lowering::tests::theory::a_theory_block_defines_its_presentation`
 #[spec(ensures: |result| result.is_ok() || matches!(result, Err(TheoryFault::Payload | TheoryFault::Text)))]
 fn presentation_term(
     arena: &mut CoreArena,

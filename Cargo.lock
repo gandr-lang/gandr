@@ -1801,6 +1801,7 @@ dependencies = [
  "gandr-surface-lowering-base",
  "gandr-surface-lowering-capability",
  "gandr-surface-lowering-exits",
+ "gandr-surface-lowering-expression",
  "gandr-surface-lowering-identity",
  "gandr-surface-lowering-model",
  "gandr-surface-lowering-native",
@@ -1873,6 +1874,32 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-lowering-base",
  "gandr-surface-syntax",
+ "quenchant-anodized",
+ "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-surface-lowering-expression"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering-base",
+ "gandr-surface-lowering-capability",
+ "gandr-surface-lowering-exits",
+ "gandr-surface-lowering-identity",
+ "gandr-surface-lowering-model",
+ "gandr-surface-lowering-native",
+ "gandr-surface-syntax",
+ "gandr-theory-cell-complexes",
+ "gandr-theory-circuit-algebras",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-computads",
+ "gandr-theory-levitation",
+ "gandr-theory-shapes",
+ "hotpath",
  "quenchant-anodized",
  "quenchant-shape",
 ]

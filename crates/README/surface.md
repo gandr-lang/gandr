@@ -19,6 +19,7 @@ crates/
 ├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
 ├── surface-lowering-capability/   the lowering's capability family
 ├── surface-lowering-exits/        the lowering's exits family
+├── surface-lowering-expression/   the lowering's expressions and types: the plan and the mint of each form
 ├── surface-lowering-identity/     the lowering's identity family
 ├── surface-lowering-model/        the lowering's model and arity family
 ├── surface-lowering-native/       the lowering's native family

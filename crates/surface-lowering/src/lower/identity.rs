@@ -5,14 +5,10 @@
 //! `IdentitiesRef::new(self)`. The family's tests stay here, because each case
 //! lowers a source.
 
-pub(super) use gandr_surface_lowering_identity::lower::identity::FLOW;
-pub(super) use gandr_surface_lowering_identity::lower::identity::ISO;
 pub(super) use gandr_surface_lowering_identity::lower::identity::Identities;
 pub(super) use gandr_surface_lowering_identity::lower::identity::IdentitiesRef;
-pub(super) use gandr_surface_lowering_identity::lower::identity::NIL;
 #[cfg(test)]
 use gandr_surface_lowering_identity::lower::identity::as_endpoint;
-pub(super) use gandr_surface_lowering_identity::lower::identity::spelled;
 #[cfg(test)]
 use gandr_surface_lowering_identity::lower::identity::telescope;
 

@@ -1,11 +1,13 @@
-//! Inert declarations. A theory's operation marked `@[ inert ]` is a field
-//! the manifest step reads, a package's name or version: a model's component
-//! for it is inert. A definition marked `@[ inert ]` is inert too, so a map
-//! or a render over inert fields has a declaration to live in. Only another
-//! inert declaration reads an inert one. A content key names what an item
-//! references, not what that holds, so an edit to an inert value moves no
-//! other item's key exactly when nothing else reads it (#533 § p2); the
-//! package address then leaves the inert declarations out.
+//! Inert declarations.
+//!
+//! A theory's operation marked `@[ inert ]` is a field the manifest step reads,
+//! a package's name or version: a model's component for it is inert. A
+//! definition marked `@[ inert ]` is inert too, so a map or a render over inert
+//! fields has a declaration to live in. Only another inert declaration reads an
+//! inert one. A content key names what an item references, not what that holds,
+//! so an edit to an inert value moves no other item's key exactly when nothing
+//! else reads it (#533 § p2); the package address then leaves the inert
+//! declarations out.
 //!
 //! # Witnesses
 //! - `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
@@ -15,7 +17,8 @@ use anodized::spec;
 pub(super) use gandr_surface_lowering_base::lower::inert::Read;
 use quenchant_shape::shape::Maybe;
 
-use super::Lowerer;
+use super::ExpressionsRef;
+use super::Families;
 use super::Site;
 use crate::error::LoweringRefusal;
 use crate::module::Container;
@@ -24,7 +27,7 @@ use crate::module::Inertness;
 use crate::module::SlotIndex;
 use crate::slot::Role;
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
     /// Whether the declaration at `slot` is inert: a definition marked
     /// `@[ inert ]`, or a model's inert component, a member declared in a
@@ -41,12 +44,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::inert_read`].
-    /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
-    /// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
     #[spec(ensures: |ret| ret == Inertness::Content
         || self.cx().collected.inert.contains(&slot)
         || self.cx().collected.slots.get(usize::from(slot)).is_some_and(|entry| matches!(entry.role, Role::Declared)))]
     #[inline]
+    #[must_use]
     pub fn inertness(
         &self,
         slot: SlotIndex,
@@ -111,8 +115,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   another model's, each asserted as the exact refusal or reading; an
     ///   inert definition reading an inert field and another inert definition,
     ///   and a content definition refused at its read of an inert definition.
-    /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
-    /// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+    /// - witness: `gandr-surface-lowering::tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
     #[spec(ensures: |ret| match ret {
         | Err(LoweringRefusal::InertRead { span, reached: read, .. }) => span == site.at.span
             && match reached {
@@ -122,10 +126,6 @@ impl<'source> Lowerer<'_, 'source>
         | Err(_) => false,
         | Ok(()) => true,
     })]
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
     #[inline]
     pub fn inert_read(
         &self,

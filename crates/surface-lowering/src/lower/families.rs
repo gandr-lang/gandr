@@ -81,6 +81,8 @@ use gandr_surface_lowering_base::resolve::Telescope;
 use gandr_surface_lowering_base::resolve::TypeAtom;
 use gandr_surface_lowering_base::resolve::binder_type;
 use gandr_surface_lowering_base::resolve::type_head;
+use gandr_surface_lowering_expression::lower::Expressions;
+use gandr_surface_lowering_expression::lower::ExpressionsRef;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::LayoutBlock;
@@ -141,7 +143,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         frame: Frame,
     ) -> Result<Reading, LoweringRefusal<'source>>
     {
-        Lowerer::box_output(self, codomain, frame)
+        Expressions::new(self).box_output(codomain, frame)
     }
 
     /// The lowering's own `box_returns`.
@@ -156,7 +158,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         origin: Origin,
     ) -> Maybe<CompTypeId, lowered::Absent>
     {
-        Lowerer::box_returns(self, codomain, sink, origin)
+        ExpressionsRef::new(self).box_returns(codomain, sink, origin)
     }
 
     /// The native family's `called_result`.
@@ -204,7 +206,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         former: Former,
     ) -> Result<Option<[NodeIndex; 2]>, LoweringRefusal<'source>>
     {
-        Lowerer::chained(self, site, operand, former)
+        Expressions::new(self).chained(site, operand, former)
     }
 
     /// The lowering's own `classify_members`.
@@ -219,7 +221,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         frame: Frame,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::classify_members(self, site, members, frame)
+        Expressions::new(self).classify_members(site, members, frame)
     }
 
     /// The native family's `constructor_named`.
@@ -266,7 +268,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         answer: Answer,
     ) -> Result<Option<(NodeIndex, Answer)>, LoweringRefusal<'source>>
     {
-        Lowerer::arrow_of(self, answer)
+        Expressions::new(self).arrow_of(answer)
     }
 
     /// The lowering's own `atom`.
@@ -279,7 +281,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         name: SurfaceName<'source>,
     ) -> Maybe<TypeAtom, type_head::Absent>
     {
-        Lowerer::atom(self, name)
+        ExpressionsRef::new(self).atom(name)
     }
 
     /// The capability family's `bare_index`.
@@ -307,7 +309,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         frame: Frame,
     ) -> Result<Block, LoweringRefusal<'source>>
     {
-        Lowerer::block(self, site, cursor, frame)
+        Expressions::new(self).block(site, cursor, frame)
     }
 
     /// The lowering's own `boxes`.
@@ -320,7 +322,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         at: NodeIndex,
     ) -> Result<Boxed, LoweringRefusal<'source>>
     {
-        Lowerer::boxes(self, at)
+        Expressions::new(self).boxes(at)
     }
 
     /// The native family's `called_environment`.
@@ -377,7 +379,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         constructor: Constructor,
     )
     {
-        Lowerer::constructed_at(self, span, constructor);
+        Expressions::new(self).constructed_at(span, constructor);
     }
 
     /// The native family's `constructor_head`.
@@ -430,7 +432,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         domain: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::domains(self, domain)
+        Expressions::new(self).domains(domain)
     }
 
     /// The identity family's `function_of`.
@@ -469,7 +471,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         at: Placed,
     ) -> Result<HoleId, LoweringRefusal<'source>>
     {
-        Lowerer::hole(self, at)
+        Expressions::new(self).hole(at)
     }
 
     /// The lowering's own `hole_group`.
@@ -482,7 +484,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         block: LayoutBlock,
     ) -> (HoleForm, LayoutBlock)
     {
-        Lowerer::hole_group(self, block)
+        Expressions::new(self).hole_group(block)
     }
 
     /// The lowering's own `implicit_slot`.
@@ -496,7 +498,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         entry: TelescopeEntry<'source>,
     ) -> Result<Option<(Placed, ModelSlot)>, LoweringRefusal<'source>>
     {
-        Lowerer::implicit_slot(self, site, entry)
+        Expressions::new(self).implicit_slot(site, entry)
     }
 
     /// The lowering's own `inert_read`.
@@ -510,7 +512,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         reached: Read<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::inert_read(self, site, reached)
+        ExpressionsRef::new(self).inert_read(site, reached)
     }
 
     /// The lowering's own `inherit_owner`.
@@ -523,7 +525,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         position: NodeIndex,
     )
     {
-        Lowerer::inherit_owner(self, position);
+        Expressions::new(self).inherit_owner(position);
     }
 
     /// The lowering's own `labelled`.
@@ -538,7 +540,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         read: LabelRead,
     )
     {
-        Lowerer::labelled(self, written, held, read);
+        Expressions::new(self).labelled(written, held, read);
     }
 
     /// The lowering's own `linked_selection`.
@@ -552,7 +554,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         head: Placed,
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
-        Lowerer::linked_selection(self, site, head)
+        Expressions::new(self).linked_selection(site, head)
     }
 
     /// The lowering's own `located_type`.
@@ -567,7 +569,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         constant: ConstantIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::located_type(self, site, operand, constant)
+        Expressions::new(self).located_type(site, operand, constant)
     }
 
     /// The native family's `looped_point`.
@@ -594,7 +596,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         at: Placed,
     ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>
     {
-        Lowerer::member_definition(self, frame, at)
+        Expressions::new(self).member_definition(frame, at)
     }
 
     /// The lowering's own `mint_block`.
@@ -608,7 +610,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        Lowerer::mint_block(self, block, sink)
+        ExpressionsRef::new(self).mint_block(block, sink)
     }
 
     /// The exits family's `mint_body`.
@@ -639,7 +641,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         origin: Origin,
     ) -> Maybe<ValueId, lowered::Absent>
     {
-        Lowerer::mint_code(self, code, arguments, sink, origin)
+        ExpressionsRef::new(self).mint_code(code, arguments, sink, origin)
     }
 
     /// The model family's `mint_returns`.
@@ -686,7 +688,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         binder: ScopeId,
     ) -> Telescope
     {
-        Lowerer::name_in_type(self, node, binder)
+        Expressions::new(self).name_in_type(node, binder)
     }
 
     /// The model family's `named_model`.
@@ -715,7 +717,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         binder: ScopeId,
     ) -> Mentioned
     {
-        Lowerer::names_own_binder(self, node, binder)
+        ExpressionsRef::new(self).names_own_binder(node, binder)
     }
 
     /// The lowering's own `nominate`.
@@ -728,7 +730,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         nomination: Nomination<'source>,
     ) -> Result<HoleId, LoweringRefusal<'source>>
     {
-        Lowerer::nominate(self, nomination)
+        Expressions::new(self).nominate(nomination)
     }
 
     /// The lowering's own `note_binder`.
@@ -743,7 +745,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         name: SurfaceName<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::note_binder(self, binder, frame, name)
+        Expressions::new(self).note_binder(binder, frame, name)
     }
 
     /// The exits family's `open_body`.
@@ -787,7 +789,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         links: &[Placed],
     ) -> Result<StructureIndex, LoweringRefusal<'source>>
     {
-        Lowerer::opened_module(self, site, head, links)
+        Expressions::new(self).opened_module(site, head, links)
     }
 
     /// The model family's `operation_domain`.
@@ -818,7 +820,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         slot: &DeclarationSlot<'source>,
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
-        Lowerer::outcome(self, position, slot)
+        ExpressionsRef::new(self).outcome(position, slot)
     }
 
     /// The lowering's own `own_written`.
@@ -832,7 +834,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         anchor: NodeIndex,
     )
     {
-        Lowerer::own_written(self, written, anchor);
+        Expressions::new(self).own_written(written, anchor);
     }
 
     /// The lowering's own `parameter_export`.
@@ -846,7 +848,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         member: SurfaceName<'source>,
     ) -> Option<SlotIndex>
     {
-        Lowerer::parameter_export(self, parameter, member)
+        ExpressionsRef::new(self).parameter_export(parameter, member)
     }
 
     /// The lowering's own `pass_model`.
@@ -863,7 +865,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         value: Option<NodeIndex>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::pass_model(self, site, frame, names, slot, value)
+        Expressions::new(self).pass_model(site, frame, names, slot, value)
     }
 
     /// The exits family's `pass_paths`.
@@ -890,7 +892,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         declared: NodeIndex,
     ) -> Result<Maybe<(), ()>, LoweringRefusal<'source>>
     {
-        Lowerer::patched_at(self, declared)
+        ExpressionsRef::new(self).patched_at(declared)
     }
 
     /// The lowering's own `path_head`.
@@ -905,7 +907,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         links: &mut Vec<(Placed, Placed)>,
     ) -> Result<Placed, LoweringRefusal<'source>>
     {
-        Lowerer::path_head(self, site, target, links)
+        Expressions::new(self).path_head(site, target, links)
     }
 
     /// The lowering's own `path_named`.
@@ -919,7 +921,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         links: &[(Placed, Placed)],
     ) -> NamePath
     {
-        Lowerer::path_named(self, head, links)
+        ExpressionsRef::new(self).path_named(head, links)
     }
 
     /// The lowering's own `phased`.
@@ -933,7 +935,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         reached: SlotIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::phased(self, site, reached)
+        ExpressionsRef::new(self).phased(site, reached)
     }
 
     /// The lowering's own `plan`.
@@ -947,7 +949,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         plan: Plan,
     )
     {
-        Lowerer::plan(self, site, plan);
+        Expressions::new(self).plan(site, plan);
     }
 
     /// The lowering's own `plan_applied`.
@@ -963,7 +965,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         frame: Frame,
     )
     {
-        Lowerer::plan_applied(self, site, plan, read, frame);
+        Expressions::new(self).plan_applied(site, plan, read, frame);
     }
 
     /// The lowering's own `plan_slot`.
@@ -978,7 +980,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         holes: Vec<gandr_core_term::hole::HoleId>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::plan_slot(self, site, slot, holes)
+        Expressions::new(self).plan_slot(site, slot, holes)
     }
 
     /// The lowering's own `pun`.
@@ -992,7 +994,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         frame: Frame,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::pun(self, label, frame)
+        Expressions::new(self).pun(label, frame)
     }
 
     /// The lowering's own `read`.
@@ -1006,7 +1008,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         reading: Reading,
     )
     {
-        Lowerer::read(self, position, reading);
+        Expressions::new(self).read(position, reading);
     }
 
     /// The lowering's own `region_binder`.
@@ -1020,7 +1022,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         name: SurfaceName<'source>,
     ) -> Option<RegionBinder>
     {
-        Lowerer::region_binder(self, at, name)
+        ExpressionsRef::new(self).region_binder(at, name)
     }
 
     /// The native family's `relocate`.
@@ -1069,7 +1071,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         produced: Produced,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        Lowerer::require(self, site, produced)
+        Expressions::new(self).require(site, produced)
     }
 
     /// The lowering's own `resident`.
@@ -1085,7 +1087,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
     where
         Count: From<usize> + PartialEq,
     {
-        Lowerer::resident(self, site, resident)
+        ExpressionsRef::new(self).resident(site, resident)
     }
 
     /// The lowering's own `resolve_name`.
@@ -1100,7 +1102,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
     {
-        Lowerer::resolve_name(self, site, frame, name)
+        Expressions::new(self).resolve_name(site, frame, name)
     }
 
     /// The lowering's own `resolved`.
@@ -1114,7 +1116,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         resolved: Resolved,
     )
     {
-        Lowerer::resolved(self, span, resolved);
+        Expressions::new(self).resolved(span, resolved);
     }
 
     /// The lowering's own `resolved_term`.
@@ -1129,7 +1131,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         resolved: Resolved,
     ) -> Result<Plan, LoweringRefusal<'source>>
     {
-        Lowerer::resolved_term(self, site, frame, resolved)
+        Expressions::new(self).resolved_term(site, frame, resolved)
     }
 
     /// The model family's `scrutinee_type`.
@@ -1169,7 +1171,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         kept: FormStretch,
     ) -> Stretch
     {
-        Lowerer::spread(self, kept)
+        ExpressionsRef::new(self).spread(kept)
     }
 
     /// The model family's `stated_entries`.
@@ -1218,7 +1220,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<TypeComponent<'source>, named::Absent>, LoweringRefusal<'source>>
     {
-        Lowerer::stated_named(self, site, name)
+        Expressions::new(self).stated_named(site, name)
     }
 
     /// The identity family's `stated_relation`.
@@ -1244,7 +1246,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         site: Site,
     ) -> Result<(Option<NodeIndex>, Option<native::Answer>), LoweringRefusal<'source>>
     {
-        Lowerer::stated_value(self, site)
+        Expressions::new(self).stated_value(site)
     }
 
     /// The model family's `supplied_carrier`.
@@ -1274,7 +1276,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         constant: ConstantIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        Lowerer::supplied_or_refused(self, site, constant)
+        ExpressionsRef::new(self).supplied_or_refused(site, constant)
     }
 
     /// The lowering's own `supplied_value`.
@@ -1287,7 +1289,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         site: Site,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        Lowerer::supplied_value(self, site)
+        Expressions::new(self).supplied_value(site)
     }
 
     /// The lowering's own `telescope_at`.
@@ -1300,7 +1302,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         node: NodeIndex,
     ) -> Telescope
     {
-        Lowerer::telescope_at(self, node)
+        ExpressionsRef::new(self).telescope_at(node)
     }
 
     /// The model family's `theory_slot`.
@@ -1359,7 +1361,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         cursor: &mut Cursor<'_>,
     ) -> Result<Universe, LoweringRefusal<'source>>
     {
-        Lowerer::universe_tiles(self, site, cursor)
+        ExpressionsRef::new(self).universe_tiles(site, cursor)
     }
 
     /// The native family's `unwrapped`.
@@ -1413,7 +1415,7 @@ impl<'run, 'source> Families<'run, 'source> for Lowerer<'run, 'source>
         at: NodeIndex,
     ) -> Result<capability::Stated, LoweringRefusal<'source>>
     {
-        Lowerer::written_stack(self, at)
+        Expressions::new(self).written_stack(at)
     }
 
     /// The native family's `written_telescope`.

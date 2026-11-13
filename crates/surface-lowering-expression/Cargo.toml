@@ -1,0 +1,50 @@
+[package]
+name = "gandr-surface-lowering-expression"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The expression and type lowering of gandr's lowering: each expression, type, pattern, block and declaration body, over the lowering's base crate and its families"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["expressions", "gandr", "lowering", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The pinned anodized facade supplies the executable specifications. The base
+# crate holds the lowering's context, the records that the families share and
+# the `Families` trait, through which the expression lowering reads the context.
+# Each family crate holds a family that the expression lowering calls directly.
+# The kernel, core and theory crates name the terms it mints, the syntax crate
+# the tree it reads. `hotpath` profiles a rule block's decision for the
+# benchmark report.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-lowering-capability.workspace = true
+gandr-surface-lowering-exits.workspace = true
+gandr-surface-lowering-identity.workspace = true
+gandr-surface-lowering-model.workspace = true
+gandr-surface-lowering-native.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-circuit-algebras.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-computads.workspace = true
+gandr-theory-levitation.workspace = true
+gandr-theory-shapes.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+
+# `hotpath` times the profiled functions and counts their allocations for the
+# benchmark report (the driver's `hotpath` bench).
+[features]
+hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-surface-lowering-model/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
+
+[lints]
+workspace = true

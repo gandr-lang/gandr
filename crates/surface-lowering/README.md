@@ -18,7 +18,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and the class of each failure, which [`classify`](../surface-lowering-base/src/classify.rs) states.
 
-**How.** The crate rustdoc holds the mechanism: the dispatch on each mold's named kind (_The grammar names every form_), and the two sweeps that plan and mint every node under one `LoweringBudget` (_Two sweeps, no recursion_).
+**How.** The crate rustdoc holds the mechanism: the dispatch on each mold's named kind (_The grammar names every form_), and the two sweeps that plan and mint every node under one `LoweringBudget` (_Two sweeps, no recursion_). The sweeps compile in `gandr-surface-lowering-expression`. This crate is their host: it holds the context, the closure, the dispatch of the families and the entry points.
 
 ## Provided features
 
@@ -97,16 +97,16 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Repairs refused in place, the four boundaries out of the fragment | [`error`](../surface-lowering-base/src/error.rs) |
 | Name resolution through tables | [`resolve`](../surface-lowering-base/src/resolve.rs) |
 | The module pass: collection, one refusal per declaration, module declarations, imports, documentation, and the collected halves of sealing, `Model(S)` and worlds | the base's [README](../surface-lowering-base/README.md) |
-| Type members, abstract components and opaque ascription | [`lower::sealing`](src/lower/sealing.rs) |
+| Type members, abstract components and opaque ascription | [`lower::sealing`](../surface-lowering-expression/src/lower/sealing.rs) |
 | `Model(S)`: the derivation, sort inference over index terms, type families, and the instance check | [`model`](../surface-lowering-base/src/model.rs), [`lower::model`](src/lower/model.rs) |
 | Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](../surface-lowering-base/src/description.rs), [`description::theory`](../surface-lowering-base/src/description/theory.rs), [`desc_cells`](../surface-lowering-base/src/desc_cells.rs) |
 | The namespace engine, the per-node table, the form stretches and the circuit readings | `gandr-surface-lowering-base` |
-| Sorts, function tails, blocks, insertions, universes, type operators, products, literals, the two sweeps | [`lower`](src/lower.rs) |
+| Sorts, function tails, blocks, insertions, universes, type operators, products, literals, the two sweeps | `gandr-surface-lowering-expression`'s [`lower`](../surface-lowering-expression/src/lower.rs) |
 | Native data, the match and recursive functions | [`lower::native`](src/lower/native.rs) |
-| Early exits and loops: the survey, the commuting, the cut, inferred exits and a loop's fixpoint | [`lower::exits`](src/lower/exits.rs), [`lower::loops`](src/lower/loops.rs), [`src/lib.rs`](src/lib.rs), [`lower`](src/lower.rs) |
-| Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](../surface-lowering-base/src/lower/runs.rs), [`lower`](src/lower.rs) |
+| Early exits and loops: the survey, the commuting, the cut, inferred exits and a loop's fixpoint | [`lower::exits`](src/lower/exits.rs), [`lower::loops`](src/lower/loops.rs), [`src/lib.rs`](src/lib.rs), `gandr-surface-lowering-expression`'s [`lower`](../surface-lowering-expression/src/lower.rs) |
+| Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](../surface-lowering-base/src/lower/runs.rs), `gandr-surface-lowering-expression`'s [`lower`](../surface-lowering-expression/src/lower.rs) |
 | Binary sessions: protocols, endpoints, actions and the statements binding them | [`lower::session`](src/lower/session.rs) |
-| Worlds | [`lower::world`](src/lower/world.rs) |
+| Worlds | [`lower::world`](../surface-lowering-expression/src/lower/world.rs) |
 | The failure classifier | [`classify`](../surface-lowering-base/src/classify.rs) |
 | Attributes | [`attribute`](../surface-lowering-base/src/attribute.rs) |
 | Origins | [`origin`](../surface-lowering-base/src/origin.rs) |
@@ -114,8 +114,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 ## References
 
-- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The module pass reads nothing of the lowering's context, so it compiles in the base, and this crate reads it there.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
 
