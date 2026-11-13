@@ -79,5 +79,44 @@
     "servers": {},
     "entries": {},
     "output": "entries 0; unstack none; link none"
+  },
+  {
+    "name": "#7142: a chain that adds a member past an open member it leaves out unstacks the stack, and links as a new stack",
+    "chain": [1, 2, 4],
+    "servers": { "1": 9, "2": 9, "3": 9 },
+    "entries": {
+      "9": [
+        { "number": 1, "state": "OPEN" },
+        { "number": 2, "state": "OPEN" },
+        { "number": 3, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack 9; link --base main 1 2 4"
+  },
+  {
+    "name": "#7142: a queued member that the chain leaves out asks for no unstack, and the chain links above it",
+    "chain": [2, 4],
+    "servers": { "1": 9, "2": 9 },
+    "queued": [1],
+    "entries": {
+      "9": [
+        { "number": 1, "state": "OPEN", "isInMergeQueue": true },
+        { "number": 2, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack none; link --base main 9 2 4"
+  },
+  {
+    "name": "#7142: a chain that adds no member unstacks nothing, though the stack holds an open member above it",
+    "chain": [1, 2],
+    "servers": { "1": 9, "2": 9, "3": 9 },
+    "entries": {
+      "9": [
+        { "number": 1, "state": "OPEN" },
+        { "number": 2, "state": "OPEN" },
+        { "number": 3, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack none; link --base main 9 1 2"
   }
 ]
