@@ -408,6 +408,7 @@ INSERT INTO purpose VALUES('core-checker-bridge','bridge::LeadingCount','struct'
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Meter','trait','Reads how many allocations the calling thread has made.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Metered','struct','A stopwatch that reads the caller''s clock and meter around each admission.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Outcome','enum','What became of one declaration at the kernel boundary.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker-bridge','bridge::Outgrown','enum','Whether a record''s retired entries reach its live ones, so that a whole readmission of the live entries holds fewer terms than the record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Readmission','struct','A module''s readmission: the kernel environment it built, one outcome per declaration, the artifact''s audit, and the declarations the kernel admitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Readmitted','struct','One declaration''s outcome, beside the position and origin the judgement echoed, the certificates its erasure replayed and what its admission spent.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Readmitting','type_alias','The declarations a readmitting run crossed before it, as a polled readmission beside what retired it.',NULL,'fits','sound',NULL);
