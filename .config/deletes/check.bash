@@ -5,15 +5,17 @@
 #
 # The check reads four kinds at the base and at the head:
 #   - the compiler's items and the suite's tests, from the evidence records of
-#     a `cargo dylint` run over the packages that the change touches, at the
-#     base in a scratch worktree and at the head in this one. A test is an
-#     item that a test unit holds and its library unit does not;
+#     the packages that the change touches, at the base in a scratch worktree
+#     and at the head in this one. A test is an item that a test unit holds
+#     and its library unit does not;
 #   - the rows of each table of `ledger/*.sql`, by primary key, and the lines
 #     of `.config/dead-weight/kept.txt`;
 #   - the files under `corpus/`, `docs/` and `ledger/`, and each crate's
 #     `README.md`, by path.
 # The records come from the merge base, never from an artifact, since a stale
-# record set gives a wrong account (#6817).
+# record set gives a wrong account (#6817). The cache of `records.bash` keys
+# each package's records by each input that they read, and a `cargo dylint`
+# run builds each package that it does not hold (#6823).
 #
 # With `--rows-only`, as in the merge queue, it reads no records and no
 # Cargo metadata: it reads the body's rows and the architect's sign-offs, so
@@ -149,33 +151,28 @@ if [[ $mode == full ]]; then
   touched=$(jq -R . "$scratch/changed" | jq -s -c --argjson packages "$packages" \
     '[.[] | select(startswith("crates/")) | split("/")[1]] | unique as $dirs | [$packages[] | select(.dir | IN($dirs[])) | {name, dir}]')
   # The evidence records of the touched packages at a tree: `$1` the tree,
-  # `$2` the directory the records go to. The run takes the policy's
-  # configuration and denials from the tree's own `check:dylint`
-  # (`policy.bash`), so it builds as the gate's run does (#6838). A package
-  # that the change adds has no manifest at the base, so the base's run
-  # leaves it out and each of its items reads as added.
+  # `$2` the directory the records go to, `$3` the side. The run takes the
+  # policy's configuration and denials from the tree's own `check:dylint`
+  # (`policy.bash`), so it builds as the gate's run does (#6838). Each
+  # package's records come from the cache of `records.bash` when its key
+  # holds, and the rest build there (#6823). A package that the change adds
+  # has no manifest at the base, so the base's run leaves it out and each of
+  # its items reads as added.
   records() {
-    local tree=$1 out=$2 args=() config flags name dir
+    local tree=$1 out=$2 side=$3 args=() name dir summary
     mkdir -p "$out"
     while IFS=$'\t' read -r name dir; do
-      if [[ -f $tree/crates/$dir/Cargo.toml ]]; then args+=(-p "$name"); fi
+      if [[ -f $tree/crates/$dir/Cargo.toml ]]; then args+=("$name=crates/$dir"); fi
     done < <(jq -r '.[] | [.name, .dir] | @tsv' <<< "$touched")
     (( ${#args[@]} )) || return 0
-    config=$("$here/policy.bash" "$tree" "$out")
-    flags=$("$here/policy.bash" --flags "$tree" "$out")
-    (cd "$tree" \
-      && CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$root/target/deletes" \
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=dylint-link CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=dylint-link \
-        CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=dylint-link CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=dylint-link \
-        CARGO_ENCODED_RUSTFLAGS=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no' \
-        DYLINT_TOML=$config DYLINT_RUSTFLAGS=$flags \
-        cargo dylint --lib quenchant_dylints -- "${args[@]}" --all-targets --locked --quiet) > "$scratch/dylint.log" 2>&1 \
-      || { echo "check:deletes: the records of $tree do not build:" >&2; tail -n 20 "$scratch/dylint.log" >&2; exit 2; }
+    summary=$("$here/records.bash" "$tree" "$root/target/deletes" "$out" "${args[@]}") || exit 2
+    cached+="; the $side ${summary#*: }"
   }
+  cached=
   if [[ $touched != '[]' ]]; then
     git -C "$root" worktree add --quiet --detach "$scratch/base" "$base"
-    records "$scratch/base" "$scratch/records-base"
-    records "$root" "$scratch/records-head"
+    records "$scratch/base" "$scratch/records-base" base
+    records "$root" "$scratch/records-head" head
   fi
   # Each side's items and tests: {id, kind, file, start, end}. A test is an
   # item of a test unit that the library unit of the same root lacks. Each
@@ -319,4 +316,4 @@ if [[ -n $findings ]]; then
   echo "check:deletes: account for each thing above in the body's \`## Deletes\` (#6817), then run the task again; ${SECONDS}s" >&2
   exit 1
 fi
-echo "check:deletes OK: $(jq length <<< "$left") things leave the tree, each with its row; ${SECONDS}s"
+echo "check:deletes OK: $(jq length <<< "$left") things leave the tree, each with its row${cached:-}; ${SECONDS}s"

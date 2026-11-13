@@ -3069,11 +3069,14 @@ echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases re
 # each entry of the group (`.config/deletes/queue.bash` over
 # `.config/queue/entries.bash`, #6839), since a green group lands every entry
 # below it. Each entry's body is read once (`.config/queue/bodies.bash`,
-# #6883) and serves the ledger's check too. With no body, as in the gate, it
+# #6883) and serves the ledger's check too. Each side's records come from a
+# cache keyed by each input that they read (`.config/deletes/records.bash`,
+# #6823), and the misses build in one run. With no body, as in the gate, it
 # runs the cases of `deletes.jq` (`.config/deletes/cases.json`), of the
-# record run's settings (`.config/deletes/policy-cases.bash`), of the reading
-# of each changed test (`.config/deletes/tests-cases.bash`), of the patches
-# that moved since a sign-off (`.config/deletes/moved-cases.bash`) and of the
+# record run's settings (`.config/deletes/policy-cases.bash`), of the cache
+# of records (`.config/deletes/records-cases.bash`), of the reading of each
+# changed test (`.config/deletes/tests-cases.bash`), of the patches that
+# moved since a sign-off (`.config/deletes/moved-cases.bash`) and of the
 # queue's walk, its bodies and its commit rules (`.config/queue/cases.bash`).
 ["check:deletes"]
 description = "A body accounts for each item, test, ledger row and file its change takes out, with the architect's sign-off for each deletion; with no body, the rule's cases"
@@ -3090,6 +3093,7 @@ set -euo pipefail
 if [[ -z ${usage_body:-} ]]; then
   .config/cases/run.bash deletes .config/deletes/cases.json --program .config/deletes/deletes.jq --mode r -L .config/claims
   .config/deletes/policy-cases.bash
+  .config/deletes/records-cases.bash
   .config/deletes/tests-cases.bash
   .config/deletes/moved-cases.bash
   .config/queue/cases.bash
