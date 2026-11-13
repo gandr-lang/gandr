@@ -358,6 +358,262 @@
     }
   },
   {
+    "name": "#6887: a hollow failure that opens its head gives no verdict, so its tip is tested again",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "2222222222222222222222222222222222222222",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "identical",
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "hollow": true
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "3333333333333333333333333333333333333333",
+        "conclusion": "success"
+      },
+      "take": "none",
+      "dispatch": true,
+      "line": "Run 3 fails on 222222222222 with no failed job, so it gives no verdict once for its head. No verdict names the tip of integration, 222222222222, so the suite starts.",
+      "aside": [
+        {
+          "id": 3,
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "sha": "2222222222222222222222222222222222222222"
+        }
+      ]
+    }
+  },
+  {
+    "name": "#6887: a hollow failure with landing ahead takes landing, and the suite starts",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "hollow": true
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "3333333333333333333333333333333333333333",
+        "conclusion": "success"
+      },
+      "take": "fast-forward",
+      "dispatch": true,
+      "line": "Run 3 fails on 222222222222 with no failed job, so it gives no verdict once for its head. integration fast-forwards to the tip of landing, 111111111111, and the suite starts.",
+      "aside": [
+        {
+          "id": 3,
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "sha": "2222222222222222222222222222222222222222"
+        }
+      ]
+    }
+  },
+  {
+    "name": "#6887: a second failure on a head gives a verdict, hollow or not",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "runs": [
+        {
+          "databaseId": 4,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/4",
+          "hollow": true
+        },
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "hollow": true
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 4,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/4",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "Run 4 fails on the tip of integration, 222222222222, so landing, 111111111111, waits for a fix."
+    }
+  },
+  {
+    "name": "#6887: a failure with a failed job gives a verdict",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "hollow": false
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 3,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "Run 3 fails on the tip of integration, 222222222222, so landing, 111111111111, waits for a fix."
+    }
+  },
+  {
+    "name": "#6887: an unmarked failure that opens its head is read",
+    "program": "hollow.jq",
+    "input": [
+      {
+        "databaseId": 3,
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "2222222222222222222222222222222222222222",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+      },
+      {
+        "databaseId": 2,
+        "status": "completed",
+        "conclusion": "success",
+        "headSha": "3333333333333333333333333333333333333333",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+      }
+    ],
+    "output": 3
+  },
+  {
+    "name": "#6887: below a hollow failure set aside, the next unmarked failure is read",
+    "program": "hollow.jq",
+    "input": [
+      {
+        "databaseId": 3,
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "2222222222222222222222222222222222222222",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+        "hollow": true
+      },
+      {
+        "databaseId": 2,
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "3333333333333333333333333333333333333333",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+      }
+    ],
+    "output": 2
+  },
+  {
+    "name": "#6887: a failure on a head that failed before is not read, since it gives a verdict",
+    "program": "hollow.jq",
+    "input": [
+      {
+        "databaseId": 4,
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "2222222222222222222222222222222222222222",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/4"
+      },
+      {
+        "databaseId": 3,
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "2222222222222222222222222222222222222222",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+        "hollow": true
+      }
+    ],
+    "output": null
+  },
+  {
+    "name": "#6887: a pass above the failures reads nothing",
+    "program": "hollow.jq",
+    "input": [
+      {
+        "databaseId": 2,
+        "status": "completed",
+        "conclusion": "success",
+        "headSha": "3333333333333333333333333333333333333333",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+      },
+      {
+        "databaseId": 1,
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "2222222222222222222222222222222222222222",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/1"
+      }
+    ],
+    "output": null
+  },
+  {
     "name": "#6540: a list with no row closes its open issue, so an empty list counts as no open defect",
     "program": "list-state.jq",
     "input": {
@@ -708,6 +964,55 @@
     "output": {
       "page": false,
       "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The brake\n\nThe brake holds the landings (#5442). `main` lags `landing` past a limit of `.config/integration/brake.json`. A passing cycle moves `main`, and then the landings go on.",
+      "soundness": []
+    }
+  },
+  {
+    "name": "#6887: a hollow failure set aside stands in the list under a pass, and pages nobody",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "3333333333333333333333333333333333333333",
+        "conclusion": "success"
+      },
+      "conflict": null,
+      "aside": [
+        {
+          "id": 3,
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+          "sha": "2222222222222222222222222222222222222222"
+        }
+      ],
+      "reports": [],
+      "jobs": [],
+      "soundness": []
+    },
+    "output": {
+      "page": false,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `333333333333` passes: [run 2](https://github.com/gandr-lang/gandr/actions/runs/2). The list holds no test.\n\nThe cycle sets aside [run 3](https://github.com/gandr-lang/gandr/actions/runs/3) on `222222222222`: it fails with no failed job, so it gives no verdict once for its head (#6887).",
+      "soundness": []
+    }
+  },
+  {
+    "name": "#6887: a failed cycle with no failing test and no failed job says so, and pages the fixer",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 4,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/4",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "conflict": null,
+      "reports": [],
+      "jobs": [],
+      "soundness": []
+    },
+    "output": {
+      "page": true,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 4](https://github.com/gandr-lang/gandr/actions/runs/4).\n\nNo test report names a failure, and no job of the run fails. A second such run on one head gives a verdict (#6887).",
       "soundness": []
     }
   },

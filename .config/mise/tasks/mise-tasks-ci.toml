@@ -1451,6 +1451,11 @@ done < "$scratch/actions"
 # runner, so the dispatched run shows before that step reads the runs.
 # Without CYCLE_FILE set the step prints what it would do and writes
 # nothing. GH_REPO names the repository.
+# Before its decision the step reads the jobs of a failure that could be
+# hollow (#6887, `.config/integration/hollow.jq`): one call for each such
+# run, three at most. A hollow failure that opens its head gives no verdict,
+# so the decision reruns the suite or takes `landing`. The decision's line
+# and the list name the run. A failed read leaves the run a verdict.
 ["ci:cycle"]
 description = "Read the integration cycle's verdict, take landing into integration and start the suite there"
 tools.jq = "1.8.1"
@@ -1501,6 +1506,18 @@ if [[ -n $repair ]]; then
   esac
 fi
 running > "$scratch/runs.json"
+# Each failure that could be hollow, newest first: its jobs read, the run
+# marked, and the next asked for. A read that fails stops the marks, so the
+# run stays a verdict.
+for _ in 1 2 3; do
+  unread=$(jq -r -L "$here" -f "$here/hollow.jq" "$scratch/runs.json")
+  [[ $unread != null ]] || break
+  failed_jobs=$(gh api --paginate "repos/$repo/actions/runs/$unread/jobs?per_page=100" \
+    --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out")] | length' | jq -s add) || break
+  jq -c --argjson id "$unread" --argjson hollow "$([[ $failed_jobs == 0 ]] && echo true || echo false)" \
+    'map(if .databaseId == $id then .hollow = $hollow else . end)' "$scratch/runs.json" > "$scratch/marked.json"
+  mv "$scratch/marked.json" "$scratch/runs.json"
+done
 decision=$(jq -n -c --arg landing "$landing" --arg integration "$integration" --arg compare "$compare" \
   --arg repair "$repair" --argjson held "$held_repair" --slurpfile runs "$scratch/runs.json" \
   '{landing: $landing, integration: $integration, compare: $compare, repair: (if $repair == "" then null else {sha: $repair, held: $held} end), runs: $runs[0]}' \
@@ -1621,7 +1638,7 @@ set_state() {
 # a failed cycle or a take that does not merge, and closed otherwise
 # (`list-state.jq`, #6540): an empty list counts as no open defect.
 keep_list() {
-  local title="integration: the known-red list" found number current id held taken braked braking jobs='[]' known url own heading row act
+  local title="integration: the known-red list" found number current id held taken braked braking jobs='[]' known url own heading row act aside set_aside named=true
   found=$(issue_found "$title")
   number=$(jq -r '.number // empty' <<< "$found")
   current=$(jq -r '.body // empty' <<< "$found")
@@ -1630,7 +1647,11 @@ keep_list() {
   taken=$([[ $conflict != null ]] && echo true || echo false)
   braked=$([[ $current == *"## The brake"* ]] && echo true || echo false)
   braking=$(jq -r .on <<< "$brake")
-  if [[ -n $id && $current == *"/actions/runs/$id)"* && $held == "$taken" && $braked == "$braking" ]]; then
+  aside=$(jq -c '.aside // []' <<< "$decision")
+  for set_aside in $(jq -r '.[].id' <<< "$aside"); do
+    [[ $current == *"/actions/runs/$set_aside)"* ]] || named=false
+  done
+  if [[ -n $id && $current == *"/actions/runs/$id)"* && $held == "$taken" && $braked == "$braking" && $named == true ]]; then
     row=$([[ $taken == true || ( -n $conclusion && $conclusion != success ) ]] && echo true || echo false)
     set_state "$(list_act "$row")"
     say "The known-red list #$number stands: it reads run $id."
@@ -1651,8 +1672,8 @@ keep_list() {
       | jq -R -s -c 'split("\n") | map(select(. != ""))')
   fi
   known=$(jq -n -c --argjson verdict "$verdict" --argjson conflict "$conflict" --argjson jobs "$jobs" \
-    --argjson brake "$braking" --slurpfile reports "$scratch/reports.json" --slurpfile soundness "$here/soundness.json" \
-    '{verdict: $verdict, conflict: $conflict, brake: $brake, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
+    --argjson brake "$braking" --argjson aside "$aside" --slurpfile reports "$scratch/reports.json" --slurpfile soundness "$here/soundness.json" \
+    '{verdict: $verdict, conflict: $conflict, brake: $brake, aside: $aside, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
     | jq -c -f "$here/known-red.jq")
   jq -r .body <<< "$known" > "$scratch/body.md"
   act=$(list_act "$(jq -c .page <<< "$known")")
