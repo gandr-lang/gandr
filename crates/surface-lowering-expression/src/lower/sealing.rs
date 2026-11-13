@@ -1,7 +1,10 @@
-//! The lowering half of an abstract component: the declaration each abstract
-//! slot amounts to once its kind and its representation have lowered, and
-//! the refusal a slot inherits from a representation that did not lower. The
-//! design lives with the collection pass (`crate::module::sealing`).
+//! The lowering half of an abstract component.
+//!
+//! The half holds the declaration that each abstract slot amounts to once its
+//! kind and its representation have lowered, and the refusal that a slot
+//! inherits from a representation that did not lower.
+//!
+//! The design lives with the collection pass (`crate::module::sealing`).
 
 use core::ops::Bound;
 
@@ -11,7 +14,9 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::SealExtent;
 use quenchant_shape::shape::Maybe;
 
-use super::Lowerer;
+use super::Expressions;
+use super::ExpressionsRef;
+use super::Families;
 use super::Sink;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -30,9 +35,9 @@ use crate::slot::Role;
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Refused(pub bool);
+pub struct Refused(pub bool);
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
 {
     /// Carry each refused representation's refusal to the abstract slots
     /// that read it, and refuse each abstract slot whose representation is a
@@ -56,8 +61,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a sealed module whose type member names an unbound
     ///   type refuses its atom and every client of it, while an unrelated
     ///   declaration still lowers.
-    /// - witness: `tests::modules::a_sealed_component_over_a_refused_member_is_refused_with_it`
-    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_sealed_component_over_a_refused_member_is_refused_with_it`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -120,7 +125,10 @@ impl<'source> Lowerer<'_, 'source>
 
         Refused(refused)
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
     /// The refusal of the type member defined at `defined` where a value type
     /// is read of it, when its definition is a computation type.
     ///
@@ -137,9 +145,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a seal and a functor's abstract parameter over a
     ///   computation member are each refused at its definition.
-    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(ensures: |ret| ret.is_none() || self.cx().computation_members.contains(&defined.node))]
     #[inline]
+    #[must_use]
     pub fn computation_refusal(
         &self,
         defined: Placed,
@@ -159,7 +168,10 @@ impl<'source> Lowerer<'_, 'source>
             Err(refusal) => Some(refusal),
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
     /// Lower every unrefused abstract slot to its declaration.
     ///
     /// # Specification
@@ -171,16 +183,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   site, and a transparent one's kind witness as the check of the
     ///   representation's code at the kind, the code's origin the member's
     ///   type.
-    /// - provides: the declarations [`Self::outcome`] reads for abstract slots.
+    /// - provides: the declarations
+    ///   [`Self::outcome`](crate::lower::ExpressionsRef::outcome) reads for
+    ///   abstract slots.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a sealed component with no kind, one with a written
     ///   universe and a transparent one each lower to the exact declaration.
-    /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
-    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    /// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_transparent_abstract_component_reads_its_type_member`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

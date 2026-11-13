@@ -1,7 +1,10 @@
-//! The lowering half of a functor application: the renaming each instance
-//! reads its template through, the types its manifest components read, and
-//! the declarations its witnesses and its body's image amount to. The design
-//! lives with the collection pass (`crate::module::functor`).
+//! The lowering half of a functor application.
+//!
+//! The half holds the renaming that each instance reads its template through,
+//! the types that its manifest components read, and the declarations that its
+//! witnesses and its body's image amount to.
+//!
+//! The design lives with the collection pass (`crate::module::functor`).
 
 use alloc::vec::Vec;
 
@@ -20,8 +23,10 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
+use super::Expressions;
+use super::ExpressionsRef;
+use super::Families;
 use super::InstanceType;
-use super::Lowerer;
 use super::Sink;
 use super::Site;
 use super::exits::record_copies;
@@ -50,7 +55,7 @@ use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 use crate::slot::Role;
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
     /// Refuse a path read off the application `target`, `F(X).x` or
     /// `F(X).T`, when its head names a functor.
@@ -75,7 +80,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a value path and a type path off an application of a
     ///   functor are each refused by name, and a path off a call of a function
     ///   is not.
-    /// - witness: `tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -142,8 +147,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a body reads its parameter's type and value by path,
     ///   and a declaration outside the functor does not; another module's path
     ///   inside the functor reads as that module.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(parameter) => self.cx().collected.structures.get(usize::from(parameter)).is_some_and(|structure| matches!(structure.stratum,
             Stratum::Parameter(functor) if self.cx().collected.functors.get(usize::from(functor))
@@ -188,15 +193,16 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`BodyScope::Domain`], a flow's, or [`BodyScope::Path`], a path's, its
     ///   parameter and the body's own container; absent for any other
     ///   container.
-    /// - provides: the domain half of [`Self::resolve_name`].
+    /// - provides: the domain half of
+    ///   [`Self::resolve_name`](crate::lower::Expressions::resolve_name).
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a flow's body reads its domain's member by name, and
     ///   an ordinary functor's body reads its own members.
-    /// - witness: `tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present((parameter, outer)) => matches!(container, Container::Module(module)
             if self.cx().collected.structures.get(usize::from(module)).is_some_and(|structure| structure.container == outer
@@ -256,7 +262,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the abstract type of a functor's parameter that is
     ///   never applied answers at its universe in the parameter's signature.
-    /// - witness: `tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
     #[inline]
     pub fn parameter_kind(
         &self,
@@ -297,7 +303,10 @@ impl<'source> Lowerer<'_, 'source>
             )),
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
     /// Plan the value path `head.selected`, written at `site`, when `head`
     /// names the parameter of the functor the path is written in.
     ///
@@ -320,8 +329,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a body reads a parameter's value, and a name the
     ///   parameter does not state is refused by name.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Ok(Read::Unread) => matches!(self.shared().parameter_named(site, self.cx().name_at(head)), Maybe::Absent(_)),
         | Ok(Read::Planned) => matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Constant(_))),
@@ -358,7 +367,10 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(Read::Planned)
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
     /// The value component the parameter at `parameter` states under `member`.
     ///
     /// A parameter's slots are entered in no name table, so its components are
@@ -376,14 +388,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a body reads a parameter's operation, a law of a
     ///   parameter's model reads the operation it states, and a name the
     ///   parameter does not state is found nowhere.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
-    /// - witness: `tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
-    #[expect(
-        clippy::same_name_method,
-        reason = "the host's `Families` method of this name calls it"
-    )]
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
     #[inline]
+    #[must_use]
     pub fn parameter_export(
         &self,
         parameter: StructureIndex,
@@ -405,7 +414,10 @@ impl<'source> Lowerer<'_, 'source>
             Member::Slot(_) | Member::Module(_) => None,
         })
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
     /// Plan the type path `head.selected`, written at `site`, when `head`
     /// names the parameter of the functor the path is written in.
     ///
@@ -427,8 +439,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a body's signature reads the parameter's abstract
     ///   type, and a type the parameter does not state is refused by name.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Ok(Read::Unread) => matches!(self.shared().parameter_named(site, self.cx().name_at(head)), Maybe::Absent(_)),
         | Ok(Read::Planned) => matches!(self.cx().plans.get(site.at.node), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
@@ -484,7 +496,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   applications are taken in source order, so an instance applied to an
     ///   earlier instance reads that instance's types.
     /// - provides: the renamings the mint sweep's instance types and
-    ///   [`Self::mint_instances`] read.
+    ///   [`Self::mint_instances`](crate::lower::Expressions::mint_instances)
+    ///   read.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -492,8 +505,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — an instance applied to a sealed argument reads the
     ///   argument's atom, and one applied to an instance reads that instance's
     ///   type.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::an_instance_can_be_an_argument`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_can_be_an_argument`
     #[spec(
         captures: before_count = self.cx().renamings.len(),
         ensures: self.cx().renamings.len() >= before_count && self.cx().renamings.len() <= self.cx().collected.instances.len(),
@@ -517,7 +530,10 @@ impl<'source> Lowerer<'_, 'source>
             self.instance_manifests(index, sink);
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
     /// The renaming the application at `index` reads its template through.
     ///
     /// # Specification
@@ -532,12 +548,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::rename_instances_before`], and a type an
-    ///   instance's member states at a parameter's operation names the
-    ///   argument's, which a source can write.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::an_instance_names_its_argument_s_operations_2179`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - hypothesis: L3 — as
+    ///   [`Self::rename_instances_before`](crate::lower::Expressions::rename_instances_before),
+    ///   and a type an instance's member states at a parameter's operation
+    ///   names the argument's, which a source can write.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_names_its_argument_s_operations_2179`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ret| ret.is_ok() || self.cx().collected.instances.get(usize::from(index)).is_some())]
     fn instance_renaming(
         &self,
@@ -630,10 +647,11 @@ impl<'source> Lowerer<'_, 'source>
     /// The refusal of the component's slot.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::rename_instances_before`].
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::functors::an_instance_can_be_an_argument`
-    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - hypothesis: L3 — as
+    ///   [`Self::rename_instances_before`](crate::lower::Expressions::rename_instances_before).
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_can_be_an_argument`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn argument_type(
         &self,
@@ -697,7 +715,10 @@ impl<'source> Lowerer<'_, 'source>
             TypeMeaning::Family(_) => Err(unlowered()),
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
     /// Mint the type each manifest component of the instance at `index`
     /// reads: its template's type, renamed.
     ///
@@ -713,8 +734,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a transparent functor's manifest result reads the
     ///   argument's type at each instance, a computation type too.
-    /// - witness: `tests::modules::functors::a_transparent_result_reads_the_argument_through`
-    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_transparent_result_reads_the_argument_through`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
         captures: before = self.cx().instance_types.len(),
         ensures: self.cx().instance_types.len() >= before,
@@ -804,18 +825,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   its import's match refuses; one whose argument's type for an abstract
     ///   component is a computation type refuses that component's witness at
     ///   the argument's definition and declares nothing else.
-    /// - provides: the declarations [`Self::assemble`] reads for an instance.
+    /// - provides: the declarations
+    ///   [`Self::assemble`](crate::lower::ExpressionsRef::assemble) reads for
+    ///   an instance.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two applications of a counter functor yield two
     ///   abstract types at two sites, and their members each typed at its own.
-    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
-    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
-    /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     #[spec(
         captures: before = self.cx().instantiated.len(),
         ensures: self.cx().instantiated.len() >= before,
@@ -949,23 +972,28 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
     /// The declaration the witness `matched` checks the argument by, for the
     /// parameter component `component`, under `renaming`.
     ///
     /// # Specification
     /// - requires: the template's parameter types are minted, a derived
     ///   component's among them.
-    /// - ensures: as [`Self::mint_instances`] for one witness; absent when the
-    ///   parameter's own type or kind did not lower, which its slot's refusal
-    ///   reports.
+    /// - ensures: as
+    ///   [`Self::mint_instances`](crate::lower::Expressions::mint_instances)
+    ///   for one witness; absent when the parameter's own type or kind did not
+    ///   lower, which its slot's refusal reports.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_instances`].
-    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
-    /// - witness: `tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
+    /// - hypothesis: L3 — as
+    ///   [`Self::mint_instances`](crate::lower::Expressions::mint_instances).
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(DeclarationOutcome::Completed { .. })))]
     fn witness_outcome(
         &self,
@@ -1078,7 +1106,7 @@ impl<'source> Lowerer<'_, 'source>
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(super) enum Read
+pub enum Read
 {
     /// The head names no parameter here: the outermost scope reads the path.
     Unread,
@@ -1092,7 +1120,7 @@ pub(super) enum Read
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(super) struct Deeper(pub bool);
+pub struct Deeper(pub bool);
 
 quenchant_shape::reason_enum! {
     /// Why a path head names no functor parameter.
@@ -1117,8 +1145,9 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::mint_instances`].
-/// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - hypothesis: L3 — as
+///   [`Lowerer::mint_instances`](crate::lower::Expressions::mint_instances).
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
 #[spec(ensures: |ret| ret == subject || sink.arena.value_type(ret).is_some())]
 pub(super) fn rename_type(
     sink: &mut Sink<'_>,
@@ -1145,8 +1174,9 @@ pub(super) fn rename_type(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::mint_instances`].
-/// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - hypothesis: L3 — as
+///   [`Lowerer::mint_instances`](crate::lower::Expressions::mint_instances).
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
 #[spec(ensures: |ret| ret == subject || sink.arena.value(ret).is_some())]
 pub(super) fn rename_value(
     sink: &mut Sink<'_>,

@@ -31,7 +31,7 @@ One file for each category holds its member rows: one row for each directory, th
 - [`core`](README/core.md): 12 crates
 - [`storage`](README/storage.md): 6 crates
 - [`runtime`](README/runtime.md): 3 crates
-- [`surface`](README/surface.md): 30 crates
+- [`surface`](README/surface.md): 31 crates
 - [`workflow`](README/workflow.md): 12 crates
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.

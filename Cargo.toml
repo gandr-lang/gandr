@@ -42,6 +42,7 @@ members = [
   "crates/surface-lowering-base",
   "crates/surface-lowering-capability",
   "crates/surface-lowering-exits",
+  "crates/surface-lowering-expression",
   "crates/surface-lowering-identity",
   "crates/surface-lowering-model",
   "crates/surface-lowering-native",
@@ -184,6 +185,7 @@ default-features = false
 # - surface-lowering-base
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -514,6 +516,7 @@ path = "crates/core-session"
 # - surface-lowering-base
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -588,10 +591,11 @@ path = "crates/kernel-core-base"
 # - core-unify
 # - kernel-core
 # - kernel-term
-# - storage-artifact (dev)
 # - runtime-emitter
+# - storage-artifact (dev)
 # - surface-dispatcher
 # - surface-lowering
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -623,6 +627,7 @@ path = "crates/kernel-strata"
 # - surface-lowering
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -818,6 +823,7 @@ path = "crates/surface-format"
 # - surface-lowering-base (dev)
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lsp
 # - surface-lsp-base
 # - surface-parser
@@ -860,6 +866,7 @@ path = "crates/surface-lowering"
 # - surface-lowering
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -871,6 +878,7 @@ path = "crates/surface-lowering-base"
 # lowering's base.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-capability]
 path = "crates/surface-lowering-capability"
 
@@ -879,14 +887,23 @@ path = "crates/surface-lowering-capability"
 # asks for, over the lowering's base.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-exits]
 path = "crates/surface-lowering-exits"
+
+# The expression and type lowering: each expression, type, pattern, block and
+# declaration body, over the lowering's base and its families.
+# consumers:
+# - surface-lowering
+[workspace.dependencies.gandr-surface-lowering-expression]
+path = "crates/surface-lowering-expression"
 
 # The identity family of the lowering: path, bridge and flow types, the
 # identity operations, transports and derived operations, over the
 # lowering's base.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-identity]
 path = "crates/surface-lowering-identity"
 
@@ -895,6 +912,7 @@ path = "crates/surface-lowering-identity"
 # the lowering's base.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-model]
 path = "crates/surface-lowering-model"
 
@@ -903,6 +921,7 @@ path = "crates/surface-lowering-model"
 # the lowering's base.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-native]
 path = "crates/surface-lowering-native"
 
@@ -1033,6 +1052,7 @@ path = "crates/surface-session"
 # - surface-lowering-base
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -1065,6 +1085,7 @@ path = "crates/surface-tui"
 # - storage-artifact
 # - surface-dispatcher (dev)
 # - surface-lowering
+# - surface-lowering-expression
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
@@ -1107,6 +1128,7 @@ default-features = false
 # - surface-dispatcher (dev)
 # - surface-lowering
 # - surface-lowering-base
+# - surface-lowering-expression
 # - theory-sites
 [workspace.dependencies.gandr-theory-circuit-algebras]
 path = "crates/theory-circuit-algebras"
@@ -1120,6 +1142,7 @@ default-features = false
 # - storage-artifact (dev)
 # - surface-dispatcher
 # - surface-lowering
+# - surface-lowering-expression
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
@@ -1134,6 +1157,7 @@ default-features = false
 # - none: the certificate fixtures use the alloc-only elaborator.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 # - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-computads]
 path = "crates/theory-computads"
@@ -1242,6 +1266,7 @@ default-features = false
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lowering-capability
+# - surface-lowering-expression
 # - surface-lowering-model
 # - surface-lowering-native
 # - surface-pretty (dev)
@@ -1315,6 +1340,7 @@ default-features = false
 # - none: alloc-only shapes and their evidence.
 # consumers:
 # - surface-lowering
+# - surface-lowering-expression
 [workspace.dependencies.gandr-theory-shapes]
 path = "crates/theory-shapes"
 default-features = false
@@ -1451,6 +1477,7 @@ default-features = false
 # - surface-dispatcher
 # - surface-driver
 # - surface-lowering
+# - surface-lowering-expression
 # - surface-lowering-model
 # - surface-lsp
 # - theory-coherent-resolutions
@@ -1735,9 +1762,9 @@ default-features = false
 # consumers:
 # - core-checker
 # - core-incremental
-# - core-term
 # - core-sequent
 # - core-session
+# - core-term
 # - core-unify
 # - kernel-core
 # - kernel-term
@@ -1755,6 +1782,7 @@ default-features = false
 # - surface-lowering-base
 # - surface-lowering-capability
 # - surface-lowering-exits
+# - surface-lowering-expression
 # - surface-lowering-identity
 # - surface-lowering-model
 # - surface-lowering-native
@@ -1769,8 +1797,8 @@ default-features = false
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
 # - theory-computads
-# - theory-deep-inference
 # - theory-decomposition-spaces
+# - theory-deep-inference
 # - theory-dynamic-graphs
 # - theory-levitation
 # - theory-nominal-automata

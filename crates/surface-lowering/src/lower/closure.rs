@@ -26,6 +26,8 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering_expression::lower::Expressions;
+use gandr_surface_lowering_expression::lower::ExpressionsRef;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_levitation::NominalSerial;
@@ -502,7 +504,7 @@ impl ClosureLowering
         let finished = state.finished.as_ref()?;
         let arena = state.arena.clone();
         let lowerer = state.lowerer.clone();
-        let resumed = lowerer.resumed(finished, &state.origins);
+        let resumed = ExpressionsRef::new(&lowerer).resumed(finished, &state.origins);
         lowerer
             .finish(&arena, state.origins.clone(), Some(resumed))
             .ok()
@@ -755,16 +757,16 @@ fn continue_from<'held>(
     let resumed = state
         .finished
         .as_ref()
-        .map(|finished| lowerer.resumed(finished, origins));
+        .map(|finished| ExpressionsRef::new(&lowerer).resumed(finished, origins));
     let mut origins = origins.clone();
-    lowerer.widen(tree, unit, described, decisions);
+    Expressions::new(&mut lowerer).widen(tree, unit, described, decisions);
     let mut sink = Sink::new(arena, &mut origins, state.tables.clone());
     for (source, own) in source_pieces(unit, pieces)
         .into_iter()
         .enumerate()
         .skip(lowered)
     {
-        lowerer.lower_source(SourceIndex::from(source), own, &mut sink)?;
+        Expressions::new(&mut lowerer).lower_source(SourceIndex::from(source), own, &mut sink)?;
     }
 
     lowerer.finish(arena, origins, resumed)
@@ -844,12 +846,14 @@ fn suspend<'closure>(
     let mut origins = OriginTable::new();
     let mut sink = Sink::new(&mut arena, &mut origins, SinkTables::new());
     for (source, own) in source_pieces(&held.unit, pieces).into_iter().enumerate() {
-        if let Err(refusal) = lowerer.lower_source(SourceIndex::from(source), own, &mut sink) {
+        if let Err(refusal) =
+            Expressions::new(&mut lowerer).lower_source(SourceIndex::from(source), own, &mut sink)
+        {
             return halted(Stage::Lowering, refusal);
         }
     }
     let tables = sink.into_tables();
-    lowerer.share_tables();
+    Expressions::new(&mut lowerer).share_tables();
     // The closure's declarations are recorded once, here: every lowering
     // resumed after it starts from the table that records them.
     let (finished, origins) = lowerer

@@ -1192,8 +1192,9 @@ jobs:
           - shard: lowering
             packages: &lowering-shard >-
               gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-lowering-base
-              gandr-surface-lowering-capability gandr-surface-lowering-exits gandr-surface-lowering-identity
-              gandr-surface-lowering-model gandr-surface-lowering-native gandr-surface-pretty
+              gandr-surface-lowering-capability gandr-surface-lowering-exits gandr-surface-lowering-expression
+              gandr-surface-lowering-identity gandr-surface-lowering-model gandr-surface-lowering-native
+              gandr-surface-pretty
           - shard: rest
             excludes:
               [*dispatcher-shard, *engine-shard, *faces-shard, *checker-shard, *lowering-shard]

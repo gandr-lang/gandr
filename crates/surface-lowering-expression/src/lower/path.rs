@@ -1,6 +1,7 @@
 //! The lowering half of a path: each body minted as a function between packed
-//! models, and each round trip as a definition over the bound model. The
-//! design lives with the collection pass (`crate::module::path`).
+//! models, and each round trip as a definition over the bound model.
+//!
+//! The design lives with the collection pass (`crate::module::path`).
 //!
 //! # A body is its template read over the bound model
 //!
@@ -43,8 +44,10 @@ use gandr_kernel_term::GroundSort;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
+use super::Expressions;
+use super::ExpressionsRef;
+use super::Families;
 use super::Lowered;
-use super::Lowerer;
 use super::Reading;
 use super::Sink;
 use super::Site;
@@ -96,7 +99,7 @@ struct Ends
     codomain_type: ValueTypeId,
 }
 
-impl<'source> Lowerer<'_, 'source>
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
 {
     /// Mint every path the source being lowered declares: its two functions
     /// and its round trips.
@@ -104,16 +107,20 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every template slot of the source is lowered.
     /// - ensures: each function and each round trip of a path the source
-    ///   declares holds the declaration [`Self::path_function`] or
-    ///   [`Self::round_trip`] mints for it.
-    /// - provides: the declarations [`Self::outcome`] reads for a path.
+    ///   declares holds the declaration
+    ///   [`Self::path_function`](crate::lower::ExpressionsRef::path_function)
+    ///   or [`Self::round_trip`](crate::lower::ExpressionsRef::round_trip)
+    ///   mints for it.
+    /// - provides: the declarations
+    ///   [`Self::outcome`](crate::lower::ExpressionsRef::outcome) reads for a
+    ///   path.
     /// - fails: never; a refusal is the declaration's own.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each function and each round trip of a path is a
     ///   completed declaration.
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     #[spec(
         captures: before = self.cx().pathed.len(),
         ensures: self.cx().pathed.len() >= before,
@@ -151,7 +158,10 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
     }
+}
 
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
     /// The bundles and the model types of the two signatures the body
     /// `template` maps between.
     ///
@@ -168,8 +178,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The refusal of a signature that bundles no model type.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_paths`].
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - hypothesis: L3 — as
+    ///   [`Self::mint_paths`](crate::lower::Expressions::mint_paths).
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     #[spec(ensures: |ret| ret.as_ref().map_or_else(|_| true, |ends| sink.arena.value_type(ends.domain_type).is_some() && sink.arena.value_type(ends.codomain_type).is_some()))]
     fn path_ends(
         &self,
@@ -286,10 +297,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_paths`], and a body that moves a sort
-    ///   binds its code.
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
-    /// - witness: `tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
+    /// - hypothesis: L3 — as
+    ///   [`Self::mint_paths`](crate::lower::Expressions::mint_paths), and a
+    ///   body that moves a sort binds its code.
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
     #[spec(ensures: |ret| matches!(ret, DeclarationOutcome::Completed { .. } | DeclarationOutcome::Refused(_)))]
     fn path_function(
         &self,
@@ -340,7 +352,7 @@ impl<'source> Lowerer<'_, 'source>
         // checker reads `s`'s fields by.
         let Some(sorts) = decoded_sorts(&read, sink, origin, |sink, place| {
             let held = bound_model(sink, ComponentCount::from(count), origin);
-            Self::sort_code(&ends.domain, domain, (held, place), sink, origin)
+            sort_code(&ends.domain, domain, (held, place), sink, origin)
         })
         else {
             return unminted;
@@ -396,7 +408,7 @@ impl<'source> Lowerer<'_, 'source>
         for (position, member) in bound.iter().enumerate().rev() {
             let held = bound_model(sink, ComponentCount::from(position), origin);
             let Maybe::Present(projected) =
-                Self::member_of(&ends.domain, domain, (held, member.place), sink, origin)
+                member_of(&ends.domain, domain, (held, member.place), sink, origin)
             else {
                 return unminted;
             };
@@ -433,8 +445,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::path_function`].
-    /// - witness: `tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
+    /// - hypothesis: L3 — as
+    ///   [`Self::path_function`](crate::lower::ExpressionsRef::path_function).
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
     #[spec(ensures: |ret| ret.is_none_or(|id| sink.arena.value(id).is_some()))]
     fn body_sort(
         &self,
@@ -478,7 +491,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the path's two functions are minted, as
-    ///   [`Self::path_function`] mints them.
+    ///   [`Self::path_function`](crate::lower::ExpressionsRef::path_function)
+    ///   mints them.
     /// - ensures: the thunk of a lambda over the member's model `s` returning
     ///   `Path.here(s.m)`, typed `+U ((s : Model(V)) -> -F Path[.A = T](
     ///   second(first(s)).m, s.m))`, each endpoint the value its computation
@@ -494,8 +508,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_paths`].
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    /// - hypothesis: L3 — as
+    ///   [`Self::mint_paths`](crate::lower::Expressions::mint_paths).
+    /// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     #[spec(ensures: |ret| matches!(ret, DeclarationOutcome::Completed { .. } | DeclarationOutcome::Refused(_)))]
     fn round_trip(
         &self,
@@ -556,7 +571,7 @@ impl<'source> Lowerer<'_, 'source>
             let read = self.read_members(template, signature);
             let Some(sorts) = decoded_sorts(&read, sink, origin, |sink, place| {
                 let held = bound_model(sink, ComponentCount::default(), origin);
-                Self::sort_code(&ends.domain, signature, (held, place), sink, origin)
+                sort_code(&ends.domain, signature, (held, place), sink, origin)
             })
             else {
                 return unminted;
@@ -594,7 +609,7 @@ impl<'source> Lowerer<'_, 'source>
         let brought = sink.arena.value_returned(round);
         sink.origins
             .record_value(brought, origin.inserted(Insertion::Endpoint));
-        let Maybe::Present(read) = Self::member_of(
+        let Maybe::Present(read) = member_of(
             &ends.domain,
             signature,
             (brought, trip.component),
@@ -617,7 +632,7 @@ impl<'source> Lowerer<'_, 'source>
             Some(Maybe::Absent(_)) | None => origin,
         };
         let own_model = bound_model(sink, ComponentCount::default(), stated_at);
-        let Maybe::Present(own) = Self::member_of(
+        let Maybe::Present(own) = member_of(
             &ends.domain,
             signature,
             (own_model, trip.component),
@@ -638,7 +653,7 @@ impl<'source> Lowerer<'_, 'source>
         let declared_type = sink.arena.value_type_thunk(pi);
         sink.origins.record_value_type(declared_type, origin);
         let point_model = bound_model(sink, ComponentCount::default(), origin);
-        let Maybe::Present(point) = Self::member_of(
+        let Maybe::Present(point) = member_of(
             &ends.domain,
             signature,
             (point_model, trip.component),
@@ -716,81 +731,82 @@ impl<'source> Lowerer<'_, 'source>
                 | ParameterForm::Manifest(_) => None,
             })
     }
+}
 
-    /// Read the member at `component` of the model `held`, a model of the
-    /// signature `signature` that `bundle` bundles.
-    ///
-    /// # Specification
-    /// - requires: `component` is a place of `signature`, and `held` is a value
-    ///   of the bundle's type.
-    /// - ensures: as `ModelsRef::project` off `held`, at the member's label
-    ///   when the bundle is a record keyed by its labels.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_paths`].
-    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
-    fn member_of(
-        bundle: &Bundled,
-        signature: &ModelSignature,
-        (held, component): (ValueId, ComponentPlace),
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ComputationId, super::lowered::Absent>
-    {
-        let Some(member) = signature.components.get(usize::from(component))
-        else {
-            return Maybe::Absent(super::lowered::Absent::Unminted);
-        };
-        let label = (bundle.dependent() == arity::Dependent(false))
-            .then(|| FieldLabel::from(alloc::string::String::from(member.name.as_ref())));
-        super::arity::project(
-            held,
-            arity::Observed {
-                index: usize::from(component),
-                count: signature.components.len(),
-            },
-            label.as_ref(),
-            sink,
-            origin,
-        )
-    }
+/// Read the member at `component` of the model `held`, a model of the
+/// signature `signature` that `bundle` bundles.
+///
+/// # Specification
+/// - requires: `component` is a place of `signature`, and `held` is a value of
+///   the bundle's type.
+/// - ensures: as `ModelsRef::project` off `held`, at the member's label when
+///   the bundle is a record keyed by its labels.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as
+///   [`Self::mint_paths`](crate::lower::Expressions::mint_paths).
+/// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
+fn member_of(
+    bundle: &Bundled,
+    signature: &ModelSignature,
+    (held, component): (ValueId, ComponentPlace),
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<ComputationId, super::lowered::Absent>
+{
+    let Some(member) = signature.components.get(usize::from(component))
+    else {
+        return Maybe::Absent(super::lowered::Absent::Unminted);
+    };
+    let label = (bundle.dependent() == arity::Dependent(false))
+        .then(|| FieldLabel::from(alloc::string::String::from(member.name.as_ref())));
+    super::arity::project(
+        held,
+        arity::Observed {
+            index: usize::from(component),
+            count: signature.components.len(),
+        },
+        label.as_ref(),
+        sink,
+        origin,
+    )
+}
 
-    /// The code of the sort at `place` of the model `held`: the value its
-    /// projection returns, as a model binder's carrier reads it.
-    ///
-    /// # Specification
-    /// - requires: as [`Self::member_of`].
-    /// - ensures: the returned value of [`Self::member_of`]'s projection,
-    ///   marked inserted; nothing when the projection does not mint.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::path_function`].
-    /// - witness: `tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
-    #[spec(ensures: |ret| ret.is_none_or(|id| matches!(sink.arena.value(id), Some(&gandr_core_term::Value::Returned(_)))))]
-    fn sort_code(
-        bundle: &Bundled,
-        signature: &ModelSignature,
-        (held, place): (ValueId, ComponentPlace),
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Option<ValueId>
-    {
-        let Maybe::Present(projected) =
-            Self::member_of(bundle, signature, (held, place), sink, origin)
-        else {
-            return None;
-        };
-        let code = sink.arena.value_returned(projected);
-        sink.origins
-            .record_value(code, origin.inserted(Insertion::Endpoint));
+/// The code of the sort at `place` of the model `held`: the value its
+/// projection returns, as a model binder's carrier reads it.
+///
+/// # Specification
+/// - requires: as [`Self::member_of`](member_of).
+/// - ensures: the returned value of [`Self::member_of`](member_of)'s
+///   projection, marked inserted; nothing when the projection does not mint.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as
+///   [`Self::path_function`](crate::lower::ExpressionsRef::path_function).
+/// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
+#[spec(ensures: |ret| ret.is_none_or(|id| matches!(sink.arena.value(id), Some(&gandr_core_term::Value::Returned(_)))))]
+fn sort_code(
+    bundle: &Bundled,
+    signature: &ModelSignature,
+    (held, place): (ValueId, ComponentPlace),
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Option<ValueId>
+{
+    let Maybe::Present(projected) = member_of(bundle, signature, (held, place), sink, origin)
+    else {
+        return None;
+    };
+    let code = sink.arena.value_returned(projected);
+    sink.origins
+        .record_value(code, origin.inserted(Insertion::Endpoint));
 
-        Some(code)
-    }
+    Some(code)
 }
 
 /// The model the lambda of a path's function or round trip binds, read past
@@ -827,7 +843,7 @@ fn de_bruijn(binders: ComponentCount) -> DeBruijnIndex
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
-struct Read
+pub struct Read
 {
     /// The member's place in the domain's signature.
     place: ComponentPlace,
@@ -864,8 +880,9 @@ fn moved_sort(component: &ModelComponent) -> Option<&ModelComponent>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::path_function`].
-/// - witness: `tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
+/// - hypothesis: L3 — as
+///   [`Lowerer::path_function`](crate::lower::ExpressionsRef::path_function).
+/// - witness: `gandr-surface-lowering::tests::modules::paths::a_path_that_moves_a_sort_states_its_round_trip_3487`
 #[spec(ensures: |ret| ret.is_some() || read.iter().any(|member| member.sort))]
 fn decoded_sorts(
     read: &[Read],

@@ -34,6 +34,7 @@ gandr-surface-grammar.workspace = true
 gandr-surface-lowering-base.workspace = true
 gandr-surface-lowering-capability.workspace = true
 gandr-surface-lowering-exits.workspace = true
+gandr-surface-lowering-expression.workspace = true
 gandr-surface-lowering-identity.workspace = true
 gandr-surface-lowering-model.workspace = true
 gandr-surface-lowering-native.workspace = true
@@ -70,7 +71,7 @@ default = []
 # overlap queries and normalization; a model slot's candidates, each one's
 # packing, an include's reduct maps and a derived equality: timed and their
 # allocations counted for the benchmark report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-surface-lowering-model/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
+hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-surface-lowering-expression/hotpath", "gandr-surface-lowering-model/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true
